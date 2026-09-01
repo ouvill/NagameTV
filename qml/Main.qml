@@ -1,7 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
-import MirakurunViewer
+import org.freedesktop.gstreamer.Qt6GLVideoItem 1.0
 
 ApplicationWindow {
     id: root
@@ -10,7 +10,7 @@ ApplicationWindow {
     minimumWidth: 820
     minimumHeight: 520
     visible: true
-    title: "Mirakurun Viewer"
+    title: qsTr("Mirakurun Viewer")
     color: "#090d16"
 
     palette {
@@ -43,7 +43,7 @@ ApplicationWindow {
             ColumnLayout {
                 spacing: 0
                 Label { text: "MIRAKURUN"; color: "#65d9c3"; font.pixelSize: 12; font.bold: true; font.letterSpacing: 2 }
-                Label { text: "Live Viewer"; font.pixelSize: 26; font.bold: true }
+                Label { text: qsTr("Live Viewer"); font.pixelSize: 26; font.bold: true }
             }
             Item { Layout.fillWidth: true }
             Rectangle {
@@ -63,12 +63,15 @@ ApplicationWindow {
             border.color: "#263249"
             clip: true
 
-            VideoItem { anchors.fill: parent }
+            GstGLQt6VideoItem {
+                objectName: "videoItem"
+                anchors.fill: parent
+            }
 
             Label {
                 anchors.centerIn: parent
                 visible: !player.playing
-                text: "Mirakurun のサービスを選んで再生"
+                text: qsTr("Enter a Mirakurun service ID to start playback")
                 color: "#77839a"
                 font.pixelSize: 18
             }
@@ -89,22 +92,22 @@ ApplicationWindow {
 
                 TextField {
                     Layout.preferredWidth: 290
-                    placeholderText: "http://mirakurun:40772"
+                    placeholderText: qsTr("http://mirakurun:40772")
                     text: player.server
                     onEditingFinished: player.server = text
                 }
                 TextField {
                     Layout.preferredWidth: 190
-                    placeholderText: "Service ID"
+                    placeholderText: qsTr("Service ID")
                     text: player.serviceId
                     inputMethodHints: Qt.ImhDigitsOnly
                     onEditingFinished: player.serviceId = text
                 }
-                Button { text: player.playing ? "再読み込み" : "再生"; highlighted: true; onClicked: player.play() }
-                Button { text: "一時停止 / 再開"; enabled: player.playing; onClicked: player.togglePause() }
-                Button { text: "停止"; enabled: player.playing; onClicked: player.stop() }
+                Button { text: player.playing ? qsTr("Reload") : qsTr("Play"); highlighted: true; onClicked: player.play() }
+                Button { text: qsTr("Pause / Resume"); enabled: player.playing; onClicked: player.togglePause() }
+                Button { text: qsTr("Stop"); enabled: player.playing; onClicked: player.stop() }
                 Item { Layout.fillWidth: true }
-                Label { text: "音量"; color: "#aeb9ce" }
+                Label { text: qsTr("Volume"); color: "#aeb9ce" }
                 Slider {
                     Layout.preferredWidth: 150
                     from: 0; to: 100

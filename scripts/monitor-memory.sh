@@ -8,7 +8,8 @@ fi
 
 viewer_pid="$1"
 interval="${2:-10}"
-output="memory-${viewer_pid}.csv"
+started_at="$(date +%Y%m%d-%H%M%S)"
+output="${3:-memory-${viewer_pid}-${started_at}.csv}"
 
 if [[ ! -r "/proc/${viewer_pid}/smaps_rollup" ]]; then
   echo "PID ${viewer_pid} is not readable" >&2

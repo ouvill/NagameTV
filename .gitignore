@@ -2,3 +2,4 @@
 build/
 target/
 memory-*.csv
+benchmark/

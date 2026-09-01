@@ -3,6 +3,7 @@ base: ubuntu@24.04
 sdks:
   - name: flutter
   - name: codex
+  - name: rust
   - name: project-codex-latest
   - name: project-mirakurun-viewer
   - name: project-gui
@@ -28,4 +29,4 @@ actions:
     cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
     cmake --build build
   test: cargo test --manifest-path rust/Cargo.toml "$@"
-  run: ./build/mirakurun-viewer "$@"
+  run: QT_QPA_PLATFORM=xcb ./build/mirakurun-viewer "$@"

@@ -1,10 +1,13 @@
 [package]
 name = "mirakurun_core"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 [lib]
 crate-type = ["staticlib"]
+
+[dependencies]
+gstreamer = { version = "0.25", features = ["v1_24"] }
 
 [profile.release]
 lto = "thin"

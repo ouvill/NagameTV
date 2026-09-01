@@ -19,6 +19,7 @@ public:
 
     static PlayerController *instance();
     MirakurunPlayer *nativePlayer() const { return player_; }
+    bool attachVideoItem(void *item);
 
     QString server() const { return server_; }
     QString serviceId() const { return serviceId_; }
@@ -50,7 +51,7 @@ private:
     MirakurunPlayer *player_ = nullptr;
     QString server_ = QStringLiteral("http://127.0.0.1:40772");
     QString serviceId_;
-    QString status_ = QStringLiteral("待機中");
+    QString status_ = QStringLiteral("Ready");
     bool playing_ = false;
     bool paused_ = false;
     double volume_ = 70.0;

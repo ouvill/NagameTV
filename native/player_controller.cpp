@@ -9,6 +9,12 @@ PlayerController *PlayerController::instance_ = nullptr;
 
 PlayerController::PlayerController(QObject *parent) : QObject(parent) {
     instance_ = this;
+    const auto configuredServer = qEnvironmentVariable("MIRAKURUN_SERVER");
+    const auto configuredServiceId = qEnvironmentVariable("MIRAKURUN_SERVICE_ID");
+    if (!configuredServer.isEmpty())
+        server_ = configuredServer;
+    if (!configuredServiceId.isEmpty())
+        serviceId_ = configuredServiceId;
     std::array<char, 512> error{};
     player_ = mirakurun_player_create(error.data(), error.size());
     if (!player_)
@@ -27,6 +33,18 @@ PlayerController::~PlayerController() {
 }
 
 PlayerController *PlayerController::instance() { return instance_; }
+
+bool PlayerController::attachVideoItem(void *item) {
+    if (!player_)
+        return false;
+    std::array<char, 512> error{};
+    if (!mirakurun_player_attach_video_item(player_, item, error.data(),
+                                             error.size())) {
+        setStatus(QString::fromUtf8(error.data()));
+        return false;
+    }
+    return true;
+}
 
 void PlayerController::setServer(const QString &value) {
     if (server_ == value)
@@ -54,13 +72,13 @@ void PlayerController::setVolume(double value) {
 
 void PlayerController::play() {
     if (!player_) {
-        setStatus(QStringLiteral("プレイヤーを初期化できませんでした"));
+        setStatus(tr("Could not initialize the player"));
         return;
     }
     bool ok = false;
     const auto id = serviceId_.toULongLong(&ok);
     if (!ok || id == 0) {
-        setStatus(QStringLiteral("Mirakurun の service ID を入力してください"));
+        setStatus(tr("Enter a Mirakurun service ID"));
         return;
     }
 
@@ -73,7 +91,7 @@ void PlayerController::play() {
     }
     paused_ = false;
     setPlaying(true);
-    setStatus(QStringLiteral("接続中…"));
+    setStatus(tr("Connecting..."));
 }
 
 void PlayerController::stop() {
@@ -81,7 +99,7 @@ void PlayerController::stop() {
         mirakurun_player_stop(player_);
     paused_ = false;
     setPlaying(false);
-    setStatus(QStringLiteral("停止しました"));
+    setStatus(tr("Stopped"));
 }
 
 void PlayerController::togglePause() {
@@ -89,7 +107,7 @@ void PlayerController::togglePause() {
         return;
     paused_ = !paused_;
     mirakurun_player_set_pause(player_, paused_);
-    setStatus(paused_ ? QStringLiteral("一時停止") : QStringLiteral("再生中"));
+    setStatus(paused_ ? tr("Paused") : tr("Playing"));
 }
 
 void PlayerController::setStatus(QString value) {
@@ -111,12 +129,12 @@ void PlayerController::pollEvents() {
         return;
     const int event = mirakurun_player_drain_events(player_);
     if (event == 1)
-        setStatus(QStringLiteral("再生中"));
+        setStatus(tr("Playing"));
     else if (event == 2) {
         setPlaying(false);
-        setStatus(QStringLiteral("ストリームが終了しました"));
+        setStatus(tr("Stream ended"));
     } else if (event == 3) {
         setPlaying(false);
-        setStatus(QStringLiteral("再生エラー"));
+        setStatus(tr("Playback error"));
     }
 }

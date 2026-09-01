@@ -1,7 +1,9 @@
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
+#include <QQuickItem>
 #include <QQuickWindow>
+#include <QTimer>
 
 #include "player_controller.h"
 
@@ -17,5 +19,11 @@ int main(int argc, char *argv[]) {
     engine.load(QUrl(QStringLiteral("qrc:/MirakurunViewer/qml/Main.qml")));
     if (engine.rootObjects().isEmpty())
         return 1;
+    auto *videoItem = engine.rootObjects().constFirst()->findChild<QQuickItem *>(
+        QStringLiteral("videoItem"));
+    if (!videoItem || !player.attachVideoItem(videoItem))
+        return 1;
+    if (qEnvironmentVariableIntValue("MIRAKURUN_AUTOPLAY") != 0)
+        QTimer::singleShot(0, &player, &PlayerController::play);
     return app.exec();
 }
