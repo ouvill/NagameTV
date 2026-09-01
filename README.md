@@ -10,6 +10,7 @@ Mirakurunの `/api/services/{id}/stream` をGStreamerで直接再生します。
 - 手書きC++は`QQuickItem*`のアドレス取得とQt QuickのOpenGL指定だけを行う
 - QMLは表示とユーザー操作に限定し、バックエンド機能を保持しない
 - CMakeはWorkshop互換のためCargoビルドを呼び出す薄いラッパーとしてのみ使用
+- Mirakurunのサービス一覧はRustのbounded background threadで取得し、Qtスレッドへ返す
 
 ## 設計上のメモリー境界
 
@@ -77,6 +78,16 @@ QT_QPA_PLATFORM=xcb ./build/mirakurun-viewer
 
 インターレース解除は`MIRAKURUN_DEINTERLACE`で選択できます。既定は高品質な
 `yadif`です。CPU負荷を抑える場合は`linear`、無効化する場合は`off`を指定します。
+
+## 操作
+
+- 画面下部の`Channels`または`C`: Mirakurunから取得したチャンネル一覧を開く
+- `Page Up` / `Page Down`: 前後のチャンネルへ切り替える
+- `Space`: 一時停止・再開
+- `F11`: フルスクリーン切り替え
+
+チャンネルを選ぶと、再生プロセスを作り直さず同じGStreamerパイプラインのURIを
+交換します。地上波、BS、CS、SKYの順にまとめ、地上波はリモコンキー順に表示します。
 
 ## 長時間試験
 

@@ -3,6 +3,8 @@ pub mod ffi {
     unsafe extern "C++" {
         include!("cxx-qt-lib/qstring.h");
         type QString = cxx_qt_lib::QString;
+        include!("cxx-qt-lib/qstringlist.h");
+        type QStringList = cxx_qt_lib::QStringList;
 
         include!("qt_helpers.h");
         type QQuickItem;
@@ -25,6 +27,7 @@ pub mod ffi {
         #[qproperty(QString, program_name, cxx_name = "programName")]
         #[qproperty(QString, program_description, cxx_name = "programDescription")]
         #[qproperty(f64, program_progress, cxx_name = "programProgress")]
+        #[qproperty(QStringList, services)]
         type Player = super::PlayerRust;
 
         #[qinvokable]
@@ -40,14 +43,27 @@ pub mod ffi {
         #[qinvokable]
         #[cxx_name = "pollEvents"]
         fn poll_events(self: Pin<&mut Player>);
+        #[qinvokable]
+        #[cxx_name = "refreshChannels"]
+        fn refresh_channels(self: Pin<&mut Player>);
+        #[qinvokable]
+        #[cxx_name = "selectChannel"]
+        fn select_channel(self: Pin<&mut Player>, index: i32);
+        #[qinvokable]
+        #[cxx_name = "changeChannel"]
+        fn change_channel(self: Pin<&mut Player>, offset: i32);
     }
+
+    impl cxx_qt::Threading for Player {}
 }
 
 use crate::playback::{Playback, PlaybackEvent};
 use core::pin::Pin;
-use cxx_qt::CxxQtType;
-use cxx_qt_lib::QString;
+use cxx_qt::{CxxQtType, Threading};
+use cxx_qt_lib::{QString, QStringList};
+use serde::Deserialize;
 use std::ffi::c_void;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 pub struct PlayerRust {
     server: QString,
@@ -60,8 +76,11 @@ pub struct PlayerRust {
     program_name: QString,
     program_description: QString,
     program_progress: f64,
+    services: QStringList,
     paused: bool,
     applied_volume: f64,
+    service_ids: Vec<u64>,
+    loading_channels: AtomicBool,
     playback: Option<Playback>,
 }
 
@@ -86,8 +105,11 @@ impl Default for PlayerRust {
             program_name: QString::default(),
             program_description: QString::default(),
             program_progress: 0.0,
+            services: QStringList::default(),
             paused: false,
             applied_volume: 70.0,
+            service_ids: Vec::new(),
+            loading_channels: AtomicBool::new(false),
             playback: playback.ok(),
         }
     }
@@ -179,4 +201,170 @@ impl ffi::Player {
             self.as_mut().rust_mut().applied_volume = volume;
         }
     }
+
+    pub fn refresh_channels(mut self: Pin<&mut Self>) {
+        if self
+            .as_ref()
+            .rust()
+            .loading_channels
+            .swap(true, Ordering::AcqRel)
+        {
+            return;
+        }
+        let server = self.as_ref().server().to_string();
+        let qt_thread = self.qt_thread();
+        self.as_mut()
+            .set_status(QString::from("Loading channels..."));
+        std::thread::spawn(move || {
+            let result = fetch_services(&server);
+            let _ = qt_thread.queue(move |mut player| {
+                player
+                    .as_ref()
+                    .rust()
+                    .loading_channels
+                    .store(false, Ordering::Release);
+                match result {
+                    Ok(services) => {
+                        let labels = services
+                            .iter()
+                            .map(|service| QString::from(&service.label))
+                            .collect::<QStringList>();
+                        player.as_mut().rust_mut().service_ids =
+                            services.iter().map(|service| service.id).collect();
+                        player.as_mut().set_services(labels);
+                        if let Ok(current_id) =
+                            player.as_ref().service_id().to_string().parse::<u64>()
+                            && let Some(index) = player
+                                .as_ref()
+                                .rust()
+                                .service_ids
+                                .iter()
+                                .position(|id| *id == current_id)
+                        {
+                            let label = player.as_ref().services().get(index as isize).cloned();
+                            if let Some(label) = label {
+                                player.as_mut().set_channel_name(label);
+                            }
+                        }
+                        if !*player.as_ref().playing() {
+                            player.as_mut().set_status(QString::from("Ready"));
+                        }
+                    }
+                    Err(error) => player.as_mut().set_status(QString::from(error)),
+                }
+            });
+        });
+    }
+
+    pub fn select_channel(mut self: Pin<&mut Self>, index: i32) {
+        let Ok(index) = usize::try_from(index) else {
+            return;
+        };
+        let Some(&service_id) = self.as_ref().rust().service_ids.get(index) else {
+            return;
+        };
+        let channel_name = self
+            .as_ref()
+            .services()
+            .get(index as isize)
+            .map(|value| value.to_string())
+            .unwrap_or_default();
+        self.as_mut()
+            .set_service_id(QString::from(service_id.to_string()));
+        self.as_mut().set_channel_name(QString::from(channel_name));
+        self.play();
+    }
+
+    pub fn change_channel(self: Pin<&mut Self>, offset: i32) {
+        let count = self.as_ref().rust().service_ids.len();
+        if count == 0 {
+            return;
+        }
+        let current_id = self.as_ref().service_id().to_string().parse::<u64>().ok();
+        let current = current_id
+            .and_then(|id| {
+                self.as_ref()
+                    .rust()
+                    .service_ids
+                    .iter()
+                    .position(|item| *item == id)
+            })
+            .unwrap_or(0);
+        let next = (current as i64 + i64::from(offset)).rem_euclid(count as i64) as i32;
+        self.select_channel(next);
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MirakurunService {
+    id: u64,
+    name: String,
+    #[serde(rename = "type")]
+    service_type: u16,
+    remote_control_key_id: Option<u16>,
+    channel: MirakurunChannel,
+}
+
+#[derive(Deserialize)]
+struct MirakurunChannel {
+    #[serde(rename = "type")]
+    channel_type: String,
+}
+
+struct Channel {
+    id: u64,
+    label: String,
+    remote_key: u16,
+    channel_priority: u8,
+}
+
+fn fetch_services(server: &str) -> Result<Vec<Channel>, String> {
+    let url = format!("{}/api/services", server.trim().trim_end_matches('/'));
+    let response = ureq::get(&url)
+        .timeout(std::time::Duration::from_secs(10))
+        .call()
+        .map_err(|error| format!("Could not load channels: {error}"))?;
+    let mut channels = response
+        .into_json::<Vec<MirakurunService>>()
+        .map_err(|error| format!("Invalid Mirakurun service list: {error}"))?
+        .into_iter()
+        .filter(|service| service.service_type == 1)
+        .map(|service| {
+            let remote_key = service.remote_control_key_id.unwrap_or(0);
+            let channel_priority = match service.channel.channel_type.as_str() {
+                "GR" => 0,
+                "BS" => 1,
+                "CS" => 2,
+                "SKY" => 3,
+                _ => 4,
+            };
+            Channel {
+                id: service.id,
+                label: if remote_key == 0 {
+                    format!("--   {}", service.name)
+                } else {
+                    format!("{remote_key:02}   {}", service.name)
+                },
+                remote_key,
+                channel_priority,
+            }
+        })
+        .collect::<Vec<_>>();
+    channels.sort_by(|a, b| {
+        (
+            a.channel_priority,
+            a.remote_key == 0,
+            a.remote_key,
+            &a.label,
+        )
+            .cmp(&(
+                b.channel_priority,
+                b.remote_key == 0,
+                b.remote_key,
+                &b.label,
+            ))
+    });
+    channels.dedup_by(|a, b| a.label == b.label);
+    Ok(channels)
 }

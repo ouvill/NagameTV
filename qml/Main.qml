@@ -32,6 +32,9 @@ ApplicationWindow {
 
     Shortcut { sequence: "Space"; enabled: player.playing; onActivated: player.togglePause() }
     Shortcut { sequence: "F11"; onActivated: root.toggleFullScreen() }
+    Shortcut { sequence: "C"; onActivated: channelPanel.open() }
+    Shortcut { sequence: "PgUp"; onActivated: player.changeChannel(-1) }
+    Shortcut { sequence: "PgDown"; onActivated: player.changeChannel(1) }
     Shortcut {
         sequence: "Escape"
         onActivated: {
@@ -209,8 +212,47 @@ ApplicationWindow {
                     onMoved: player.volume = value
                 }
                 Item { Layout.fillWidth: true }
-                Button { text: qsTr("Channels"); enabled: false }
+                Button { text: qsTr("Channels"); onClicked: channelPanel.open() }
                 Button { text: qsTr("Comments"); enabled: false }
+            }
+        }
+    }
+
+    Drawer {
+        id: channelPanel
+        edge: Qt.LeftEdge
+        width: Math.min(430, root.width * 0.9); height: root.height
+        modal: true; dim: true
+        onOpened: { root.revealOverlay(); player.refreshChannels() }
+        background: Rectangle { color: "#f50c1420"; border.color: "#27364a" }
+        ColumnLayout {
+            anchors.fill: parent; anchors.margins: 24; spacing: 14
+            RowLayout {
+                Layout.fillWidth: true
+                Label { text: qsTr("Channels"); font.pixelSize: 26; font.weight: Font.DemiBold }
+                Item { Layout.fillWidth: true }
+                ToolButton { text: "↻"; onClicked: player.refreshChannels() }
+                ToolButton { text: "×"; font.pixelSize: 24; onClicked: channelPanel.close() }
+            }
+            Label {
+                visible: player.services.length === 0
+                text: qsTr("Loading channels…"); color: "#9daabd"
+            }
+            ListView {
+                Layout.fillWidth: true; Layout.fillHeight: true
+                clip: true; spacing: 4; model: player.services
+                ScrollBar.vertical: ScrollBar { }
+                delegate: ItemDelegate {
+                    required property int index
+                    required property string modelData
+                    width: ListView.view.width; height: 54
+                    highlighted: modelData === player.channelName
+                    text: modelData; font.pixelSize: 16
+                    onClicked: {
+                        player.selectChannel(index)
+                        channelPanel.close()
+                    }
+                }
             }
         }
     }
@@ -265,6 +307,7 @@ ApplicationWindow {
     Component.onCompleted: {
         if (!player.attachVideoItem(videoItem))
             return
+        player.refreshChannels()
         if (player.autoplay)
             player.play()
         overlayTimer.start()
