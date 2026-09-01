@@ -154,6 +154,15 @@ impl Playback {
             .build()
             .map_err(|error| format!("Could not create playbin3: {error}"))?;
         playbin.set_property("video-sink", &video_output);
+        if std::env::var("MIRAKURUN_AUDIO_SINK").is_ok_and(|value| value == "fakesink") {
+            let audio_sink = gst::ElementFactory::make("fakesink")
+                .name("isolated-test-audio-sink")
+                .build()
+                .map_err(|error| format!("Could not create test audio sink: {error}"))?;
+            audio_sink.set_property("enable-last-sample", false);
+            audio_sink.set_property("sync", true);
+            playbin.set_property("audio-sink", &audio_sink);
+        }
         playbin.set_property("volume", 0.7_f64);
         Ok(Self {
             playbin,

@@ -41,11 +41,17 @@ Mirakurunの `/api/services/{id}/stream` をGStreamerで直接再生します。
 workshop refresh dev
 workshop run dev build
 workshop run dev run
+workshop run dev test-ui
 ```
 
 `project-mirakurun-viewer` SDKのhealth checkは、Rust、CMake、Qt 6、GStreamer、libmpvを
 refreshのたびに検証します。GUI、GPU、PulseAudioは既存の`project-gui` SDKと
 `.workshop/dev.yaml`の接続定義から提供されます。
+
+`test-ui`はWorkshop内に専用のXvfbディスプレイ`:99`を作り、Mesaのソフトウェア
+OpenGLとGStreamerのテスト用音声sinkでNHK大津を再生します。ホストのデスクトップ、
+入力、音声出力を使用しないため、`DISPLAY=:99 xdotool ...`で決定論的に操作できます。
+実GPU、実音声、画質、負荷の確認には通常の`run`を使用してください。
 
 ### Ubuntuへ直接導入する場合
 
