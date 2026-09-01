@@ -7,6 +7,7 @@ apt-get update
 apt-get install --yes --no-install-recommends \
   build-essential \
   cmake \
+  fonts-noto-cjk \
   gstreamer1.0-libav \
   gstreamer1.0-gl \
   gstreamer1.0-plugins-bad \
