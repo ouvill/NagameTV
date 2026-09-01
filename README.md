@@ -56,6 +56,15 @@ refreshのたびに検証します。GUI、GPU、PulseAudioは既存の`project-
 `DISPLAY=:99 xdotool ...`で決定論的に操作できます。実GPU、実音声、画質、負荷の
 確認には通常の`run`を使用してください。
 
+隔離ディスプレイの解像度も変更できます。
+
+```bash
+MIRAKURUN_TEST_SCREEN=1920x1080x24 workshop run dev test-ui
+```
+
+アプリのウィンドウはボーダーレスのまま、四辺または四隅のドラッグでサイズを
+変更できます。最小サイズは820×480です。
+
 ### Ubuntuへ直接導入する場合
 
 Ubuntu 24.04:

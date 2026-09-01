@@ -333,6 +333,55 @@ ApplicationWindow {
         }
     }
 
+    component ResizeHandle: MouseArea {
+        required property int resizeEdges
+        enabled: root.visibility === Window.Windowed
+        acceptedButtons: Qt.LeftButton
+        z: 1000
+        onPressed: root.startSystemResize(resizeEdges)
+    }
+
+    ResizeHandle {
+        resizeEdges: Qt.LeftEdge
+        anchors { left: parent.left; top: parent.top; bottom: parent.bottom }
+        width: 6; cursorShape: Qt.SizeHorCursor
+    }
+    ResizeHandle {
+        resizeEdges: Qt.RightEdge
+        anchors { right: parent.right; top: parent.top; bottom: parent.bottom }
+        width: 6; cursorShape: Qt.SizeHorCursor
+    }
+    ResizeHandle {
+        resizeEdges: Qt.TopEdge
+        anchors { left: parent.left; right: parent.right; top: parent.top }
+        height: 6; cursorShape: Qt.SizeVerCursor
+    }
+    ResizeHandle {
+        resizeEdges: Qt.BottomEdge
+        anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
+        height: 6; cursorShape: Qt.SizeVerCursor
+    }
+    ResizeHandle {
+        resizeEdges: Qt.LeftEdge | Qt.TopEdge
+        anchors { left: parent.left; top: parent.top }
+        width: 12; height: 12; cursorShape: Qt.SizeFDiagCursor
+    }
+    ResizeHandle {
+        resizeEdges: Qt.RightEdge | Qt.TopEdge
+        anchors { right: parent.right; top: parent.top }
+        width: 12; height: 12; cursorShape: Qt.SizeBDiagCursor
+    }
+    ResizeHandle {
+        resizeEdges: Qt.LeftEdge | Qt.BottomEdge
+        anchors { left: parent.left; bottom: parent.bottom }
+        width: 12; height: 12; cursorShape: Qt.SizeBDiagCursor
+    }
+    ResizeHandle {
+        resizeEdges: Qt.RightEdge | Qt.BottomEdge
+        anchors { right: parent.right; bottom: parent.bottom }
+        width: 12; height: 12; cursorShape: Qt.SizeFDiagCursor
+    }
+
     Component.onCompleted: {
         if (!player.attachVideoItem(videoItem))
             return
