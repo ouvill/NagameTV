@@ -1,0 +1,4 @@
+.workshop.lock
+build/
+target/
+memory-*.csv
