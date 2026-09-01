@@ -1,7 +1,15 @@
 # Mirakurun Viewer
 
-Qt 6/QML のUIとRustの再生コアを組み合わせたMirakurunライブ視聴クライアントです。
+Qt 6/QML のUIとRustバックエンドを組み合わせたMirakurunライブ視聴クライアントです。
 Mirakurunの `/api/services/{id}/stream` をGStreamerで直接再生します。
+
+## アーキテクチャ
+
+- CXX-QtがRustの`Player`をQtの`QObject`として生成し、QMLへ直接公開
+- アプリのエントリーポイント、状態管理、再生制御はRustで実装
+- 手書きC++は`QQuickItem*`のアドレス取得とQt QuickのOpenGL指定だけを行う
+- QMLは表示とユーザー操作に限定し、バックエンド機能を保持しない
+- CMakeはWorkshop互換のためCargoビルドを呼び出す薄いラッパーとしてのみ使用
 
 ## 設計上のメモリー境界
 
@@ -13,7 +21,8 @@ Mirakurunの `/api/services/{id}/stream` をGStreamerで直接再生します。
 - 描画待ちqueueを8フレームに制限し、フレームを捨てずにbackpressureをかける
 - チャンネル再読み込みは同じ`playbin3`を`READY`へ戻してURIを交換する
 
-これによりアプリ起因の無制限なメモリー増加を防ぎます。実機での長時間RSS/PSS試験は別途必要です。
+これによりアプリ起因の無制限なメモリー増加を防ぎます。YADIF版は実機で
+ウォームアップ後のRSS/PSS、FD数、スレッド数が安定することを確認しています。
 
 ## ビルド
 
@@ -39,6 +48,7 @@ Ubuntu 24.04:
 
 ```bash
 sudo apt install build-essential cmake ninja-build rustc cargo \
+  fonts-noto-cjk \
   qt6-base-dev qt6-declarative-dev qml6-module-qtquick \
   qml6-module-qtquick-controls qml6-module-qtquick-layouts \
   qml6-module-qtquick-templates \

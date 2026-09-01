@@ -1,13 +1,17 @@
 [package]
-name = "mirakurun_core"
-version = "0.1.0"
+name = "mirakurun-viewer"
+version = "0.2.0"
 edition = "2024"
-
-[lib]
-crate-type = ["staticlib"]
+build = "build.rs"
 
 [dependencies]
+cxx = "1.0"
+cxx-qt = "0.10"
+cxx-qt-lib = { version = "0.10", features = ["full"] }
 gstreamer = { version = "0.25", features = ["v1_24"] }
+
+[build-dependencies]
+cxx-qt-build = { version = "0.10", features = ["link_qt_object_files"] }
 
 [profile.release]
 lto = "thin"

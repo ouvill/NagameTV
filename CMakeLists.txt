@@ -1,50 +1,23 @@
 cmake_minimum_required(VERSION 3.24)
-project(mirakurun_viewer VERSION 0.1.0 LANGUAGES CXX)
+project(mirakurun_viewer VERSION 0.2.0 LANGUAGES NONE)
 
-set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_AUTOMOC ON)
-
-find_package(Qt6 6.4 REQUIRED COMPONENTS Core Gui Qml Quick)
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(GSTREAMER REQUIRED IMPORTED_TARGET
-    gio-2.0
-    gobject-2.0
-    gstreamer-1.0
-)
-
-set(RUST_TARGET_DIR "${CMAKE_BINARY_DIR}/cargo")
-set(RUST_LIBRARY "${RUST_TARGET_DIR}/release/libmirakurun_core.a")
+set(CARGO_TARGET_DIR "${CMAKE_BINARY_DIR}/cargo")
+set(CARGO_BINARY "${CARGO_TARGET_DIR}/release/mirakurun-viewer")
+set(OUTPUT_BINARY "${CMAKE_BINARY_DIR}/mirakurun-viewer")
 
 add_custom_command(
-    OUTPUT "${RUST_LIBRARY}"
-    COMMAND ${CMAKE_COMMAND} -E env CARGO_TARGET_DIR=${RUST_TARGET_DIR}
+    OUTPUT "${OUTPUT_BINARY}"
+    COMMAND ${CMAKE_COMMAND} -E env CARGO_TARGET_DIR=${CARGO_TARGET_DIR}
             cargo build --manifest-path ${CMAKE_SOURCE_DIR}/rust/Cargo.toml --release
-    DEPENDS rust/Cargo.toml rust/Cargo.lock rust/src/lib.rs
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CARGO_BINARY}" "${OUTPUT_BINARY}"
+    DEPENDS
+        rust/Cargo.toml rust/Cargo.lock rust/build.rs
+        rust/src/main.rs rust/src/player.rs rust/src/playback.rs rust/src/qt_helpers.h
+        qml/Main.qml
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-    COMMENT "Building memory-safe Rust playback core"
+    COMMENT "Building Rust/CXX-Qt Mirakurun Viewer"
     VERBATIM
 )
-add_custom_target(mirakurun_core ALL DEPENDS "${RUST_LIBRARY}")
 
-qt_add_executable(mirakurun-viewer
-    native/main.cpp
-    native/player_controller.cpp
-    native/player_controller.h
-    native/rust_core.h
-)
-
-qt_add_qml_module(mirakurun-viewer
-    URI MirakurunViewer
-    VERSION 1.0
-    QML_FILES qml/Main.qml
-)
-
-add_dependencies(mirakurun-viewer mirakurun_core)
-target_include_directories(mirakurun-viewer PRIVATE native)
-target_link_libraries(mirakurun-viewer PRIVATE
-    Qt6::Core Qt6::Gui Qt6::Qml Qt6::Quick PkgConfig::GSTREAMER
-    "${RUST_LIBRARY}" pthread dl m
-)
-
-install(TARGETS mirakurun-viewer RUNTIME DESTINATION bin)
+add_custom_target(mirakurun-viewer-build ALL DEPENDS "${OUTPUT_BINARY}")
+install(PROGRAMS "${OUTPUT_BINARY}" DESTINATION bin)

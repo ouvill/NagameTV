@@ -3,3 +3,4 @@ build/
 target/
 memory-*.csv
 benchmark/
+.qmlls.ini
