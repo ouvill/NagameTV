@@ -1,3 +1,4 @@
+mod network;
 mod playback;
 mod player;
 

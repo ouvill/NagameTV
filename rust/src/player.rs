@@ -57,6 +57,7 @@ pub mod ffi {
     impl cxx_qt::Threading for Player {}
 }
 
+use crate::network::NetworkRuntime;
 use crate::playback::{Playback, PlaybackEvent};
 use core::pin::Pin;
 use cxx_qt::{CxxQtType, Threading};
@@ -81,16 +82,19 @@ pub struct PlayerRust {
     applied_volume: f64,
     service_ids: Vec<u64>,
     loading_channels: AtomicBool,
+    network: Option<NetworkRuntime>,
     playback: Option<Playback>,
 }
 
 impl Default for PlayerRust {
     fn default() -> Self {
         let playback = crate::playback::take_preloaded();
-        let status = match &playback {
-            Ok(_) => "Ready".to_owned(),
-            Err(error) => error.clone(),
-        };
+        let network = NetworkRuntime::new();
+        let status = playback
+            .as_ref()
+            .map(|_| ())
+            .and(network.as_ref().map(|_| ()))
+            .map_or_else(|error| error.clone(), |()| "Ready".to_owned());
         Self {
             server: QString::from(
                 std::env::var("MIRAKURUN_SERVER")
@@ -110,6 +114,7 @@ impl Default for PlayerRust {
             applied_volume: 70.0,
             service_ids: Vec::new(),
             loading_channels: AtomicBool::new(false),
+            network: network.ok(),
             playback: playback.ok(),
         }
     }
@@ -213,10 +218,25 @@ impl ffi::Player {
         }
         let server = self.as_ref().server().to_string();
         let qt_thread = self.qt_thread();
+        let network = self
+            .as_ref()
+            .rust()
+            .network
+            .as_ref()
+            .map(|network| (network.handle(), network.client()));
+        let Some((runtime, client)) = network else {
+            self.as_ref()
+                .rust()
+                .loading_channels
+                .store(false, Ordering::Release);
+            self.as_mut()
+                .set_status(QString::from("Network runtime is unavailable"));
+            return;
+        };
         self.as_mut()
             .set_status(QString::from("Loading channels..."));
-        std::thread::spawn(move || {
-            let result = fetch_services(&server);
+        runtime.spawn(async move {
+            let result = fetch_services(&client, &server).await;
             let _ = qt_thread.queue(move |mut player| {
                 player
                     .as_ref()
@@ -319,14 +339,18 @@ struct Channel {
     channel_priority: u8,
 }
 
-fn fetch_services(server: &str) -> Result<Vec<Channel>, String> {
+async fn fetch_services(client: &reqwest::Client, server: &str) -> Result<Vec<Channel>, String> {
     let url = format!("{}/api/services", server.trim().trim_end_matches('/'));
-    let response = ureq::get(&url)
-        .timeout(std::time::Duration::from_secs(10))
-        .call()
+    let response = client
+        .get(url)
+        .send()
+        .await
         .map_err(|error| format!("Could not load channels: {error}"))?;
     let mut channels = response
-        .into_json::<Vec<MirakurunService>>()
+        .error_for_status()
+        .map_err(|error| format!("Could not load channels: {error}"))?
+        .json::<Vec<MirakurunService>>()
+        .await
         .map_err(|error| format!("Invalid Mirakurun service list: {error}"))?
         .into_iter()
         .filter(|service| service.service_type == 1)

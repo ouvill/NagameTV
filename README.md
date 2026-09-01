@@ -10,7 +10,9 @@ Mirakurunの `/api/services/{id}/stream` をGStreamerで直接再生します。
 - 手書きC++は`QQuickItem*`のアドレス取得とQt QuickのOpenGL指定だけを行う
 - QMLは表示とユーザー操作に限定し、バックエンド機能を保持しない
 - CMakeはWorkshop互換のためCargoビルドを呼び出す薄いラッパーとしてのみ使用
-- Mirakurunのサービス一覧はRustのbounded background threadで取得し、Qtスレッドへ返す
+- 通信は専用の単一worker Tokio runtimeで実行し、QtのGUIスレッドをブロックしない
+- Mirakurun APIは再利用可能な`reqwest::Client`で取得し、CXX-QtのキューでQtへ返す
+- 同じruntimeへNX-JikkyoのWebSocketタスクを追加できる構造にする
 
 ## 設計上のメモリー境界
 
@@ -88,6 +90,8 @@ QT_QPA_PLATFORM=xcb ./build/mirakurun-viewer
 
 チャンネルを選ぶと、再生プロセスを作り直さず同じGStreamerパイプラインのURIを
 交換します。地上波、BS、CS、SKYの順にまとめ、地上波はリモコンキー順に表示します。
+HTTP接続には5秒、リクエスト全体には10秒のtimeoutを設け、接続プールも上限付きで
+再利用します。
 
 ## 長時間試験
 
