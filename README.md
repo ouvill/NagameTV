@@ -9,6 +9,8 @@ Mirakurunの `/api/services/{id}/stream` をGStreamerで直接再生します。
 - 停止・終了時にパイプラインを`NULL`へ戻し、バッファーを解放
 - Busイベントは50msごとに空になるまで処理し、アプリ側に蓄積しない
 - `qml6glsink`でQt QuickへGLテクスチャを渡し、映像フレームをCPUコピーしない
+- YADIFの全フィールド出力でインターレース映像の時間解像度を維持
+- 描画待ちqueueを8フレームに制限し、フレームを捨てずにbackpressureをかける
 - チャンネル再読み込みは同じ`playbin3`を`READY`へ戻してURIを交換する
 
 これによりアプリ起因の無制限なメモリー増加を防ぎます。実機での長時間RSS/PSS試験は別途必要です。
@@ -62,6 +64,9 @@ MIRAKURUN_SERVICE_ID=3203246080 \
 MIRAKURUN_AUTOPLAY=1 \
 QT_QPA_PLATFORM=xcb ./build/mirakurun-viewer
 ```
+
+インターレース解除は`MIRAKURUN_DEINTERLACE`で選択できます。既定は高品質な
+`yadif`です。CPU負荷を抑える場合は`linear`、無効化する場合は`off`を指定します。
 
 ## 長時間試験
 

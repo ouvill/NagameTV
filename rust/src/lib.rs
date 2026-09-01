@@ -14,6 +14,31 @@ pub struct MirakurunPlayer {
     video_attached: bool,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum DeinterlaceMode {
+    Yadif,
+    Linear,
+    Off,
+}
+
+impl DeinterlaceMode {
+    fn from_environment() -> Result<Self, String> {
+        let value = std::env::var("MIRAKURUN_DEINTERLACE").unwrap_or_else(|_| "yadif".to_owned());
+        Self::parse(&value)
+    }
+
+    fn parse(value: &str) -> Result<Self, String> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "yadif" | "quality" => Ok(Self::Yadif),
+            "linear" | "balanced" => Ok(Self::Linear),
+            "off" | "disabled" => Ok(Self::Off),
+            _ => Err(format!(
+                "Invalid MIRAKURUN_DEINTERLACE value '{value}'; use yadif, linear, or off"
+            )),
+        }
+    }
+}
+
 impl MirakurunPlayer {
     fn new() -> Result<Self, String> {
         gst::init().map_err(|error| format!("Could not initialize GStreamer: {error}"))?;
@@ -25,6 +50,44 @@ impl MirakurunPlayer {
             .build()
             .map_err(|error| format!("Could not create qml6glsink: {error}"))?;
         video_sink.set_property("enable-last-sample", false);
+        video_sink.set_property("force-aspect-ratio", true);
+
+        let deinterlace_mode = DeinterlaceMode::from_environment()?;
+        let video_process = match deinterlace_mode {
+            DeinterlaceMode::Off => gst::ElementFactory::make("identity")
+                .name("deinterlace-disabled")
+                .build()
+                .map_err(|error| format!("Could not create the video passthrough: {error}"))?,
+            mode => {
+                let element = gst::ElementFactory::make("deinterlace")
+                    .name("deinterlace")
+                    .build()
+                    .map_err(|error| format!("Could not create deinterlace: {error}"))?;
+                element.set_property_from_str(
+                    "method",
+                    match mode {
+                        DeinterlaceMode::Yadif => "yadif",
+                        DeinterlaceMode::Linear => "linear",
+                        DeinterlaceMode::Off => unreachable!(),
+                    },
+                );
+                element.set_property_from_str("mode", "auto");
+                element.set_property_from_str("fields", "all");
+                element.set_property_from_str("locking", "auto");
+                element
+            }
+        };
+
+        let video_queue = gst::ElementFactory::make("queue")
+            .name("bounded-video-queue")
+            .build()
+            .map_err(|error| format!("Could not create the video queue: {error}"))?;
+        // Keep the queue bounded, but apply backpressure instead of dropping
+        // frames.  Dropping at this point makes double-rate deinterlacing
+        // visibly judder whenever the Qt render thread is briefly delayed.
+        video_queue.set_property("max-size-buffers", 8_u32);
+        video_queue.set_property("max-size-bytes", 0_u32);
+        video_queue.set_property("max-size-time", 0_u64);
 
         let gl_upload = gst::ElementFactory::make("glupload")
             .build()
@@ -43,14 +106,28 @@ impl MirakurunPlayer {
         rgba_filter.set_property("caps", &rgba_caps);
         let video_output = gst::Bin::with_name("qt-video-output");
         video_output
-            .add_many([&gl_upload, &gl_convert, &rgba_filter, &video_sink])
+            .add_many([
+                &video_process,
+                &video_queue,
+                &gl_upload,
+                &gl_convert,
+                &rgba_filter,
+                &video_sink,
+            ])
             .map_err(|error| format!("Could not assemble the video output: {error}"))?;
-        gst::Element::link_many([&gl_upload, &gl_convert, &rgba_filter, &video_sink])
-            .map_err(|error| format!("Could not link the video output: {error}"))?;
-        let upload_sink_pad = gl_upload
+        gst::Element::link_many([
+            &video_process,
+            &video_queue,
+            &gl_upload,
+            &gl_convert,
+            &rgba_filter,
+            &video_sink,
+        ])
+        .map_err(|error| format!("Could not link the video output: {error}"))?;
+        let process_sink_pad = video_process
             .static_pad("sink")
-            .ok_or_else(|| "glupload has no sink pad".to_owned())?;
-        let ghost_pad = gst::GhostPad::with_target(&upload_sink_pad)
+            .ok_or_else(|| "The video processor has no sink pad".to_owned())?;
+        let ghost_pad = gst::GhostPad::with_target(&process_sink_pad)
             .map_err(|error| format!("Could not expose the video sink pad: {error}"))?;
         ghost_pad
             .set_active(true)
@@ -320,7 +397,7 @@ pub unsafe extern "C" fn mirakurun_player_drain_events(player: *mut MirakurunPla
 
 #[cfg(test)]
 mod tests {
-    use super::service_stream_url;
+    use super::{DeinterlaceMode, service_stream_url};
 
     #[test]
     fn builds_mirakurun_service_url() {
@@ -334,5 +411,19 @@ mod tests {
     fn rejects_unsafe_scheme_and_zero_id() {
         assert!(service_stream_url("ftp://example.test", 1).is_err());
         assert!(service_stream_url("http://example.test", 0).is_err());
+    }
+
+    #[test]
+    fn parses_deinterlace_modes() {
+        assert_eq!(
+            DeinterlaceMode::parse("YADIF").unwrap(),
+            DeinterlaceMode::Yadif
+        );
+        assert_eq!(
+            DeinterlaceMode::parse("balanced").unwrap(),
+            DeinterlaceMode::Linear
+        );
+        assert_eq!(DeinterlaceMode::parse("off").unwrap(), DeinterlaceMode::Off);
+        assert!(DeinterlaceMode::parse("unknown").is_err());
     }
 }
