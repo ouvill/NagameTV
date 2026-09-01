@@ -24,6 +24,17 @@ ApplicationWindow {
         visibility = visibility === Window.FullScreen ? Window.Windowed : Window.FullScreen
         revealOverlay()
     }
+    function programTime(index) {
+        if (index >= player.programStarts.length || index >= player.programDurations.length)
+            return qsTr("Program information unavailable")
+        const start = Number(player.programStarts[index])
+        const duration = Number(player.programDurations[index])
+        if (start <= 0 || duration <= 0)
+            return qsTr("Program information unavailable")
+        const end = start + duration
+        return Qt.formatTime(new Date(start), "hh:mm") + " – "
+             + Qt.formatTime(new Date(end), "hh:mm")
+    }
 
     palette {
         window: "#0b111c"; windowText: "#f5f7fb"; base: "#121b2a"; text: "#f5f7fb"
@@ -245,9 +256,27 @@ ApplicationWindow {
                 delegate: ItemDelegate {
                     required property int index
                     required property string modelData
-                    width: ListView.view.width; height: 54
+                    width: ListView.view.width; height: 82
                     highlighted: modelData === player.channelName
-                    text: modelData; font.pixelSize: 16
+                    contentItem: ColumnLayout {
+                        spacing: 2
+                        Label {
+                            Layout.fillWidth: true
+                            text: modelData; font.pixelSize: 15; font.weight: Font.DemiBold
+                            elide: Text.ElideRight
+                        }
+                        Label {
+                            Layout.fillWidth: true
+                            text: index < player.programTitles.length
+                                  && player.programTitles[index].length > 0
+                                  ? player.programTitles[index]
+                                  : qsTr("Program information unavailable")
+                            color: "#d5deea"; font.pixelSize: 13; elide: Text.ElideRight
+                        }
+                        Label {
+                            text: root.programTime(index); color: "#8f9caf"; font.pixelSize: 12
+                        }
+                    }
                     onClicked: {
                         player.selectChannel(index)
                         channelPanel.close()

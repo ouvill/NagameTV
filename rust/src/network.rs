@@ -1,8 +1,11 @@
 use std::time::Duration;
 
+use crate::epg::EpgStore;
+
 pub struct NetworkRuntime {
     runtime: Option<tokio::runtime::Runtime>,
     client: reqwest::Client,
+    epg: EpgStore,
 }
 
 impl NetworkRuntime {
@@ -23,6 +26,7 @@ impl NetworkRuntime {
         Ok(Self {
             runtime: Some(runtime),
             client,
+            epg: EpgStore::default(),
         })
     }
 
@@ -36,6 +40,10 @@ impl NetworkRuntime {
 
     pub fn client(&self) -> reqwest::Client {
         self.client.clone()
+    }
+
+    pub fn epg(&self) -> EpgStore {
+        self.epg.clone()
     }
 }
 

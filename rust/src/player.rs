@@ -28,6 +28,9 @@ pub mod ffi {
         #[qproperty(QString, program_description, cxx_name = "programDescription")]
         #[qproperty(f64, program_progress, cxx_name = "programProgress")]
         #[qproperty(QStringList, services)]
+        #[qproperty(QStringList, program_titles, cxx_name = "programTitles")]
+        #[qproperty(QStringList, program_starts, cxx_name = "programStarts")]
+        #[qproperty(QStringList, program_durations, cxx_name = "programDurations")]
         type Player = super::PlayerRust;
 
         #[qinvokable]
@@ -57,14 +60,16 @@ pub mod ffi {
     impl cxx_qt::Threading for Player {}
 }
 
+use crate::epg::{CurrentProgram, EpgStore, Program, Service};
 use crate::network::NetworkRuntime;
 use crate::playback::{Playback, PlaybackEvent};
 use core::pin::Pin;
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{QString, QStringList};
-use serde::Deserialize;
+use std::collections::{HashMap, HashSet};
 use std::ffi::c_void;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 pub struct PlayerRust {
     server: QString,
@@ -78,6 +83,9 @@ pub struct PlayerRust {
     program_description: QString,
     program_progress: f64,
     services: QStringList,
+    program_titles: QStringList,
+    program_starts: QStringList,
+    program_durations: QStringList,
     paused: bool,
     applied_volume: f64,
     service_ids: Vec<u64>,
@@ -110,6 +118,9 @@ impl Default for PlayerRust {
             program_description: QString::default(),
             program_progress: 0.0,
             services: QStringList::default(),
+            program_titles: QStringList::default(),
+            program_starts: QStringList::default(),
+            program_durations: QStringList::default(),
             paused: false,
             applied_volume: 70.0,
             service_ids: Vec::new(),
@@ -223,8 +234,8 @@ impl ffi::Player {
             .rust()
             .network
             .as_ref()
-            .map(|network| (network.handle(), network.client()));
-        let Some((runtime, client)) = network else {
+            .map(|network| (network.handle(), network.client(), network.epg()));
+        let Some((runtime, client, epg)) = network else {
             self.as_ref()
                 .rust()
                 .loading_channels
@@ -236,7 +247,7 @@ impl ffi::Player {
         self.as_mut()
             .set_status(QString::from("Loading channels..."));
         runtime.spawn(async move {
-            let result = fetch_services(&client, &server).await;
+            let result = fetch_services(&client, &epg, &server).await;
             let _ = qt_thread.queue(move |mut player| {
                 player
                     .as_ref()
@@ -249,9 +260,24 @@ impl ffi::Player {
                             .iter()
                             .map(|service| QString::from(&service.label))
                             .collect::<QStringList>();
+                        let program_titles = services
+                            .iter()
+                            .map(|service| QString::from(&service.program_title))
+                            .collect::<QStringList>();
+                        let program_starts = services
+                            .iter()
+                            .map(|service| QString::from(service.program_start.to_string()))
+                            .collect::<QStringList>();
+                        let program_durations = services
+                            .iter()
+                            .map(|service| QString::from(service.program_duration.to_string()))
+                            .collect::<QStringList>();
                         player.as_mut().rust_mut().service_ids =
                             services.iter().map(|service| service.id).collect();
                         player.as_mut().set_services(labels);
+                        player.as_mut().set_program_titles(program_titles);
+                        player.as_mut().set_program_starts(program_starts);
+                        player.as_mut().set_program_durations(program_durations);
                         if let Ok(current_id) =
                             player.as_ref().service_id().to_string().parse::<u64>()
                             && let Some(index) = player
@@ -315,21 +341,11 @@ impl ffi::Player {
     }
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct MirakurunService {
-    id: u64,
-    name: String,
-    #[serde(rename = "type")]
-    service_type: u16,
-    remote_control_key_id: Option<u16>,
-    channel: MirakurunChannel,
-}
-
-#[derive(Deserialize)]
-struct MirakurunChannel {
-    #[serde(rename = "type")]
-    channel_type: String,
+#[derive(Clone, Hash, PartialEq, Eq)]
+struct ProgramSignature {
+    event_id: u16,
+    start_at: u64,
+    duration: u64,
 }
 
 struct Channel {
@@ -337,22 +353,57 @@ struct Channel {
     label: String,
     remote_key: u16,
     channel_priority: u8,
+    service_id: u16,
+    physical_channel: String,
+    program_signature: Option<ProgramSignature>,
+    program_title: String,
+    program_start: u64,
+    program_duration: u64,
 }
 
-async fn fetch_services(client: &reqwest::Client, server: &str) -> Result<Vec<Channel>, String> {
-    let url = format!("{}/api/services", server.trim().trim_end_matches('/'));
-    let response = client
-        .get(url)
+async fn fetch_services(
+    client: &reqwest::Client,
+    epg: &EpgStore,
+    server: &str,
+) -> Result<Vec<Channel>, String> {
+    let api = server.trim().trim_end_matches('/');
+    let services = client
+        .get(format!("{api}/api/services"))
         .send()
         .await
-        .map_err(|error| format!("Could not load channels: {error}"))?;
-    let mut channels = response
+        .map_err(|error| format!("Could not load channels: {error}"))?
         .error_for_status()
         .map_err(|error| format!("Could not load channels: {error}"))?
-        .json::<Vec<MirakurunService>>()
+        .json::<Vec<Service>>()
         .await
-        .map_err(|error| format!("Invalid Mirakurun service list: {error}"))?
-        .into_iter()
+        .map_err(|error| format!("Invalid Mirakurun service list: {error}"))?;
+    let programs = client
+        .get(format!("{api}/api/programs"))
+        .send()
+        .await
+        .map_err(|error| format!("Could not load programs: {error}"))?
+        .error_for_status()
+        .map_err(|error| format!("Could not load programs: {error}"))?
+        .json::<Vec<Program>>()
+        .await
+        .map_err(|error| format!("Invalid Mirakurun program list: {error}"))?;
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|error| format!("Could not read system time: {error}"))?
+        .as_millis() as u64;
+    epg.replace(services, programs, now);
+    let snapshot = epg.snapshot();
+    let current_programs = snapshot.current_programs(now);
+    Ok(build_channels(&snapshot.services, current_programs))
+}
+
+fn build_channels(services: &[Service], programs: Vec<CurrentProgram>) -> Vec<Channel> {
+    let current_programs = programs
+        .iter()
+        .map(|program| ((program.network_id, program.service_id), program))
+        .collect::<HashMap<_, _>>();
+    let mut channels = services
+        .iter()
         .filter(|service| service.service_type == 1)
         .map(|service| {
             let remote_key = service.remote_control_key_id.unwrap_or(0);
@@ -363,6 +414,7 @@ async fn fetch_services(client: &reqwest::Client, server: &str) -> Result<Vec<Ch
                 "SKY" => 3,
                 _ => 4,
             };
+            let program = current_programs.get(&(service.network_id, service.service_id));
             Channel {
                 id: service.id,
                 label: if remote_key == 0 {
@@ -372,6 +424,21 @@ async fn fetch_services(client: &reqwest::Client, server: &str) -> Result<Vec<Ch
                 },
                 remote_key,
                 channel_priority,
+                service_id: service.service_id,
+                physical_channel: format!(
+                    "{}:{}:{}",
+                    service.network_id, service.channel.channel_type, service.channel.channel
+                ),
+                program_signature: program.map(|program| ProgramSignature {
+                    event_id: program.event_id,
+                    start_at: program.start_at,
+                    duration: program.duration,
+                }),
+                program_title: program
+                    .and_then(|program| program.name.clone())
+                    .unwrap_or_default(),
+                program_start: program.map_or(0, |program| program.start_at),
+                program_duration: program.map_or(0, |program| program.duration),
             }
         })
         .collect::<Vec<_>>();
@@ -381,14 +448,91 @@ async fn fetch_services(client: &reqwest::Client, server: &str) -> Result<Vec<Ch
             a.remote_key == 0,
             a.remote_key,
             &a.label,
+            a.service_id,
         )
             .cmp(&(
                 b.channel_priority,
                 b.remote_key == 0,
                 b.remote_key,
                 &b.label,
+                b.service_id,
             ))
     });
-    channels.dedup_by(|a, b| a.label == b.label);
-    Ok(channels)
+    let mut main_broadcasts = HashMap::<String, Option<ProgramSignature>>::new();
+    let mut broadcasts = HashSet::new();
+    channels.retain(|channel| {
+        let Some(main_program) = main_broadcasts.get(&channel.physical_channel) else {
+            main_broadcasts.insert(
+                channel.physical_channel.clone(),
+                channel.program_signature.clone(),
+            );
+            broadcasts.insert((
+                channel.physical_channel.clone(),
+                channel.program_signature.clone(),
+            ));
+            return true;
+        };
+        matches!(
+            (main_program, &channel.program_signature),
+            (Some(main), Some(subchannel)) if main != subchannel
+        ) && broadcasts.insert((
+            channel.physical_channel.clone(),
+            channel.program_signature.clone(),
+        ))
+    });
+    channels
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::epg::ServiceChannel;
+
+    fn service(service_id: u16, name: &str) -> Service {
+        Service {
+            id: 32_000_000_u64 + u64::from(service_id),
+            service_id,
+            network_id: 32_000,
+            name: name.to_owned(),
+            service_type: 1,
+            remote_control_key_id: Some(1),
+            channel: ServiceChannel {
+                channel_type: "GR".to_owned(),
+                channel: "26".to_owned(),
+            },
+        }
+    }
+
+    fn program(service_id: u16, event_id: u16) -> CurrentProgram {
+        CurrentProgram {
+            event_id,
+            service_id,
+            network_id: 32_000,
+            start_at: 1_000,
+            duration: 1_800,
+            name: Some(format!("Program {event_id}")),
+        }
+    }
+
+    #[test]
+    fn hides_subchannel_during_simulcast() {
+        let services = [service(100, "Main"), service(101, "Sub")];
+        let channels = build_channels(&services, vec![program(100, 10), program(101, 10)]);
+        assert_eq!(channels.len(), 1);
+        assert_eq!(channels[0].service_id, 100);
+    }
+
+    #[test]
+    fn keeps_subchannel_during_split_programming() {
+        let services = [service(100, "Main"), service(101, "Sub")];
+        let channels = build_channels(&services, vec![program(100, 10), program(101, 11)]);
+        assert_eq!(channels.len(), 2);
+    }
+
+    #[test]
+    fn hides_subchannel_when_program_information_is_missing() {
+        let services = [service(100, "Main"), service(101, "Sub")];
+        let channels = build_channels(&services, vec![program(100, 10)]);
+        assert_eq!(channels.len(), 1);
+    }
 }

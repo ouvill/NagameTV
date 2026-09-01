@@ -13,6 +13,8 @@ Mirakurunの `/api/services/{id}/stream` をGStreamerで直接再生します。
 - 通信は専用の単一worker Tokio runtimeで実行し、QtのGUIスレッドをブロックしない
 - Mirakurun APIは再利用可能な`reqwest::Client`で取得し、CXX-QtのキューでQtへ返す
 - 同じruntimeへNX-JikkyoのWebSocketタスクを追加できる構造にする
+- EPGはMirakurunを正本とし、時間順に索引した不変のメモリースナップショットで保持
+- EPG更新は完成した新スナップショットとの交換で行い、古いデータを蓄積しない
 
 ## 設計上のメモリー境界
 
@@ -92,6 +94,9 @@ QT_QPA_PLATFORM=xcb ./build/mirakurun-viewer
 交換します。地上波、BS、CS、SKYの順にまとめ、地上波はリモコンキー順に表示します。
 HTTP接続には5秒、リクエスト全体には10秒のtimeoutを設け、接続プールも上限付きで
 再利用します。
+
+EPGは永続化せず、起動後にMirakurunから再構築します。視聴・録画予約などの
+ユーザー固有データを追加する段階で、それらだけを別の永続ストアへ保存します。
 
 ## 長時間試験
 
