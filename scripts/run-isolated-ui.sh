@@ -16,7 +16,12 @@ Xvfb "$display" \
   -nolisten tcp \
   -noreset &
 xvfb_pid=$!
+openbox_pid=""
 cleanup() {
+  if [[ -n "$openbox_pid" ]]; then
+    kill "$openbox_pid" 2>/dev/null || true
+    wait "$openbox_pid" 2>/dev/null || true
+  fi
   kill "$xvfb_pid" 2>/dev/null || true
   wait "$xvfb_pid" 2>/dev/null || true
 }
@@ -33,13 +38,29 @@ if ! DISPLAY="$display" xdpyinfo >/dev/null 2>&1; then
   exit 1
 fi
 
+DISPLAY="$display" openbox --sm-disable >"/tmp/mirakurun-openbox-${display_number}.log" 2>&1 &
+openbox_pid=$!
+for _ in {1..50}; do
+  if DISPLAY="$display" xprop -root _NET_SUPPORTING_WM_CHECK 2>/dev/null \
+    | grep -q 'window id'; then
+    break
+  fi
+  sleep 0.1
+done
+if ! DISPLAY="$display" xprop -root _NET_SUPPORTING_WM_CHECK 2>/dev/null \
+  | grep -q 'window id'; then
+  echo "Openbox did not become ready on $display" >&2
+  exit 1
+fi
+
 renderer=$(DISPLAY="$display" LIBGL_ALWAYS_SOFTWARE=1 glxinfo -B 2>/dev/null \
   | sed -n 's/^OpenGL renderer string: //p')
 if [[ -z "$renderer" ]]; then
   echo "Software OpenGL is unavailable on isolated display $display" >&2
   exit 1
 fi
-printf 'Isolated display: %s\nOpenGL renderer: %s\n' "$display" "$renderer"
+printf 'Isolated display: %s\nWindow manager: Openbox\nOpenGL renderer: %s\n' \
+  "$display" "$renderer"
 
 env \
   DISPLAY="$display" \

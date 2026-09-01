@@ -3,7 +3,7 @@ set -euo pipefail
 
 missing=()
 
-for command in Xvfb cargo cmake gst-launch-1.0 import mpv ninja pkg-config rustc xdpyinfo xdotool; do
+for command in Xvfb cargo cmake gst-launch-1.0 import mpv ninja openbox pkg-config rustc xdpyinfo xdotool; do
   if ! command -v "$command" >/dev/null 2>&1; then
     missing+=("$command")
   fi

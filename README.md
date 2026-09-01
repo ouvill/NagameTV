@@ -42,16 +42,19 @@ workshop refresh dev
 workshop run dev build
 workshop run dev run
 workshop run dev test-ui
+workshop run dev test-stream-isolated
 ```
 
 `project-mirakurun-viewer` SDKのhealth checkは、Rust、CMake、Qt 6、GStreamer、libmpvを
 refreshのたびに検証します。GUI、GPU、PulseAudioは既存の`project-gui` SDKと
 `.workshop/dev.yaml`の接続定義から提供されます。
 
-`test-ui`はWorkshop内に専用のXvfbディスプレイ`:99`を作り、Mesaのソフトウェア
-OpenGLとGStreamerのテスト用音声sinkでNHK大津を再生します。ホストのデスクトップ、
-入力、音声出力を使用しないため、`DISPLAY=:99 xdotool ...`で決定論的に操作できます。
-実GPU、実音声、画質、負荷の確認には通常の`run`を使用してください。
+`test-ui`はWorkshop内に専用のXvfbディスプレイ`:99`とOpenboxを作り、映像を
+自動再生せず軽量にUIを検証します。`test-stream-isolated`は同じ隔離環境でMesaの
+ソフトウェアOpenGLとGStreamerのテスト用音声sinkを使い、NHK大津を再生します。
+どちらもホストのデスクトップ、入力、音声出力を使用しないため、
+`DISPLAY=:99 xdotool ...`で決定論的に操作できます。実GPU、実音声、画質、負荷の
+確認には通常の`run`を使用してください。
 
 ### Ubuntuへ直接導入する場合
 
