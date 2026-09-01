@@ -1,0 +1,16 @@
+#!/bin/sh
+set -eu
+
+installer_url="https://chatgpt.com/codex/install.sh"
+installer_path="$(mktemp)"
+trap 'rm -f "$installer_path"' EXIT
+
+curl --fail --silent --show-error --location \
+  "$installer_url" \
+  --output "$installer_path"
+
+CODEX_INSTALL_DIR="$HOME/.local/bin" \
+CODEX_NON_INTERACTIVE=1 \
+  sh "$installer_path"
+
+"$HOME/.local/bin/codex" --version

@@ -1,0 +1,8 @@
+name: codex-latest
+title: Latest Codex CLI
+base: ubuntu@24.04
+version: "1"
+summary: Current OpenAI Codex CLI
+description: |
+  Installs the latest Codex CLI release with OpenAI's official installer.
+license: Apache-2.0
