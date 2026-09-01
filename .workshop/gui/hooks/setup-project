@@ -1,0 +1,11 @@
+#!/bin/sh
+set -eu
+
+pulse_server='export PULSE_SERVER=tcp:127.0.0.1:4713'
+
+for profile_path in "$HOME/.profile" "$HOME/.bashrc"; do
+  if ! grep --fixed-strings --line-regexp --quiet \
+    "$pulse_server" "$profile_path" 2>/dev/null; then
+    printf '\n%s\n' "$pulse_server" >>"$profile_path"
+  fi
+done

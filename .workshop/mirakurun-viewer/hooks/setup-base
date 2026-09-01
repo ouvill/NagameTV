@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+export DEBIAN_FRONTEND=noninteractive
+
+apt-get update
+apt-get install --yes --no-install-recommends \
+  build-essential \
+  cargo \
+  cmake \
+  libmpv-dev \
+  mesa-utils \
+  ninja-build \
+  pkg-config \
+  qml6-module-qtqml \
+  qml6-module-qtqml-models \
+  qml6-module-qtqml-workerscript \
+  qml6-module-qtquick \
+  qml6-module-qtquick-controls \
+  qml6-module-qtquick-layouts \
+  qml6-module-qtquick-templates \
+  qml6-module-qtquick-window \
+  qt6-base-dev \
+  qt6-declarative-dev \
+  qt6-wayland \
+  rustc \
+  rustfmt

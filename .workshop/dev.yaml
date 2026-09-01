@@ -1,0 +1,31 @@
+name: dev
+base: ubuntu@24.04
+sdks:
+  - name: flutter
+  - name: codex
+  - name: project-codex-latest
+  - name: project-mirakurun-viewer
+  - name: project-gui
+  - name: system
+    slots:
+      pulse:
+        interface: tunnel
+        endpoint: $XDG_RUNTIME_DIR/pulse/native
+
+connections:
+  - plug: gui:desktop
+    slot: system:desktop
+
+  - plug: gui:gpu
+    slot: system:gpu
+
+  - plug: gui:pulse
+    slot: system:pulse
+
+actions:
+  configure: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+  build: |
+    cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+    cmake --build build
+  test: cargo test --manifest-path rust/Cargo.toml "$@"
+  run: ./build/mirakurun-viewer "$@"

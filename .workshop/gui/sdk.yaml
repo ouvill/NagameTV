@@ -1,0 +1,18 @@
+name: gui
+title: GUI integration
+base: ubuntu@24.04
+version: "0.1"
+summary: Host desktop, GPU, and audio access
+description: |
+  Exposes the host desktop session, GPU devices, and PulseAudio service to the
+  workshop.
+license: MIT
+
+plugs:
+  desktop:
+    interface: desktop
+  gpu:
+    interface: gpu
+  pulse:
+    interface: tunnel
+    endpoint: localhost:4713
