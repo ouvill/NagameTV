@@ -1119,6 +1119,7 @@ dependencies = [
  "gstreamer",
  "reqwest",
  "serde",
+ "thiserror 2.0.20",
  "tokio",
 ]
 

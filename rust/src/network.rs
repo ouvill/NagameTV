@@ -1,6 +1,15 @@
 use std::time::Duration;
+use thiserror::Error;
 
 use crate::epg::EpgStore;
+
+#[derive(Debug, Error)]
+pub enum NetworkError {
+    #[error("Could not start the network runtime: {0}")]
+    Runtime(#[source] std::io::Error),
+    #[error("Could not create the HTTP client: {0}")]
+    HttpClient(#[source] reqwest::Error),
+}
 
 pub struct NetworkRuntime {
     runtime: Option<tokio::runtime::Runtime>,
@@ -9,20 +18,20 @@ pub struct NetworkRuntime {
 }
 
 impl NetworkRuntime {
-    pub fn new() -> Result<Self, String> {
+    pub fn new() -> Result<Self, NetworkError> {
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(1)
             .thread_name("mirakurun-network")
             .enable_all()
             .build()
-            .map_err(|error| format!("Could not start the network runtime: {error}"))?;
+            .map_err(NetworkError::Runtime)?;
         let client = reqwest::Client::builder()
             .connect_timeout(Duration::from_secs(5))
             .timeout(Duration::from_secs(10))
             .pool_idle_timeout(Duration::from_secs(90))
             .pool_max_idle_per_host(4)
             .build()
-            .map_err(|error| format!("Could not create the HTTP client: {error}"))?;
+            .map_err(NetworkError::HttpClient)?;
         Ok(Self {
             runtime: Some(runtime),
             client,

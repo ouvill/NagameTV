@@ -3,21 +3,77 @@ use gstreamer as gst;
 use std::ffi::{c_char, c_void};
 use std::ptr;
 use std::sync::{Mutex, OnceLock};
+use thiserror::Error;
 
 static PRELOADED: OnceLock<Mutex<Option<Playback>>> = OnceLock::new();
 
-pub fn preload() -> Result<(), String> {
+#[derive(Debug, Error)]
+pub enum PlaybackError {
+    #[error("Could not initialize GStreamer: {0}")]
+    Initialization(#[source] gst::glib::Error),
+    #[error("Could not create {element}: {source}")]
+    ElementCreation {
+        element: &'static str,
+        #[source]
+        source: gst::glib::BoolError,
+    },
+    #[error("Invalid MIRAKURUN_DEINTERLACE value '{value}'; use yadif, linear, or off")]
+    InvalidDeinterlaceMode { value: String },
+    #[error("Could not assemble video output: {0}")]
+    VideoOutputAssembly(#[source] gst::glib::BoolError),
+    #[error("Could not link video output: {0}")]
+    VideoOutputLink(#[source] gst::glib::BoolError),
+    #[error("Video processor has no sink pad")]
+    MissingVideoSinkPad,
+    #[error("Could not expose video sink pad: {0}")]
+    VideoSinkPadExposure(#[source] gst::glib::BoolError),
+    #[error("Could not activate video sink pad: {0}")]
+    VideoSinkPadActivation(#[source] gst::glib::BoolError),
+    #[error("Could not add video sink pad: {0}")]
+    VideoSinkPadAddition(#[source] gst::glib::BoolError),
+    #[error("Playback was already preloaded")]
+    AlreadyPreloaded,
+    #[error("The preloaded playback lock is poisoned")]
+    PreloadLockPoisoned,
+    #[error("The preloaded playback pipeline is unavailable")]
+    PreloadedUnavailable,
+    #[error("The video item is null")]
+    NullVideoItem,
+    #[error("The Qt video item is not attached")]
+    VideoItemNotAttached,
+    #[error("The server URL must start with http:// or https://")]
+    InvalidServerUrl,
+    #[error("The service ID must be greater than zero")]
+    InvalidServiceId,
+    #[error("Could not {operation}: {source}")]
+    StateChange {
+        operation: &'static str,
+        #[source]
+        source: gst::StateChangeError,
+    },
+    #[error("The GStreamer message bus is unavailable")]
+    BusUnavailable,
+    #[error("GStreamer playback error: {source} (debug: {debug:?})")]
+    Pipeline {
+        #[source]
+        source: gst::glib::Error,
+        debug: Option<String>,
+    },
+}
+
+pub fn preload() -> Result<(), PlaybackError> {
     let playback = Playback::new()?;
     PRELOADED
         .set(Mutex::new(Some(playback)))
-        .map_err(|_| "Playback was already preloaded".to_owned())
+        .map_err(|_| PlaybackError::AlreadyPreloaded)
 }
 
-pub fn take_preloaded() -> Result<Playback, String> {
-    PRELOADED
-        .get()
-        .and_then(|slot| slot.lock().ok()?.take())
-        .ok_or_else(|| "The preloaded playback pipeline is unavailable".to_owned())
+pub fn take_preloaded() -> Result<Playback, PlaybackError> {
+    let slot = PRELOADED.get().ok_or(PlaybackError::PreloadedUnavailable)?;
+    slot.lock()
+        .map_err(|_| PlaybackError::PreloadLockPoisoned)?
+        .take()
+        .ok_or(PlaybackError::PreloadedUnavailable)
 }
 
 #[link(name = "gobject-2.0")]
@@ -39,30 +95,33 @@ enum DeinterlaceMode {
 }
 
 impl DeinterlaceMode {
-    fn from_environment() -> Result<Self, String> {
+    fn from_environment() -> Result<Self, PlaybackError> {
         let value = std::env::var("MIRAKURUN_DEINTERLACE").unwrap_or_else(|_| "yadif".into());
         Self::parse(&value)
     }
 
-    fn parse(value: &str) -> Result<Self, String> {
+    fn parse(value: &str) -> Result<Self, PlaybackError> {
         match value.trim().to_ascii_lowercase().as_str() {
             "yadif" | "quality" => Ok(Self::Yadif),
             "linear" | "balanced" => Ok(Self::Linear),
             "off" | "disabled" => Ok(Self::Off),
-            _ => Err(format!(
-                "Invalid MIRAKURUN_DEINTERLACE value '{value}'; use yadif, linear, or off"
-            )),
+            _ => Err(PlaybackError::InvalidDeinterlaceMode {
+                value: value.to_owned(),
+            }),
         }
     }
 }
 
 impl Playback {
-    pub fn new() -> Result<Self, String> {
-        gst::init().map_err(|error| format!("Could not initialize GStreamer: {error}"))?;
+    pub fn new() -> Result<Self, PlaybackError> {
+        gst::init().map_err(PlaybackError::Initialization)?;
         let video_sink = gst::ElementFactory::make("qml6glsink")
             .name("qt-video-sink")
             .build()
-            .map_err(|error| format!("Could not create qml6glsink: {error}"))?;
+            .map_err(|source| PlaybackError::ElementCreation {
+                element: "qml6glsink",
+                source,
+            })?;
         video_sink.set_property("enable-last-sample", false);
 
         let deinterlace_mode = DeinterlaceMode::from_environment()?;
@@ -70,12 +129,18 @@ impl Playback {
             DeinterlaceMode::Off => gst::ElementFactory::make("identity")
                 .name("deinterlace-disabled")
                 .build()
-                .map_err(|error| format!("Could not create video passthrough: {error}"))?,
+                .map_err(|source| PlaybackError::ElementCreation {
+                    element: "video passthrough",
+                    source,
+                })?,
             mode => {
                 let element = gst::ElementFactory::make("deinterlace")
                     .name("deinterlace")
                     .build()
-                    .map_err(|error| format!("Could not create deinterlace: {error}"))?;
+                    .map_err(|source| PlaybackError::ElementCreation {
+                        element: "deinterlace",
+                        source,
+                    })?;
                 element.set_property_from_str(
                     "method",
                     match mode {
@@ -94,20 +159,32 @@ impl Playback {
         let video_queue = gst::ElementFactory::make("queue")
             .name("bounded-video-queue")
             .build()
-            .map_err(|error| format!("Could not create video queue: {error}"))?;
+            .map_err(|source| PlaybackError::ElementCreation {
+                element: "video queue",
+                source,
+            })?;
         video_queue.set_property("max-size-buffers", 8_u32);
         video_queue.set_property("max-size-bytes", 0_u32);
         video_queue.set_property("max-size-time", 0_u64);
 
         let gl_upload = gst::ElementFactory::make("glupload")
             .build()
-            .map_err(|error| format!("Could not create glupload: {error}"))?;
+            .map_err(|source| PlaybackError::ElementCreation {
+                element: "glupload",
+                source,
+            })?;
         let gl_convert = gst::ElementFactory::make("glcolorconvert")
             .build()
-            .map_err(|error| format!("Could not create glcolorconvert: {error}"))?;
+            .map_err(|source| PlaybackError::ElementCreation {
+                element: "glcolorconvert",
+                source,
+            })?;
         let rgba_filter = gst::ElementFactory::make("capsfilter")
             .build()
-            .map_err(|error| format!("Could not create RGBA filter: {error}"))?;
+            .map_err(|source| PlaybackError::ElementCreation {
+                element: "RGBA filter",
+                source,
+            })?;
         rgba_filter.set_property(
             "caps",
             gst::Caps::builder("video/x-raw")
@@ -127,7 +204,7 @@ impl Playback {
                 &rgba_filter,
                 &video_sink,
             ])
-            .map_err(|error| format!("Could not assemble video output: {error}"))?;
+            .map_err(PlaybackError::VideoOutputAssembly)?;
         gst::Element::link_many([
             &video_process,
             &video_queue,
@@ -136,29 +213,35 @@ impl Playback {
             &rgba_filter,
             &video_sink,
         ])
-        .map_err(|error| format!("Could not link video output: {error}"))?;
+        .map_err(PlaybackError::VideoOutputLink)?;
         let sink_pad = video_process
             .static_pad("sink")
-            .ok_or_else(|| "Video processor has no sink pad".to_owned())?;
-        let ghost_pad = gst::GhostPad::with_target(&sink_pad)
-            .map_err(|error| format!("Could not expose video sink pad: {error}"))?;
+            .ok_or(PlaybackError::MissingVideoSinkPad)?;
+        let ghost_pad =
+            gst::GhostPad::with_target(&sink_pad).map_err(PlaybackError::VideoSinkPadExposure)?;
         ghost_pad
             .set_active(true)
-            .map_err(|error| format!("Could not activate video sink pad: {error}"))?;
+            .map_err(PlaybackError::VideoSinkPadActivation)?;
         video_output
             .add_pad(&ghost_pad)
-            .map_err(|error| format!("Could not add video sink pad: {error}"))?;
+            .map_err(PlaybackError::VideoSinkPadAddition)?;
 
         let playbin = gst::ElementFactory::make("playbin3")
             .name("mirakurun-player")
             .build()
-            .map_err(|error| format!("Could not create playbin3: {error}"))?;
+            .map_err(|source| PlaybackError::ElementCreation {
+                element: "playbin3",
+                source,
+            })?;
         playbin.set_property("video-sink", &video_output);
         if std::env::var("MIRAKURUN_AUDIO_SINK").is_ok_and(|value| value == "fakesink") {
             let audio_sink = gst::ElementFactory::make("fakesink")
                 .name("isolated-test-audio-sink")
                 .build()
-                .map_err(|error| format!("Could not create test audio sink: {error}"))?;
+                .map_err(|source| PlaybackError::ElementCreation {
+                    element: "test audio sink",
+                    source,
+                })?;
             audio_sink.set_property("enable-last-sample", false);
             audio_sink.set_property("sync", true);
             playbin.set_property("audio-sink", &audio_sink);
@@ -171,9 +254,9 @@ impl Playback {
         })
     }
 
-    pub fn attach_video_item(&mut self, widget: *mut c_void) -> Result<(), String> {
+    pub fn attach_video_item(&mut self, widget: *mut c_void) -> Result<(), PlaybackError> {
         if widget.is_null() {
-            return Err("The video item is null".into());
+            return Err(PlaybackError::NullVideoItem);
         }
         unsafe {
             g_object_set(
@@ -188,32 +271,54 @@ impl Playback {
         Ok(())
     }
 
-    pub fn play_service(&self, server: &str, service_id: u64) -> Result<(), String> {
+    pub fn play_service(&self, server: &str, service_id: u64) -> Result<(), PlaybackError> {
         if !self.video_attached {
-            return Err("The Qt video item is not attached".into());
+            return Err(PlaybackError::VideoItemNotAttached);
         }
         let url = service_stream_url(server, service_id)?;
         self.playbin
             .set_state(gst::State::Ready)
-            .map_err(|error| format!("Could not reset pipeline: {error:?}"))?;
+            .map_err(|source| PlaybackError::StateChange {
+                operation: "reset pipeline",
+                source,
+            })?;
         self.playbin.set_property("uri", url);
         self.playbin
             .set_state(gst::State::Playing)
-            .map_err(|error| format!("Could not start playback: {error:?}"))?;
+            .map_err(|source| PlaybackError::StateChange {
+                operation: "start playback",
+                source,
+            })?;
         Ok(())
     }
 
-    pub fn stop(&self) {
-        let _ = self.playbin.set_state(gst::State::Null);
+    pub fn stop(&self) -> Result<(), PlaybackError> {
+        self.playbin
+            .set_state(gst::State::Null)
+            .map(|_| ())
+            .map_err(|source| PlaybackError::StateChange {
+                operation: "stop playback",
+                source,
+            })
     }
 
-    pub fn set_paused(&self, paused: bool) {
+    pub fn set_paused(&self, paused: bool) -> Result<(), PlaybackError> {
         let state = if paused {
             gst::State::Paused
         } else {
             gst::State::Playing
         };
-        let _ = self.playbin.set_state(state);
+        self.playbin
+            .set_state(state)
+            .map(|_| ())
+            .map_err(|source| PlaybackError::StateChange {
+                operation: if paused {
+                    "pause playback"
+                } else {
+                    "resume playback"
+                },
+                source,
+            })
     }
 
     pub fn set_volume(&self, volume: f64) {
@@ -221,17 +326,19 @@ impl Playback {
             .set_property("volume", volume.clamp(0.0, 100.0) / 100.0);
     }
 
-    pub fn drain_events(&self) -> PlaybackEvent {
+    pub fn drain_events(&self) -> Result<PlaybackEvent, PlaybackError> {
         let Some(bus) = self.playbin.bus() else {
-            return PlaybackEvent::Error;
+            return Err(PlaybackError::BusUnavailable);
         };
         let mut outcome = PlaybackEvent::None;
         while let Some(message) = bus.pop() {
             use gst::MessageView;
             outcome = match message.view() {
                 MessageView::Error(error) => {
-                    eprintln!("GStreamer error: {} ({:?})", error.error(), error.debug());
-                    PlaybackEvent::Error
+                    return Err(PlaybackError::Pipeline {
+                        source: error.error(),
+                        debug: error.debug().map(|debug| debug.to_string()),
+                    });
                 }
                 MessageView::Eos(..) => PlaybackEvent::Ended,
                 MessageView::StateChanged(state)
@@ -243,14 +350,18 @@ impl Playback {
                 _ => outcome,
             };
         }
-        outcome
+        Ok(outcome)
     }
 }
 
 impl Drop for Playback {
     fn drop(&mut self) {
-        let _ = self.playbin.set_state(gst::State::Null);
-        let _ = self.video_sink.set_state(gst::State::Null);
+        if let Err(error) = self.playbin.set_state(gst::State::Null) {
+            eprintln!("Could not stop playback while dropping: {error}");
+        }
+        if let Err(error) = self.video_sink.set_state(gst::State::Null) {
+            eprintln!("Could not stop the video sink while dropping: {error}");
+        }
         if self.video_attached {
             unsafe {
                 g_object_set(
@@ -269,23 +380,22 @@ pub enum PlaybackEvent {
     None,
     Playing,
     Ended,
-    Error,
 }
 
-fn service_stream_url(server: &str, service_id: u64) -> Result<String, String> {
+fn service_stream_url(server: &str, service_id: u64) -> Result<String, PlaybackError> {
     let server = server.trim().trim_end_matches('/');
     if !(server.starts_with("http://") || server.starts_with("https://")) {
-        return Err("The server URL must start with http:// or https://".into());
+        return Err(PlaybackError::InvalidServerUrl);
     }
     if service_id == 0 {
-        return Err("The service ID must be greater than zero".into());
+        return Err(PlaybackError::InvalidServiceId);
     }
     Ok(format!("{server}/api/services/{service_id}/stream"))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{DeinterlaceMode, service_stream_url};
+    use super::{DeinterlaceMode, PlaybackError, service_stream_url};
     #[test]
     fn builds_service_url() {
         assert_eq!(
@@ -295,8 +405,14 @@ mod tests {
     }
     #[test]
     fn validates_inputs() {
-        assert!(service_stream_url("ftp://example.test", 1).is_err());
-        assert!(service_stream_url("http://example.test", 0).is_err());
+        assert!(matches!(
+            service_stream_url("ftp://example.test", 1),
+            Err(PlaybackError::InvalidServerUrl)
+        ));
+        assert!(matches!(
+            service_stream_url("http://example.test", 0),
+            Err(PlaybackError::InvalidServiceId)
+        ));
         assert_eq!(
             DeinterlaceMode::parse("YADIF").unwrap(),
             DeinterlaceMode::Yadif
@@ -305,6 +421,9 @@ mod tests {
             DeinterlaceMode::parse("balanced").unwrap(),
             DeinterlaceMode::Linear
         );
-        assert!(DeinterlaceMode::parse("unknown").is_err());
+        assert!(matches!(
+            DeinterlaceMode::parse("unknown"),
+            Err(PlaybackError::InvalidDeinterlaceMode { value }) if value == "unknown"
+        ));
     }
 }

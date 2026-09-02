@@ -62,7 +62,7 @@ pub mod ffi {
 
 use crate::epg::{CurrentProgram, EpgStore, Program, Service};
 use crate::network::NetworkRuntime;
-use crate::playback::{Playback, PlaybackEvent};
+use crate::playback::{Playback, PlaybackError, PlaybackEvent};
 use core::pin::Pin;
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{QString, QStringList};
@@ -70,6 +70,35 @@ use std::collections::{HashMap, HashSet};
 use std::ffi::c_void;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
+use thiserror::Error;
+
+#[derive(Debug, Error)]
+enum PlayerError {
+    #[error(transparent)]
+    Playback(#[from] PlaybackError),
+    #[error("Could not initialize the player")]
+    PlaybackUnavailable,
+    #[error("Enter a valid Mirakurun service ID")]
+    InvalidServiceId,
+}
+
+#[derive(Debug, Error)]
+enum FetchServicesError {
+    #[error("Could not load channels: {0}")]
+    ServicesRequest(#[source] reqwest::Error),
+    #[error("Mirakurun rejected the channel request: {0}")]
+    ServicesStatus(#[source] reqwest::Error),
+    #[error("Invalid Mirakurun service list: {0}")]
+    ServicesResponse(#[source] reqwest::Error),
+    #[error("Could not load programs: {0}")]
+    ProgramsRequest(#[source] reqwest::Error),
+    #[error("Mirakurun rejected the program request: {0}")]
+    ProgramsStatus(#[source] reqwest::Error),
+    #[error("Invalid Mirakurun program list: {0}")]
+    ProgramsResponse(#[source] reqwest::Error),
+    #[error("Could not read system time: {0}")]
+    SystemTime(#[source] std::time::SystemTimeError),
+}
 
 pub struct PlayerRust {
     server: QString,
@@ -100,9 +129,10 @@ impl Default for PlayerRust {
         let network = NetworkRuntime::new();
         let status = playback
             .as_ref()
-            .map(|_| ())
-            .and(network.as_ref().map(|_| ()))
-            .map_or_else(|error| error.clone(), |()| "Ready".to_owned());
+            .err()
+            .map(ToString::to_string)
+            .or_else(|| network.as_ref().err().map(ToString::to_string))
+            .unwrap_or_else(|| "Ready".to_owned());
         Self {
             server: QString::from(
                 std::env::var("MIRAKURUN_SERVER")
@@ -134,17 +164,21 @@ impl Default for PlayerRust {
 impl ffi::Player {
     pub unsafe fn attach_video_item(mut self: Pin<&mut Self>, item: *mut ffi::QQuickItem) -> bool {
         let address = unsafe { ffi::q_quick_item_address(item) };
-        let result = {
+        let result: Result<(), PlayerError> = {
             let mut rust = self.as_mut().rust_mut();
-            let Some(playback) = rust.playback.as_mut() else {
-                return false;
-            };
-            playback.attach_video_item(address as *mut c_void)
+            rust.playback
+                .as_mut()
+                .ok_or(PlayerError::PlaybackUnavailable)
+                .and_then(|playback| {
+                    playback
+                        .attach_video_item(address as *mut c_void)
+                        .map_err(Into::into)
+                })
         };
         match result {
             Ok(()) => true,
             Err(error) => {
-                self.as_mut().set_status(QString::from(error));
+                self.as_mut().set_status(QString::from(error.to_string()));
                 false
             }
         }
@@ -153,28 +187,40 @@ impl ffi::Player {
     pub fn play(mut self: Pin<&mut Self>) {
         let server = self.as_ref().server().to_string();
         let service_id = self.as_ref().service_id().to_string().parse::<u64>();
-        let result = match (self.as_ref().rust().playback.as_ref(), service_id) {
-            (Some(playback), Ok(id)) if id > 0 => playback.play_service(&server, id),
-            (None, _) => Err("Could not initialize the player".to_owned()),
-            _ => Err("Enter a valid Mirakurun service ID".to_owned()),
-        };
+        let result: Result<(), PlayerError> =
+            match (self.as_ref().rust().playback.as_ref(), service_id) {
+                (Some(playback), Ok(id)) if id > 0 => {
+                    playback.play_service(&server, id).map_err(Into::into)
+                }
+                (None, _) => Err(PlayerError::PlaybackUnavailable),
+                _ => Err(PlayerError::InvalidServiceId),
+            };
         match result {
             Ok(()) => {
                 self.as_mut().rust_mut().paused = false;
                 self.as_mut().set_playing(true);
                 self.as_mut().set_status(QString::from("Connecting..."));
             }
-            Err(error) => self.as_mut().set_status(QString::from(error)),
+            Err(error) => self.as_mut().set_status(QString::from(error.to_string())),
         }
     }
 
     pub fn stop(mut self: Pin<&mut Self>) {
-        if let Some(playback) = self.as_ref().rust().playback.as_ref() {
-            playback.stop();
+        let result = self
+            .as_ref()
+            .rust()
+            .playback
+            .as_ref()
+            .ok_or(PlayerError::PlaybackUnavailable)
+            .and_then(|playback| playback.stop().map_err(Into::into));
+        match result {
+            Ok(()) => {
+                self.as_mut().rust_mut().paused = false;
+                self.as_mut().set_playing(false);
+                self.as_mut().set_status(QString::from("Stopped"));
+            }
+            Err(error) => self.as_mut().set_status(QString::from(error.to_string())),
         }
-        self.as_mut().rust_mut().paused = false;
-        self.as_mut().set_playing(false);
-        self.as_mut().set_status(QString::from("Stopped"));
     }
 
     pub fn toggle_pause(mut self: Pin<&mut Self>) {
@@ -182,12 +228,21 @@ impl ffi::Player {
             return;
         }
         let paused = !self.as_ref().rust().paused;
-        self.as_mut().rust_mut().paused = paused;
-        if let Some(playback) = self.as_ref().rust().playback.as_ref() {
-            playback.set_paused(paused);
+        let result = self
+            .as_ref()
+            .rust()
+            .playback
+            .as_ref()
+            .ok_or(PlayerError::PlaybackUnavailable)
+            .and_then(|playback| playback.set_paused(paused).map_err(Into::into));
+        match result {
+            Ok(()) => {
+                self.as_mut().rust_mut().paused = paused;
+                self.as_mut()
+                    .set_status(QString::from(if paused { "Paused" } else { "Playing" }));
+            }
+            Err(error) => self.as_mut().set_status(QString::from(error.to_string())),
         }
-        self.as_mut()
-            .set_status(QString::from(if paused { "Paused" } else { "Playing" }));
     }
 
     pub fn poll_events(mut self: Pin<&mut Self>) {
@@ -196,17 +251,20 @@ impl ffi::Player {
             .rust()
             .playback
             .as_ref()
-            .map_or(PlaybackEvent::Error, Playback::drain_events);
+            .ok_or(PlayerError::PlaybackUnavailable)
+            .and_then(|playback| playback.drain_events().map_err(Into::into));
         match event {
-            PlaybackEvent::None => {}
-            PlaybackEvent::Playing => self.as_mut().set_status(QString::from("Playing")),
-            PlaybackEvent::Ended => {
+            Ok(PlaybackEvent::None) => {}
+            Ok(PlaybackEvent::Playing) => self.as_mut().set_status(QString::from("Playing")),
+            Ok(PlaybackEvent::Ended) => {
+                self.as_mut().rust_mut().paused = false;
                 self.as_mut().set_playing(false);
                 self.as_mut().set_status(QString::from("Stream ended"));
             }
-            PlaybackEvent::Error => {
+            Err(error) => {
+                self.as_mut().rust_mut().paused = false;
                 self.as_mut().set_playing(false);
-                self.as_mut().set_status(QString::from("Playback error"));
+                self.as_mut().set_status(QString::from(error.to_string()));
             }
         }
         let volume = *self.as_ref().volume();
@@ -296,7 +354,7 @@ impl ffi::Player {
                             player.as_mut().set_status(QString::from("Ready"));
                         }
                     }
-                    Err(error) => player.as_mut().set_status(QString::from(error)),
+                    Err(error) => player.as_mut().set_status(QString::from(error.to_string())),
                 }
             });
         });
@@ -365,31 +423,31 @@ async fn fetch_services(
     client: &reqwest::Client,
     epg: &EpgStore,
     server: &str,
-) -> Result<Vec<Channel>, String> {
+) -> Result<Vec<Channel>, FetchServicesError> {
     let api = server.trim().trim_end_matches('/');
     let services = client
         .get(format!("{api}/api/services"))
         .send()
         .await
-        .map_err(|error| format!("Could not load channels: {error}"))?
+        .map_err(FetchServicesError::ServicesRequest)?
         .error_for_status()
-        .map_err(|error| format!("Could not load channels: {error}"))?
+        .map_err(FetchServicesError::ServicesStatus)?
         .json::<Vec<Service>>()
         .await
-        .map_err(|error| format!("Invalid Mirakurun service list: {error}"))?;
+        .map_err(FetchServicesError::ServicesResponse)?;
     let programs = client
         .get(format!("{api}/api/programs"))
         .send()
         .await
-        .map_err(|error| format!("Could not load programs: {error}"))?
+        .map_err(FetchServicesError::ProgramsRequest)?
         .error_for_status()
-        .map_err(|error| format!("Could not load programs: {error}"))?
+        .map_err(FetchServicesError::ProgramsStatus)?
         .json::<Vec<Program>>()
         .await
-        .map_err(|error| format!("Invalid Mirakurun program list: {error}"))?;
+        .map_err(FetchServicesError::ProgramsResponse)?;
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map_err(|error| format!("Could not read system time: {error}"))?
+        .map_err(FetchServicesError::SystemTime)?
         .as_millis() as u64;
     epg.replace(services, programs, now);
     let snapshot = epg.snapshot();
