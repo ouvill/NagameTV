@@ -1,5 +1,6 @@
 .workshop.lock
 build/
+build-host/
 target/
 memory-*.csv
 benchmark/
