@@ -16,6 +16,8 @@ ApplicationWindow {
     flags: Qt.Window | Qt.FramelessWindowHint
     property bool overlayVisible: true
     property bool overlayPinned: settingsPanel.opened
+    property bool videoAttached: false
+    property bool autoplayStarted: false
 
     Player { id: player }
 
@@ -46,6 +48,13 @@ ApplicationWindow {
     Shortcut { sequence: "C"; onActivated: channelPanel.open() }
     Shortcut { sequence: "PgUp"; onActivated: player.changeChannel(-1) }
     Shortcut { sequence: "PgDown"; onActivated: player.changeChannel(1) }
+    onFrameSwapped: {
+        if (videoAttached && player.autoplay && !autoplayStarted) {
+            autoplayStarted = true
+            // qml6glsink must not enter READY until Qt has created the Scene Graph GL context.
+            Qt.callLater(function() { player.play() })
+        }
+    }
     Shortcut {
         sequence: "Escape"
         onActivated: {
@@ -383,11 +392,10 @@ ApplicationWindow {
     }
 
     Component.onCompleted: {
-        if (!player.attachVideoItem(videoItem))
+        videoAttached = player.attachVideoItem(videoItem)
+        if (!videoAttached)
             return
         player.refreshChannels()
-        if (player.autoplay)
-            player.play()
         overlayTimer.start()
     }
 }

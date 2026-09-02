@@ -276,6 +276,9 @@ impl Playback {
             return Err(PlaybackError::VideoItemNotAttached);
         }
         let url = service_stream_url(server, service_id)?;
+        if self.playbin.current_state() == gst::State::Null {
+            self.prepare_video_sink()?;
+        }
         self.playbin
             .set_state(gst::State::Ready)
             .map_err(|source| PlaybackError::StateChange {
@@ -290,6 +293,18 @@ impl Playback {
                 source,
             })?;
         Ok(())
+    }
+
+    fn prepare_video_sink(&self) -> Result<(), PlaybackError> {
+        // qml6glsink must reach READY before the other GL elements so its Qt-backed
+        // GstGLDisplay and GstGLContext are propagated through the pipeline.
+        self.video_sink
+            .set_state(gst::State::Ready)
+            .map(|_| ())
+            .map_err(|source| PlaybackError::StateChange {
+                operation: "prepare the Qt video sink",
+                source,
+            })
     }
 
     pub fn stop(&self) -> Result<(), PlaybackError> {

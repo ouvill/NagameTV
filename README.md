@@ -89,6 +89,18 @@ cmake --build build
 ./build/mirakurun-viewer
 ```
 
+> [!WARNING]
+> Ubuntu 26.04のNVIDIA環境では、Qt/GStreamerのネイティブWayland GL共有により
+> 映像が緑色に崩れる問題があります。WaylandセッションでXwaylandが利用できる場合、
+> アプリは暫定的に`xcb`を選択します。これは恒久的な描画方式ではありません。
+> ネイティブWaylandを再検証する場合は、`QT_QPA_PLATFORM=wayland`を明示してください。
+> 関連する上流問題は[GStreamer Issue #5178](https://gitlab.freedesktop.org/gstreamer/gstreamer/-/work_items/5178)
+> で追跡されています。
+
+```bash
+QT_QPA_PLATFORM=wayland ./build/mirakurun-viewer
+```
+
 診断や自動試験では環境変数で接続先を指定できます。
 
 ```bash
