@@ -13,6 +13,7 @@ reqwest = { version = "0.13", default-features = false, features = ["json", "rus
 serde = { version = "1.0", features = ["derive"] }
 thiserror = "2.0"
 tokio = { version = "1.47", features = ["rt-multi-thread"] }
+toml = "0.9"
 
 [build-dependencies]
 cxx-qt-build = { version = "0.10", features = ["link_qt_object_files"] }

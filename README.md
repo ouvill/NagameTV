@@ -128,6 +128,16 @@ HTTP接続には5秒、リクエスト全体には10秒のtimeoutを設け、接
 EPGは永続化せず、起動後にMirakurunから再構築します。視聴・録画予約などの
 ユーザー固有データを追加する段階で、それらだけを別の永続ストアへ保存します。
 
+接続先、最後に選択したService ID、音量はユーザー設定として次のTOMLへ保存します。
+
+```text
+$XDG_CONFIG_HOME/mirakurun-viewer/settings.toml
+```
+
+`XDG_CONFIG_HOME`が未設定の場合は`~/.config/mirakurun-viewer/settings.toml`です。
+`MIRAKURUN_SERVER`と`MIRAKURUN_SERVICE_ID`を指定した場合は、保存値より環境変数を
+優先します。
+
 ## 長時間試験
 
 `scripts/monitor-memory.sh <PID> [interval]`でRSS、PSS、FD数、スレッド数をCSVへ記録できます。

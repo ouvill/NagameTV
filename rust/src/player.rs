@@ -55,6 +55,9 @@ pub mod ffi {
         #[qinvokable]
         #[cxx_name = "changeChannel"]
         fn change_channel(self: Pin<&mut Player>, offset: i32);
+        #[qinvokable]
+        #[cxx_name = "saveSettings"]
+        fn save_settings(self: Pin<&mut Player>);
     }
 
     impl cxx_qt::Threading for Player {}
@@ -63,6 +66,7 @@ pub mod ffi {
 use crate::epg::{CurrentProgram, EpgStore, Program, Service};
 use crate::network::NetworkRuntime;
 use crate::playback::{Playback, PlaybackError, PlaybackEvent};
+use crate::settings::Settings;
 use core::pin::Pin;
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{QString, QStringList};
@@ -125,6 +129,16 @@ pub struct PlayerRust {
 
 impl Default for PlayerRust {
     fn default() -> Self {
+        let mut settings = Settings::load().unwrap_or_else(|error| {
+            eprintln!("Could not load settings: {error}");
+            Settings::default()
+        });
+        if let Ok(server) = std::env::var("MIRAKURUN_SERVER") {
+            settings.server = server;
+        }
+        if let Ok(service_id) = std::env::var("MIRAKURUN_SERVICE_ID") {
+            settings.service_id = service_id;
+        }
         let playback = crate::playback::take_preloaded();
         let network = NetworkRuntime::new();
         let status = playback
@@ -134,14 +148,11 @@ impl Default for PlayerRust {
             .or_else(|| network.as_ref().err().map(ToString::to_string))
             .unwrap_or_else(|| "Ready".to_owned());
         Self {
-            server: QString::from(
-                std::env::var("MIRAKURUN_SERVER")
-                    .unwrap_or_else(|_| "http://127.0.0.1:40772".to_owned()),
-            ),
-            service_id: QString::from(std::env::var("MIRAKURUN_SERVICE_ID").unwrap_or_default()),
+            server: QString::from(settings.server),
+            service_id: QString::from(settings.service_id),
             status: QString::from(status),
             playing: false,
-            volume: 70.0,
+            volume: settings.volume,
             autoplay: std::env::var("MIRAKURUN_AUTOPLAY").is_ok_and(|value| value != "0"),
             channel_name: QString::default(),
             program_name: QString::default(),
@@ -152,7 +163,8 @@ impl Default for PlayerRust {
             program_starts: QStringList::default(),
             program_durations: QStringList::default(),
             paused: false,
-            applied_volume: 70.0,
+            // Force the first event poll to apply a persisted non-default volume.
+            applied_volume: -1.0,
             service_ids: Vec::new(),
             loading_channels: AtomicBool::new(false),
             network: network.ok(),
@@ -376,6 +388,7 @@ impl ffi::Player {
         self.as_mut()
             .set_service_id(QString::from(service_id.to_string()));
         self.as_mut().set_channel_name(QString::from(channel_name));
+        self.as_mut().save_settings();
         self.play();
     }
 
@@ -396,6 +409,19 @@ impl ffi::Player {
             .unwrap_or(0);
         let next = (current as i64 + i64::from(offset)).rem_euclid(count as i64) as i32;
         self.select_channel(next);
+    }
+
+    pub fn save_settings(mut self: Pin<&mut Self>) {
+        let settings = Settings {
+            server: self.as_ref().server().to_string(),
+            service_id: self.as_ref().service_id().to_string(),
+            volume: (*self.as_ref().volume()).clamp(0.0, 100.0),
+        };
+        if let Err(error) = settings.save() {
+            eprintln!("Could not save settings: {error}");
+            self.as_mut()
+                .set_status(QString::from(format!("Could not save settings: {error}")));
+        }
     }
 }
 

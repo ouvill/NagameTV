@@ -230,6 +230,7 @@ ApplicationWindow {
                 Slider {
                     Layout.preferredWidth: 150; from: 0; to: 100; value: player.volume
                     onMoved: player.volume = value
+                    onPressedChanged: if (!pressed) player.saveSettings()
                 }
                 Item { Layout.fillWidth: true }
                 Button { text: qsTr("Channels"); onClicked: channelPanel.open() }
@@ -325,6 +326,7 @@ ApplicationWindow {
                 onClicked: {
                     player.server = serverField.text
                     player.serviceId = serviceField.text
+                    player.saveSettings()
                     player.play()
                     settingsPanel.close()
                 }
