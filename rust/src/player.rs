@@ -43,7 +43,15 @@ pub mod ffi {
         #[qproperty(QStringList, guide_starts, cxx_name = "guideStarts")]
         #[qproperty(QStringList, guide_durations, cxx_name = "guideDurations")]
         #[qproperty(QStringList, guide_genres, cxx_name = "guideGenres")]
+        #[qproperty(QStringList, comment_times, cxx_name = "commentTimes")]
+        #[qproperty(QStringList, comment_texts, cxx_name = "commentTexts")]
+        #[qproperty(QStringList, comment_sources, cxx_name = "commentSources")]
+        #[qproperty(QString, comment_status, cxx_name = "commentStatus")]
         type Player = super::PlayerRust;
+
+        #[qsignal]
+        #[cxx_name = "commentReceived"]
+        fn comment_received(self: Pin<&mut Player>, text: QString);
 
         #[qinvokable]
         #[cxx_name = "attachVideoItem"]
@@ -75,6 +83,7 @@ pub mod ffi {
     impl cxx_qt::Threading for Player {}
 }
 
+use crate::comments::{CommentEvent, jikkyo_id};
 use crate::epg::{CurrentProgram, EpgStore, Program, Service};
 use crate::network::NetworkRuntime;
 use crate::playback::{Playback, PlaybackError, PlaybackEvent};
@@ -82,9 +91,10 @@ use crate::settings::Settings;
 use core::pin::Pin;
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{QString, QStringList};
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::ffi::c_void;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, mpsc};
 use std::time::{SystemTime, UNIX_EPOCH};
 use thiserror::Error;
 
@@ -143,11 +153,21 @@ pub struct PlayerRust {
     guide_starts: QStringList,
     guide_durations: QStringList,
     guide_genres: QStringList,
+    comment_times: QStringList,
+    comment_texts: QStringList,
+    comment_sources: QStringList,
+    comment_status: QString,
     current_program_start: u64,
     current_program_duration: u64,
     paused: bool,
     applied_volume: f64,
     service_ids: Vec<u64>,
+    jikkyo_ids: Vec<Option<String>>,
+    active_jikkyo_id: Option<String>,
+    comment_generation: Arc<std::sync::atomic::AtomicU64>,
+    comment_events_tx: mpsc::Sender<CommentEvent>,
+    comment_events_rx: mpsc::Receiver<CommentEvent>,
+    comments: VecDeque<(String, String, String)>,
     loading_channels: AtomicBool,
     network: Option<NetworkRuntime>,
     playback: Option<Playback>,
@@ -155,6 +175,7 @@ pub struct PlayerRust {
 
 impl Default for PlayerRust {
     fn default() -> Self {
+        let (comment_events_tx, comment_events_rx) = mpsc::channel();
         let mut settings = Settings::load().unwrap_or_else(|error| {
             eprintln!("Could not load settings: {error}");
             Settings::default()
@@ -200,12 +221,22 @@ impl Default for PlayerRust {
             guide_starts: QStringList::default(),
             guide_durations: QStringList::default(),
             guide_genres: QStringList::default(),
+            comment_times: QStringList::default(),
+            comment_texts: QStringList::default(),
+            comment_sources: QStringList::default(),
+            comment_status: QString::from("チャンネルを選択してください"),
             current_program_start: 0,
             current_program_duration: 0,
             paused: false,
             // Force the first event poll to apply a persisted non-default volume.
             applied_volume: -1.0,
             service_ids: Vec::new(),
+            jikkyo_ids: Vec::new(),
+            active_jikkyo_id: None,
+            comment_generation: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            comment_events_tx,
+            comment_events_rx,
+            comments: VecDeque::new(),
             loading_channels: AtomicBool::new(false),
             network: network.ok(),
             playback: playback.ok(),
@@ -341,6 +372,63 @@ impl ffi::Player {
         if (progress - *self.as_ref().program_progress()).abs() > 0.000_01 {
             self.as_mut().set_program_progress(progress);
         }
+        let comment_events = self
+            .as_ref()
+            .rust()
+            .comment_events_rx
+            .try_iter()
+            .collect::<Vec<_>>();
+        let mut comments_changed = false;
+        let mut received_texts = Vec::new();
+        for event in comment_events {
+            match event {
+                CommentEvent::Status(status) => {
+                    self.as_mut().set_comment_status(QString::from(status))
+                }
+                CommentEvent::Comment {
+                    time,
+                    text,
+                    source,
+                    initial,
+                } => {
+                    if !initial {
+                        received_texts.push(text.clone());
+                    }
+                    let mut rust = self.as_mut().rust_mut();
+                    rust.comments.push_back((time, text, source));
+                    while rust.comments.len() > 200 {
+                        rust.comments.pop_front();
+                    }
+                    comments_changed = true;
+                }
+            }
+        }
+        if comments_changed {
+            let (times, texts, sources) = {
+                let player = self.as_ref();
+                let rust = player.rust();
+                (
+                    rust.comments
+                        .iter()
+                        .map(|item| QString::from(&item.0))
+                        .collect(),
+                    rust.comments
+                        .iter()
+                        .map(|item| QString::from(&item.1))
+                        .collect(),
+                    rust.comments
+                        .iter()
+                        .map(|item| QString::from(&item.2))
+                        .collect(),
+                )
+            };
+            self.as_mut().set_comment_times(times);
+            self.as_mut().set_comment_texts(texts);
+            self.as_mut().set_comment_sources(sources);
+        }
+        for text in received_texts {
+            self.as_mut().comment_received(QString::from(text));
+        }
     }
 
     pub fn refresh_channels(mut self: Pin<&mut Self>) {
@@ -418,6 +506,10 @@ impl ffi::Player {
                             .collect::<QStringList>();
                         player.as_mut().rust_mut().service_ids =
                             services.iter().map(|service| service.id).collect();
+                        player.as_mut().rust_mut().jikkyo_ids = services
+                            .iter()
+                            .map(|service| service.jikkyo_id.clone())
+                            .collect();
                         player.as_mut().set_services(labels);
                         player.as_mut().set_program_titles(program_titles);
                         player
@@ -481,6 +573,7 @@ impl ffi::Player {
                         if !*player.as_ref().playing() {
                             player.as_mut().set_status(QString::from("Ready"));
                         }
+                        player.as_mut().restart_comments();
                     }
                     Err(error) => player.as_mut().set_status(QString::from(error.to_string())),
                 }
@@ -540,6 +633,7 @@ impl ffi::Player {
         self.as_mut().set_channel_logo_url(QString::from(logo_url));
         self.as_mut().rust_mut().current_program_start = program_start;
         self.as_mut().rust_mut().current_program_duration = program_duration;
+        self.as_mut().restart_comments();
         self.as_mut().save_settings();
         self.play();
     }
@@ -575,6 +669,58 @@ impl ffi::Player {
                 .set_status(QString::from(format!("Could not save settings: {error}")));
         }
     }
+
+    fn restart_comments(mut self: Pin<&mut Self>) {
+        let current_id = self.as_ref().service_id().to_string().parse::<u64>().ok();
+        let jikkyo = current_id.and_then(|id| {
+            let index = self
+                .as_ref()
+                .rust()
+                .service_ids
+                .iter()
+                .position(|item| *item == id)?;
+            self.as_ref().rust().jikkyo_ids.get(index)?.clone()
+        });
+        if jikkyo.is_some() && self.as_ref().rust().active_jikkyo_id == jikkyo {
+            return;
+        }
+        let generation = self
+            .as_ref()
+            .rust()
+            .comment_generation
+            .fetch_add(1, Ordering::AcqRel)
+            + 1;
+        self.as_mut().rust_mut().active_jikkyo_id = jikkyo.clone();
+        self.as_mut().rust_mut().comments.clear();
+        self.as_mut().set_comment_times(QStringList::default());
+        self.as_mut().set_comment_texts(QStringList::default());
+        self.as_mut().set_comment_sources(QStringList::default());
+        let Some(channel_id) = jikkyo else {
+            self.as_mut()
+                .set_comment_status(QString::from("このチャンネルはコメントに対応していません"));
+            return;
+        };
+        let network = self
+            .as_ref()
+            .rust()
+            .network
+            .as_ref()
+            .map(|network| (network.handle(), network.client()));
+        let Some((handle, client)) = network else {
+            return;
+        };
+        self.as_mut()
+            .set_comment_status(QString::from("コメントに接続中…"));
+        let current_generation = self.as_ref().rust().comment_generation.clone();
+        let events = self.as_ref().rust().comment_events_tx.clone();
+        handle.spawn(crate::comments::receive(
+            client,
+            channel_id,
+            generation,
+            current_generation,
+            events,
+        ));
+    }
 }
 
 #[derive(Clone, Hash, PartialEq, Eq)]
@@ -599,6 +745,7 @@ struct Channel {
     program_duration: u64,
     network_id: u16,
     channel_type: String,
+    jikkyo_id: Option<String>,
 }
 
 struct GuideProgram {
@@ -747,6 +894,11 @@ fn build_channels(services: &[Service], programs: Vec<CurrentProgram>) -> Vec<Ch
                 program_duration: program.map_or(0, |program| program.duration),
                 network_id: service.network_id,
                 channel_type: service.channel.channel_type.clone(),
+                jikkyo_id: jikkyo_id(
+                    &service.channel.channel_type,
+                    service.service_id,
+                    &service.name,
+                ),
             }
         })
         .collect::<Vec<_>>();

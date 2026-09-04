@@ -1,3 +1,4 @@
+mod comments;
 mod epg;
 mod network;
 mod playback;

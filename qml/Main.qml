@@ -234,12 +234,63 @@ ApplicationWindow {
             }
         }
         Item {
-            anchors.fill: videoItem; visible: root.danmaku && player.playing; clip: true
-            Repeater {
-                model: ["大雨ほんと気をつけて！", "正木さんの天気予報たすかる", "メンディーきたーー！", "朝から元気出る番組", "この新作ティー飲んでみたい", "週末晴れますように"]
-                Label { required property int index; required property string modelData; x: parent.width * (.57 + index % 3 * .13); y: 90 + index * Math.max(54, (parent.height - 210) / 6); text: modelData; color: index === 2 ? "#d5d5d3" : root.ink; font.pixelSize: index === 2 ? 25 : 21; font.bold: true; style: Text.Outline; styleColor: "#c0000000" }
+            id: danmakuLayer; anchors.fill: videoItem; visible: root.danmaku && player.playing; clip: true
+            property var laneEntries: [null, null, null, null, null, null, null, null]
+            function selectLane(entry, speed) {
+                const startX = width + entry.implicitWidth
+                let earliestLane = 0
+                let earliestRight = Number.MAX_VALUE
+                for (let lane = 0; lane < laneEntries.length; ++lane) {
+                    const previous = laneEntries[lane]
+                    if (previous === null) {
+                        laneEntries[lane] = entry
+                        return lane
+                    }
+                    const previousRight = previous.x + previous.width
+                    const gap = startX - previousRight
+                    const catchesBeforeExit = speed > previous.motionSpeed
+                        && gap / (speed - previous.motionSpeed) < previousRight / previous.motionSpeed
+                    if (gap >= 24 && !catchesBeforeExit) {
+                        laneEntries[lane] = entry
+                        return lane
+                    }
+                    if (previousRight < earliestRight) {
+                        earliestRight = previousRight
+                        earliestLane = lane
+                    }
+                }
+                laneEntries[earliestLane] = entry
+                return earliestLane
+            }
+            function releaseLane(entry) {
+                if (entry.lane >= 0 && laneEntries[entry.lane] === entry)
+                    laneEntries[entry.lane] = null
             }
             Rectangle { x: 24; y: 24; width: 106; height: 38; radius: 19; color: "#b8171819"; Label { anchors.centerIn: parent; text: qsTr("弾幕  ON"); color: root.ink; font.weight: Font.DemiBold } }
+            Component { id: danmakuComment
+                Label { id: danmakuEntry; required property string commentText; property int lane: -1; property real motionSpeed: 0; text: commentText; width: implicitWidth; y: 76 + lane * Math.max(38, Math.min(58, (danmakuLayer.height - 180) / 8)); color: root.ink; font.pixelSize: 21; font.bold: true; style: Text.Outline; styleColor: "#d0000000"
+                    NumberAnimation { id: danmakuMotion; target: danmakuEntry; property: "x"; easing.type: Easing.Linear; onFinished: { danmakuLayer.releaseLane(danmakuEntry); danmakuEntry.destroy() } }
+                    Component.onCompleted: {
+                        const textWidth = implicitWidth
+                        const visibleDuration = 9000
+                        const visibleDistance = danmakuLayer.width + textWidth
+                        const pixelsPerMillisecond = visibleDistance / visibleDuration
+                        motionSpeed = pixelsPerMillisecond
+                        lane = danmakuLayer.selectLane(danmakuEntry, motionSpeed)
+                        danmakuMotion.from = danmakuLayer.width + textWidth
+                        danmakuMotion.to = -textWidth
+                        danmakuMotion.duration = Math.round((danmakuMotion.from - danmakuMotion.to) / pixelsPerMillisecond)
+                        x = danmakuMotion.from
+                        danmakuMotion.start()
+                    }
+                }
+            }
+        }
+        Connections { target: player
+            function onCommentReceived(text) {
+                if (!root.danmaku || !player.playing || text.length === 0) return
+                danmakuComment.createObject(danmakuLayer, { "commentText": text })
+            }
         }
     }
 
@@ -350,9 +401,16 @@ ApplicationWindow {
                 Label { Layout.fillWidth: true; text: qsTr("Mirakurunから取得した番組情報を表示しています"); color: "#929497"; font.pixelSize: 12; wrapMode: Text.Wrap }
             }
             ListView {
-                visible: root.panel === "comments"; Layout.fillWidth: true; Layout.fillHeight: true; clip: true
-                model: [["05:42:18", "雨すごいな、みんな気をつけて"], ["05:42:23", "正木さんの解説わかりやすい"], ["05:42:31", "メンディーきた！"], ["05:42:38", "この紅茶気になる"], ["05:42:44", "週末は晴れてほしいな"], ["05:42:51", "関西かなり降ってるね"]]
-                delegate: Item { required property var modelData; width: ListView.view.width; height: 78; Label { x: 0; y: 18; width: 72; text: modelData[0]; color: "#929497"; font.pixelSize: 11 } Label { x: 80; y: 15; width: parent.width - 80; text: modelData[1]; color: "#e5e5e4"; font.pixelSize: 14; wrapMode: Text.Wrap } Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: "#12ffffff" } }
+                id: commentList; visible: root.panel === "comments"; Layout.fillWidth: true; Layout.fillHeight: true; clip: true
+                model: player.commentTexts
+                onCountChanged: if (count > 0) positionViewAtEnd()
+                delegate: Item { required property int index; required property string modelData; width: ListView.view.width; height: Math.max(62, commentBody.implicitHeight + 28)
+                    Label { x: 0; y: 16; width: 62; text: index < player.commentTimes.length ? player.commentTimes[index] : ""; color: "#929497"; font.pixelSize: 10 }
+                    Label { id: commentBody; x: 70; y: 13; width: parent.width - 70; text: modelData; color: "#e5e5e4"; font.pixelSize: 14; wrapMode: Text.Wrap }
+                    Label { anchors.right: parent.right; anchors.bottom: parent.bottom; anchors.bottomMargin: 5; text: index < player.commentSources.length ? player.commentSources[index] : ""; color: root.muted; font.pixelSize: 9 }
+                    Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: "#12ffffff" }
+                }
+                Label { anchors.centerIn: parent; visible: commentList.count === 0; width: parent.width - 24; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap; text: player.commentStatus; color: root.muted; font.pixelSize: 13 }
             }
             Rectangle { visible: root.panel === "comments"; Layout.fillWidth: true; height: 58; radius: 20; color: root.raised; border.color: "#606163"; Label { anchors.left: parent.left; anchors.leftMargin: 18; anchors.verticalCenter: parent.verticalCenter; text: qsTr("コメントを入力…"); color: "#9fa0a2" } RoundAction { anchors.right: parent.right; anchors.rightMargin: 8; anchors.verticalCenter: parent.verticalCenter; iconSource: "../assets/icons/send.svg"; tip: qsTr("送信") } }
             Item { visible: root.panel === "channels"; Layout.fillWidth: true; Layout.fillHeight: true
