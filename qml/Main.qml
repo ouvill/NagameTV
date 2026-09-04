@@ -35,6 +35,7 @@ ApplicationWindow {
     property string guideType: "GR"
     property string channelPickerType: "GR"
     property double nowMs: Date.now()
+    property double lastChannelRefreshMs: 0
     readonly property bool panelOpen: panel === "program" || panel === "comments" || panel === "channels"
     readonly property bool overlayPinned: guideOpen || channelsOpen || settings.opened || playbackSettings.opened
 
@@ -73,6 +74,13 @@ ApplicationWindow {
     }
 
     function reveal() { overlayVisible = true; hideTimer.restart() }
+    function refreshChannelsIfDue(force) {
+        const now = Date.now()
+        if (!force && now - lastChannelRefreshMs < 60000) return
+        lastChannelRefreshMs = now
+        player.refreshChannels()
+    }
+    onPanelChanged: if (panel === "channels") refreshChannelsIfDue(false)
     onOverlayPinnedChanged: {
         if (!overlayPinned && player.playing) {
             overlayVisible = true
@@ -142,7 +150,7 @@ ApplicationWindow {
 
     Shortcut { sequence: "Space"; enabled: player.playing; onActivated: player.togglePause() }
     Shortcut { sequence: "F11"; onActivated: root.toggleFullscreen() }
-    Shortcut { sequence: "C"; onActivated: { channelsOpen = !channelsOpen; player.refreshChannels(); reveal() } }
+    Shortcut { sequence: "C"; onActivated: { channelsOpen = !channelsOpen; if (channelsOpen) refreshChannelsIfDue(false); reveal() } }
     Shortcut { sequence: "G"; onActivated: { guideOpen = !guideOpen; reveal() } }
     Shortcut { sequence: "PgUp"; onActivated: player.changeChannel(-1) }
     Shortcut { sequence: "PgDown"; onActivated: player.changeChannel(1) }
@@ -150,7 +158,7 @@ ApplicationWindow {
     Timer { id: hideTimer; interval: 3200; onTriggered: if (player.playing && !overlayPinned) overlayVisible = false }
     Timer { interval: 50; running: true; repeat: true; onTriggered: player.pollEvents() }
     Timer { interval: 30000; running: true; repeat: true; triggeredOnStart: true; onTriggered: root.nowMs = Date.now() }
-    Timer { interval: 60000; running: root.channelsOpen || root.panel === "channels"; repeat: true; onTriggered: player.refreshChannels() }
+    Timer { interval: 60000; running: root.channelsOpen || root.panel === "channels"; repeat: true; onTriggered: root.refreshChannelsIfDue(false) }
     onFrameSwapped: if (videoAttached && player.autoplay && !autoplayStarted) {
         autoplayStarted = true; Qt.callLater(function() { player.play() })
     }
@@ -397,7 +405,7 @@ ApplicationWindow {
                 RoundAction { iconSource: root.uiIcon("volume-2"); tip: qsTr("音量") }
                 Slider { Layout.preferredWidth: 132; from: 0; to: 100; value: player.volume; onMoved: player.volume = value; onPressedChanged: if (!pressed) player.saveSettings() }
                 Item { Layout.fillWidth: true }
-                RoundAction { iconSource: root.uiIcon("grid-2x2"); tip: qsTr("チャンネル"); onTriggered: { channelsOpen = true; player.refreshChannels(); reveal() } }
+                RoundAction { iconSource: root.uiIcon("grid-2x2"); tip: qsTr("チャンネル"); onTriggered: { channelsOpen = true; root.refreshChannelsIfDue(false); reveal() } }
                 RoundAction { iconSource: root.uiIcon("pencil"); tip: qsTr("コメント投稿") }
                 RoundAction { iconSource: root.uiIcon("captions"); tip: qsTr("字幕") }
                 RoundAction { iconSource: root.uiIcon("settings-2"); tip: qsTr("再生設定"); onTriggered: { playbackSettings.open(); root.reveal() } }
@@ -832,6 +840,6 @@ ApplicationWindow {
     Component.onCompleted: {
         videoAttached = player.attachVideoItem(videoItem)
         if (!videoAttached) return
-        player.refreshChannels(); hideTimer.start()
+        root.refreshChannelsIfDue(true); hideTimer.start()
     }
 }
