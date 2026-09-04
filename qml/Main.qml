@@ -50,6 +50,12 @@ ApplicationWindow {
         if (!types.some(option => option[0] === guideType)) guideType = types[0][0]
         if (!types.some(option => option[0] === channelPickerType)) channelPickerType = types[0][0]
     }
+    function channelIndices(channelType) {
+        const result = []
+        for (let i = 0; i < player.channelTypes.length; ++i)
+            if (player.channelTypes[i] === channelType) result.push(i)
+        return result
+    }
     Connections { target: player; function onChannelTypesChanged() { root.normalizeChannelTypes() } }
 
     function scrollGuideToNow() {
@@ -302,7 +308,7 @@ ApplicationWindow {
                 RoundAction { iconSource: root.uiIcon("captions"); tip: qsTr("字幕") }
                 RoundAction { iconSource: root.uiIcon("maximize"); tip: qsTr("全画面"); onTriggered: root.toggleFullscreen() }
                 Rectangle { width: 1; height: 28; color: "#28ffffff"; Layout.leftMargin: 4; Layout.rightMargin: 4; Layout.alignment: Qt.AlignVCenter }
-                RoundAction { iconSource: root.uiIcon("panel-right-open"); tip: qsTr("サイドパネル"); onTriggered: root.panel = root.panelOpen ? "" : "program" }
+                RoundAction { iconSource: root.uiIcon(root.panelOpen ? "panel-right-close" : "panel-right-open"); tip: root.panelOpen ? qsTr("サイドパネルを閉じる") : qsTr("サイドパネルを開く"); onTriggered: root.panel = root.panelOpen ? "" : "program" }
             }
         }
     }
@@ -350,17 +356,18 @@ ApplicationWindow {
             }
             Rectangle { visible: root.panel === "comments"; Layout.fillWidth: true; height: 58; radius: 20; color: root.raised; border.color: "#606163"; Label { anchors.left: parent.left; anchors.leftMargin: 18; anchors.verticalCenter: parent.verticalCenter; text: qsTr("コメントを入力…"); color: "#9fa0a2" } RoundAction { anchors.right: parent.right; anchors.rightMargin: 8; anchors.verticalCenter: parent.verticalCenter; iconSource: "../assets/icons/send.svg"; tip: qsTr("送信") } }
             Item { visible: root.panel === "channels"; Layout.fillWidth: true; Layout.fillHeight: true
-                ListView { id: sideChannelList; anchors.fill: parent; spacing: 12; clip: true; model: player.services; boundsBehavior: Flickable.DragAndOvershootBounds; boundsMovement: Flickable.FollowBoundsBehavior
-                    delegate: Rectangle { required property int index; required property string modelData; width: ListView.view.width; height: 132; radius: 14; color: modelData === player.channelName ? "#26302a" : root.raised; border.color: modelData === player.channelName ? root.accent : "#24ffffff"
+                BroadcastTabs { id: sideChannelTabs; anchors.top: parent.top; anchors.horizontalCenter: parent.horizontalCenter; value: root.channelPickerType; onSelected: function(channelType) { root.channelPickerType = channelType; sideChannelList.positionViewAtBeginning() } }
+                ListView { id: sideChannelList; anchors.left: parent.left; anchors.right: parent.right; anchors.top: sideChannelTabs.bottom; anchors.bottom: parent.bottom; anchors.topMargin: 14; spacing: 12; clip: true; model: root.channelIndices(root.channelPickerType); boundsBehavior: Flickable.DragAndOvershootBounds; boundsMovement: Flickable.FollowBoundsBehavior
+                    delegate: Rectangle { required property var modelData; readonly property int channelIndex: Number(modelData); readonly property string channelName: channelIndex < player.services.length ? player.services[channelIndex] : ""; width: ListView.view.width; height: 132; radius: 14; color: channelName === player.channelName ? "#26302a" : root.raised; border.color: channelName === player.channelName ? root.accent : "#24ffffff"
                         Column { anchors.fill: parent; anchors.margins: 14; spacing: 8
-                            Row { spacing: 8; Item { width: 56; height: 32; Image { id: channelCardLogo; anchors.fill: parent; source: index < player.channelLogoUrls.length ? player.channelLogoUrls[index] : ""; fillMode: Image.PreserveAspectFit; asynchronous: true } Label { anchors.centerIn: parent; visible: channelCardLogo.status !== Image.Ready; text: qsTr("局ロゴ"); color: root.muted; font.pixelSize: 9 } } Label { anchors.verticalCenter: parent.verticalCenter; text: modelData.replace(/^\d+\s+/, ""); color: root.ink; font.bold: true } }
-                            Label { width: parent.width; text: index < player.programTitles.length ? player.programTitles[index] : qsTr("番組情報なし"); color: root.ink; font.bold: true; elide: Text.ElideRight }
-                            Label { text: root.programTime(index); color: root.muted; font.pixelSize: 11 }
+                            Row { spacing: 8; Item { width: 56; height: 32; Image { id: channelCardLogo; anchors.fill: parent; source: channelIndex < player.channelLogoUrls.length ? player.channelLogoUrls[channelIndex] : ""; fillMode: Image.PreserveAspectFit; asynchronous: true } Label { anchors.centerIn: parent; visible: channelCardLogo.status !== Image.Ready; text: qsTr("局ロゴ"); color: root.muted; font.pixelSize: 9 } } Label { anchors.verticalCenter: parent.verticalCenter; text: channelName.replace(/^\d+\s+/, ""); color: root.ink; font.bold: true } }
+                            Label { width: parent.width; text: channelIndex < player.programTitles.length ? player.programTitles[channelIndex] : qsTr("番組情報なし"); color: root.ink; font.bold: true; elide: Text.ElideRight }
+                            Label { text: root.programTime(channelIndex); color: root.muted; font.pixelSize: 11 }
                         }
                         Rectangle { anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom; anchors.leftMargin: 14; anchors.rightMargin: 14; anchors.bottomMargin: 10; height: 3; radius: 2; color: "#32ffffff"
-                            Rectangle { width: parent.width * root.programProgressAt(index); height: parent.height; radius: parent.radius; color: root.accent }
+                            Rectangle { width: parent.width * root.programProgressAt(channelIndex); height: parent.height; radius: parent.radius; color: root.accent }
                         }
-                        MouseArea { anchors.fill: parent; onClicked: player.selectChannel(index) }
+                        MouseArea { anchors.fill: parent; onClicked: player.selectChannel(channelIndex) }
                     }
                 }
                 MouseArea {
