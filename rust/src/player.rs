@@ -26,6 +26,8 @@ pub mod ffi {
         #[qproperty(f64, comment_font_size, cxx_name = "commentFontSize")]
         #[qproperty(f64, comment_opacity, cxx_name = "commentOpacity")]
         #[qproperty(f64, comment_speed, cxx_name = "commentSpeed")]
+        #[qproperty(bool, subtitles_enabled, cxx_name = "subtitlesEnabled")]
+        #[qproperty(QString, subtitle_text, cxx_name = "subtitleText")]
         #[qproperty(bool, autoplay)]
         #[qproperty(QString, channel_name, cxx_name = "channelName")]
         #[qproperty(QString, program_name, cxx_name = "programName")]
@@ -139,6 +141,8 @@ pub struct PlayerRust {
     comment_font_size: f64,
     comment_opacity: f64,
     comment_speed: f64,
+    subtitles_enabled: bool,
+    subtitle_text: QString,
     autoplay: bool,
     channel_name: QString,
     program_name: QString,
@@ -211,6 +215,8 @@ impl Default for PlayerRust {
             comment_font_size: settings.comment_font_size,
             comment_opacity: settings.comment_opacity,
             comment_speed: settings.comment_speed,
+            subtitles_enabled: settings.subtitles_enabled,
+            subtitle_text: QString::default(),
             autoplay: std::env::var("MIRAKURUN_AUTOPLAY").is_ok_and(|value| value != "0"),
             channel_name: QString::default(),
             program_name: QString::default(),
@@ -341,6 +347,16 @@ impl ffi::Player {
                 playback.set_volume(volume);
             }
             self.as_mut().rust_mut().applied_volume = volume;
+        }
+        let subtitles = self
+            .as_ref()
+            .rust()
+            .playback
+            .as_ref()
+            .map(Playback::drain_subtitles)
+            .unwrap_or_default();
+        if let Some(text) = subtitles.last() {
+            self.as_mut().set_subtitle_text(QString::from(text));
         }
         let (start, duration) = {
             let player = self.as_ref();
@@ -663,6 +679,7 @@ impl ffi::Player {
             comment_font_size: (*self.as_ref().comment_font_size()).clamp(12.0, 48.0),
             comment_opacity: (*self.as_ref().comment_opacity()).clamp(0.1, 1.0),
             comment_speed: (*self.as_ref().comment_speed()).clamp(0.5, 2.0),
+            subtitles_enabled: *self.as_ref().subtitles_enabled(),
         };
         if let Err(error) = settings.save() {
             eprintln!("Could not save settings: {error}");

@@ -17,6 +17,7 @@ pub struct Settings {
     pub comment_font_size: f64,
     pub comment_opacity: f64,
     pub comment_speed: f64,
+    pub subtitles_enabled: bool,
 }
 
 impl Default for Settings {
@@ -29,6 +30,7 @@ impl Default for Settings {
             comment_font_size: 21.0,
             comment_opacity: 1.0,
             comment_speed: 1.0,
+            subtitles_enabled: false,
         }
     }
 }
@@ -161,6 +163,7 @@ mod tests {
             comment_font_size: 28.0,
             comment_opacity: 0.7,
             comment_speed: 1.25,
+            subtitles_enabled: true,
         };
         save_to(&path, &expected).unwrap();
         assert_eq!(load_from(&path).unwrap(), expected);

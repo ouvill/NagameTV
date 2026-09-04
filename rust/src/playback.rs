@@ -1,9 +1,12 @@
 use gst::prelude::*;
 use gstreamer as gst;
+use std::collections::VecDeque;
 use std::ffi::{c_char, c_void};
 use std::ptr;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 use thiserror::Error;
+
+use crate::subtitles::TsSubtitleExtractor;
 
 static PRELOADED: OnceLock<Mutex<Option<Playback>>> = OnceLock::new();
 
@@ -85,6 +88,7 @@ pub struct Playback {
     playbin: gst::Element,
     video_sink: gst::Element,
     video_attached: bool,
+    subtitles: Arc<Mutex<VecDeque<String>>>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -260,10 +264,37 @@ impl Playback {
             playbin.set_property("audio-sink", &audio_sink);
         }
         playbin.set_property("volume", 0.7_f64);
+        let subtitles = Arc::new(Mutex::new(VecDeque::new()));
+        let subtitle_extractor = Arc::new(Mutex::new(TsSubtitleExtractor::new()));
+        let extractor_for_source = subtitle_extractor.clone();
+        let subtitles_for_source = subtitles.clone();
+        playbin.connect("source-setup", false, move |values| {
+            let Some(source) = values
+                .get(1)
+                .and_then(|value| value.get::<gst::Element>().ok())
+            else {
+                return None;
+            };
+            let factory = source
+                .factory()
+                .map(|factory| factory.name().to_string())
+                .unwrap_or_else(|| source.type_().name().to_owned());
+            eprintln!("Attaching MPEG-TS subtitle extractor to {factory}");
+            if let Ok(mut extractor) = extractor_for_source.lock() {
+                *extractor = TsSubtitleExtractor::new();
+            }
+            attach_subtitle_probe(
+                &source,
+                extractor_for_source.clone(),
+                subtitles_for_source.clone(),
+            );
+            None
+        });
         Ok(Self {
             playbin,
             video_sink,
             video_attached: false,
+            subtitles,
         })
     }
 
@@ -330,6 +361,13 @@ impl Playback {
             })
     }
 
+    pub fn drain_subtitles(&self) -> Vec<String> {
+        self.subtitles
+            .lock()
+            .map(|mut queue| queue.drain(..).collect())
+            .unwrap_or_default()
+    }
+
     pub fn set_volume(&self, volume: f64) {
         self.playbin
             .set_property("volume", volume.clamp(0.0, 100.0) / 100.0);
@@ -361,6 +399,39 @@ impl Playback {
         }
         Ok(outcome)
     }
+}
+
+fn attach_subtitle_probe(
+    source: &gst::Element,
+    extractor: Arc<Mutex<TsSubtitleExtractor>>,
+    subtitles: Arc<Mutex<VecDeque<String>>>,
+) {
+    let Some(pad) = source.static_pad("src") else {
+        eprintln!("MPEG-TS subtitle extractor: source has no src pad");
+        return;
+    };
+    pad.add_probe(gst::PadProbeType::BUFFER, move |_, info| {
+        let Some(buffer) = info.buffer() else {
+            return gst::PadProbeReturn::Ok;
+        };
+        let Ok(data) = buffer.map_readable() else {
+            return gst::PadProbeReturn::Ok;
+        };
+        let texts = extractor
+            .lock()
+            .ok()
+            .map(|mut extractor| extractor.push(data.as_slice()))
+            .unwrap_or_default();
+        if !texts.is_empty()
+            && let Ok(mut queue) = subtitles.lock()
+        {
+            queue.extend(texts);
+            while queue.len() > 8 {
+                queue.pop_front();
+            }
+        }
+        gst::PadProbeReturn::Ok
+    });
 }
 
 impl Drop for Playback {

@@ -4,6 +4,7 @@ mod network;
 mod playback;
 mod player;
 mod settings;
+mod subtitles;
 
 use cxx_qt_lib::{QGuiApplication, QQmlApplicationEngine, QUrl};
 

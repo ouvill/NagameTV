@@ -78,7 +78,7 @@ sudo apt install build-essential cmake ninja-build rustc cargo \
   libmpv-dev qt6-wayland mpv gstreamer1.0-tools gstreamer1.0-qt6 \
   gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
   gstreamer1.0-plugins-bad gstreamer1.0-libav gstreamer1.0-gl gstreamer1.0-x \
-  libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
+  libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libaribb24-dev
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 ```
@@ -117,7 +117,6 @@ QT_QPA_PLATFORM=xcb ./build/mirakurun-viewer
 
 - 画面下部の`Channels`または`C`: Mirakurunから取得したチャンネル一覧を開く
 - `Page Up` / `Page Down`: 前後のチャンネルへ切り替える
-- `Space`: 一時停止・再開
 - `F11`: フルスクリーン切り替え
 
 チャンネルを選ぶと、再生プロセスを作り直さず同じGStreamerパイプラインのURIを

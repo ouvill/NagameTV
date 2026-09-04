@@ -167,10 +167,11 @@ ApplicationWindow {
         property url iconSource: ""
         property string tip: ""
         property bool primary: false
+        property bool active: false
         signal triggered()
         implicitWidth: 42; implicitHeight: 42; radius: 21
-        color: hover.containsMouse ? "#28ffffff" : (primary ? "#eeeeec" : "#17000000")
-        border.color: primary ? "#80ffffff" : "#16ffffff"
+        color: hover.containsMouse ? "#28ffffff" : (primary ? "#eeeeec" : (active ? "#389caf9f" : "#17000000"))
+        border.color: primary ? "#80ffffff" : (active ? root.accent : "#16ffffff")
         Image { anchors.centerIn: parent; width: 24; height: 24; source: action.iconSource; visible: action.iconSource.toString().length > 0; sourceSize.width: 24; sourceSize.height: 24 }
         MouseArea { id: hover; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: action.triggered() }
         ToolTip {
@@ -342,7 +343,25 @@ ApplicationWindow {
                 danmakuComment.createObject(danmakuLayer, { "commentText": text })
             }
         }
+        Item {
+            anchors.fill: danmakuLayer; z: 20
+            visible: player.playing && player.subtitlesEnabled && player.subtitleText.length > 0
+            Label {
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.bottom: parent.bottom
+                anchors.bottomMargin: controls.opacity > 0 ? 126 : 38
+                width: Math.min(parent.width * .82, 1040)
+                text: player.subtitleText
+                color: "white"; font.pixelSize: 28; font.bold: true
+                horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap
+                style: Text.Outline; styleColor: "#e0000000"
+                Behavior on anchors.bottomMargin { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
+            }
+        }
     }
+
+    Timer { id: subtitleClearTimer; interval: 7000; onTriggered: player.subtitleText = "" }
+    Connections { target: player; function onSubtitleTextChanged() { if (player.subtitleText.length > 0) subtitleClearTimer.restart(); else subtitleClearTimer.stop() } }
 
     Column {
         id: persistentProgramIdentity
@@ -405,7 +424,7 @@ ApplicationWindow {
                 Item { Layout.fillWidth: true }
                 RoundAction { iconSource: root.uiIcon("grid-2x2"); tip: qsTr("チャンネル"); onTriggered: { channelsOpen = true; root.refreshChannelsIfDue(false); reveal() } }
                 RoundAction { iconSource: root.uiIcon("pencil"); tip: qsTr("コメント投稿") }
-                RoundAction { iconSource: root.uiIcon("captions"); tip: qsTr("字幕") }
+                RoundAction { iconSource: root.uiIcon("captions"); tip: player.subtitlesEnabled ? qsTr("字幕を非表示") : qsTr("字幕を表示"); active: player.subtitlesEnabled; onTriggered: { player.subtitlesEnabled = !player.subtitlesEnabled; if (!player.subtitlesEnabled) player.subtitleText = ""; player.saveSettings() } }
                 RoundAction { iconSource: root.uiIcon("settings-2"); tip: qsTr("再生設定"); onTriggered: { playbackSettings.open(); root.reveal() } }
                 RoundAction { iconSource: root.uiIcon("maximize"); tip: qsTr("全画面"); onTriggered: root.toggleFullscreen() }
                 Rectangle { width: 1; height: 28; color: "#28ffffff"; Layout.leftMargin: 4; Layout.rightMargin: 4; Layout.alignment: Qt.AlignVCenter }
