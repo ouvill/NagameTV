@@ -1185,6 +1185,7 @@ dependencies = [
 name = "mirakurun-viewer"
 version = "0.2.0"
 dependencies = [
+ "cmake",
  "cxx",
  "cxx-qt",
  "cxx-qt-build",

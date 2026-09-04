@@ -36,6 +36,7 @@ ApplicationWindow {
     property string channelPickerType: "GR"
     property double nowMs: Date.now()
     property double lastChannelRefreshMs: 0
+    property var subtitleCue: null
     readonly property bool panelOpen: panel === "program" || panel === "comments" || panel === "channels"
     readonly property bool overlayPinned: guideOpen || channelsOpen || settings.opened || playbackSettings.opened
 
@@ -345,8 +346,45 @@ ApplicationWindow {
         }
         Item {
             anchors.fill: danmakuLayer; z: 20
-            visible: player.playing && player.subtitlesEnabled && player.subtitleText.length > 0
+            visible: player.playing && player.subtitlesEnabled
+                && (player.subtitleText.length > 0 || player.subtitleData.length > 0)
+            clip: true
+            Repeater {
+                model: root.subtitleCue && root.subtitleCue.cells ? root.subtitleCue.cells : []
+                delegate: Rectangle {
+                    id: subtitleCell
+                    required property var modelData
+                    readonly property real scaleX: parent.width / Math.max(1, root.subtitleCue.planeWidth)
+                    readonly property real scaleY: parent.height / Math.max(1, root.subtitleCue.planeHeight)
+                    x: modelData.x * scaleX
+                    y: modelData.y * scaleY
+                    width: Math.max(1, modelData.width * scaleX)
+                    height: Math.max(1, modelData.height * scaleY)
+                    color: modelData.background
+                    Label {
+                        id: subtitleGlyph
+                        anchors.centerIn: parent
+                        text: modelData.text
+                        color: modelData.foreground
+                        font.family: root.font.family
+                        font.pixelSize: Math.max(8, modelData.glyphHeight * subtitleCell.scaleY)
+                        font.bold: modelData.bold
+                        font.italic: modelData.italic
+                        font.underline: modelData.underline
+                        renderType: Text.NativeRendering
+                        style: modelData.stroked ? Text.Outline : Text.Normal
+                        styleColor: modelData.stroke
+                        transform: Scale {
+                            origin.x: subtitleGlyph.width / 2
+                            origin.y: subtitleGlyph.height / 2
+                            xScale: subtitleGlyph.implicitWidth > 0
+                                ? Math.min(1, modelData.glyphWidth * subtitleCell.scaleX / subtitleGlyph.implicitWidth) : 1
+                        }
+                    }
+                }
+            }
             Label {
+                visible: !root.subtitleCue || !root.subtitleCue.cells || root.subtitleCue.cells.length === 0
                 anchors.horizontalCenter: parent.horizontalCenter
                 anchors.bottom: parent.bottom
                 anchors.bottomMargin: controls.opacity > 0 ? 126 : 38
@@ -360,8 +398,28 @@ ApplicationWindow {
         }
     }
 
-    Timer { id: subtitleClearTimer; interval: 7000; onTriggered: player.subtitleText = "" }
-    Connections { target: player; function onSubtitleTextChanged() { if (player.subtitleText.length > 0) subtitleClearTimer.restart(); else subtitleClearTimer.stop() } }
+    Timer {
+        id: subtitleClearTimer
+        interval: 7000
+        onTriggered: { player.subtitleText = ""; player.subtitleData = ""; root.subtitleCue = null }
+    }
+    Connections {
+        target: player
+        function onSubtitleDataChanged() {
+            if (player.subtitleData.length === 0) {
+                root.subtitleCue = null
+                subtitleClearTimer.stop()
+                return
+            }
+            try {
+                root.subtitleCue = JSON.parse(player.subtitleData)
+                subtitleClearTimer.interval = Math.max(100, Math.min(60000, root.subtitleCue.durationMs || 7000))
+                subtitleClearTimer.restart()
+            } catch (error) {
+                console.warn("Could not parse subtitle regions:", error)
+            }
+        }
+    }
 
     Column {
         id: persistentProgramIdentity
@@ -424,7 +482,7 @@ ApplicationWindow {
                 Item { Layout.fillWidth: true }
                 RoundAction { iconSource: root.uiIcon("grid-2x2"); tip: qsTr("チャンネル"); onTriggered: { channelsOpen = true; root.refreshChannelsIfDue(false); reveal() } }
                 RoundAction { iconSource: root.uiIcon("pencil"); tip: qsTr("コメント投稿") }
-                RoundAction { iconSource: root.uiIcon("captions"); tip: player.subtitlesEnabled ? qsTr("字幕を非表示") : qsTr("字幕を表示"); active: player.subtitlesEnabled; onTriggered: { player.subtitlesEnabled = !player.subtitlesEnabled; if (!player.subtitlesEnabled) player.subtitleText = ""; player.saveSettings() } }
+                RoundAction { iconSource: root.uiIcon("captions"); tip: player.subtitlesEnabled ? qsTr("字幕を非表示") : qsTr("字幕を表示"); active: player.subtitlesEnabled; onTriggered: { player.subtitlesEnabled = !player.subtitlesEnabled; if (!player.subtitlesEnabled) { player.subtitleText = ""; player.subtitleData = ""; root.subtitleCue = null }; player.saveSettings() } }
                 RoundAction { iconSource: root.uiIcon("settings-2"); tip: qsTr("再生設定"); onTriggered: { playbackSettings.open(); root.reveal() } }
                 RoundAction { iconSource: root.uiIcon("maximize"); tip: qsTr("全画面"); onTriggered: root.toggleFullscreen() }
                 Rectangle { width: 1; height: 28; color: "#28ffffff"; Layout.leftMargin: 4; Layout.rightMargin: 4; Layout.alignment: Qt.AlignVCenter }

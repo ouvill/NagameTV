@@ -1,106 +1,9 @@
+mod decoder;
+mod model;
+
+use decoder::AribDecoder;
+pub use model::SubtitleCue;
 use std::collections::{HashMap, HashSet};
-use std::ffi::{c_char, c_void};
-use std::ptr;
-
-#[repr(C)]
-struct AribInstance {
-    _private: [u8; 0],
-}
-#[repr(C)]
-struct AribParser {
-    _private: [u8; 0],
-}
-#[repr(C)]
-struct AribDecoderOpaque {
-    _private: [u8; 0],
-}
-
-#[link(name = "aribb24")]
-unsafe extern "C" {
-    fn arib_instance_new(opaque: *mut c_void) -> *mut AribInstance;
-    fn arib_instance_destroy(instance: *mut AribInstance);
-    fn arib_get_parser(instance: *mut AribInstance) -> *mut AribParser;
-    fn arib_get_decoder(instance: *mut AribInstance) -> *mut AribDecoderOpaque;
-    fn arib_initialize_decoder_a_profile(decoder: *mut AribDecoderOpaque);
-    fn arib_finalize_decoder(decoder: *mut AribDecoderOpaque);
-    fn arib_parse_pes(parser: *mut AribParser, data: *const c_void, size: usize);
-    fn arib_parser_get_data(parser: *mut AribParser, size: *mut usize) -> *const u8;
-    fn arib_decode_buffer(
-        decoder: *mut AribDecoderOpaque,
-        data: *const u8,
-        size: usize,
-        output: *mut c_char,
-        output_size: usize,
-    ) -> usize;
-}
-
-pub struct AribDecoder {
-    instance: *mut AribInstance,
-    parser: *mut AribParser,
-    decoder: *mut AribDecoderOpaque,
-}
-
-// Access is serialized by Playback's Mutex; libaribb24 instances are not shared otherwise.
-unsafe impl Send for AribDecoder {}
-
-impl AribDecoder {
-    pub fn new() -> Option<Self> {
-        unsafe {
-            let instance = arib_instance_new(ptr::null_mut());
-            if instance.is_null() {
-                return None;
-            }
-            let parser = arib_get_parser(instance);
-            let decoder = arib_get_decoder(instance);
-            if parser.is_null() || decoder.is_null() {
-                arib_instance_destroy(instance);
-                return None;
-            }
-            arib_initialize_decoder_a_profile(decoder);
-            Some(Self {
-                instance,
-                parser,
-                decoder,
-            })
-        }
-    }
-
-    pub fn decode_pes(&mut self, pes: &[u8]) -> Option<String> {
-        unsafe {
-            arib_parse_pes(self.parser, pes.as_ptr().cast(), pes.len());
-            let mut parsed_size = 0;
-            let parsed = arib_parser_get_data(self.parser, &mut parsed_size);
-            if parsed.is_null() || parsed_size == 0 {
-                return None;
-            }
-            let mut output = vec![0_u8; 64 * 1024];
-            let written = arib_decode_buffer(
-                self.decoder,
-                parsed,
-                parsed_size,
-                output.as_mut_ptr().cast(),
-                output.len(),
-            );
-            if written == 0 || written > output.len() {
-                return None;
-            }
-            let text = String::from_utf8_lossy(&output[..written])
-                .trim_matches(char::from(0))
-                .trim()
-                .to_owned();
-            (!text.is_empty()).then_some(text)
-        }
-    }
-}
-
-impl Drop for AribDecoder {
-    fn drop(&mut self) {
-        unsafe {
-            arib_finalize_decoder(self.decoder);
-            arib_instance_destroy(self.instance);
-        }
-    }
-}
 
 /// Extracts ARIB caption PES packets directly from an MPEG-TS byte stream.
 /// GStreamer's tsdemux intentionally does not expose Japanese broadcast
@@ -126,7 +29,7 @@ impl TsSubtitleExtractor {
         }
     }
 
-    pub fn push(&mut self, data: &[u8]) -> Vec<String> {
+    pub fn push(&mut self, data: &[u8]) -> Vec<SubtitleCue> {
         self.bytes.extend_from_slice(data);
         let mut texts = Vec::new();
         loop {
@@ -150,7 +53,7 @@ impl TsSubtitleExtractor {
         texts
     }
 
-    fn handle_packet(&mut self, packet: &[u8], texts: &mut Vec<String>) {
+    fn handle_packet(&mut self, packet: &[u8], texts: &mut Vec<SubtitleCue>) {
         if packet.len() != 188 || packet[0] != 0x47 || packet[1] & 0x80 != 0 {
             return;
         }
@@ -275,7 +178,7 @@ impl TsSubtitleExtractor {
         }
     }
 
-    fn decode_pes(&mut self, pes: &[u8], texts: &mut Vec<String>) {
+    fn decode_pes(&mut self, pes: &[u8], texts: &mut Vec<SubtitleCue>) {
         if pes.len() < 9 || &pes[..3] != b"\0\0\x01" {
             return;
         }
@@ -286,14 +189,28 @@ impl TsSubtitleExtractor {
         if let Some(text) = self
             .decoder
             .as_mut()
-            .and_then(|decoder| decoder.decode_pes(&pes[payload_offset..]))
+            .and_then(|decoder| decoder.decode_pes(&pes[payload_offset..], pes_pts_ms(pes)))
         {
             texts.push(text);
         }
     }
 }
 
+fn pes_pts_ms(pes: &[u8]) -> i64 {
+    if pes.len() < 14 || pes[7] & 0x80 == 0 {
+        return i64::MIN;
+    }
+    let pts = (((pes[9] as u64 >> 1) & 0x07) << 30)
+        | ((pes[10] as u64) << 22)
+        | (((pes[11] as u64 >> 1) & 0x7f) << 15)
+        | ((pes[12] as u64) << 7)
+        | ((pes[13] as u64 >> 1) & 0x7f);
+    (pts / 90) as i64
+}
+
 fn is_caption_stream(descriptors: &[u8]) -> bool {
+    let mut component_tag = None;
+    let mut data_component_id = None;
     let mut pos = 0;
     while pos + 2 <= descriptors.len() {
         let tag = descriptors[pos];
@@ -302,13 +219,15 @@ fn is_caption_stream(descriptors: &[u8]) -> bool {
             break;
         }
         let value = &descriptors[pos + 2..pos + 2 + len];
-        // ARIB STD-B24 data_component_descriptor; 0x0008 is captions.
-        if tag == 0xfd && value.len() >= 2 && value[0] == 0 && value[1] == 8 {
-            return true;
+        if tag == 0x52 && !value.is_empty() {
+            component_tag = Some(value[0]);
+        } else if tag == 0xfd && value.len() >= 2 {
+            data_component_id = Some(u16::from_be_bytes([value[0], value[1]]));
         }
         pos += 2 + len;
     }
-    false
+    data_component_id == Some(0x0008)
+        && component_tag.is_some_and(|tag| (0x30..=0x37).contains(&tag))
 }
 
 #[cfg(test)]
@@ -328,6 +247,10 @@ mod tests {
         assert!(
             !extractor.subtitle_pids.is_empty(),
             "no ARIB caption stream was discovered"
+        );
+        assert!(
+            texts.iter().any(|cue| !cue.cells.is_empty()),
+            "caption had no positioned cells"
         );
         eprintln!("decoded {} subtitle screens", texts.len());
     }

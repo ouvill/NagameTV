@@ -28,6 +28,7 @@ pub mod ffi {
         #[qproperty(f64, comment_speed, cxx_name = "commentSpeed")]
         #[qproperty(bool, subtitles_enabled, cxx_name = "subtitlesEnabled")]
         #[qproperty(QString, subtitle_text, cxx_name = "subtitleText")]
+        #[qproperty(QString, subtitle_data, cxx_name = "subtitleData")]
         #[qproperty(bool, autoplay)]
         #[qproperty(QString, channel_name, cxx_name = "channelName")]
         #[qproperty(QString, program_name, cxx_name = "programName")]
@@ -143,6 +144,7 @@ pub struct PlayerRust {
     comment_speed: f64,
     subtitles_enabled: bool,
     subtitle_text: QString,
+    subtitle_data: QString,
     autoplay: bool,
     channel_name: QString,
     program_name: QString,
@@ -217,6 +219,7 @@ impl Default for PlayerRust {
             comment_speed: settings.comment_speed,
             subtitles_enabled: settings.subtitles_enabled,
             subtitle_text: QString::default(),
+            subtitle_data: QString::default(),
             autoplay: std::env::var("MIRAKURUN_AUTOPLAY").is_ok_and(|value| value != "0"),
             channel_name: QString::default(),
             program_name: QString::default(),
@@ -355,8 +358,16 @@ impl ffi::Player {
             .as_ref()
             .map(Playback::drain_subtitles)
             .unwrap_or_default();
-        if let Some(text) = subtitles.last() {
-            self.as_mut().set_subtitle_text(QString::from(text));
+        if let Some(cue) = subtitles.last() {
+            if cue.clear_screen {
+                self.as_mut().set_subtitle_text(QString::default());
+                self.as_mut().set_subtitle_data(QString::default());
+            } else {
+                self.as_mut().set_subtitle_text(QString::from(&cue.text));
+                if let Ok(data) = serde_json::to_string(cue) {
+                    self.as_mut().set_subtitle_data(QString::from(data));
+                }
+            }
         }
         let (start, duration) = {
             let player = self.as_ref();

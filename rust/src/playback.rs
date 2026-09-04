@@ -6,7 +6,7 @@ use std::ptr;
 use std::sync::{Arc, Mutex, OnceLock};
 use thiserror::Error;
 
-use crate::subtitles::TsSubtitleExtractor;
+use crate::subtitles::{SubtitleCue, TsSubtitleExtractor};
 
 static PRELOADED: OnceLock<Mutex<Option<Playback>>> = OnceLock::new();
 
@@ -88,7 +88,7 @@ pub struct Playback {
     playbin: gst::Element,
     video_sink: gst::Element,
     video_attached: bool,
-    subtitles: Arc<Mutex<VecDeque<String>>>,
+    subtitles: Arc<Mutex<VecDeque<SubtitleCue>>>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -361,7 +361,7 @@ impl Playback {
             })
     }
 
-    pub fn drain_subtitles(&self) -> Vec<String> {
+    pub fn drain_subtitles(&self) -> Vec<SubtitleCue> {
         self.subtitles
             .lock()
             .map(|mut queue| queue.drain(..).collect())
@@ -404,7 +404,7 @@ impl Playback {
 fn attach_subtitle_probe(
     source: &gst::Element,
     extractor: Arc<Mutex<TsSubtitleExtractor>>,
-    subtitles: Arc<Mutex<VecDeque<String>>>,
+    subtitles: Arc<Mutex<VecDeque<SubtitleCue>>>,
 ) {
     let Some(pad) = source.static_pad("src") else {
         eprintln!("MPEG-TS subtitle extractor: source has no src pad");
