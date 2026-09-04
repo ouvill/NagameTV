@@ -690,11 +690,17 @@ ApplicationWindow {
             const starts = player.guideStarts
             const durations = player.guideDurations
             const channels = player.guideChannelIndices
-            for (let i = 0; i < starts.length; ++i) {
+            const count = Math.min(starts.length, durations.length, channels.length)
+            for (let i = 0; i < count; ++i) {
                 const channelIndex = Number(channels[i])
                 const start = Number(starts[i])
                 const duration = Number(durations[i])
-                if (start < dayStart + 86400000
+                if (Number.isInteger(channelIndex)
+                        && channelIndex >= 0
+                        && channelIndex < result.length
+                        && Number.isFinite(start)
+                        && Number.isFinite(duration)
+                        && start < dayStart + 86400000
                         && start + duration > dayStart)
                     result[channelIndex].push(i)
             }
