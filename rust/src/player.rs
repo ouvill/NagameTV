@@ -372,7 +372,7 @@ impl ffi::Player {
             .map(Playback::drain_subtitles)
             .unwrap_or_default();
         if let Some(cue) = subtitles.last() {
-            if cue.clear_screen {
+            if cue.is_clear_only() {
                 self.as_mut().set_subtitle_text(QString::default());
                 self.as_mut().set_subtitle_data(QString::default());
             } else {
