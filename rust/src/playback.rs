@@ -279,7 +279,7 @@ impl Playback {
                 .factory()
                 .map(|factory| factory.name().to_string())
                 .unwrap_or_else(|| source.type_().name().to_owned());
-            eprintln!("Attaching MPEG-TS subtitle extractor to {factory}");
+            tracing::debug!(source = %factory, "Attaching MPEG-TS subtitle extractor");
             if let Ok(mut extractor) = extractor_for_source.lock() {
                 *extractor = TsSubtitleExtractor::new();
             }
@@ -407,7 +407,7 @@ fn attach_subtitle_probe(
     subtitles: Arc<Mutex<VecDeque<SubtitleCue>>>,
 ) {
     let Some(pad) = source.static_pad("src") else {
-        eprintln!("MPEG-TS subtitle extractor: source has no src pad");
+        tracing::warn!("MPEG-TS subtitle extractor source has no src pad");
         return;
     };
     pad.add_probe(gst::PadProbeType::BUFFER, move |_, info| {
@@ -437,10 +437,10 @@ fn attach_subtitle_probe(
 impl Drop for Playback {
     fn drop(&mut self) {
         if let Err(error) = self.playbin.set_state(gst::State::Null) {
-            eprintln!("Could not stop playback while dropping: {error}");
+            tracing::warn!(%error, "Could not stop playback while dropping");
         }
         if let Err(error) = self.video_sink.set_state(gst::State::Null) {
-            eprintln!("Could not stop the video sink while dropping: {error}");
+            tracing::warn!(%error, "Could not stop the video sink while dropping");
         }
         if self.video_attached {
             unsafe {

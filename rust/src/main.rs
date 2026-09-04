@@ -7,15 +7,17 @@ mod settings;
 mod subtitles;
 
 use cxx_qt_lib::{QGuiApplication, QQmlApplicationEngine, QUrl};
+use tracing_subscriber::EnvFilter;
 
 fn main() {
+    initialize_tracing();
     apply_temporary_xcb_workaround();
     cxx_qt::init_qml_module!("MirakurunViewer");
     player::ffi::configure_qt_quick_open_gl();
     let mut app = QGuiApplication::new();
 
     if let Err(error) = playback::preload() {
-        eprintln!("Could not initialize playback: {error}");
+        tracing::error!(%error, "Could not initialize playback");
         std::process::exit(1);
     }
 
@@ -26,6 +28,15 @@ fn main() {
     if let Some(app) = app.as_mut() {
         app.exec();
     }
+}
+
+fn initialize_tracing() {
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("warn"));
+    tracing_subscriber::fmt()
+        .with_env_filter(filter)
+        .with_target(false)
+        .compact()
+        .init();
 }
 
 fn apply_temporary_xcb_workaround() {
@@ -43,7 +54,7 @@ fn apply_temporary_xcb_workaround() {
             unsafe {
                 std::env::set_var("QT_QPA_PLATFORM", "xcb");
             }
-            eprintln!(
+            tracing::info!(
                 "Using the temporary xcb compatibility workaround for video rendering; \
                  set QT_QPA_PLATFORM=wayland explicitly to test the native Wayland path"
             );

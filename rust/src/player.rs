@@ -199,7 +199,7 @@ impl Default for PlayerRust {
         let (comment_events_tx, comment_events_rx) = mpsc::channel();
         let (epg_events_tx, epg_events_rx) = mpsc::channel();
         let mut settings = Settings::load().unwrap_or_else(|error| {
-            eprintln!("Could not load settings: {error}");
+            tracing::warn!(%error, "Could not load settings");
             Settings::default()
         });
         if let Ok(server) = std::env::var("MIRAKURUN_SERVER") {
@@ -859,7 +859,7 @@ impl ffi::Player {
             subtitles_enabled: *self.as_ref().subtitles_enabled(),
         };
         if let Err(error) = settings.save() {
-            eprintln!("Could not save settings: {error}");
+            tracing::warn!(%error, "Could not save settings");
             self.as_mut()
                 .set_status(QString::from(format!("Could not save settings: {error}")));
         }

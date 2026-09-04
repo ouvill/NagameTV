@@ -170,7 +170,10 @@ impl TsSubtitleExtractor {
                 let descriptors = &section[pos + 5..pos + 5 + info_len];
                 if stream_type == 0x06 && is_caption_stream(descriptors) {
                     if self.subtitle_pids.insert(elementary_pid) {
-                        eprintln!("ARIB subtitle stream detected (PID 0x{elementary_pid:04x})");
+                        tracing::debug!(
+                            pid = format_args!("0x{elementary_pid:04x}"),
+                            "ARIB subtitle stream detected"
+                        );
                     }
                 }
                 pos += 5 + info_len;
