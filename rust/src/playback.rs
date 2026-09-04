@@ -198,9 +198,18 @@ impl Playback {
                 .build(),
         );
 
+        // This bin owns format conversion when playbin's conversion is disabled.
+        let input_convert = gst::ElementFactory::make("videoconvert")
+            .name("video-input-convert")
+            .build()
+            .map_err(|source| PlaybackError::ElementCreation {
+                element: "videoconvert",
+                source,
+            })?;
         let video_output = gst::Bin::with_name("qt-video-output");
         video_output
             .add_many([
+                &input_convert,
                 &video_process,
                 &video_queue,
                 &gl_upload,
@@ -210,6 +219,7 @@ impl Playback {
             ])
             .map_err(PlaybackError::VideoOutputAssembly)?;
         gst::Element::link_many([
+            &input_convert,
             &video_process,
             &video_queue,
             &gl_upload,
@@ -218,7 +228,7 @@ impl Playback {
             &video_sink,
         ])
         .map_err(PlaybackError::VideoOutputLink)?;
-        let sink_pad = video_process
+        let sink_pad = input_convert
             .static_pad("sink")
             .ok_or(PlaybackError::MissingVideoSinkPad)?;
         let ghost_pad =
@@ -237,6 +247,18 @@ impl Playback {
                 element: "playbin3",
                 source,
             })?;
+        // Our sink bin owns deinterlacing and conversion; do not process the
+        // video through playbin's intermediate conversion/deinterlacing chain.
+        let flags = playbin.property_value("flags");
+        let flags_class = gst::glib::FlagsClass::with_type(flags.type_()).unwrap();
+        let flags = flags_class.unset_by_nick(flags, "deinterlace").unwrap();
+        let flags = flags_class.set_by_nick(flags, "native-video").unwrap();
+        let flags = flags_class
+            .unset_by_nick(flags, "soft-colorbalance")
+            .unwrap();
+        // ARIB captions are already extracted from TS and rendered by QML.
+        let flags = flags_class.unset_by_nick(flags, "text").unwrap();
+        playbin.set_property_from_value("flags", &flags);
         playbin.set_property("video-sink", &video_output);
         if std::env::var("MIRAKURUN_AUDIO_SINK").is_ok_and(|value| value == "fakesink") {
             let audio_sink = gst::ElementFactory::make("fakesink")
