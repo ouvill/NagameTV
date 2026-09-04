@@ -62,7 +62,18 @@ ApplicationWindow {
             if (player.channelTypes[i] === channelType) result.push(i)
         return result
     }
-    Connections { target: player; function onChannelTypesChanged() { root.normalizeChannelTypes() } }
+    Connections {
+        target: player
+        function onChannelTypesChanged() { root.normalizeChannelTypes() }
+        function onPlayingChanged() {
+            if (player.playing) {
+                root.reveal()
+            } else {
+                hideTimer.stop()
+                root.overlayVisible = true
+            }
+        }
+    }
 
     function scrollGuideToNow() {
         const position = 88 + (root.nowMs - guide.dayStart) / 60000 * guide.pixelsPerMinute
