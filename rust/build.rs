@@ -24,6 +24,8 @@ fn main() {
             .depend("QtQuick.Layouts"),
     )
     .qrc_resources([
+        "../assets/fonts/rounded-mplus-1m-arib.ttf",
+        "../assets/fonts/LICENSE-Rounded-Mplus-1m-for-ARIB.txt",
         "../assets/icons/calendar-days.svg",
         "../assets/icons/captions.svg",
         "../assets/icons/chevron-down.svg",

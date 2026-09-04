@@ -6,6 +6,7 @@ import MirakurunViewer 1.0
 
 ApplicationWindow {
     id: root
+    FontLoader { id: subtitleFont; source: "qrc:/qt/qml/MirakurunViewer/assets/fonts/rounded-mplus-1m-arib.ttf" }
     width: 1440; height: 900
     minimumWidth: 900; minimumHeight: 560
     visible: true
@@ -367,7 +368,8 @@ ApplicationWindow {
                         anchors.centerIn: parent
                         text: modelData.text
                         color: modelData.foreground
-                        font.family: root.font.family
+                        font.family: subtitleFont.status === FontLoader.Ready
+                            ? subtitleFont.name : "Noto Sans CJK JP"
                         font.pixelSize: Math.max(8, modelData.glyphHeight * subtitleCell.scaleY)
                         font.bold: modelData.bold
                         font.italic: modelData.italic

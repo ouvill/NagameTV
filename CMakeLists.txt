@@ -5,6 +5,7 @@ set(CARGO_TARGET_DIR "${CMAKE_BINARY_DIR}/cargo")
 set(CARGO_BINARY "${CARGO_TARGET_DIR}/release/mirakurun-viewer")
 set(OUTPUT_BINARY "${CMAKE_BINARY_DIR}/mirakurun-viewer")
 file(GLOB ICON_ASSETS CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/assets/icons/*.svg")
+file(GLOB FONT_ASSETS CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/assets/fonts/*")
 file(GLOB_RECURSE RUST_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_SOURCE_DIR}/rust/src/*.rs"
     "${CMAKE_SOURCE_DIR}/rust/src/*.h"
@@ -20,7 +21,7 @@ add_custom_command(
         .gitmodules third_party/libaribcaption/CMakeLists.txt
         ${RUST_SOURCES}
         qml/Main.qml
-        ${ICON_ASSETS} assets/icons/LICENSE-Lucide.txt
+        ${ICON_ASSETS} ${FONT_ASSETS} assets/icons/LICENSE-Lucide.txt
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     COMMENT "Building Rust/CXX-Qt Mirakurun Viewer"
     VERBATIM
