@@ -148,7 +148,6 @@ ApplicationWindow {
         return count
     }
 
-    Shortcut { sequence: "Space"; enabled: player.playing; onActivated: player.togglePause() }
     Shortcut { sequence: "F11"; onActivated: root.toggleFullscreen() }
     Shortcut { sequence: "C"; onActivated: { channelsOpen = !channelsOpen; if (channelsOpen) refreshChannelsIfDue(false); reveal() } }
     Shortcut { sequence: "G"; onActivated: { guideOpen = !guideOpen; reveal() } }
@@ -400,7 +399,6 @@ ApplicationWindow {
             ProgressBar { width: parent.width; height: 4; from: 0; to: 1; value: player.programProgress; background: Rectangle { implicitHeight: 3; radius: 2; color: "#42ffffff" } contentItem: Item { Rectangle { width: parent.width * player.programProgress; height: 3; radius: 2; color: "#e1e1df" } } }
             RowLayout {
                 width: parent.width; spacing: 12
-                RoundAction { iconSource: root.uiIcon(player.playing ? "pause" : "play"); primary: true; tip: player.playing ? qsTr("一時停止") : qsTr("再生"); onTriggered: player.playing ? player.togglePause() : player.play() }
                 RoundAction { iconSource: root.uiIcon("square"); tip: qsTr("停止"); onTriggered: player.stop() }
                 RoundAction { iconSource: root.uiIcon("volume-2"); tip: qsTr("音量") }
                 Slider { Layout.preferredWidth: 132; from: 0; to: 100; value: player.volume; onMoved: player.volume = value; onPressedChanged: if (!pressed) player.saveSettings() }

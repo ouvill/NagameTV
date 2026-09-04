@@ -66,9 +66,6 @@ pub mod ffi {
         #[qinvokable]
         fn stop(self: Pin<&mut Player>);
         #[qinvokable]
-        #[cxx_name = "togglePause"]
-        fn toggle_pause(self: Pin<&mut Player>);
-        #[qinvokable]
         #[cxx_name = "pollEvents"]
         fn poll_events(self: Pin<&mut Player>);
         #[qinvokable]
@@ -170,7 +167,6 @@ pub struct PlayerRust {
     comment_status: QString,
     current_program_start: u64,
     current_program_duration: u64,
-    paused: bool,
     applied_volume: f64,
     service_ids: Vec<u64>,
     jikkyo_ids: Vec<Option<String>>,
@@ -243,7 +239,6 @@ impl Default for PlayerRust {
             comment_status: QString::from("チャンネルを選択してください"),
             current_program_start: 0,
             current_program_duration: 0,
-            paused: false,
             // Force the first event poll to apply a persisted non-default volume.
             applied_volume: -1.0,
             service_ids: Vec::new(),
@@ -296,7 +291,6 @@ impl ffi::Player {
             };
         match result {
             Ok(()) => {
-                self.as_mut().rust_mut().paused = false;
                 self.as_mut().set_playing(true);
                 self.as_mut().set_status(QString::from("Connecting..."));
             }
@@ -314,31 +308,8 @@ impl ffi::Player {
             .and_then(|playback| playback.stop().map_err(Into::into));
         match result {
             Ok(()) => {
-                self.as_mut().rust_mut().paused = false;
                 self.as_mut().set_playing(false);
                 self.as_mut().set_status(QString::from("Stopped"));
-            }
-            Err(error) => self.as_mut().set_status(QString::from(error.to_string())),
-        }
-    }
-
-    pub fn toggle_pause(mut self: Pin<&mut Self>) {
-        if !*self.as_ref().playing() {
-            return;
-        }
-        let paused = !self.as_ref().rust().paused;
-        let result = self
-            .as_ref()
-            .rust()
-            .playback
-            .as_ref()
-            .ok_or(PlayerError::PlaybackUnavailable)
-            .and_then(|playback| playback.set_paused(paused).map_err(Into::into));
-        match result {
-            Ok(()) => {
-                self.as_mut().rust_mut().paused = paused;
-                self.as_mut()
-                    .set_status(QString::from(if paused { "Paused" } else { "Playing" }));
             }
             Err(error) => self.as_mut().set_status(QString::from(error.to_string())),
         }
@@ -356,12 +327,10 @@ impl ffi::Player {
             Ok(PlaybackEvent::None) => {}
             Ok(PlaybackEvent::Playing) => self.as_mut().set_status(QString::from("Playing")),
             Ok(PlaybackEvent::Ended) => {
-                self.as_mut().rust_mut().paused = false;
                 self.as_mut().set_playing(false);
                 self.as_mut().set_status(QString::from("Stream ended"));
             }
             Err(error) => {
-                self.as_mut().rust_mut().paused = false;
                 self.as_mut().set_playing(false);
                 self.as_mut().set_status(QString::from(error.to_string()));
             }

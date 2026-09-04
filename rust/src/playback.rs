@@ -330,25 +330,6 @@ impl Playback {
             })
     }
 
-    pub fn set_paused(&self, paused: bool) -> Result<(), PlaybackError> {
-        let state = if paused {
-            gst::State::Paused
-        } else {
-            gst::State::Playing
-        };
-        self.playbin
-            .set_state(state)
-            .map(|_| ())
-            .map_err(|source| PlaybackError::StateChange {
-                operation: if paused {
-                    "pause playback"
-                } else {
-                    "resume playback"
-                },
-                source,
-            })
-    }
-
     pub fn set_volume(&self, volume: f64) {
         self.playbin
             .set_property("volume", volume.clamp(0.0, 100.0) / 100.0);
