@@ -588,7 +588,7 @@ struct Channel {
     id: u64,
     has_logo_data: bool,
     label: String,
-    remote_key: u16,
+    channel_number: u16,
     channel_priority: u8,
     service_id: u16,
     physical_channel: String,
@@ -701,6 +701,12 @@ fn build_channels(services: &[Service], programs: Vec<CurrentProgram>) -> Vec<Ch
         .filter(|service| service.service_type == 1)
         .map(|service| {
             let remote_key = service.remote_control_key_id.unwrap_or(0);
+            let is_terrestrial = service.channel.channel_type == "GR";
+            let channel_number = if is_terrestrial {
+                remote_key
+            } else {
+                service.service_id
+            };
             let channel_priority = match service.channel.channel_type.as_str() {
                 "GR" => 0,
                 "BS" => 1,
@@ -712,12 +718,14 @@ fn build_channels(services: &[Service], programs: Vec<CurrentProgram>) -> Vec<Ch
             Channel {
                 id: service.id,
                 has_logo_data: service.has_logo_data,
-                label: if remote_key == 0 {
+                label: if is_terrestrial && remote_key == 0 {
                     format!("--   {}", service.name)
-                } else {
+                } else if is_terrestrial {
                     format!("{remote_key:02}   {}", service.name)
+                } else {
+                    format!("{:03}   {}", service.service_id, service.name)
                 },
-                remote_key,
+                channel_number,
                 channel_priority,
                 service_id: service.service_id,
                 physical_channel: format!(
@@ -745,15 +753,15 @@ fn build_channels(services: &[Service], programs: Vec<CurrentProgram>) -> Vec<Ch
     channels.sort_by(|a, b| {
         (
             a.channel_priority,
-            a.remote_key == 0,
-            a.remote_key,
+            a.channel_number == 0,
+            a.channel_number,
             &a.label,
             a.service_id,
         )
             .cmp(&(
                 b.channel_priority,
-                b.remote_key == 0,
-                b.remote_key,
+                b.channel_number == 0,
+                b.channel_number,
                 &b.label,
                 b.service_id,
             ))
