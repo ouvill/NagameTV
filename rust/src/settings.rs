@@ -13,6 +13,10 @@ pub struct Settings {
     pub server: String,
     pub service_id: String,
     pub volume: f64,
+    pub danmaku_enabled: bool,
+    pub comment_font_size: f64,
+    pub comment_opacity: f64,
+    pub comment_speed: f64,
 }
 
 impl Default for Settings {
@@ -21,6 +25,10 @@ impl Default for Settings {
             server: "http://127.0.0.1:40772".to_owned(),
             service_id: String::new(),
             volume: 70.0,
+            danmaku_enabled: false,
+            comment_font_size: 21.0,
+            comment_opacity: 1.0,
+            comment_speed: 1.0,
         }
     }
 }
@@ -89,7 +97,18 @@ fn load_from(path: &Path) -> Result<Settings, SettingsError> {
     } else {
         Settings::default().volume
     };
+    settings.comment_font_size = finite_clamped(settings.comment_font_size, 12.0, 48.0, 21.0);
+    settings.comment_opacity = finite_clamped(settings.comment_opacity, 0.1, 1.0, 1.0);
+    settings.comment_speed = finite_clamped(settings.comment_speed, 0.5, 2.0, 1.0);
     Ok(settings)
+}
+
+fn finite_clamped(value: f64, minimum: f64, maximum: f64, fallback: f64) -> f64 {
+    if value.is_finite() {
+        value.clamp(minimum, maximum)
+    } else {
+        fallback
+    }
 }
 
 fn save_to(path: &Path, settings: &Settings) -> Result<(), SettingsError> {
@@ -138,6 +157,10 @@ mod tests {
             server: "http://mirakurun:40772".to_owned(),
             service_id: "3203246080".to_owned(),
             volume: 42.5,
+            danmaku_enabled: true,
+            comment_font_size: 28.0,
+            comment_opacity: 0.7,
+            comment_speed: 1.25,
         };
         save_to(&path, &expected).unwrap();
         assert_eq!(load_from(&path).unwrap(), expected);
@@ -151,6 +174,8 @@ mod tests {
         let settings = load_from(&path).unwrap();
         assert_eq!(settings.server, "http://example.test:40772");
         assert_eq!(settings.volume, 70.0);
+        assert!(!settings.danmaku_enabled);
+        assert_eq!(settings.comment_font_size, 21.0);
         let _ = fs::remove_file(path);
     }
 }

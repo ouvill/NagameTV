@@ -22,6 +22,10 @@ pub mod ffi {
         #[qproperty(QString, status)]
         #[qproperty(bool, playing)]
         #[qproperty(f64, volume)]
+        #[qproperty(bool, danmaku_enabled, cxx_name = "danmakuEnabled")]
+        #[qproperty(f64, comment_font_size, cxx_name = "commentFontSize")]
+        #[qproperty(f64, comment_opacity, cxx_name = "commentOpacity")]
+        #[qproperty(f64, comment_speed, cxx_name = "commentSpeed")]
         #[qproperty(bool, autoplay)]
         #[qproperty(QString, channel_name, cxx_name = "channelName")]
         #[qproperty(QString, program_name, cxx_name = "programName")]
@@ -132,6 +136,10 @@ pub struct PlayerRust {
     status: QString,
     playing: bool,
     volume: f64,
+    danmaku_enabled: bool,
+    comment_font_size: f64,
+    comment_opacity: f64,
+    comment_speed: f64,
     autoplay: bool,
     channel_name: QString,
     program_name: QString,
@@ -200,6 +208,10 @@ impl Default for PlayerRust {
             status: QString::from(status),
             playing: false,
             volume: settings.volume,
+            danmaku_enabled: settings.danmaku_enabled,
+            comment_font_size: settings.comment_font_size,
+            comment_opacity: settings.comment_opacity,
+            comment_speed: settings.comment_speed,
             autoplay: std::env::var("MIRAKURUN_AUTOPLAY").is_ok_and(|value| value != "0"),
             channel_name: QString::default(),
             program_name: QString::default(),
@@ -662,6 +674,10 @@ impl ffi::Player {
             server: self.as_ref().server().to_string(),
             service_id: self.as_ref().service_id().to_string(),
             volume: (*self.as_ref().volume()).clamp(0.0, 100.0),
+            danmaku_enabled: *self.as_ref().danmaku_enabled(),
+            comment_font_size: (*self.as_ref().comment_font_size()).clamp(12.0, 48.0),
+            comment_opacity: (*self.as_ref().comment_opacity()).clamp(0.1, 1.0),
+            comment_speed: (*self.as_ref().comment_speed()).clamp(0.5, 2.0),
         };
         if let Err(error) = settings.save() {
             eprintln!("Could not save settings: {error}");

@@ -23,7 +23,10 @@ ApplicationWindow {
     property string panel: ""
     property bool guideOpen: false
     property bool channelsOpen: false
-    property bool danmaku: false
+    property alias danmaku: player.danmakuEnabled
+    property alias commentFontSize: player.commentFontSize
+    property alias commentOpacity: player.commentOpacity
+    property alias commentSpeed: player.commentSpeed
     property bool overlayVisible: true
     property bool videoAttached: false
     property bool autoplayStarted: false
@@ -33,7 +36,7 @@ ApplicationWindow {
     property string channelPickerType: "GR"
     property double nowMs: Date.now()
     readonly property bool panelOpen: panel === "program" || panel === "comments" || panel === "channels"
-    readonly property bool overlayPinned: panelOpen || guideOpen || channelsOpen || settings.opened
+    readonly property bool overlayPinned: guideOpen || channelsOpen || settings.opened
 
     Player { id: player }
 
@@ -70,6 +73,12 @@ ApplicationWindow {
     }
 
     function reveal() { overlayVisible = true; hideTimer.restart() }
+    onOverlayPinnedChanged: {
+        if (!overlayPinned && player.playing) {
+            overlayVisible = true
+            hideTimer.restart()
+        }
+    }
     function scrollOneStep(view, event, horizontal, step) {
         const delta = event.angleDelta.y || event.angleDelta.x
         if (delta === 0) return
@@ -234,8 +243,22 @@ ApplicationWindow {
             }
         }
         Item {
-            id: danmakuLayer; anchors.fill: videoItem; visible: root.danmaku && player.playing; clip: true
+            id: danmakuLayer
+            width: videoItem.width
+            height: Math.min(videoItem.height, width * 9 / 16)
+            anchors.horizontalCenter: videoItem.horizontalCenter
+            anchors.verticalCenter: videoItem.verticalCenter
+            visible: root.danmaku && player.playing
+            clip: true
             property var laneEntries: [null, null, null, null, null, null, null, null]
+            readonly property bool titleOverlapsVideo: persistentProgramIdentity.visible
+                && persistentProgramIdentity.y < videoItem.y + y + height
+                && persistentProgramIdentity.y + persistentProgramIdentity.height > videoItem.y + y
+            readonly property real titleBottomInVideo: persistentProgramIdentity.y
+                + persistentProgramIdentity.height - videoItem.y - y
+            readonly property real laneTop: titleOverlapsVideo
+                ? Math.max(40, Math.min(height * .4, titleBottomInVideo + 16)) : 40
+            readonly property real laneSpacing: Math.max(30, Math.min(58, (height - laneTop - 50) / 8))
             function selectLane(entry, speed) {
                 const startX = width + entry.implicitWidth
                 let earliestLane = 0
@@ -266,13 +289,13 @@ ApplicationWindow {
                 if (entry.lane >= 0 && laneEntries[entry.lane] === entry)
                     laneEntries[entry.lane] = null
             }
-            Rectangle { x: 24; y: 24; width: 106; height: 38; radius: 19; color: "#b8171819"; Label { anchors.centerIn: parent; text: qsTr("弾幕  ON"); color: root.ink; font.weight: Font.DemiBold } }
             Component { id: danmakuComment
-                Label { id: danmakuEntry; required property string commentText; property int lane: -1; property real motionSpeed: 0; text: commentText; width: implicitWidth; y: 76 + lane * Math.max(38, Math.min(58, (danmakuLayer.height - 180) / 8)); color: root.ink; font.pixelSize: 21; font.bold: true; style: Text.Outline; styleColor: "#d0000000"
+                Label { id: danmakuEntry; required property string commentText; property int lane: -1; property real motionSpeed: 0; text: commentText; width: implicitWidth; y: danmakuLayer.laneTop + lane * danmakuLayer.laneSpacing; color: root.ink; opacity: root.commentOpacity; font.pixelSize: root.commentFontSize; font.bold: true; style: Text.Outline; styleColor: "#d0000000"
+                    Behavior on y { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
                     NumberAnimation { id: danmakuMotion; target: danmakuEntry; property: "x"; easing.type: Easing.Linear; onFinished: { danmakuLayer.releaseLane(danmakuEntry); danmakuEntry.destroy() } }
                     Component.onCompleted: {
                         const textWidth = implicitWidth
-                        const visibleDuration = 9000
+                        const visibleDuration = 9000 / root.commentSpeed
                         const visibleDistance = danmakuLayer.width + textWidth
                         const pixelsPerMillisecond = visibleDistance / visibleDuration
                         motionSpeed = pixelsPerMillisecond
@@ -383,7 +406,15 @@ ApplicationWindow {
                 RoundAction { iconSource: root.uiIcon("panel-right-close"); tip: qsTr("折りたたむ"); onTriggered: root.panel = "" }
                 Label { text: root.panel === "comments" ? qsTr("コメント") : (root.panel === "channels" ? qsTr("チャンネル") : qsTr("番組情報")); color: root.ink; font.pixelSize: 17; font.bold: true }
                 Item { Layout.fillWidth: true }
-                Rectangle { visible: root.panel === "comments"; width: 88; height: 36; radius: 18; color: root.danmaku ? "#30ffffff" : "#12ffffff"; border.color: root.danmaku ? "#8fffffff" : "#22ffffff"; Row { anchors.centerIn: parent; spacing: 7; Label { text: qsTr("弾幕"); color: root.danmaku ? root.ink : root.muted; font.pixelSize: 13 } Rectangle { width: 18; height: 18; radius: 9; color: root.danmaku ? root.accent : "#626365" } } MouseArea { anchors.fill: parent; onClicked: root.danmaku = !root.danmaku } }
+                Rectangle { visible: root.panel === "comments"; width: 88; height: 36; radius: 18; color: root.danmaku ? "#30ffffff" : "#12ffffff"; border.color: root.danmaku ? "#8fffffff" : "#22ffffff"; Row { anchors.centerIn: parent; spacing: 7; Label { text: qsTr("弾幕"); color: root.danmaku ? root.ink : root.muted; font.pixelSize: 13 } Rectangle { width: 18; height: 18; radius: 9; color: root.danmaku ? root.accent : "#626365" } } MouseArea { anchors.fill: parent; onClicked: { root.danmaku = !root.danmaku; player.saveSettings() } } }
+            }
+            ColumnLayout { visible: root.panel === "comments"; Layout.fillWidth: true; spacing: 2
+                RowLayout { Layout.fillWidth: true; Label { text: qsTr("文字サイズ"); color: root.muted; font.pixelSize: 11 } Item { Layout.fillWidth: true } Label { text: Math.round(root.commentFontSize) + " px"; color: root.ink; font.pixelSize: 11 } }
+                Slider { Layout.fillWidth: true; from: 14; to: 36; stepSize: 1; value: root.commentFontSize; onMoved: root.commentFontSize = value; onPressedChanged: if (!pressed) player.saveSettings() }
+                RowLayout { Layout.fillWidth: true; Label { text: qsTr("不透明度"); color: root.muted; font.pixelSize: 11 } Item { Layout.fillWidth: true } Label { text: Math.round(root.commentOpacity * 100) + "%"; color: root.ink; font.pixelSize: 11 } }
+                Slider { Layout.fillWidth: true; from: .2; to: 1; stepSize: .05; value: root.commentOpacity; onMoved: root.commentOpacity = value; onPressedChanged: if (!pressed) player.saveSettings() }
+                RowLayout { Layout.fillWidth: true; Label { text: qsTr("速度"); color: root.muted; font.pixelSize: 11 } Item { Layout.fillWidth: true } Label { text: root.commentSpeed.toFixed(1) + "×"; color: root.ink; font.pixelSize: 11 } }
+                Slider { Layout.fillWidth: true; from: .5; to: 2; stepSize: .1; value: root.commentSpeed; onMoved: root.commentSpeed = value; onPressedChanged: if (!pressed) player.saveSettings() }
             }
             ColumnLayout {
                 visible: root.panel === "program"; Layout.fillWidth: true; spacing: 13
