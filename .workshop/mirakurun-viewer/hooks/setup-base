@@ -19,6 +19,7 @@ apt-get install --yes --no-install-recommends \
   libgstreamer-plugins-base1.0-dev \
   libgstreamer1.0-dev \
   libmpv-dev \
+  libqt6svg6 \
   mesa-utils \
   imagemagick \
   ninja-build \

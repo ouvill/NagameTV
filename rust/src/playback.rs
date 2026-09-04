@@ -245,6 +245,19 @@ impl Playback {
             audio_sink.set_property("enable-last-sample", false);
             audio_sink.set_property("sync", true);
             playbin.set_property("audio-sink", &audio_sink);
+        } else if std::env::var_os("PULSE_SERVER").is_some() {
+            // Workshop exposes host audio through a PulseAudio TCP endpoint, but no
+            // PipeWire socket or ALSA device.  Letting autoaudiosink probe those
+            // unavailable backends can make playbin3 rebuild its output while it is
+            // being configured.  Select the known working transport directly.
+            let audio_sink = gst::ElementFactory::make("pulsesink")
+                .name("pulse-audio-sink")
+                .build()
+                .map_err(|source| PlaybackError::ElementCreation {
+                    element: "PulseAudio sink",
+                    source,
+                })?;
+            playbin.set_property("audio-sink", &audio_sink);
         }
         playbin.set_property("volume", 0.7_f64);
         Ok(Self {

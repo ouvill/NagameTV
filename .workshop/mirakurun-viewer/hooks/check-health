@@ -33,6 +33,11 @@ if [[ ! -f /usr/lib/x86_64-linux-gnu/qt6/plugins/platforms/libqwayland-egl.so ]]
   missing+=("Qt6:wayland-egl")
 fi
 
+if [[ ! -f /usr/lib/x86_64-linux-gnu/qt6/plugins/imageformats/libqsvg.so ]] &&
+   [[ ! -f /usr/lib/aarch64-linux-gnu/qt6/plugins/imageformats/libqsvg.so ]]; then
+  missing+=("Qt6:imageformats-svg")
+fi
+
 if ((${#missing[@]} > 0)); then
   workshopctl set-health error "Missing Mirakurun Viewer dependencies: ${missing[*]}"
   exit 1

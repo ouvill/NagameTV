@@ -26,11 +26,23 @@ pub mod ffi {
         #[qproperty(QString, channel_name, cxx_name = "channelName")]
         #[qproperty(QString, program_name, cxx_name = "programName")]
         #[qproperty(QString, program_description, cxx_name = "programDescription")]
+        #[qproperty(QString, channel_logo_url, cxx_name = "channelLogoUrl")]
         #[qproperty(f64, program_progress, cxx_name = "programProgress")]
         #[qproperty(QStringList, services)]
         #[qproperty(QStringList, program_titles, cxx_name = "programTitles")]
+        #[qproperty(QStringList, program_descriptions, cxx_name = "programDescriptions")]
         #[qproperty(QStringList, program_starts, cxx_name = "programStarts")]
         #[qproperty(QStringList, program_durations, cxx_name = "programDurations")]
+        #[qproperty(QStringList, channel_logo_urls, cxx_name = "channelLogoUrls")]
+        #[qproperty(QStringList, channel_types, cxx_name = "channelTypes")]
+        #[qproperty(QString, guide_start, cxx_name = "guideStart")]
+        #[qproperty(QStringList, guide_program_ids, cxx_name = "guideProgramIds")]
+        #[qproperty(QStringList, guide_channel_indices, cxx_name = "guideChannelIndices")]
+        #[qproperty(QStringList, guide_titles, cxx_name = "guideTitles")]
+        #[qproperty(QStringList, guide_descriptions, cxx_name = "guideDescriptions")]
+        #[qproperty(QStringList, guide_starts, cxx_name = "guideStarts")]
+        #[qproperty(QStringList, guide_durations, cxx_name = "guideDurations")]
+        #[qproperty(QStringList, guide_genres, cxx_name = "guideGenres")]
         type Player = super::PlayerRust;
 
         #[qinvokable]
@@ -114,11 +126,25 @@ pub struct PlayerRust {
     channel_name: QString,
     program_name: QString,
     program_description: QString,
+    channel_logo_url: QString,
     program_progress: f64,
     services: QStringList,
     program_titles: QStringList,
+    program_descriptions: QStringList,
     program_starts: QStringList,
     program_durations: QStringList,
+    channel_logo_urls: QStringList,
+    channel_types: QStringList,
+    guide_start: QString,
+    guide_program_ids: QStringList,
+    guide_channel_indices: QStringList,
+    guide_titles: QStringList,
+    guide_descriptions: QStringList,
+    guide_starts: QStringList,
+    guide_durations: QStringList,
+    guide_genres: QStringList,
+    current_program_start: u64,
+    current_program_duration: u64,
     paused: bool,
     applied_volume: f64,
     service_ids: Vec<u64>,
@@ -157,11 +183,25 @@ impl Default for PlayerRust {
             channel_name: QString::default(),
             program_name: QString::default(),
             program_description: QString::default(),
+            channel_logo_url: QString::default(),
             program_progress: 0.0,
             services: QStringList::default(),
             program_titles: QStringList::default(),
+            program_descriptions: QStringList::default(),
             program_starts: QStringList::default(),
             program_durations: QStringList::default(),
+            channel_logo_urls: QStringList::default(),
+            channel_types: QStringList::default(),
+            guide_start: QString::default(),
+            guide_program_ids: QStringList::default(),
+            guide_channel_indices: QStringList::default(),
+            guide_titles: QStringList::default(),
+            guide_descriptions: QStringList::default(),
+            guide_starts: QStringList::default(),
+            guide_durations: QStringList::default(),
+            guide_genres: QStringList::default(),
+            current_program_start: 0,
+            current_program_duration: 0,
             paused: false,
             // Force the first event poll to apply a persisted non-default volume.
             applied_volume: -1.0,
@@ -286,6 +326,21 @@ impl ffi::Player {
             }
             self.as_mut().rust_mut().applied_volume = volume;
         }
+        let (start, duration) = {
+            let player = self.as_ref();
+            let rust = player.rust();
+            (rust.current_program_start, rust.current_program_duration)
+        };
+        let progress = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .ok()
+            .filter(|_| start > 0 && duration > 0)
+            .map(|now| now.as_millis().saturating_sub(u128::from(start)) as f64 / duration as f64)
+            .unwrap_or(0.0)
+            .clamp(0.0, 1.0);
+        if (progress - *self.as_ref().program_progress()).abs() > 0.000_01 {
+            self.as_mut().set_program_progress(progress);
+        }
     }
 
     pub fn refresh_channels(mut self: Pin<&mut Self>) {
@@ -325,7 +380,8 @@ impl ffi::Player {
                     .loading_channels
                     .store(false, Ordering::Release);
                 match result {
-                    Ok(services) => {
+                    Ok(payload) => {
+                        let services = payload.channels;
                         let labels = services
                             .iter()
                             .map(|service| QString::from(&service.label))
@@ -333,6 +389,10 @@ impl ffi::Player {
                         let program_titles = services
                             .iter()
                             .map(|service| QString::from(&service.program_title))
+                            .collect::<QStringList>();
+                        let program_descriptions = services
+                            .iter()
+                            .map(|service| QString::from(&service.program_description))
                             .collect::<QStringList>();
                         let program_starts = services
                             .iter()
@@ -342,12 +402,49 @@ impl ffi::Player {
                             .iter()
                             .map(|service| QString::from(service.program_duration.to_string()))
                             .collect::<QStringList>();
+                        let channel_logo_urls = services
+                            .iter()
+                            .map(|service| QString::from(service_logo_url(&server, service.id)))
+                            .collect::<QStringList>();
+                        let channel_types = services
+                            .iter()
+                            .map(|service| QString::from(&service.channel_type))
+                            .collect::<QStringList>();
                         player.as_mut().rust_mut().service_ids =
                             services.iter().map(|service| service.id).collect();
                         player.as_mut().set_services(labels);
                         player.as_mut().set_program_titles(program_titles);
+                        player
+                            .as_mut()
+                            .set_program_descriptions(program_descriptions);
                         player.as_mut().set_program_starts(program_starts);
                         player.as_mut().set_program_durations(program_durations);
+                        player.as_mut().set_channel_logo_urls(channel_logo_urls);
+                        player.as_mut().set_channel_types(channel_types);
+                        player
+                            .as_mut()
+                            .set_guide_start(QString::from(payload.guide_start.to_string()));
+                        player.as_mut().set_guide_program_ids(strings(
+                            payload.guide.iter().map(|p| p.id.to_string()),
+                        ));
+                        player.as_mut().set_guide_channel_indices(strings(
+                            payload.guide.iter().map(|p| p.channel_index.to_string()),
+                        ));
+                        player.as_mut().set_guide_titles(strings(
+                            payload.guide.iter().map(|p| p.title.clone()),
+                        ));
+                        player.as_mut().set_guide_descriptions(strings(
+                            payload.guide.iter().map(|p| p.description.clone()),
+                        ));
+                        player.as_mut().set_guide_starts(strings(
+                            payload.guide.iter().map(|p| p.start_at.to_string()),
+                        ));
+                        player.as_mut().set_guide_durations(strings(
+                            payload.guide.iter().map(|p| p.duration.to_string()),
+                        ));
+                        player.as_mut().set_guide_genres(strings(
+                            payload.guide.iter().map(|p| p.genre.to_string()),
+                        ));
                         if let Ok(current_id) =
                             player.as_ref().service_id().to_string().parse::<u64>()
                             && let Some(index) = player
@@ -357,10 +454,19 @@ impl ffi::Player {
                                 .iter()
                                 .position(|id| *id == current_id)
                         {
-                            let label = player.as_ref().services().get(index as isize).cloned();
-                            if let Some(label) = label {
-                                player.as_mut().set_channel_name(label);
-                            }
+                            let channel = &services[index];
+                            let label = QString::from(&channel.label);
+                            let title = QString::from(&channel.program_title);
+                            let description = QString::from(&channel.program_description);
+                            let logo = QString::from(service_logo_url(&server, channel.id));
+                            let start = channel.program_start;
+                            let duration = channel.program_duration;
+                            player.as_mut().set_channel_name(label);
+                            player.as_mut().set_program_name(title);
+                            player.as_mut().set_program_description(description);
+                            player.as_mut().set_channel_logo_url(logo);
+                            player.as_mut().rust_mut().current_program_start = start;
+                            player.as_mut().rust_mut().current_program_duration = duration;
                         }
                         if !*player.as_ref().playing() {
                             player.as_mut().set_status(QString::from("Ready"));
@@ -385,9 +491,40 @@ impl ffi::Player {
             .get(index as isize)
             .map(|value| value.to_string())
             .unwrap_or_default();
+        let program_name = self
+            .as_ref()
+            .program_titles()
+            .get(index as isize)
+            .map(|value| value.to_string())
+            .unwrap_or_default();
+        let program_description = self
+            .as_ref()
+            .program_descriptions()
+            .get(index as isize)
+            .map(|value| value.to_string())
+            .unwrap_or_default();
+        let program_start = self
+            .as_ref()
+            .program_starts()
+            .get(index as isize)
+            .and_then(|value| value.to_string().parse::<u64>().ok())
+            .unwrap_or(0);
+        let program_duration = self
+            .as_ref()
+            .program_durations()
+            .get(index as isize)
+            .and_then(|value| value.to_string().parse::<u64>().ok())
+            .unwrap_or(0);
+        let logo_url = service_logo_url(&self.as_ref().server().to_string(), service_id);
         self.as_mut()
             .set_service_id(QString::from(service_id.to_string()));
         self.as_mut().set_channel_name(QString::from(channel_name));
+        self.as_mut().set_program_name(QString::from(program_name));
+        self.as_mut()
+            .set_program_description(QString::from(program_description));
+        self.as_mut().set_channel_logo_url(QString::from(logo_url));
+        self.as_mut().rust_mut().current_program_start = program_start;
+        self.as_mut().rust_mut().current_program_duration = program_duration;
         self.as_mut().save_settings();
         self.play();
     }
@@ -441,15 +578,38 @@ struct Channel {
     physical_channel: String,
     program_signature: Option<ProgramSignature>,
     program_title: String,
+    program_description: String,
     program_start: u64,
     program_duration: u64,
+    network_id: u16,
+    channel_type: String,
+}
+
+struct GuideProgram {
+    id: u64,
+    channel_index: usize,
+    title: String,
+    description: String,
+    start_at: u64,
+    duration: u64,
+    genre: u8,
+}
+
+struct FetchPayload {
+    channels: Vec<Channel>,
+    guide: Vec<GuideProgram>,
+    guide_start: u64,
+}
+
+fn strings(values: impl Iterator<Item = String>) -> QStringList {
+    values.map(|value| QString::from(value)).collect()
 }
 
 async fn fetch_services(
     client: &reqwest::Client,
     epg: &EpgStore,
     server: &str,
-) -> Result<Vec<Channel>, FetchServicesError> {
+) -> Result<FetchPayload, FetchServicesError> {
     let api = server.trim().trim_end_matches('/');
     let services = client
         .get(format!("{api}/api/services"))
@@ -475,10 +635,41 @@ async fn fetch_services(
         .duration_since(UNIX_EPOCH)
         .map_err(FetchServicesError::SystemTime)?
         .as_millis() as u64;
-    epg.replace(services, programs, now);
+    epg.replace(services, programs.clone(), now);
     let snapshot = epg.snapshot();
     let current_programs = snapshot.current_programs(now);
-    Ok(build_channels(&snapshot.services, current_programs))
+    let channels = build_channels(&snapshot.services, current_programs);
+    let guide_start = now - now % 1_800_000;
+    let guide_end = guide_start + 6 * 60 * 60 * 1_000;
+    let mut guide = programs
+        .into_iter()
+        .filter(|program| {
+            program.start_at < guide_end
+                && program.start_at.saturating_add(program.duration) > guide_start
+        })
+        .filter_map(|program| {
+            let channel_index = channels.iter().position(|channel| {
+                channel.network_id == program.network_id && channel.service_id == program.service_id
+            })?;
+            Some(GuideProgram {
+                id: program.id,
+                channel_index,
+                title: program
+                    .name
+                    .unwrap_or_else(|| "（番組情報なし）".to_owned()),
+                description: program.description.unwrap_or_default(),
+                start_at: program.start_at,
+                duration: program.duration,
+                genre: program.genres.first().map_or(15, |genre| genre.lv1),
+            })
+        })
+        .collect::<Vec<_>>();
+    guide.sort_unstable_by_key(|program| (program.channel_index, program.start_at));
+    Ok(FetchPayload {
+        channels,
+        guide,
+        guide_start,
+    })
 }
 
 fn build_channels(services: &[Service], programs: Vec<CurrentProgram>) -> Vec<Channel> {
@@ -521,8 +712,13 @@ fn build_channels(services: &[Service], programs: Vec<CurrentProgram>) -> Vec<Ch
                 program_title: program
                     .and_then(|program| program.name.clone())
                     .unwrap_or_default(),
+                program_description: program
+                    .and_then(|program| program.description.clone())
+                    .unwrap_or_default(),
                 program_start: program.map_or(0, |program| program.start_at),
                 program_duration: program.map_or(0, |program| program.duration),
+                network_id: service.network_id,
+                channel_type: service.channel.channel_type.clone(),
             }
         })
         .collect::<Vec<_>>();
@@ -567,6 +763,13 @@ fn build_channels(services: &[Service], programs: Vec<CurrentProgram>) -> Vec<Ch
     channels
 }
 
+fn service_logo_url(server: &str, service_id: u64) -> String {
+    format!(
+        "{}/api/services/{service_id}/logo",
+        server.trim().trim_end_matches('/')
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -595,6 +798,7 @@ mod tests {
             start_at: 1_000,
             duration: 1_800,
             name: Some(format!("Program {event_id}")),
+            description: Some(format!("Description {event_id}")),
         }
     }
 

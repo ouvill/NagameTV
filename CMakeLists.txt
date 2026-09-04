@@ -4,6 +4,7 @@ project(mirakurun_viewer VERSION 0.2.0 LANGUAGES NONE)
 set(CARGO_TARGET_DIR "${CMAKE_BINARY_DIR}/cargo")
 set(CARGO_BINARY "${CARGO_TARGET_DIR}/release/mirakurun-viewer")
 set(OUTPUT_BINARY "${CMAKE_BINARY_DIR}/mirakurun-viewer")
+file(GLOB ICON_ASSETS CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/assets/icons/*.svg")
 
 add_custom_command(
     OUTPUT "${OUTPUT_BINARY}"
@@ -14,6 +15,7 @@ add_custom_command(
         rust/Cargo.toml rust/Cargo.lock rust/build.rs
         rust/src/main.rs rust/src/player.rs rust/src/playback.rs rust/src/qt_helpers.h
         qml/Main.qml
+        ${ICON_ASSETS} assets/icons/LICENSE-Lucide.txt
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     COMMENT "Building Rust/CXX-Qt Mirakurun Viewer"
     VERBATIM

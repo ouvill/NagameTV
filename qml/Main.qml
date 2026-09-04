@@ -6,398 +6,552 @@ import MirakurunViewer 1.0
 
 ApplicationWindow {
     id: root
-    width: 1280; height: 720
-    minimumWidth: 820; minimumHeight: 480
+    width: 1440; height: 900
+    minimumWidth: 900; minimumHeight: 560
     visible: true
-    title: player.programName.length > 0
-           ? player.programName + " — " + qsTr("Mirakurun Viewer")
-           : qsTr("Mirakurun Viewer")
-    color: "black"
+    title: player.programName.length ? player.programName : qsTr("Mirakurun Viewer")
+    color: "#0b0c0b"
     flags: Qt.Window | Qt.FramelessWindowHint
+    font.family: "Noto Sans CJK JP"
+
+    readonly property color surface: "#151715"
+    readonly property color raised: "#1c1f1c"
+    readonly property color ink: "#f4f5f3"
+    readonly property color muted: "#b6bab6"
+    readonly property color accent: "#9caf9f"
+    readonly property int panelWidth: Math.min(408, Math.max(360, width * .32))
+    property string panel: ""
+    property bool guideOpen: false
+    property bool channelsOpen: false
+    property bool danmaku: false
     property bool overlayVisible: true
-    property bool overlayPinned: settingsPanel.opened
     property bool videoAttached: false
     property bool autoplayStarted: false
+    property int selectedGuideIndex: -1
+    property string guideType: "GR"
+    property string channelPickerType: "GR"
+    property double nowMs: Date.now()
+    readonly property bool panelOpen: panel === "program" || panel === "comments" || panel === "channels"
+    readonly property bool overlayPinned: panelOpen || guideOpen || channelsOpen || settings.opened
 
     Player { id: player }
 
-    function revealOverlay() { overlayVisible = true; overlayTimer.restart() }
-    function toggleFullScreen() {
+    function availableChannelTypes() {
+        const labels = { "GR": qsTr("地デジ"), "BS": "BS", "CS": "CS" }
+        const result = []
+        for (const type of ["GR", "BS", "CS"])
+            if (player.channelTypes.indexOf(type) >= 0) result.push([type, labels[type]])
+        return result
+    }
+    function normalizeChannelTypes() {
+        const types = availableChannelTypes()
+        if (types.length === 0) return
+        if (!types.some(option => option[0] === guideType)) guideType = types[0][0]
+        if (!types.some(option => option[0] === channelPickerType)) channelPickerType = types[0][0]
+    }
+    Connections { target: player; function onChannelTypesChanged() { root.normalizeChannelTypes() } }
+
+    function reveal() { overlayVisible = true; hideTimer.restart() }
+    function scrollOneStep(view, event, horizontal, step) {
+        const delta = event.angleDelta.y || event.angleDelta.x
+        if (delta === 0) return
+
+        view.cancelFlick()
+        const position = horizontal ? view.contentX : view.contentY
+        const contentSize = horizontal ? view.contentWidth : view.contentHeight
+        const viewportSize = horizontal ? view.width : view.height
+        const next = Math.max(0, Math.min(contentSize - viewportSize,
+                                          position + (delta < 0 ? step : -step)))
+        if (horizontal) view.contentX = next
+        else view.contentY = next
+        event.accepted = true
+    }
+    function toggleFullscreen() {
         visibility = visibility === Window.FullScreen ? Window.Windowed : Window.FullScreen
-        revealOverlay()
+        reveal()
+    }
+    function closeTopmost() {
+        if (settings.opened) settings.close()
+        else if (selectedGuideIndex >= 0) selectedGuideIndex = -1
+        else if (guideOpen) guideOpen = false
+        else if (channelsOpen) channelsOpen = false
+        else if (panelOpen) panel = ""
+        else if (visibility === Window.FullScreen) showNormal()
     }
     function programTime(index) {
-        if (index >= player.programStarts.length || index >= player.programDurations.length)
-            return qsTr("Program information unavailable")
+        if (index < 0 || index >= player.programStarts.length) return qsTr("番組情報なし")
         const start = Number(player.programStarts[index])
         const duration = Number(player.programDurations[index])
-        if (start <= 0 || duration <= 0)
-            return qsTr("Program information unavailable")
-        const end = start + duration
-        return Qt.formatTime(new Date(start), "hh:mm") + " – "
-             + Qt.formatTime(new Date(end), "hh:mm")
+        if (!start || !duration) return qsTr("番組情報なし")
+        return Qt.formatTime(new Date(start), "hh:mm") + "–" + Qt.formatTime(new Date(start + duration), "hh:mm")
     }
-
-    palette {
-        window: "#0b111c"; windowText: "#f5f7fb"; base: "#121b2a"; text: "#f5f7fb"
-        button: "#1c2738"; buttonText: "#f5f7fb"; highlight: "#62e6c4"
+    function programProgressAt(index) {
+        if (index < 0 || index >= player.programStarts.length) return 0
+        const start = Number(player.programStarts[index])
+        const duration = Number(player.programDurations[index])
+        if (!start || duration <= 0) return 0
+        return Math.max(0, Math.min(1, (root.nowMs - start) / duration))
+    }
+    function guideColor(genre) {
+        const colors = ["#ffffe0", "#e0e0ff", "#ffe0f0", "#ffe0e0", "#e0ffe0", "#e0ffff", "#fff0e0", "#ffe0ff", "#ffffe0", "#fff0e0", "#e0f0ff", "#e0f0ff"]
+        const value = Number(genre)
+        return value >= 0 && value < colors.length ? colors[value] : "#f0f0f0"
+    }
+    function guideClock(milliseconds) { return Qt.formatTime(new Date(Number(milliseconds)), "hh:mm") }
+    function uiIcon(name) { return "../assets/icons/" + name + ".svg" }
+    function guideChannelVisible(index) { return index < player.channelTypes.length && player.channelTypes[index] === guideType }
+    function guideColumn(index) {
+        let column = 0
+        for (let i = 0; i < index; ++i) if (guideChannelVisible(i)) ++column
+        return column
+    }
+    function guideChannelCount() {
+        let count = 0
+        for (let i = 0; i < player.channelTypes.length; ++i) if (guideChannelVisible(i)) ++count
+        return count
     }
 
     Shortcut { sequence: "Space"; enabled: player.playing; onActivated: player.togglePause() }
-    Shortcut { sequence: "F11"; onActivated: root.toggleFullScreen() }
-    Shortcut { sequence: "C"; onActivated: channelPanel.open() }
+    Shortcut { sequence: "F11"; onActivated: root.toggleFullscreen() }
+    Shortcut { sequence: "C"; onActivated: { channelsOpen = !channelsOpen; player.refreshChannels(); reveal() } }
+    Shortcut { sequence: "G"; onActivated: { guideOpen = !guideOpen; reveal() } }
     Shortcut { sequence: "PgUp"; onActivated: player.changeChannel(-1) }
     Shortcut { sequence: "PgDown"; onActivated: player.changeChannel(1) }
-    onFrameSwapped: {
-        if (videoAttached && player.autoplay && !autoplayStarted) {
-            autoplayStarted = true
-            // qml6glsink must not enter READY until Qt has created the Scene Graph GL context.
-            Qt.callLater(function() { player.play() })
+    Shortcut { sequence: "Escape"; onActivated: closeTopmost() }
+    Timer { id: hideTimer; interval: 3200; onTriggered: if (player.playing && !overlayPinned) overlayVisible = false }
+    Timer { interval: 50; running: true; repeat: true; onTriggered: player.pollEvents() }
+    Timer { interval: 30000; running: true; repeat: true; triggeredOnStart: true; onTriggered: root.nowMs = Date.now() }
+    onFrameSwapped: if (videoAttached && player.autoplay && !autoplayStarted) {
+        autoplayStarted = true; Qt.callLater(function() { player.play() })
+    }
+
+    component RoundAction: Rectangle {
+        id: action
+        property url iconSource: ""
+        property string tip: ""
+        property bool primary: false
+        signal triggered()
+        implicitWidth: 42; implicitHeight: 42; radius: 21
+        color: hover.containsMouse ? "#28ffffff" : (primary ? "#eeeeec" : "#17000000")
+        border.color: primary ? "#80ffffff" : "#16ffffff"
+        Image { anchors.centerIn: parent; width: 24; height: 24; source: action.iconSource; visible: action.iconSource.toString().length > 0; sourceSize.width: 24; sourceSize.height: 24 }
+        MouseArea { id: hover; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: action.triggered() }
+        ToolTip {
+            parent: action
+            visible: hover.containsMouse && action.tip.length > 0
+            text: action.tip
+            delay: 150
+            timeout: 3000
+            x: (action.width - implicitWidth) / 2
+            y: -implicitHeight - 10
+            padding: 9
+            contentItem: Label { text: action.tip; color: root.ink; font.pixelSize: 12 }
+            background: Rectangle { radius: 8; color: "#e61b1d1b"; border.color: "#38ffffff" }
         }
     }
-    Shortcut {
-        sequence: "Escape"
-        onActivated: {
-            if (settingsPanel.opened) settingsPanel.close()
-            else if (root.visibility === Window.FullScreen) root.showNormal()
+    component WindowAction: Rectangle {
+        id: windowAction
+        required property url iconSource
+        property bool destructive: false
+        signal triggered()
+        width: 42; height: 42; radius: 21
+        color: hover.containsMouse ? (destructive ? "#a94b3f" : "#28ffffff") : "transparent"
+        Behavior on color { ColorAnimation { duration: 100 } }
+        Image { anchors.centerIn: parent; width: 16; height: 16; source: windowAction.iconSource }
+        MouseArea { id: hover; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: windowAction.triggered() }
+    }
+    component BroadcastTabs: Rectangle {
+        id: broadcastTabs
+        property string value: "GR"
+        readonly property var options: root.availableChannelTypes()
+        readonly property int selectedIndex: Math.max(0, options.findIndex(option => option[0] === value))
+        signal selected(string channelType)
+        implicitWidth: Math.max(82, options.length * 76 + 6); implicitHeight: 40; radius: 20
+        visible: options.length > 0
+        color: "#b8171918"; border.color: "#32ffffff"
+        readonly property real segmentWidth: (width - 6) / Math.max(1, options.length)
+        Rectangle {
+            x: 3 + broadcastTabs.selectedIndex * broadcastTabs.segmentWidth
+            y: 3; width: broadcastTabs.segmentWidth; height: parent.height - 6; radius: height / 2
+            color: "#429caf9f"; border.color: root.accent
+            Behavior on x { NumberAnimation { duration: 170; easing.type: Easing.OutCubic } }
+        }
+        Row { x: 3; width: parent.width - 6; height: parent.height
+            Repeater { model: broadcastTabs.options
+                Item { required property var modelData; width: broadcastTabs.segmentWidth; height: broadcastTabs.height
+                    Label { anchors.centerIn: parent; text: modelData[1]; color: broadcastTabs.value === modelData[0] ? root.ink : "#d5d8d5"; font.bold: broadcastTabs.value === modelData[0] }
+                    MouseArea { anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: broadcastTabs.selected(modelData[0]) }
+                }
+            }
+        }
+    }
+    component WindowButtons: Rectangle {
+        implicitWidth: 126; implicitHeight: 42; radius: 21
+        color: "#b8171819"; border.color: "#16ffffff"
+        Row { anchors.fill: parent
+            WindowAction { iconSource: root.uiIcon("minus"); onTriggered: root.showMinimized() }
+            WindowAction { iconSource: root.uiIcon("square"); onTriggered: root.visibility === Window.Maximized ? root.showNormal() : root.showMaximized() }
+            WindowAction { iconSource: root.uiIcon("x"); destructive: true; onTriggered: root.close() }
         }
     }
 
-    Timer {
-        id: overlayTimer
-        interval: 3200
-        onTriggered: if (player.playing && !root.overlayPinned) root.overlayVisible = false
+    Rectangle { anchors.fill: parent; color: "#0b0c0b" }
+    Item {
+        id: videoRegion
+        width: root.panelOpen ? root.width - root.panelWidth : root.width
+        height: root.height
+        GstGLQt6VideoItem {
+            id: videoItem; objectName: "videoItem"
+            width: parent.width
+            height: root.panelOpen ? Math.min(parent.height, width * 9 / 16) : parent.height
+            anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
+        }
+        Rectangle {
+            anchors.fill: videoItem; visible: !player.playing; color: "#141516"
+            Column {
+                anchors.centerIn: parent; spacing: 14
+                Label { anchors.horizontalCenter: parent.horizontalCenter; text: qsTr("ライブテレビ"); color: root.ink; font.pixelSize: 32; font.bold: true }
+                Label { anchors.horizontalCenter: parent.horizontalCenter; text: player.serviceId.length ? player.status : qsTr("視聴するチャンネルを選択してください"); color: root.muted }
+                Rectangle { anchors.horizontalCenter: parent.horizontalCenter; width: 148; height: 44; radius: 22; color: root.accent; Label { anchors.centerIn: parent; text: player.serviceId.length ? qsTr("視聴する") : qsTr("接続設定"); color: "#191a1b"; font.bold: true } MouseArea { anchors.fill: parent; onClicked: player.serviceId.length ? player.play() : settings.open() } }
+            }
+        }
+        Item {
+            anchors.fill: videoItem; visible: root.danmaku && player.playing; clip: true
+            Repeater {
+                model: ["大雨ほんと気をつけて！", "正木さんの天気予報たすかる", "メンディーきたーー！", "朝から元気出る番組", "この新作ティー飲んでみたい", "週末晴れますように"]
+                Label { required property int index; required property string modelData; x: parent.width * (.57 + index % 3 * .13); y: 90 + index * Math.max(54, (parent.height - 210) / 6); text: modelData; color: index === 2 ? "#d5d5d3" : root.ink; font.pixelSize: index === 2 ? 25 : 21; font.bold: true; style: Text.Outline; styleColor: "#c0000000" }
+            }
+            Rectangle { x: 24; y: 24; width: 106; height: 38; radius: 19; color: "#b8171819"; Label { anchors.centerIn: parent; text: qsTr("弾幕  ON"); color: root.ink; font.weight: Font.DemiBold } }
+        }
     }
 
-    Timer {
-        interval: 50
-        running: true
-        repeat: true
-        onTriggered: player.pollEvents()
+    Column {
+        id: persistentProgramIdentity
+        z: 402
+        visible: controls.opacity > 0 && !root.guideOpen
+        anchors.left: videoRegion.left; anchors.top: videoRegion.top; anchors.margins: 24
+        width: Math.max(360, videoRegion.width - 430); spacing: 8
+        Row { spacing: 12
+            Item { width: 64; height: 36
+                Image { id: currentChannelLogo; anchors.fill: parent; source: player.channelLogoUrl; fillMode: Image.PreserveAspectFit; asynchronous: true; cache: true }
+                Label { anchors.centerIn: parent; visible: currentChannelLogo.status !== Image.Ready; text: qsTr("局ロゴ"); color: root.muted; font.pixelSize: 10 }
+            }
+            Label { anchors.verticalCenter: parent.verticalCenter; text: player.channelName.length ? player.channelName.replace(/^\d+\s+/, "") : qsTr("チャンネル"); color: root.muted; font.pixelSize: 13; style: Text.Outline; styleColor: "#90000000" }
+        }
+        Label {
+            width: parent.width
+            text: player.programName.length ? player.programName : qsTr("番組情報なし")
+            color: root.ink; font.pixelSize: 23; font.bold: true
+            wrapMode: Text.Wrap; maximumLineCount: 2; elide: Text.ElideRight
+            style: Text.Outline; styleColor: "#a0000000"
+            MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.panel = "program" }
+        }
+        Label { text: root.programTime(Math.max(0, player.services.indexOf(player.channelName))); color: "#d7d7d6"; font.pixelSize: 12; style: Text.Outline; styleColor: "#90000000" }
     }
 
-    GstGLQt6VideoItem { id: videoItem; objectName: "videoItem"; anchors.fill: parent }
+    MouseArea { anchors.fill: videoRegion; z: controls.opacity > .01 ? -1 : 100; acceptedButtons: Qt.AllButtons; hoverEnabled: true; onPositionChanged: reveal(); onPressed: reveal() }
+    Item {
+        id: controls; anchors.fill: videoRegion; visible: opacity > 0 && !guideOpen; z: 401
+        opacity: overlayVisible || !player.playing ? 1 : 0
+        Behavior on opacity { NumberAnimation { duration: 180 } }
+        Rectangle { anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top; height: Math.min(210, parent.height * .28)
+            gradient: Gradient { GradientStop { position: 0; color: "#a8000000" } GradientStop { position: 1; color: "#00000000" } }
+        }
+        Rectangle { anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom; height: Math.min(360, parent.height * .46); visible: !root.channelsOpen
+            gradient: Gradient { GradientStop { position: 0; color: "#00000000" } GradientStop { position: 1; color: "#d6000000" } }
+        }
+        Row {
+            visible: !root.panelOpen
+            anchors.right: parent.right; anchors.top: parent.top; anchors.margins: 18; spacing: 14
+            RoundAction { iconSource: root.uiIcon("calendar-days"); tip: qsTr("番組表"); onTriggered: { guideOpen = true; reveal() } }
+            RoundAction { iconSource: root.uiIcon("settings-2"); tip: qsTr("設定"); onTriggered: settings.open() }
+            WindowButtons {}
+        }
+        MouseArea { anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top; height: 76; acceptedButtons: Qt.LeftButton; z: -1; onPressed: root.startSystemMove(); onDoubleClicked: root.visibility === Window.Maximized ? root.showNormal() : root.showMaximized() }
+        Column {
+            id: playerControlBar
+            visible: opacity > 0; enabled: !root.channelsOpen
+            opacity: root.channelsOpen ? 0 : 1
+            transform: Translate { y: root.channelsOpen ? 20 : 0; Behavior on y { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } } }
+            Behavior on opacity { NumberAnimation { duration: 130; easing.type: Easing.OutCubic } }
+            anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom
+            anchors.leftMargin: 24; anchors.rightMargin: 24; anchors.bottomMargin: 22; spacing: 12
+            Row { width: parent.width; Label { text: Math.round(player.programProgress * 100) + "%"; color: root.muted; font.pixelSize: 11 } }
+            ProgressBar { width: parent.width; height: 4; from: 0; to: 1; value: player.programProgress; background: Rectangle { implicitHeight: 3; radius: 2; color: "#42ffffff" } contentItem: Item { Rectangle { width: parent.width * player.programProgress; height: 3; radius: 2; color: "#e1e1df" } } }
+            RowLayout {
+                width: parent.width; spacing: 12
+                RoundAction { iconSource: root.uiIcon(player.playing ? "pause" : "play"); primary: true; tip: player.playing ? qsTr("一時停止") : qsTr("再生"); onTriggered: player.playing ? player.togglePause() : player.play() }
+                RoundAction { iconSource: root.uiIcon("square"); tip: qsTr("停止"); onTriggered: player.stop() }
+                RoundAction { iconSource: root.uiIcon("volume-2"); tip: qsTr("音量") }
+                Slider { Layout.preferredWidth: 132; from: 0; to: 100; value: player.volume; onMoved: player.volume = value; onPressedChanged: if (!pressed) player.saveSettings() }
+                Item { Layout.fillWidth: true }
+                RoundAction { iconSource: root.uiIcon("grid-2x2"); tip: qsTr("チャンネル"); onTriggered: { channelsOpen = true; player.refreshChannels(); reveal() } }
+                RoundAction { iconSource: root.uiIcon("pencil"); tip: qsTr("コメント投稿") }
+                RoundAction { iconSource: root.uiIcon("captions"); tip: qsTr("字幕") }
+                RoundAction { iconSource: root.uiIcon("maximize"); tip: qsTr("全画面"); onTriggered: root.toggleFullscreen() }
+                Rectangle { width: 1; height: 28; color: "#28ffffff"; Layout.leftMargin: 4; Layout.rightMargin: 4; Layout.alignment: Qt.AlignVCenter }
+                RoundAction { iconSource: root.uiIcon("panel-right-open"); tip: qsTr("サイドパネル"); onTriggered: root.panel = root.panelOpen ? "" : "program" }
+            }
+        }
+    }
 
     Rectangle {
-        anchors.fill: parent
-        visible: !player.playing
-        color: "#0a101a"
-        Column {
-            anchors.centerIn: parent; spacing: 12
-            Label {
-                anchors.horizontalCenter: parent.horizontalCenter
-                text: "MIRAKURUN"; color: "#62e6c4"; font.pixelSize: 13
-                font.bold: true; font.letterSpacing: 3
+        id: sidePanel
+        x: root.panelOpen ? root.width - root.panelWidth : root.width
+        width: root.panelWidth; height: root.height
+        visible: true; enabled: root.panelOpen; clip: true; color: root.surface
+        Behavior on x { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+        Rectangle { width: 1; height: parent.height; color: "#20ffffff" }
+        Row { anchors.right: parent.right; anchors.rightMargin: 18; anchors.top: parent.top; anchors.topMargin: 18; spacing: 10
+            RoundAction { iconSource: root.uiIcon("calendar-days"); tip: qsTr("番組表"); onTriggered: root.guideOpen = true }
+            RoundAction { iconSource: root.uiIcon("settings-2"); tip: qsTr("設定"); onTriggered: settings.open() }
+            WindowButtons {}
+        }
+        ColumnLayout {
+            width: root.panelWidth - 48; height: parent.height - 102; x: 24; y: 78; spacing: 14
+            RowLayout {
+                Layout.fillWidth: true
+                RoundAction { iconSource: root.uiIcon("panel-right-close"); tip: qsTr("折りたたむ"); onTriggered: root.panel = "" }
+                Label { text: root.panel === "comments" ? qsTr("コメント") : (root.panel === "channels" ? qsTr("チャンネル") : qsTr("番組情報")); color: root.ink; font.pixelSize: 17; font.bold: true }
+                Item { Layout.fillWidth: true }
+                Rectangle { visible: root.panel === "comments"; width: 88; height: 36; radius: 18; color: root.danmaku ? "#30ffffff" : "#12ffffff"; border.color: root.danmaku ? "#8fffffff" : "#22ffffff"; Row { anchors.centerIn: parent; spacing: 7; Label { text: qsTr("弾幕"); color: root.danmaku ? root.ink : root.muted; font.pixelSize: 13 } Rectangle { width: 18; height: 18; radius: 9; color: root.danmaku ? root.accent : "#626365" } } MouseArea { anchors.fill: parent; onClicked: root.danmaku = !root.danmaku } }
             }
-            Label {
-                anchors.horizontalCenter: parent.horizontalCenter
-                text: qsTr("Live television"); font.pixelSize: 34; font.weight: Font.DemiBold
+            ColumnLayout {
+                visible: root.panel === "program"; Layout.fillWidth: true; spacing: 13
+                RowLayout { Item { width: 56; height: 32; Image { id: panelLogo; anchors.fill: parent; source: player.channelLogoUrl; fillMode: Image.PreserveAspectFit; asynchronous: true; cache: true } Label { anchors.centerIn: parent; visible: panelLogo.status !== Image.Ready; text: qsTr("局ロゴ"); color: root.muted; font.pixelSize: 10 } } Label { text: player.channelName.length ? player.channelName : qsTr("チャンネル"); color: root.ink; font.weight: Font.DemiBold } }
+                Label { Layout.fillWidth: true; text: player.programName; color: root.ink; font.pixelSize: 23; font.bold: true; wrapMode: Text.Wrap }
+                Label { text: root.programTime(Math.max(0, player.services.indexOf(player.channelName))); color: "#d4d4d3"; font.pixelSize: 13 }
+                ProgressBar {
+                    Layout.fillWidth: true; height: 4; value: player.programProgress
+                    background: Rectangle { implicitHeight: 3; radius: 2; color: "#30ffffff" }
+                    contentItem: Item { Rectangle { width: parent.width * player.programProgress; height: 3; radius: 2; color: root.accent } }
+                }
+                Label { text: qsTr("概要"); color: root.muted; font.weight: Font.DemiBold }
+                Label { Layout.fillWidth: true; text: player.programDescription.length ? player.programDescription : qsTr("番組概要はありません"); color: "#e4e4e3"; font.pixelSize: 15; wrapMode: Text.Wrap; lineHeight: 1.35 }
+                Rectangle { Layout.fillWidth: true; height: 1; color: "#18ffffff" }
+                Label { Layout.fillWidth: true; text: qsTr("Mirakurunから取得した番組情報を表示しています"); color: "#929497"; font.pixelSize: 12; wrapMode: Text.Wrap }
             }
-            Label {
-                anchors.horizontalCenter: parent.horizontalCenter
-                text: player.serviceId.length > 0 ? player.status : qsTr("Choose a service to begin")
-                color: "#9daabd"; font.pixelSize: 16
+            ListView {
+                visible: root.panel === "comments"; Layout.fillWidth: true; Layout.fillHeight: true; clip: true
+                model: [["05:42:18", "雨すごいな、みんな気をつけて"], ["05:42:23", "正木さんの解説わかりやすい"], ["05:42:31", "メンディーきた！"], ["05:42:38", "この紅茶気になる"], ["05:42:44", "週末は晴れてほしいな"], ["05:42:51", "関西かなり降ってるね"]]
+                delegate: Item { required property var modelData; width: ListView.view.width; height: 78; Label { x: 0; y: 18; width: 72; text: modelData[0]; color: "#929497"; font.pixelSize: 11 } Label { x: 80; y: 15; width: parent.width - 80; text: modelData[1]; color: "#e5e5e4"; font.pixelSize: 14; wrapMode: Text.Wrap } Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: "#12ffffff" } }
             }
-            Button {
-                anchors.horizontalCenter: parent.horizontalCenter
-                text: player.serviceId.length > 0 ? qsTr("Watch") : qsTr("Connection settings")
-                highlighted: true
-                onClicked: player.serviceId.length > 0 ? player.play() : settingsPanel.open()
+            Rectangle { visible: root.panel === "comments"; Layout.fillWidth: true; height: 58; radius: 20; color: root.raised; border.color: "#606163"; Label { anchors.left: parent.left; anchors.leftMargin: 18; anchors.verticalCenter: parent.verticalCenter; text: qsTr("コメントを入力…"); color: "#9fa0a2" } RoundAction { anchors.right: parent.right; anchors.rightMargin: 8; anchors.verticalCenter: parent.verticalCenter; iconSource: "../assets/icons/send.svg"; tip: qsTr("送信") } }
+            Item { visible: root.panel === "channels"; Layout.fillWidth: true; Layout.fillHeight: true
+                ListView { id: sideChannelList; anchors.fill: parent; spacing: 12; clip: true; model: player.services; boundsBehavior: Flickable.DragAndOvershootBounds; boundsMovement: Flickable.FollowBoundsBehavior
+                    delegate: Rectangle { required property int index; required property string modelData; width: ListView.view.width; height: 132; radius: 14; color: modelData === player.channelName ? "#26302a" : root.raised; border.color: modelData === player.channelName ? root.accent : "#24ffffff"
+                        Column { anchors.fill: parent; anchors.margins: 14; spacing: 8
+                            Row { spacing: 8; Item { width: 56; height: 32; Image { id: channelCardLogo; anchors.fill: parent; source: index < player.channelLogoUrls.length ? player.channelLogoUrls[index] : ""; fillMode: Image.PreserveAspectFit; asynchronous: true } Label { anchors.centerIn: parent; visible: channelCardLogo.status !== Image.Ready; text: qsTr("局ロゴ"); color: root.muted; font.pixelSize: 9 } } Label { anchors.verticalCenter: parent.verticalCenter; text: modelData.replace(/^\d+\s+/, ""); color: root.ink; font.bold: true } }
+                            Label { width: parent.width; text: index < player.programTitles.length ? player.programTitles[index] : qsTr("番組情報なし"); color: root.ink; font.bold: true; elide: Text.ElideRight }
+                            Label { text: root.programTime(index); color: root.muted; font.pixelSize: 11 }
+                        }
+                        Rectangle { anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom; anchors.leftMargin: 14; anchors.rightMargin: 14; anchors.bottomMargin: 10; height: 3; radius: 2; color: "#32ffffff"
+                            Rectangle { width: parent.width * root.programProgressAt(index); height: parent.height; radius: parent.radius; color: root.accent }
+                        }
+                        MouseArea { anchors.fill: parent; onClicked: player.selectChannel(index) }
+                    }
+                }
+                MouseArea {
+                    anchors.fill: parent
+                    z: 100
+                    acceptedButtons: Qt.LeftButton
+                    propagateComposedEvents: true
+                    scrollGestureEnabled: false
+                    onPressed: function(mouse) { mouse.accepted = false }
+                    onClicked: function(mouse) { mouse.accepted = false }
+                    onWheel: function(event) { root.scrollOneStep(sideChannelList, event, false, 144) }
+                }
+            }
+            Item { visible: root.panel === "program"; Layout.fillHeight: true }
+            Rectangle { Layout.fillWidth: true; height: 1; color: "#18ffffff" }
+            RowLayout { Layout.fillWidth: true; spacing: 8
+                Repeater { model: [["comments", "message-square", qsTr("コメント")], ["program", "info", qsTr("番組情報")], ["channels", "grid-2x2", qsTr("チャンネル")]]
+                    Rectangle { required property var modelData; Layout.fillWidth: true; height: 54; radius: 12; color: root.panel === modelData[0] ? "#249caf9f" : "transparent"
+                        Column { anchors.centerIn: parent; spacing: 3; Image { anchors.horizontalCenter: parent.horizontalCenter; width: 18; height: 18; source: root.uiIcon(modelData[1]); opacity: root.panel === modelData[0] ? 1 : .68 } Label { anchors.horizontalCenter: parent.horizontalCenter; text: modelData[2]; color: root.panel === modelData[0] ? root.ink : root.muted; font.pixelSize: 10 } }
+                        MouseArea { anchors.fill: parent; onClicked: root.panel = modelData[0] }
+                    }
+                }
             }
         }
-    }
-
-    // Future comments use pooled delegates in this independent layer, so
-    // comment traffic never rebuilds or retains the video renderer.
-    Item {
-        objectName: "commentLayer"
-        anchors.fill: parent
-        anchors.topMargin: 64; anchors.bottomMargin: 150
-        enabled: false
     }
 
     MouseArea {
-        id: wakeArea
-        anchors.fill: parent
-        z: chrome.opacity > 0.01 ? -1 : 100
-        acceptedButtons: Qt.AllButtons
-        hoverEnabled: true
-        onPositionChanged: root.revealOverlay()
-        onPressed: root.revealOverlay()
+        visible: root.channelsOpen
+        anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top
+        height: Math.max(0, root.height - channelPicker.height)
+        z: 399
+        cursorShape: Qt.PointingHandCursor
+        onClicked: root.channelsOpen = false
     }
 
-    Item {
-        id: chrome
-        anchors.fill: parent
-        visible: opacity > 0
-        opacity: root.overlayVisible || !player.playing ? 1 : 0
-        Behavior on opacity { NumberAnimation { duration: 180 } }
-
-        Rectangle {
-            anchors.fill: parent
+    Rectangle {
+        id: channelPicker
+        anchors.left: parent.left; anchors.right: parent.right; height: 304
+        y: root.channelsOpen ? root.height - height : root.height
+        visible: opacity > 0; enabled: root.channelsOpen; opacity: root.channelsOpen ? 1 : 0; color: "transparent"; z: 400
+        Behavior on y { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
+        Behavior on opacity { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
+        Rectangle { anchors.fill: parent
             gradient: Gradient {
-                GradientStop { position: 0.0; color: "#b0000000" }
-                GradientStop { position: 0.16; color: "#16000000" }
-                GradientStop { position: 0.65; color: "#08000000" }
-                GradientStop { position: 1.0; color: "#d9000000" }
+                GradientStop { position: 0; color: "#06000000" }
+                GradientStop { position: .35; color: "#52000000" }
+                GradientStop { position: 1; color: "#d6000000" }
             }
         }
-
-        RowLayout {
-            anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top
-            anchors.margins: 22; spacing: 10
-            ColumnLayout {
-                spacing: -2
-                Label {
-                    text: "MIRAKURUN"; color: "#62e6c4"; font.pixelSize: 11
-                    font.bold: true; font.letterSpacing: 2.5
-                }
-                Label { text: qsTr("Live TV"); font.pixelSize: 22; font.weight: Font.DemiBold }
+        Column { anchors.fill: parent; anchors.leftMargin: 24; anchors.topMargin: 20; spacing: 14
+            Row { width: parent.width - 24; spacing: 14
+                RoundAction { iconSource: root.uiIcon("chevron-down"); tip: qsTr("折りたたむ"); onTriggered: root.channelsOpen = false }
+                Label { text: qsTr("チャンネル"); color: root.ink; font.pixelSize: 22; font.bold: true; anchors.verticalCenter: parent.verticalCenter }
+                Item { width: 24; height: 1 }
+                BroadcastTabs { anchors.verticalCenter: parent.verticalCenter; value: root.channelPickerType; onSelected: function(channelType) { root.channelPickerType = channelType } }
             }
-            Rectangle {
-                Layout.leftMargin: 8
-                implicitWidth: connectionStatus.implicitWidth + 22; implicitHeight: 28; radius: 14
-                color: player.playing ? "#a6195046" : "#991a2433"
-                Label {
-                    id: connectionStatus; anchors.centerIn: parent; text: player.status
-                    color: player.playing ? "#8cf5db" : "#c5cfdd"; font.pixelSize: 12
-                }
-            }
-            Item { Layout.fillWidth: true }
-            ToolButton { text: "⚙"; font.pixelSize: 19; onClicked: settingsPanel.open() }
-            ToolButton {
-                text: root.visibility === Window.FullScreen ? "↙" : "↗"
-                font.pixelSize: 19; onClicked: root.toggleFullScreen()
-            }
-            ToolButton { text: "×"; font.pixelSize: 24; onClicked: root.close() }
-        }
-
-        MouseArea {
-            anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top
-            height: 72; acceptedButtons: Qt.LeftButton; z: -1
-            onPressed: root.startSystemMove()
-            onDoubleClicked: root.toggleFullScreen()
-        }
-
-        ColumnLayout {
-            anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom
-            anchors.leftMargin: 30; anchors.rightMargin: 30; anchors.bottomMargin: 24; spacing: 14
-            RowLayout {
-                Layout.fillWidth: true; spacing: 18
-                Label {
-                    text: player.serviceId.length > 0 ? player.serviceId : "--"
-                    color: "#62e6c4"; font.pixelSize: 14; font.bold: true
-                }
-                ColumnLayout {
-                    Layout.fillWidth: true; spacing: 2
-                    Label {
-                        text: player.channelName.length > 0 ? player.channelName : qsTr("Live broadcast")
-                        font.pixelSize: 21; font.weight: Font.DemiBold
-                    }
-                    Label {
-                        text: player.programName.length > 0 ? player.programName : qsTr("Loading program information…")
-                        color: "#dce3ec"; font.pixelSize: 14; elide: Text.ElideRight; Layout.fillWidth: true
-                    }
-                    Label {
-                        text: player.programDescription
-                        visible: text.length > 0; color: "#aab5c5"; font.pixelSize: 12
-                        elide: Text.ElideRight; Layout.fillWidth: true
-                    }
-                }
-                Label {
-                    id: clockLabel
-                    text: Qt.formatTime(new Date(), "hh:mm"); font.pixelSize: 18
-                    Timer {
-                        interval: 1000; running: true; repeat: true
-                        onTriggered: clockLabel.text = Qt.formatTime(new Date(), "hh:mm")
-                    }
-                }
-            }
-            ProgressBar {
-                Layout.fillWidth: true
-                from: 0; to: 1; value: player.programProgress
-                visible: player.programName.length > 0
-            }
-            RowLayout {
-                Layout.fillWidth: true; spacing: 10
-                RoundButton {
-                    text: player.playing ? "Ⅱ" : "▶"; implicitWidth: 48; implicitHeight: 48
-                    font.pixelSize: 18
-                    onClicked: player.playing ? player.togglePause() : player.play()
-                }
-                ToolButton { text: "■"; enabled: player.playing; onClicked: player.stop() }
-                Label { text: qsTr("Volume"); color: "#aab5c5" }
-                Slider {
-                    Layout.preferredWidth: 150; from: 0; to: 100; value: player.volume
-                    onMoved: player.volume = value
-                    onPressedChanged: if (!pressed) player.saveSettings()
-                }
-                Item { Layout.fillWidth: true }
-                Button { text: qsTr("Channels"); onClicked: channelPanel.open() }
-                Button { text: qsTr("Comments"); enabled: false }
-            }
-        }
-    }
-
-    Drawer {
-        id: channelPanel
-        edge: Qt.LeftEdge
-        width: Math.min(430, root.width * 0.9); height: root.height
-        modal: true; dim: true
-        onOpened: { root.revealOverlay(); player.refreshChannels() }
-        background: Rectangle { color: "#f50c1420"; border.color: "#27364a" }
-        ColumnLayout {
-            anchors.fill: parent; anchors.margins: 24; spacing: 14
-            RowLayout {
-                Layout.fillWidth: true
-                Label { text: qsTr("Channels"); font.pixelSize: 26; font.weight: Font.DemiBold }
-                Item { Layout.fillWidth: true }
-                ToolButton { text: "↻"; onClicked: player.refreshChannels() }
-                ToolButton { text: "×"; font.pixelSize: 24; onClicked: channelPanel.close() }
-            }
-            Label {
-                visible: player.services.length === 0
-                text: qsTr("Loading channels…"); color: "#9daabd"
-            }
-            ListView {
-                Layout.fillWidth: true; Layout.fillHeight: true
-                clip: true; spacing: 4; model: player.services
-                ScrollBar.vertical: ScrollBar { }
-                delegate: ItemDelegate {
-                    required property int index
-                    required property string modelData
-                    width: ListView.view.width; height: 82
-                    highlighted: modelData === player.channelName
-                    contentItem: ColumnLayout {
-                        spacing: 2
-                        Label {
-                            Layout.fillWidth: true
-                            text: modelData; font.pixelSize: 15; font.weight: Font.DemiBold
-                            elide: Text.ElideRight
-                        }
-                        Label {
-                            Layout.fillWidth: true
-                            text: index < player.programTitles.length
-                                  && player.programTitles[index].length > 0
-                                  ? player.programTitles[index]
-                                  : qsTr("Program information unavailable")
-                            color: "#d5deea"; font.pixelSize: 13; elide: Text.ElideRight
-                        }
-                        Label {
-                            text: root.programTime(index); color: "#8f9caf"; font.pixelSize: 12
+            Item { width: parent.width - 24; height: 190
+                Flickable { id: channelPickerList; anchors.fill: parent; contentWidth: channelPickerRow.width; contentHeight: height; clip: true; boundsBehavior: Flickable.DragAndOvershootBounds; boundsMovement: Flickable.FollowBoundsBehavior
+                    Row { id: channelPickerRow; spacing: 14
+                        Repeater { model: player.services
+                            delegate: Rectangle { required property int index; required property string modelData; readonly property bool matchesType: index < player.channelTypes.length && player.channelTypes[index] === root.channelPickerType; width: matchesType ? (modelData === player.channelName ? 356 : 270) : 0; height: 164; visible: matchesType; radius: 16; color: modelData === player.channelName ? "#26302a" : root.raised; border.color: modelData === player.channelName ? root.accent : "#30ffffff"
+                                Column { anchors.fill: parent; anchors.margins: 14; spacing: 9
+                                    Row { spacing: 8; Item { width: 56; height: 32; Image { id: pickerLogo; anchors.fill: parent; source: index < player.channelLogoUrls.length ? player.channelLogoUrls[index] : ""; fillMode: Image.PreserveAspectFit; asynchronous: true } Label { anchors.centerIn: parent; visible: pickerLogo.status !== Image.Ready; text: qsTr("局ロゴ"); color: root.muted; font.pixelSize: 9 } } Label { anchors.verticalCenter: parent.verticalCenter; text: modelData.replace(/^\d+\s+/, ""); color: root.muted; font.pixelSize: 12 } }
+                                    Label { width: parent.width; text: index < player.programTitles.length ? player.programTitles[index] : qsTr("番組情報なし"); color: root.ink; font.pixelSize: modelData === player.channelName ? 16 : 14; font.bold: true; wrapMode: Text.Wrap; maximumLineCount: 2; elide: Text.ElideRight }
+                                    Label { text: root.programTime(index); color: root.muted; font.pixelSize: 11 }
+                                }
+                                Rectangle { anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom; anchors.leftMargin: 14; anchors.rightMargin: 14; anchors.bottomMargin: 8; height: 3; radius: 2; color: "#32ffffff"
+                                    Rectangle { width: parent.width * root.programProgressAt(index); height: parent.height; radius: parent.radius; color: root.accent }
+                                }
+                                MouseArea { anchors.fill: parent; onClicked: { player.selectChannel(index); root.channelsOpen = false } }
+                            }
                         }
                     }
-                    onClicked: {
-                        player.selectChannel(index)
-                        channelPanel.close()
-                    }
+                }
+                MouseArea {
+                    anchors.fill: parent
+                    z: 100
+                    acceptedButtons: Qt.LeftButton
+                    propagateComposedEvents: true
+                    scrollGestureEnabled: false
+                    onPressed: function(mouse) { mouse.accepted = false }
+                    onClicked: function(mouse) { mouse.accepted = false }
+                    onWheel: function(event) { root.scrollOneStep(channelPickerList, event, true, 112) }
                 }
             }
         }
     }
 
-    Drawer {
-        id: settingsPanel
-        edge: Qt.RightEdge
-        width: Math.min(420, root.width * 0.88); height: root.height
-        modal: true; dim: true
-        onOpened: root.revealOverlay()
-        background: Rectangle { color: "#f50c1420"; border.color: "#27364a" }
-        ColumnLayout {
-            anchors.fill: parent; anchors.margins: 28; spacing: 18
-            RowLayout {
-                Layout.fillWidth: true
-                Label { text: qsTr("Connection"); font.pixelSize: 26; font.weight: Font.DemiBold }
+    Rectangle {
+        id: guide; anchors.fill: parent; visible: root.guideOpen; color: "#0b0c0b"; z: 500
+        readonly property real pixelsPerMinute: 2.4
+        readonly property real channelWidth: 222
+        Rectangle { id: guideToolbar; anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top; height: 84; color: "#151715"
+            RowLayout { anchors.fill: parent; anchors.leftMargin: 24; anchors.rightMargin: 24; spacing: 16
+                RoundAction { iconSource: root.uiIcon("chevron-left"); onTriggered: { root.selectedGuideIndex = -1; root.guideOpen = false } }
+                Label { text: qsTr("番組表"); color: root.ink; font.pixelSize: 26; font.bold: true }
+                Label { text: Qt.formatDate(new Date(Number(player.guideStart)), "M月d日（ddd）"); color: root.muted; Layout.leftMargin: 34 }
+                Rectangle { width: 76; height: 36; radius: 18; color: "#249caf9f"; border.color: root.accent; Label { anchors.centerIn: parent; text: qsTr("今日"); color: root.accent; font.bold: true } }
+                BroadcastTabs { value: root.guideType; onSelected: function(channelType) { root.guideType = channelType; root.selectedGuideIndex = -1; epgFlick.contentX = 0 } }
                 Item { Layout.fillWidth: true }
-                ToolButton { text: "×"; font.pixelSize: 24; onClicked: settingsPanel.close() }
+                RoundAction { iconSource: root.uiIcon("settings-2"); onTriggered: settings.open() }
+                WindowButtons {}
             }
-            Label { text: qsTr("Mirakurun server"); color: "#aab5c5" }
-            TextField {
-                id: serverField; Layout.fillWidth: true
-                placeholderText: "http://mirakurun:40772"; text: player.server
-            }
-            Label { text: qsTr("Service ID"); color: "#aab5c5" }
-            TextField {
-                id: serviceField; Layout.fillWidth: true; placeholderText: "3203246080"
-                text: player.serviceId; inputMethodHints: Qt.ImhDigitsOnly
-            }
-            Button {
-                Layout.fillWidth: true; text: qsTr("Apply and watch"); highlighted: true
-                onClicked: {
-                    player.server = serverField.text
-                    player.serviceId = serviceField.text
-                    player.saveSettings()
-                    player.play()
-                    settingsPanel.close()
+        }
+        Item { id: guideBody; anchors.left: parent.left; anchors.right: parent.right; anchors.top: guideToolbar.bottom; anchors.bottom: guideFooter.top
+            Rectangle { anchors.left: parent.left; anchors.top: parent.top; width: 104; height: 88; color: "#111311"; Label { anchors.centerIn: parent; text: qsTr("関西"); color: root.muted; font.pixelSize: 13 } }
+            Item { anchors.left: parent.left; anchors.top: parent.top; anchors.bottom: parent.bottom; width: 104; z: 4
+                Repeater { model: 7
+                    Label { required property int index; x: 24; y: 80 + index * 60 * guide.pixelsPerMinute - 8; text: root.guideClock(Number(player.guideStart) + index * 3600000); color: root.muted; font.pixelSize: 12; font.bold: true }
+                }
+                Rectangle { visible: root.nowMs >= Number(player.guideStart) && root.nowMs <= Number(player.guideStart) + 21600000; x: 20; y: 88 + (root.nowMs - Number(player.guideStart)) / 60000 * guide.pixelsPerMinute - 12; width: 68; height: 24; radius: 12; color: root.accent
+                    Label { anchors.centerIn: parent; text: root.guideClock(root.nowMs); color: "#17201a"; font.pixelSize: 11; font.bold: true }
                 }
             }
-            Label {
-                Layout.fillWidth: true
-                text: qsTr("Channel discovery and the program guide will use this server in a future step.")
-                wrapMode: Text.WordWrap; color: "#7f8da1"
+            Flickable { id: epgFlick; x: 104; width: parent.width - 104; height: parent.height; clip: true; contentWidth: Math.max(width, root.guideChannelCount() * guide.channelWidth); contentHeight: 88 + 360 * guide.pixelsPerMinute; boundsBehavior: Flickable.StopAtBounds
+                Item { width: epgFlick.contentWidth; height: epgFlick.contentHeight
+                    Repeater { model: player.services
+                        Rectangle { required property int index; required property string modelData; visible: root.guideChannelVisible(index); x: root.guideColumn(index) * guide.channelWidth; y: 0; width: guide.channelWidth - 4; height: 88; color: "#151715"
+                            Row { anchors.left: parent.left; anchors.leftMargin: 14; anchors.verticalCenter: parent.verticalCenter; spacing: 8
+                                Item { width: 56; height: 32
+                                    Image { id: epgLogo; anchors.fill: parent; source: index < player.channelLogoUrls.length ? player.channelLogoUrls[index] : ""; fillMode: Image.PreserveAspectFit; asynchronous: true }
+                                    Label { anchors.centerIn: parent; visible: epgLogo.status !== Image.Ready; text: qsTr("局ロゴ"); color: root.muted; font.pixelSize: 10 }
+                                }
+                                Label { width: guide.channelWidth - 94; anchors.verticalCenter: parent.verticalCenter; text: modelData.replace(/^\d+\s+/, ""); color: root.ink; font.bold: true; elide: Text.ElideRight }
+                            }
+                        }
+                    }
+                    Repeater { model: 7
+                        Rectangle { required property int index; x: 0; y: 88 + index * 60 * guide.pixelsPerMinute; width: epgFlick.contentWidth; height: 1; color: "#20ffffff" }
+                    }
+                    Repeater { model: player.guideTitles
+                        Rectangle { required property int index; required property string modelData
+                            readonly property int channelIndex: Number(player.guideChannelIndices[index])
+                            readonly property real startValue: Number(player.guideStarts[index])
+                            readonly property real durationValue: Number(player.guideDurations[index])
+                            visible: root.guideChannelVisible(channelIndex)
+                            x: root.guideColumn(channelIndex) * guide.channelWidth; y: 88 + Math.max(0, (startValue - Number(player.guideStart)) / 60000 * guide.pixelsPerMinute)
+                            width: guide.channelWidth - 4; height: Math.max(24, durationValue / 60000 * guide.pixelsPerMinute - 4)
+                            color: root.guideColor(player.guideGenres[index]); radius: 0
+                            border.width: root.selectedGuideIndex === index ? 4 : 1
+                            border.color: root.selectedGuideIndex === index ? root.accent : "#5b625e"
+                            Column { anchors.fill: parent; anchors.margins: 10; spacing: 5
+                                Label { width: parent.width; text: modelData; color: "#1b201d"; font.pixelSize: 13; font.bold: true; wrapMode: Text.Wrap; maximumLineCount: Math.max(1, Math.floor((parent.height - 22) / 17)); elide: Text.ElideRight }
+                                Label { visible: parent.height > 46; text: root.guideClock(startValue) + "–" + root.guideClock(startValue + durationValue); color: "#4e5651"; font.pixelSize: 10 }
+                            }
+                            MouseArea { anchors.fill: parent; onClicked: root.selectedGuideIndex = index }
+                        }
+                    }
+                    Rectangle { visible: root.nowMs >= Number(player.guideStart) && root.nowMs <= Number(player.guideStart) + 21600000; z: 12; x: 0; y: 88 + (root.nowMs - Number(player.guideStart)) / 60000 * guide.pixelsPerMinute; width: epgFlick.contentWidth; height: 2; color: root.accent }
+                }
             }
+            Rectangle { id: guideDetail; visible: opacity > 0; enabled: root.selectedGuideIndex >= 0; opacity: root.selectedGuideIndex >= 0 ? 1 : 0; scale: root.selectedGuideIndex >= 0 ? 1 : .97; z: 20; width: Math.min(500, parent.width - 48); height: 360; radius: 18; color: "#151715"; border.color: "#b8ffffff"
+                transformOrigin: Item.Center
+                Behavior on opacity { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
+                Behavior on scale { NumberAnimation { duration: 180; easing.type: Easing.OutBack } }
+                x: {
+                    if (root.selectedGuideIndex < 0) return 24
+                    const cellX = 104 + root.guideColumn(Number(player.guideChannelIndices[root.selectedGuideIndex])) * guide.channelWidth - epgFlick.contentX
+                    return cellX > parent.width / 2 ? Math.max(24, cellX - width - 28) : Math.min(parent.width - width - 24, cellX + guide.channelWidth + 24)
+                }
+                y: root.selectedGuideIndex < 0 ? 20 : Math.max(20, Math.min(parent.height - height - 20, 88 + (Number(player.guideStarts[root.selectedGuideIndex]) - Number(player.guideStart)) / 60000 * guide.pixelsPerMinute - epgFlick.contentY))
+                Column { anchors.fill: parent; anchors.margins: 28; spacing: 14
+                    Label { text: root.selectedGuideIndex >= 0 ? root.guideClock(player.guideStarts[root.selectedGuideIndex]) + "–" + root.guideClock(Number(player.guideStarts[root.selectedGuideIndex]) + Number(player.guideDurations[root.selectedGuideIndex])) : ""; color: root.accent; font.bold: true }
+                    Label { width: parent.width; text: root.selectedGuideIndex >= 0 ? player.guideTitles[root.selectedGuideIndex] : ""; color: root.ink; font.pixelSize: 22; font.bold: true; wrapMode: Text.Wrap; maximumLineCount: 3; elide: Text.ElideRight }
+                    Label { width: parent.width; text: root.selectedGuideIndex >= 0 ? player.services[Number(player.guideChannelIndices[root.selectedGuideIndex])] : ""; color: root.muted }
+                    Rectangle { width: parent.width; height: 1; color: "#20ffffff" }
+                    Label { width: parent.width; height: 88; text: root.selectedGuideIndex >= 0 ? player.guideDescriptions[root.selectedGuideIndex] : ""; color: "#d9dcda"; wrapMode: Text.Wrap; elide: Text.ElideRight }
+                    Item { width: 1; height: 4 }
+                    Row { spacing: 16
+                        Rectangle { width: 168; height: 44; radius: 22; color: root.accent; Label { anchors.centerIn: parent; text: qsTr("この番組を視聴"); color: "#17201a"; font.bold: true } MouseArea { anchors.fill: parent; onClicked: { player.selectChannel(Number(player.guideChannelIndices[root.selectedGuideIndex])); root.selectedGuideIndex = -1; root.guideOpen = false } } }
+                        Label { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Esc  閉じる"); color: root.muted; font.pixelSize: 12 }
+                    }
+                }
+                MouseArea { anchors.fill: parent; acceptedButtons: Qt.NoButton }
+            }
+        }
+        Rectangle { id: guideFooter; anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom; height: 60; color: "#0b0c0b"; border.color: "#18ffffff"; Label { anchors.left: parent.left; anchors.leftMargin: 24; anchors.verticalCenter: parent.verticalCenter; text: qsTr("←→ チャンネル移動　 ↑↓ 時間移動　 Enter 詳細"); color: root.muted; font.pixelSize: 12 } }
+    }
+
+    Drawer {
+        id: settings; edge: Qt.RightEdge; width: Math.min(420, root.width * .88); height: root.height; modal: true; dim: true; onOpened: root.reveal()
+        background: Rectangle { color: "#fc151715"; border.color: "#28ffffff" }
+        ColumnLayout { anchors.fill: parent; anchors.margins: 28; spacing: 18
+            RowLayout { Layout.fillWidth: true; Label { text: qsTr("接続設定"); color: root.ink; font.pixelSize: 23; font.bold: true } Item { Layout.fillWidth: true } RoundAction { iconSource: root.uiIcon("panel-right-close"); tip: qsTr("折りたたむ"); onTriggered: settings.close() } }
+            Label { text: qsTr("Mirakurunサーバー"); color: root.muted }
+            TextField { id: serverField; Layout.fillWidth: true; height: 48; placeholderText: "http://mirakurun:40772"; text: player.server; color: root.ink; placeholderTextColor: "#8c918c"; leftPadding: 16; rightPadding: 16; background: Rectangle { radius: 12; color: root.raised; border.color: serverField.activeFocus ? root.accent : "#30ffffff" } }
+            Label { text: qsTr("サービスID"); color: root.muted }
+            TextField { id: serviceField; Layout.fillWidth: true; height: 48; placeholderText: "3203246080"; text: player.serviceId; inputMethodHints: Qt.ImhDigitsOnly; color: root.ink; placeholderTextColor: "#8c918c"; leftPadding: 16; rightPadding: 16; background: Rectangle { radius: 12; color: root.raised; border.color: serviceField.activeFocus ? root.accent : "#30ffffff" } }
+            Rectangle { Layout.fillWidth: true; height: 46; radius: 23; color: root.accent; Label { anchors.centerIn: parent; text: qsTr("適用して視聴"); color: "#17201a"; font.bold: true } MouseArea { anchors.fill: parent; onClicked: { player.server = serverField.text; player.serviceId = serviceField.text; player.saveSettings(); player.play(); settings.close() } } }
             Item { Layout.fillHeight: true }
-            Label {
-                text: "F11  " + qsTr("Full screen") + "   Space  " + qsTr("Pause")
-                color: "#7f8da1"
-            }
+            Label { text: "F11  " + qsTr("全画面") + "　 Space  " + qsTr("一時停止"); color: "#929497" }
         }
     }
 
-    component ResizeHandle: MouseArea {
-        required property int resizeEdges
-        enabled: root.visibility === Window.Windowed
-        acceptedButtons: Qt.LeftButton
-        z: 1000
-        onPressed: root.startSystemResize(resizeEdges)
-    }
-
-    ResizeHandle {
-        resizeEdges: Qt.LeftEdge
-        anchors { left: parent.left; top: parent.top; bottom: parent.bottom }
-        width: 6; cursorShape: Qt.SizeHorCursor
-    }
-    ResizeHandle {
-        resizeEdges: Qt.RightEdge
-        anchors { right: parent.right; top: parent.top; bottom: parent.bottom }
-        width: 6; cursorShape: Qt.SizeHorCursor
-    }
-    ResizeHandle {
-        resizeEdges: Qt.TopEdge
-        anchors { left: parent.left; right: parent.right; top: parent.top }
-        height: 6; cursorShape: Qt.SizeVerCursor
-    }
-    ResizeHandle {
-        resizeEdges: Qt.BottomEdge
-        anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
-        height: 6; cursorShape: Qt.SizeVerCursor
-    }
-    ResizeHandle {
-        resizeEdges: Qt.LeftEdge | Qt.TopEdge
-        anchors { left: parent.left; top: parent.top }
-        width: 12; height: 12; cursorShape: Qt.SizeFDiagCursor
-    }
-    ResizeHandle {
-        resizeEdges: Qt.RightEdge | Qt.TopEdge
-        anchors { right: parent.right; top: parent.top }
-        width: 12; height: 12; cursorShape: Qt.SizeBDiagCursor
-    }
-    ResizeHandle {
-        resizeEdges: Qt.LeftEdge | Qt.BottomEdge
-        anchors { left: parent.left; bottom: parent.bottom }
-        width: 12; height: 12; cursorShape: Qt.SizeBDiagCursor
-    }
-    ResizeHandle {
-        resizeEdges: Qt.RightEdge | Qt.BottomEdge
-        anchors { right: parent.right; bottom: parent.bottom }
-        width: 12; height: 12; cursorShape: Qt.SizeFDiagCursor
-    }
+    component ResizeEdge: MouseArea { required property int edges; enabled: root.visibility === Window.Windowed; acceptedButtons: Qt.LeftButton; z: 1000; onPressed: root.startSystemResize(edges) }
+    ResizeEdge { edges: Qt.LeftEdge; anchors { left: parent.left; top: parent.top; bottom: parent.bottom } width: 6; cursorShape: Qt.SizeHorCursor }
+    ResizeEdge { edges: Qt.RightEdge; anchors { right: parent.right; top: parent.top; bottom: parent.bottom } width: 6; cursorShape: Qt.SizeHorCursor }
+    ResizeEdge { edges: Qt.TopEdge; anchors { left: parent.left; right: parent.right; top: parent.top } height: 6; cursorShape: Qt.SizeVerCursor }
+    ResizeEdge { edges: Qt.BottomEdge; anchors { left: parent.left; right: parent.right; bottom: parent.bottom } height: 6; cursorShape: Qt.SizeVerCursor }
 
     Component.onCompleted: {
         videoAttached = player.attachVideoItem(videoItem)
-        if (!videoAttached)
-            return
-        player.refreshChannels()
-        overlayTimer.start()
+        if (!videoAttached) return
+        player.refreshChannels(); hideTimer.start()
     }
 }

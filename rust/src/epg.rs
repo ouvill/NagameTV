@@ -40,7 +40,6 @@ pub struct ServiceChannel {
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Program {
-    #[expect(dead_code, reason = "used by the upcoming program guide model")]
     pub id: u64,
     pub event_id: u16,
     pub service_id: u16,
@@ -48,8 +47,16 @@ pub struct Program {
     pub start_at: u64,
     pub duration: u64,
     pub name: Option<String>,
-    #[expect(dead_code, reason = "used by the upcoming program detail view")]
     pub description: Option<String>,
+    #[serde(default)]
+    pub genres: Vec<ProgramGenre>,
+}
+
+#[derive(Clone, Deserialize)]
+pub struct ProgramGenre {
+    pub lv1: u8,
+    #[serde(rename = "lv2")]
+    pub _lv2: u8,
 }
 
 #[derive(Clone)]
@@ -60,6 +67,7 @@ pub struct CurrentProgram {
     pub start_at: u64,
     pub duration: u64,
     pub name: Option<String>,
+    pub description: Option<String>,
 }
 
 impl EpgStore {
@@ -109,6 +117,7 @@ impl EpgSnapshot {
                             start_at: program.start_at,
                             duration: program.duration,
                             name: program.name.clone(),
+                            description: program.description.clone(),
                         }
                     })
                 })
@@ -143,6 +152,7 @@ mod tests {
             duration,
             name: Some("News".to_owned()),
             description: None,
+            genres: Vec::new(),
         }
     }
 
