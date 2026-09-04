@@ -22,6 +22,10 @@ pub enum PlaybackError {
     },
     #[error("Invalid MIRAKURUN_DEINTERLACE value '{value}'; use yadif, linear, or off")]
     InvalidDeinterlaceMode { value: String },
+    #[error("The playbin flags property is not a flags type")]
+    InvalidPlaybinFlagsType,
+    #[error("Could not configure playbin flag '{flag}' (enabled={enabled})")]
+    PlaybinFlagConfiguration { flag: &'static str, enabled: bool },
     #[error("Could not assemble video output: {0}")]
     VideoOutputAssembly(#[source] gst::glib::BoolError),
     #[error("Could not link video output: {0}")]
@@ -250,14 +254,7 @@ impl Playback {
         // Our sink bin owns deinterlacing and conversion; do not process the
         // video through playbin's intermediate conversion/deinterlacing chain.
         let flags = playbin.property_value("flags");
-        let flags_class = gst::glib::FlagsClass::with_type(flags.type_()).unwrap();
-        let flags = flags_class.unset_by_nick(flags, "deinterlace").unwrap();
-        let flags = flags_class.set_by_nick(flags, "native-video").unwrap();
-        let flags = flags_class
-            .unset_by_nick(flags, "soft-colorbalance")
-            .unwrap();
-        // ARIB captions are already extracted from TS and rendered by QML.
-        let flags = flags_class.unset_by_nick(flags, "text").unwrap();
+        let flags = configure_video_flags(flags)?;
         playbin.set_property_from_value("flags", &flags);
         playbin.set_property("video-sink", &video_output);
         if std::env::var("MIRAKURUN_AUDIO_SINK").is_ok_and(|value| value == "fakesink") {
@@ -423,6 +420,26 @@ impl Playback {
     }
 }
 
+fn configure_video_flags(mut flags: gst::glib::Value) -> Result<gst::glib::Value, PlaybackError> {
+    let class = gst::glib::FlagsClass::with_type(flags.type_())
+        .ok_or(PlaybackError::InvalidPlaybinFlagsType)?;
+    for (flag, enabled) in [
+        ("deinterlace", false),
+        ("native-video", true),
+        ("soft-colorbalance", false),
+        // ARIB captions are already extracted from TS and rendered by QML.
+        ("text", false),
+    ] {
+        flags = if enabled {
+            class.set_by_nick(flags, flag)
+        } else {
+            class.unset_by_nick(flags, flag)
+        }
+        .map_err(|_| PlaybackError::PlaybinFlagConfiguration { flag, enabled })?;
+    }
+    Ok(flags)
+}
+
 fn attach_subtitle_probe(
     source: &gst::Element,
     extractor: Arc<Mutex<TsSubtitleExtractor>>,
@@ -498,6 +515,49 @@ fn service_stream_url(server: &str, service_id: u64) -> Result<String, PlaybackE
 #[cfg(test)]
 mod tests {
     use super::{DeinterlaceMode, PlaybackError, service_stream_url};
+    use gst::prelude::*;
+    use gstreamer as gst;
+
+    #[test]
+    fn configures_playbin_video_flags() {
+        gst::init().unwrap();
+        // Inspect configuration only; do not start playback or access devices.
+        let playbin = gst::ElementFactory::make("playbin3").build().unwrap();
+        let original = playbin.property_value("flags");
+        let class = gst::glib::FlagsClass::with_type(original.type_()).unwrap();
+        let flags = super::configure_video_flags(original.clone()).unwrap();
+        assert!(class.is_set_by_nick(&flags, "native-video"));
+        for flag in ["deinterlace", "soft-colorbalance", "text"] {
+            assert!(!class.is_set_by_nick(&flags, flag));
+        }
+        for flag in ["audio", "video", "buffering", "soft-volume"] {
+            assert_eq!(
+                class.is_set_by_nick(&flags, flag),
+                class.is_set_by_nick(&original, flag)
+            );
+        }
+        playbin.set_property_from_value("flags", &flags);
+    }
+
+    #[test]
+    fn rejects_invalid_playbin_flags_without_panicking() {
+        assert!(matches!(
+            super::configure_video_flags(0_u32.to_value()),
+            Err(PlaybackError::InvalidPlaybinFlagsType)
+        ));
+    }
+
+    #[test]
+    fn rejects_missing_playbin_flags_without_panicking() {
+        gst::init().unwrap();
+        assert!(matches!(
+            super::configure_video_flags(gst::BufferFlags::empty().to_value()),
+            Err(PlaybackError::PlaybinFlagConfiguration {
+                flag: "deinterlace",
+                enabled: false
+            })
+        ));
+    }
     #[test]
     fn builds_service_url() {
         assert_eq!(
