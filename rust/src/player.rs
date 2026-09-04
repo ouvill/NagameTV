@@ -75,6 +75,9 @@ pub mod ffi {
         #[cxx_name = "refreshChannels"]
         fn refresh_channels(self: Pin<&mut Player>);
         #[qinvokable]
+        #[cxx_name = "refreshCurrentPrograms"]
+        fn refresh_current_programs(self: Pin<&mut Player>);
+        #[qinvokable]
         #[cxx_name = "selectChannel"]
         fn select_channel(self: Pin<&mut Player>, index: i32);
         #[qinvokable]
@@ -96,6 +99,7 @@ use crate::settings::Settings;
 use core::pin::Pin;
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{QString, QStringList};
+use futures_util::StreamExt;
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::ffi::c_void;
@@ -182,6 +186,10 @@ pub struct PlayerRust {
     comment_events_rx: mpsc::Receiver<CommentEvent>,
     comments: VecDeque<(String, String, String)>,
     loading_channels: AtomicBool,
+    epg_event_generation: Arc<std::sync::atomic::AtomicU64>,
+    epg_event_server: String,
+    epg_events_tx: mpsc::Sender<()>,
+    epg_events_rx: mpsc::Receiver<()>,
     network: Option<NetworkRuntime>,
     playback: Option<Playback>,
 }
@@ -189,6 +197,7 @@ pub struct PlayerRust {
 impl Default for PlayerRust {
     fn default() -> Self {
         let (comment_events_tx, comment_events_rx) = mpsc::channel();
+        let (epg_events_tx, epg_events_rx) = mpsc::channel();
         let mut settings = Settings::load().unwrap_or_else(|error| {
             eprintln!("Could not load settings: {error}");
             Settings::default()
@@ -258,6 +267,10 @@ impl Default for PlayerRust {
             comment_events_rx,
             comments: VecDeque::new(),
             loading_channels: AtomicBool::new(false),
+            epg_event_generation: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            epg_event_server: String::new(),
+            epg_events_tx,
+            epg_events_rx,
             network: network.ok(),
             playback: playback.ok(),
         }
@@ -441,9 +454,14 @@ impl ffi::Player {
         for text in received_texts {
             self.as_mut().comment_received(QString::from(text));
         }
+        if self.as_ref().rust().epg_events_rx.try_recv().is_ok() {
+            while self.as_ref().rust().epg_events_rx.try_recv().is_ok() {}
+            self.as_mut().refresh_channels();
+        }
     }
 
     pub fn refresh_channels(mut self: Pin<&mut Self>) {
+        self.as_mut().ensure_epg_event_stream();
         if self
             .as_ref()
             .rust()
@@ -603,6 +621,154 @@ impl ffi::Player {
                 }
             });
         });
+    }
+
+    fn ensure_epg_event_stream(mut self: Pin<&mut Self>) {
+        let server = self
+            .as_ref()
+            .server()
+            .to_string()
+            .trim()
+            .trim_end_matches('/')
+            .to_owned();
+        if server.is_empty() || self.as_ref().rust().epg_event_server == server {
+            return;
+        }
+        let Some((runtime, client)) = self
+            .as_ref()
+            .rust()
+            .network
+            .as_ref()
+            .map(|network| (network.handle(), network.client()))
+        else {
+            return;
+        };
+        let generation = self
+            .as_ref()
+            .rust()
+            .epg_event_generation
+            .fetch_add(1, Ordering::AcqRel)
+            + 1;
+        let active_generation = self.as_ref().rust().epg_event_generation.clone();
+        let events = self.as_ref().rust().epg_events_tx.clone();
+        self.as_mut().rust_mut().epg_event_server = server.clone();
+        runtime.spawn(async move {
+            let url = format!("{server}/api/events/stream?resource=program");
+            while active_generation.load(Ordering::Acquire) == generation {
+                let response = client.get(&url).send().await;
+                if let Ok(response) = response.and_then(reqwest::Response::error_for_status) {
+                    let mut stream = response.bytes_stream();
+                    let mut last_notification = tokio::time::Instant::now()
+                        .checked_sub(std::time::Duration::from_secs(10))
+                        .unwrap_or_else(tokio::time::Instant::now);
+                    while active_generation.load(Ordering::Acquire) == generation {
+                        let Some(chunk) = stream.next().await else {
+                            break;
+                        };
+                        let Ok(chunk) = chunk else { break };
+                        if chunk.iter().any(|byte| !byte.is_ascii_whitespace())
+                            && last_notification.elapsed() >= std::time::Duration::from_secs(15)
+                        {
+                            let _ = events.send(());
+                            last_notification = tokio::time::Instant::now();
+                        }
+                    }
+                }
+                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+            }
+        });
+    }
+
+    /// Re-evaluate the current programme from the in-memory EPG snapshot.
+    /// This is intentionally network-free so it can run at programme boundaries.
+    pub fn refresh_current_programs(mut self: Pin<&mut Self>) {
+        let Some(epg) = self
+            .as_ref()
+            .rust()
+            .network
+            .as_ref()
+            .map(NetworkRuntime::epg)
+        else {
+            return;
+        };
+        let Ok(now) = SystemTime::now().duration_since(UNIX_EPOCH) else {
+            return;
+        };
+        let snapshot = epg.snapshot();
+        if snapshot.services.is_empty() {
+            return;
+        }
+        let current_programs = snapshot
+            .current_programs(now.as_millis() as u64)
+            .into_iter()
+            .map(|program| ((program.network_id, program.service_id), program))
+            .collect::<HashMap<_, _>>();
+        let services = snapshot
+            .services
+            .iter()
+            .map(|service| (service.id, service))
+            .collect::<HashMap<_, _>>();
+        let service_ids = self.as_ref().rust().service_ids.clone();
+        let program_for = |id: &u64| {
+            services
+                .get(id)
+                .and_then(|service| current_programs.get(&(service.network_id, service.service_id)))
+        };
+        let titles = service_ids
+            .iter()
+            .map(|id| {
+                QString::from(
+                    program_for(id)
+                        .and_then(|program| program.name.as_deref())
+                        .unwrap_or(""),
+                )
+            })
+            .collect::<QStringList>();
+        let descriptions = service_ids
+            .iter()
+            .map(|id| {
+                QString::from(
+                    program_for(id)
+                        .and_then(|program| program.description.as_deref())
+                        .unwrap_or(""),
+                )
+            })
+            .collect::<QStringList>();
+        let starts = service_ids
+            .iter()
+            .map(|id| {
+                QString::from(
+                    program_for(id)
+                        .map_or(0, |program| program.start_at)
+                        .to_string(),
+                )
+            })
+            .collect::<QStringList>();
+        let durations = service_ids
+            .iter()
+            .map(|id| {
+                QString::from(
+                    program_for(id)
+                        .map_or(0, |program| program.duration)
+                        .to_string(),
+                )
+            })
+            .collect::<QStringList>();
+        self.as_mut().set_program_titles(titles);
+        self.as_mut().set_program_descriptions(descriptions);
+        self.as_mut().set_program_starts(starts);
+        self.as_mut().set_program_durations(durations);
+
+        let current_id = self.as_ref().service_id().to_string().parse::<u64>().ok();
+        if let Some(program) = current_id.as_ref().and_then(program_for) {
+            self.as_mut()
+                .set_program_name(QString::from(program.name.as_deref().unwrap_or("")));
+            self.as_mut().set_program_description(QString::from(
+                program.description.as_deref().unwrap_or(""),
+            ));
+            self.as_mut().rust_mut().current_program_start = program.start_at;
+            self.as_mut().rust_mut().current_program_duration = program.duration;
+        }
     }
 
     pub fn select_channel(mut self: Pin<&mut Self>, index: i32) {

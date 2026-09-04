@@ -158,7 +158,8 @@ ApplicationWindow {
     Timer { id: hideTimer; interval: 3200; onTriggered: if (player.playing && !overlayPinned) overlayVisible = false }
     Timer { interval: 50; running: true; repeat: true; onTriggered: player.pollEvents() }
     Timer { interval: 30000; running: true; repeat: true; triggeredOnStart: true; onTriggered: root.nowMs = Date.now() }
-    Timer { interval: 60000; running: root.channelsOpen || root.panel === "channels"; repeat: true; onTriggered: root.refreshChannelsIfDue(false) }
+    Timer { interval: 1000; running: true; repeat: true; onTriggered: player.refreshCurrentPrograms() }
+    Timer { interval: 300000; running: true; repeat: true; onTriggered: root.refreshChannelsIfDue(false) }
     onFrameSwapped: if (videoAttached && player.autoplay && !autoplayStarted) {
         autoplayStarted = true; Qt.callLater(function() { player.play() })
     }
