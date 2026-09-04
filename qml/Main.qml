@@ -36,7 +36,7 @@ ApplicationWindow {
     property string channelPickerType: "GR"
     property double nowMs: Date.now()
     readonly property bool panelOpen: panel === "program" || panel === "comments" || panel === "channels"
-    readonly property bool overlayPinned: guideOpen || channelsOpen || settings.opened
+    readonly property bool overlayPinned: guideOpen || channelsOpen || settings.opened || playbackSettings.opened
 
     Player { id: player }
 
@@ -98,7 +98,8 @@ ApplicationWindow {
         reveal()
     }
     function closeTopmost() {
-        if (settings.opened) settings.close()
+        if (playbackSettings.opened) playbackSettings.close()
+        else if (settings.opened) settings.close()
         else if (selectedGuideIndex >= 0) selectedGuideIndex = -1
         else if (guideOpen) guideOpen = false
         else if (channelsOpen) channelsOpen = false
@@ -175,6 +176,23 @@ ApplicationWindow {
             contentItem: Label { text: action.tip; color: root.ink; font.pixelSize: 12 }
             background: Rectangle { radius: 8; color: "#e61b1d1b"; border.color: "#38ffffff" }
         }
+    }
+
+    component ToggleSwitch: Rectangle {
+        id: toggle
+        property bool checked: false
+        signal toggled()
+        implicitWidth: 42; implicitHeight: 24; radius: 12
+        color: checked ? root.accent : "#4c4f4c"
+        Behavior on color { ColorAnimation { duration: 120 } }
+        Rectangle {
+            width: 18; height: 18; radius: 9
+            x: toggle.checked ? toggle.width - width - 3 : 3
+            anchors.verticalCenter: parent.verticalCenter
+            color: toggle.checked ? "#17201a" : "#d7d9d7"
+            Behavior on x { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+        }
+        MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: toggle.toggled() }
     }
     component WindowAction: Rectangle {
         id: windowAction
@@ -380,6 +398,7 @@ ApplicationWindow {
                 RoundAction { iconSource: root.uiIcon("grid-2x2"); tip: qsTr("チャンネル"); onTriggered: { channelsOpen = true; player.refreshChannels(); reveal() } }
                 RoundAction { iconSource: root.uiIcon("pencil"); tip: qsTr("コメント投稿") }
                 RoundAction { iconSource: root.uiIcon("captions"); tip: qsTr("字幕") }
+                RoundAction { iconSource: root.uiIcon("settings-2"); tip: qsTr("再生設定"); onTriggered: { playbackSettings.open(); root.reveal() } }
                 RoundAction { iconSource: root.uiIcon("maximize"); tip: qsTr("全画面"); onTriggered: root.toggleFullscreen() }
                 Rectangle { width: 1; height: 28; color: "#28ffffff"; Layout.leftMargin: 4; Layout.rightMargin: 4; Layout.alignment: Qt.AlignVCenter }
                 RoundAction { iconSource: root.uiIcon(root.panelOpen ? "panel-right-close" : "panel-right-open"); tip: root.panelOpen ? qsTr("サイドパネルを閉じる") : qsTr("サイドパネルを開く"); onTriggered: root.panel = root.panelOpen ? "" : "program" }
@@ -406,15 +425,10 @@ ApplicationWindow {
                 RoundAction { iconSource: root.uiIcon("panel-right-close"); tip: qsTr("折りたたむ"); onTriggered: root.panel = "" }
                 Label { text: root.panel === "comments" ? qsTr("コメント") : (root.panel === "channels" ? qsTr("チャンネル") : qsTr("番組情報")); color: root.ink; font.pixelSize: 17; font.bold: true }
                 Item { Layout.fillWidth: true }
-                Rectangle { visible: root.panel === "comments"; width: 88; height: 36; radius: 18; color: root.danmaku ? "#30ffffff" : "#12ffffff"; border.color: root.danmaku ? "#8fffffff" : "#22ffffff"; Row { anchors.centerIn: parent; spacing: 7; Label { text: qsTr("弾幕"); color: root.danmaku ? root.ink : root.muted; font.pixelSize: 13 } Rectangle { width: 18; height: 18; radius: 9; color: root.danmaku ? root.accent : "#626365" } } MouseArea { anchors.fill: parent; onClicked: { root.danmaku = !root.danmaku; player.saveSettings() } } }
-            }
-            ColumnLayout { visible: root.panel === "comments"; Layout.fillWidth: true; spacing: 2
-                RowLayout { Layout.fillWidth: true; Label { text: qsTr("文字サイズ"); color: root.muted; font.pixelSize: 11 } Item { Layout.fillWidth: true } Label { text: Math.round(root.commentFontSize) + " px"; color: root.ink; font.pixelSize: 11 } }
-                Slider { Layout.fillWidth: true; from: 14; to: 36; stepSize: 1; value: root.commentFontSize; onMoved: root.commentFontSize = value; onPressedChanged: if (!pressed) player.saveSettings() }
-                RowLayout { Layout.fillWidth: true; Label { text: qsTr("不透明度"); color: root.muted; font.pixelSize: 11 } Item { Layout.fillWidth: true } Label { text: Math.round(root.commentOpacity * 100) + "%"; color: root.ink; font.pixelSize: 11 } }
-                Slider { Layout.fillWidth: true; from: .2; to: 1; stepSize: .05; value: root.commentOpacity; onMoved: root.commentOpacity = value; onPressedChanged: if (!pressed) player.saveSettings() }
-                RowLayout { Layout.fillWidth: true; Label { text: qsTr("速度"); color: root.muted; font.pixelSize: 11 } Item { Layout.fillWidth: true } Label { text: root.commentSpeed.toFixed(1) + "×"; color: root.ink; font.pixelSize: 11 } }
-                Slider { Layout.fillWidth: true; from: .5; to: 2; stepSize: .1; value: root.commentSpeed; onMoved: root.commentSpeed = value; onPressedChanged: if (!pressed) player.saveSettings() }
+                Row { visible: root.panel === "comments"; spacing: 9; Layout.alignment: Qt.AlignVCenter
+                    Label { height: parent.height; verticalAlignment: Text.AlignVCenter; text: qsTr("弾幕"); color: root.danmaku ? root.ink : root.muted; font.pixelSize: 13 }
+                    ToggleSwitch { checked: root.danmaku; onToggled: { root.danmaku = !root.danmaku; player.saveSettings() } }
+                }
             }
             ColumnLayout {
                 visible: root.panel === "program"; Layout.fillWidth: true; spacing: 13
@@ -751,6 +765,33 @@ ApplicationWindow {
             }
         }
         Rectangle { id: guideFooter; anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom; height: 60; color: "#0b0c0b"; border.color: "#18ffffff"; Label { anchors.left: parent.left; anchors.leftMargin: 24; anchors.verticalCenter: parent.verticalCenter; text: qsTr("←→ チャンネル移動　 ↑↓ 時間移動　 Enter 詳細"); color: root.muted; font.pixelSize: 12 } }
+    }
+
+    Popup {
+        id: playbackSettings
+        parent: Overlay.overlay
+        width: 320; height: 300
+        x: Math.max(20, videoRegion.width - width - 24)
+        y: Math.max(20, root.height - height - 92)
+        modal: false; dim: false; padding: 20
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        onClosed: { player.saveSettings(); root.reveal() }
+        background: Rectangle { radius: 18; color: "#f21a1c1a"; border.color: "#42ffffff" }
+        contentItem: ColumnLayout {
+            spacing: 8
+            Label { text: qsTr("再生設定"); color: root.ink; font.pixelSize: 17; font.bold: true }
+            RowLayout { Layout.fillWidth: true
+                Label { text: qsTr("弾幕コメント"); color: root.ink; font.pixelSize: 13 }
+                Item { Layout.fillWidth: true }
+                ToggleSwitch { checked: root.danmaku; onToggled: root.danmaku = !root.danmaku }
+            }
+            RowLayout { Layout.fillWidth: true; Label { text: qsTr("文字サイズ"); color: root.muted; font.pixelSize: 11 } Item { Layout.fillWidth: true } Label { text: Math.round(root.commentFontSize) + " px"; color: root.ink; font.pixelSize: 11 } }
+            Slider { Layout.fillWidth: true; from: 14; to: 36; stepSize: 1; value: root.commentFontSize; onMoved: root.commentFontSize = value }
+            RowLayout { Layout.fillWidth: true; Label { text: qsTr("不透明度"); color: root.muted; font.pixelSize: 11 } Item { Layout.fillWidth: true } Label { text: Math.round(root.commentOpacity * 100) + "%"; color: root.ink; font.pixelSize: 11 } }
+            Slider { Layout.fillWidth: true; from: .2; to: 1; stepSize: .05; value: root.commentOpacity; onMoved: root.commentOpacity = value }
+            RowLayout { Layout.fillWidth: true; Label { text: qsTr("速度"); color: root.muted; font.pixelSize: 11 } Item { Layout.fillWidth: true } Label { text: root.commentSpeed.toFixed(1) + "×"; color: root.ink; font.pixelSize: 11 } }
+            Slider { Layout.fillWidth: true; from: .5; to: 2; stepSize: .1; value: root.commentSpeed; onMoved: root.commentSpeed = value }
+        }
     }
 
     Drawer {
