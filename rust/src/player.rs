@@ -404,7 +404,13 @@ impl ffi::Player {
                             .collect::<QStringList>();
                         let channel_logo_urls = services
                             .iter()
-                            .map(|service| QString::from(service_logo_url(&server, service.id)))
+                            .map(|service| {
+                                QString::from(if service.has_logo_data {
+                                    service_logo_url(&server, service.id)
+                                } else {
+                                    String::new()
+                                })
+                            })
                             .collect::<QStringList>();
                         let channel_types = services
                             .iter()
@@ -458,7 +464,11 @@ impl ffi::Player {
                             let label = QString::from(&channel.label);
                             let title = QString::from(&channel.program_title);
                             let description = QString::from(&channel.program_description);
-                            let logo = QString::from(service_logo_url(&server, channel.id));
+                            let logo = QString::from(if channel.has_logo_data {
+                                service_logo_url(&server, channel.id)
+                            } else {
+                                String::new()
+                            });
                             let start = channel.program_start;
                             let duration = channel.program_duration;
                             player.as_mut().set_channel_name(label);
@@ -515,7 +525,12 @@ impl ffi::Player {
             .get(index as isize)
             .and_then(|value| value.to_string().parse::<u64>().ok())
             .unwrap_or(0);
-        let logo_url = service_logo_url(&self.as_ref().server().to_string(), service_id);
+        let logo_url = self
+            .as_ref()
+            .channel_logo_urls()
+            .get(index as isize)
+            .map(|value| value.to_string())
+            .unwrap_or_default();
         self.as_mut()
             .set_service_id(QString::from(service_id.to_string()));
         self.as_mut().set_channel_name(QString::from(channel_name));
@@ -571,6 +586,7 @@ struct ProgramSignature {
 
 struct Channel {
     id: u64,
+    has_logo_data: bool,
     label: String,
     remote_key: u16,
     channel_priority: u8,
@@ -639,8 +655,11 @@ async fn fetch_services(
     let snapshot = epg.snapshot();
     let current_programs = snapshot.current_programs(now);
     let channels = build_channels(&snapshot.services, current_programs);
-    let guide_start = now - now % 1_800_000;
-    let guide_end = guide_start + 6 * 60 * 60 * 1_000;
+    // QML presents seven local calendar days. Keep a one-day margin before now
+    // so today's programmes are available regardless of the local UTC offset,
+    // plus enough future data to cover the final tab completely.
+    let guide_start = now.saturating_sub(24 * 60 * 60 * 1_000);
+    let guide_end = now.saturating_add(8 * 24 * 60 * 60 * 1_000);
     let mut guide = programs
         .into_iter()
         .filter(|program| {
@@ -692,6 +711,7 @@ fn build_channels(services: &[Service], programs: Vec<CurrentProgram>) -> Vec<Ch
             let program = current_programs.get(&(service.network_id, service.service_id));
             Channel {
                 id: service.id,
+                has_logo_data: service.has_logo_data,
                 label: if remote_key == 0 {
                     format!("--   {}", service.name)
                 } else {
@@ -782,6 +802,7 @@ mod tests {
             network_id: 32_000,
             name: name.to_owned(),
             service_type: 1,
+            has_logo_data: true,
             remote_control_key_id: Some(1),
             channel: ServiceChannel {
                 channel_type: "GR".to_owned(),

@@ -26,6 +26,8 @@ pub struct Service {
     pub name: String,
     #[serde(rename = "type")]
     pub service_type: u16,
+    #[serde(default)]
+    pub has_logo_data: bool,
     pub remote_control_key_id: Option<u16>,
     pub channel: ServiceChannel,
 }

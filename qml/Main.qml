@@ -28,6 +28,7 @@ ApplicationWindow {
     property bool videoAttached: false
     property bool autoplayStarted: false
     property int selectedGuideIndex: -1
+    property int guideDayOffset: 0
     property string guideType: "GR"
     property string channelPickerType: "GR"
     property double nowMs: Date.now()
@@ -50,6 +51,17 @@ ApplicationWindow {
         if (!types.some(option => option[0] === channelPickerType)) channelPickerType = types[0][0]
     }
     Connections { target: player; function onChannelTypesChanged() { root.normalizeChannelTypes() } }
+
+    function scrollGuideToNow() {
+        const position = 88 + (root.nowMs - guide.dayStart) / 60000 * guide.pixelsPerMinute
+        const maximum = Math.max(0, epgFlick.contentHeight - epgFlick.height)
+        epgFlick.contentY = Math.max(0, Math.min(maximum, position - epgFlick.height * 0.34))
+    }
+    onGuideOpenChanged: if (guideOpen) {
+        guideDayOffset = 0
+        selectedGuideIndex = -1
+        Qt.callLater(root.scrollGuideToNow)
+    }
 
     function reveal() { overlayVisible = true; hideTimer.restart() }
     function scrollOneStep(view, event, horizontal, step) {
@@ -441,32 +453,115 @@ ApplicationWindow {
         id: guide; anchors.fill: parent; visible: root.guideOpen; color: "#0b0c0b"; z: 500
         readonly property real pixelsPerMinute: 2.4
         readonly property real channelWidth: 222
+        function selectDay(index) {
+            const next = Math.max(0, Math.min(6, index))
+            if (next === root.guideDayOffset) return
+            root.guideDayOffset = next
+            root.selectedGuideIndex = -1
+            if (guideDateGroup.visible) guideDateGroup.revealSelected()
+            if (next === 0) Qt.callLater(root.scrollGuideToNow)
+            else epgFlick.contentY = 0
+        }
+        function scrollHorizontally(event) {
+            const delta = event.angleDelta.y || event.angleDelta.x
+            if (delta === 0) return
+            epgFlick.cancelFlick()
+            epgHorizontalScroll.stop()
+            const maximum = Math.max(0, epgFlick.contentWidth - epgFlick.width)
+            epgHorizontalScroll.from = epgFlick.contentX
+            epgHorizontalScroll.to = Math.max(0, Math.min(maximum,
+                epgFlick.contentX + (delta < 0 ? channelWidth : -channelWidth)))
+            epgHorizontalScroll.start()
+            event.accepted = true
+        }
+        NumberAnimation { id: epgHorizontalScroll; target: epgFlick; property: "contentX"; duration: 150; easing.type: Easing.OutCubic }
+        readonly property real dayStart: {
+            const date = new Date(root.nowMs)
+            date.setHours(0, 0, 0, 0)
+            return date.getTime() + root.guideDayOffset * 86400000
+        }
+        readonly property var programsByChannel: {
+            const result = []
+            for (let i = 0; i < player.services.length; ++i) result.push([])
+            const starts = player.guideStarts
+            const durations = player.guideDurations
+            const channels = player.guideChannelIndices
+            for (let i = 0; i < starts.length; ++i) {
+                const channelIndex = Number(channels[i])
+                const start = Number(starts[i])
+                const duration = Number(durations[i])
+                if (start < dayStart + 86400000
+                        && start + duration > dayStart)
+                    result[channelIndex].push(i)
+            }
+            return result
+        }
         Rectangle { id: guideToolbar; anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top; height: 84; color: "#151715"
-            RowLayout { anchors.fill: parent; anchors.leftMargin: 24; anchors.rightMargin: 24; spacing: 16
+            MouseArea { anchors.fill: parent; z: 0; acceptedButtons: Qt.LeftButton; onPressed: root.startSystemMove(); onDoubleClicked: root.visibility === Window.Maximized ? root.showNormal() : root.showMaximized() }
+            WindowButtons { id: guideWindowButtons; anchors.right: parent.right; anchors.top: parent.top; anchors.rightMargin: 18; anchors.topMargin: 18; z: 1 }
+            RowLayout { anchors.left: parent.left; anchors.right: guideWindowButtons.left; anchors.top: parent.top; anchors.leftMargin: 18; anchors.rightMargin: 14; anchors.topMargin: 18; height: 42; z: 1; spacing: root.width < 980 ? 8 : 14
                 RoundAction { iconSource: root.uiIcon("chevron-left"); onTriggered: { root.selectedGuideIndex = -1; root.guideOpen = false } }
-                Label { text: qsTr("番組表"); color: root.ink; font.pixelSize: 26; font.bold: true }
-                Label { text: Qt.formatDate(new Date(Number(player.guideStart)), "M月d日（ddd）"); color: root.muted; Layout.leftMargin: 34 }
-                Rectangle { width: 76; height: 36; radius: 18; color: "#249caf9f"; border.color: root.accent; Label { anchors.centerIn: parent; text: qsTr("今日"); color: root.accent; font.bold: true } }
+                Label { visible: root.width >= 900; text: qsTr("番組表"); color: root.ink; font.pixelSize: 26; font.bold: true }
                 BroadcastTabs { value: root.guideType; onSelected: function(channelType) { root.guideType = channelType; root.selectedGuideIndex = -1; epgFlick.contentX = 0 } }
+                Rectangle { id: guideDateCompact; visible: root.width < 1280; Layout.preferredWidth: 202; implicitHeight: 40; radius: 20; color: "#b8171918"; border.color: "#32ffffff"
+                    Connections { target: root; function onGuideDayOffsetChanged() { compactDateChange.restart() } }
+                    SequentialAnimation { id: compactDateChange
+                        NumberAnimation { target: compactDateLabel; property: "opacity"; to: .35; duration: 70; easing.type: Easing.InCubic }
+                        NumberAnimation { target: compactDateLabel; property: "opacity"; to: 1; duration: 120; easing.type: Easing.OutCubic }
+                    }
+                    Rectangle { anchors.left: parent.left; anchors.top: parent.top; anchors.bottom: parent.bottom; width: 44; radius: height / 2; color: compactPrevious.containsMouse && root.guideDayOffset > 0 ? "#28ffffff" : "transparent"; opacity: root.guideDayOffset > 0 ? 1 : .35
+                        Image { anchors.centerIn: parent; width: 16; height: 16; source: root.uiIcon("chevron-left") }
+                        MouseArea { id: compactPrevious; anchors.fill: parent; enabled: root.guideDayOffset > 0; hoverEnabled: true; cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor; onClicked: guide.selectDay(root.guideDayOffset - 1) }
+                    }
+                    Label { id: compactDateLabel; anchors.centerIn: parent; text: root.guideDayOffset === 0 ? qsTr("今日") : Qt.formatDate(new Date(guide.dayStart), "M/d（ddd）"); color: root.ink; font.pixelSize: 12; font.bold: true }
+                    Rectangle { anchors.right: parent.right; anchors.top: parent.top; anchors.bottom: parent.bottom; width: 44; radius: height / 2; color: compactNext.containsMouse && root.guideDayOffset < 6 ? "#28ffffff" : "transparent"; opacity: root.guideDayOffset < 6 ? 1 : .35
+                        Image { anchors.centerIn: parent; width: 16; height: 16; source: root.uiIcon("chevron-left"); mirror: true }
+                        MouseArea { id: compactNext; anchors.fill: parent; enabled: root.guideDayOffset < 6; hoverEnabled: true; cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor; onClicked: guide.selectDay(root.guideDayOffset + 1) }
+                    }
+                }
+                Rectangle { id: guideDateGroup; visible: root.width >= 1280; Layout.fillWidth: visible; Layout.minimumWidth: visible ? 82 : 0; Layout.maximumWidth: 572; implicitHeight: 40; radius: 20; color: "#b8171918"; border.color: "#32ffffff"; clip: true
+                    function itemX(index) { return 3 + (index === 0 ? 0 : 62 + (index - 1) * 84) }
+                    function itemWidth(index) { return index === 0 ? 62 : 84 }
+                    function revealSelected() {
+                        const center = itemX(root.guideDayOffset) + itemWidth(root.guideDayOffset) / 2
+                        const maximum = Math.max(0, guideDateFlick.contentWidth - guideDateFlick.width)
+                        guideDateScroll.to = Math.max(0, Math.min(maximum, center - guideDateFlick.width / 2))
+                        guideDateScroll.restart()
+                    }
+                    Flickable { id: guideDateFlick; anchors.fill: parent; contentWidth: 3 + guideDateRow.width + 3; contentHeight: height; boundsBehavior: Flickable.StopAtBounds; flickableDirection: Flickable.HorizontalFlick
+                        NumberAnimation { id: guideDateScroll; target: guideDateFlick; property: "contentX"; duration: 170; easing.type: Easing.OutCubic }
+                        Rectangle { x: guideDateGroup.itemX(root.guideDayOffset); y: 3; width: guideDateGroup.itemWidth(root.guideDayOffset); height: parent.height - 6; radius: height / 2; color: "#429caf9f"; border.color: root.accent
+                            Behavior on x { NumberAnimation { duration: 170; easing.type: Easing.OutCubic } }
+                            Behavior on width { NumberAnimation { duration: 170; easing.type: Easing.OutCubic } }
+                        }
+                        Row { id: guideDateRow; x: 3; width: 62 + 6 * 84; height: parent.height
+                            Repeater { model: 7
+                                Item { required property int index; width: guideDateGroup.itemWidth(index); height: guideDateRow.height
+                                    Label { anchors.centerIn: parent; text: index === 0 ? qsTr("今日") : Qt.formatDate(new Date(guide.dayStart - root.guideDayOffset * 86400000 + index * 86400000), "M/d（ddd）"); color: root.guideDayOffset === index ? root.ink : "#d5d8d5"; font.pixelSize: 12; font.bold: root.guideDayOffset === index }
+                                    MouseArea { anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: guide.selectDay(index) }
+                                }
+                            }
+                        }
+                    }
+                }
                 Item { Layout.fillWidth: true }
                 RoundAction { iconSource: root.uiIcon("settings-2"); onTriggered: settings.open() }
-                WindowButtons {}
             }
         }
         Item { id: guideBody; anchors.left: parent.left; anchors.right: parent.right; anchors.top: guideToolbar.bottom; anchors.bottom: guideFooter.top
-            Rectangle { anchors.left: parent.left; anchors.top: parent.top; width: 104; height: 88; color: "#111311"; Label { anchors.centerIn: parent; text: qsTr("関西"); color: root.muted; font.pixelSize: 13 } }
-            Item { anchors.left: parent.left; anchors.top: parent.top; anchors.bottom: parent.bottom; width: 104; z: 4
-                Repeater { model: 7
-                    Label { required property int index; x: 24; y: 80 + index * 60 * guide.pixelsPerMinute - 8; text: root.guideClock(Number(player.guideStart) + index * 3600000); color: root.muted; font.pixelSize: 12; font.bold: true }
+            Rectangle { anchors.left: parent.left; anchors.top: parent.top; width: 104; height: 88; color: "#111311" }
+            Item { anchors.left: parent.left; anchors.top: parent.top; anchors.bottom: parent.bottom; width: 104; z: 4; clip: true
+                Repeater { model: 25
+                    Label { required property int index; x: 24; y: 80 + index * 60 * guide.pixelsPerMinute - 8 - epgFlick.contentY; text: root.guideClock(guide.dayStart + index * 3600000); color: root.muted; font.pixelSize: 12; font.bold: true }
                 }
-                Rectangle { visible: root.nowMs >= Number(player.guideStart) && root.nowMs <= Number(player.guideStart) + 21600000; x: 20; y: 88 + (root.nowMs - Number(player.guideStart)) / 60000 * guide.pixelsPerMinute - 12; width: 68; height: 24; radius: 12; color: root.accent
+                Rectangle { visible: root.nowMs >= guide.dayStart && root.nowMs < guide.dayStart + 86400000; x: 20; y: 88 + (root.nowMs - guide.dayStart) / 60000 * guide.pixelsPerMinute - 12 - epgFlick.contentY; width: 68; height: 24; radius: 12; color: root.accent
                     Label { anchors.centerIn: parent; text: root.guideClock(root.nowMs); color: "#17201a"; font.pixelSize: 11; font.bold: true }
                 }
             }
-            Flickable { id: epgFlick; x: 104; width: parent.width - 104; height: parent.height; clip: true; contentWidth: Math.max(width, root.guideChannelCount() * guide.channelWidth); contentHeight: 88 + 360 * guide.pixelsPerMinute; boundsBehavior: Flickable.StopAtBounds
+            Flickable { id: epgFlick; x: 104; width: parent.width - 104; height: parent.height; clip: true; contentWidth: Math.max(width, root.guideChannelCount() * guide.channelWidth); contentHeight: 88 + 1440 * guide.pixelsPerMinute; boundsBehavior: Flickable.StopAtBounds
                 Item { width: epgFlick.contentWidth; height: epgFlick.contentHeight
                     Repeater { model: player.services
-                        Rectangle { required property int index; required property string modelData; visible: root.guideChannelVisible(index); x: root.guideColumn(index) * guide.channelWidth; y: 0; width: guide.channelWidth - 4; height: 88; color: "#151715"
+                        Rectangle { required property int index; required property string modelData; visible: root.guideChannelVisible(index); z: 30; x: root.guideColumn(index) * guide.channelWidth; y: epgFlick.contentY; width: guide.channelWidth - 4; height: 88; color: "#151715"
                             Row { anchors.left: parent.left; anchors.leftMargin: 14; anchors.verticalCenter: parent.verticalCenter; spacing: 8
                                 Item { width: 56; height: 32
                                     Image { id: epgLogo; anchors.fill: parent; source: index < player.channelLogoUrls.length ? player.channelLogoUrls[index] : ""; fillMode: Image.PreserveAspectFit; asynchronous: true }
@@ -476,40 +571,76 @@ ApplicationWindow {
                             }
                         }
                     }
-                    Repeater { model: 7
+                    Repeater { model: 25
                         Rectangle { required property int index; x: 0; y: 88 + index * 60 * guide.pixelsPerMinute; width: epgFlick.contentWidth; height: 1; color: "#20ffffff" }
                     }
-                    Repeater { model: player.guideTitles
-                        Rectangle { required property int index; required property string modelData
-                            readonly property int channelIndex: Number(player.guideChannelIndices[index])
-                            readonly property real startValue: Number(player.guideStarts[index])
-                            readonly property real durationValue: Number(player.guideDurations[index])
-                            visible: root.guideChannelVisible(channelIndex)
-                            x: root.guideColumn(channelIndex) * guide.channelWidth; y: 88 + Math.max(0, (startValue - Number(player.guideStart)) / 60000 * guide.pixelsPerMinute)
-                            width: guide.channelWidth - 4; height: Math.max(24, durationValue / 60000 * guide.pixelsPerMinute - 4)
-                            color: root.guideColor(player.guideGenres[index]); radius: 0
-                            border.width: root.selectedGuideIndex === index ? 4 : 1
-                            border.color: root.selectedGuideIndex === index ? root.accent : "#5b625e"
-                            Column { anchors.fill: parent; anchors.margins: 10; spacing: 5
-                                Label { width: parent.width; text: modelData; color: "#1b201d"; font.pixelSize: 13; font.bold: true; wrapMode: Text.Wrap; maximumLineCount: Math.max(1, Math.floor((parent.height - 22) / 17)); elide: Text.ElideRight }
-                                Label { visible: parent.height > 46; text: root.guideClock(startValue) + "–" + root.guideClock(startValue + durationValue); color: "#4e5651"; font.pixelSize: 10 }
+                    Repeater { model: player.services
+                        Loader { id: channelPrograms; required property int index
+                            readonly property real columnX: root.guideColumn(index) * guide.channelWidth
+                            x: columnX; y: 88; width: guide.channelWidth - 4; height: epgFlick.contentHeight - 88
+                            active: root.guideChannelVisible(index)
+                                && columnX + width >= epgFlick.contentX - guide.channelWidth
+                                && columnX <= epgFlick.contentX + epgFlick.width + guide.channelWidth
+                            sourceComponent: Component {
+                                Item { width: channelPrograms.width; height: channelPrograms.height
+                                    Repeater { model: guide.programsByChannel[channelPrograms.index] || []
+                                        Rectangle { required property var modelData
+                                            readonly property int programIndex: Number(modelData)
+                                            readonly property real startValue: Number(player.guideStarts[programIndex])
+                                            readonly property real durationValue: Number(player.guideDurations[programIndex])
+                                            y: Math.max(0, (startValue - guide.dayStart) / 60000 * guide.pixelsPerMinute)
+                                            width: channelPrograms.width; height: Math.max(24, durationValue / 60000 * guide.pixelsPerMinute - 4)
+                                            color: root.guideColor(player.guideGenres[programIndex]); radius: 0
+                                            border.width: root.selectedGuideIndex === programIndex ? 4 : 1
+                                            border.color: root.selectedGuideIndex === programIndex ? root.accent : "#5b625e"
+                                            Column { anchors.fill: parent; anchors.margins: 10; spacing: 5
+                                                Label { width: parent.width; text: player.guideTitles[programIndex]; color: "#1b201d"; font.pixelSize: 13; font.bold: true; wrapMode: Text.Wrap; maximumLineCount: Math.max(1, Math.floor((parent.height - 22) / 17)); elide: Text.ElideRight }
+                                                Label { visible: parent.height > 46; text: root.guideClock(startValue) + "–" + root.guideClock(startValue + durationValue); color: "#4e5651"; font.pixelSize: 10 }
+                                            }
+                                            MouseArea { anchors.fill: parent; onClicked: guideDetail.openFor(programIndex) }
+                                        }
+                                    }
+                                }
                             }
-                            MouseArea { anchors.fill: parent; onClicked: root.selectedGuideIndex = index }
                         }
                     }
-                    Rectangle { visible: root.nowMs >= Number(player.guideStart) && root.nowMs <= Number(player.guideStart) + 21600000; z: 12; x: 0; y: 88 + (root.nowMs - Number(player.guideStart)) / 60000 * guide.pixelsPerMinute; width: epgFlick.contentWidth; height: 2; color: root.accent }
+                    Rectangle { visible: root.nowMs >= guide.dayStart && root.nowMs < guide.dayStart + 86400000; z: 12; x: 0; y: 88 + (root.nowMs - guide.dayStart) / 60000 * guide.pixelsPerMinute; width: epgFlick.contentWidth; height: 2; color: root.accent }
                 }
             }
+            MouseArea {
+                x: epgFlick.x; y: epgFlick.y; width: epgFlick.width; height: epgFlick.height
+                z: 18
+                acceptedButtons: Qt.LeftButton
+                propagateComposedEvents: true
+                scrollGestureEnabled: false
+                onPressed: function(mouse) { mouse.accepted = false }
+                onClicked: function(mouse) { mouse.accepted = false }
+                onWheel: function(event) {
+                    if (event.modifiers & Qt.ShiftModifier)
+                        guide.scrollHorizontally(event)
+                    else
+                        event.accepted = false
+                }
+            }
+            MouseArea { anchors.fill: parent; visible: root.selectedGuideIndex >= 0; z: 19; onClicked: root.selectedGuideIndex = -1 }
             Rectangle { id: guideDetail; visible: opacity > 0; enabled: root.selectedGuideIndex >= 0; opacity: root.selectedGuideIndex >= 0 ? 1 : 0; scale: root.selectedGuideIndex >= 0 ? 1 : .97; z: 20; width: Math.min(500, parent.width - 48); height: 360; radius: 18; color: "#151715"; border.color: "#b8ffffff"
+                readonly property bool selectedProgramIsLive: root.selectedGuideIndex >= 0
+                    && Number(player.guideStarts[root.selectedGuideIndex]) <= root.nowMs
+                    && root.nowMs < Number(player.guideStarts[root.selectedGuideIndex]) + Number(player.guideDurations[root.selectedGuideIndex])
+                function openFor(index) {
+                    const cellX = 104 + root.guideColumn(Number(player.guideChannelIndices[index])) * guide.channelWidth - epgFlick.contentX
+                    x = cellX > parent.width / 2
+                        ? Math.max(24, cellX - width - 28)
+                        : Math.min(parent.width - width - 24, cellX + guide.channelWidth + 24)
+                    y = Math.max(20, Math.min(parent.height - height - 20,
+                        88 + (Number(player.guideStarts[index]) - guide.dayStart) / 60000 * guide.pixelsPerMinute - epgFlick.contentY))
+                    root.selectedGuideIndex = index
+                }
                 transformOrigin: Item.Center
                 Behavior on opacity { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
                 Behavior on scale { NumberAnimation { duration: 180; easing.type: Easing.OutBack } }
-                x: {
-                    if (root.selectedGuideIndex < 0) return 24
-                    const cellX = 104 + root.guideColumn(Number(player.guideChannelIndices[root.selectedGuideIndex])) * guide.channelWidth - epgFlick.contentX
-                    return cellX > parent.width / 2 ? Math.max(24, cellX - width - 28) : Math.min(parent.width - width - 24, cellX + guide.channelWidth + 24)
-                }
-                y: root.selectedGuideIndex < 0 ? 20 : Math.max(20, Math.min(parent.height - height - 20, 88 + (Number(player.guideStarts[root.selectedGuideIndex]) - Number(player.guideStart)) / 60000 * guide.pixelsPerMinute - epgFlick.contentY))
+                x: 24; y: 20
+                MouseArea { anchors.fill: parent }
                 Column { anchors.fill: parent; anchors.margins: 28; spacing: 14
                     Label { text: root.selectedGuideIndex >= 0 ? root.guideClock(player.guideStarts[root.selectedGuideIndex]) + "–" + root.guideClock(Number(player.guideStarts[root.selectedGuideIndex]) + Number(player.guideDurations[root.selectedGuideIndex])) : ""; color: root.accent; font.bold: true }
                     Label { width: parent.width; text: root.selectedGuideIndex >= 0 ? player.guideTitles[root.selectedGuideIndex] : ""; color: root.ink; font.pixelSize: 22; font.bold: true; wrapMode: Text.Wrap; maximumLineCount: 3; elide: Text.ElideRight }
@@ -518,11 +649,9 @@ ApplicationWindow {
                     Label { width: parent.width; height: 88; text: root.selectedGuideIndex >= 0 ? player.guideDescriptions[root.selectedGuideIndex] : ""; color: "#d9dcda"; wrapMode: Text.Wrap; elide: Text.ElideRight }
                     Item { width: 1; height: 4 }
                     Row { spacing: 16
-                        Rectangle { width: 168; height: 44; radius: 22; color: root.accent; Label { anchors.centerIn: parent; text: qsTr("この番組を視聴"); color: "#17201a"; font.bold: true } MouseArea { anchors.fill: parent; onClicked: { player.selectChannel(Number(player.guideChannelIndices[root.selectedGuideIndex])); root.selectedGuideIndex = -1; root.guideOpen = false } } }
-                        Label { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Esc  閉じる"); color: root.muted; font.pixelSize: 12 }
+                        Rectangle { visible: guideDetail.selectedProgramIsLive; width: visible ? 168 : 0; height: 44; radius: 22; color: root.accent; Label { anchors.centerIn: parent; text: qsTr("この番組を視聴"); color: "#17201a"; font.bold: true } MouseArea { anchors.fill: parent; onClicked: { player.selectChannel(Number(player.guideChannelIndices[root.selectedGuideIndex])); root.selectedGuideIndex = -1; root.guideOpen = false } } }
                     }
                 }
-                MouseArea { anchors.fill: parent; acceptedButtons: Qt.NoButton }
             }
         }
         Rectangle { id: guideFooter; anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom; height: 60; color: "#0b0c0b"; border.color: "#18ffffff"; Label { anchors.left: parent.left; anchors.leftMargin: 24; anchors.verticalCenter: parent.verticalCenter; text: qsTr("←→ チャンネル移動　 ↑↓ 時間移動　 Enter 詳細"); color: root.muted; font.pixelSize: 12 } }
