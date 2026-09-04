@@ -39,6 +39,7 @@ pub mod ffi {
         #[qproperty(QStringList, program_durations, cxx_name = "programDurations")]
         #[qproperty(QStringList, channel_logo_urls, cxx_name = "channelLogoUrls")]
         #[qproperty(QStringList, channel_types, cxx_name = "channelTypes")]
+        #[qproperty(QStringList, jikkyo_forces, cxx_name = "jikkyoForces")]
         #[qproperty(QString, guide_start, cxx_name = "guideStart")]
         #[qproperty(QStringList, guide_program_ids, cxx_name = "guideProgramIds")]
         #[qproperty(QStringList, guide_channel_indices, cxx_name = "guideChannelIndices")]
@@ -95,6 +96,7 @@ use crate::settings::Settings;
 use core::pin::Pin;
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{QString, QStringList};
+use serde::Deserialize;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::ffi::c_void;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -153,6 +155,7 @@ pub struct PlayerRust {
     program_durations: QStringList,
     channel_logo_urls: QStringList,
     channel_types: QStringList,
+    jikkyo_forces: QStringList,
     guide_start: QString,
     guide_program_ids: QStringList,
     guide_channel_indices: QStringList,
@@ -225,6 +228,7 @@ impl Default for PlayerRust {
             program_durations: QStringList::default(),
             channel_logo_urls: QStringList::default(),
             channel_types: QStringList::default(),
+            jikkyo_forces: QStringList::default(),
             guide_start: QString::default(),
             guide_program_ids: QStringList::default(),
             guide_channel_indices: QStringList::default(),
@@ -516,6 +520,17 @@ impl ffi::Player {
                             .iter()
                             .map(|service| QString::from(&service.channel_type))
                             .collect::<QStringList>();
+                        let jikkyo_forces = services
+                            .iter()
+                            .map(|service| {
+                                QString::from(
+                                    service
+                                        .jikkyo_force
+                                        .map(|force| force.to_string())
+                                        .unwrap_or_default(),
+                                )
+                            })
+                            .collect::<QStringList>();
                         player.as_mut().rust_mut().service_ids =
                             services.iter().map(|service| service.id).collect();
                         player.as_mut().rust_mut().jikkyo_ids = services
@@ -531,6 +546,7 @@ impl ffi::Player {
                         player.as_mut().set_program_durations(program_durations);
                         player.as_mut().set_channel_logo_urls(channel_logo_urls);
                         player.as_mut().set_channel_types(channel_types);
+                        player.as_mut().set_jikkyo_forces(jikkyo_forces);
                         player
                             .as_mut()
                             .set_guide_start(QString::from(payload.guide_start.to_string()));
@@ -762,6 +778,19 @@ struct Channel {
     network_id: u16,
     channel_type: String,
     jikkyo_id: Option<String>,
+    jikkyo_force: Option<u64>,
+}
+
+#[derive(Deserialize)]
+struct NxChannel {
+    id: String,
+    threads: Vec<NxThread>,
+}
+
+#[derive(Deserialize)]
+struct NxThread {
+    status: String,
+    jikkyo_force: Option<u64>,
 }
 
 struct GuideProgram {
@@ -817,7 +846,15 @@ async fn fetch_services(
     epg.replace(services, programs.clone(), now);
     let snapshot = epg.snapshot();
     let current_programs = snapshot.current_programs(now);
-    let channels = build_channels(&snapshot.services, current_programs);
+    let mut channels = build_channels(&snapshot.services, current_programs);
+    if let Ok(forces) = fetch_jikkyo_forces(client).await {
+        for channel in &mut channels {
+            channel.jikkyo_force = channel
+                .jikkyo_id
+                .as_ref()
+                .and_then(|id| forces.get(id).copied());
+        }
+    }
     // QML presents seven local calendar days. Keep a one-day margin before now
     // so today's programmes are available regardless of the local UTC offset,
     // plus enough future data to cover the final tab completely.
@@ -915,6 +952,7 @@ fn build_channels(services: &[Service], programs: Vec<CurrentProgram>) -> Vec<Ch
                     service.service_id,
                     &service.name,
                 ),
+                jikkyo_force: None,
             }
         })
         .collect::<Vec<_>>();
@@ -957,6 +995,29 @@ fn build_channels(services: &[Service], programs: Vec<CurrentProgram>) -> Vec<Ch
         ))
     });
     channels
+}
+
+async fn fetch_jikkyo_forces(
+    client: &reqwest::Client,
+) -> Result<HashMap<String, u64>, reqwest::Error> {
+    let channels = client
+        .get("https://nx-jikkyo.tsukumijima.net/api/v1/channels")
+        .send()
+        .await?
+        .error_for_status()?
+        .json::<Vec<NxChannel>>()
+        .await?;
+    Ok(channels
+        .into_iter()
+        .filter_map(|channel| {
+            channel
+                .threads
+                .into_iter()
+                .find(|thread| thread.status == "ACTIVE")
+                .and_then(|thread| thread.jikkyo_force)
+                .map(|force| (channel.id, force))
+        })
+        .collect())
 }
 
 fn service_logo_url(server: &str, service_id: u64) -> String {

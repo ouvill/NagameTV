@@ -127,6 +127,7 @@ ApplicationWindow {
     }
     function guideClock(milliseconds) { return Qt.formatTime(new Date(Number(milliseconds)), "hh:mm") }
     function uiIcon(name) { return "../assets/icons/" + name + ".svg" }
+    function jikkyoForce(index) { return index < player.jikkyoForces.length && player.jikkyoForces[index].length ? qsTr("勢い ") + player.jikkyoForces[index] : "" }
     function guideChannelVisible(index) { return index < player.channelTypes.length && player.channelTypes[index] === guideType }
     function guideColumn(index) {
         let column = 0
@@ -149,6 +150,7 @@ ApplicationWindow {
     Timer { id: hideTimer; interval: 3200; onTriggered: if (player.playing && !overlayPinned) overlayVisible = false }
     Timer { interval: 50; running: true; repeat: true; onTriggered: player.pollEvents() }
     Timer { interval: 30000; running: true; repeat: true; triggeredOnStart: true; onTriggered: root.nowMs = Date.now() }
+    Timer { interval: 60000; running: root.channelsOpen || root.panel === "channels"; repeat: true; onTriggered: player.refreshChannels() }
     onFrameSwapped: if (videoAttached && player.autoplay && !autoplayStarted) {
         autoplayStarted = true; Qt.callLater(function() { player.play() })
     }
@@ -463,7 +465,11 @@ ApplicationWindow {
                 ListView { id: sideChannelList; anchors.left: parent.left; anchors.right: parent.right; anchors.top: sideChannelTabs.bottom; anchors.bottom: parent.bottom; anchors.topMargin: 14; spacing: 12; clip: true; model: root.channelIndices(root.channelPickerType); boundsBehavior: Flickable.DragAndOvershootBounds; boundsMovement: Flickable.FollowBoundsBehavior
                     delegate: Rectangle { required property var modelData; readonly property int channelIndex: Number(modelData); readonly property string channelName: channelIndex < player.services.length ? player.services[channelIndex] : ""; width: ListView.view.width; height: 132; radius: 14; color: channelName === player.channelName ? "#26302a" : root.raised; border.color: channelName === player.channelName ? root.accent : "#24ffffff"
                         Column { anchors.fill: parent; anchors.margins: 14; spacing: 8
-                            Row { spacing: 8; Item { width: 56; height: 32; Image { id: channelCardLogo; anchors.fill: parent; source: channelIndex < player.channelLogoUrls.length ? player.channelLogoUrls[channelIndex] : ""; fillMode: Image.PreserveAspectFit; asynchronous: true } Label { anchors.centerIn: parent; visible: channelCardLogo.status !== Image.Ready; text: qsTr("局ロゴ"); color: root.muted; font.pixelSize: 9 } } Label { anchors.verticalCenter: parent.verticalCenter; text: channelName.replace(/^\d+\s+/, ""); color: root.ink; font.bold: true } }
+                            Item { width: parent.width; height: 32
+                                Item { id: channelCardLogoBox; width: 56; height: 32; Image { id: channelCardLogo; anchors.fill: parent; source: channelIndex < player.channelLogoUrls.length ? player.channelLogoUrls[channelIndex] : ""; fillMode: Image.PreserveAspectFit; asynchronous: true } Label { anchors.centerIn: parent; visible: channelCardLogo.status !== Image.Ready; text: qsTr("局ロゴ"); color: root.muted; font.pixelSize: 9 } }
+                                Label { anchors.left: channelCardLogoBox.right; anchors.leftMargin: 8; anchors.right: channelForce.left; anchors.rightMargin: 8; anchors.verticalCenter: parent.verticalCenter; text: channelName.replace(/^\d+\s+/, ""); color: root.ink; font.bold: true; elide: Text.ElideRight }
+                                Label { id: channelForce; anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; text: root.jikkyoForce(channelIndex); visible: text.length > 0; color: root.accent; font.pixelSize: 11; font.bold: true }
+                            }
                             Label { width: parent.width; text: channelIndex < player.programTitles.length ? player.programTitles[channelIndex] : qsTr("番組情報なし"); color: root.ink; font.bold: true; elide: Text.ElideRight }
                             Label { text: root.programTime(channelIndex); color: root.muted; font.pixelSize: 11 }
                         }
@@ -533,7 +539,11 @@ ApplicationWindow {
                         Repeater { model: player.services
                             delegate: Rectangle { required property int index; required property string modelData; readonly property bool matchesType: index < player.channelTypes.length && player.channelTypes[index] === root.channelPickerType; width: matchesType ? (modelData === player.channelName ? 356 : 270) : 0; height: 164; visible: matchesType; radius: 16; color: modelData === player.channelName ? "#26302a" : root.raised; border.color: modelData === player.channelName ? root.accent : "#30ffffff"
                                 Column { anchors.fill: parent; anchors.margins: 14; spacing: 9
-                                    Row { spacing: 8; Item { width: 56; height: 32; Image { id: pickerLogo; anchors.fill: parent; source: index < player.channelLogoUrls.length ? player.channelLogoUrls[index] : ""; fillMode: Image.PreserveAspectFit; asynchronous: true } Label { anchors.centerIn: parent; visible: pickerLogo.status !== Image.Ready; text: qsTr("局ロゴ"); color: root.muted; font.pixelSize: 9 } } Label { anchors.verticalCenter: parent.verticalCenter; text: modelData.replace(/^\d+\s+/, ""); color: root.muted; font.pixelSize: 12 } }
+                                    Item { width: parent.width; height: 32
+                                        Item { id: pickerLogoBox; width: 56; height: 32; Image { id: pickerLogo; anchors.fill: parent; source: index < player.channelLogoUrls.length ? player.channelLogoUrls[index] : ""; fillMode: Image.PreserveAspectFit; asynchronous: true } Label { anchors.centerIn: parent; visible: pickerLogo.status !== Image.Ready; text: qsTr("局ロゴ"); color: root.muted; font.pixelSize: 9 } }
+                                        Label { anchors.left: pickerLogoBox.right; anchors.leftMargin: 8; anchors.right: pickerForce.left; anchors.rightMargin: 8; anchors.verticalCenter: parent.verticalCenter; text: modelData.replace(/^\d+\s+/, ""); color: root.muted; font.pixelSize: 12; elide: Text.ElideRight }
+                                        Label { id: pickerForce; anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; text: root.jikkyoForce(index); visible: text.length > 0; color: root.accent; font.pixelSize: 11; font.bold: true }
+                                    }
                                     Label { width: parent.width; text: index < player.programTitles.length ? player.programTitles[index] : qsTr("番組情報なし"); color: root.ink; font.pixelSize: modelData === player.channelName ? 16 : 14; font.bold: true; wrapMode: Text.Wrap; maximumLineCount: 2; elide: Text.ElideRight }
                                     Label { text: root.programTime(index); color: root.muted; font.pixelSize: 11 }
                                 }
