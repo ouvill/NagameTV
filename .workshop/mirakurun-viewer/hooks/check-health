@@ -3,7 +3,7 @@ set -euo pipefail
 
 missing=()
 
-for command in Xvfb cargo cmake gst-launch-1.0 import mpv ninja openbox pkg-config rustc xdpyinfo xdotool; do
+for command in Xvfb cargo cmake gst-launch-1.0 import lld mpv ninja openbox pkg-config qtpaths6 rustc xdpyinfo xdotool; do
   if ! command -v "$command" >/dev/null 2>&1; then
     missing+=("$command")
   fi
@@ -28,14 +28,19 @@ for module in Qt6Core Qt6Gui Qt6Qml Qt6Quick aribb24 gstreamer-1.0 mpv; do
   fi
 done
 
-if [[ ! -f /usr/lib/x86_64-linux-gnu/qt6/plugins/platforms/libqwayland-egl.so ]] &&
-   [[ ! -f /usr/lib/aarch64-linux-gnu/qt6/plugins/platforms/libqwayland-egl.so ]]; then
-  missing+=("Qt6:wayland-egl")
-fi
-
-if [[ ! -f /usr/lib/x86_64-linux-gnu/qt6/plugins/imageformats/libqsvg.so ]] &&
-   [[ ! -f /usr/lib/aarch64-linux-gnu/qt6/plugins/imageformats/libqsvg.so ]]; then
-  missing+=("Qt6:imageformats-svg")
+qt_plugins_dir=$(qtpaths6 --query QT_INSTALL_PLUGINS 2>/dev/null || true)
+if [[ -z "$qt_plugins_dir" || ! -d "$qt_plugins_dir" ]]; then
+  missing+=("Qt6:plugin-directory")
+else
+  # New Qt versions use qwayland plus a separate EGL integration plugin.
+  if [[ ! -f "$qt_plugins_dir/platforms/libqwayland-egl.so" ]] &&
+     { [[ ! -f "$qt_plugins_dir/platforms/libqwayland.so" ]] ||
+       [[ ! -f "$qt_plugins_dir/wayland-graphics-integration-client/libqt-plugin-wayland-egl.so" ]]; }; then
+    missing+=("Qt6:wayland-egl")
+  fi
+  if [[ ! -f "$qt_plugins_dir/imageformats/libqsvg.so" ]]; then
+    missing+=("Qt6:imageformats-svg (qt6-svg-plugins)")
+  fi
 fi
 
 if ((${#missing[@]} > 0)); then

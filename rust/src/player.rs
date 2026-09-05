@@ -10,6 +10,10 @@ pub mod ffi {
         type QQuickItem;
         #[cxx_name = "configureQtQuickOpenGl"]
         fn configure_qt_quick_open_gl();
+        #[cxx_name = "playbackLogDirectory"]
+        fn playback_log_directory() -> QString;
+        #[cxx_name = "openPlaybackLogDirectory"]
+        fn open_playback_log_directory(path: &QString) -> bool;
         #[cxx_name = "qQuickItemAddress"]
         unsafe fn q_quick_item_address(item: *mut QQuickItem) -> usize;
     }
@@ -86,6 +90,9 @@ pub mod ffi {
         #[qinvokable]
         #[cxx_name = "saveSettings"]
         fn save_settings(self: Pin<&mut Player>);
+        #[qinvokable]
+        #[cxx_name = "openLogFolder"]
+        fn open_log_folder(self: Pin<&mut Player>) -> bool;
     }
 
     impl cxx_qt::Threading for Player {}
@@ -277,7 +284,57 @@ impl Default for PlayerRust {
     }
 }
 
+fn prepare_log_directory() -> std::io::Result<std::path::PathBuf> {
+    let path = std::path::PathBuf::from(ffi::playback_log_directory().to_string());
+    if !path.is_absolute() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "User log directory unavailable",
+        ));
+    }
+    std::fs::create_dir_all(&path).map_err(|error| {
+        std::io::Error::new(error.kind(), format!("{}: {error}", path.display()))
+    })?;
+    Ok(path)
+}
+
 impl ffi::Player {
+    pub fn open_log_folder(self: Pin<&mut Self>) -> bool {
+        match prepare_log_directory() {
+            Ok(path) => {
+                let opened = ffi::open_playback_log_directory(&QString::from(
+                    path.to_string_lossy().as_ref(),
+                ));
+                if !opened {
+                    tracing::warn!(path = %path.display(), "Could not open log folder");
+                }
+                opened
+            }
+            Err(error) => {
+                tracing::warn!(%error, "Could not prepare log folder");
+                false
+            }
+        }
+    }
+
+    fn report_playback_error(mut self: Pin<&mut Self>, error: &PlayerError) {
+        let message = error.to_string();
+        tracing::error!(%error, "Playback failed");
+        match prepare_log_directory() {
+            Ok(directory) => {
+                let path = directory.join("playback-error.log");
+                match std::fs::write(&path, format!("{message}\n")) {
+                    Ok(()) => tracing::error!(path = %path.display(), "Playback diagnostic saved"),
+                    Err(write_error) => {
+                        tracing::warn!(%write_error, path = %path.display(), "Could not save playback diagnostic")
+                    }
+                }
+            }
+            Err(error) => tracing::warn!(%error, "Could not prepare playback diagnostic directory"),
+        }
+        self.as_mut().set_status(QString::from(message));
+    }
+
     pub unsafe fn attach_video_item(mut self: Pin<&mut Self>, item: *mut ffi::QQuickItem) -> bool {
         let address = unsafe { ffi::q_quick_item_address(item) };
         let result: Result<(), PlayerError> = {
@@ -294,7 +351,7 @@ impl ffi::Player {
         match result {
             Ok(()) => true,
             Err(error) => {
-                self.as_mut().set_status(QString::from(error.to_string()));
+                self.as_mut().report_playback_error(&error);
                 false
             }
         }
@@ -316,7 +373,7 @@ impl ffi::Player {
                 self.as_mut().set_playing(true);
                 self.as_mut().set_status(QString::from("Connecting..."));
             }
-            Err(error) => self.as_mut().set_status(QString::from(error.to_string())),
+            Err(error) => self.as_mut().report_playback_error(&error),
         }
     }
 
@@ -333,7 +390,7 @@ impl ffi::Player {
                 self.as_mut().set_playing(false);
                 self.as_mut().set_status(QString::from("Stopped"));
             }
-            Err(error) => self.as_mut().set_status(QString::from(error.to_string())),
+            Err(error) => self.as_mut().report_playback_error(&error),
         }
     }
 
@@ -354,7 +411,7 @@ impl ffi::Player {
             }
             Err(error) => {
                 self.as_mut().set_playing(false);
-                self.as_mut().set_status(QString::from(error.to_string()));
+                self.as_mut().report_playback_error(&error);
             }
         }
         let volume = *self.as_ref().volume();

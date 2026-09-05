@@ -962,6 +962,14 @@ ApplicationWindow {
             TextField { id: serviceField; Layout.fillWidth: true; height: 48; placeholderText: "3203246080"; text: player.serviceId; inputMethodHints: Qt.ImhDigitsOnly; color: root.ink; placeholderTextColor: "#8c918c"; leftPadding: 16; rightPadding: 16; background: Rectangle { radius: 12; color: root.raised; border.color: serviceField.activeFocus ? root.accent : "#30ffffff" } }
             Rectangle { Layout.fillWidth: true; height: 46; radius: 23; color: root.accent; Label { anchors.centerIn: parent; text: qsTr("適用して視聴"); color: "#17201a"; font.bold: true } MouseArea { anchors.fill: parent; onClicked: { player.server = serverField.text; player.serviceId = serviceField.text; player.saveSettings(); player.play(); settings.close() } } }
             Item { Layout.fillHeight: true }
+            Button {
+                Layout.fillWidth: true
+                text: qsTr("ログフォルダーを開く")
+                onClicked: logFolderError.visible = !player.openLogFolder()
+                contentItem: Label { text: parent.text; color: root.ink; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                background: Rectangle { implicitHeight: 40; radius: 12; color: parent.hovered ? root.raised : "transparent"; border.color: "#30ffffff" }
+            }
+            Label { id: logFolderError; visible: false; Layout.fillWidth: true; wrapMode: Text.Wrap; text: qsTr("ログフォルダーを開けませんでした。端末の警告を確認してください。"); color: root.muted }
             Label { text: "F11  " + qsTr("全画面") + "　 Space  " + qsTr("一時停止"); color: "#929497" }
         }
     }

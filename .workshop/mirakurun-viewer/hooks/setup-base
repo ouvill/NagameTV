@@ -21,6 +21,7 @@ apt-get install --yes --no-install-recommends \
   libaribb24-dev \
   libmpv-dev \
   libqt6svg6 \
+  lld \
   mesa-utils \
   imagemagick \
   ninja-build \
@@ -37,6 +38,7 @@ apt-get install --yes --no-install-recommends \
   qml6-module-qtquick-window \
   qt6-base-dev \
   qt6-declarative-dev \
+  qt6-svg-plugins \
   qt6-wayland \
   x11-utils \
   xdotool \

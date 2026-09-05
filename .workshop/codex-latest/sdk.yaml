@@ -1,6 +1,6 @@
 name: codex-latest
 title: Latest Codex CLI
-base: ubuntu@24.04
+base: ubuntu@26.04
 version: "1"
 summary: Current OpenAI Codex CLI
 description: |

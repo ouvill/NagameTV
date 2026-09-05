@@ -1,6 +1,6 @@
 name: mirakurun-viewer
 title: Mirakurun Viewer development SDK
-base: ubuntu@24.04
+base: ubuntu@26.04
 version: "0.1"
 summary: Qt 6, Rust, libmpv, and diagnostics for Mirakurun Viewer
 description: |

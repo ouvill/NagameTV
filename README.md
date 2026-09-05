@@ -70,7 +70,7 @@ MIRAKURUN_TEST_SCREEN=1920x1080x24 workshop run dev test-ui
 Ubuntu 24.04:
 
 ```bash
-sudo apt install build-essential cmake ninja-build rustc cargo \
+sudo apt install build-essential cmake ninja-build rustc cargo lld \
   fonts-noto-cjk \
   qt6-base-dev qt6-declarative-dev qml6-module-qtquick \
   qml6-module-qtquick-controls qml6-module-qtquick-layouts \
@@ -112,6 +112,19 @@ QT_QPA_PLATFORM=xcb ./build/mirakurun-viewer
 
 インターレース解除は`MIRAKURUN_DEINTERLACE`で選択できます。既定は高品質な
 `yadif`です。CPU負荷を抑える場合は`linear`、無効化する場合は`off`を指定します。
+
+## 再生エラーログ
+
+再生エラーはUIと端末に表示し、ユーザー別の状態保存ディレクトリに
+`playback-error.log`として最新の1件を保存します。端末には保存先の絶対パスも表示します。
+設定画面の「ログフォルダーを開く」からOSのファイルマネージャーで確認できます。
+
+Qt 6.7以降は`QStandardPaths::StateLocation`を使用します。
+Linuxでは通常`~/.local/state/mirakurun-viewer`（`XDG_STATE_HOME`指定時はその配下）、
+Windowsでは通常`%LOCALAPPDATA%/mirakurun-viewer/State`です。
+古いQtではLinuxのXDG規約、その他のOSではQtの`AppLocalDataLocation/State`を使用します。
+Workshop内ではコンテナ側に保存されます。保存やフォルダー表示の失敗は端末に警告し、
+元の再生エラーはそのまま表示します。
 
 ## 操作
 
