@@ -10,6 +10,7 @@ const SETTINGS_FILE: &str = "settings.toml";
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(default)]
 pub struct Settings {
+    pub language: String,
     pub server: String,
     pub service_id: String,
     pub volume: f64,
@@ -23,6 +24,7 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
+            language: "system".to_owned(),
             server: "http://127.0.0.1:40772".to_owned(),
             service_id: String::new(),
             volume: 70.0,
@@ -102,7 +104,16 @@ fn load_from(path: &Path) -> Result<Settings, SettingsError> {
     settings.comment_font_size = finite_clamped(settings.comment_font_size, 12.0, 48.0, 21.0);
     settings.comment_opacity = finite_clamped(settings.comment_opacity, 0.1, 1.0, 1.0);
     settings.comment_speed = finite_clamped(settings.comment_speed, 0.5, 2.0, 1.0);
+    settings.language = normalize_language(&settings.language).to_owned();
     Ok(settings)
+}
+
+pub fn normalize_language(language: &str) -> &'static str {
+    match language {
+        "system" => "system",
+        "ja" => "ja",
+        _ => "en",
+    }
 }
 
 fn finite_clamped(value: f64, minimum: f64, maximum: f64, fallback: f64) -> f64 {
@@ -146,6 +157,15 @@ mod tests {
     }
 
     #[test]
+    fn unsupported_language_falls_back_to_english() {
+        assert_eq!(normalize_language("system"), "system");
+        assert_eq!(normalize_language("ja"), "ja");
+        assert_eq!(normalize_language("en"), "en");
+        assert_eq!(normalize_language("fr"), "en");
+        assert_eq!(normalize_language(""), "en");
+    }
+
+    #[test]
     fn missing_file_uses_defaults() {
         let path = test_path("missing");
         let _ = fs::remove_file(&path);
@@ -156,6 +176,7 @@ mod tests {
     fn settings_round_trip_as_toml() {
         let path = test_path("round-trip");
         let expected = Settings {
+            language: "ja".to_owned(),
             server: "http://mirakurun:40772".to_owned(),
             service_id: "3203246080".to_owned(),
             volume: 42.5,
@@ -176,6 +197,7 @@ mod tests {
         fs::write(&path, "server = 'http://example.test:40772'\n").unwrap();
         let settings = load_from(&path).unwrap();
         assert_eq!(settings.server, "http://example.test:40772");
+        assert_eq!(settings.language, "system");
         assert_eq!(settings.volume, 70.0);
         assert!(!settings.danmaku_enabled);
         assert_eq!(settings.comment_font_size, 21.0);

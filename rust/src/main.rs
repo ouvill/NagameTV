@@ -5,8 +5,9 @@ mod playback;
 mod player;
 mod settings;
 mod subtitles;
+mod video_stats;
 
-use cxx_qt_lib::{QGuiApplication, QQmlApplicationEngine, QUrl};
+use cxx_qt_lib::{QGuiApplication, QQmlApplicationEngine, QString, QUrl};
 use tracing_subscriber::EnvFilter;
 
 fn main() {
@@ -22,7 +23,14 @@ fn main() {
     }
 
     let mut engine = QQmlApplicationEngine::new();
-    if let Some(engine) = engine.as_mut() {
+    if let Some(mut engine) = engine.as_mut() {
+        let language = settings::Settings::load()
+            .map(|s| s.language)
+            .unwrap_or_else(|_| "system".to_owned());
+        if !player::ffi::initialize_ui_language(engine.as_mut(), &QString::from(language)) {
+            tracing::error!("Could not load UI translation");
+            std::process::exit(1);
+        }
         engine.load(&QUrl::from("qrc:/qt/qml/MirakurunViewer/qml/Main.qml"));
     }
     if let Some(app) = app.as_mut() {

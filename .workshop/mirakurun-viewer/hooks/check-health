@@ -29,6 +29,10 @@ for module in Qt6Core Qt6Gui Qt6Qml Qt6Quick aribb24 gstreamer-1.0 mpv; do
 done
 
 qt_plugins_dir=$(qtpaths6 --query QT_INSTALL_PLUGINS 2>/dev/null || true)
+qt_host_bins=$(qtpaths6 --query QT_HOST_BINS 2>/dev/null || true)
+if [[ -z "$qt_host_bins" || ! -x "$qt_host_bins/lrelease" ]]; then
+  missing+=("Qt6:lrelease (qt6-l10n-tools)")
+fi
 if [[ -z "$qt_plugins_dir" || ! -d "$qt_plugins_dir" ]]; then
   missing+=("Qt6:plugin-directory")
 else

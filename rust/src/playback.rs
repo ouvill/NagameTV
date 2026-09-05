@@ -91,6 +91,9 @@ unsafe extern "C" {
 pub struct Playback {
     playbin: gst::Element,
     video_sink: gst::Element,
+    video_process: gst::Element,
+    video_queue: gst::Element,
+    deinterlace_mode: DeinterlaceMode,
     video_attached: bool,
     subtitles: Arc<Mutex<VecDeque<SubtitleCue>>>,
 }
@@ -312,9 +315,26 @@ impl Playback {
         Ok(Self {
             playbin,
             video_sink,
+            video_process,
+            video_queue,
+            deinterlace_mode,
             video_attached: false,
             subtitles,
         })
+    }
+
+    pub fn video_stats(&self) -> crate::video_stats::VideoStats {
+        crate::video_stats::snapshot(
+            &self.playbin,
+            &self.video_process,
+            &self.video_queue,
+            &self.video_sink,
+            match self.deinterlace_mode {
+                DeinterlaceMode::Yadif => "YADIF (auto / all fields)",
+                DeinterlaceMode::Linear => "Linear (auto / all fields)",
+                DeinterlaceMode::Off => "Off",
+            },
+        )
     }
 
     pub fn attach_video_item(&mut self, widget: *mut c_void) -> Result<(), PlaybackError> {

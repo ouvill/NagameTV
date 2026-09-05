@@ -67,8 +67,8 @@ pub async fn receive(
     .await;
     if current_generation.load(Ordering::Acquire) == generation {
         let status = result.map_or_else(
-            |error| format!("コメント接続エラー: {error}"),
-            |_| "接続終了".to_owned(),
+            |error| format!("Comment connection error: {error}"),
+            |_| "Connection ended".to_owned(),
         );
         let _ = events.send(CommentEvent::Status(status));
     }
@@ -91,7 +91,7 @@ async fn receive_inner(
     let thread = threads
         .iter()
         .find(|thread| thread.status == "ACTIVE")
-        .ok_or("現在のコメントスレッドがありません")?;
+        .ok_or("No active comment thread")?;
     if current_generation.load(Ordering::Acquire) != generation {
         return Ok(());
     }
@@ -108,7 +108,7 @@ async fn receive_inner(
     socket
         .send(Message::Text(request.to_string().into()))
         .await?;
-    let _ = events.send(CommentEvent::Status("コメント受信中".to_owned()));
+    let _ = events.send(CommentEvent::Status("Receiving comments".to_owned()));
     let mut receiving_initial_comments = true;
 
     loop {

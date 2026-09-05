@@ -5,6 +5,18 @@ pub mod ffi {
         type QString = cxx_qt_lib::QString;
         include!("cxx-qt-lib/qstringlist.h");
         type QStringList = cxx_qt_lib::QStringList;
+        include!("cxx-qt-lib/qqmlapplicationengine.h");
+        type QQmlApplicationEngine = cxx_qt_lib::QQmlApplicationEngine;
+        include!("localization.h");
+        #[cxx_name = "initializeUiLanguage"]
+        fn initialize_ui_language(
+            engine: Pin<&mut QQmlApplicationEngine>,
+            preference: &QString,
+        ) -> bool;
+        #[cxx_name = "applyUiLanguage"]
+        fn apply_ui_language(preference: &QString) -> QString;
+        #[cxx_name = "currentUiLanguage"]
+        fn current_ui_language() -> QString;
 
         include!("qt_helpers.h");
         type QQuickItem;
@@ -22,6 +34,8 @@ pub mod ffi {
         #[qobject]
         #[qml_element]
         #[qproperty(QString, server)]
+        #[qproperty(QString, language)]
+        #[qproperty(QString, ui_language, cxx_name = "uiLanguage")]
         #[qproperty(QString, service_id, cxx_name = "serviceId")]
         #[qproperty(QString, status)]
         #[qproperty(bool, playing)]
@@ -96,6 +110,12 @@ pub mod ffi {
         #[qinvokable]
         #[cxx_name = "openLogFolder"]
         fn open_log_folder(self: Pin<&mut Player>) -> bool;
+        #[qinvokable]
+        #[cxx_name = "videoStats"]
+        fn video_stats(self: &Player) -> QString;
+        #[qinvokable]
+        #[cxx_name = "changeLanguage"]
+        fn change_language(self: Pin<&mut Player>, language: QString) -> bool;
     }
 
     impl cxx_qt::Threading for Player {}
@@ -148,6 +168,8 @@ enum FetchServicesError {
 
 pub struct PlayerRust {
     server: QString,
+    language: QString,
+    ui_language: QString,
     service_id: QString,
     status: QString,
     playing: bool,
@@ -228,6 +250,8 @@ impl Default for PlayerRust {
             .unwrap_or_else(|| "Ready".to_owned());
         Self {
             server: QString::from(settings.server),
+            language: QString::from(settings.language),
+            ui_language: ffi::current_ui_language(),
             service_id: QString::from(settings.service_id),
             status: QString::from(status),
             playing: false,
@@ -264,7 +288,7 @@ impl Default for PlayerRust {
             comment_times: QStringList::default(),
             comment_texts: QStringList::default(),
             comment_sources: QStringList::default(),
-            comment_status: QString::from("チャンネルを選択してください"),
+            comment_status: QString::from("Select a channel"),
             current_program_start: 0,
             current_program_duration: 0,
             // Force the first event poll to apply a persisted non-default volume.
@@ -302,13 +326,38 @@ fn prepare_log_directory() -> std::io::Result<std::path::PathBuf> {
 }
 
 impl ffi::Player {
+    pub fn change_language(mut self: Pin<&mut Self>, language: QString) -> bool {
+        let preference = crate::settings::normalize_language(&language.to_string());
+        let language = QString::from(preference);
+        let effective = ffi::apply_ui_language(&language);
+        if effective.is_empty() {
+            tracing::error!("Could not load UI translation");
+            self.as_mut()
+                .set_status(QString::from("Could not load UI translation"));
+            return false;
+        }
+        self.as_mut().set_language(language);
+        self.as_mut().set_ui_language(effective);
+        self.as_mut().save_settings();
+        true
+    }
+
+    pub fn video_stats(&self) -> QString {
+        self.rust()
+            .playback
+            .as_ref()
+            .and_then(|playback| serde_json::to_string(&playback.video_stats()).ok())
+            .map(QString::from)
+            .unwrap_or_else(|| QString::from("{}"))
+    }
+
     pub fn connect_server(mut self: Pin<&mut Self>, server: QString) -> bool {
         let server = server.to_string().trim().trim_end_matches('/').to_owned();
         if !reqwest::Url::parse(&server)
             .is_ok_and(|url| matches!(url.scheme(), "http" | "https") && url.host_str().is_some())
         {
             self.as_mut().set_status(QString::from(
-                "http:// または https:// で始まるサーバーURLを入力してください",
+                "Enter a server URL starting with http:// or https://",
             ));
             return false;
         }
@@ -733,7 +782,7 @@ impl ffi::Player {
                             player
                                 .as_mut()
                                 .set_status(QString::from(if services.is_empty() {
-                                    "視聴できるチャンネルが見つかりませんでした"
+                                    "No available channels were found"
                                 } else {
                                     "Ready"
                                 }));
@@ -973,6 +1022,7 @@ impl ffi::Player {
     pub fn save_settings(mut self: Pin<&mut Self>) {
         let settings = Settings {
             server: self.as_ref().server().to_string(),
+            language: self.as_ref().language().to_string(),
             service_id: self.as_ref().service_id().to_string(),
             volume: (*self.as_ref().volume()).clamp(0.0, 100.0),
             danmaku_enabled: *self.as_ref().danmaku_enabled(),
@@ -1015,7 +1065,7 @@ impl ffi::Player {
         self.as_mut().set_comment_sources(QStringList::default());
         let Some(channel_id) = jikkyo else {
             self.as_mut()
-                .set_comment_status(QString::from("このチャンネルはコメントに対応していません"));
+                .set_comment_status(QString::from("Comments are unavailable for this channel"));
             return;
         };
         let network = self
@@ -1028,7 +1078,7 @@ impl ffi::Player {
             return;
         };
         self.as_mut()
-            .set_comment_status(QString::from("コメントに接続中…"));
+            .set_comment_status(QString::from("Connecting to comments…"));
         let current_generation = self.as_ref().rust().comment_generation.clone();
         let events = self.as_ref().rust().comment_events_tx.clone();
         handle.spawn(crate::comments::receive(
@@ -1159,9 +1209,7 @@ async fn fetch_services(
             Some(GuideProgram {
                 id: program.id,
                 channel_index,
-                title: program
-                    .name
-                    .unwrap_or_else(|| "（番組情報なし）".to_owned()),
+                title: program.name.unwrap_or_default(),
                 description: program.description.unwrap_or_default(),
                 start_at: program.start_at,
                 duration: program.duration,

@@ -72,7 +72,7 @@ Ubuntu 24.04:
 ```bash
 sudo apt install build-essential cmake ninja-build rustc cargo lld \
   fonts-noto-cjk \
-  qt6-base-dev qt6-declarative-dev qml6-module-qtquick \
+  qt6-base-dev qt6-declarative-dev qt6-l10n-tools qml6-module-qtquick \
   qml6-module-qtquick-controls qml6-module-qtquick-layouts \
   qml6-module-qtquick-templates \
   libmpv-dev qt6-wayland mpv gstreamer1.0-tools gstreamer1.0-qt6 \
@@ -113,6 +113,24 @@ QT_QPA_PLATFORM=xcb ./build/mirakurun-viewer
 インターレース解除は`MIRAKURUN_DEINTERLACE`で選択できます。既定は高品質な
 `yadif`です。CPU負荷を抑える場合は`linear`、無効化する場合は`off`を指定します。
 
+## 表示言語
+
+設定の「言語 / Language」から「システムに従う / System default」「日本語」「English」
+を選べます。初回はシステム言語に従い、日本語以外の言語は英語にフォールバックします。
+変更は再起動せずに反映され、選択は設定ファイルの`language`へ保存されます。
+既存の設定ファイルにこの項目がない場合も、システム言語を使用します。
+
+英語をソース文言とし、日本語訳は`translations/app_ja.ts`で管理します。
+Qtの`lrelease`で翻訳をコンパイルし、アプリ本体に埋め込みます。
+独自のQt環境では`QT_LRELEASE`でlrelease実行ファイルのパスを指定できます。
+番組・局名、放送字幕、コメント本文は配信内容を維持します。低レベルの技術的な
+エラー詳細も原文で表示します。動画統計の英語名は「Stats for nerds」です。
+
+翻訳更新にはQtの`lupdate qml/Main.qml rust/src/localization.h -ts translations/app_ja.ts`
+を使用できます（Ubuntuでは`lupdate`は`qtpaths6 --query QT_HOST_BINS`のディレクトリ内）。
+`localization.h`にはRustが出力する状態メッセージの翻訳抽出マーカーもあります。
+`bash scripts/test-localization.sh`で画面・GPU不要の言語切り替えテストを実行できます。
+
 ## 再生エラーログ
 
 再生エラーはUIと端末に表示し、ユーザー別の状態保存ディレクトリに
@@ -127,6 +145,11 @@ Workshop内ではコンテナ側に保存されます。保存やフォルダー
 元の再生エラーはそのまま表示します。
 
 ## 操作
+
+再生設定の「動画統計」を有効にすると、入力・出力の解像度とfps、画素形式、
+デインターレース設定、映像sinkのフレーム集計、キュー使用量を表示します。
+統計は表示中だけ1秒ごとに更新します。sinkの集計は画面への実表示回数とは異なり、
+映像キューの時間も放送からの遅延を表すものではありません。
 
 - 画面下部の`Channels`または`C`: Mirakurunから取得したチャンネル一覧を開く
 - `Page Up` / `Page Down`: 前後のチャンネルへ切り替える

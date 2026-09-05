@@ -24,6 +24,8 @@ ApplicationWindow {
     property string panel: ""
     property bool guideOpen: false
     property bool channelsOpen: false
+    property bool statsOpen: false
+    readonly property string statsTitle: qsTr("Stats for nerds")
     property alias danmaku: player.danmakuEnabled
     property alias commentFontSize: player.commentFontSize
     property alias commentOpacity: player.commentOpacity
@@ -42,9 +44,19 @@ ApplicationWindow {
     readonly property bool overlayPinned: guideOpen || channelsOpen || settings.opened || playbackSettings.opened
 
     Player { id: player }
+    readonly property var uiLocale: Qt.locale(player.uiLanguage)
+    function backendText(source) {
+        // Ensure already-visible status messages update on a language change.
+        const language = player.uiLanguage
+        if (source.startsWith("Comment connection error: "))
+            return qsTr("Comment connection error: %1").arg(qsTranslate("Backend", source.slice("Comment connection error: ".length)))
+        if (source.startsWith("Could not save settings: "))
+            return qsTr("Could not save settings: %1").arg(source.slice("Could not save settings: ".length))
+        return qsTranslate("Backend", source)
+    }
 
     function availableChannelTypes() {
-        const labels = { "GR": qsTr("地デジ"), "BS": "BS", "CS": "CS" }
+        const labels = { "GR": qsTr("Terrestrial"), "BS": "BS", "CS": "CS" }
         const result = []
         for (const type of ["GR", "BS", "CS"])
             if (player.channelTypes.indexOf(type) >= 0) result.push([type, labels[type]])
@@ -128,10 +140,10 @@ ApplicationWindow {
         else if (visibility === Window.FullScreen) showNormal()
     }
     function programTime(index) {
-        if (index < 0 || index >= player.programStarts.length) return qsTr("番組情報なし")
+        if (index < 0 || index >= player.programStarts.length) return qsTr("No program information")
         const start = Number(player.programStarts[index])
         const duration = Number(player.programDurations[index])
-        if (!start || !duration) return qsTr("番組情報なし")
+        if (!start || !duration) return qsTr("No program information")
         return Qt.formatTime(new Date(start), "hh:mm") + "–" + Qt.formatTime(new Date(start + duration), "hh:mm")
     }
     function programProgressAt(index) {
@@ -148,7 +160,7 @@ ApplicationWindow {
     }
     function guideClock(milliseconds) { return Qt.formatTime(new Date(Number(milliseconds)), "hh:mm") }
     function uiIcon(name) { return "../assets/icons/" + name + ".svg" }
-    function jikkyoForce(index) { return index < player.jikkyoForces.length && player.jikkyoForces[index].length ? qsTr("勢い ") + player.jikkyoForces[index] : "" }
+    function jikkyoForce(index) { return index < player.jikkyoForces.length && player.jikkyoForces[index].length ? qsTr("Activity ") + player.jikkyoForces[index] : "" }
     function guideChannelVisible(index) { return index < player.channelTypes.length && player.channelTypes[index] === guideType }
     function guideColumn(index) {
         let column = 0
@@ -235,7 +247,7 @@ ApplicationWindow {
         readonly property var options: root.availableChannelTypes()
         readonly property int selectedIndex: Math.max(0, options.findIndex(option => option[0] === value))
         signal selected(string channelType)
-        implicitWidth: Math.max(82, options.length * 76 + 6); implicitHeight: 40; radius: 20
+        implicitWidth: Math.max(82, options.length * (player.uiLanguage === "en" ? 96 : 76) + 6); implicitHeight: 40; radius: 20
         visible: options.length > 0
         color: "#b8171918"; border.color: "#32ffffff"
         readonly property real segmentWidth: (width - 6) / Math.max(1, options.length)
@@ -279,9 +291,9 @@ ApplicationWindow {
             anchors.fill: videoItem; visible: !player.playing; color: "#141516"
             Column {
                 anchors.centerIn: parent; spacing: 14
-                Label { anchors.horizontalCenter: parent.horizontalCenter; text: qsTr("ライブテレビ"); color: root.ink; font.pixelSize: 32; font.bold: true }
-                Label { anchors.horizontalCenter: parent.horizontalCenter; width: Math.min(420, videoItem.width - 32); horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap; text: player.serviceId.length || !player.services.length ? player.status : qsTr("視聴するチャンネルを選択してください"); color: root.muted }
-                Rectangle { anchors.horizontalCenter: parent.horizontalCenter; width: 180; height: 44; radius: 22; color: root.accent; Label { anchors.centerIn: parent; text: player.serviceId.length ? qsTr("視聴する") : player.services.length ? qsTr("チャンネルを選ぶ") : qsTr("接続設定"); color: "#191a1b"; font.bold: true } MouseArea { anchors.fill: parent; onClicked: { if (player.serviceId.length) player.play(); else if (player.services.length) { root.channelsOpen = true; root.refreshChannelsIfDue(false); root.reveal() } else settings.open() } } }
+                Label { anchors.horizontalCenter: parent.horizontalCenter; text: qsTr("Live TV"); color: root.ink; font.pixelSize: 32; font.bold: true }
+                Label { anchors.horizontalCenter: parent.horizontalCenter; width: Math.min(420, videoItem.width - 32); horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap; text: player.serviceId.length || !player.services.length ? root.backendText(player.status) : qsTr("Select a channel to watch"); color: root.muted }
+                Rectangle { anchors.horizontalCenter: parent.horizontalCenter; width: 180; height: 44; radius: 22; color: root.accent; Label { anchors.centerIn: parent; text: player.serviceId.length ? qsTr("Watch") : player.services.length ? qsTr("Choose a channel") : qsTr("Connection settings"); color: "#191a1b"; font.bold: true } MouseArea { anchors.fill: parent; onClicked: { if (player.serviceId.length) player.play(); else if (player.services.length) { root.channelsOpen = true; root.refreshChannelsIfDue(false); root.reveal() } else settings.open() } } }
             }
         }
         Item {
@@ -444,13 +456,13 @@ ApplicationWindow {
         Row { spacing: 12
             Item { width: 64; height: 36
                 Image { id: currentChannelLogo; anchors.fill: parent; source: player.channelLogoUrl; fillMode: Image.PreserveAspectFit; asynchronous: true; cache: true }
-                Label { anchors.centerIn: parent; visible: currentChannelLogo.status !== Image.Ready; text: qsTr("局ロゴ"); color: root.muted; font.pixelSize: 10 }
+                Label { anchors.centerIn: parent; visible: currentChannelLogo.status !== Image.Ready; text: qsTr("Channel logo"); color: root.muted; font.pixelSize: 10 }
             }
-            Label { anchors.verticalCenter: parent.verticalCenter; text: player.channelName.length ? player.channelName.replace(/^\d+\s+/, "") : qsTr("チャンネル"); color: root.muted; font.pixelSize: 13; style: Text.Outline; styleColor: "#90000000" }
+            Label { anchors.verticalCenter: parent.verticalCenter; text: player.channelName.length ? player.channelName.replace(/^\d+\s+/, "") : qsTr("Channels"); color: root.muted; font.pixelSize: 13; style: Text.Outline; styleColor: "#90000000" }
         }
         Label {
             width: parent.width
-            text: player.programName.length ? player.programName : qsTr("番組情報なし")
+            text: player.programName.length ? player.programName : qsTr("No program information")
             color: root.ink; font.pixelSize: 23; font.bold: true
             wrapMode: Text.Wrap; maximumLineCount: 2; elide: Text.ElideRight
             style: Text.Outline; styleColor: "#a0000000"
@@ -517,8 +529,8 @@ ApplicationWindow {
         Row {
             visible: !root.panelOpen
             anchors.right: parent.right; anchors.top: parent.top; anchors.margins: 18; spacing: 14
-            RoundAction { iconSource: root.uiIcon("calendar-days"); tip: qsTr("番組表"); onTriggered: { guideOpen = true; reveal() } }
-            RoundAction { iconSource: root.uiIcon("settings-2"); tip: qsTr("設定"); onTriggered: settings.open() }
+            RoundAction { iconSource: root.uiIcon("calendar-days"); tip: qsTr("Program guide"); onTriggered: { guideOpen = true; reveal() } }
+            RoundAction { iconSource: root.uiIcon("settings-2"); tip: qsTr("Settings"); onTriggered: settings.open() }
             WindowButtons {}
         }
         MouseArea { anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top; height: 76; acceptedButtons: Qt.LeftButton; z: -1; onPressed: root.startSystemMove(); onDoubleClicked: root.visibility === Window.Maximized ? root.showNormal() : root.showMaximized() }
@@ -534,17 +546,17 @@ ApplicationWindow {
             ProgressBar { width: parent.width; height: 4; from: 0; to: 1; value: player.programProgress; background: Rectangle { implicitHeight: 3; radius: 2; color: "#42ffffff" } contentItem: Item { Rectangle { width: parent.width * player.programProgress; height: 3; radius: 2; color: "#e1e1df" } } }
             RowLayout {
                 width: parent.width; spacing: 12
-                RoundAction { iconSource: root.uiIcon("square"); tip: qsTr("停止"); onTriggered: player.stop() }
-                RoundAction { iconSource: root.uiIcon("volume-2"); tip: qsTr("音量") }
+                RoundAction { iconSource: root.uiIcon("square"); tip: qsTr("Stop"); onTriggered: player.stop() }
+                RoundAction { iconSource: root.uiIcon("volume-2"); tip: qsTr("Volume") }
                 Slider { Layout.preferredWidth: 132; from: 0; to: 100; value: player.volume; onMoved: player.volume = value; onPressedChanged: if (!pressed) player.saveSettings() }
                 Item { Layout.fillWidth: true }
-                RoundAction { iconSource: root.uiIcon("grid-2x2"); tip: qsTr("チャンネル"); onTriggered: { channelsOpen = true; root.refreshChannelsIfDue(false); reveal() } }
-                RoundAction { iconSource: root.uiIcon("pencil"); tip: qsTr("コメント投稿") }
-                RoundAction { iconSource: root.uiIcon("captions"); tip: player.subtitlesEnabled ? qsTr("字幕を非表示") : qsTr("字幕を表示"); active: player.subtitlesEnabled; onTriggered: { player.subtitlesEnabled = !player.subtitlesEnabled; if (!player.subtitlesEnabled) { player.subtitleText = ""; player.subtitleData = ""; root.subtitleCue = null }; player.saveSettings() } }
-                RoundAction { iconSource: root.uiIcon("settings-2"); tip: qsTr("再生設定"); onTriggered: { playbackSettings.open(); root.reveal() } }
-                RoundAction { iconSource: root.uiIcon("maximize"); tip: qsTr("全画面"); onTriggered: root.toggleFullscreen() }
+                RoundAction { iconSource: root.uiIcon("grid-2x2"); tip: qsTr("Channels"); onTriggered: { channelsOpen = true; root.refreshChannelsIfDue(false); reveal() } }
+                RoundAction { iconSource: root.uiIcon("pencil"); tip: qsTr("Post a comment") }
+                RoundAction { iconSource: root.uiIcon("captions"); tip: player.subtitlesEnabled ? qsTr("Hide subtitles") : qsTr("Show subtitles"); active: player.subtitlesEnabled; onTriggered: { player.subtitlesEnabled = !player.subtitlesEnabled; if (!player.subtitlesEnabled) { player.subtitleText = ""; player.subtitleData = ""; root.subtitleCue = null }; player.saveSettings() } }
+                RoundAction { iconSource: root.uiIcon("settings-2"); tip: qsTr("Playback settings"); onTriggered: { playbackSettings.open(); root.reveal() } }
+                RoundAction { iconSource: root.uiIcon("maximize"); tip: qsTr("Fullscreen"); onTriggered: root.toggleFullscreen() }
                 Rectangle { width: 1; height: 28; color: "#28ffffff"; Layout.leftMargin: 4; Layout.rightMargin: 4; Layout.alignment: Qt.AlignVCenter }
-                RoundAction { iconSource: root.uiIcon(root.panelOpen ? "panel-right-close" : "panel-right-open"); tip: root.panelOpen ? qsTr("サイドパネルを閉じる") : qsTr("サイドパネルを開く"); onTriggered: root.panel = root.panelOpen ? "" : "program" }
+                RoundAction { iconSource: root.uiIcon(root.panelOpen ? "panel-right-close" : "panel-right-open"); tip: root.panelOpen ? qsTr("Close side panel") : qsTr("Open side panel"); onTriggered: root.panel = root.panelOpen ? "" : "program" }
             }
         }
     }
@@ -557,36 +569,36 @@ ApplicationWindow {
         Behavior on x { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
         Rectangle { width: 1; height: parent.height; color: "#20ffffff" }
         Row { anchors.right: parent.right; anchors.rightMargin: 18; anchors.top: parent.top; anchors.topMargin: 18; spacing: 10
-            RoundAction { iconSource: root.uiIcon("calendar-days"); tip: qsTr("番組表"); onTriggered: root.guideOpen = true }
-            RoundAction { iconSource: root.uiIcon("settings-2"); tip: qsTr("設定"); onTriggered: settings.open() }
+            RoundAction { iconSource: root.uiIcon("calendar-days"); tip: qsTr("Program guide"); onTriggered: root.guideOpen = true }
+            RoundAction { iconSource: root.uiIcon("settings-2"); tip: qsTr("Settings"); onTriggered: settings.open() }
             WindowButtons {}
         }
         ColumnLayout {
             width: root.panelWidth - 48; height: parent.height - 102; x: 24; y: 78; spacing: 14
             RowLayout {
                 Layout.fillWidth: true
-                RoundAction { iconSource: root.uiIcon("panel-right-close"); tip: qsTr("折りたたむ"); onTriggered: root.panel = "" }
-                Label { text: root.panel === "comments" ? qsTr("コメント") : (root.panel === "channels" ? qsTr("チャンネル") : qsTr("番組情報")); color: root.ink; font.pixelSize: 17; font.bold: true }
+                RoundAction { iconSource: root.uiIcon("panel-right-close"); tip: qsTr("Collapse"); onTriggered: root.panel = "" }
+                Label { text: root.panel === "comments" ? qsTr("Comments") : (root.panel === "channels" ? qsTr("Channels") : qsTr("Program information")); color: root.ink; font.pixelSize: 17; font.bold: true }
                 Item { Layout.fillWidth: true }
                 Row { visible: root.panel === "comments"; spacing: 9; Layout.alignment: Qt.AlignVCenter
-                    Label { height: parent.height; verticalAlignment: Text.AlignVCenter; text: qsTr("弾幕"); color: root.danmaku ? root.ink : root.muted; font.pixelSize: 13 }
+                    Label { height: parent.height; verticalAlignment: Text.AlignVCenter; text: qsTr("Danmaku"); color: root.danmaku ? root.ink : root.muted; font.pixelSize: 13 }
                     ToggleSwitch { checked: root.danmaku; onToggled: { root.danmaku = !root.danmaku; player.saveSettings() } }
                 }
             }
             ColumnLayout {
                 visible: root.panel === "program"; Layout.fillWidth: true; spacing: 13
-                RowLayout { Item { width: 56; height: 32; Image { id: panelLogo; anchors.fill: parent; source: player.channelLogoUrl; fillMode: Image.PreserveAspectFit; asynchronous: true; cache: true } Label { anchors.centerIn: parent; visible: panelLogo.status !== Image.Ready; text: qsTr("局ロゴ"); color: root.muted; font.pixelSize: 10 } } Label { text: player.channelName.length ? player.channelName : qsTr("チャンネル"); color: root.ink; font.weight: Font.DemiBold } }
-                Label { Layout.fillWidth: true; text: player.programName; color: root.ink; font.pixelSize: 23; font.bold: true; wrapMode: Text.Wrap }
+                RowLayout { Item { width: 56; height: 32; Image { id: panelLogo; anchors.fill: parent; source: player.channelLogoUrl; fillMode: Image.PreserveAspectFit; asynchronous: true; cache: true } Label { anchors.centerIn: parent; visible: panelLogo.status !== Image.Ready; text: qsTr("Channel logo"); color: root.muted; font.pixelSize: 10 } } Label { text: player.channelName.length ? player.channelName : qsTr("Channels"); color: root.ink; font.weight: Font.DemiBold } }
+                Label { Layout.fillWidth: true; text: player.programName || qsTr("No program information"); color: root.ink; font.pixelSize: 23; font.bold: true; wrapMode: Text.Wrap }
                 Label { text: root.programTime(Math.max(0, player.services.indexOf(player.channelName))); color: "#d4d4d3"; font.pixelSize: 13 }
                 ProgressBar {
                     Layout.fillWidth: true; height: 4; value: player.programProgress
                     background: Rectangle { implicitHeight: 3; radius: 2; color: "#30ffffff" }
                     contentItem: Item { Rectangle { width: parent.width * player.programProgress; height: 3; radius: 2; color: root.accent } }
                 }
-                Label { text: qsTr("概要"); color: root.muted; font.weight: Font.DemiBold }
-                Label { Layout.fillWidth: true; text: player.programDescription.length ? player.programDescription : qsTr("番組概要はありません"); color: "#e4e4e3"; font.pixelSize: 15; wrapMode: Text.Wrap; lineHeight: 1.35 }
+                Label { text: qsTr("Summary"); color: root.muted; font.weight: Font.DemiBold }
+                Label { Layout.fillWidth: true; text: player.programDescription.length ? player.programDescription : qsTr("No program description"); color: "#e4e4e3"; font.pixelSize: 15; wrapMode: Text.Wrap; lineHeight: 1.35 }
                 Rectangle { Layout.fillWidth: true; height: 1; color: "#18ffffff" }
-                Label { Layout.fillWidth: true; text: qsTr("Mirakurunから取得した番組情報を表示しています"); color: "#929497"; font.pixelSize: 12; wrapMode: Text.Wrap }
+                Label { Layout.fillWidth: true; text: qsTr("Program information provided by Mirakurun"); color: "#929497"; font.pixelSize: 12; wrapMode: Text.Wrap }
             }
             ListView {
                 id: commentList; visible: root.panel === "comments"; Layout.fillWidth: true; Layout.fillHeight: true; clip: true
@@ -598,20 +610,20 @@ ApplicationWindow {
                     Label { anchors.right: parent.right; anchors.bottom: parent.bottom; anchors.bottomMargin: 5; text: index < player.commentSources.length ? player.commentSources[index] : ""; color: root.muted; font.pixelSize: 9 }
                     Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: "#12ffffff" }
                 }
-                Label { anchors.centerIn: parent; visible: commentList.count === 0; width: parent.width - 24; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap; text: player.commentStatus; color: root.muted; font.pixelSize: 13 }
+                Label { anchors.centerIn: parent; visible: commentList.count === 0; width: parent.width - 24; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap; text: root.backendText(player.commentStatus); color: root.muted; font.pixelSize: 13 }
             }
-            Rectangle { visible: root.panel === "comments"; Layout.fillWidth: true; height: 58; radius: 20; color: root.raised; border.color: "#606163"; Label { anchors.left: parent.left; anchors.leftMargin: 18; anchors.verticalCenter: parent.verticalCenter; text: qsTr("コメントを入力…"); color: "#9fa0a2" } RoundAction { anchors.right: parent.right; anchors.rightMargin: 8; anchors.verticalCenter: parent.verticalCenter; iconSource: "../assets/icons/send.svg"; tip: qsTr("送信") } }
+            Rectangle { visible: root.panel === "comments"; Layout.fillWidth: true; height: 58; radius: 20; color: root.raised; border.color: "#606163"; Label { anchors.left: parent.left; anchors.leftMargin: 18; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Enter a comment…"); color: "#9fa0a2" } RoundAction { anchors.right: parent.right; anchors.rightMargin: 8; anchors.verticalCenter: parent.verticalCenter; iconSource: "../assets/icons/send.svg"; tip: qsTr("Send") } }
             Item { visible: root.panel === "channels"; Layout.fillWidth: true; Layout.fillHeight: true
                 BroadcastTabs { id: sideChannelTabs; anchors.top: parent.top; anchors.horizontalCenter: parent.horizontalCenter; value: root.channelPickerType; onSelected: function(channelType) { root.channelPickerType = channelType; sideChannelList.positionViewAtBeginning() } }
                 ListView { id: sideChannelList; anchors.left: parent.left; anchors.right: parent.right; anchors.top: sideChannelTabs.bottom; anchors.bottom: parent.bottom; anchors.topMargin: 14; spacing: 12; clip: true; model: root.channelIndices(root.channelPickerType); boundsBehavior: Flickable.DragAndOvershootBounds; boundsMovement: Flickable.FollowBoundsBehavior
                     delegate: Rectangle { required property var modelData; readonly property int channelIndex: Number(modelData); readonly property string channelName: channelIndex < player.services.length ? player.services[channelIndex] : ""; width: ListView.view.width; height: 132; radius: 14; color: channelName === player.channelName ? "#26302a" : root.raised; border.color: channelName === player.channelName ? root.accent : "#24ffffff"
                         Column { anchors.fill: parent; anchors.margins: 14; spacing: 8
                             Item { width: parent.width; height: 32
-                                Item { id: channelCardLogoBox; width: 56; height: 32; Image { id: channelCardLogo; anchors.fill: parent; source: channelIndex < player.channelLogoUrls.length ? player.channelLogoUrls[channelIndex] : ""; fillMode: Image.PreserveAspectFit; asynchronous: true } Label { anchors.centerIn: parent; visible: channelCardLogo.status !== Image.Ready; text: qsTr("局ロゴ"); color: root.muted; font.pixelSize: 9 } }
+                                Item { id: channelCardLogoBox; width: 56; height: 32; Image { id: channelCardLogo; anchors.fill: parent; source: channelIndex < player.channelLogoUrls.length ? player.channelLogoUrls[channelIndex] : ""; fillMode: Image.PreserveAspectFit; asynchronous: true } Label { anchors.centerIn: parent; visible: channelCardLogo.status !== Image.Ready; text: qsTr("Channel logo"); color: root.muted; font.pixelSize: 9 } }
                                 Label { anchors.left: channelCardLogoBox.right; anchors.leftMargin: 8; anchors.right: channelForce.left; anchors.rightMargin: 8; anchors.verticalCenter: parent.verticalCenter; text: channelName.replace(/^\d+\s+/, ""); color: root.ink; font.bold: true; elide: Text.ElideRight }
                                 Label { id: channelForce; anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; text: root.jikkyoForce(channelIndex); visible: text.length > 0; color: root.accent; font.pixelSize: 11; font.bold: true }
                             }
-                            Label { width: parent.width; text: channelIndex < player.programTitles.length ? player.programTitles[channelIndex] : qsTr("番組情報なし"); color: root.ink; font.bold: true; elide: Text.ElideRight }
+                            Label { width: parent.width; text: channelIndex < player.programTitles.length ? (player.programTitles[channelIndex] || qsTr("No program information")) : qsTr("No program information"); color: root.ink; font.bold: true; elide: Text.ElideRight }
                             Label { text: root.programTime(channelIndex); color: root.muted; font.pixelSize: 11 }
                         }
                         Rectangle { anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom; anchors.leftMargin: 14; anchors.rightMargin: 14; anchors.bottomMargin: 10; height: 3; radius: 2; color: "#32ffffff"
@@ -634,7 +646,7 @@ ApplicationWindow {
             Item { visible: root.panel === "program"; Layout.fillHeight: true }
             Rectangle { Layout.fillWidth: true; height: 1; color: "#18ffffff" }
             RowLayout { Layout.fillWidth: true; spacing: 8
-                Repeater { model: [["comments", "message-square", qsTr("コメント")], ["program", "info", qsTr("番組情報")], ["channels", "grid-2x2", qsTr("チャンネル")]]
+                Repeater { model: [["comments", "message-square", qsTr("Comments")], ["program", "info", qsTr("Program information")], ["channels", "grid-2x2", qsTr("Channels")]]
                     Rectangle { required property var modelData; Layout.fillWidth: true; height: 54; radius: 12; color: root.panel === modelData[0] ? "#249caf9f" : "transparent"
                         Column { anchors.centerIn: parent; spacing: 3; Image { anchors.horizontalCenter: parent.horizontalCenter; width: 18; height: 18; source: root.uiIcon(modelData[1]); opacity: root.panel === modelData[0] ? 1 : .68 } Label { anchors.horizontalCenter: parent.horizontalCenter; text: modelData[2]; color: root.panel === modelData[0] ? root.ink : root.muted; font.pixelSize: 10 } }
                         MouseArea { anchors.fill: parent; onClicked: root.panel = modelData[0] }
@@ -669,8 +681,8 @@ ApplicationWindow {
         }
         Column { anchors.fill: parent; anchors.leftMargin: 24; anchors.topMargin: 20; spacing: 14
             Row { width: parent.width - 24; spacing: 14
-                RoundAction { iconSource: root.uiIcon("chevron-down"); tip: qsTr("折りたたむ"); onTriggered: root.channelsOpen = false }
-                Label { text: qsTr("チャンネル"); color: root.ink; font.pixelSize: 22; font.bold: true; anchors.verticalCenter: parent.verticalCenter }
+                RoundAction { iconSource: root.uiIcon("chevron-down"); tip: qsTr("Collapse"); onTriggered: root.channelsOpen = false }
+                Label { text: qsTr("Channels"); color: root.ink; font.pixelSize: 22; font.bold: true; anchors.verticalCenter: parent.verticalCenter }
                 Item { width: 24; height: 1 }
                 BroadcastTabs { anchors.verticalCenter: parent.verticalCenter; value: root.channelPickerType; onSelected: function(channelType) { root.channelPickerType = channelType } }
             }
@@ -681,11 +693,11 @@ ApplicationWindow {
                             delegate: Rectangle { required property int index; required property string modelData; readonly property bool matchesType: index < player.channelTypes.length && player.channelTypes[index] === root.channelPickerType; width: matchesType ? (modelData === player.channelName ? 356 : 270) : 0; height: 164; visible: matchesType; radius: 16; color: modelData === player.channelName ? "#26302a" : root.raised; border.color: modelData === player.channelName ? root.accent : "#30ffffff"
                                 Column { anchors.fill: parent; anchors.margins: 14; spacing: 9
                                     Item { width: parent.width; height: 32
-                                        Item { id: pickerLogoBox; width: 56; height: 32; Image { id: pickerLogo; anchors.fill: parent; source: index < player.channelLogoUrls.length ? player.channelLogoUrls[index] : ""; fillMode: Image.PreserveAspectFit; asynchronous: true } Label { anchors.centerIn: parent; visible: pickerLogo.status !== Image.Ready; text: qsTr("局ロゴ"); color: root.muted; font.pixelSize: 9 } }
+                                        Item { id: pickerLogoBox; width: 56; height: 32; Image { id: pickerLogo; anchors.fill: parent; source: index < player.channelLogoUrls.length ? player.channelLogoUrls[index] : ""; fillMode: Image.PreserveAspectFit; asynchronous: true } Label { anchors.centerIn: parent; visible: pickerLogo.status !== Image.Ready; text: qsTr("Channel logo"); color: root.muted; font.pixelSize: 9 } }
                                         Label { anchors.left: pickerLogoBox.right; anchors.leftMargin: 8; anchors.right: pickerForce.left; anchors.rightMargin: 8; anchors.verticalCenter: parent.verticalCenter; text: modelData.replace(/^\d+\s+/, ""); color: root.muted; font.pixelSize: 12; elide: Text.ElideRight }
                                         Label { id: pickerForce; anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; text: root.jikkyoForce(index); visible: text.length > 0; color: root.accent; font.pixelSize: 11; font.bold: true }
                                     }
-                                    Label { width: parent.width; text: index < player.programTitles.length ? player.programTitles[index] : qsTr("番組情報なし"); color: root.ink; font.pixelSize: modelData === player.channelName ? 16 : 14; font.bold: true; wrapMode: Text.Wrap; maximumLineCount: 2; elide: Text.ElideRight }
+                                    Label { width: parent.width; text: index < player.programTitles.length ? (player.programTitles[index] || qsTr("No program information")) : qsTr("No program information"); color: root.ink; font.pixelSize: modelData === player.channelName ? 16 : 14; font.bold: true; wrapMode: Text.Wrap; maximumLineCount: 2; elide: Text.ElideRight }
                                     Label { text: root.programTime(index); color: root.muted; font.pixelSize: 11 }
                                 }
                                 Rectangle { anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom; anchors.leftMargin: 14; anchors.rightMargin: 14; anchors.bottomMargin: 8; height: 3; radius: 2; color: "#32ffffff"
@@ -768,7 +780,7 @@ ApplicationWindow {
             WindowButtons { id: guideWindowButtons; anchors.right: parent.right; anchors.top: parent.top; anchors.rightMargin: 18; anchors.topMargin: 18; z: 1 }
             RowLayout { anchors.left: parent.left; anchors.right: guideWindowButtons.left; anchors.top: parent.top; anchors.leftMargin: 18; anchors.rightMargin: 14; anchors.topMargin: 18; height: 42; z: 1; spacing: root.width < 980 ? 8 : 14
                 RoundAction { iconSource: root.uiIcon("chevron-left"); onTriggered: { root.selectedGuideIndex = -1; root.guideOpen = false } }
-                Label { visible: root.width >= 900; text: qsTr("番組表"); color: root.ink; font.pixelSize: 26; font.bold: true }
+                Label { visible: root.width >= 900; text: qsTr("Program guide"); color: root.ink; font.pixelSize: 26; font.bold: true }
                 BroadcastTabs { value: root.guideType; onSelected: function(channelType) { root.guideType = channelType; root.selectedGuideIndex = -1; epgFlick.contentX = 0 } }
                 Rectangle { id: guideDateCompact; visible: root.width < 1280; Layout.preferredWidth: 202; implicitHeight: 40; radius: 20; color: "#b8171918"; border.color: "#32ffffff"
                     Connections { target: root; function onGuideDayOffsetChanged() { compactDateChange.restart() } }
@@ -780,7 +792,7 @@ ApplicationWindow {
                         Image { anchors.centerIn: parent; width: 16; height: 16; source: root.uiIcon("chevron-left") }
                         MouseArea { id: compactPrevious; anchors.fill: parent; enabled: root.guideDayOffset > 0; hoverEnabled: true; cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor; onClicked: guide.selectDay(root.guideDayOffset - 1) }
                     }
-                    Label { id: compactDateLabel; anchors.centerIn: parent; text: root.guideDayOffset === 0 ? qsTr("今日") : Qt.formatDate(new Date(guide.dayStart), "M/d（ddd）"); color: root.ink; font.pixelSize: 12; font.bold: true }
+                    Label { id: compactDateLabel; anchors.centerIn: parent; text: root.guideDayOffset === 0 ? qsTr("Today") : root.uiLocale.toString(new Date(guide.dayStart), qsTr("ddd, MMM d")); color: root.ink; font.pixelSize: 12; font.bold: true }
                     Rectangle { anchors.right: parent.right; anchors.top: parent.top; anchors.bottom: parent.bottom; width: 44; radius: height / 2; color: compactNext.containsMouse && root.guideDayOffset < 6 ? "#28ffffff" : "transparent"; opacity: root.guideDayOffset < 6 ? 1 : .35
                         Image { anchors.centerIn: parent; width: 16; height: 16; source: root.uiIcon("chevron-left"); mirror: true }
                         MouseArea { id: compactNext; anchors.fill: parent; enabled: root.guideDayOffset < 6; hoverEnabled: true; cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor; onClicked: guide.selectDay(root.guideDayOffset + 1) }
@@ -804,7 +816,7 @@ ApplicationWindow {
                         Row { id: guideDateRow; x: 3; width: 62 + 6 * 84; height: parent.height
                             Repeater { model: 7
                                 Item { required property int index; width: guideDateGroup.itemWidth(index); height: guideDateRow.height
-                                    Label { anchors.centerIn: parent; text: index === 0 ? qsTr("今日") : Qt.formatDate(new Date(guide.dayStart - root.guideDayOffset * 86400000 + index * 86400000), "M/d（ddd）"); color: root.guideDayOffset === index ? root.ink : "#d5d8d5"; font.pixelSize: 12; font.bold: root.guideDayOffset === index }
+                                    Label { anchors.centerIn: parent; text: index === 0 ? qsTr("Today") : root.uiLocale.toString(new Date(guide.dayStart - root.guideDayOffset * 86400000 + index * 86400000), qsTr("ddd, MMM d")); color: root.guideDayOffset === index ? root.ink : "#d5d8d5"; font.pixelSize: 12; font.bold: root.guideDayOffset === index }
                                     MouseArea { anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: guide.selectDay(index) }
                                 }
                             }
@@ -832,7 +844,7 @@ ApplicationWindow {
                             Row { anchors.left: parent.left; anchors.leftMargin: 14; anchors.verticalCenter: parent.verticalCenter; spacing: 8
                                 Item { width: 56; height: 32
                                     Image { id: epgLogo; anchors.fill: parent; source: index < player.channelLogoUrls.length ? player.channelLogoUrls[index] : ""; fillMode: Image.PreserveAspectFit; asynchronous: true }
-                                    Label { anchors.centerIn: parent; visible: epgLogo.status !== Image.Ready; text: qsTr("局ロゴ"); color: root.muted; font.pixelSize: 10 }
+                                    Label { anchors.centerIn: parent; visible: epgLogo.status !== Image.Ready; text: qsTr("Channel logo"); color: root.muted; font.pixelSize: 10 }
                                 }
                                 Label { width: guide.channelWidth - 94; anchors.verticalCenter: parent.verticalCenter; text: modelData.replace(/^\d+\s+/, ""); color: root.ink; font.bold: true; elide: Text.ElideRight }
                             }
@@ -861,7 +873,7 @@ ApplicationWindow {
                                             border.width: root.selectedGuideIndex === programIndex ? 4 : 1
                                             border.color: root.selectedGuideIndex === programIndex ? root.accent : "#5b625e"
                                             Column { anchors.fill: parent; anchors.margins: 10; spacing: 5
-                                                Label { width: parent.width; text: player.guideTitles[programIndex]; color: "#1b201d"; font.pixelSize: 13; font.bold: true; wrapMode: Text.Wrap; maximumLineCount: Math.max(1, Math.floor((parent.height - 22) / 17)); elide: Text.ElideRight }
+                                                Label { width: parent.width; text: player.guideTitles[programIndex] || qsTr("No program information"); color: "#1b201d"; font.pixelSize: 13; font.bold: true; wrapMode: Text.Wrap; maximumLineCount: Math.max(1, Math.floor((parent.height - 22) / 17)); elide: Text.ElideRight }
                                                 Label { visible: parent.height > 46; text: root.guideClock(startValue) + "–" + root.guideClock(startValue + durationValue); color: "#4e5651"; font.pixelSize: 10 }
                                             }
                                             MouseArea { anchors.fill: parent; onClicked: guideDetail.openFor(programIndex) }
@@ -910,24 +922,82 @@ ApplicationWindow {
                 MouseArea { anchors.fill: parent }
                 Column { anchors.fill: parent; anchors.margins: 28; spacing: 14
                     Label { text: root.selectedGuideIndex >= 0 ? root.guideClock(player.guideStarts[root.selectedGuideIndex]) + "–" + root.guideClock(Number(player.guideStarts[root.selectedGuideIndex]) + Number(player.guideDurations[root.selectedGuideIndex])) : ""; color: root.accent; font.bold: true }
-                    Label { width: parent.width; text: root.selectedGuideIndex >= 0 ? player.guideTitles[root.selectedGuideIndex] : ""; color: root.ink; font.pixelSize: 22; font.bold: true; wrapMode: Text.Wrap; maximumLineCount: 3; elide: Text.ElideRight }
+                    Label { width: parent.width; text: root.selectedGuideIndex >= 0 ? (player.guideTitles[root.selectedGuideIndex] || qsTr("No program information")) : ""; color: root.ink; font.pixelSize: 22; font.bold: true; wrapMode: Text.Wrap; maximumLineCount: 3; elide: Text.ElideRight }
                     Label { width: parent.width; text: root.selectedGuideIndex >= 0 ? player.services[Number(player.guideChannelIndices[root.selectedGuideIndex])] : ""; color: root.muted }
                     Rectangle { width: parent.width; height: 1; color: "#20ffffff" }
                     Label { width: parent.width; height: 88; text: root.selectedGuideIndex >= 0 ? player.guideDescriptions[root.selectedGuideIndex] : ""; color: "#d9dcda"; wrapMode: Text.Wrap; elide: Text.ElideRight }
                     Item { width: 1; height: 4 }
                     Row { spacing: 16
-                        Rectangle { visible: guideDetail.selectedProgramIsLive; width: visible ? 168 : 0; height: 44; radius: 22; color: root.accent; Label { anchors.centerIn: parent; text: qsTr("この番組を視聴"); color: "#17201a"; font.bold: true } MouseArea { anchors.fill: parent; onClicked: { player.selectChannel(Number(player.guideChannelIndices[root.selectedGuideIndex])); root.selectedGuideIndex = -1; root.guideOpen = false } } }
+                        Rectangle { visible: guideDetail.selectedProgramIsLive; width: visible ? 168 : 0; height: 44; radius: 22; color: root.accent; Label { anchors.centerIn: parent; text: qsTr("Watch this program"); color: "#17201a"; font.bold: true } MouseArea { anchors.fill: parent; onClicked: { player.selectChannel(Number(player.guideChannelIndices[root.selectedGuideIndex])); root.selectedGuideIndex = -1; root.guideOpen = false } } }
                     }
                 }
             }
         }
-        Rectangle { id: guideFooter; anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom; height: 60; color: "#0b0c0b"; border.color: "#18ffffff"; Label { anchors.left: parent.left; anchors.leftMargin: 24; anchors.verticalCenter: parent.verticalCenter; text: qsTr("←→ チャンネル移動　 ↑↓ 時間移動　 Enter 詳細"); color: root.muted; font.pixelSize: 12 } }
+        Rectangle { id: guideFooter; anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom; height: 60; color: "#0b0c0b"; border.color: "#18ffffff"; Label { anchors.left: parent.left; anchors.leftMargin: 24; anchors.verticalCenter: parent.verticalCenter; text: qsTr("←→ Channels   ↑↓ Time   Enter Details"); color: root.muted; font.pixelSize: 12 } }
+    }
+
+    Rectangle {
+        id: videoStatsPanel
+        z: 450
+        visible: root.statsOpen && !root.guideOpen
+        x: videoRegion.x + 16
+        y: Math.min(root.overlayVisible ? 138 : 20, Math.max(16, root.height - height - 16))
+        width: Math.min(510, videoRegion.width - 32)
+        height: statsLayout.implicitHeight + 28
+        radius: 12; color: "#ed151715"; border.color: "#42ffffff"
+        property var snapshot: ({})
+        function refresh() { snapshot = JSON.parse(player.videoStats()) }
+        function number(value, decimals) { return value === null || value === undefined || !Number.isFinite(Number(value)) ? "—" : Number(value).toFixed(decimals) }
+        function formatVideo(value) {
+            if (!value || !value.width || !value.height) return "—"
+            return value.width + " × " + value.height + " / " + number(value.fps, 3) + " fps"
+        }
+        onVisibleChanged: if (visible) refresh()
+        Timer { interval: 1000; repeat: true; running: videoStatsPanel.visible; onTriggered: videoStatsPanel.refresh() }
+        // Consume clicks within the card without blocking its child controls.
+        MouseArea { anchors.fill: parent; acceptedButtons: Qt.AllButtons }
+        ColumnLayout {
+            id: statsLayout
+            anchors { left: parent.left; right: parent.right; top: parent.top; margins: 14 }
+            spacing: 7
+            RowLayout {
+                Layout.fillWidth: true
+                Label { text: root.statsTitle; color: root.ink; font.pixelSize: 14; font.bold: true; Layout.fillWidth: true }
+                RoundAction { iconSource: root.uiIcon("x"); tip: qsTr("Close stats for nerds"); onTriggered: root.statsOpen = false }
+            }
+            Repeater {
+                model: [
+                    [qsTr("State"), root.backendText(videoStatsPanel.snapshot.state || "—")],
+                    [qsTr("Input video"), videoStatsPanel.formatVideo(videoStatsPanel.snapshot.input)],
+                    [qsTr("Input scan / PAR"), videoStatsPanel.snapshot.input ? (videoStatsPanel.snapshot.input.interlace || "—") + " / " + (videoStatsPanel.snapshot.input.pixel_aspect_ratio || "—") : "—"],
+                    [qsTr("Output video"), videoStatsPanel.formatVideo(videoStatsPanel.snapshot.output)],
+                    [qsTr("Pixels: input → output"), (videoStatsPanel.snapshot.input?.pixel_format || "—") + " → " + (videoStatsPanel.snapshot.output?.pixel_format || "—")],
+                    [qsTr("Viewport / DPR"), Math.round(videoItem.width) + " × " + Math.round(videoItem.height) + " / " + Screen.devicePixelRatio],
+                    [qsTr("Deinterlacing"), videoStatsPanel.snapshot.deinterlacer || "—"],
+                    [qsTr("Sink average rate"), videoStatsPanel.number(videoStatsPanel.snapshot.average_fps, 2) + " fps"],
+                    [qsTr("Sink rendered / dropped"), videoStatsPanel.number(videoStatsPanel.snapshot.rendered, 0) + " / " + videoStatsPanel.number(videoStatsPanel.snapshot.dropped, 0)],
+                    [qsTr("Video queue"), videoStatsPanel.number(videoStatsPanel.snapshot.queue_buffers, 0) + " frames / " + videoStatsPanel.number(videoStatsPanel.snapshot.queue_ms, 1) + " ms"],
+                    [qsTr("Queue memory"), videoStatsPanel.number(videoStatsPanel.snapshot.queue_bytes / 1048576, 2) + " MiB"],
+                    [qsTr("Playback engine"), videoStatsPanel.snapshot.gstreamer || "—"]
+                ]
+                delegate: RowLayout {
+                    required property var modelData
+                    Layout.fillWidth: true
+                    Label { text: modelData[0]; color: root.muted; font.pixelSize: 11; Layout.preferredWidth: 142; wrapMode: Text.Wrap }
+                    Label { text: modelData[1]; color: root.ink; font.pixelSize: 11; Layout.fillWidth: true; wrapMode: Text.Wrap; font.family: root.font.family }
+                }
+            }
+            Label {
+                Layout.fillWidth: true; wrapMode: Text.Wrap; font.pixelSize: 10; color: root.muted
+                text: qsTr("Updated every second. Sink frame counts do not measure actual screen presentations. Queue time is not live latency.")
+            }
+        }
     }
 
     Popup {
         id: playbackSettings
         parent: Overlay.overlay
-        width: 320; height: 300
+        width: 320; height: 340
         x: Math.max(20, videoRegion.width - width - 24)
         y: Math.max(20, root.height - height - 92)
         modal: false; dim: false; padding: 20
@@ -936,32 +1006,114 @@ ApplicationWindow {
         background: Rectangle { radius: 18; color: "#f21a1c1a"; border.color: "#42ffffff" }
         contentItem: ColumnLayout {
             spacing: 8
-            Label { text: qsTr("再生設定"); color: root.ink; font.pixelSize: 17; font.bold: true }
+            Label { text: qsTr("Playback settings"); color: root.ink; font.pixelSize: 17; font.bold: true }
             RowLayout { Layout.fillWidth: true
-                Label { text: qsTr("弾幕コメント"); color: root.ink; font.pixelSize: 13 }
+                Label { text: qsTr("Danmaku comments"); color: root.ink; font.pixelSize: 13 }
                 Item { Layout.fillWidth: true }
                 ToggleSwitch { checked: root.danmaku; onToggled: root.danmaku = !root.danmaku }
             }
-            RowLayout { Layout.fillWidth: true; Label { text: qsTr("文字サイズ"); color: root.muted; font.pixelSize: 11 } Item { Layout.fillWidth: true } Label { text: Math.round(root.commentFontSize) + " px"; color: root.ink; font.pixelSize: 11 } }
+            RowLayout { Layout.fillWidth: true; Label { text: qsTr("Text size"); color: root.muted; font.pixelSize: 11 } Item { Layout.fillWidth: true } Label { text: Math.round(root.commentFontSize) + " px"; color: root.ink; font.pixelSize: 11 } }
             Slider { Layout.fillWidth: true; from: 14; to: 36; stepSize: 1; value: root.commentFontSize; onMoved: root.commentFontSize = value }
-            RowLayout { Layout.fillWidth: true; Label { text: qsTr("不透明度"); color: root.muted; font.pixelSize: 11 } Item { Layout.fillWidth: true } Label { text: Math.round(root.commentOpacity * 100) + "%"; color: root.ink; font.pixelSize: 11 } }
+            RowLayout { Layout.fillWidth: true; Label { text: qsTr("Opacity"); color: root.muted; font.pixelSize: 11 } Item { Layout.fillWidth: true } Label { text: Math.round(root.commentOpacity * 100) + "%"; color: root.ink; font.pixelSize: 11 } }
             Slider { Layout.fillWidth: true; from: .2; to: 1; stepSize: .05; value: root.commentOpacity; onMoved: root.commentOpacity = value }
-            RowLayout { Layout.fillWidth: true; Label { text: qsTr("速度"); color: root.muted; font.pixelSize: 11 } Item { Layout.fillWidth: true } Label { text: root.commentSpeed.toFixed(1) + "×"; color: root.ink; font.pixelSize: 11 } }
+            RowLayout { Layout.fillWidth: true; Label { text: qsTr("Speed"); color: root.muted; font.pixelSize: 11 } Item { Layout.fillWidth: true } Label { text: root.commentSpeed.toFixed(1) + "×"; color: root.ink; font.pixelSize: 11 } }
             Slider { Layout.fillWidth: true; from: .5; to: 2; stepSize: .1; value: root.commentSpeed; onMoved: root.commentSpeed = value }
+            RowLayout {
+                Layout.fillWidth: true
+                Label { text: root.statsTitle; color: root.ink; font.pixelSize: 13 }
+                Item { Layout.fillWidth: true }
+                ToggleSwitch { checked: root.statsOpen; onToggled: { root.statsOpen = !root.statsOpen; playbackSettings.close() } }
+            }
         }
     }
 
     Drawer {
         id: settings; edge: Qt.RightEdge; width: Math.min(420, root.width * .88); height: root.height; modal: true; dim: true; onOpened: root.reveal()
         background: Rectangle { color: "#fc151715"; border.color: "#28ffffff" }
-        ColumnLayout { anchors.fill: parent; anchors.margins: 28; spacing: 18
-            RowLayout { Layout.fillWidth: true; Label { text: qsTr("接続設定"); color: root.ink; font.pixelSize: 23; font.bold: true } Item { Layout.fillWidth: true } RoundAction { iconSource: root.uiIcon("panel-right-close"); tip: qsTr("折りたたむ"); onTriggered: settings.close() } }
-            Label { text: qsTr("Mirakurunサーバー"); color: root.muted }
+        ScrollView {
+            id: settingsScroll
+            anchors.fill: parent; anchors.margins: 28; clip: true
+            contentWidth: availableWidth
+        ColumnLayout { width: settingsScroll.availableWidth; spacing: 18
+            RowLayout { Layout.fillWidth: true; Label { text: qsTr("Settings"); color: root.ink; font.pixelSize: 23; font.bold: true } Item { Layout.fillWidth: true } RoundAction { iconSource: root.uiIcon("panel-right-close"); tip: qsTr("Collapse"); onTriggered: settings.close() } }
+            Label { text: qsTr("Language"); color: root.muted }
+            ComboBox {
+                id: languageBox
+                Layout.fillWidth: true
+                palette.button: root.raised
+                palette.buttonText: root.ink
+                palette.base: root.surface
+                palette.text: root.ink
+                palette.highlight: root.accent
+                palette.highlightedText: "#17201a"
+                implicitHeight: 46
+                leftPadding: 14
+                rightPadding: 40
+                contentItem: Label {
+                    text: languageBox.displayText
+                    color: root.ink
+                    verticalAlignment: Text.AlignVCenter
+                    elide: Text.ElideRight
+                }
+                indicator: Image {
+                    x: languageBox.width - width - 14
+                    y: (languageBox.height - height) / 2
+                    width: 18; height: 18
+                    source: root.uiIcon("chevron-down")
+                }
+                background: Rectangle {
+                    radius: 12
+                    color: root.raised
+                    border.color: languageBox.activeFocus ? root.accent : "#30ffffff"
+                }
+                delegate: ItemDelegate {
+                    id: languageOption
+                    required property int index
+                    required property string modelData
+                    width: languageBox.width - 12
+                    height: 42
+                    highlighted: languageBox.highlightedIndex === index
+                    contentItem: Label {
+                        text: languageOption.modelData
+                        color: root.ink
+                        font.bold: languageBox.currentIndex === languageOption.index
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideRight
+                    }
+                    background: Rectangle {
+                        radius: 8
+                        color: languageOption.highlighted ? "#389caf9f"
+                            : languageBox.currentIndex === languageOption.index ? "#209caf9f" : "transparent"
+                    }
+                }
+                popup: Popup {
+                    y: languageBox.height + 6
+                    width: languageBox.width
+                    padding: 6
+                    implicitHeight: contentItem.implicitHeight + topPadding + bottomPadding
+                    background: Rectangle {
+                        radius: 12
+                        color: root.surface
+                        border.color: "#40ffffff"
+                    }
+                    contentItem: ListView {
+                        clip: true
+                        implicitHeight: contentHeight
+                        model: languageBox.popup.visible ? languageBox.delegateModel : null
+                        currentIndex: languageBox.highlightedIndex
+                    }
+                }
+                model: [qsTr("System default"), "日本語", "English"]
+                currentIndex: ["system", "ja", "en"].indexOf(player.language)
+                onActivated: function(index) { languageError.visible = !player.changeLanguage(["system", "ja", "en"][index]) }
+            }
+            Label { id: languageError; visible: false; Layout.fillWidth: true; wrapMode: Text.Wrap; text: root.backendText(player.status); color: root.muted }
+            Label { text: qsTr("Mirakurun server"); color: root.muted }
             TextField { id: serverField; Layout.fillWidth: true; height: 48; placeholderText: "http://mirakurun:40772"; text: player.server; color: root.ink; placeholderTextColor: "#8c918c"; leftPadding: 16; rightPadding: 16; background: Rectangle { radius: 12; color: root.raised; border.color: serverField.activeFocus ? root.accent : "#30ffffff" } }
-            Label { Layout.fillWidth: true; wrapMode: Text.Wrap; text: qsTr("MirakurunのサーバーURLを設定します。"); color: root.muted }
+            Label { Layout.fillWidth: true; wrapMode: Text.Wrap; text: qsTr("Enter your Mirakurun server URL."); color: root.muted }
             Button {
                 Layout.fillWidth: true
-                text: qsTr("保存して接続")
+                text: qsTr("Save and connect")
                 contentItem: Label { text: parent.text; color: "#17201a"; font.bold: true; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                 background: Rectangle { implicitHeight: 46; radius: 23; color: root.accent }
                 onClicked: {
@@ -974,17 +1126,18 @@ ApplicationWindow {
                     }
                 }
             }
-            Label { id: connectionError; visible: false; Layout.fillWidth: true; wrapMode: Text.Wrap; text: player.status; color: root.muted }
+            Label { id: connectionError; visible: false; Layout.fillWidth: true; wrapMode: Text.Wrap; text: root.backendText(player.status); color: root.muted }
             Item { Layout.fillHeight: true }
             Button {
                 Layout.fillWidth: true
-                text: qsTr("ログフォルダーを開く")
+                text: qsTr("Open log folder")
                 onClicked: logFolderError.visible = !player.openLogFolder()
                 contentItem: Label { text: parent.text; color: root.ink; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                 background: Rectangle { implicitHeight: 40; radius: 12; color: parent.hovered ? root.raised : "transparent"; border.color: "#30ffffff" }
             }
-            Label { id: logFolderError; visible: false; Layout.fillWidth: true; wrapMode: Text.Wrap; text: qsTr("ログフォルダーを開けませんでした。端末の警告を確認してください。"); color: root.muted }
-            Label { text: "F11  " + qsTr("全画面") + "　 Space  " + qsTr("一時停止"); color: "#929497" }
+            Label { id: logFolderError; visible: false; Layout.fillWidth: true; wrapMode: Text.Wrap; text: qsTr("Could not open the log folder. Check the terminal for details."); color: root.muted }
+            Label { text: "F11  " + qsTr("Fullscreen"); color: "#929497" }
+        }
         }
     }
 

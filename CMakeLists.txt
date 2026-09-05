@@ -6,6 +6,7 @@ set(CARGO_BINARY "${CARGO_TARGET_DIR}/release/mirakurun-viewer")
 set(OUTPUT_BINARY "${CMAKE_BINARY_DIR}/mirakurun-viewer")
 file(GLOB ICON_ASSETS CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/assets/icons/*.svg")
 file(GLOB FONT_ASSETS CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/assets/fonts/*")
+file(GLOB TRANSLATIONS CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/translations/*.ts")
 file(GLOB_RECURSE RUST_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_SOURCE_DIR}/rust/src/*.rs"
     "${CMAKE_SOURCE_DIR}/rust/src/*.h"
@@ -20,6 +21,7 @@ add_custom_command(
         rust/Cargo.toml rust/Cargo.lock rust/build.rs
         .gitmodules third_party/libaribcaption/CMakeLists.txt
         ${RUST_SOURCES}
+        ${TRANSLATIONS}
         qml/Main.qml
         ${ICON_ASSETS} ${FONT_ASSETS} assets/icons/LICENSE-Lucide.txt
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
