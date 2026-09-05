@@ -25,6 +25,8 @@ pub enum PlaybackError {
     InvalidDeinterlaceMode { value: String },
     #[error("The playbin flags property is not a flags type")]
     InvalidPlaybinFlagsType,
+    #[error("The playback element is not a GStreamer bin")]
+    InvalidPlaybinType,
     #[error("Could not configure playbin flag '{flag}' (enabled={enabled})")]
     PlaybinFlagConfiguration { flag: &'static str, enabled: bool },
     #[error("Could not assemble video output: {0}")]
@@ -350,7 +352,10 @@ impl Playback {
         let audio_filter = routing.filter().map_err(PlaybackError::AudioRouting)?;
         playbin.set_property("audio-filter", audio_filter);
         let subtitles = SubtitleClock::default();
-        subtitles.attach(&playbin);
+        let playbin_bin = playbin
+            .downcast_ref::<gst::Bin>()
+            .ok_or(PlaybackError::InvalidPlaybinType)?;
+        subtitles.attach(playbin_bin);
         let subtitle_extractor = Arc::new(Mutex::new(TsSubtitleExtractor::new()));
         let extractor_for_source = subtitle_extractor.clone();
         let subtitles_for_source = subtitles.clone();
@@ -727,6 +732,8 @@ fn service_stream_url(server: &str, service_id: u64) -> Result<String, PlaybackE
 
 #[cfg(test)]
 mod tests {
+    // In tests, unwrap/expect assert successful setup or an expected result.
+    // Failures intentionally fail the test; they are not assumed impossible IO.
     use super::{DeinterlaceMode, PlaybackError, service_stream_url};
     use gst::prelude::*;
     use gstreamer as gst;

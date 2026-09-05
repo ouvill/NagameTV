@@ -131,7 +131,6 @@ impl EpgSnapshot {
             .collect()
     }
 
-    #[allow(dead_code, reason = "query boundary for the upcoming program guide")]
     pub fn programs_between(&self, start_at: u64, end_at: u64) -> Vec<&Program> {
         self.programs_by_service
             .values()
@@ -146,6 +145,8 @@ impl EpgSnapshot {
 
 #[cfg(test)]
 mod tests {
+    // In tests, unwrap/expect assert successful setup or an expected result.
+    // Failures intentionally fail the test; they are not assumed impossible IO.
     use super::*;
 
     fn program(start_at: u64, duration: u64) -> Program {

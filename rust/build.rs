@@ -1,5 +1,8 @@
 use cxx_qt_build::{CxxQtBuilder, QmlModule};
 
+// Cargo supplies OUT_DIR and CARGO_MANIFEST_DIR when running build scripts.
+// Other expect calls deliberately fail the build if required tools, sources,
+// or generated files are unavailable; continuing would produce an invalid build.
 fn main() {
     println!("cargo:rerun-if-changed=../translations/app_ja.ts");
     println!("cargo:rerun-if-env-changed=QT_LRELEASE");

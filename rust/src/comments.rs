@@ -2,9 +2,15 @@ use futures_util::{SinkExt, StreamExt};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, mpsc::Sender};
+use std::sync::{Arc, mpsc::SyncSender};
 use std::time::Duration;
-use tokio_tungstenite::{connect_async, tungstenite::Message};
+use tokio_tungstenite::{
+    connect_async_with_config,
+    tungstenite::{Message, protocol::WebSocketConfig},
+};
+
+pub const QUEUE_CAPACITY: usize = 256;
+const MAX_COMMENT_BYTES: usize = 4096;
 
 const NX_JIKKYO: &str = "https://nx-jikkyo.tsukumijima.net";
 
@@ -55,8 +61,13 @@ pub async fn receive(
     channel_id: String,
     generation: u64,
     current_generation: Arc<AtomicU64>,
-    events: Sender<CommentEvent>,
+    events: SyncSender<(u64, CommentEvent)>,
 ) {
+    let events = EventSender {
+        generation,
+        current: current_generation.clone(),
+        queue: events,
+    };
     let result = receive_inner(
         &client,
         &channel_id,
@@ -70,7 +81,23 @@ pub async fn receive(
             |error| format!("Comment connection error: {error}"),
             |_| "Connection ended".to_owned(),
         );
-        let _ = events.send(CommentEvent::Status(status));
+        events.send(CommentEvent::Status(status));
+    }
+}
+
+// Never block the single network worker when the UI falls behind. Drop incoming
+// messages under overload; history and on-screen comments have separate limits.
+struct EventSender {
+    generation: u64,
+    current: Arc<AtomicU64>,
+    queue: SyncSender<(u64, CommentEvent)>,
+}
+
+impl EventSender {
+    fn send(&self, event: CommentEvent) {
+        if self.current.load(Ordering::Acquire) == self.generation {
+            let _ = self.queue.try_send((self.generation, event));
+        }
     }
 }
 
@@ -79,7 +106,7 @@ async fn receive_inner(
     channel_id: &str,
     generation: u64,
     current_generation: &AtomicU64,
-    events: &Sender<CommentEvent>,
+    events: &EventSender,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let threads = client
         .get(format!("{NX_JIKKYO}/api/v1/channels/{channel_id}/threads"))
@@ -97,7 +124,19 @@ async fn receive_inner(
     }
 
     let url = format!("wss://nx-jikkyo.tsukumijima.net/api/v1/channels/{channel_id}/ws/comment");
-    let (mut socket, _) = connect_async(url).await?;
+    let (mut socket, _) = tokio::time::timeout(
+        Duration::from_secs(10),
+        connect_async_with_config(
+            url,
+            Some(
+                WebSocketConfig::default()
+                    .max_message_size(Some(64 * 1024))
+                    .max_frame_size(Some(64 * 1024)),
+            ),
+            false,
+        ),
+    )
+    .await??;
     let request = json!([
         {"ping":{"content":"rs:0"}},
         {"ping":{"content":"ps:0"}},
@@ -105,15 +144,17 @@ async fn receive_inner(
         {"ping":{"content":"pf:0"}},
         {"ping":{"content":"rf:0"}}
     ]);
-    socket
-        .send(Message::Text(request.to_string().into()))
-        .await?;
-    let _ = events.send(CommentEvent::Status("Receiving comments".to_owned()));
+    tokio::time::timeout(
+        Duration::from_secs(10),
+        socket.send(Message::Text(request.to_string().into())),
+    )
+    .await??;
+    events.send(CommentEvent::Status("Receiving comments".to_owned()));
     let mut receiving_initial_comments = true;
 
     loop {
         if current_generation.load(Ordering::Acquire) != generation {
-            let _ = socket.close(None).await;
+            let _ = tokio::time::timeout(Duration::from_secs(2), socket.close(None)).await;
             return Ok(());
         }
         let message = match tokio::time::timeout(Duration::from_secs(1), socket.next()).await {
@@ -137,7 +178,7 @@ async fn receive_inner(
         let Some(content) = chat.get("content").and_then(Value::as_str) else {
             continue;
         };
-        if content.is_empty() {
+        if content.is_empty() || content.len() > MAX_COMMENT_BYTES {
             continue;
         }
         let seconds = (chat.get("date").and_then(Value::as_u64).unwrap_or(0) + 9 * 3_600) % 86_400;
@@ -153,7 +194,7 @@ async fn receive_inner(
         } else {
             "NX"
         };
-        let _ = events.send(CommentEvent::Comment {
+        events.send(CommentEvent::Comment {
             time,
             text: content.to_owned(),
             source: source.to_owned(),
@@ -164,10 +205,30 @@ async fn receive_inner(
 
 #[cfg(test)]
 mod tests {
+    // In tests, unwrap/expect assert successful setup or an expected result.
+    // Failures intentionally fail the test; they are not assumed impossible IO.
     use super::{CommentEvent, jikkyo_id, receive};
     use std::sync::atomic::AtomicU64;
     use std::sync::{Arc, mpsc};
     use std::time::Duration;
+
+    #[test]
+    fn queue_is_bounded_and_rejects_obsolete_connections() {
+        let (tx, rx) = mpsc::sync_channel(2);
+        let current = Arc::new(AtomicU64::new(1));
+        let sender = super::EventSender {
+            generation: 1,
+            current: current.clone(),
+            queue: tx,
+        };
+        for _ in 0..1000 {
+            sender.send(CommentEvent::Status("test".into()));
+        }
+        assert_eq!(rx.try_iter().count(), 2);
+        current.store(2, std::sync::atomic::Ordering::Release);
+        sender.send(CommentEvent::Status("stale".into()));
+        assert!(rx.try_recv().is_err());
+    }
 
     #[test]
     fn maps_kansai_terrestrial_affiliates() {
@@ -204,14 +265,14 @@ mod tests {
             .build()
             .unwrap();
         let generation = Arc::new(AtomicU64::new(1));
-        let (sender, receiver) = mpsc::channel();
+        let (sender, receiver) = mpsc::sync_channel(super::QUEUE_CAPACITY);
         runtime.spawn(receive(client, "jk1".to_owned(), 1, generation, sender));
         let deadline = std::time::Instant::now() + Duration::from_secs(20);
         let mut received = false;
         while std::time::Instant::now() < deadline {
             if matches!(
                 receiver.recv_timeout(Duration::from_millis(500)),
-                Ok(CommentEvent::Comment { initial: false, .. })
+                Ok((1, CommentEvent::Comment { initial: false, .. }))
             ) {
                 received = true;
                 break;

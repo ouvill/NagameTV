@@ -333,7 +333,9 @@ impl AudioRouting {
         let routing = self.clone();
         filter
             .static_pad("src")
-            .expect("audio filter has a source pad")
+            .ok_or_else(|| {
+                gst::glib::Error::new(gst::CoreError::Pad, "Audio filter has no source pad")
+            })?
             .add_probe(
                 gst::PadProbeType::BUFFER | gst::PadProbeType::EVENT_DOWNSTREAM,
                 move |_, info| {
@@ -376,22 +378,46 @@ fn route_stereo(data: &mut [u8], mode: i32) {
         return;
     }
     for frame in data.chunks_exact_mut(8) {
-        let left = f32::from_le_bytes(frame[..4].try_into().unwrap());
-        let right = f32::from_le_bytes(frame[4..].try_into().unwrap());
-        let output = match mode {
-            1 => left,
-            2 => right,
-            _ => right,
+        // chunks_exact_mut(8) guarantees two disjoint four-byte PCM samples.
+        // Copy the original bytes to preserve every F32 bit pattern, including NaNs.
+        let (left, right) = frame.split_at_mut(4);
+        if mode == 1 {
+            right.copy_from_slice(left);
+        } else {
+            left.copy_from_slice(right);
         }
-        .to_le_bytes();
-        frame[..4].copy_from_slice(&output);
-        frame[4..].copy_from_slice(&output);
     }
 }
 
 #[cfg(test)]
 mod tests {
+    // In tests, unwrap/expect assert successful setup or an expected result.
+    // Failures intentionally fail the test; they are not assumed impossible IO.
     use super::*;
+
+    #[test]
+    fn pcm_routing_preserves_sample_bits_and_incomplete_frames() {
+        // Include a NaN payload and negative zero: routing must copy samples
+        // without interpreting them or touching an incomplete trailing frame.
+        let original = [0x01, 0x00, 0xc0, 0x7f, 0x00, 0x00, 0x00, 0x80, 0xaa];
+        for mode in [1, 2] {
+            let mut data = original;
+            super::route_stereo(&mut data, mode);
+            let selected = if mode == 1 {
+                &original[..4]
+            } else {
+                &original[4..8]
+            };
+            assert_eq!(&data[..4], selected);
+            assert_eq!(&data[4..8], selected);
+            assert_eq!(data[8], 0xaa);
+        }
+        for mode in [0, 3, -1] {
+            let mut data = original;
+            super::route_stereo(&mut data, mode);
+            assert_eq!(data, original);
+        }
+    }
 
     fn streams() -> AudioStreams {
         let stream = |id, kind| gst::Stream::new(Some(id), None, kind, gst::StreamFlags::empty());

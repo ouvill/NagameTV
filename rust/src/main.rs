@@ -1,6 +1,7 @@
 mod audio;
 mod comments;
 mod epg;
+mod epg_events;
 mod network;
 mod playback;
 mod player;

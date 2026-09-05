@@ -46,7 +46,7 @@ impl SubtitleClock {
             .unwrap_or(SubtitleUpdate::Unchanged)
     }
 
-    pub fn attach(&self, playbin: &gst::Element) {
+    pub fn attach(&self, playbin: &gst::Bin) {
         let clock = self.clone();
         if let Some(bus) = playbin.bus() {
             bus.set_sync_handler(move |_, message| {
@@ -77,63 +77,60 @@ impl SubtitleClock {
             });
         }
         let clock = self.clone();
-        playbin
-            .downcast_ref::<gst::Bin>()
-            .expect("playbin is a bin")
-            .connect_deep_element_added(move |_, _, element| {
-                if element
-                    .factory()
-                    .is_none_or(|factory| factory.name() != "tsdemux")
-                {
+        playbin.connect_deep_element_added(move |_, _, element| {
+            if element
+                .factory()
+                .is_none_or(|factory| factory.name() != "tsdemux")
+            {
+                return;
+            }
+            element.set_property("emit-stats", true);
+            let removed_clock = clock.clone();
+            element.connect_pad_removed(move |demux, pad| {
+                let Some(pid) = pad
+                    .name()
+                    .rsplit('_')
+                    .next()
+                    .and_then(|pid| u32::from_str_radix(pid, 16).ok())
+                else {
+                    return;
+                };
+                let key = (demux.name().to_string(), pid);
+                if let Ok(mut state) = removed_clock.0.lock() {
+                    state.raw_pts.remove(&key);
+                    if state.video.as_ref() == Some(&key) {
+                        state.video = None;
+                        state.timeline.reset();
+                    }
+                }
+            });
+            let clock = clock.clone();
+            element.connect_pad_added(move |demux, pad| {
+                if !pad.name().starts_with("video_") {
                     return;
                 }
-                element.set_property("emit-stats", true);
-                let removed_clock = clock.clone();
-                element.connect_pad_removed(move |demux, pad| {
-                    let Some(pid) = pad
-                        .name()
-                        .rsplit('_')
-                        .next()
-                        .and_then(|pid| u32::from_str_radix(pid, 16).ok())
-                    else {
-                        return;
-                    };
-                    let key = (demux.name().to_string(), pid);
-                    if let Ok(mut state) = removed_clock.0.lock() {
-                        state.raw_pts.remove(&key);
-                        if state.video.as_ref() == Some(&key) {
-                            state.video = None;
-                            state.timeline.reset();
-                        }
-                    }
-                });
-                let clock = clock.clone();
-                element.connect_pad_added(move |demux, pad| {
-                    if !pad.name().starts_with("video_") {
+                let Some(pid) = pad
+                    .name()
+                    .rsplit('_')
+                    .next()
+                    .and_then(|pid| u32::from_str_radix(pid, 16).ok())
+                else {
+                    return;
+                };
+                let key = (demux.name().to_string(), pid);
+                if let Ok(mut state) = clock.0.lock() {
+                    if state
+                        .video
+                        .as_ref()
+                        .is_some_and(|current| current.0 == key.0 && current != &key)
+                    {
                         return;
                     }
-                    let Some(pid) = pad
-                        .name()
-                        .rsplit('_')
-                        .next()
-                        .and_then(|pid| u32::from_str_radix(pid, 16).ok())
-                    else {
-                        return;
-                    };
-                    let key = (demux.name().to_string(), pid);
-                    if let Ok(mut state) = clock.0.lock() {
-                        if state
-                            .video
-                            .as_ref()
-                            .is_some_and(|current| current.0 == key.0 && current != &key)
-                        {
-                            return;
-                        }
-                        state.video = Some(key.clone());
-                    }
-                    clock.attach_video_pad(pad, key);
-                });
+                    state.video = Some(key.clone());
+                }
+                clock.attach_video_pad(pad, key);
             });
+        });
     }
 
     fn attach_video_pad(&self, pad: &gst::Pad, key: StreamKey) {
@@ -233,6 +230,8 @@ impl SubtitleClock {
 
 #[cfg(test)]
 mod tests {
+    // In tests, unwrap/expect assert successful setup or an expected result.
+    // Failures intentionally fail the test; they are not assumed impossible IO.
     use super::*;
 
     struct PipelineGuard(gst::Pipeline);

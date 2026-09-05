@@ -148,7 +148,6 @@ use crate::settings::Settings;
 use core::pin::Pin;
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{QString, QStringList};
-use futures_util::StreamExt;
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::ffi::c_void;
@@ -205,6 +204,8 @@ pub struct PlayerRust {
     subtitles_enabled: bool,
     subtitle_text: QString,
     subtitle_data: QString,
+    subtitle_cue: Option<crate::subtitles::SubtitleCue>,
+    subtitle_presented: bool,
     autoplay: bool,
     channel_name: QString,
     program_name: QString,
@@ -238,22 +239,25 @@ pub struct PlayerRust {
     jikkyo_ids: Vec<Option<String>>,
     active_jikkyo_id: Option<String>,
     comment_generation: Arc<std::sync::atomic::AtomicU64>,
-    comment_events_tx: mpsc::Sender<CommentEvent>,
-    comment_events_rx: mpsc::Receiver<CommentEvent>,
+    comment_events_tx: mpsc::SyncSender<(u64, CommentEvent)>,
+    comment_events_rx: mpsc::Receiver<(u64, CommentEvent)>,
+    comment_task: Option<crate::network::NetworkTask>,
+    epg_task: Option<crate::network::NetworkTask>,
     comments: VecDeque<(String, String, String)>,
     loading_channels: AtomicBool,
     epg_event_generation: Arc<std::sync::atomic::AtomicU64>,
     epg_event_server: String,
-    epg_events_tx: mpsc::Sender<()>,
-    epg_events_rx: mpsc::Receiver<()>,
+    epg_events_tx: mpsc::SyncSender<u64>,
+    epg_events_rx: mpsc::Receiver<u64>,
     network: Option<NetworkRuntime>,
     playback: Option<Playback>,
 }
 
 impl Default for PlayerRust {
     fn default() -> Self {
-        let (comment_events_tx, comment_events_rx) = mpsc::channel();
-        let (epg_events_tx, epg_events_rx) = mpsc::channel();
+        let (comment_events_tx, comment_events_rx) =
+            mpsc::sync_channel(crate::comments::QUEUE_CAPACITY);
+        let (epg_events_tx, epg_events_rx) = mpsc::sync_channel(1);
         let mut settings = Settings::load().unwrap_or_else(|error| {
             tracing::warn!(%error, "Could not load settings");
             Settings::default()
@@ -292,6 +296,8 @@ impl Default for PlayerRust {
             subtitles_enabled: settings.subtitles_enabled,
             subtitle_text: QString::default(),
             subtitle_data: QString::default(),
+            subtitle_cue: None,
+            subtitle_presented: false,
             autoplay: std::env::var("MIRAKURUN_AUTOPLAY").is_ok_and(|value| value != "0"),
             channel_name: QString::default(),
             program_name: QString::default(),
@@ -328,6 +334,8 @@ impl Default for PlayerRust {
             comment_generation: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             comment_events_tx,
             comment_events_rx,
+            comment_task: None,
+            epg_task: None,
             comments: VecDeque::new(),
             loading_channels: AtomicBool::new(false),
             epg_event_generation: Arc::new(std::sync::atomic::AtomicU64::new(0)),
@@ -405,6 +413,7 @@ impl ffi::Player {
             self.as_mut().set_program_name(QString::default());
             self.as_mut().set_program_description(QString::default());
             self.as_mut().set_channel_logo_url(QString::default());
+            self.as_mut().rust_mut().subtitle_cue = None;
             self.as_mut().set_subtitle_text(QString::default());
             self.as_mut().set_subtitle_data(QString::default());
             self.as_mut().rust_mut().service_ids.clear();
@@ -461,6 +470,7 @@ impl ffi::Player {
                 tracing::warn!(%stop_error, "Could not clean up failed playback");
             }
         }
+        self.as_mut().rust_mut().subtitle_cue = None;
         self.as_mut().set_subtitle_text(QString::default());
         self.as_mut().set_subtitle_data(QString::default());
         let summary = match error {
@@ -511,6 +521,7 @@ impl ffi::Player {
     }
 
     pub fn play(mut self: Pin<&mut Self>) {
+        self.as_mut().rust_mut().subtitle_cue = None;
         self.as_mut().set_subtitle_text(QString::default());
         self.as_mut().set_subtitle_data(QString::default());
         self.as_mut().set_playback_error(QString::default());
@@ -546,6 +557,7 @@ impl ffi::Player {
             Ok(()) => {
                 self.as_mut().set_playing(false);
                 self.as_mut().set_status(QString::from("Stopped"));
+                self.as_mut().rust_mut().subtitle_cue = None;
                 self.as_mut().set_subtitle_text(QString::default());
                 self.as_mut().set_subtitle_data(QString::default());
                 self.as_mut().set_playback_error(QString::default());
@@ -584,18 +596,37 @@ impl ffi::Player {
             .as_ref()
             .map(Playback::poll_subtitles)
             .unwrap_or(SubtitleUpdate::Unchanged);
+        let changed = !matches!(update, SubtitleUpdate::Unchanged);
         match update {
             SubtitleUpdate::Unchanged => {}
-            SubtitleUpdate::Clear => {
+            SubtitleUpdate::Clear => self.as_mut().rust_mut().subtitle_cue = None,
+            SubtitleUpdate::Show(cue) => self.as_mut().rust_mut().subtitle_cue = Some(cue),
+        }
+        let visible = *self.as_ref().subtitles_enabled() && *self.as_ref().playing();
+        if !visible {
+            if self.as_ref().rust().subtitle_presented {
                 self.as_mut().set_subtitle_text(QString::default());
                 self.as_mut().set_subtitle_data(QString::default());
             }
-            SubtitleUpdate::Show(cue) => {
-                self.as_mut().set_subtitle_text(QString::from(&cue.text));
-                if let Ok(data) = serde_json::to_string(&cue) {
-                    self.as_mut().set_subtitle_data(QString::from(data));
-                }
-            }
+            self.as_mut().rust_mut().subtitle_presented = false;
+            return;
+        }
+        if changed || !self.as_ref().rust().subtitle_presented {
+            let (text, data) = self
+                .as_ref()
+                .rust()
+                .subtitle_cue
+                .as_ref()
+                .map(|cue| {
+                    (
+                        QString::from(&cue.text),
+                        QString::from(serde_json::to_string(cue).unwrap_or_default()),
+                    )
+                })
+                .unwrap_or_default();
+            self.as_mut().set_subtitle_text(text);
+            self.as_mut().set_subtitle_data(data);
+            self.as_mut().rust_mut().subtitle_presented = true;
         }
     }
 
@@ -650,10 +681,20 @@ impl ffi::Player {
             .rust()
             .comment_events_rx
             .try_iter()
+            .take(64)
             .collect::<Vec<_>>();
         let mut comments_changed = false;
         let mut received_texts = Vec::new();
-        for event in comment_events {
+        for (generation, event) in comment_events {
+            if generation
+                != self
+                    .as_ref()
+                    .rust()
+                    .comment_generation
+                    .load(Ordering::Acquire)
+            {
+                continue;
+            }
             match event {
                 CommentEvent::Status(status) => {
                     self.as_mut().set_comment_status(QString::from(status))
@@ -702,9 +743,22 @@ impl ffi::Player {
         for text in received_texts {
             self.as_mut().comment_received(QString::from(text));
         }
-        if self.as_ref().rust().epg_events_rx.try_recv().is_ok() {
-            while self.as_ref().rust().epg_events_rx.try_recv().is_ok() {}
-            self.as_mut().refresh_channels();
+        if !self
+            .as_ref()
+            .rust()
+            .loading_channels
+            .load(Ordering::Acquire)
+            && let Ok(generation) = self.as_ref().rust().epg_events_rx.try_recv()
+        {
+            if generation
+                == self
+                    .as_ref()
+                    .rust()
+                    .epg_event_generation
+                    .load(Ordering::Acquire)
+            {
+                self.as_mut().refresh_channels();
+            }
         }
     }
 
@@ -890,7 +944,16 @@ impl ffi::Player {
             .trim()
             .trim_end_matches('/')
             .to_owned();
-        if server.is_empty() || self.as_ref().rust().epg_event_server == server {
+        if server.is_empty() {
+            self.as_mut().rust_mut().epg_task = None;
+            self.as_mut().rust_mut().epg_event_server.clear();
+            self.as_ref()
+                .rust()
+                .epg_event_generation
+                .fetch_add(1, Ordering::AcqRel);
+            return;
+        }
+        if self.as_ref().rust().epg_event_server == server {
             return;
         }
         let Some((runtime, client)) = self
@@ -898,7 +961,7 @@ impl ffi::Player {
             .rust()
             .network
             .as_ref()
-            .map(|network| (network.handle(), network.client()))
+            .map(|network| (network.handle(), network.stream_client()))
         else {
             return;
         };
@@ -908,34 +971,13 @@ impl ffi::Player {
             .epg_event_generation
             .fetch_add(1, Ordering::AcqRel)
             + 1;
-        let active_generation = self.as_ref().rust().epg_event_generation.clone();
         let events = self.as_ref().rust().epg_events_tx.clone();
+        self.as_mut().rust_mut().epg_task = None;
+        while self.as_ref().rust().epg_events_rx.try_recv().is_ok() {}
         self.as_mut().rust_mut().epg_event_server = server.clone();
-        runtime.spawn(async move {
-            let url = format!("{server}/api/events/stream?resource=program");
-            while active_generation.load(Ordering::Acquire) == generation {
-                let response = client.get(&url).send().await;
-                if let Ok(response) = response.and_then(reqwest::Response::error_for_status) {
-                    let mut stream = response.bytes_stream();
-                    let mut last_notification = tokio::time::Instant::now()
-                        .checked_sub(std::time::Duration::from_secs(10))
-                        .unwrap_or_else(tokio::time::Instant::now);
-                    while active_generation.load(Ordering::Acquire) == generation {
-                        let Some(chunk) = stream.next().await else {
-                            break;
-                        };
-                        let Ok(chunk) = chunk else { break };
-                        if chunk.iter().any(|byte| !byte.is_ascii_whitespace())
-                            && last_notification.elapsed() >= std::time::Duration::from_secs(15)
-                        {
-                            let _ = events.send(());
-                            last_notification = tokio::time::Instant::now();
-                        }
-                    }
-                }
-                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-            }
-        });
+        self.as_mut().rust_mut().epg_task = Some(crate::network::NetworkTask(runtime.spawn(
+            crate::epg_events::receive(client, server, generation, events),
+        )));
     }
 
     /// Re-evaluate the current programme from the in-memory EPG snapshot.
@@ -1144,7 +1186,15 @@ impl ffi::Player {
                 .position(|item| *item == id)?;
             self.as_ref().rust().jikkyo_ids.get(index)?.clone()
         });
-        if jikkyo.is_some() && self.as_ref().rust().active_jikkyo_id == jikkyo {
+        if jikkyo.is_some()
+            && self.as_ref().rust().active_jikkyo_id == jikkyo
+            && self
+                .as_ref()
+                .rust()
+                .comment_task
+                .as_ref()
+                .is_some_and(|task| !task.0.is_finished())
+        {
             return;
         }
         let generation = self
@@ -1153,6 +1203,8 @@ impl ffi::Player {
             .comment_generation
             .fetch_add(1, Ordering::AcqRel)
             + 1;
+        self.as_mut().rust_mut().comment_task = None;
+        while self.as_ref().rust().comment_events_rx.try_recv().is_ok() {}
         self.as_mut().rust_mut().active_jikkyo_id = jikkyo.clone();
         self.as_mut().rust_mut().comments.clear();
         self.as_mut().set_comment_times(QStringList::default());
@@ -1176,13 +1228,9 @@ impl ffi::Player {
             .set_comment_status(QString::from("Connecting to comments…"));
         let current_generation = self.as_ref().rust().comment_generation.clone();
         let events = self.as_ref().rust().comment_events_tx.clone();
-        handle.spawn(crate::comments::receive(
-            client,
-            channel_id,
-            generation,
-            current_generation,
-            events,
-        ));
+        self.as_mut().rust_mut().comment_task = Some(crate::network::NetworkTask(handle.spawn(
+            crate::comments::receive(client, channel_id, generation, current_generation, events),
+        )));
     }
 }
 
@@ -1274,7 +1322,7 @@ async fn fetch_services(
         .duration_since(UNIX_EPOCH)
         .map_err(FetchServicesError::SystemTime)?
         .as_millis() as u64;
-    epg.replace(services, programs.clone(), now);
+    epg.replace(services, programs, now);
     let snapshot = epg.snapshot();
     let current_programs = snapshot.current_programs(now);
     let mut channels = build_channels(&snapshot.services, current_programs);
@@ -1291,12 +1339,9 @@ async fn fetch_services(
     // plus enough future data to cover the final tab completely.
     let guide_start = now.saturating_sub(24 * 60 * 60 * 1_000);
     let guide_end = now.saturating_add(8 * 24 * 60 * 60 * 1_000);
-    let mut guide = programs
+    let mut guide = snapshot
+        .programs_between(guide_start, guide_end)
         .into_iter()
-        .filter(|program| {
-            program.start_at < guide_end
-                && program.start_at.saturating_add(program.duration) > guide_start
-        })
         .filter_map(|program| {
             let channel_index = channels.iter().position(|channel| {
                 channel.network_id == program.network_id && channel.service_id == program.service_id
@@ -1304,8 +1349,8 @@ async fn fetch_services(
             Some(GuideProgram {
                 id: program.id,
                 channel_index,
-                title: program.name.unwrap_or_default(),
-                description: program.description.unwrap_or_default(),
+                title: program.name.clone().unwrap_or_default(),
+                description: program.description.clone().unwrap_or_default(),
                 start_at: program.start_at,
                 duration: program.duration,
                 genre: program.genres.first().map_or(15, |genre| genre.lv1),

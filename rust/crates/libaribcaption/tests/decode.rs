@@ -1,3 +1,5 @@
+// unwrap below asserts successful decoding of the checked-in fixture.
+// A decode/setup error must fail this test rather than be ignored.
 #[path = "fixtures/sample.rs"]
 mod fixture;
 use libaribcaption::Decoder;

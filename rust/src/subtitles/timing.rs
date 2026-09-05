@@ -32,7 +32,8 @@ pub(crate) enum SubtitleUpdate {
 #[derive(Default)]
 pub(super) struct Timeline {
     anchor: Option<Anchor>,
-    pending: VecDeque<SubtitleCue>,
+    // Only timestamped cues can enter the scheduling queue.
+    pending: VecDeque<(i64, SubtitleCue)>,
     expires_pts_ms: Option<i64>,
     clear_pending: bool,
 }
@@ -61,15 +62,15 @@ impl Timeline {
     }
 
     pub fn push(&mut self, cue: SubtitleCue) {
-        if cue.pts_ms.is_none() {
+        let Some(pts_ms) = cue.pts_ms else {
             tracing::warn!("ARIB caption has no presentation timestamp; cannot synchronize it");
             return;
-        }
+        };
         if self.pending.len() >= MAX_PENDING {
             tracing::warn!("Subtitle timeline is full; dropping the incoming caption");
             return;
         }
-        self.pending.push_back(cue);
+        self.pending.push_back((pts_ms, cue));
     }
 
     /// Query against the video sink's stream position, never wall time or receipt time.
@@ -85,12 +86,15 @@ impl Timeline {
         let now = i128::from(position_ns);
         let mut due = Vec::new();
         for _ in 0..self.pending.len() {
-            let cue = self.pending.pop_front().expect("queue length checked");
-            let start = anchor.map_ms(cue.pts_ms.expect("timestamp checked on insertion"));
+            // The loop visits the initial queue length; each iteration removes
+            // exactly one entry and may requeue it. No other code can mutate the
+            // queue while this method holds &mut self, so it cannot be empty here.
+            let (pts_ms, cue) = self.pending.pop_front().expect("queue length checked");
+            let start = anchor.map_ms(pts_ms);
             if start <= now {
                 due.push((start, cue));
             } else {
-                self.pending.push_back(cue);
+                self.pending.push_back((pts_ms, cue));
             }
         }
         due.sort_by_key(|(start, _)| *start);
@@ -119,6 +123,8 @@ impl Timeline {
 
 #[cfg(test)]
 mod tests {
+    // In tests, unwrap/expect assert successful setup or an expected result.
+    // Failures intentionally fail the test; they are not assumed impossible IO.
     use super::*;
 
     fn caption(pts_ms: i64, duration_ms: Option<u64>) -> SubtitleCue {
@@ -137,6 +143,24 @@ mod tests {
             stream_ns: 2_000_000_000,
         });
         timeline
+    }
+
+    #[test]
+    fn untimestamped_captions_never_enter_the_queue() {
+        let mut timeline = timeline();
+        let mut cue = caption(10_000, None);
+        cue.pts_ms = None;
+        timeline.push(cue);
+        assert!(timeline.pending.is_empty());
+        assert!(matches!(
+            timeline.poll(Some(2_000_000_000)),
+            SubtitleUpdate::Unchanged
+        ));
+        timeline.push(caption(10_000, None));
+        assert!(matches!(
+            timeline.poll(Some(2_000_000_000)),
+            SubtitleUpdate::Show(_)
+        ));
     }
 
     #[test]

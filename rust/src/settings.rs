@@ -146,6 +146,8 @@ fn save_to(path: &Path, settings: &Settings) -> Result<(), SettingsError> {
 
 #[cfg(test)]
 mod tests {
+    // In tests, unwrap/expect assert successful setup or an expected result.
+    // Failures intentionally fail the test; they are not assumed impossible IO.
     use super::*;
 
     fn test_path(name: &str) -> PathBuf {

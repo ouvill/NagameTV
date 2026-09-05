@@ -409,6 +409,14 @@ ApplicationWindow {
             anchors.verticalCenter: videoItem.verticalCenter
             visible: root.danmaku && player.playing
             clip: true
+            property var liveEntries: []
+            function clearComments() {
+                const entries = liveEntries
+                liveEntries = []
+                laneEntries = [null, null, null, null, null, null, null, null]
+                for (const entry of entries) entry.dispose()
+            }
+            onVisibleChanged: if (!visible) clearComments()
             property var laneEntries: [null, null, null, null, null, null, null, null]
             readonly property bool titleOverlapsVideo: persistentProgramIdentity.visible
                 && persistentProgramIdentity.y < videoItem.y + y + height
@@ -445,13 +453,23 @@ ApplicationWindow {
                 return earliestLane
             }
             function releaseLane(entry) {
+                const index = liveEntries.indexOf(entry)
+                if (index >= 0) liveEntries.splice(index, 1)
                 if (entry.lane >= 0 && laneEntries[entry.lane] === entry)
                     laneEntries[entry.lane] = null
             }
             Component { id: danmakuComment
-                Label { id: danmakuEntry; required property string commentText; property int lane: -1; property real motionSpeed: 0; text: commentText; width: implicitWidth; y: danmakuLayer.laneTop + lane * danmakuLayer.laneSpacing; color: root.ink; opacity: root.commentOpacity; font.pixelSize: root.commentFontSize; font.bold: true; style: Text.Outline; styleColor: "#d0000000"
+                Label { id: danmakuEntry; required property string commentText; property int lane: -1; property real motionSpeed: 0; text: commentText; textFormat: Text.PlainText; width: implicitWidth; y: danmakuLayer.laneTop + lane * danmakuLayer.laneSpacing; color: root.ink; opacity: root.commentOpacity; font.pixelSize: root.commentFontSize; font.bold: true; style: Text.Outline; styleColor: "#d0000000"
+                    property bool disposed: false
+                    function dispose() {
+                        if (disposed) return
+                        disposed = true
+                        danmakuMotion.stop()
+                        danmakuLayer.releaseLane(danmakuEntry)
+                        destroy()
+                    }
                     Behavior on y { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
-                    NumberAnimation { id: danmakuMotion; target: danmakuEntry; property: "x"; easing.type: Easing.Linear; onFinished: { danmakuLayer.releaseLane(danmakuEntry); danmakuEntry.destroy() } }
+                    NumberAnimation { id: danmakuMotion; target: danmakuEntry; property: "x"; easing.type: Easing.Linear; onFinished: danmakuEntry.dispose() }
                     Component.onCompleted: {
                         const textWidth = implicitWidth
                         const visibleDuration = 9000 / root.commentSpeed
@@ -469,9 +487,11 @@ ApplicationWindow {
             }
         }
         Connections { target: player
+            function onServiceIdChanged() { danmakuLayer.clearComments() }
             function onCommentReceived(text) {
-                if (!root.danmaku || !player.playing || text.length === 0) return
-                danmakuComment.createObject(danmakuLayer, { "commentText": text })
+                if (!root.danmaku || !player.playing || text.length === 0 || danmakuLayer.liveEntries.length >= 64) return
+                const entry = danmakuComment.createObject(danmakuLayer, { "commentText": text })
+                if (entry) danmakuLayer.liveEntries.push(entry)
             }
         }
         Item {
@@ -480,7 +500,7 @@ ApplicationWindow {
                 && (player.subtitleText.length > 0 || player.subtitleData.length > 0)
             clip: true
             Repeater {
-                model: root.subtitleCue && root.subtitleCue.cells ? root.subtitleCue.cells : []
+                model: player.playing && player.subtitlesEnabled && root.subtitleCue && root.subtitleCue.cells ? root.subtitleCue.cells : []
                 delegate: Rectangle {
                     id: subtitleCell
                     required property var modelData
@@ -886,6 +906,7 @@ ApplicationWindow {
             return date.getTime() + root.guideDayOffset * 86400000
         }
         readonly property var programsByChannel: {
+            if (!root.guideOpen) return []
             const result = []
             for (let i = 0; i < player.services.length; ++i) result.push([])
             const starts = player.guideStarts
@@ -989,7 +1010,7 @@ ApplicationWindow {
                         Loader { id: channelPrograms; required property int index
                             readonly property real columnX: root.guideColumn(index) * guide.channelWidth
                             x: columnX; y: 88; width: guide.channelWidth - 4; height: epgFlick.contentHeight - 88
-                            active: root.guideChannelVisible(index)
+                            active: root.guideOpen && root.guideChannelVisible(index)
                                 && columnX + width >= epgFlick.contentX - guide.channelWidth
                                 && columnX <= epgFlick.contentX + epgFlick.width + guide.channelWidth
                             sourceComponent: Component {

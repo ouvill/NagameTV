@@ -1,5 +1,8 @@
 use std::{env, path::PathBuf};
 
+// Cargo supplies OUT_DIR and CARGO_MANIFEST_DIR when running build scripts.
+// Other expect calls deliberately fail the build if required tools, sources,
+// or generated files are unavailable; continuing would produce an invalid build.
 fn main() {
     println!("cargo:rerun-if-env-changed=ARIBCAPTION_SOURCE_DIR");
     println!("cargo:rerun-if-env-changed=LIBCLANG_PATH");

@@ -128,19 +128,13 @@ impl TsSubtitleExtractor {
             let Some(section_size) = section_size else {
                 break;
             };
-            if !self
-                .psi
-                .get(&pid)
-                .is_some_and(|data| data.len() >= section_size)
-            {
+            let Some(data) = self.psi.get_mut(&pid) else {
+                break;
+            };
+            if data.len() < section_size {
                 break;
             }
-            let section = self
-                .psi
-                .get_mut(&pid)
-                .expect("PSI buffer exists")
-                .drain(..section_size)
-                .collect::<Vec<_>>();
+            let section = data.drain(..section_size).collect::<Vec<_>>();
             self.parse_psi(pid, &section);
         }
     }
@@ -248,6 +242,8 @@ fn is_caption_stream(descriptors: &[u8]) -> bool {
 
 #[cfg(test)]
 mod tests {
+    // In tests, unwrap/expect assert successful setup or an expected result.
+    // Failures intentionally fail the test; they are not assumed impossible IO.
     use super::TsSubtitleExtractor;
 
     #[test]
