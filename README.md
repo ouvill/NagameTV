@@ -11,7 +11,7 @@ Mirakurunの `/api/services/{id}/stream` をGStreamerで直接再生します。
 - QMLは表示とユーザー操作に限定し、バックエンド機能を保持しない
 - CMakeはWorkshop互換のためCargoビルドを呼び出す薄いラッパーとしてのみ使用
 - 通信は専用の単一worker Tokio runtimeで実行し、QtのGUIスレッドをブロックしない
-- Mirakurun APIは再利用可能な`reqwest::Client`で取得し、CXX-QtのキューでQtへ返す
+- Mirakurun APIは再利用可能な`reqwest::Client`で取得し、容量1件の結果キューでGUIスレッドへ返す
 - 同じruntimeへNX-JikkyoのWebSocketタスクを追加できる構造にする
 - EPGはMirakurunを正本とし、時間順に索引した不変のメモリースナップショットで保持
 - EPG更新は完成した新スナップショットとの交換で行い、古いデータを蓄積しない
@@ -236,3 +236,5 @@ NHK大津を同じ条件で比較するには、`scripts/benchmark-player.sh mpv
 `scripts/benchmark-player.sh gstreamer`を実行します。既定の測定時間は10分で、
 結果は開始日時ごとの`benchmark/`ディレクトリに保存されます。
 ウォームアップ後のメモリーが時間比例で増えないことを判定してください。
+
+Rust側の責務分割と非同期処理の所有権は[Playerの設計](docs/player-architecture.md)を参照してください。

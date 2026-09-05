@@ -1,4 +1,5 @@
-#pragma once
+#ifndef MIRAKURUN_VIEWER_LOCALIZATION_H
+#define MIRAKURUN_VIEWER_LOCALIZATION_H
 
 #include <QtCore/QCoreApplication>
 #include <QtCore/QLocale>
@@ -81,3 +82,5 @@ inline bool initializeUiLanguage(QQmlApplicationEngine &engine, const QString &p
 }
 
 inline QString currentUiLanguage() { return effectiveUiLanguage; }
+
+#endif // MIRAKURUN_VIEWER_LOCALIZATION_H

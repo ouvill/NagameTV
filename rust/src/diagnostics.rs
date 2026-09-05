@@ -388,11 +388,15 @@ mod tests {
                 {
                     let allocator = &rows[0]["allocator"];
                     assert_eq!(allocator["provider"], "glibc");
-                    assert!(allocator["arena_bytes"].as_u64().unwrap() > 0);
+                    let bytes = |key: &str| {
+                        allocator[key].as_u64().ok_or_else(|| {
+                            io::Error::other(format!("missing integer statistic: {key}"))
+                        })
+                    };
+                    assert!(bytes("arena_bytes")? > 0);
                     assert_eq!(
-                        allocator["arena_bytes"].as_u64().unwrap(),
-                        allocator["in_use_bytes"].as_u64().unwrap()
-                            + allocator["free_bytes"].as_u64().unwrap()
+                        bytes("arena_bytes")?,
+                        bytes("in_use_bytes")? + bytes("free_bytes")?
                     );
                 }
                 assert_eq!(rows[1]["kind"], "qt_gc");

@@ -15,7 +15,10 @@ pub struct EpgSnapshot {
     pub program_count: usize,
     pub text_capacity_bytes: usize,
     programs_by_service: HashMap<ServiceKey, Vec<Program>>,
-    #[expect(dead_code, reason = "used by the upcoming EPG refresh scheduler")]
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "used by the upcoming EPG refresh scheduler")
+    )]
     pub synced_at: u64,
 }
 
@@ -105,6 +108,13 @@ impl EpgStore {
             programs_by_service,
             synced_at,
         });
+        self.publish(replacement);
+    }
+
+    /// Install a fully built snapshot only after its request is accepted.
+    pub fn publish(&self, replacement: Arc<EpgSnapshot>) {
+        // A poisoned lock still contains a valid Arc: no partially built
+        // snapshot is ever installed and the assignment itself cannot panic.
         *self
             .snapshot
             .write()

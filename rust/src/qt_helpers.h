@@ -1,4 +1,5 @@
-#pragma once
+#ifndef MIRAKURUN_VIEWER_QT_HELPERS_H
+#define MIRAKURUN_VIEWER_QT_HELPERS_H
 
 #include <QtQuick/QQuickItem>
 #include <QtQuick/QQuickWindow>
@@ -76,3 +77,5 @@ inline void installQtGcLogging(rust::Fn<void(rust::Str, rust::Str)> callback) {
         "qt.qml.gc.statistics.debug=true\nqt.qml.gc.allocatorStats.debug=true"));
   }
 }
+
+#endif // MIRAKURUN_VIEWER_QT_HELPERS_H
