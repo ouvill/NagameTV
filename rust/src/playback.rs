@@ -60,12 +60,66 @@ pub enum PlaybackError {
     },
     #[error("The GStreamer message bus is unavailable")]
     BusUnavailable,
-    #[error("GStreamer playback error: {source} (debug: {debug:?})")]
+    #[error("GStreamer playback error: {source} (HTTP: {http_status:?}, debug: {debug:?})")]
     Pipeline {
         #[source]
         source: gst::glib::Error,
         debug: Option<String>,
+        http_status: Option<u32>,
+        network_source: bool,
     },
+    #[error("The live stream ended unexpectedly. Try again to reconnect.")]
+    StreamEnded,
+}
+
+impl PlaybackError {
+    pub fn user_message(&self) -> &'static str {
+        match self {
+            Self::Pipeline {
+                http_status: Some(503),
+                ..
+            } => {
+                "No tuner is available. Tuners may be in use or unavailable. Wait a moment and try again, or choose another channel."
+            }
+            Self::Pipeline {
+                http_status: Some(404),
+                ..
+            } => {
+                "This channel was not found on Mirakurun. Refresh the channel list and choose a channel again."
+            }
+            Self::Pipeline {
+                http_status: Some(401 | 403),
+                ..
+            } => "Mirakurun denied access to the stream. Check the server's access settings.",
+            Self::Pipeline {
+                http_status: Some(408 | 504),
+                ..
+            } => "The server did not respond in time. Check the connection and try again.",
+            Self::Pipeline {
+                http_status: Some(500..=599),
+                ..
+            } => "Mirakurun could not start the stream. Check the server and try again.",
+            Self::Pipeline {
+                http_status: Some(400..=499),
+                ..
+            } => {
+                "Mirakurun rejected the stream request. Check the connection settings and channel."
+            }
+            Self::Pipeline {
+                source,
+                network_source: true,
+                ..
+            } if source.kind::<gst::ResourceError>().is_some() => {
+                "Could not receive the stream from Mirakurun. Check the server and network connection, then try again."
+            }
+            Self::InvalidServerUrl => "Enter a server URL starting with http:// or https://",
+            Self::InvalidServiceId => "Enter a valid Mirakurun service ID",
+            Self::StreamEnded => "The live stream ended unexpectedly. Try again to reconnect.",
+            _ => {
+                "Could not play this channel. Try again or choose another channel. See the error details if the problem continues."
+            }
+        }
+    }
 }
 
 pub fn preload() -> Result<(), PlaybackError> {
@@ -301,6 +355,11 @@ impl Playback {
                 .factory()
                 .map(|factory| factory.name().to_string())
                 .unwrap_or_else(|| source.type_().name().to_owned());
+            if factory == "souphttpsrc" {
+                // Surface tuner exhaustion immediately; retries are an explicit UI action.
+                source.set_property("retries", 0_i32);
+                source.set_property("timeout", 15_u32);
+            }
             tracing::debug!(source = %factory, "Attaching MPEG-TS subtitle extractor");
             if let Ok(mut extractor) = extractor_for_source.lock() {
                 *extractor = TsSubtitleExtractor::new();
@@ -362,19 +421,24 @@ impl Playback {
         if self.playbin.current_state() == gst::State::Null {
             self.prepare_video_sink()?;
         }
-        self.playbin
-            .set_state(gst::State::Ready)
-            .map_err(|source| PlaybackError::StateChange {
-                operation: "reset pipeline",
-                source,
-            })?;
+        let bus = self.playbin.bus().ok_or(PlaybackError::BusUnavailable)?;
+        // Discard messages from the previous stream, including queued failures.
+        bus.set_flushing(true);
+        let reset = self.playbin.set_state(gst::State::Ready);
+        bus.set_flushing(false);
+        reset.map_err(|source| PlaybackError::StateChange {
+            operation: "reset pipeline",
+            source,
+        })?;
         self.playbin.set_property("uri", url);
-        self.playbin
-            .set_state(gst::State::Playing)
-            .map_err(|source| PlaybackError::StateChange {
+        if let Err(source) = self.playbin.set_state(gst::State::Playing) {
+            // A synchronous state failure can already have the useful HTTP error queued.
+            drain_bus_events(&bus, &self.playbin)?;
+            return Err(PlaybackError::StateChange {
                 operation: "start playback",
                 source,
-            })?;
+            });
+        }
         Ok(())
     }
 
@@ -416,27 +480,49 @@ impl Playback {
         let Some(bus) = self.playbin.bus() else {
             return Err(PlaybackError::BusUnavailable);
         };
-        let mut outcome = PlaybackEvent::None;
-        while let Some(message) = bus.pop() {
-            use gst::MessageView;
-            outcome = match message.view() {
-                MessageView::Error(error) => {
-                    return Err(PlaybackError::Pipeline {
+        drain_bus_events(&bus, &self.playbin)
+    }
+}
+
+fn drain_bus_events(
+    bus: &gst::Bus,
+    playbin: &gst::Element,
+) -> Result<PlaybackEvent, PlaybackError> {
+    let mut outcome = PlaybackEvent::None;
+    let mut first_error = None;
+    while let Some(message) = bus.pop() {
+        use gst::MessageView;
+        match message.view() {
+            MessageView::Error(error) => {
+                if first_error.is_none() {
+                    first_error = Some(PlaybackError::Pipeline {
                         source: error.error(),
                         debug: error.debug().map(|debug| debug.to_string()),
+                        http_status: error
+                            .details()
+                            .and_then(|details| details.get::<u32>("http-status-code").ok()),
+                        network_source: error
+                            .src()
+                            .and_then(|src| src.downcast_ref::<gst::Element>())
+                            .and_then(|element| element.factory())
+                            .is_some_and(|factory| factory.name() == "souphttpsrc"),
                     });
                 }
-                MessageView::Eos(..) => PlaybackEvent::Ended,
-                MessageView::StateChanged(state)
-                    if state.src() == Some(self.playbin.upcast_ref())
-                        && state.current() == gst::State::Playing =>
-                {
-                    PlaybackEvent::Playing
-                }
-                _ => outcome,
-            };
+            }
+            MessageView::Eos(..) => outcome = PlaybackEvent::Ended,
+            MessageView::StateChanged(state)
+                if state.src() == Some(playbin.upcast_ref())
+                    && state.current() == gst::State::Playing
+                    && outcome != PlaybackEvent::Ended =>
+            {
+                outcome = PlaybackEvent::Playing;
+            }
+            _ => {}
         }
-        Ok(outcome)
+    }
+    match first_error {
+        Some(error) => Err(error),
+        None => Ok(outcome),
     }
 }
 
@@ -537,6 +623,143 @@ mod tests {
     use super::{DeinterlaceMode, PlaybackError, service_stream_url};
     use gst::prelude::*;
     use gstreamer as gst;
+
+    // Bus-only tests: no playback, display, GPU, or audio device is started.
+    fn queued_http_error(bus: &gst::Bus, status: u32) {
+        bus.post(
+            gst::message::Error::builder(gst::ResourceError::Read, "Service unavailable")
+                .details(
+                    gst::Structure::builder("details")
+                        .field("http-status-code", status)
+                        .build(),
+                )
+                .debug("HTTP stream request failed")
+                .build(),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn preserves_http_cause_and_drains_followup_errors() {
+        gst::init().unwrap();
+        let bus = gst::Bus::new();
+        let playbin = gst::ElementFactory::make("playbin3").build().unwrap();
+        queued_http_error(&bus, 503);
+        bus.post(gst::message::Error::new(
+            gst::StreamError::Failed,
+            "Internal data stream error",
+        ))
+        .unwrap();
+        bus.post(
+            gst::message::StateChanged::builder(
+                gst::State::Paused,
+                gst::State::Playing,
+                gst::State::VoidPending,
+            )
+            .src(&playbin)
+            .build(),
+        )
+        .unwrap();
+        let error = super::drain_bus_events(&bus, &playbin).unwrap_err();
+        assert!(matches!(
+            &error,
+            PlaybackError::Pipeline {
+                http_status: Some(503),
+                ..
+            }
+        ));
+        assert!(error.user_message().starts_with("No tuner is available."));
+        assert!(error.to_string().contains("HTTP stream request failed"));
+        assert_eq!(
+            super::drain_bus_events(&bus, &playbin).unwrap(),
+            super::PlaybackEvent::None
+        );
+        // A fresh attempt can now report Playing without the previous error.
+        bus.post(
+            gst::message::StateChanged::builder(
+                gst::State::Paused,
+                gst::State::Playing,
+                gst::State::VoidPending,
+            )
+            .src(&playbin)
+            .build(),
+        )
+        .unwrap();
+        assert_eq!(
+            super::drain_bus_events(&bus, &playbin).unwrap(),
+            super::PlaybackEvent::Playing
+        );
+    }
+
+    #[test]
+    fn distinguishes_http_failures() {
+        gst::init().unwrap();
+        let bus = gst::Bus::new();
+        let playbin = gst::ElementFactory::make("playbin3").build().unwrap();
+        for (status, message) in [
+            (404, "This channel was not found"),
+            (401, "Mirakurun denied access"),
+            (403, "Mirakurun denied access"),
+            (408, "The server did not respond in time"),
+            (504, "The server did not respond in time"),
+            (500, "Mirakurun could not start the stream"),
+            (502, "Mirakurun could not start the stream"),
+            (429, "Mirakurun rejected the stream request"),
+        ] {
+            queued_http_error(&bus, status);
+            let error = super::drain_bus_events(&bus, &playbin).unwrap_err();
+            assert!(
+                error.user_message().starts_with(message),
+                "HTTP {status}: {error}"
+            );
+        }
+    }
+
+    #[test]
+    fn distinguishes_network_errors_from_output_errors() {
+        gst::init().unwrap();
+        let mut error = PlaybackError::Pipeline {
+            source: gst::glib::Error::new(gst::ResourceError::OpenRead, "Connection refused"),
+            debug: None,
+            http_status: None,
+            network_source: true,
+        };
+        assert!(
+            error
+                .user_message()
+                .starts_with("Could not receive the stream")
+        );
+        if let PlaybackError::Pipeline { network_source, .. } = &mut error {
+            *network_source = false;
+        }
+        assert!(
+            error
+                .user_message()
+                .starts_with("Could not play this channel")
+        );
+    }
+
+    #[test]
+    fn eos_is_not_overwritten_by_a_queued_playing_message() {
+        gst::init().unwrap();
+        let bus = gst::Bus::new();
+        let playbin = gst::ElementFactory::make("playbin3").build().unwrap();
+        bus.post(gst::message::Eos::new()).unwrap();
+        bus.post(
+            gst::message::StateChanged::builder(
+                gst::State::Paused,
+                gst::State::Playing,
+                gst::State::VoidPending,
+            )
+            .src(&playbin)
+            .build(),
+        )
+        .unwrap();
+        assert_eq!(
+            super::drain_bus_events(&bus, &playbin).unwrap(),
+            super::PlaybackEvent::Ended
+        );
+    }
 
     #[test]
     fn configures_playbin_video_flags() {

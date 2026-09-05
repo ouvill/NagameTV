@@ -4,6 +4,22 @@
   <context>
     <name>Main</name>
     <message>
+      <source>Close</source>
+      <translation>閉じる</translation>
+    </message>
+    <message>
+      <source>Playback unavailable</source>
+      <translation>視聴できません</translation>
+    </message>
+    <message>
+      <source>Retry</source>
+      <translation>再試行</translation>
+    </message>
+    <message>
+      <source>Error details</source>
+      <translation>エラー詳細</translation>
+    </message>
+    <message>
       <source>Mute</source>
       <translation>ミュート</translation>
     </message>
@@ -270,6 +286,50 @@
   </context>
   <context>
     <name>Backend</name>
+    <message>
+      <source>No tuner is available. Tuners may be in use or unavailable. Wait a moment and try again, or choose another channel.</source>
+      <translation>利用できるチューナーがありません。ほかの視聴・録画で使用中か、チューナーが利用できない状態です。少し待って再試行するか、別のチャンネルを選んでください。</translation>
+    </message>
+    <message>
+      <source>This channel was not found on Mirakurun. Refresh the channel list and choose a channel again.</source>
+      <translation>Mirakurunにこのチャンネルが見つかりません。チャンネル一覧を更新して選び直してください。</translation>
+    </message>
+    <message>
+      <source>Mirakurun denied access to the stream. Check the server's access settings.</source>
+      <translation>ストリームへのアクセスが拒否されました。サーバーのアクセス設定を確認してください。</translation>
+    </message>
+    <message>
+      <source>The server did not respond in time. Check the connection and try again.</source>
+      <translation>サーバーの応答がタイムアウトしました。接続を確認して再試行してください。</translation>
+    </message>
+    <message>
+      <source>Mirakurun could not start the stream. Check the server and try again.</source>
+      <translation>Mirakurunで配信を開始できませんでした。サーバーの状態を確認して再試行してください。</translation>
+    </message>
+    <message>
+      <source>Mirakurun rejected the stream request. Check the connection settings and channel.</source>
+      <translation>Mirakurunが視聴リクエストを拒否しました。接続設定とチャンネルを確認してください。</translation>
+    </message>
+    <message>
+      <source>Could not receive the stream from Mirakurun. Check the server and network connection, then try again.</source>
+      <translation>Mirakurunから映像を受信できませんでした。サーバーとネットワークの接続を確認して再試行してください。</translation>
+    </message>
+    <message>
+      <source>Enter a valid Mirakurun service ID</source>
+      <translation>有効なMirakurunのサービスIDを指定してください。</translation>
+    </message>
+    <message>
+      <source>The live stream ended unexpectedly. Try again to reconnect.</source>
+      <translation>ライブ配信が切断されました。再試行すると接続し直します。</translation>
+    </message>
+    <message>
+      <source>Could not play this channel. Try again or choose another channel. See the error details if the problem continues.</source>
+      <translation>このチャンネルを再生できませんでした。再試行するか、別のチャンネルを選んでください。問題が続く場合はエラー詳細を確認してください。</translation>
+    </message>
+    <message>
+      <source>Could not initialize the player</source>
+      <translation>プレーヤーを初期化できませんでした。アプリを再起動し、問題が続く場合はエラー詳細を確認してください。</translation>
+    </message>
     <message>
       <source>Select a channel</source>
       <translation>チャンネルを選択してください</translation>

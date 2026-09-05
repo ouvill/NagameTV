@@ -131,6 +131,7 @@ ApplicationWindow {
         reveal()
     }
     function closeTopmost() {
+        if (playbackErrorDialog.opened) { playbackErrorDialog.close(); return }
         if (playbackSettings.opened) playbackSettings.close()
         else if (settings.opened) settings.close()
         else if (selectedGuideIndex >= 0) selectedGuideIndex = -1
@@ -211,6 +212,22 @@ ApplicationWindow {
             padding: 9
             contentItem: Label { text: action.tip; color: root.ink; font.pixelSize: 12 }
             background: Rectangle { radius: 8; color: "#e61b1d1b"; border.color: "#38ffffff" }
+        }
+    }
+
+    component TextAction: Button {
+        id: textAction
+        padding: 12
+        contentItem: Label {
+            text: textAction.text
+            color: root.ink
+            font.pixelSize: 12
+            horizontalAlignment: Text.AlignHCenter
+        }
+        background: Rectangle {
+            radius: 16
+            color: textAction.down || textAction.hovered ? "#28ffffff" : root.raised
+            border.color: textAction.visualFocus ? root.accent : "#28ffffff"
         }
     }
 
@@ -326,9 +343,20 @@ ApplicationWindow {
             anchors.fill: videoItem; visible: !player.playing; color: "#141516"
             Column {
                 anchors.centerIn: parent; spacing: 14
-                Label { anchors.horizontalCenter: parent.horizontalCenter; text: qsTr("Live TV"); color: root.ink; font.pixelSize: 32; font.bold: true }
-                Label { anchors.horizontalCenter: parent.horizontalCenter; width: Math.min(420, videoItem.width - 32); horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap; text: player.serviceId.length || !player.services.length ? root.backendText(player.status) : qsTr("Select a channel to watch"); color: root.muted }
-                Rectangle { anchors.horizontalCenter: parent.horizontalCenter; width: 180; height: 44; radius: 22; color: root.accent; Label { anchors.centerIn: parent; text: player.serviceId.length ? qsTr("Watch") : player.services.length ? qsTr("Choose a channel") : qsTr("Connection settings"); color: "#191a1b"; font.bold: true } MouseArea { anchors.fill: parent; onClicked: { if (player.serviceId.length) player.play(); else if (player.services.length) { root.channelsOpen = true; root.refreshChannelsIfDue(false); root.reveal() } else settings.open() } } }
+                Label { anchors.horizontalCenter: parent.horizontalCenter; text: player.playbackError.length ? qsTr("Playback unavailable") : qsTr("Live TV"); color: root.ink; font.pixelSize: player.playbackError.length ? 26 : 32; font.bold: true }
+                Label { anchors.horizontalCenter: parent.horizontalCenter; width: Math.min(420, videoItem.width - 32); horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap; text: player.playbackError.length ? root.backendText(player.playbackError) : player.serviceId.length || !player.services.length ? root.backendText(player.status) : qsTr("Select a channel to watch"); color: root.muted }
+                Rectangle { anchors.horizontalCenter: parent.horizontalCenter; width: 180; height: 44; radius: 22; color: root.accent; Label { anchors.centerIn: parent; text: player.serviceId.length ? (player.playbackError.length ? qsTr("Retry") : qsTr("Watch")) : player.services.length ? qsTr("Choose a channel") : qsTr("Connection settings"); color: "#191a1b"; font.bold: true } MouseArea { anchors.fill: parent; onClicked: { if (player.serviceId.length) player.play(); else if (player.services.length) { root.channelsOpen = true; root.refreshChannelsIfDue(false); root.reveal() } else settings.open() } } }
+                Row {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    spacing: 8
+                    visible: player.playbackError.length > 0
+                    TextAction {
+                        text: qsTr("Choose a channel")
+                        onClicked: { root.channelsOpen = true; root.refreshChannelsIfDue(true); root.reveal() }
+                    }
+                    TextAction { text: qsTr("Connection settings"); onClicked: settings.open() }
+                    TextAction { text: qsTr("Error details"); onClicked: playbackErrorDialog.open() }
+                }
             }
         }
         Item {
@@ -1185,6 +1213,40 @@ ApplicationWindow {
             Label { id: logFolderError; visible: false; Layout.fillWidth: true; wrapMode: Text.Wrap; text: qsTr("Could not open the log folder. Check the terminal for details."); color: root.muted }
             Label { text: "F11  " + qsTr("Fullscreen"); color: "#929497" }
         }
+        }
+    }
+
+    Popup {
+        id: playbackErrorDialog
+        anchors.centerIn: Overlay.overlay
+        width: Math.min(640, root.width - 40)
+        height: Math.min(420, root.height - 80)
+        modal: true
+        padding: 20
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        background: Rectangle { radius: 18; color: root.surface; border.color: "#42ffffff" }
+        contentItem: ColumnLayout {
+            spacing: 12
+            RowLayout {
+                Layout.fillWidth: true
+                Label { text: qsTr("Error details"); color: root.ink; font.pixelSize: 18; Layout.fillWidth: true }
+                RoundAction { iconSource: root.uiIcon("x"); tip: qsTr("Close"); onTriggered: playbackErrorDialog.close() }
+            }
+            ScrollView {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                clip: true
+                contentWidth: availableWidth
+                TextArea {
+                    text: player.playbackErrorDetails
+                    readOnly: true
+                    selectByMouse: true
+                    wrapMode: TextEdit.Wrap
+                    color: root.muted
+                    font.pixelSize: 12
+                    background: Rectangle { color: root.raised; radius: 8 }
+                }
+            }
         }
     }
 

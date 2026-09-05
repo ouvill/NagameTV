@@ -38,6 +38,8 @@ pub mod ffi {
         #[qproperty(QString, ui_language, cxx_name = "uiLanguage")]
         #[qproperty(QString, service_id, cxx_name = "serviceId")]
         #[qproperty(QString, status)]
+        #[qproperty(QString, playback_error, cxx_name = "playbackError")]
+        #[qproperty(QString, playback_error_details, cxx_name = "playbackErrorDetails")]
         #[qproperty(bool, playing)]
         #[qproperty(f64, volume)]
         #[qproperty(bool, audio_muted, cxx_name = "audioMuted")]
@@ -173,6 +175,8 @@ pub struct PlayerRust {
     ui_language: QString,
     service_id: QString,
     status: QString,
+    playback_error: QString,
+    playback_error_details: QString,
     playing: bool,
     volume: f64,
     audio_muted: bool,
@@ -256,6 +260,8 @@ impl Default for PlayerRust {
             ui_language: ffi::current_ui_language(),
             service_id: QString::from(settings.service_id),
             status: QString::from(status),
+            playback_error: QString::default(),
+            playback_error_details: QString::default(),
             playing: false,
             volume: settings.volume,
             audio_muted: false,
@@ -425,7 +431,24 @@ impl ffi::Player {
     }
 
     fn report_playback_error(mut self: Pin<&mut Self>, error: &PlayerError) {
+        self.as_mut().set_playing(false);
+        if let Some(playback) = self.as_ref().rust().playback.as_ref() {
+            if let Err(stop_error) = playback.stop() {
+                tracing::warn!(%stop_error, "Could not clean up failed playback");
+            }
+            playback.drain_subtitles();
+        }
+        self.as_mut().set_subtitle_text(QString::default());
+        self.as_mut().set_subtitle_data(QString::default());
+        let summary = match error {
+            PlayerError::Playback(error) => error.user_message(),
+            PlayerError::PlaybackUnavailable => "Could not initialize the player",
+            PlayerError::InvalidServiceId => "Enter a valid Mirakurun service ID",
+        };
+        self.as_mut().set_playback_error(QString::from(summary));
         let message = error.to_string();
+        self.as_mut()
+            .set_playback_error_details(QString::from(&message));
         tracing::error!(%error, "Playback failed");
         match prepare_log_directory() {
             Ok(directory) => {
@@ -465,6 +488,8 @@ impl ffi::Player {
     }
 
     pub fn play(mut self: Pin<&mut Self>) {
+        self.as_mut().set_playback_error(QString::default());
+        self.as_mut().set_playback_error_details(QString::default());
         let server = self.as_ref().server().to_string();
         let service_id = self.as_ref().service_id().to_string().parse::<u64>();
         let result: Result<(), PlayerError> =
@@ -496,29 +521,30 @@ impl ffi::Player {
             Ok(()) => {
                 self.as_mut().set_playing(false);
                 self.as_mut().set_status(QString::from("Stopped"));
+                self.as_mut().set_playback_error(QString::default());
+                self.as_mut().set_playback_error_details(QString::default());
             }
             Err(error) => self.as_mut().report_playback_error(&error),
         }
     }
 
     pub fn poll_events(mut self: Pin<&mut Self>) {
-        let event = self
-            .as_ref()
-            .rust()
-            .playback
-            .as_ref()
-            .ok_or(PlayerError::PlaybackUnavailable)
-            .and_then(|playback| playback.drain_events().map_err(Into::into));
-        match event {
-            Ok(PlaybackEvent::None) => {}
-            Ok(PlaybackEvent::Playing) => self.as_mut().set_status(QString::from("Playing")),
-            Ok(PlaybackEvent::Ended) => {
-                self.as_mut().set_playing(false);
-                self.as_mut().set_status(QString::from("Stream ended"));
-            }
-            Err(error) => {
-                self.as_mut().set_playing(false);
-                self.as_mut().report_playback_error(&error);
+        // Failed or stopped streams must not overwrite the original diagnostic.
+        if *self.as_ref().playing() {
+            let event = self
+                .as_ref()
+                .rust()
+                .playback
+                .as_ref()
+                .ok_or(PlayerError::PlaybackUnavailable)
+                .and_then(|playback| playback.drain_events().map_err(Into::into));
+            match event {
+                Ok(PlaybackEvent::None) => {}
+                Ok(PlaybackEvent::Playing) => self.as_mut().set_status(QString::from("Playing")),
+                Ok(PlaybackEvent::Ended) => self
+                    .as_mut()
+                    .report_playback_error(&PlaybackError::StreamEnded.into()),
+                Err(error) => self.as_mut().report_playback_error(&error),
             }
         }
         let volume = if *self.as_ref().audio_muted() {

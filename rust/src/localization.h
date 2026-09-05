@@ -27,6 +27,17 @@ inline constexpr const char *backendTranslationSources[] = {
     QT_TRANSLATE_NOOP("Backend", "Loading channels..."),
     QT_TRANSLATE_NOOP("Backend", "Network runtime is unavailable"),
     QT_TRANSLATE_NOOP("Backend", "Could not load UI translation"),
+    QT_TRANSLATE_NOOP("Backend", "No tuner is available. Tuners may be in use or unavailable. Wait a moment and try again, or choose another channel."),
+    QT_TRANSLATE_NOOP("Backend", "This channel was not found on Mirakurun. Refresh the channel list and choose a channel again."),
+    QT_TRANSLATE_NOOP("Backend", "Mirakurun denied access to the stream. Check the server's access settings."),
+    QT_TRANSLATE_NOOP("Backend", "The server did not respond in time. Check the connection and try again."),
+    QT_TRANSLATE_NOOP("Backend", "Mirakurun could not start the stream. Check the server and try again."),
+    QT_TRANSLATE_NOOP("Backend", "Mirakurun rejected the stream request. Check the connection settings and channel."),
+    QT_TRANSLATE_NOOP("Backend", "Could not receive the stream from Mirakurun. Check the server and network connection, then try again."),
+    QT_TRANSLATE_NOOP("Backend", "Enter a valid Mirakurun service ID"),
+    QT_TRANSLATE_NOOP("Backend", "The live stream ended unexpectedly. Try again to reconnect."),
+    QT_TRANSLATE_NOOP("Backend", "Could not play this channel. Try again or choose another channel. See the error details if the problem continues."),
+    QT_TRANSLATE_NOOP("Backend", "Could not initialize the player"),
 };
 
 // English is the source language. Unsupported languages always resolve to it.
