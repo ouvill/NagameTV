@@ -3,6 +3,10 @@ set -euo pipefail
 
 missing=()
 
+if ! ldconfig -p 2>/dev/null | grep -E 'libclang(-[0-9]+)?\.so' >/dev/null; then
+  missing+=("libclang (libclang-dev)")
+fi
+
 for command in Xvfb cargo cmake gst-launch-1.0 import lld mpv ninja openbox pkg-config qtpaths6 rustc xdpyinfo xdotool; do
   if ! command -v "$command" >/dev/null 2>&1; then
     missing+=("$command")

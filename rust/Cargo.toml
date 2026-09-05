@@ -4,7 +4,12 @@ version = "0.2.0"
 edition = "2024"
 build = "build.rs"
 
+[workspace]
+members = ["crates/libaribcaption-sys", "crates/libaribcaption"]
+resolver = "3"
+
 [dependencies]
+libaribcaption = { path = "crates/libaribcaption" }
 cxx = "1.0"
 cxx-qt = "0.10"
 cxx-qt-lib = { version = "0.10", features = ["full"] }
@@ -21,7 +26,6 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [build-dependencies]
-cmake = "0.1"
 cxx-qt-build = { version = "0.10", features = ["link_qt_object_files"] }
 
 [profile.release]

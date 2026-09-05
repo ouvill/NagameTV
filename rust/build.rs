@@ -47,21 +47,6 @@ fn main() {
         .replace('>', "&gt;");
     std::fs::write(&qrc, format!("<RCC><qresource prefix=\"/i18n\"><file alias=\"ja.qm\">{qm_path}</file></qresource></RCC>"))
         .expect("Could not write translation resource");
-    println!("cargo:rerun-if-changed=../third_party/libaribcaption/CMakeLists.txt");
-    println!("cargo:rerun-if-changed=../third_party/libaribcaption/src");
-    println!("cargo:rerun-if-changed=../third_party/libaribcaption/include");
-    let aribcaption = cmake::Config::new("../third_party/libaribcaption")
-        .define("ARIBCC_NO_RENDERER", "ON")
-        .define("ARIBCC_BUILD_TESTS", "OFF")
-        .define("ARIBCC_SHARED_LIBRARY", "OFF")
-        .build();
-    println!(
-        "cargo:rustc-link-search=native={}/lib",
-        aribcaption.display()
-    );
-    println!("cargo:rustc-link-lib=static=aribcaption");
-    println!("cargo:rustc-link-lib=dylib=stdc++");
-
     CxxQtBuilder::new_qml_module(
         QmlModule::new("MirakurunViewer")
             .qml_file("../qml/Main.qml")

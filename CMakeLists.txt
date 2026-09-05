@@ -10,6 +10,10 @@ file(GLOB TRANSLATIONS CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/translations/*.ts"
 file(GLOB_RECURSE RUST_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_SOURCE_DIR}/rust/src/*.rs"
     "${CMAKE_SOURCE_DIR}/rust/src/*.h"
+    "${CMAKE_SOURCE_DIR}/rust/crates/*.rs"
+    "${CMAKE_SOURCE_DIR}/rust/crates/*.h"
+    "${CMAKE_SOURCE_DIR}/rust/crates/*.cpp"
+    "${CMAKE_SOURCE_DIR}/rust/crates/Cargo.toml"
 )
 
 add_custom_command(

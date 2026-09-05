@@ -15,6 +15,7 @@ Mirakurunの `/api/services/{id}/stream` をGStreamerで直接再生します。
 - 同じruntimeへNX-JikkyoのWebSocketタスクを追加できる構造にする
 - EPGはMirakurunを正本とし、時間順に索引した不変のメモリースナップショットで保持
 - EPG更新は完成した新スナップショットとの交換で行い、古いデータを蓄積しない
+- 字幕のFFIは`libaribcaption-sys`でbindgen自動生成し、`libaribcaption`が所有権・解放を管理。アプリには安全なRust APIのみ公開（[詳細](rust/crates/README.md)）
 
 ## 設計上のメモリー境界
 
@@ -70,7 +71,7 @@ MIRAKURUN_TEST_SCREEN=1920x1080x24 workshop run dev test-ui
 Ubuntu 24.04:
 
 ```bash
-sudo apt install build-essential cmake ninja-build rustc cargo lld \
+sudo apt install build-essential cmake ninja-build rustc cargo lld libclang-dev \
   fonts-noto-cjk \
   qt6-base-dev qt6-declarative-dev qt6-l10n-tools qml6-module-qtquick \
   qml6-module-qtquick-controls qml6-module-qtquick-layouts \
