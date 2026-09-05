@@ -2,7 +2,7 @@
 
 - `libaribcaption-sys`: 同じソースからC++ライブラリをビルドし、インストール済みCヘッダーからbindgenでFFIを生成する。生成コードはOUT_DIRのみ。
 - `libaribcaption`: デコーダーとコンテキストを所有し、Dropで解放する安全なRust API。結果はRust所有の文字列・領域・文字・色・時刻情報。Qt/GStreamer/Mirakurunには依存しない。
-- アプリの`subtitles/decoder.rs`: Rustの字幕データからQML用モデルへの変換のみ。7秒の既定表示時間や色の文字列化はアプリ側の方針。
+- アプリの`subtitles/decoder.rs`: Rustの字幕データからQML用モデルへの変換のみ。PTSと表示時間を保持し、色をQML用文字列に変換する。表示・消去の判定はアプリの`subtitles/timing.rs`で映像の再生時刻に合わせて行う。
 
 現時点では日本語JIS・Aプロファイル・第1言語のデコード部分を公開する。レンダラー、DRCSビットマップ取得など、上流API全体の安全なラッパーではない。
 

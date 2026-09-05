@@ -1,0 +1,255 @@
+use super::SubtitleCue;
+use std::collections::VecDeque;
+
+const PTS_WRAP: i128 = 1 << 33;
+const MAX_PENDING: usize = 128;
+
+/// One correspondence between the transport's 90 kHz PTS and video stream time.
+#[derive(Clone, Copy)]
+pub(super) struct Anchor {
+    pub pts: u64,
+    pub stream_ns: u64,
+}
+
+impl Anchor {
+    fn map_ticks(self, pts: i128) -> i128 {
+        let delta = (pts - i128::from(self.pts) + PTS_WRAP / 2).rem_euclid(PTS_WRAP) - PTS_WRAP / 2;
+        i128::from(self.stream_ns) + delta * 1_000_000_000 / 90_000
+    }
+
+    fn map_ms(self, pts_ms: i64) -> i128 {
+        self.map_ticks(i128::from(pts_ms) * 90)
+    }
+}
+
+#[derive(Debug)]
+pub(crate) enum SubtitleUpdate {
+    Unchanged,
+    Clear,
+    Show(SubtitleCue),
+}
+
+#[derive(Default)]
+pub(super) struct Timeline {
+    anchor: Option<Anchor>,
+    pending: VecDeque<SubtitleCue>,
+    expires_pts_ms: Option<i64>,
+    clear_pending: bool,
+}
+
+impl Timeline {
+    pub fn reset(&mut self) {
+        *self = Self {
+            clear_pending: true,
+            ..Self::default()
+        };
+    }
+
+    pub fn anchor(&mut self, anchor: Anchor) {
+        if self.anchor.is_some_and(|old| {
+            (old.map_ticks(i128::from(anchor.pts)) - i128::from(anchor.stream_ns)).abs()
+                > 500_000_000
+        }) {
+            // A new timestamp epoch must not display captions from the old one.
+            self.reset();
+        }
+        self.anchor = Some(anchor);
+    }
+
+    pub fn map_ticks(&self, pts: u64) -> Option<i128> {
+        self.anchor.map(|anchor| anchor.map_ticks(i128::from(pts)))
+    }
+
+    pub fn push(&mut self, cue: SubtitleCue) {
+        if cue.pts_ms.is_none() {
+            tracing::warn!("ARIB caption has no presentation timestamp; cannot synchronize it");
+            return;
+        }
+        if self.pending.len() >= MAX_PENDING {
+            tracing::warn!("Subtitle timeline is full; dropping the incoming caption");
+            return;
+        }
+        self.pending.push_back(cue);
+    }
+
+    /// Query against the video sink's stream position, never wall time or receipt time.
+    pub fn poll(&mut self, position_ns: Option<u64>) -> SubtitleUpdate {
+        let mut update = if std::mem::take(&mut self.clear_pending) {
+            SubtitleUpdate::Clear
+        } else {
+            SubtitleUpdate::Unchanged
+        };
+        let (Some(anchor), Some(position_ns)) = (self.anchor, position_ns) else {
+            return update;
+        };
+        let now = i128::from(position_ns);
+        let mut due = Vec::new();
+        for _ in 0..self.pending.len() {
+            let cue = self.pending.pop_front().expect("queue length checked");
+            let start = anchor.map_ms(cue.pts_ms.expect("timestamp checked on insertion"));
+            if start <= now {
+                due.push((start, cue));
+            } else {
+                self.pending.push_back(cue);
+            }
+        }
+        due.sort_by_key(|(start, _)| *start);
+        // A GUI stall can make several changes due at once; render the final state.
+        for (_, cue) in due {
+            self.expires_pts_ms = cue
+                .duration_ms
+                .and_then(|duration| cue.pts_ms?.checked_add(i64::try_from(duration).ok()?));
+            update = if cue.is_clear_only() {
+                self.expires_pts_ms = None;
+                SubtitleUpdate::Clear
+            } else {
+                SubtitleUpdate::Show(cue)
+            };
+        }
+        if self
+            .expires_pts_ms
+            .is_some_and(|pts| anchor.map_ms(pts) <= now)
+        {
+            self.expires_pts_ms = None;
+            update = SubtitleUpdate::Clear;
+        }
+        update
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn caption(pts_ms: i64, duration_ms: Option<u64>) -> SubtitleCue {
+        SubtitleCue {
+            text: "字幕".into(),
+            clear_screen: false,
+            duration_ms,
+            ..SubtitleCue::clear(pts_ms)
+        }
+    }
+
+    fn timeline() -> Timeline {
+        let mut timeline = Timeline::default();
+        timeline.anchor(Anchor {
+            pts: 900_000,
+            stream_ns: 2_000_000_000,
+        });
+        timeline
+    }
+
+    #[test]
+    fn buffers_until_video_reaches_pts_and_expires_on_video_time() {
+        let mut timeline = timeline();
+        timeline.push(caption(11_000, Some(2_000)));
+        assert!(matches!(timeline.poll(None), SubtitleUpdate::Unchanged));
+        assert!(matches!(
+            timeline.poll(Some(2_999_999_999)),
+            SubtitleUpdate::Unchanged
+        ));
+        assert!(matches!(
+            timeline.poll(Some(3_000_000_000)),
+            SubtitleUpdate::Show(_)
+        ));
+        // A paused/buffering video position cannot expire the subtitle.
+        for _ in 0..1000 {
+            assert!(matches!(
+                timeline.poll(Some(3_000_000_000)),
+                SubtitleUpdate::Unchanged
+            ));
+        }
+        assert!(matches!(
+            timeline.poll(Some(4_999_999_999)),
+            SubtitleUpdate::Unchanged
+        ));
+        assert!(matches!(
+            timeline.poll(Some(5_000_000_000)),
+            SubtitleUpdate::Clear
+        ));
+    }
+
+    #[test]
+    fn indefinite_caption_survives_seven_seconds_until_a_timed_clear() {
+        let mut timeline = timeline();
+        timeline.push(caption(10_000, None));
+        timeline.push(SubtitleCue::clear(30_000));
+        assert!(matches!(
+            timeline.poll(Some(2_000_000_000)),
+            SubtitleUpdate::Show(_)
+        ));
+        assert!(matches!(
+            timeline.poll(Some(21_999_999_999)),
+            SubtitleUpdate::Unchanged
+        ));
+        assert!(matches!(
+            timeline.poll(Some(22_000_000_000)),
+            SubtitleUpdate::Clear
+        ));
+    }
+
+    #[test]
+    fn late_caption_does_not_restart_its_duration() {
+        let mut timeline = timeline();
+        timeline.push(caption(10_000, Some(1_000)));
+        assert!(matches!(
+            timeline.poll(Some(4_000_000_000)),
+            SubtitleUpdate::Clear
+        ));
+    }
+
+    #[test]
+    fn future_replacement_is_not_shown_early() {
+        let mut timeline = timeline();
+        timeline.push(caption(10_000, None));
+        timeline.push(caption(15_000, None));
+        let SubtitleUpdate::Show(cue) = timeline.poll(Some(2_000_000_000)) else {
+            panic!()
+        };
+        assert_eq!(cue.pts_ms, Some(10_000));
+        assert!(matches!(
+            timeline.poll(Some(6_000_000_000)),
+            SubtitleUpdate::Unchanged
+        ));
+        let SubtitleUpdate::Show(cue) = timeline.poll(Some(7_000_000_000)) else {
+            panic!()
+        };
+        assert_eq!(cue.pts_ms, Some(15_000));
+    }
+
+    #[test]
+    fn handles_pts_wraparound() {
+        let anchor = Anchor {
+            pts: (1 << 33) - 90_000,
+            stream_ns: 5_000_000_000,
+        };
+        assert_eq!(anchor.map_ms(1_000), 7_000_000_000);
+        assert_eq!(anchor.map_ticks((1 << 33) - 180_000), 4_000_000_000);
+    }
+
+    #[test]
+    fn resets_on_channel_changes_and_timestamp_discontinuities() {
+        let mut timeline = timeline();
+        timeline.push(caption(15_000, None));
+        timeline.reset();
+        assert!(matches!(timeline.poll(None), SubtitleUpdate::Clear));
+        timeline.anchor(Anchor {
+            pts: 900_000,
+            stream_ns: 2_000_000_000,
+        });
+        assert!(matches!(
+            timeline.poll(Some(7_000_000_000)),
+            SubtitleUpdate::Unchanged
+        ));
+        timeline.push(caption(15_000, None));
+        timeline.anchor(Anchor {
+            pts: 90_000,
+            stream_ns: 2_000_000_000,
+        });
+        assert!(matches!(
+            timeline.poll(Some(2_000_000_000)),
+            SubtitleUpdate::Clear
+        ));
+        assert!(timeline.pending.is_empty());
+    }
+}

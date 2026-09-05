@@ -114,6 +114,21 @@ QT_QPA_PLATFORM=xcb ./build/mirakurun-viewer
 インターレース解除は`MIRAKURUN_DEINTERLACE`で選択できます。既定は高品質な
 `yadif`です。CPU負荷を抑える場合は`linear`、無効化する場合は`off`を指定します。
 
+## 字幕の同期
+
+ARIB字幕のPTSと表示時間を保持し、GStreamerの映像sinkが返す再生位置に合わせて
+表示・消去します。`tsdemux`のPTS統計と分離後の映像PES・segmentを対応付けて、
+放送の90 kHz時刻を映像のstream timeへ変換します。受信時刻や固定の7秒タイマーは使いません。
+
+表示時間が未指定の字幕は次の字幕または消去指示まで保持します。表示時間がある場合は
+字幕PTSから計算した終了時刻で消し、遅れて届いても表示時間を延ばしません。
+チャンネル変更・停止・再生エラーでは字幕と待機キューをリセットします。
+PTSの周回、映像の一時停止、複数字幕の先行受信もタイムライン側で扱います。
+
+タイムラインの単体テストと、生成したMPEG-TSをメモリー上で分離する同期テストは
+`cargo test --manifest-path rust/Cargo.toml --bin mirakurun-viewer`で実行できます。
+これらはディスプレイ・GPU・音声デバイスを使用しません。
+
 ## 表示言語
 
 設定の「言語 / Language」から「システムに従う / System default」「日本語」「English」

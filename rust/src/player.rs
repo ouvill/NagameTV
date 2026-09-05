@@ -93,6 +93,9 @@ pub mod ffi {
         #[cxx_name = "pollEvents"]
         fn poll_events(self: Pin<&mut Player>);
         #[qinvokable]
+        #[cxx_name = "pollSubtitles"]
+        fn poll_subtitles(self: Pin<&mut Player>);
+        #[qinvokable]
         #[cxx_name = "refreshChannels"]
         fn refresh_channels(self: Pin<&mut Player>);
         #[qinvokable]
@@ -436,7 +439,6 @@ impl ffi::Player {
             if let Err(stop_error) = playback.stop() {
                 tracing::warn!(%stop_error, "Could not clean up failed playback");
             }
-            playback.drain_subtitles();
         }
         self.as_mut().set_subtitle_text(QString::default());
         self.as_mut().set_subtitle_data(QString::default());
@@ -488,6 +490,8 @@ impl ffi::Player {
     }
 
     pub fn play(mut self: Pin<&mut Self>) {
+        self.as_mut().set_subtitle_text(QString::default());
+        self.as_mut().set_subtitle_data(QString::default());
         self.as_mut().set_playback_error(QString::default());
         self.as_mut().set_playback_error_details(QString::default());
         let server = self.as_ref().server().to_string();
@@ -521,10 +525,36 @@ impl ffi::Player {
             Ok(()) => {
                 self.as_mut().set_playing(false);
                 self.as_mut().set_status(QString::from("Stopped"));
+                self.as_mut().set_subtitle_text(QString::default());
+                self.as_mut().set_subtitle_data(QString::default());
                 self.as_mut().set_playback_error(QString::default());
                 self.as_mut().set_playback_error_details(QString::default());
             }
             Err(error) => self.as_mut().report_playback_error(&error),
+        }
+    }
+
+    pub fn poll_subtitles(mut self: Pin<&mut Self>) {
+        use crate::subtitles::SubtitleUpdate;
+        let update = self
+            .as_ref()
+            .rust()
+            .playback
+            .as_ref()
+            .map(Playback::poll_subtitles)
+            .unwrap_or(SubtitleUpdate::Unchanged);
+        match update {
+            SubtitleUpdate::Unchanged => {}
+            SubtitleUpdate::Clear => {
+                self.as_mut().set_subtitle_text(QString::default());
+                self.as_mut().set_subtitle_data(QString::default());
+            }
+            SubtitleUpdate::Show(cue) => {
+                self.as_mut().set_subtitle_text(QString::from(&cue.text));
+                if let Ok(data) = serde_json::to_string(&cue) {
+                    self.as_mut().set_subtitle_data(QString::from(data));
+                }
+            }
         }
     }
 
@@ -557,24 +587,6 @@ impl ffi::Player {
                 playback.set_volume(volume);
             }
             self.as_mut().rust_mut().applied_volume = volume;
-        }
-        let subtitles = self
-            .as_ref()
-            .rust()
-            .playback
-            .as_ref()
-            .map(Playback::drain_subtitles)
-            .unwrap_or_default();
-        if let Some(cue) = subtitles.last() {
-            if cue.is_clear_only() {
-                self.as_mut().set_subtitle_text(QString::default());
-                self.as_mut().set_subtitle_data(QString::default());
-            } else {
-                self.as_mut().set_subtitle_text(QString::from(&cue.text));
-                if let Ok(data) = serde_json::to_string(cue) {
-                    self.as_mut().set_subtitle_data(QString::from(data));
-                }
-            }
         }
         let (start, duration) = {
             let player = self.as_ref();

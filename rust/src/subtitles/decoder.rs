@@ -41,11 +41,11 @@ fn to_cue(caption: Caption) -> SubtitleCue {
     }
     SubtitleCue {
         text: caption.text,
-        // Keep the player's existing presentation policy outside the library.
+        pts_ms: (caption.pts_ms != i64::MIN).then_some(caption.pts_ms),
+        // Missing duration means "until replaced/cleared", not seven seconds.
         duration_ms: caption
             .duration_ms
-            .filter(|duration| *duration > 0)
-            .map_or(7000, |duration| duration as u64),
+            .and_then(|duration| u64::try_from(duration).ok()),
         clear_screen: caption.clear_screen,
         plane_width: caption.plane_width,
         plane_height: caption.plane_height,
@@ -73,7 +73,8 @@ mod tests {
         let mut decoder = AribDecoder::new().unwrap();
         let cue = decoder.decode_pes(fixture::SAMPLE, 1234).unwrap();
         assert_eq!(cue.text, "♬〜");
-        assert_eq!(cue.duration_ms, 7000);
+        assert_eq!(cue.pts_ms, Some(1234));
+        assert_eq!(cue.duration_ms, None);
         assert!(cue.clear_screen);
         assert_eq!((cue.plane_width, cue.plane_height), (960, 540));
         assert_eq!(cue.cells.len(), 2);
@@ -87,12 +88,12 @@ mod tests {
     }
 
     #[test]
-    fn keeps_duration_fallback_in_player() {
+    fn preserves_broadcast_duration_without_a_fixed_timeout() {
         for (duration, expected) in [
-            (None, 7000),
-            (Some(0), 7000),
-            (Some(-1), 7000),
-            (Some(2500), 2500),
+            (None, None),
+            (Some(0), Some(0)),
+            (Some(-1), None),
+            (Some(2500), Some(2500)),
         ] {
             let caption = Caption {
                 text: String::new(),

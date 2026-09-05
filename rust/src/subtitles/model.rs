@@ -5,7 +5,8 @@ use serde::Serialize;
 #[serde(rename_all = "camelCase")]
 pub struct SubtitleCue {
     pub text: String,
-    pub duration_ms: u64,
+    pub pts_ms: Option<i64>,
+    pub duration_ms: Option<u64>,
     pub clear_screen: bool,
     pub plane_width: i32,
     pub plane_height: i32,
@@ -13,6 +14,19 @@ pub struct SubtitleCue {
 }
 
 impl SubtitleCue {
+    #[cfg(test)]
+    pub(crate) fn clear(pts_ms: i64) -> Self {
+        Self {
+            text: String::new(),
+            pts_ms: Some(pts_ms),
+            duration_ms: None,
+            clear_screen: true,
+            plane_width: 960,
+            plane_height: 540,
+            cells: Vec::new(),
+        }
+    }
+
     /// A clear-screen flag can accompany a new caption.  It means "replace the
     /// previous screen", not "discard this caption".  Only an empty cue is a
     /// request to clear without presenting a replacement.
@@ -49,7 +63,8 @@ mod tests {
     fn cue(text: &str, clear_screen: bool) -> SubtitleCue {
         SubtitleCue {
             text: text.to_owned(),
-            duration_ms: 7000,
+            pts_ms: Some(0),
+            duration_ms: None,
             clear_screen,
             plane_width: 960,
             plane_height: 540,

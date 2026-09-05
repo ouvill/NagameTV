@@ -1,12 +1,11 @@
 use gst::prelude::*;
 use gstreamer as gst;
-use std::collections::VecDeque;
 use std::ffi::{c_char, c_void};
 use std::ptr;
 use std::sync::{Arc, Mutex, OnceLock};
 use thiserror::Error;
 
-use crate::subtitles::{SubtitleCue, TsSubtitleExtractor};
+use crate::subtitles::{SubtitleClock, SubtitleUpdate, TsSubtitleExtractor};
 
 static PRELOADED: OnceLock<Mutex<Option<Playback>>> = OnceLock::new();
 
@@ -149,7 +148,7 @@ pub struct Playback {
     video_queue: gst::Element,
     deinterlace_mode: DeinterlaceMode,
     video_attached: bool,
-    subtitles: Arc<Mutex<VecDeque<SubtitleCue>>>,
+    subtitles: SubtitleClock,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -340,7 +339,8 @@ impl Playback {
             playbin.set_property("audio-sink", &audio_sink);
         }
         playbin.set_property("volume", 0.7_f64);
-        let subtitles = Arc::new(Mutex::new(VecDeque::new()));
+        let subtitles = SubtitleClock::default();
+        subtitles.attach(&playbin);
         let subtitle_extractor = Arc::new(Mutex::new(TsSubtitleExtractor::new()));
         let extractor_for_source = subtitle_extractor.clone();
         let subtitles_for_source = subtitles.clone();
@@ -361,6 +361,7 @@ impl Playback {
                 source.set_property("timeout", 15_u32);
             }
             tracing::debug!(source = %factory, "Attaching MPEG-TS subtitle extractor");
+            subtitles_for_source.reset();
             if let Ok(mut extractor) = extractor_for_source.lock() {
                 *extractor = TsSubtitleExtractor::new();
             }
@@ -430,6 +431,7 @@ impl Playback {
             operation: "reset pipeline",
             source,
         })?;
+        self.subtitles.reset();
         self.playbin.set_property("uri", url);
         if let Err(source) = self.playbin.set_state(gst::State::Playing) {
             // A synchronous state failure can already have the useful HTTP error queued.
@@ -455,20 +457,27 @@ impl Playback {
     }
 
     pub fn stop(&self) -> Result<(), PlaybackError> {
-        self.playbin
+        let result = self
+            .playbin
             .set_state(gst::State::Null)
             .map(|_| ())
             .map_err(|source| PlaybackError::StateChange {
                 operation: "stop playback",
                 source,
-            })
+            });
+        self.subtitles.reset();
+        result
     }
 
-    pub fn drain_subtitles(&self) -> Vec<SubtitleCue> {
-        self.subtitles
-            .lock()
-            .map(|mut queue| queue.drain(..).collect())
-            .unwrap_or_default()
+    pub fn poll_subtitles(&self) -> SubtitleUpdate {
+        // GstBaseSink's TIME position includes clock/segment/latency handling;
+        // source arrival time and the decoder's ahead-of-playback position do not.
+        let position = if self.playbin.current_state() == gst::State::Playing {
+            self.video_sink.query_position::<gst::ClockTime>()
+        } else {
+            None
+        };
+        self.subtitles.poll(position)
     }
 
     pub fn set_volume(&self, volume: f64) {
@@ -549,7 +558,7 @@ fn configure_video_flags(mut flags: gst::glib::Value) -> Result<gst::glib::Value
 fn attach_subtitle_probe(
     source: &gst::Element,
     extractor: Arc<Mutex<TsSubtitleExtractor>>,
-    subtitles: Arc<Mutex<VecDeque<SubtitleCue>>>,
+    subtitles: SubtitleClock,
 ) {
     let Some(pad) = source.static_pad("src") else {
         tracing::warn!("MPEG-TS subtitle extractor source has no src pad");
@@ -567,14 +576,7 @@ fn attach_subtitle_probe(
             .ok()
             .map(|mut extractor| extractor.push(data.as_slice()))
             .unwrap_or_default();
-        if !texts.is_empty()
-            && let Ok(mut queue) = subtitles.lock()
-        {
-            queue.extend(texts);
-            while queue.len() > 8 {
-                queue.pop_front();
-            }
-        }
+        subtitles.push(texts);
         gst::PadProbeReturn::Ok
     });
 }

@@ -182,6 +182,7 @@ ApplicationWindow {
     Shortcut { sequence: "Escape"; onActivated: closeTopmost() }
     Timer { id: hideTimer; interval: 3200; onTriggered: if (player.playing && !overlayPinned) overlayVisible = false }
     Timer { interval: 50; running: true; repeat: true; onTriggered: player.pollEvents() }
+    Timer { interval: 16; running: player.playing; repeat: true; onTriggered: player.pollSubtitles() }
     Timer { interval: 30000; running: true; repeat: true; triggeredOnStart: true; onTriggered: root.nowMs = Date.now() }
     Timer { interval: 1000; running: true; repeat: true; onTriggered: player.refreshCurrentPrograms() }
     Timer { interval: 300000; running: true; repeat: true; onTriggered: root.refreshChannelsIfDue(false) }
@@ -487,23 +488,15 @@ ApplicationWindow {
         }
     }
 
-    Timer {
-        id: subtitleClearTimer
-        interval: 7000
-        onTriggered: { player.subtitleText = ""; player.subtitleData = ""; root.subtitleCue = null }
-    }
     Connections {
         target: player
         function onSubtitleDataChanged() {
             if (player.subtitleData.length === 0) {
                 root.subtitleCue = null
-                subtitleClearTimer.stop()
                 return
             }
             try {
                 root.subtitleCue = JSON.parse(player.subtitleData)
-                subtitleClearTimer.interval = Math.max(100, Math.min(60000, root.subtitleCue.durationMs || 7000))
-                subtitleClearTimer.restart()
             } catch (error) {
                 console.warn("Could not parse subtitle regions:", error)
             }
@@ -627,7 +620,7 @@ ApplicationWindow {
                 Item { Layout.fillWidth: true }
                 RoundAction { iconSource: root.uiIcon("grid-2x2"); tip: qsTr("Channels"); onTriggered: { channelsOpen = true; root.refreshChannelsIfDue(false); reveal() } }
                 RoundAction { iconSource: root.uiIcon("pencil"); tip: qsTr("Post a comment") }
-                RoundAction { iconSource: root.uiIcon("captions"); tip: player.subtitlesEnabled ? qsTr("Hide subtitles") : qsTr("Show subtitles"); active: player.subtitlesEnabled; onTriggered: { player.subtitlesEnabled = !player.subtitlesEnabled; if (!player.subtitlesEnabled) { player.subtitleText = ""; player.subtitleData = ""; root.subtitleCue = null }; player.saveSettings() } }
+                RoundAction { iconSource: root.uiIcon("captions"); tip: player.subtitlesEnabled ? qsTr("Hide subtitles") : qsTr("Show subtitles"); active: player.subtitlesEnabled; onTriggered: { player.subtitlesEnabled = !player.subtitlesEnabled; player.saveSettings() } }
                 RoundAction { iconSource: root.uiIcon("settings-2"); tip: qsTr("Playback settings"); onTriggered: { playbackSettings.open(); root.reveal() } }
                 RoundAction { iconSource: root.uiIcon("maximize"); tip: qsTr("Fullscreen"); onTriggered: root.toggleFullscreen() }
                 Rectangle { width: 1; height: 28; color: "#28ffffff"; Layout.leftMargin: 4; Layout.rightMargin: 4; Layout.alignment: Qt.AlignVCenter }
