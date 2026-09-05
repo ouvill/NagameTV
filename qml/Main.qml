@@ -337,6 +337,29 @@ ApplicationWindow {
             }
         }
     }
+    component WindowDragArea: MouseArea {
+        acceptedButtons: Qt.LeftButton
+        onDoubleClicked: {
+            if (root.visibility !== Window.FullScreen)
+                root.visibility === Window.Maximized ? root.showNormal() : root.showMaximized()
+        }
+        // A press can still be a click or the first half of a double click.
+        // Hand off only after the platform drag threshold has been crossed.
+        // Let the compositor restore/place the window in its own coordinates.
+        DragHandler {
+            target: null
+            acceptedButtons: Qt.LeftButton
+            enabled: root.visibility === Window.Windowed || root.visibility === Window.Maximized
+            onActiveChanged: {
+                if (active) {
+                    root.reveal()
+                    if (!root.startSystemMove())
+                        console.warn("Could not start the system window move")
+                }
+            }
+        }
+    }
+
     component WindowButtons: Rectangle {
         implicitWidth: 126; implicitHeight: 42; radius: 21
         color: "#b8171819"; border.color: "#16ffffff"
@@ -629,7 +652,7 @@ ApplicationWindow {
             RoundAction { iconSource: root.uiIcon("settings-2"); tip: qsTr("Settings"); onTriggered: settings.open() }
             WindowButtons {}
         }
-        MouseArea { anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top; height: 76; acceptedButtons: Qt.LeftButton; z: -1; onPressed: root.startSystemMove(); onDoubleClicked: root.visibility === Window.Maximized ? root.showNormal() : root.showMaximized() }
+        WindowDragArea { anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top; height: 76; z: -1 }
         Column {
             id: playerControlBar
             visible: opacity > 0; enabled: !root.channelsOpen
@@ -885,7 +908,7 @@ ApplicationWindow {
             return result
         }
         Rectangle { id: guideToolbar; anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top; height: 84; color: "#151715"
-            MouseArea { anchors.fill: parent; z: 0; acceptedButtons: Qt.LeftButton; onPressed: root.startSystemMove(); onDoubleClicked: root.visibility === Window.Maximized ? root.showNormal() : root.showMaximized() }
+            WindowDragArea { anchors.fill: parent; z: 0 }
             WindowButtons { id: guideWindowButtons; anchors.right: parent.right; anchors.top: parent.top; anchors.rightMargin: 18; anchors.topMargin: 18; z: 1 }
             RowLayout { anchors.left: parent.left; anchors.right: guideWindowButtons.left; anchors.top: parent.top; anchors.leftMargin: 18; anchors.rightMargin: 14; anchors.topMargin: 18; height: 42; z: 1; spacing: root.width < 980 ? 8 : 14
                 RoundAction { iconSource: root.uiIcon("chevron-left"); onTriggered: { root.selectedGuideIndex = -1; root.guideOpen = false } }
