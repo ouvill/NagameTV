@@ -226,6 +226,10 @@ $XDG_CONFIG_HOME/mirakurun-viewer/settings.toml
 
 ## 長時間試験
 
+普段の視聴ログにはglibcの使用中・空き容量も記録します。
+`MIRAKURUN_GC_LOG=1`で起動するとQtのGC統計も保存します。
+保存場所・集計・項目の読み方は[診断ログの説明](docs/passive-diagnostics.md)を参照してください。
+
 `scripts/monitor-memory.sh <PID> [interval]`でRSS、PSS、FD数、スレッド数をCSVへ記録できます。
 
 NHK大津を同じ条件で比較するには、`scripts/benchmark-player.sh mpv`または

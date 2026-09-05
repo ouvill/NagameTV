@@ -5,7 +5,7 @@ use std::{
     io::{self, Write},
     path::{Path, PathBuf},
     sync::{
-        Arc,
+        Arc, OnceLock, Weak,
         atomic::{AtomicU64, Ordering},
         mpsc,
     },
@@ -44,8 +44,48 @@ struct Entry {
     snapshot: Snapshot,
 }
 
+enum Message {
+    Sample(Entry),
+    QtGc {
+        unix_ms: u128,
+        category: String,
+        message: String,
+    },
+}
+
+struct Sink {
+    sender: mpsc::SyncSender<Message>,
+    dropped: Arc<AtomicU64>,
+}
+static GC_SINK: OnceLock<Weak<Sink>> = OnceLock::new();
+
+// Called by Qt's message handler on arbitrary threads; never performs file IO.
+pub fn record_qt_gc(category: &str, message: &str) {
+    if !matches!(
+        category,
+        "qt.qml.gc.statistics" | "qt.qml.gc.allocatorStats"
+    ) {
+        return;
+    }
+    if let Some(sink) = GC_SINK.get().and_then(Weak::upgrade) {
+        // Bound each message, including UTF-8 and JSON escaping overhead.
+        let message: String = message.chars().take(4096).collect();
+        if sink
+            .sender
+            .try_send(Message::QtGc {
+                unix_ms: unix_ms(),
+                category: category.to_owned(),
+                message,
+            })
+            .is_err()
+        {
+            sink.dropped.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+}
+
 pub struct Recorder {
-    sender: mpsc::SyncSender<Entry>,
+    sink: Arc<Sink>,
     dropped: Arc<AtomicU64>,
     started: Instant,
 }
@@ -56,30 +96,46 @@ impl Recorder {
         prune_finished_logs(&directory)?;
         let path = directory.join(format!("usage-{}.jsonl", std::process::id()));
         let writer = RotatingWriter::new(path, MAX_LOG_BYTES)?;
-        let (sender, receiver) = mpsc::sync_channel::<Entry>(QUEUE_SIZE);
+        let (sender, receiver) = mpsc::sync_channel::<Message>(QUEUE_SIZE);
         let dropped = Arc::new(AtomicU64::new(0));
         let worker_dropped = dropped.clone();
+        let sink = Arc::new(Sink {
+            sender,
+            dropped: dropped.clone(),
+        });
         std::thread::Builder::new()
             .name("viewer-diagnostics".into())
             .spawn(move || {
                 let mut writer = writer;
                 for entry in receiver {
                     let measured_unix_ms = unix_ms();
-                    let memory = process_memory();
-                    let record = serde_json::json!({
-                        "record": entry,
-                        "measured_unix_ms": measured_unix_ms,
-                        "process": memory,
-                        "dropped_records": worker_dropped.load(Ordering::Relaxed),
-                    });
+                    let record = match entry {
+                        Message::Sample(entry) => serde_json::json!({
+                            "record": entry,
+                            "measured_unix_ms": measured_unix_ms,
+                            "process": process_memory(),
+                            "allocator": allocator_memory(),
+                            "dropped_records": worker_dropped.load(Ordering::Relaxed),
+                        }),
+                        Message::QtGc {
+                            unix_ms,
+                            category,
+                            message,
+                        } => serde_json::json!({
+                            "kind": "qt_gc", "schema": 1, "pid": std::process::id(),
+                            "unix_ms": unix_ms, "category": category, "message": message,
+                            "dropped_records": worker_dropped.load(Ordering::Relaxed),
+                        }),
+                    };
                     if let Err(error) = writer.write(&record) {
                         tracing::warn!(%error, "Passive diagnostics stopped");
                         break;
                     }
                 }
             })?;
+        let _ = GC_SINK.set(Arc::downgrade(&sink));
         Ok(Self {
-            sender,
+            sink,
             dropped,
             started: Instant::now(),
         })
@@ -95,7 +151,7 @@ impl Recorder {
             event,
             snapshot,
         };
-        if self.sender.try_send(entry).is_err() {
+        if self.sink.sender.try_send(Message::Sample(entry)).is_err() {
             self.dropped.fetch_add(1, Ordering::Relaxed);
         }
     }
@@ -107,9 +163,53 @@ fn unix_ms() -> u128 {
         .map_or(0, |time| time.as_millis())
 }
 
+/// glibc accounting, not live application bytes: tcache and allocator metadata
+/// affect these counters. Direct mmap (including QML's JS heap) is not covered.
+#[derive(Serialize)]
+struct AllocatorMemory {
+    provider: &'static str,
+    version: String,
+    arena_bytes: usize,
+    in_use_bytes: usize,
+    free_bytes: usize,
+    mmap_bytes: usize,
+    mmap_regions: usize,
+    releasable_top_bytes: usize,
+}
+
+fn allocator_memory() -> Option<AllocatorMemory> {
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    {
+        // SAFETY: mallinfo2 takes no pointers, returns a value, and locks arenas
+        // internally. Sampling occurs only on the diagnostics worker.
+        let info = unsafe { libc::mallinfo2() };
+        // SAFETY: glibc returns a static, NUL-terminated version string.
+        let version = unsafe { std::ffi::CStr::from_ptr(libc::gnu_get_libc_version()) }
+            .to_string_lossy()
+            .into_owned();
+        Some(AllocatorMemory {
+            provider: "glibc",
+            version,
+            arena_bytes: info.arena,
+            in_use_bytes: info.uordblks,
+            free_bytes: info.fordblks,
+            mmap_bytes: info.hblkhd,
+            mmap_regions: info.hblks,
+            releasable_top_bytes: info.keepcost,
+        })
+    }
+    #[cfg(not(all(target_os = "linux", target_env = "gnu")))]
+    {
+        None
+    }
+}
+
 #[derive(Default, Serialize)]
 struct ProcessMemory {
     rss_kib: Option<u64>,
+    virtual_kib: Option<u64>,
+    anonymous_kib: Option<u64>,
+    lazy_free_kib: Option<u64>,
     pss_kib: Option<u64>,
     private_kib: Option<u64>,
     swap_kib: Option<u64>,
@@ -130,6 +230,9 @@ fn field(text: &str, key: &str) -> Option<u64> {
 fn parse_memory(status: &str, smaps: &str) -> ProcessMemory {
     ProcessMemory {
         rss_kib: field(status, "VmRSS:"), // Same kernel counter used for htop RES.
+        virtual_kib: field(status, "VmSize:"),
+        anonymous_kib: field(smaps, "Anonymous:"),
+        lazy_free_kib: field(smaps, "LazyFree:"),
         pss_kib: field(smaps, "Pss:"),
         private_kib: field(smaps, "Private_Clean:")
             .zip(field(smaps, "Private_Dirty:"))
@@ -233,7 +336,10 @@ mod tests {
         let (sender, receiver) = mpsc::sync_channel(1);
         let dropped = Arc::new(AtomicU64::new(0));
         let recorder = Recorder {
-            sender,
+            sink: Arc::new(Sink {
+                sender,
+                dropped: dropped.clone(),
+            }),
             dropped: dropped.clone(),
             started: Instant::now(),
         };
@@ -256,6 +362,52 @@ mod tests {
         assert_eq!(memory.threads, Some(41));
         assert_eq!(parse_memory("", "").rss_kib, None);
     }
+    #[test]
+    fn recorder_writes_allocator_and_gc_records() -> io::Result<()> {
+        let dir = std::env::temp_dir().join(format!(
+            "viewer-gc-test-{}-{}",
+            std::process::id(),
+            unix_ms()
+        ));
+        let recorder = Recorder::start(dir.clone())?;
+        recorder.record("sample", Snapshot::default());
+        record_qt_gc("unrelated.category", "must not be recorded");
+        record_qt_gc("qt.qml.gc.statistics", "before \"GC\"\nafter GC");
+        drop(recorder);
+        let path = dir.join(format!("usage-{}.jsonl", std::process::id()));
+        let deadline = Instant::now() + std::time::Duration::from_secs(2);
+        loop {
+            let text = fs::read_to_string(&path)?;
+            let rows: Vec<serde_json::Value> = text
+                .lines()
+                .filter_map(|line| serde_json::from_str(line).ok())
+                .collect();
+            if rows.len() == 2 {
+                assert_eq!(rows[0]["record"]["event"], "sample");
+                #[cfg(all(target_os = "linux", target_env = "gnu"))]
+                {
+                    let allocator = &rows[0]["allocator"];
+                    assert_eq!(allocator["provider"], "glibc");
+                    assert!(allocator["arena_bytes"].as_u64().unwrap() > 0);
+                    assert_eq!(
+                        allocator["arena_bytes"].as_u64().unwrap(),
+                        allocator["in_use_bytes"].as_u64().unwrap()
+                            + allocator["free_bytes"].as_u64().unwrap()
+                    );
+                }
+                assert_eq!(rows[1]["kind"], "qt_gc");
+                assert_eq!(rows[1]["message"], "before \"GC\"\nafter GC");
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "diagnostic worker did not write records"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        fs::remove_dir_all(dir)
+    }
+
     #[test]
     fn rotation_keeps_complete_json_lines_within_limit() -> io::Result<()> {
         let dir = std::env::temp_dir().join(format!(

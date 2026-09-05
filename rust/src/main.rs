@@ -19,6 +19,9 @@ fn main() {
     apply_temporary_xcb_workaround();
     cxx_qt::init_qml_module!("MirakurunViewer");
     player::ffi::configure_qt_quick_open_gl();
+    if std::env::var("MIRAKURUN_DIAGNOSTICS").as_deref() != Ok("0") {
+        player::ffi::install_qt_gc_logging(diagnostics::record_qt_gc);
+    }
     let mut app = QGuiApplication::new();
 
     if let Err(error) = playback::preload() {

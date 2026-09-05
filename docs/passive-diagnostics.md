@@ -49,3 +49,66 @@ python3 scripts/summarize-usage.py ~/.local/state/mirakurun-viewer/usage
 - 書き込みエラー時は警告して記録を停止する。終了直前や異常終了時には未書き込みの末尾記録が失われる場合がある。
 
 比較時には、この記録機能自体による1スレッドとメモリの増加が含まれる点にも注意する。
+
+## glibc・QML GCの切り分け
+
+通常の状態記録には `allocator` を追加した。Linux/glibcでは `mallinfo2()` の
+統計を記録し、それ以外の環境では `null` とする。glibc 2.33以降が必要。
+旧ログにはこの項目がなく、集計では `unavailable` と表示する。
+
+| 項目 | 内容（bytes） |
+| --- | --- |
+| `arena_bytes` | glibcのアリーナ容量 |
+| `in_use_bytes` | glibcが使用中と集計する容量（uordblks） |
+| `free_bytes` | アリーナ内の空き容量（fordblks） |
+| `mmap_bytes` | mallocが直接mmapで確保した容量（hblkhd） |
+| `releasable_top_bytes` | ヒープ末尾の返却候補容量（keepcost）。全空き領域ではない |
+
+`mmap_regions`、`provider`、glibcの `version` も記録する。
+`in_use_bytes` はアプリの生存オブジェクト容量と一致しない。tcacheや管理領域の影響があり、
+この値の増加だけではリークと確定できない。QMLのJSヒープによる直接mmapやGPU割当は対象外。
+アロケーターをLD_PRELOAD等で差し替えた環境ではglibc統計が全体を表さない。
+統計取得時にglibc内部のロックを取るため、計測自体にも負荷がある。
+
+`process` には `virtual_kib`（VmSize）、`anonymous_kib`（smaps_rollupのAnonymous）、
+`lazy_free_kib`（LazyFree）も追加した。仮想サイズは実際の物理メモリー使用量ではない。
+LazyFreeも全ての「解放済みメモリー」の合計ではない。procfsに項目がなければ `null`。
+
+QtのGC前後の統計も必要な場合は、通常の視聴環境で次のように起動する。
+
+```sh
+MIRAKURUN_GC_LOG=1 ./build/mirakurun-viewer
+```
+
+`qt.qml.gc.statistics` と `qt.qml.gc.allocatorStats` のdebugを有効にし、
+`kind: "qt_gc"` の行として同じ `usage-<PID>.jsonl` に保存する。
+GCの発生時刻 `unix_ms`、カテゴリー、Qtのメッセージを保存する。
+既存のQtメッセージ出力も維持する。明示的な `QT_LOGGING_RULES` / `QT_LOGGING_CONF` は
+この設定より優先される。自分でこれらのカテゴリーを有効にした場合も保存される。
+
+GC行は状態記録と同じ32件のキュー・4MiBのファイル上限を共有する。
+1メッセージは最大4096 Unicode文字に制限し、満杯時は省略数に加算する。
+このため大量のGCログで状態記録が省略されたり、保存期間が短くなる場合がある。
+Playerの診断記録開始より前、および終了後のGCメッセージは保存しない。
+GC行には状態スナップショットを付けず、前後の通常サンプルと時刻で照合する。
+`MIRAKURUN_DIAGNOSTICS=0` はGCのファイル記録も無効にする。
+
+起動後5分を除外して集計する例:
+
+```sh
+python3 scripts/summarize-usage.py ~/.local/state/mirakurun-viewer/usage --after 300
+```
+
+`endpoint_delta/min` は区間の最初と最後の差を経過分数で割ったMiB/分。
+回帰分析やリーク判定ではなく、停止・選局が混ざるとその影響も含む。
+GCメッセージ件数と省略数は、`--after` にかかわらず読み込んだファイル全体の値。
+GCの数値はQtのバージョンで形式が変わり得るため、自動解析せず原文を保存する。
+
+同じ操作を繰り返し、同じ状態へ戻った後の値を比較する。
+`free_bytes` が増え、GC後の使用量が安定していれば未返却領域が候補になる。
+GC後の使用量やネイティブ割当が増え続ける場合は、保持参照や割当元の追跡へ進む。
+強制GC、`malloc_trim()`、`malloc_info()`のXML保存はこの記録機能では実行しない。
+
+参考: [QtのJSメモリー管理](https://doc.qt.io/qt-6.10/qtqml-javascript-memory.html)、
+[Qtのロギングルール](https://doc.qt.io/qt-6/qloggingcategory.html)、
+[mallinfo2](https://man7.org/linux/man-pages/man3/mallinfo.3.html)。

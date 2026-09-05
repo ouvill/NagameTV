@@ -27,6 +27,8 @@ pub mod ffi {
         type QQuickItem;
         #[cxx_name = "configureQtQuickOpenGl"]
         fn configure_qt_quick_open_gl();
+        #[cxx_name = "installQtGcLogging"]
+        fn install_qt_gc_logging(callback: fn(category: &str, message: &str));
         #[cxx_name = "playbackLogDirectory"]
         fn playback_log_directory() -> QString;
         #[cxx_name = "openPlaybackLogDirectory"]
