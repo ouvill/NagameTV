@@ -23,6 +23,13 @@ struct State {
 pub(crate) struct SubtitleClock(Arc<Mutex<State>>);
 
 impl SubtitleClock {
+    pub fn pending_count(&self) -> Option<usize> {
+        self.0
+            .try_lock()
+            .ok()
+            .map(|state| state.timeline.pending_count())
+    }
+
     pub fn reset(&self) {
         if let Ok(mut state) = self.0.lock() {
             state.raw_pts.clear();

@@ -497,6 +497,10 @@ impl Playback {
         result
     }
 
+    pub fn pending_subtitles(&self) -> Option<usize> {
+        self.subtitles.pending_count()
+    }
+
     pub fn poll_subtitles(&self) -> SubtitleUpdate {
         // GstBaseSink's TIME position includes clock/segment/latency handling;
         // source arrival time and the decoder's ahead-of-playback position do not.

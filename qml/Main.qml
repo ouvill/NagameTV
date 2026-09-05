@@ -109,10 +109,18 @@ ApplicationWindow {
         const maximum = Math.max(0, epgFlick.contentHeight - epgFlick.height)
         epgFlick.contentY = Math.max(0, Math.min(maximum, position - epgFlick.height * 0.34))
     }
-    onGuideOpenChanged: if (guideOpen) {
-        guideDayOffset = 0
-        selectedGuideIndex = -1
-        Qt.callLater(root.scrollGuideToNow)
+    property bool usageReady: false
+    function recordUsage() {
+        if (usageReady) player.recordUiState(root.guideOpen, root.channelsOpen, danmakuLayer.liveEntries.length)
+    }
+    onChannelsOpenChanged: recordUsage()
+    onGuideOpenChanged: {
+        recordUsage()
+        if (guideOpen) {
+            guideDayOffset = 0
+            selectedGuideIndex = -1
+            Qt.callLater(root.scrollGuideToNow)
+        }
     }
 
     function reveal() { overlayVisible = true; hideTimer.restart() }
@@ -199,6 +207,12 @@ ApplicationWindow {
     Shortcut { sequence: "PgDown"; onActivated: player.changeChannel(1) }
     Shortcut { sequence: "Escape"; onActivated: closeTopmost() }
     Timer { id: hideTimer; interval: 3200; onTriggered: if (player.playing && !overlayPinned) overlayVisible = false }
+    Timer { interval: 10000; running: true; repeat: true; onTriggered: root.recordUsage() }
+    Connections { target: player
+        function onSubtitlesEnabledChanged() { root.recordUsage() }
+        function onDanmakuEnabledChanged() { root.recordUsage() }
+        function onPlayingChanged() { root.recordUsage() }
+    }
     Timer { interval: 50; running: true; repeat: true; onTriggered: player.pollEvents() }
     Timer { interval: 16; running: player.playing; repeat: true; onTriggered: player.pollSubtitles() }
     Timer { interval: 30000; running: true; repeat: true; triggeredOnStart: true; onTriggered: root.nowMs = Date.now() }
@@ -1391,6 +1405,8 @@ ApplicationWindow {
     ResizeEdge { edges: Qt.RightEdge | Qt.BottomEdge; anchors { right: parent.right; bottom: parent.bottom } width: 18; height: 18; z: 1001; cursorShape: Qt.SizeFDiagCursor }
 
     Component.onCompleted: {
+        usageReady = true
+        root.recordUsage()
         videoAttached = player.attachVideoItem(videoItem)
         if (!videoAttached) return
         root.refreshChannelsIfDue(true); hideTimer.start()

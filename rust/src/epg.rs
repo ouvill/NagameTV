@@ -12,6 +12,8 @@ pub struct EpgStore {
 #[derive(Default)]
 pub struct EpgSnapshot {
     pub services: Vec<Service>,
+    pub program_count: usize,
+    pub text_capacity_bytes: usize,
     programs_by_service: HashMap<ServiceKey, Vec<Program>>,
     #[expect(dead_code, reason = "used by the upcoming EPG refresh scheduler")]
     pub synced_at: u64,
@@ -77,6 +79,15 @@ pub struct CurrentProgram {
 
 impl EpgStore {
     pub fn replace(&self, services: Vec<Service>, programs: Vec<Program>, synced_at: u64) {
+        // Cache these counters at replacement time, not on every UI sample.
+        let program_count = programs.len();
+        let text_capacity_bytes = programs
+            .iter()
+            .map(|p| {
+                p.name.as_ref().map_or(0, String::capacity)
+                    + p.description.as_ref().map_or(0, String::capacity)
+            })
+            .sum();
         let mut programs_by_service = HashMap::<ServiceKey, Vec<Program>>::new();
         for program in programs {
             programs_by_service
@@ -89,6 +100,8 @@ impl EpgStore {
         }
         let replacement = Arc::new(EpgSnapshot {
             services,
+            program_count,
+            text_capacity_bytes,
             programs_by_service,
             synced_at,
         });

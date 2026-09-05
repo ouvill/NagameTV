@@ -39,6 +39,10 @@ pub(super) struct Timeline {
 }
 
 impl Timeline {
+    pub fn pending_count(&self) -> usize {
+        self.pending.len()
+    }
+
     pub fn reset(&mut self) {
         *self = Self {
             clear_pending: true,

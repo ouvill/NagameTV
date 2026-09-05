@@ -124,6 +124,9 @@ pub mod ffi {
         #[cxx_name = "saveSettings"]
         fn save_settings(self: Pin<&mut Player>);
         #[qinvokable]
+        #[cxx_name = "recordUiState"]
+        fn record_ui_state(self: Pin<&mut Player>, guide: bool, channels: bool, live_comments: i32);
+        #[qinvokable]
         #[cxx_name = "connectServer"]
         fn connect_server(self: Pin<&mut Player>, server: QString) -> bool;
         #[qinvokable]
@@ -249,6 +252,9 @@ pub struct PlayerRust {
     epg_event_server: String,
     epg_events_tx: mpsc::SyncSender<u64>,
     epg_events_rx: mpsc::Receiver<u64>,
+    diagnostics: Option<crate::diagnostics::Recorder>,
+    diagnostic_ui: (bool, bool, usize),
+    diagnostic_flags: (bool, bool, bool),
     network: Option<NetworkRuntime>,
     playback: Option<Playback>,
 }
@@ -342,6 +348,16 @@ impl Default for PlayerRust {
             epg_event_server: String::new(),
             epg_events_tx,
             epg_events_rx,
+            diagnostics: if std::env::var("MIRAKURUN_DIAGNOSTICS").is_ok_and(|value| value == "0") {
+                None
+            } else {
+                prepare_log_directory()
+                    .and_then(|path| crate::diagnostics::Recorder::start(path.join("usage")))
+                    .map_err(|error| tracing::warn!(%error, "Could not start passive diagnostics"))
+                    .ok()
+            },
+            diagnostic_ui: (false, false, 0),
+            diagnostic_flags: (false, false, false),
             network: network.ok(),
             playback: playback.ok(),
         }
@@ -363,6 +379,67 @@ fn prepare_log_directory() -> std::io::Result<std::path::PathBuf> {
 }
 
 impl ffi::Player {
+    pub fn record_ui_state(
+        mut self: Pin<&mut Self>,
+        guide: bool,
+        channels: bool,
+        live_comments: i32,
+    ) {
+        let flags = (
+            *self.as_ref().playing(),
+            *self.as_ref().subtitles_enabled(),
+            *self.as_ref().danmaku_enabled(),
+        );
+        let previous = self.as_ref().rust().diagnostic_ui;
+        let event = if (previous.0, previous.1) != (guide, channels) {
+            "panels_changed"
+        } else if flags != self.as_ref().rust().diagnostic_flags {
+            "playback_options_changed"
+        } else {
+            "sample"
+        };
+        self.as_mut().rust_mut().diagnostic_ui =
+            (guide, channels, usize::try_from(live_comments).unwrap_or(0));
+        self.as_mut().rust_mut().diagnostic_flags = flags;
+        self.as_ref().record_diagnostics(event);
+    }
+
+    fn record_diagnostics(&self, event: &'static str) {
+        let rust = self.rust();
+        let Some(recorder) = rust.diagnostics.as_ref() else {
+            return;
+        };
+        let epg = rust
+            .network
+            .as_ref()
+            .map(|network| network.epg().snapshot());
+        recorder.record(
+            event,
+            crate::diagnostics::Snapshot {
+                playing: rust.playing,
+                subtitles: rust.subtitles_enabled,
+                comments: rust.danmaku_enabled,
+                guide_open: rust.diagnostic_ui.0,
+                channels_open: rust.diagnostic_ui.1,
+                live_comments: rust.diagnostic_ui.2,
+                channel_count: rust.service_ids.len(),
+                epg_programs: epg.as_ref().map_or(0, |epg| epg.program_count),
+                epg_text_capacity_bytes: epg.as_ref().map_or(0, |epg| epg.text_capacity_bytes),
+                comment_history_count: rust.comments.len(),
+                comment_history_text_capacity_bytes: rust
+                    .comments
+                    .iter()
+                    .map(|(time, text, source)| {
+                        time.capacity() + text.capacity() + source.capacity()
+                    })
+                    .sum(),
+                subtitle_cells: rust.subtitle_cue.as_ref().map_or(0, |cue| cue.cells.len()),
+                subtitle_pending: rust.playback.as_ref().and_then(Playback::pending_subtitles),
+                epg_loading: rust.loading_channels.load(Ordering::Acquire),
+            },
+        );
+    }
+
     pub fn subtitle_glyph_outline(&self, text: QString, font: ffi::QFont) -> QString {
         ffi::subtitle_outline_path(&text, &font)
     }
@@ -521,6 +598,7 @@ impl ffi::Player {
     }
 
     pub fn play(mut self: Pin<&mut Self>) {
+        self.as_ref().record_diagnostics("play_requested");
         self.as_mut().rust_mut().subtitle_cue = None;
         self.as_mut().set_subtitle_text(QString::default());
         self.as_mut().set_subtitle_data(QString::default());
@@ -546,6 +624,7 @@ impl ffi::Player {
     }
 
     pub fn stop(mut self: Pin<&mut Self>) {
+        self.as_ref().record_diagnostics("stop_requested");
         let result = self
             .as_ref()
             .rust()
@@ -791,6 +870,7 @@ impl ffi::Player {
         };
         self.as_mut()
             .set_status(QString::from("Loading channels..."));
+        self.as_ref().record_diagnostics("epg_fetch_started");
         runtime.spawn(async move {
             let result = fetch_services(&client, &epg, &server).await;
             let _ = qt_thread.queue(move |mut player| {
@@ -799,6 +879,11 @@ impl ffi::Player {
                     .rust()
                     .loading_channels
                     .store(false, Ordering::Release);
+                player.as_ref().record_diagnostics(if result.is_ok() {
+                    "epg_fetch_finished"
+                } else {
+                    "epg_fetch_failed"
+                });
                 // A previous server's request may complete after settings changed.
                 if player.as_ref().server().to_string() != server {
                     player.as_mut().refresh_channels();
@@ -1087,6 +1172,7 @@ impl ffi::Player {
         let Some(&service_id) = self.as_ref().rust().service_ids.get(index) else {
             return;
         };
+        self.as_ref().record_diagnostics("channel_selected");
         let channel_name = self
             .as_ref()
             .services()

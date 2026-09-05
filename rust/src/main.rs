@@ -1,5 +1,6 @@
 mod audio;
 mod comments;
+mod diagnostics;
 mod epg;
 mod epg_events;
 mod network;
