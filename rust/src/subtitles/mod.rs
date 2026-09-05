@@ -9,6 +9,12 @@ use decoder::AribDecoder;
 pub use model::SubtitleCue;
 use std::collections::{HashMap, HashSet};
 
+// A nonzero 16-bit PES length covers at most 65535 bytes after its six-byte
+// prefix. Allow the rest of the final TS payload too. Apply the same finite
+// budget to length-zero caption PES, which would otherwise wait indefinitely
+// for the next payload start on damaged input.
+const MAX_CAPTION_PES_BYTES: usize = u16::MAX as usize + 6 + 183;
+
 /// Extracts ARIB caption PES packets directly from an MPEG-TS byte stream.
 /// GStreamer's tsdemux intentionally does not expose Japanese broadcast
 /// private-data streams (stream_type 0x06), so this runs before the demuxer.
@@ -103,6 +109,14 @@ impl TsSubtitleExtractor {
             }
             self.pes.insert(pid, payload.to_vec());
         } else if let Some(pes) = self.pes.get_mut(&pid) {
+            if pes.len() + payload.len() > MAX_CAPTION_PES_BYTES {
+                self.pes.remove(&pid);
+                tracing::warn!(
+                    pid,
+                    "Discarding oversized subtitle PES; waiting for next start"
+                );
+                return;
+            }
             pes.extend_from_slice(payload);
         }
         let complete = self.pes.get(&pid).is_some_and(|pes| {
@@ -119,8 +133,19 @@ impl TsSubtitleExtractor {
 
     fn parse_complete_psi_sections(&mut self, pid: u16) {
         loop {
+            // Stuffing ends this assembly. Remove it, rather than retaining a
+            // sentinel that would cause every following continuation to pile up.
+            // Only a new payload start can create another assembly for this PID.
+            if self
+                .psi
+                .get(&pid)
+                .is_some_and(|data| data.first() == Some(&0xff))
+            {
+                self.psi.remove(&pid);
+                break;
+            }
             let section_size = self.psi.get(&pid).and_then(|data| {
-                if data.len() < 3 || data[0] == 0xff {
+                if data.len() < 3 {
                     return None;
                 }
                 Some(3 + ((((data[1] & 0x0f) as usize) << 8) | data[2] as usize))
@@ -245,6 +270,72 @@ mod tests {
     // In tests, unwrap/expect assert successful setup or an expected result.
     // Failures intentionally fail the test; they are not assumed impossible IO.
     use super::TsSubtitleExtractor;
+
+    fn ts_packet(pid: u16, start: bool, payload: &[u8]) -> [u8; 188] {
+        assert!(!payload.is_empty() && payload.len() <= 184);
+        let mut packet = [0xff; 188];
+        packet[..4].copy_from_slice(&[
+            0x47,
+            ((pid >> 8) as u8 & 0x1f) | if start { 0x40 } else { 0 },
+            pid as u8,
+            if payload.len() == 184 { 0x10 } else { 0x30 },
+        ]);
+        if payload.len() < 184 {
+            packet[4] = (183 - payload.len()) as u8;
+            if packet[4] > 0 {
+                packet[5] = 0;
+            }
+        }
+        packet[188 - payload.len()..].copy_from_slice(payload);
+        packet
+    }
+
+    #[test]
+    fn psi_stuffing_does_not_accumulate_and_next_section_recovers() {
+        let mut extractor = TsSubtitleExtractor::new();
+        extractor.push(&ts_packet(0, true, &[0, 0xff]));
+        for _ in 0..1000 {
+            extractor.push(&ts_packet(0, false, &[0xff; 184]));
+        }
+        assert!(extractor.psi.get(&0).is_none_or(Vec::is_empty));
+        let pat = [0, 0, 0xb0, 13, 0, 1, 0xc1, 0, 0, 0, 1, 0xe1, 0, 0, 0, 0, 0];
+        extractor.push(&ts_packet(0, true, &pat));
+        assert!(extractor.pmt_pids.contains(&0x100));
+    }
+
+    #[test]
+    fn unterminated_pes_is_discarded_until_the_next_start() {
+        let mut extractor = TsSubtitleExtractor::new();
+        extractor.subtitle_pids.insert(0x120);
+        extractor.push(&ts_packet(0x120, true, &[0, 0, 1, 0xbd, 0, 0, 0x80, 0, 0]));
+        for _ in 0..1000 {
+            extractor.push(&ts_packet(0x120, false, &[0x55; 184]));
+        }
+        assert!(!extractor.pes.contains_key(&0x120));
+        extractor.push(&ts_packet(0x120, true, &[0, 0, 1, 0xbd, 0, 10]));
+        assert_eq!(extractor.pes[&0x120].len(), 6);
+        extractor.push(&ts_packet(0x120, false, &[0; 10]));
+        assert!(!extractor.pes.contains_key(&0x120));
+    }
+
+    #[test]
+    fn largest_nonzero_pes_length_is_accepted_including_final_ts_padding() {
+        let mut extractor = TsSubtitleExtractor::new();
+        extractor.subtitle_pids.insert(0x120);
+        let mut pes = vec![0; u16::MAX as usize + 6];
+        pes[..6].copy_from_slice(&[0, 0, 1, 0xbd, 0xff, 0xff]);
+        let mut consumed = 0;
+        for (index, chunk) in pes.chunks(184).enumerate() {
+            let mut payload = [0xff; 184];
+            payload[..chunk.len()].copy_from_slice(chunk);
+            extractor.push(&ts_packet(0x120, index == 0, &payload));
+            consumed += chunk.len();
+            if consumed < pes.len() {
+                assert_eq!(extractor.pes[&0x120].len(), consumed);
+            }
+        }
+        assert!(!extractor.pes.contains_key(&0x120));
+    }
 
     #[test]
     fn updates_audio_mapping_from_fragmented_pmt_with_pointer_completion() {
