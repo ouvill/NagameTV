@@ -74,7 +74,7 @@ Ubuntu 24.04:
 sudo apt install build-essential cmake ninja-build rustc cargo lld libclang-dev \
   fonts-noto-cjk \
   qt6-base-dev qt6-declarative-dev qt6-l10n-tools qml6-module-qtquick \
-  qml6-module-qtquick-controls qml6-module-qtquick-layouts \
+  qml6-module-qtquick-controls qml6-module-qtquick-layouts qml6-module-qtquick-shapes \
   qml6-module-qtquick-templates \
   libmpv-dev qt6-wayland mpv gstreamer1.0-tools gstreamer1.0-qt6 \
   gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
@@ -150,6 +150,9 @@ PTSの周回、映像の一時停止、複数字幕の先行受信もタイム�
 タイムラインの単体テストと、生成したMPEG-TSをメモリー上で分離する同期テストは
 `cargo test --manifest-path rust/Cargo.toml --bin mirakurun-viewer`で実行できます。
 これらはディスプレイ・GPU・音声デバイスを使用しません。
+
+`bash scripts/test-subtitle-outline.sh`で字幕の縁取り配置の回帰テストを実行できます
+（Qt SVGの開発パッケージ `libqt6svg6-dev` が必要）。
 
 ## 表示言語
 

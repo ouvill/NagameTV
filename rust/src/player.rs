@@ -3,6 +3,11 @@ pub mod ffi {
     unsafe extern "C++" {
         include!("cxx-qt-lib/qstring.h");
         type QString = cxx_qt_lib::QString;
+        include!("cxx-qt-lib/qfont.h");
+        type QFont = cxx_qt_lib::QFont;
+        include!("subtitle_outline.h");
+        #[cxx_name = "subtitleOutlinePath"]
+        fn subtitle_outline_path(text: &QString, font: &QFont) -> QString;
         include!("cxx-qt-lib/qstringlist.h");
         type QStringList = cxx_qt_lib::QStringList;
         include!("cxx-qt-lib/qqmlapplicationengine.h");
@@ -94,6 +99,9 @@ pub mod ffi {
         #[qinvokable]
         #[cxx_name = "selectAudioTrack"]
         fn select_audio_track(self: Pin<&mut Player>, key: QString);
+        #[qinvokable]
+        #[cxx_name = "subtitleGlyphOutline"]
+        fn subtitle_glyph_outline(self: &Player, text: QString, font: QFont) -> QString;
         #[qinvokable]
         #[cxx_name = "pollEvents"]
         fn poll_events(self: Pin<&mut Player>);
@@ -347,6 +355,10 @@ fn prepare_log_directory() -> std::io::Result<std::path::PathBuf> {
 }
 
 impl ffi::Player {
+    pub fn subtitle_glyph_outline(&self, text: QString, font: ffi::QFont) -> QString {
+        ffi::subtitle_outline_path(&text, &font)
+    }
+
     pub fn change_language(mut self: Pin<&mut Self>, language: QString) -> bool {
         let preference = crate::settings::normalize_language(&language.to_string());
         let language = QString::from(preference);

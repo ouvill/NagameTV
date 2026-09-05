@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQuick.Shapes
 import org.freedesktop.gstreamer.Qt6GLVideoItem 1.0
 import MirakurunViewer 1.0
 
@@ -469,8 +470,10 @@ ApplicationWindow {
                     color: modelData.background
                     Label {
                         id: subtitleGlyph
+                        readonly property real outlineRadius: font.pixelSize * 0.06
                         anchors.centerIn: parent
                         text: modelData.text
+                        textFormat: Text.PlainText
                         color: modelData.foreground
                         font.family: subtitleFont.status === FontLoader.Ready
                             ? subtitleFont.name : "Noto Sans CJK JP"
@@ -479,8 +482,28 @@ ApplicationWindow {
                         font.italic: modelData.italic
                         font.underline: modelData.underline
                         renderType: Text.NativeRendering
-                        style: modelData.stroked ? Text.Outline : Text.Normal
-                        styleColor: modelData.stroke
+                        // Keep the original Label layout. The outline uses font coordinates
+                        // relative to this same baseline, not each glyph's ink bounds.
+                        Shape {
+                            x: subtitleGlyph.leftPadding
+                            y: subtitleGlyph.baselineOffset
+                            width: subtitleGlyph.width
+                            height: subtitleGlyph.height
+                            z: -1
+                            visible: subtitleCell.modelData.stroked
+                            preferredRendererType: Shape.CurveRenderer
+                            ShapePath {
+                                fillColor: "transparent"
+                                strokeColor: subtitleCell.modelData.stroke
+                                strokeWidth: subtitleGlyph.outlineRadius * 2
+                                joinStyle: ShapePath.RoundJoin
+                                fillRule: ShapePath.WindingFill
+                                PathSvg {
+                                    path: subtitleCell.modelData.stroked
+                                        ? player.subtitleGlyphOutline(subtitleGlyph.text, subtitleGlyph.font) : ""
+                                }
+                            }
+                        }
                         transform: Scale {
                             origin.x: subtitleGlyph.width / 2
                             origin.y: subtitleGlyph.height / 2
