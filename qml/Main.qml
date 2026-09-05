@@ -214,6 +214,41 @@ ApplicationWindow {
         }
     }
 
+    component ThemedSlider: Slider {
+        id: slider
+        property bool subdued: false
+        implicitWidth: 132
+        implicitHeight: 28
+        padding: 8
+        hoverEnabled: true
+        background: Rectangle {
+            x: slider.leftPadding
+            y: slider.topPadding + slider.availableHeight / 2 - height / 2
+            width: slider.availableWidth
+            height: 4
+            radius: 2
+            color: "#32ffffff"
+            Rectangle {
+                x: slider.mirrored ? parent.width - width : 0
+                width: slider.position * parent.width
+                height: parent.height
+                radius: parent.radius
+                color: slider.subdued ? root.muted : root.accent
+            }
+        }
+        handle: Rectangle {
+            x: slider.leftPadding + slider.visualPosition * (slider.availableWidth - width)
+            y: slider.topPadding + slider.availableHeight / 2 - height / 2
+            implicitWidth: 12
+            implicitHeight: 12
+            radius: 6
+            color: slider.pressed || slider.hovered ? root.ink : (slider.subdued ? root.muted : root.accent)
+            border.width: slider.visualFocus ? 2 : 0
+            border.color: root.ink
+            Behavior on color { ColorAnimation { duration: 100 } }
+        }
+    }
+
     component ToggleSwitch: Rectangle {
         id: toggle
         property bool checked: false
@@ -547,8 +582,20 @@ ApplicationWindow {
             RowLayout {
                 width: parent.width; spacing: 12
                 RoundAction { iconSource: root.uiIcon("square"); tip: qsTr("Stop"); onTriggered: player.stop() }
-                RoundAction { iconSource: root.uiIcon("volume-2"); tip: qsTr("Volume") }
-                Slider { Layout.preferredWidth: 132; from: 0; to: 100; value: player.volume; onMoved: player.volume = value; onPressedChanged: if (!pressed) player.saveSettings() }
+                RoundAction {
+                    iconSource: root.uiIcon(player.audioMuted || player.volume === 0 ? "volume-x" : "volume-2")
+                    tip: player.audioMuted ? qsTr("Unmute") : qsTr("Mute")
+                    active: player.audioMuted
+                    onTriggered: player.audioMuted = !player.audioMuted
+                }
+                ThemedSlider {
+                    Layout.preferredWidth: 132
+                    from: 0; to: 100; value: player.volume
+                    subdued: player.audioMuted
+                    Accessible.name: qsTr("Volume")
+                    onMoved: { player.volume = value; player.audioMuted = false }
+                    onPressedChanged: if (!pressed) player.saveSettings()
+                }
                 Item { Layout.fillWidth: true }
                 RoundAction { iconSource: root.uiIcon("grid-2x2"); tip: qsTr("Channels"); onTriggered: { channelsOpen = true; root.refreshChannelsIfDue(false); reveal() } }
                 RoundAction { iconSource: root.uiIcon("pencil"); tip: qsTr("Post a comment") }
@@ -1013,11 +1060,11 @@ ApplicationWindow {
                 ToggleSwitch { checked: root.danmaku; onToggled: root.danmaku = !root.danmaku }
             }
             RowLayout { Layout.fillWidth: true; Label { text: qsTr("Text size"); color: root.muted; font.pixelSize: 11 } Item { Layout.fillWidth: true } Label { text: Math.round(root.commentFontSize) + " px"; color: root.ink; font.pixelSize: 11 } }
-            Slider { Layout.fillWidth: true; from: 14; to: 36; stepSize: 1; value: root.commentFontSize; onMoved: root.commentFontSize = value }
+            ThemedSlider { Layout.fillWidth: true; from: 14; to: 36; stepSize: 1; value: root.commentFontSize; onMoved: root.commentFontSize = value }
             RowLayout { Layout.fillWidth: true; Label { text: qsTr("Opacity"); color: root.muted; font.pixelSize: 11 } Item { Layout.fillWidth: true } Label { text: Math.round(root.commentOpacity * 100) + "%"; color: root.ink; font.pixelSize: 11 } }
-            Slider { Layout.fillWidth: true; from: .2; to: 1; stepSize: .05; value: root.commentOpacity; onMoved: root.commentOpacity = value }
+            ThemedSlider { Layout.fillWidth: true; from: .2; to: 1; stepSize: .05; value: root.commentOpacity; onMoved: root.commentOpacity = value }
             RowLayout { Layout.fillWidth: true; Label { text: qsTr("Speed"); color: root.muted; font.pixelSize: 11 } Item { Layout.fillWidth: true } Label { text: root.commentSpeed.toFixed(1) + "×"; color: root.ink; font.pixelSize: 11 } }
-            Slider { Layout.fillWidth: true; from: .5; to: 2; stepSize: .1; value: root.commentSpeed; onMoved: root.commentSpeed = value }
+            ThemedSlider { Layout.fillWidth: true; from: .5; to: 2; stepSize: .1; value: root.commentSpeed; onMoved: root.commentSpeed = value }
             RowLayout {
                 Layout.fillWidth: true
                 Label { text: root.statsTitle; color: root.ink; font.pixelSize: 13 }

@@ -76,6 +76,7 @@ fn main() {
         "../assets/icons/settings-2.svg",
         "../assets/icons/square.svg",
         "../assets/icons/volume-2.svg",
+        "../assets/icons/volume-x.svg",
         "../assets/icons/x.svg",
     ])
     .file("src/player.rs")

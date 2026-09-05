@@ -4,6 +4,14 @@
   <context>
     <name>Main</name>
     <message>
+      <source>Mute</source>
+      <translation>ミュート</translation>
+    </message>
+    <message>
+      <source>Unmute</source>
+      <translation>ミュート解除</translation>
+    </message>
+    <message>
       <source>Mirakurun Viewer</source>
       <translation>Mirakurun Viewer</translation>
     </message>

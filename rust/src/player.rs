@@ -40,6 +40,7 @@ pub mod ffi {
         #[qproperty(QString, status)]
         #[qproperty(bool, playing)]
         #[qproperty(f64, volume)]
+        #[qproperty(bool, audio_muted, cxx_name = "audioMuted")]
         #[qproperty(bool, danmaku_enabled, cxx_name = "danmakuEnabled")]
         #[qproperty(f64, comment_font_size, cxx_name = "commentFontSize")]
         #[qproperty(f64, comment_opacity, cxx_name = "commentOpacity")]
@@ -174,6 +175,7 @@ pub struct PlayerRust {
     status: QString,
     playing: bool,
     volume: f64,
+    audio_muted: bool,
     danmaku_enabled: bool,
     comment_font_size: f64,
     comment_opacity: f64,
@@ -256,6 +258,7 @@ impl Default for PlayerRust {
             status: QString::from(status),
             playing: false,
             volume: settings.volume,
+            audio_muted: false,
             danmaku_enabled: settings.danmaku_enabled,
             comment_font_size: settings.comment_font_size,
             comment_opacity: settings.comment_opacity,
@@ -518,7 +521,11 @@ impl ffi::Player {
                 self.as_mut().report_playback_error(&error);
             }
         }
-        let volume = *self.as_ref().volume();
+        let volume = if *self.as_ref().audio_muted() {
+            0.0
+        } else {
+            *self.as_ref().volume()
+        };
         if (volume - self.as_ref().rust().applied_volume).abs() > f64::EPSILON {
             if let Some(playback) = self.as_ref().rust().playback.as_ref() {
                 playback.set_volume(volume);
