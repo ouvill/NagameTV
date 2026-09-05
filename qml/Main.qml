@@ -40,8 +40,24 @@ ApplicationWindow {
     property double nowMs: Date.now()
     property double lastChannelRefreshMs: 0
     property var subtitleCue: null
+    readonly property var audioTrackList: JSON.parse(player.audioTracks)
+    function audioTrackLabel(track, index) {
+        const languages = { "ja": "日本語", "jpn": "日本語", "en": "English", "eng": "English",
+            "de": "Deutsch", "deu": "Deutsch", "ger": "Deutsch", "fr": "Français", "fra": "Français",
+            "fre": "Français", "ko": "한국어", "kor": "한국어", "zh": "中文", "zho": "中文", "chi": "中文" }
+        const language = languages[track.language] || track.language
+        const role = track.role === "main" ? qsTr("Main audio")
+            : track.role === "sub" ? qsTr("Sub audio")
+            : track.role === "both" ? qsTr("Main / sub")
+            : ""
+        const name = track.mode === 3 ? role : (language ? language + (role ? " · " + role : "") : role)
+        const duplicate = root.audioTrackList.some(other => other.key !== track.key
+            && other.language === track.language && other.role === track.role)
+        return !name ? qsTr("Audio %1").arg(track.number)
+            : duplicate ? name + " · " + qsTr("Audio %1").arg(track.number) : name
+    }
     readonly property bool panelOpen: panel === "program" || panel === "comments" || panel === "channels"
-    readonly property bool overlayPinned: guideOpen || channelsOpen || settings.opened || playbackSettings.opened
+    readonly property bool overlayPinned: guideOpen || channelsOpen || settings.opened || playbackSettings.opened || audioSettings.opened
 
     Player { id: player }
     readonly property var uiLocale: Qt.locale(player.uiLanguage)
@@ -131,6 +147,7 @@ ApplicationWindow {
         reveal()
     }
     function closeTopmost() {
+        if (audioSettings.opened) { audioSettings.close(); return }
         if (playbackErrorDialog.opened) { playbackErrorDialog.close(); return }
         if (playbackSettings.opened) playbackSettings.close()
         else if (settings.opened) settings.close()
@@ -609,6 +626,7 @@ ApplicationWindow {
                     active: player.audioMuted
                     onTriggered: player.audioMuted = !player.audioMuted
                 }
+                RoundAction { iconSource: root.uiIcon("chevron-down"); tip: qsTr("Audio selection"); implicitWidth: 28; implicitHeight: 28; radius: 14; onTriggered: { audioSettings.open(); root.reveal() } }
                 ThemedSlider {
                     Layout.preferredWidth: 132
                     from: 0; to: 100; value: player.volume
@@ -1206,6 +1224,58 @@ ApplicationWindow {
             Label { id: logFolderError; visible: false; Layout.fillWidth: true; wrapMode: Text.Wrap; text: qsTr("Could not open the log folder. Check the terminal for details."); color: root.muted }
             Label { text: "F11  " + qsTr("Fullscreen"); color: "#929497" }
         }
+        }
+    }
+
+    Popup {
+        id: audioSettings
+        parent: Overlay.overlay
+        width: Math.min(380, root.width - 40)
+        height: Math.min(340, root.height - 80)
+        x: 24
+        y: Math.max(20, root.height - height - 100)
+        padding: 20
+        modal: false; dim: false
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        onClosed: root.reveal()
+        background: Rectangle { radius: 18; color: "#f21a1c1a"; border.color: "#42ffffff" }
+        contentItem: ColumnLayout {
+            spacing: 12
+            RowLayout {
+                Layout.fillWidth: true
+                Label { text: qsTr("Audio selection"); color: root.ink; font.pixelSize: 17; font.bold: true; Layout.fillWidth: true }
+                RoundAction { iconSource: root.uiIcon("x"); tip: qsTr("Close"); implicitWidth: 28; implicitHeight: 28; radius: 14; onTriggered: audioSettings.close() }
+            }
+            ScrollView {
+                id: audioTrackScroll
+                Layout.fillWidth: true; Layout.fillHeight: true
+                contentWidth: availableWidth; clip: true
+                ColumnLayout {
+                    width: audioTrackScroll.availableWidth
+                    spacing: 6
+                    Repeater {
+                        model: root.audioTrackList
+                        delegate: TextAction {
+                            id: audioTrackOption
+                            required property int index
+                            required property var modelData
+                            Layout.fillWidth: true
+                            enabled: player.playing && modelData.enabled && root.audioTrackList.length > 1
+                            text: root.audioTrackLabel(modelData, index)
+                            contentItem: Label { text: audioTrackOption.text; color: root.ink; font.pixelSize: 12; wrapMode: Text.Wrap }
+                            background: Rectangle {
+                                radius: 12
+                                color: audioTrackOption.modelData.selected ? "#389caf9f" : root.raised
+                                border.color: audioTrackOption.modelData.selected || audioTrackOption.visualFocus ? root.accent : "#28ffffff"
+                            }
+                            onClicked: player.selectAudioTrack(modelData.key)
+                        }
+                    }
+                    Label { visible: root.audioTrackList.length === 0; Layout.fillWidth: true; text: qsTr("No audio tracks are available yet."); color: root.muted; wrapMode: Text.Wrap; font.pixelSize: 12 }
+                }
+            }
+            Label { Layout.fillWidth: true; visible: root.audioTrackList.length === 1; text: qsTr("This broadcast has one audio option."); color: root.muted; wrapMode: Text.Wrap; font.pixelSize: 11 }
+            Label { Layout.fillWidth: true; visible: player.audioError.length > 0; text: root.backendText(player.audioError); color: root.ink; wrapMode: Text.Wrap; font.pixelSize: 12 }
         }
     }
 

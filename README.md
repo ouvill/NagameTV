@@ -114,6 +114,28 @@ QT_QPA_PLATFORM=xcb ./build/mirakurun-viewer
 インターレース解除は`MIRAKURUN_DEINTERLACE`で選択できます。既定は高品質な
 `yadif`です。CPU負荷を抑える場合は`linear`、無効化する場合は`off`を指定します。
 
+## 二か国語・複数音声
+
+音声ボタン横の「⌄」から音声切替を開けます。音声ボタン自体はミュート切り替えです。
+
+- 二重音声: 放送情報で確認できた場合に「主音声」「副音声」「主／副」を表示し、言語情報があれば併記します。主・副の単独選択は両スピーカーへ出力し、主／副は左に主、右に副を出力します。
+- 複数音声: 配信されている音声を一覧から選択します。映像の選択は保持します。
+- 通常のステレオ・モノラル: 音声が1種類なら現在の音声だけを表示します。左右の切り替えは表示しません。
+- 情報不明: 確認できた言語タグ、または「音声1」などを表示し、左右の切り替えは表示しません。
+
+Mirakurunの番組情報 `audios` を、PMTの `stream_identifier_descriptor` の
+`component_tag` とGStreamerのストリームPIDで照合します。配列の並びから言語を推測しません。
+二重音声の判定はARIB STD-B10の `component_type` に従います。
+番組・チャンネル変更や音声構成の更新時は選択をリセットします。
+音量・ミュートは選択した音声にも適用されます。
+
+仕様の参照: [ARIB STD-B10](https://www.arib.or.jp/english/html/overview/doc/6-STD-B10v5_13-E1.pdf)、
+[Mirakurun API](https://github.com/Chinachu/Mirakurun/blob/master/api.d.ts)、
+[GStreamerのストリームID生成](https://gitlab.freedesktop.org/gstreamer/gstreamer/-/blob/main/subprojects/gst-plugins-bad/gst/mpegtsdemux/mpegtsbase.c)。
+
+音声処理のテストは生成したPCMをメモリー上で処理し、音声デバイスを使わずに実行します。
+実放送のAACデコード結果が左右に分かれていない場合、この左右選択では言語を分離できません。
+
 ## 字幕の同期
 
 ARIB字幕のPTSと表示時間を保持し、GStreamerの映像sinkが返す再生位置に合わせて

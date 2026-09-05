@@ -42,6 +42,8 @@ pub struct ServiceChannel {
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Program {
+    #[serde(default)]
+    pub audios: Vec<crate::audio::ProgramAudio>,
     pub id: u64,
     pub event_id: u16,
     pub service_id: u16,
@@ -63,6 +65,7 @@ pub struct ProgramGenre {
 
 #[derive(Clone)]
 pub struct CurrentProgram {
+    pub audios: Vec<crate::audio::ProgramAudio>,
     pub event_id: u16,
     pub service_id: u16,
     pub network_id: u16,
@@ -113,6 +116,7 @@ impl EpgSnapshot {
                     let program = &schedule[current];
                     (program.start_at.saturating_add(program.duration) > now).then(|| {
                         CurrentProgram {
+                            audios: program.audios.clone(),
                             event_id: program.event_id,
                             service_id: program.service_id,
                             network_id: program.network_id,
@@ -146,6 +150,7 @@ mod tests {
 
     fn program(start_at: u64, duration: u64) -> Program {
         Program {
+            audios: Vec::new(),
             id: 1,
             event_id: 10,
             service_id: 20,
@@ -169,6 +174,27 @@ mod tests {
         let second = store.snapshot();
         assert_eq!(second.current_programs(2_250).len(), 1);
         assert_eq!(first.current_programs(1_250).len(), 1);
+    }
+
+    #[test]
+    fn preserves_broadcast_audio_and_accepts_missing_metadata() {
+        let json = r#"{"id":1,"eventId":10,"serviceId":20,"networkId":30,
+            "startAt":1000,"duration":500,
+            "audios":[{"componentType":2,"componentTag":16,"isMain":true,"langs":["jpn","eng"]}]}"#;
+        let program: Program = serde_json::from_str(json).unwrap();
+        let store = EpgStore::default();
+        store.replace(Vec::new(), vec![program], 1000);
+        let current = store.snapshot().current_programs(1250);
+        assert_eq!(current[0].audios[0].langs, ["jpn", "eng"]);
+        assert!(store.snapshot().current_programs(1500).is_empty());
+        let mut value: serde_json::Value = serde_json::from_str(json).unwrap();
+        value.as_object_mut().unwrap().remove("audios");
+        assert!(
+            serde_json::from_value::<Program>(value)
+                .unwrap()
+                .audios
+                .is_empty()
+        );
     }
 
     #[test]

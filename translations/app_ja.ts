@@ -4,6 +4,14 @@
   <context>
     <name>Main</name>
     <message>
+      <source>Audio %1</source>
+      <translation>音声 %1</translation>
+    </message>
+    <message>
+      <source>No audio tracks are available yet.</source>
+      <translation>音声トラックはまだ取得されていません。</translation>
+    </message>
+    <message>
       <source>Close</source>
       <translation>閉じる</translation>
     </message>
@@ -283,9 +291,37 @@
       <source>Could not save settings: %1</source>
       <translation>設定を保存できませんでした: %1</translation>
     </message>
+    <message>
+      <source>Audio selection</source>
+      <translation>音声切替</translation>
+    </message>
+    <message>
+      <source>Main audio</source>
+      <translation>主音声</translation>
+    </message>
+    <message>
+      <source>Sub audio</source>
+      <translation>副音声</translation>
+    </message>
+    <message>
+      <source>Main / sub</source>
+      <translation>主／副</translation>
+    </message>
+    <message>
+      <source>This broadcast has one audio option.</source>
+      <translation>この放送の音声は1種類です。</translation>
+    </message>
   </context>
   <context>
     <name>Backend</name>
+    <message>
+      <source>This audio track is no longer available. Choose a track again.</source>
+      <translation>この音声トラックは利用できなくなりました。音声を選び直してください。</translation>
+    </message>
+    <message>
+      <source>Could not switch audio tracks. Try again.</source>
+      <translation>音声を切り替えられませんでした。もう一度選択してください。</translation>
+    </message>
     <message>
       <source>No tuner is available. Tuners may be in use or unavailable. Wait a moment and try again, or choose another channel.</source>
       <translation>利用できるチューナーがありません。ほかの視聴・録画で使用中か、チューナーが利用できない状態です。少し待って再試行するか、別のチャンネルを選んでください。</translation>

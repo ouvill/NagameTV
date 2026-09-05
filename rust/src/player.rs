@@ -43,6 +43,8 @@ pub mod ffi {
         #[qproperty(bool, playing)]
         #[qproperty(f64, volume)]
         #[qproperty(bool, audio_muted, cxx_name = "audioMuted")]
+        #[qproperty(QString, audio_tracks, cxx_name = "audioTracks")]
+        #[qproperty(QString, audio_error, cxx_name = "audioError")]
         #[qproperty(bool, danmaku_enabled, cxx_name = "danmakuEnabled")]
         #[qproperty(f64, comment_font_size, cxx_name = "commentFontSize")]
         #[qproperty(f64, comment_opacity, cxx_name = "commentOpacity")]
@@ -89,6 +91,9 @@ pub mod ffi {
         fn play(self: Pin<&mut Player>);
         #[qinvokable]
         fn stop(self: Pin<&mut Player>);
+        #[qinvokable]
+        #[cxx_name = "selectAudioTrack"]
+        fn select_audio_track(self: Pin<&mut Player>, key: QString);
         #[qinvokable]
         #[cxx_name = "pollEvents"]
         fn poll_events(self: Pin<&mut Player>);
@@ -183,6 +188,8 @@ pub struct PlayerRust {
     playing: bool,
     volume: f64,
     audio_muted: bool,
+    audio_tracks: QString,
+    audio_error: QString,
     danmaku_enabled: bool,
     comment_font_size: f64,
     comment_opacity: f64,
@@ -268,6 +275,8 @@ impl Default for PlayerRust {
             playing: false,
             volume: settings.volume,
             audio_muted: false,
+            audio_tracks: QString::from("[]"),
+            audio_error: QString::default(),
             danmaku_enabled: settings.danmaku_enabled,
             comment_font_size: settings.comment_font_size,
             comment_opacity: settings.comment_opacity,
@@ -534,6 +543,26 @@ impl ffi::Player {
         }
     }
 
+    fn refresh_audio_state(mut self: Pin<&mut Self>) {
+        if let Some((tracks, error)) = self
+            .as_ref()
+            .rust()
+            .playback
+            .as_ref()
+            .map(Playback::audio_state)
+        {
+            self.as_mut().set_audio_tracks(QString::from(tracks));
+            self.as_mut().set_audio_error(QString::from(error));
+        }
+    }
+
+    pub fn select_audio_track(mut self: Pin<&mut Self>, key: QString) {
+        if let Some(playback) = self.as_ref().rust().playback.as_ref() {
+            playback.select_audio_option(&key.to_string());
+        }
+        self.as_mut().refresh_audio_state();
+    }
+
     pub fn poll_subtitles(mut self: Pin<&mut Self>) {
         use crate::subtitles::SubtitleUpdate;
         let update = self
@@ -577,6 +606,7 @@ impl ffi::Player {
                 Err(error) => self.as_mut().report_playback_error(&error),
             }
         }
+        self.as_mut().refresh_audio_state();
         let volume = if *self.as_ref().audio_muted() {
             0.0
         } else {
@@ -977,6 +1007,14 @@ impl ffi::Player {
         self.as_mut().set_program_durations(durations);
 
         let current_id = self.as_ref().service_id().to_string().parse::<u64>().ok();
+        if let Some(playback) = self.as_ref().rust().playback.as_ref() {
+            playback.set_audio_program(
+                current_id
+                    .as_ref()
+                    .and_then(program_for)
+                    .map(|program| (program.service_id, program.start_at, program.audios.clone())),
+            );
+        }
         if let Some(program) = current_id.as_ref().and_then(program_for) {
             self.as_mut()
                 .set_program_name(QString::from(program.name.as_deref().unwrap_or("")));
@@ -1429,6 +1467,7 @@ mod tests {
 
     fn program(service_id: u16, event_id: u16) -> CurrentProgram {
         CurrentProgram {
+            audios: Vec::new(),
             event_id,
             service_id,
             network_id: 32_000,

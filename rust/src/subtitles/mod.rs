@@ -13,6 +13,7 @@ use std::collections::{HashMap, HashSet};
 /// GStreamer's tsdemux intentionally does not expose Japanese broadcast
 /// private-data streams (stream_type 0x06), so this runs before the demuxer.
 pub struct TsSubtitleExtractor {
+    pub audio_components: crate::audio::ComponentMap,
     bytes: Vec<u8>,
     psi: HashMap<u16, Vec<u8>>,
     pmt_pids: HashSet<u16>,
@@ -24,6 +25,7 @@ pub struct TsSubtitleExtractor {
 impl TsSubtitleExtractor {
     pub fn new() -> Self {
         Self {
+            audio_components: Default::default(),
             bytes: Vec::new(),
             psi: HashMap::new(),
             pmt_pids: HashSet::new(),
@@ -79,7 +81,11 @@ impl TsSubtitleExtractor {
         if pid == 0 || self.pmt_pids.contains(&pid) {
             if payload_start && !payload.is_empty() {
                 let pointer = payload[0] as usize;
-                if 1 + pointer < payload.len() {
+                if 1 + pointer <= payload.len() {
+                    if let Some(section) = self.psi.get_mut(&pid) {
+                        section.extend_from_slice(&payload[1..1 + pointer]);
+                    }
+                    self.parse_complete_psi_sections(pid);
                     self.psi.insert(pid, payload[1 + pointer..].to_vec());
                 }
             } else if let Some(section) = self.psi.get_mut(&pid) {
@@ -159,6 +165,9 @@ impl TsSubtitleExtractor {
                 pos += 4;
             }
         } else if self.pmt_pids.contains(&pid) && section[0] == 0x02 && section.len() >= 12 {
+            if let Some((service, components)) = crate::audio::pmt_components(section) {
+                self.audio_components.insert(service, components);
+            }
             let program_info_len = (((section[10] & 0x0f) as usize) << 8) | section[11] as usize;
             let end = section_len.saturating_sub(1);
             let mut pos = 12 + program_info_len;
@@ -240,6 +249,46 @@ fn is_caption_stream(descriptors: &[u8]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::TsSubtitleExtractor;
+
+    #[test]
+    fn updates_audio_mapping_from_fragmented_pmt_with_pointer_completion() {
+        fn packet(payload: &[u8]) -> Vec<u8> {
+            let mut packet = vec![0xff; 188];
+            packet[..4].copy_from_slice(&[0x47, 0x41, 0x00, 0x30]);
+            let adaptation = 183 - payload.len();
+            packet[4] = adaptation as u8;
+            if adaptation > 0 {
+                packet[5] = 0;
+            }
+            packet[5 + adaptation..].copy_from_slice(payload);
+            packet
+        }
+        let first = [
+            0x2, 0xb0, 0x15, 0x0, 0xa, 0xc1, 0x0, 0x0, 0xe2, 0x0, 0xf0, 0x0, 0xf, 0xe2, 0x1, 0xf0,
+            0x3, 0x52, 0x1, 0x10, 0xf6, 0x9b, 0x97, 0x17,
+        ];
+        let replacement = [
+            0x2, 0xb0, 0x15, 0x0, 0xa, 0xc1, 0x0, 0x0, 0xe2, 0x0, 0xf0, 0x0, 0xf, 0xe2, 0x2, 0xf0,
+            0x3, 0x52, 0x1, 0x11, 0xdf, 0x22, 0x9d, 0x28,
+        ];
+        let mut extractor = TsSubtitleExtractor::new();
+        extractor.pmt_pids.insert(0x100);
+        let mut payload = vec![0];
+        payload.extend_from_slice(&first[..12]);
+        extractor.push(&packet(&payload));
+        assert!(extractor.audio_components.is_empty());
+        let mut payload = vec![(first.len() - 12) as u8];
+        payload.extend_from_slice(&first[12..]);
+        payload.extend_from_slice(&replacement);
+        let packet = packet(&payload);
+        for fragment in packet.chunks(7) {
+            extractor.push(fragment);
+        }
+        let components = &extractor.audio_components[&10];
+        assert_eq!(components.len(), 1);
+        assert_eq!(components.get(&0x202), Some(&17));
+        assert!(!components.contains_key(&0x201));
+    }
 
     #[test]
     #[ignore = "requires an MPEG-TS fixture supplied through MIRAKURUN_SUBTITLE_TS_FIXTURE"]

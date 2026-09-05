@@ -38,6 +38,8 @@ inline constexpr const char *backendTranslationSources[] = {
     QT_TRANSLATE_NOOP("Backend", "The live stream ended unexpectedly. Try again to reconnect."),
     QT_TRANSLATE_NOOP("Backend", "Could not play this channel. Try again or choose another channel. See the error details if the problem continues."),
     QT_TRANSLATE_NOOP("Backend", "Could not initialize the player"),
+    QT_TRANSLATE_NOOP("Backend", "This audio track is no longer available. Choose a track again."),
+    QT_TRANSLATE_NOOP("Backend", "Could not switch audio tracks. Try again."),
 };
 
 // English is the source language. Unsupported languages always resolve to it.

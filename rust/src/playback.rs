@@ -1,5 +1,7 @@
+use crate::audio::{AudioRouting, AudioStreams};
 use gst::prelude::*;
 use gstreamer as gst;
+use std::cell::RefCell;
 use std::ffi::{c_char, c_void};
 use std::ptr;
 use std::sync::{Arc, Mutex, OnceLock};
@@ -67,6 +69,8 @@ pub enum PlaybackError {
         http_status: Option<u32>,
         network_source: bool,
     },
+    #[error("Could not configure audio routing: {0}")]
+    AudioRouting(#[source] gst::glib::Error),
     #[error("The live stream ended unexpectedly. Try again to reconnect.")]
     StreamEnded,
 }
@@ -149,6 +153,9 @@ pub struct Playback {
     deinterlace_mode: DeinterlaceMode,
     video_attached: bool,
     subtitles: SubtitleClock,
+    audio: RefCell<AudioStreams>,
+    extractor: Arc<Mutex<TsSubtitleExtractor>>,
+    routing: AudioRouting,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -339,6 +346,9 @@ impl Playback {
             playbin.set_property("audio-sink", &audio_sink);
         }
         playbin.set_property("volume", 0.7_f64);
+        let routing = AudioRouting::default();
+        let audio_filter = routing.filter().map_err(PlaybackError::AudioRouting)?;
+        playbin.set_property("audio-filter", audio_filter);
         let subtitles = SubtitleClock::default();
         subtitles.attach(&playbin);
         let subtitle_extractor = Arc::new(Mutex::new(TsSubtitleExtractor::new()));
@@ -380,6 +390,9 @@ impl Playback {
             deinterlace_mode,
             video_attached: false,
             subtitles,
+            audio: RefCell::new(AudioStreams::default()),
+            extractor: subtitle_extractor,
+            routing,
         })
     }
 
@@ -432,6 +445,11 @@ impl Playback {
             source,
         })?;
         self.subtitles.reset();
+        *self.audio.borrow_mut() = AudioStreams::default();
+        self.routing.reset();
+        if let Ok(mut extractor) = self.extractor.lock() {
+            extractor.audio_components.clear();
+        }
         self.playbin.set_property("uri", url);
         if let Err(source) = self.playbin.set_state(gst::State::Playing) {
             // A synchronous state failure can already have the useful HTTP error queued.
@@ -466,6 +484,11 @@ impl Playback {
                 source,
             });
         self.subtitles.reset();
+        *self.audio.borrow_mut() = AudioStreams::default();
+        self.routing.reset();
+        if let Ok(mut extractor) = self.extractor.lock() {
+            extractor.audio_components.clear();
+        }
         result
     }
 
@@ -489,7 +512,80 @@ impl Playback {
         let Some(bus) = self.playbin.bus() else {
             return Err(PlaybackError::BusUnavailable);
         };
-        drain_bus_events(&bus, &self.playbin)
+        drain_bus_events_with(&bus, &self.playbin, |message| {
+            self.audio.borrow_mut().observe(&self.playbin, message);
+        })
+    }
+
+    pub fn set_audio_program(&self, program: Option<(u16, u64, Vec<crate::audio::ProgramAudio>)>) {
+        let mut audio = self.audio.borrow_mut();
+        if audio.program != program {
+            audio.program = program;
+            audio.reset_choice();
+            self.routing.set_mode(0);
+        }
+    }
+
+    pub fn audio_state(&self) -> (String, String) {
+        let mut audio = self.audio.borrow_mut();
+        if let Ok(extractor) = self.extractor.lock() {
+            if audio.components != extractor.audio_components {
+                audio.components = extractor.audio_components.clone();
+                audio.reset_choice();
+                self.routing.set_mode(0);
+            }
+        }
+        let options = audio.options(self.routing.mode(), self.routing.channels());
+        if audio.choice.is_none() {
+            if let Some(default) = options
+                .iter()
+                .find(|option| option.default && option.enabled)
+            {
+                if audio.selected_index() == default.track as i32
+                    || audio.select(&self.playbin, default.track as i32)
+                {
+                    audio.choice = Some(default.key.clone());
+                }
+            }
+        }
+        if let Some(choice) = &audio.choice {
+            if let Some(option) = options.iter().find(|option| &option.key == choice) {
+                if audio.selected_index() == option.track as i32 {
+                    self.routing.set_mode(option.mode);
+                }
+            } else {
+                audio.reset_choice();
+                self.routing.set_mode(0);
+            }
+        }
+        (
+            serde_json::to_string(&audio.options(self.routing.mode(), self.routing.channels()))
+                .unwrap_or_else(|_| "[]".into()),
+            audio.error.clone(),
+        )
+    }
+
+    pub fn select_audio_option(&self, key: &str) -> bool {
+        let mut audio = self.audio.borrow_mut();
+        let Some(option) = audio
+            .options(self.routing.mode(), self.routing.channels())
+            .into_iter()
+            .find(|option| option.key == key && option.enabled)
+        else {
+            audio.error = "This audio track is no longer available. Choose a track again.".into();
+            return false;
+        };
+        if audio.selected_index() != option.track as i32 {
+            self.routing.set_mode(0);
+            if !audio.select(&self.playbin, option.track as i32) {
+                return false;
+            }
+        } else {
+            self.routing.set_mode(option.mode);
+        }
+        audio.choice = Some(key.to_owned());
+        audio.error.clear();
+        true
     }
 }
 
@@ -497,9 +593,18 @@ fn drain_bus_events(
     bus: &gst::Bus,
     playbin: &gst::Element,
 ) -> Result<PlaybackEvent, PlaybackError> {
+    drain_bus_events_with(bus, playbin, |_| {})
+}
+
+fn drain_bus_events_with(
+    bus: &gst::Bus,
+    playbin: &gst::Element,
+    mut observe: impl FnMut(&gst::MessageRef),
+) -> Result<PlaybackEvent, PlaybackError> {
     let mut outcome = PlaybackEvent::None;
     let mut first_error = None;
     while let Some(message) = bus.pop() {
+        observe(&message);
         use gst::MessageView;
         match message.view() {
             MessageView::Error(error) => {
