@@ -1,4 +1,5 @@
 mod audio;
+mod channels;
 mod comments;
 mod diagnostics;
 mod epg;

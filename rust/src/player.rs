@@ -143,8 +143,8 @@ pub mod ffi {
     impl cxx_qt::Threading for Player {}
 }
 
-use crate::comments::{CommentEvent, jikkyo_id};
-use crate::epg::{CurrentProgram, EpgStore, Program, Service};
+use crate::comments::CommentEvent;
+use crate::epg::{EpgStore, Program, Service};
 use crate::network::NetworkRuntime;
 use crate::playback::{Playback, PlaybackError, PlaybackEvent};
 use crate::settings::Settings;
@@ -152,7 +152,7 @@ use core::pin::Pin;
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{QString, QStringList};
 use serde::Deserialize;
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, VecDeque};
 use std::ffi::c_void;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, mpsc};
@@ -898,19 +898,49 @@ impl ffi::Player {
                             .collect::<QStringList>();
                         let program_titles = services
                             .iter()
-                            .map(|service| QString::from(&service.program_title))
+                            .map(|service| {
+                                QString::from(
+                                    service
+                                        .program
+                                        .as_ref()
+                                        .map_or("", |program| program.title.as_str()),
+                                )
+                            })
                             .collect::<QStringList>();
                         let program_descriptions = services
                             .iter()
-                            .map(|service| QString::from(&service.program_description))
+                            .map(|service| {
+                                QString::from(
+                                    service
+                                        .program
+                                        .as_ref()
+                                        .map_or("", |program| program.description.as_str()),
+                                )
+                            })
                             .collect::<QStringList>();
                         let program_starts = services
                             .iter()
-                            .map(|service| QString::from(service.program_start.to_string()))
+                            .map(|service| {
+                                QString::from(
+                                    service
+                                        .program
+                                        .as_ref()
+                                        .map_or(0, |program| program.start_at)
+                                        .to_string(),
+                                )
+                            })
                             .collect::<QStringList>();
                         let program_durations = services
                             .iter()
-                            .map(|service| QString::from(service.program_duration.to_string()))
+                            .map(|service| {
+                                QString::from(
+                                    service
+                                        .program
+                                        .as_ref()
+                                        .map_or(0, |program| program.duration)
+                                        .to_string(),
+                                )
+                            })
                             .collect::<QStringList>();
                         let channel_logo_urls = services
                             .iter()
@@ -988,15 +1018,31 @@ impl ffi::Player {
                         {
                             let channel = &services[index];
                             let label = QString::from(&channel.label);
-                            let title = QString::from(&channel.program_title);
-                            let description = QString::from(&channel.program_description);
+                            let title = QString::from(
+                                channel
+                                    .program
+                                    .as_ref()
+                                    .map_or("", |program| program.title.as_str()),
+                            );
+                            let description = QString::from(
+                                channel
+                                    .program
+                                    .as_ref()
+                                    .map_or("", |program| program.description.as_str()),
+                            );
                             let logo = QString::from(if channel.has_logo_data {
                                 service_logo_url(&server, channel.id)
                             } else {
                                 String::new()
                             });
-                            let start = channel.program_start;
-                            let duration = channel.program_duration;
+                            let start = channel
+                                .program
+                                .as_ref()
+                                .map_or(0, |program| program.start_at);
+                            let duration = channel
+                                .program
+                                .as_ref()
+                                .map_or(0, |program| program.duration);
                             player.as_mut().set_channel_name(label);
                             player.as_mut().set_program_name(title);
                             player.as_mut().set_program_description(description);
@@ -1320,32 +1366,6 @@ impl ffi::Player {
     }
 }
 
-#[derive(Clone, Hash, PartialEq, Eq)]
-struct ProgramSignature {
-    event_id: u16,
-    start_at: u64,
-    duration: u64,
-}
-
-struct Channel {
-    id: u64,
-    has_logo_data: bool,
-    label: String,
-    channel_number: u16,
-    channel_priority: u8,
-    service_id: u16,
-    physical_channel: String,
-    program_signature: Option<ProgramSignature>,
-    program_title: String,
-    program_description: String,
-    program_start: u64,
-    program_duration: u64,
-    network_id: u16,
-    channel_type: String,
-    jikkyo_id: Option<String>,
-    jikkyo_force: Option<u64>,
-}
-
 #[derive(Deserialize)]
 struct NxChannel {
     id: String,
@@ -1358,22 +1378,6 @@ struct NxThread {
     jikkyo_force: Option<u64>,
 }
 
-struct GuideProgram {
-    id: u64,
-    channel_index: usize,
-    title: String,
-    description: String,
-    start_at: u64,
-    duration: u64,
-    genre: u8,
-}
-
-struct FetchPayload {
-    channels: Vec<Channel>,
-    guide: Vec<GuideProgram>,
-    guide_start: u64,
-}
-
 fn strings(values: impl Iterator<Item = String>) -> QStringList {
     values.map(|value| QString::from(value)).collect()
 }
@@ -1382,7 +1386,7 @@ async fn fetch_services(
     client: &reqwest::Client,
     epg: &EpgStore,
     server: &str,
-) -> Result<FetchPayload, FetchServicesError> {
+) -> Result<crate::channels::ChannelCatalog, FetchServicesError> {
     let api = server.trim().trim_end_matches('/');
     let services = client
         .get(format!("{api}/api/services"))
@@ -1410,151 +1414,16 @@ async fn fetch_services(
         .as_millis() as u64;
     epg.replace(services, programs, now);
     let snapshot = epg.snapshot();
-    let current_programs = snapshot.current_programs(now);
-    let mut channels = build_channels(&snapshot.services, current_programs);
+    let mut catalog = crate::channels::build_catalog(&snapshot, now);
     if let Ok(forces) = fetch_jikkyo_forces(client).await {
-        for channel in &mut channels {
+        for channel in &mut catalog.channels {
             channel.jikkyo_force = channel
                 .jikkyo_id
                 .as_ref()
                 .and_then(|id| forces.get(id).copied());
         }
     }
-    // QML presents seven local calendar days. Keep a one-day margin before now
-    // so today's programmes are available regardless of the local UTC offset,
-    // plus enough future data to cover the final tab completely.
-    let guide_start = now.saturating_sub(24 * 60 * 60 * 1_000);
-    let guide_end = now.saturating_add(8 * 24 * 60 * 60 * 1_000);
-    let mut guide = snapshot
-        .programs_between(guide_start, guide_end)
-        .into_iter()
-        .filter_map(|program| {
-            let channel_index = channels.iter().position(|channel| {
-                channel.network_id == program.network_id && channel.service_id == program.service_id
-            })?;
-            Some(GuideProgram {
-                id: program.id,
-                channel_index,
-                title: program.name.clone().unwrap_or_default(),
-                description: program.description.clone().unwrap_or_default(),
-                start_at: program.start_at,
-                duration: program.duration,
-                genre: program.genres.first().map_or(15, |genre| genre.lv1),
-            })
-        })
-        .collect::<Vec<_>>();
-    guide.sort_unstable_by_key(|program| (program.channel_index, program.start_at));
-    Ok(FetchPayload {
-        channels,
-        guide,
-        guide_start,
-    })
-}
-
-fn build_channels(services: &[Service], programs: Vec<CurrentProgram>) -> Vec<Channel> {
-    let current_programs = programs
-        .iter()
-        .map(|program| ((program.network_id, program.service_id), program))
-        .collect::<HashMap<_, _>>();
-    let mut channels = services
-        .iter()
-        .filter(|service| service.service_type == 1)
-        .map(|service| {
-            let remote_key = service.remote_control_key_id.unwrap_or(0);
-            let is_terrestrial = service.channel.channel_type == "GR";
-            let channel_number = if is_terrestrial {
-                remote_key
-            } else {
-                service.service_id
-            };
-            let channel_priority = match service.channel.channel_type.as_str() {
-                "GR" => 0,
-                "BS" => 1,
-                "CS" => 2,
-                "SKY" => 3,
-                _ => 4,
-            };
-            let program = current_programs.get(&(service.network_id, service.service_id));
-            Channel {
-                id: service.id,
-                has_logo_data: service.has_logo_data,
-                label: if is_terrestrial && remote_key == 0 {
-                    format!("--   {}", service.name)
-                } else if is_terrestrial {
-                    format!("{remote_key:02}   {}", service.name)
-                } else {
-                    format!("{:03}   {}", service.service_id, service.name)
-                },
-                channel_number,
-                channel_priority,
-                service_id: service.service_id,
-                physical_channel: format!(
-                    "{}:{}:{}",
-                    service.network_id, service.channel.channel_type, service.channel.channel
-                ),
-                program_signature: program.map(|program| ProgramSignature {
-                    event_id: program.event_id,
-                    start_at: program.start_at,
-                    duration: program.duration,
-                }),
-                program_title: program
-                    .and_then(|program| program.name.clone())
-                    .unwrap_or_default(),
-                program_description: program
-                    .and_then(|program| program.description.clone())
-                    .unwrap_or_default(),
-                program_start: program.map_or(0, |program| program.start_at),
-                program_duration: program.map_or(0, |program| program.duration),
-                network_id: service.network_id,
-                channel_type: service.channel.channel_type.clone(),
-                jikkyo_id: jikkyo_id(
-                    &service.channel.channel_type,
-                    service.service_id,
-                    &service.name,
-                ),
-                jikkyo_force: None,
-            }
-        })
-        .collect::<Vec<_>>();
-    channels.sort_by(|a, b| {
-        (
-            a.channel_priority,
-            a.channel_number == 0,
-            a.channel_number,
-            &a.label,
-            a.service_id,
-        )
-            .cmp(&(
-                b.channel_priority,
-                b.channel_number == 0,
-                b.channel_number,
-                &b.label,
-                b.service_id,
-            ))
-    });
-    let mut main_broadcasts = HashMap::<String, Option<ProgramSignature>>::new();
-    let mut broadcasts = HashSet::new();
-    channels.retain(|channel| {
-        let Some(main_program) = main_broadcasts.get(&channel.physical_channel) else {
-            main_broadcasts.insert(
-                channel.physical_channel.clone(),
-                channel.program_signature.clone(),
-            );
-            broadcasts.insert((
-                channel.physical_channel.clone(),
-                channel.program_signature.clone(),
-            ));
-            return true;
-        };
-        matches!(
-            (main_program, &channel.program_signature),
-            (Some(main), Some(subchannel)) if main != subchannel
-        ) && broadcasts.insert((
-            channel.physical_channel.clone(),
-            channel.program_signature.clone(),
-        ))
-    });
-    channels
+    Ok(catalog)
 }
 
 async fn fetch_jikkyo_forces(
@@ -1585,61 +1454,4 @@ fn service_logo_url(server: &str, service_id: u64) -> String {
         "{}/api/services/{service_id}/logo",
         server.trim().trim_end_matches('/')
     )
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::epg::ServiceChannel;
-
-    fn service(service_id: u16, name: &str) -> Service {
-        Service {
-            id: 32_000_000_u64 + u64::from(service_id),
-            service_id,
-            network_id: 32_000,
-            name: name.to_owned(),
-            service_type: 1,
-            has_logo_data: true,
-            remote_control_key_id: Some(1),
-            channel: ServiceChannel {
-                channel_type: "GR".to_owned(),
-                channel: "26".to_owned(),
-            },
-        }
-    }
-
-    fn program(service_id: u16, event_id: u16) -> CurrentProgram {
-        CurrentProgram {
-            audios: Vec::new(),
-            event_id,
-            service_id,
-            network_id: 32_000,
-            start_at: 1_000,
-            duration: 1_800,
-            name: Some(format!("Program {event_id}")),
-            description: Some(format!("Description {event_id}")),
-        }
-    }
-
-    #[test]
-    fn hides_subchannel_during_simulcast() {
-        let services = [service(100, "Main"), service(101, "Sub")];
-        let channels = build_channels(&services, vec![program(100, 10), program(101, 10)]);
-        assert_eq!(channels.len(), 1);
-        assert_eq!(channels[0].service_id, 100);
-    }
-
-    #[test]
-    fn keeps_subchannel_during_split_programming() {
-        let services = [service(100, "Main"), service(101, "Sub")];
-        let channels = build_channels(&services, vec![program(100, 10), program(101, 11)]);
-        assert_eq!(channels.len(), 2);
-    }
-
-    #[test]
-    fn hides_subchannel_when_program_information_is_missing() {
-        let services = [service(100, "Main"), service(101, "Sub")];
-        let channels = build_channels(&services, vec![program(100, 10)]);
-        assert_eq!(channels.len(), 1);
-    }
 }
