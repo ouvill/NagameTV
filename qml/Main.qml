@@ -280,8 +280,8 @@ ApplicationWindow {
             Column {
                 anchors.centerIn: parent; spacing: 14
                 Label { anchors.horizontalCenter: parent.horizontalCenter; text: qsTr("ライブテレビ"); color: root.ink; font.pixelSize: 32; font.bold: true }
-                Label { anchors.horizontalCenter: parent.horizontalCenter; text: player.serviceId.length ? player.status : qsTr("視聴するチャンネルを選択してください"); color: root.muted }
-                Rectangle { anchors.horizontalCenter: parent.horizontalCenter; width: 148; height: 44; radius: 22; color: root.accent; Label { anchors.centerIn: parent; text: player.serviceId.length ? qsTr("視聴する") : qsTr("接続設定"); color: "#191a1b"; font.bold: true } MouseArea { anchors.fill: parent; onClicked: player.serviceId.length ? player.play() : settings.open() } }
+                Label { anchors.horizontalCenter: parent.horizontalCenter; width: Math.min(420, videoItem.width - 32); horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap; text: player.serviceId.length || !player.services.length ? player.status : qsTr("視聴するチャンネルを選択してください"); color: root.muted }
+                Rectangle { anchors.horizontalCenter: parent.horizontalCenter; width: 180; height: 44; radius: 22; color: root.accent; Label { anchors.centerIn: parent; text: player.serviceId.length ? qsTr("視聴する") : player.services.length ? qsTr("チャンネルを選ぶ") : qsTr("接続設定"); color: "#191a1b"; font.bold: true } MouseArea { anchors.fill: parent; onClicked: { if (player.serviceId.length) player.play(); else if (player.services.length) { root.channelsOpen = true; root.refreshChannelsIfDue(false); root.reveal() } else settings.open() } } }
             }
         }
         Item {
@@ -958,9 +958,23 @@ ApplicationWindow {
             RowLayout { Layout.fillWidth: true; Label { text: qsTr("接続設定"); color: root.ink; font.pixelSize: 23; font.bold: true } Item { Layout.fillWidth: true } RoundAction { iconSource: root.uiIcon("panel-right-close"); tip: qsTr("折りたたむ"); onTriggered: settings.close() } }
             Label { text: qsTr("Mirakurunサーバー"); color: root.muted }
             TextField { id: serverField; Layout.fillWidth: true; height: 48; placeholderText: "http://mirakurun:40772"; text: player.server; color: root.ink; placeholderTextColor: "#8c918c"; leftPadding: 16; rightPadding: 16; background: Rectangle { radius: 12; color: root.raised; border.color: serverField.activeFocus ? root.accent : "#30ffffff" } }
-            Label { text: qsTr("サービスID"); color: root.muted }
-            TextField { id: serviceField; Layout.fillWidth: true; height: 48; placeholderText: "3203246080"; text: player.serviceId; inputMethodHints: Qt.ImhDigitsOnly; color: root.ink; placeholderTextColor: "#8c918c"; leftPadding: 16; rightPadding: 16; background: Rectangle { radius: 12; color: root.raised; border.color: serviceField.activeFocus ? root.accent : "#30ffffff" } }
-            Rectangle { Layout.fillWidth: true; height: 46; radius: 23; color: root.accent; Label { anchors.centerIn: parent; text: qsTr("適用して視聴"); color: "#17201a"; font.bold: true } MouseArea { anchors.fill: parent; onClicked: { player.server = serverField.text; player.serviceId = serviceField.text; player.saveSettings(); player.play(); settings.close() } } }
+            Label { Layout.fillWidth: true; wrapMode: Text.Wrap; text: qsTr("MirakurunのサーバーURLを設定します。"); color: root.muted }
+            Button {
+                Layout.fillWidth: true
+                text: qsTr("保存して接続")
+                contentItem: Label { text: parent.text; color: "#17201a"; font.bold: true; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                background: Rectangle { implicitHeight: 46; radius: 23; color: root.accent }
+                onClicked: {
+                    connectionError.visible = !player.connectServer(serverField.text)
+                    if (!connectionError.visible) {
+                        settings.close()
+                        root.guideOpen = false
+                        root.selectedGuideIndex = -1
+                        root.reveal()
+                    }
+                }
+            }
+            Label { id: connectionError; visible: false; Layout.fillWidth: true; wrapMode: Text.Wrap; text: player.status; color: root.muted }
             Item { Layout.fillHeight: true }
             Button {
                 Layout.fillWidth: true

@@ -91,6 +91,9 @@ pub mod ffi {
         #[cxx_name = "saveSettings"]
         fn save_settings(self: Pin<&mut Player>);
         #[qinvokable]
+        #[cxx_name = "connectServer"]
+        fn connect_server(self: Pin<&mut Player>, server: QString) -> bool;
+        #[qinvokable]
         #[cxx_name = "openLogFolder"]
         fn open_log_folder(self: Pin<&mut Player>) -> bool;
     }
@@ -299,6 +302,58 @@ fn prepare_log_directory() -> std::io::Result<std::path::PathBuf> {
 }
 
 impl ffi::Player {
+    pub fn connect_server(mut self: Pin<&mut Self>, server: QString) -> bool {
+        let server = server.to_string().trim().trim_end_matches('/').to_owned();
+        if !reqwest::Url::parse(&server)
+            .is_ok_and(|url| matches!(url.scheme(), "http" | "https") && url.host_str().is_some())
+        {
+            self.as_mut().set_status(QString::from(
+                "http:// または https:// で始まるサーバーURLを入力してください",
+            ));
+            return false;
+        }
+        if self.as_ref().server().to_string() != server {
+            self.as_mut().stop();
+            if *self.as_ref().playing() {
+                return false;
+            }
+            self.as_mut().set_server(QString::from(server));
+            self.as_mut().set_service_id(QString::default());
+            self.as_mut().set_channel_name(QString::default());
+            self.as_mut().set_program_name(QString::default());
+            self.as_mut().set_program_description(QString::default());
+            self.as_mut().set_channel_logo_url(QString::default());
+            self.as_mut().set_subtitle_text(QString::default());
+            self.as_mut().set_subtitle_data(QString::default());
+            self.as_mut().rust_mut().service_ids.clear();
+            self.as_mut().rust_mut().jikkyo_ids.clear();
+            self.as_mut().set_services(QStringList::default());
+            self.as_mut().set_channel_types(QStringList::default());
+            self.as_mut().set_program_titles(QStringList::default());
+            self.as_mut()
+                .set_program_descriptions(QStringList::default());
+            self.as_mut().set_program_starts(QStringList::default());
+            self.as_mut().set_program_durations(QStringList::default());
+            self.as_mut().set_channel_logo_urls(QStringList::default());
+            self.as_mut().set_jikkyo_forces(QStringList::default());
+            self.as_mut().set_guide_program_ids(QStringList::default());
+            self.as_mut()
+                .set_guide_channel_indices(QStringList::default());
+            self.as_mut().set_guide_titles(QStringList::default());
+            self.as_mut().set_guide_descriptions(QStringList::default());
+            self.as_mut().set_guide_starts(QStringList::default());
+            self.as_mut().set_guide_durations(QStringList::default());
+            self.as_mut().set_guide_genres(QStringList::default());
+            self.as_mut().rust_mut().current_program_start = 0;
+            self.as_mut().rust_mut().current_program_duration = 0;
+            self.as_mut().set_program_progress(0.0);
+            self.as_mut().restart_comments();
+        }
+        self.as_mut().save_settings();
+        self.as_mut().refresh_channels();
+        true
+    }
+
     pub fn open_log_folder(self: Pin<&mut Self>) -> bool {
         match prepare_log_directory() {
             Ok(path) => {
@@ -554,6 +609,11 @@ impl ffi::Player {
                     .rust()
                     .loading_channels
                     .store(false, Ordering::Release);
+                // A previous server's request may complete after settings changed.
+                if player.as_ref().server().to_string() != server {
+                    player.as_mut().refresh_channels();
+                    return;
+                }
                 match result {
                     Ok(payload) => {
                         let services = payload.channels;
@@ -670,7 +730,13 @@ impl ffi::Player {
                             player.as_mut().rust_mut().current_program_duration = duration;
                         }
                         if !*player.as_ref().playing() {
-                            player.as_mut().set_status(QString::from("Ready"));
+                            player
+                                .as_mut()
+                                .set_status(QString::from(if services.is_empty() {
+                                    "視聴できるチャンネルが見つかりませんでした"
+                                } else {
+                                    "Ready"
+                                }));
                         }
                         player.as_mut().restart_comments();
                     }
