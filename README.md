@@ -10,6 +10,8 @@ Qt Quick + GStreamerの最小版から、字幕とEPGを独立して検証する
 
 Qt 6.8以降の Quick / Controls、GStreamer 1.24以降（qml6glsink・tsdemux・映像デコーダー・
 pulsesink）、Rust、CMake、C++コンパイラー、libclangが必要。
+PMT通知の取得にはgstreamer-mpegts-1.0の開発パッケージも必要。Ubuntuでは
+`libgstreamer-plugins-bad1.0-dev`を導入する。アプリがリンクする追加ライブラリーはlibgstmpegts。
 
 ```sh
 git submodule update --init

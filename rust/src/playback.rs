@@ -1,3 +1,4 @@
+mod audio_components;
 pub mod audio_output;
 pub mod audio_streams;
 pub mod deinterlace;
@@ -196,7 +197,12 @@ impl Playback {
     }
 
     /// Returns false when this stream is already connecting or playing.
-    pub fn play(&self, server: &str, service: u64) -> Result<bool> {
+    pub fn play(
+        &self,
+        server: &str,
+        service: u64,
+        broadcast: Option<crate::channels::BroadcastService>,
+    ) -> Result<bool> {
         if !self.attached {
             return Err(Error::OutputNotReady);
         }
@@ -205,6 +211,8 @@ impl Playback {
             return Ok(false);
         }
         self.stop()?;
+        *self.audio_streams.borrow_mut() =
+            audio_streams::Streams::for_service(broadcast.map(|service| service.service_id));
         // Qt must supply the GL display before any other GL element starts.
         self.sink.set_state(gst::State::Ready)?;
         self.playbin.set_property("uri", &uri);

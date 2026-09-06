@@ -491,7 +491,7 @@ impl ffi::Player {
         let Some(entry) = self.rust().entries.get(*self.selected() as usize) else {
             return;
         };
-        let (id, name) = (entry.id, entry.name.clone());
+        let (id, name, broadcast) = (entry.id, entry.name.clone(), entry.broadcast);
         let server = self.server().to_string();
         if self.rust().active_service == Some(id) {
             return;
@@ -518,7 +518,11 @@ impl ffi::Player {
                     .set_subtitle_status(QString::from(error.to_string())),
             }
         }
-        let result = self.rust().playback.as_ref().map(|p| p.play(&server, id));
+        let result = self
+            .rust()
+            .playback
+            .as_ref()
+            .map(|p| p.play(&server, id, broadcast));
         match result {
             Some(Ok(_)) => {
                 self.as_mut()

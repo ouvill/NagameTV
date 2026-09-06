@@ -74,7 +74,7 @@ PMTの利用を検証する。[GstMpegtsSection](https://gstreamer.freedesktop.o
 ではPMT適用後、壊れていないsectionをbusへ投稿する経路を確認した。
 これにより追加のTSバッファー・ストリームスレッドのMutexを避けられる可能性があるが、
 実サービスのcomponent_tagを取得できることはまだ未検証。依存導入と実PMTの確認が次の段階。
-現在の環境にはlibgstmpegtsの実行時ライブラリーはあるが、gstreamer-mpegts-1.0.pcはない。
+調査時は開発用pcファイルがなかったため、後述の実装時に開発パッケージを導入した。
 
 番組側はmainのaudio_programと同じ現在番組を参照し、serviceId・component_tagで照合する。
 字幕Sessionに残る配信用idからのserviceId剰余計算を流用しない。
@@ -88,3 +88,42 @@ as_chunks::<4>()へ修正した後、該当する結合試験を再実行して�
 PLAYING・音声メニューの表示・正常終了を確認した。新しいaudio_error呼び出しを含め
 QML実行エラーは検出されなかった。証跡はGit対象外のaudio-recovery.logとaudio-recovery.png
 （benchmark/viewing-design内）。実放送での自動再選択失敗そのものの再現は未実施。
+
+## PMT bus通知によるcomponent_tagの取得
+
+playback/audio_components.rsを追加し、gstreamer-mpegts 0.25.2の安全なSection／message APIを使う。
+Ubuntuのlibgstreamer-plugins-bad1.0-devを導入し、pkg-configで1.28.2を確認した。
+RustバインディングはPMTの高水準デコードをまだ公開していないため、Section::dataで得た
+バイト列からPIDとstream_identifier_descriptor (0x52)だけを読み取る。
+TSの再フレーミング、PAT探索、source probe、追加スレッド・Mutexは導入しない。
+アプリ側の新規unsafeやunwrapもない。
+
+Playback::playは配信用idと別にBroadcastServiceを受け取り、明示されたserviceIdだけを
+PMT照合に用いる。停止成功時に対応表を破棄する。選択サービス不明・別サービスのPMTは無視する。
+既存bus pollでElementメッセージ内のsectionだけを処理し、最大1024バイト・CRC・単一section・
+記述子長・PIDとtagの重複を検証する。将来用のcurrent_next=0は現在の対応表を上書きしない。
+対象サービスの不正な更新では対応表を消す。完全な新しいPMTは表全体を置き換える。
+
+保持するのは選択サービスのPID/tag一覧だけ。フレームごとの処理やEPGデータの増加はない。
+一時のVecとHashSetはsection検証時のみ生成し、同じ対応表なら保持領域を置換しない。
+変更時だけAUDIO_PMTログへ対応表を記録する。
+音声トラックの表示用JSONにcomponent_tagを付けるが、UIへ技術情報としては表示しない。
+GStreamer 1.28.2のmpegtsbase.cのストリームID生成（%s/%08x）を確認し、
+8桁の16進PIDと対応する場合だけタグを返す。
+
+CPU試験では実際のGstMpegtsSection／Elementメッセージからの取り出し、順序の異なるPID、
+別サービス、将来用PMT、更新・消滅、CRC既知ベクター、全途中切断、記述子長不正、
+重複PID/tagと複数sectionの拒否を検証した。Rust59件成功・外部TS依存1件未実行、
+Clippy全ターゲット・releaseビルド成功。フィールド検査とCRCベクター追加後の対象2件も成功。
+
+実放送ではサービスAPIのserviceId=41984とPMTの値が一致し、PID272/tag16を含む対応表を
+取得できた。最初の試験スクリプトは期待するserviceIdを1024と固定して失敗したため、
+サービスAPIから取得するよう修正した。アプリはこの試行でもPLAYING・正常終了に成功していた。
+
+現在番組のaudiosとの照合、主／副／主副の型とPCMルーティング、メタデータ更新時の
+選択解除・再適用は未実装。component_tagの取得だけで音声機能全体の互換完了とは扱わない。
+
+修正した試験では--features=none（字幕・EPGともOFF）で実放送を再生し、
+サービスAPIと一致するPMT、音声メニューの表示、正常終了を確認した。EPG_MEMORYログなし、
+字幕購読0・EPGタスク0も確認。証跡はGit対象外のbenchmark/viewing-design/audio-pmt.py、
+audio-pmt-isolated.log、audio-pmt-isolated.png。主／副の表示・音声ルーティングは未検証。

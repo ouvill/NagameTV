@@ -13,6 +13,7 @@ pub enum Error {
 #[derive(Serialize)]
 pub struct Track {
     pub id: String,
+    pub component_tag: Option<u8>,
     pub language: String,
     pub title: String,
     pub selected: bool,
@@ -24,9 +25,16 @@ pub struct Streams {
     selected: Vec<gst::glib::GString>,
     requested: Option<String>,
     failure: Option<Error>,
+    components: super::audio_components::Components,
 }
 
 impl Streams {
+    pub fn for_service(service: Option<u16>) -> Self {
+        Self {
+            components: super::audio_components::Components::for_service(service),
+            ..Self::default()
+        }
+    }
     /// Project only on request, rather than copying stream tags on each bus poll.
     pub fn tracks(&self) -> Vec<Track> {
         self.collection
@@ -38,6 +46,7 @@ impl Streams {
                 let tags = stream.tags();
                 Some(Track {
                     selected: self.selected.iter().any(|selected| selected == &id),
+                    component_tag: self.components.tag_for_stream(id.as_str()),
                     id: id.to_string(),
                     language: tags
                         .as_ref()
@@ -117,6 +126,9 @@ impl Streams {
         player: &gst::Element,
         message: &gst::MessageRef,
     ) -> Result<(), Error> {
+        if let Err(error) = self.components.observe(message) {
+            tracing::debug!(%error, "Audio PMT rejected");
+        }
         match message.view() {
             gst::MessageView::StreamCollection(message) => {
                 self.collection = Some(message.stream_collection());
@@ -171,6 +183,7 @@ mod tests {
             selected: vec!["v".into(), "ja".into(), "t".into()],
             requested: None,
             failure: None,
+            components: super::super::audio_components::Components::default(),
         };
         assert_eq!(streams.selection("en")?, ["v", "t", "en"]);
         assert!(matches!(streams.selection("gone"), Err(Error::Unavailable)));
@@ -217,6 +230,7 @@ mod tests {
             selected: vec!["v".into(), "ja".into(), "t".into()],
             requested: None,
             failure: None,
+            components: super::super::audio_components::Components::default(),
         };
         streams.select(&sink, "en")?;
         assert_eq!(

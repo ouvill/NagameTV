@@ -675,6 +675,43 @@ dependencies = [
 ]
 
 [[package]]
+name = "gstreamer-base-sys"
+version = "0.25.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "709fbbc623dc066908ba10c43d629c21096508dea04796592a206c4edd864e37"
+dependencies = [
+ "glib-sys",
+ "gobject-sys",
+ "gstreamer-sys",
+ "libc",
+ "system-deps 7.0.8",
+]
+
+[[package]]
+name = "gstreamer-mpegts"
+version = "0.25.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fb6f9e084e00547c20ac85b5d9c4b9236703e7bd0af2d8eda4207feea56dec27"
+dependencies = [
+ "glib",
+ "gstreamer",
+ "gstreamer-mpegts-sys",
+]
+
+[[package]]
+name = "gstreamer-mpegts-sys"
+version = "0.25.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "629c6455344b93afc9ebde584146576bfd2e6dd6dad30365082281b05cdef725"
+dependencies = [
+ "glib-sys",
+ "gstreamer-base-sys",
+ "gstreamer-sys",
+ "libc",
+ "system-deps 7.0.8",
+]
+
+[[package]]
 name = "gstreamer-sys"
 version = "0.25.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1125,6 +1162,7 @@ dependencies = [
  "cxx-qt-build",
  "cxx-qt-lib",
  "gstreamer",
+ "gstreamer-mpegts",
  "libaribcaption",
  "libc",
  "reqwest",
