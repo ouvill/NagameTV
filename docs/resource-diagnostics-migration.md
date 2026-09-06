@@ -96,3 +96,27 @@ Recorder::start_directoryはディレクトリーを用意し、整理後にmain
 シンボリックリンクと無関係なファイルの保持を一時ディレクトリーで検証した。
 単独crateの合計13件、Clippy全ターゲット、fmtが成功。Qt GC通知とアプリへの接続、
 実アプリの長時間資源計測は引き続き残作業。
+
+
+## GC通知の受け口
+
+GcCategoryでqt.qml.gc.statisticsとqt.qml.gc.allocatorStatsだけを受け付け、その他の
+文字列はparse時にNoneとする。GcSinkはWeak参照で保持でき、Qt側のコールバックより
+Recorderが先に終了しても送信口を保持し続けない。本文はmainと同じ4096 Unicode scalar
+まで取り込み、最大16KiBのUTF-8本文として所有する。JSONエスケープ後も既存のレコード
+64KiB上限を適用する。通知スレッドではファイル書き込み・プロセス計測を行わない。
+
+GCと通常Snapshotは同じ32件キューを使う。送信口の短い排他はtry_lockし、競合時も
+待機せずDroppedと破棄件数を返す。満杯時も同じ扱い。ワーカーではGCレコードをmainと
+同じkind/schema/pid/unix_ms/category/message/dropped_recordsで保存し、GC通知の
+たびに/procやallocatorを追加計測しない。
+
+stopは送信口そのものを閉じる。直前にWeakをupgradeした通知処理が残っていても、
+その参照の解放を待つことなくワーカーは受理済みキューを処理して終了できる。
+停止側は短い送信処理の排他完了を待つ場合があるが、その排他中にIOや計測は行わない。
+poison状態は記録の継続に使わず、送信口を閉じる目的だけで内部所有権を回収する。
+
+非BMP文字・改行・引用符を含む長文の上限とJSON復元、停止後に残る通知参照、
+競合中の非待機・破棄件数、Snapshotで満杯のキューへのGC通知を検証した。
+合計15件、Clippy全ターゲット、fmtが成功。これはRustの受け口を直接呼んだ試験であり、
+Qtメッセージハンドラーの登録と実GC通知、アプリの定期記録への接続はまだ未実施。

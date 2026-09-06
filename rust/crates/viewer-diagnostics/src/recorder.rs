@@ -1,10 +1,10 @@
-//! Fixed-size messages and one owned IO worker. No GUI, timers or runtime.
+//! Bounded messages and one owned IO worker. No GUI, timers or runtime.
 use crate::{Snapshot, measurement, storage};
 use serde::Serialize;
 use std::{
     path::PathBuf,
     sync::{
-        Arc,
+        Arc, Mutex, Weak,
         atomic::{AtomicU64, Ordering},
         mpsc,
     },
@@ -56,8 +56,86 @@ struct Entry {
     snapshot: Snapshot,
 }
 
+#[derive(Clone, Copy, Serialize)]
+pub enum GcCategory {
+    #[serde(rename = "qt.qml.gc.statistics")]
+    Statistics,
+    #[serde(rename = "qt.qml.gc.allocatorStats")]
+    AllocatorStats,
+}
+impl GcCategory {
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "qt.qml.gc.statistics" => Some(Self::Statistics),
+            "qt.qml.gc.allocatorStats" => Some(Self::AllocatorStats),
+            _ => None,
+        }
+    }
+}
+enum Message {
+    Sample(Entry),
+    Gc {
+        unix_ms: u128,
+        category: GcCategory,
+        text: Box<str>,
+    },
+}
+struct Sink {
+    sender: Mutex<Option<mpsc::SyncSender<Message>>>,
+    dropped: Arc<AtomicU64>,
+}
+impl Sink {
+    fn close(&self) {
+        // Only the sender's ownership is guarded. Recovering a poisoned guard
+        // is safe for closing it; no partially updated application state is reused.
+        let mut sender = self
+            .sender
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        sender.take();
+    }
+    fn send(&self, message: Message) -> Enqueue {
+        let guard = match self.sender.try_lock() {
+            Ok(guard) => guard,
+            Err(std::sync::TryLockError::WouldBlock) => {
+                self.dropped.fetch_add(1, Ordering::Relaxed);
+                return Enqueue::Dropped;
+            }
+            Err(std::sync::TryLockError::Poisoned(_)) => return Enqueue::Stopped,
+        };
+        let Some(sender) = guard.as_ref() else {
+            return Enqueue::Stopped;
+        };
+        match sender.try_send(message) {
+            Ok(()) => Enqueue::Accepted,
+            Err(mpsc::TrySendError::Full(_)) => {
+                self.dropped.fetch_add(1, Ordering::Relaxed);
+                Enqueue::Dropped
+            }
+            Err(mpsc::TrySendError::Disconnected(_)) => Enqueue::Stopped,
+        }
+    }
+}
+/// May outlive the recorder without keeping its queue or worker alive.
+#[derive(Clone)]
+pub struct GcSink(Weak<Sink>);
+impl GcSink {
+    pub fn record(&self, category: GcCategory, text: &str) -> Enqueue {
+        let Some(sink) = self.0.upgrade() else {
+            return Enqueue::Stopped;
+        };
+        // Match main's 4096 Unicode scalar limit; no unbounded source clone.
+        let text: String = text.chars().take(4096).collect();
+        sink.send(Message::Gc {
+            unix_ms: unix_ms(),
+            category,
+            text: text.into_boxed_str(),
+        })
+    }
+}
+
 pub struct Recorder {
-    sender: Option<mpsc::SyncSender<Entry>>,
+    sender: Option<Arc<Sink>>,
     task: Option<JoinHandle<Result<(), Error>>>,
     dropped: Arc<AtomicU64>,
     started: Instant,
@@ -83,20 +161,31 @@ impl Recorder {
         version: &'static str,
         mut write: impl FnMut(&serde_json::Value) -> Result<(), storage::Error> + Send + 'static,
     ) -> Result<Self, Error> {
-        let (sender, receiver) = mpsc::sync_channel::<Entry>(QUEUE_SIZE);
+        let (sender, receiver) = mpsc::sync_channel::<Message>(QUEUE_SIZE);
         let dropped = Arc::new(AtomicU64::new(0));
         let worker_dropped = dropped.clone();
         let task = thread::Builder::new()
             .name("viewer-diagnostics".into())
             .spawn(move || {
-                for entry in receiver {
-                    let value = serde_json::json!({
+                for message in receiver {
+                    let value = match message {
+                        Message::Sample(entry) => serde_json::json!({
                         "record": entry,
                         "measured_unix_ms": unix_ms(),
                         "process": measurement::process_memory(),
                         "allocator": measurement::allocator_memory(),
                         "dropped_records": worker_dropped.load(Ordering::Relaxed),
-                    });
+                        }),
+                        Message::Gc {
+                            unix_ms,
+                            category,
+                            text,
+                        } => serde_json::json!({
+                            "kind": "qt_gc", "schema": 1, "pid": std::process::id(),
+                            "unix_ms": unix_ms, "category": category, "message": text,
+                            "dropped_records": worker_dropped.load(Ordering::Relaxed),
+                        }),
+                    };
                     // An IO error is terminal, so no further writes follow a partial line.
                     write(&value)?;
                 }
@@ -104,7 +193,10 @@ impl Recorder {
             })
             .map_err(Error::Spawn)?;
         Ok(Self {
-            sender: Some(sender),
+            sender: Some(Arc::new(Sink {
+                sender: Mutex::new(Some(sender)),
+                dropped: dropped.clone(),
+            })),
             task: Some(task),
             dropped,
             started: Instant::now(),
@@ -124,14 +216,10 @@ impl Recorder {
             event,
             snapshot,
         };
-        match sender.try_send(entry) {
-            Ok(()) => Enqueue::Accepted,
-            Err(mpsc::TrySendError::Full(_)) => {
-                self.dropped.fetch_add(1, Ordering::Relaxed);
-                Enqueue::Dropped
-            }
-            Err(mpsc::TrySendError::Disconnected(_)) => Enqueue::Stopped,
-        }
+        sender.send(Message::Sample(entry))
+    }
+    pub fn gc_sink(&self) -> GcSink {
+        GcSink(self.sender.as_ref().map(Arc::downgrade).unwrap_or_default())
     }
     pub fn dropped(&self) -> u64 {
         self.dropped.load(Ordering::Relaxed)
@@ -141,7 +229,9 @@ impl Recorder {
     }
     /// Stops admission immediately. The finite accepted queue drains on the worker.
     pub fn stop(mut self) -> Stopping {
-        self.sender = None;
+        if let Some(sink) = self.sender.take() {
+            sink.close();
+        }
         Stopping {
             task: self.task.take(),
         }
@@ -170,7 +260,9 @@ impl Drop for Recorder {
     fn drop(&mut self) {
         // Explicit stop allows nonblocking polling. Fallback Drop still owns cleanup;
         // slow filesystem IO can delay shutdown, but never leaves a detached worker.
-        self.sender = None;
+        if let Some(sink) = self.sender.take() {
+            sink.close();
+        }
         let _ = join(self.task.take());
     }
 }
@@ -222,7 +314,11 @@ mod tests {
                 Enqueue::Dropped
             );
         }
-        assert_eq!(recorder.dropped(), 1000);
+        assert_eq!(
+            recorder.gc_sink().record(GcCategory::Statistics, "full"),
+            Enqueue::Dropped
+        );
+        assert_eq!(recorder.dropped(), 1001);
         let stopping = recorder.stop();
         let release = release; // Also precede Stopping cleanup on assertion failure.
         assert!(!stopping.is_finished());
@@ -231,6 +327,73 @@ mod tests {
         assert_eq!(writes.load(Ordering::Relaxed), QUEUE_SIZE as u64 + 1);
         Ok(())
     }
+    #[test]
+    fn competing_callback_drops_instead_of_waiting_for_sender_lock()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let dir = tempfile::tempdir()?;
+        let recorder = Recorder::start(dir.path().join("usage.jsonl"), "test")?;
+        let callback = recorder.gc_sink();
+        let sink = callback.0.upgrade().ok_or("missing sink")?;
+        let guard = sink.sender.lock().map_err(|_| "poisoned test lock")?;
+        assert_eq!(
+            callback.record(GcCategory::Statistics, "contention"),
+            Enqueue::Dropped
+        );
+        assert_eq!(recorder.dropped(), 1);
+        drop(guard);
+        recorder.stop().join()?;
+        Ok(())
+    }
+
+    #[test]
+    fn gc_records_are_bounded_and_weak_callbacks_do_not_keep_the_worker_alive()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("usage.jsonl");
+        let recorder = Recorder::start(path.clone(), "test")?;
+        let callback = recorder.gc_sink();
+        let late_callback = callback.clone();
+        // Simulate a callback that upgraded Weak just before stop closes admission.
+        let in_flight = callback.0.upgrade().ok_or("missing sink")?;
+        assert!(GcCategory::parse("unrelated.category").is_none());
+        assert!(matches!(
+            GcCategory::parse("qt.qml.gc.statistics"),
+            Some(GcCategory::Statistics)
+        ));
+        assert!(matches!(
+            GcCategory::parse("qt.qml.gc.allocatorStats"),
+            Some(GcCategory::AllocatorStats)
+        ));
+        let input = "𠮷\n\"".repeat(2000);
+        assert_eq!(
+            callback.record(GcCategory::Statistics, &input),
+            Enqueue::Accepted
+        );
+        recorder.stop().join()?;
+        assert_eq!(
+            late_callback.record(GcCategory::AllocatorStats, "late"),
+            Enqueue::Stopped
+        );
+        assert!(
+            in_flight
+                .sender
+                .lock()
+                .map_err(|_| "poisoned sink")?
+                .is_none()
+        );
+        let text = std::fs::read_to_string(path)?;
+        assert_eq!(text.lines().count(), 1);
+        let record: serde_json::Value = serde_json::from_str(&text)?;
+        assert_eq!(record["kind"], "qt_gc");
+        assert_eq!(record["category"], "qt.qml.gc.statistics");
+        assert_eq!(
+            record["message"],
+            input.chars().take(4096).collect::<String>()
+        );
+        assert!(record.get("process").is_none()); // GC callbacks don't trigger process sampling.
+        Ok(())
+    }
+
     #[test]
     fn writes_final_snapshot_before_join_returns() -> Result<(), Box<dyn std::error::Error>> {
         let dir = tempfile::tempdir()?;
