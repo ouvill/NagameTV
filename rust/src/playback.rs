@@ -1,3 +1,4 @@
+pub mod audio_output;
 pub mod deinterlace;
 pub mod stats;
 
@@ -210,10 +211,8 @@ impl Playback {
         Ok(())
     }
 
-    pub fn set_volume(&self, value: f64) {
-        if value.is_finite() {
-            self.playbin.set_property("volume", value.clamp(0.0, 1.0));
-        }
+    pub fn set_audio_output(&self, output: audio_output::Output) {
+        output.apply(&self.playbin);
     }
 
     pub fn poll(&self) -> Result<bool> {

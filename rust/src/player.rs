@@ -1,3 +1,4 @@
+mod audio_output;
 mod channels;
 mod startup;
 mod statistics;
@@ -39,6 +40,7 @@ pub mod ffi {
         #[qproperty(QString, epg_data, READ, NOTIFY)]
         #[qproperty(QString, epg_status, READ, NOTIFY)]
         #[qproperty(f64, volume_level, READ, NOTIFY)]
+        #[qproperty(bool, audio_muted, READ, NOTIFY)]
         #[qproperty(QString, settings_error, READ, NOTIFY)]
         #[qproperty(QString, diagnostics, READ, NOTIFY)]
         type Player = super::PlayerRust;
@@ -68,6 +70,8 @@ pub mod ffi {
         fn subtitle_glyph_outline(self: &Player, text: QString, font: QFont) -> QString;
         #[qinvokable]
         fn volume(self: Pin<&mut Player>, value: f64);
+        #[qinvokable]
+        fn mute(self: Pin<&mut Player>, muted: bool);
         #[qinvokable]
         fn poll(self: Pin<&mut Player>);
         #[qinvokable]
@@ -105,6 +109,8 @@ pub struct PlayerRust {
     epg_status: QString,
     diagnostics: QString,
     volume_level: f64,
+    audio_muted: bool,
+    audio_output: playback::audio_output::Output,
     settings_error: QString,
     preferences: settings::Session,
     autoplay_pending: bool,
@@ -179,6 +185,7 @@ impl ffi::Player {
     property_setter!(set_epg_data, epg_data, epg_data_changed, QString);
     property_setter!(set_epg_status, epg_status, epg_status_changed, QString);
     property_setter!(set_diagnostics, diagnostics, diagnostics_changed, QString);
+    property_setter!(set_audio_muted, audio_muted, audio_muted_changed, bool);
     property_setter!(set_volume_level, volume_level, volume_level_changed, f64);
     property_setter!(
         set_settings_error,
@@ -453,20 +460,6 @@ impl ffi::Player {
             Ok(()) => self.status_text("停止"),
             Err(error) => self.status_text(error),
         }
-    }
-    pub fn volume(mut self: Pin<&mut Self>, value: f64) {
-        let Some(volume) = settings::Volume::from_fraction(value) else {
-            return;
-        };
-        if let Some(playback) = &self.rust().playback {
-            playback.set_volume(volume.fraction());
-        }
-        self.as_mut()
-            .rust_mut()
-            .preferences
-            .preferences_mut()
-            .volume = volume;
-        self.set_volume_level(volume.fraction());
     }
     pub fn poll(mut self: Pin<&mut Self>) {
         let fetched = self

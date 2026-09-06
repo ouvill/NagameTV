@@ -13,7 +13,7 @@ viewer-coreを照合し、機能単位で移植する。表の「一部」はmai
 | EPG全局取得・定期更新・更新失敗時保持 | epg、runtime、viewer-core | 基本取得あり。現在24時間先・選択局200件の投影 |
 | EPG時間軸・複数局表示・詳細・現在番組 | QML、epg、epg_events | 未移植。現在は選択局の一覧 |
 | 複数音声・主/副/主副・言語の照合 | audio、transport、viewer-core/audio | 未移植。推測せず放送メタデータと照合する |
-| 音量・ミュート | playback、QML | 音量の復元を追加。ミュートUIは未移植 |
+| 音量・ミュート | playback、QML | 音量復元とミュートUIを移植。型付き出力状態とnativeプロパティ保持を試験。実再生音声の確認は未実施 |
 | 実況接続・チャンネル追随・描画・調整 | comments、runtime、QML | 未移植。無効時は通信と描画を生成しない |
 | 接続先・局・音量・字幕の設定保存 | settings、viewer-core/settings | 互換TOMLの読み書きを追加。現状は正常終了時に保存 |
 | 言語設定・動的翻訳切替 | localization.h、translations、QML | 未移植。既存のlanguage設定は保持 |
@@ -77,3 +77,5 @@ CMakeビルド成功。設定テストはmain形式の読み込み・未知項�
 チャンネルの分類・番号順・種別絞り込みの契約と検証は [channel-selection.md](channel-selection.md)。
 
 字幕の書体・輪郭描画の設計と検証は [subtitle-rendering.md](subtitle-rendering.md)。
+
+音量・ミュートの設計と検証は [audio-output.md](audio-output.md)。

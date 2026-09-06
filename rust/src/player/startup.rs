@@ -42,10 +42,12 @@ impl Default for PlayerRust {
             plan.subtitles = preferences.preferences().subtitles_enabled;
             plan.epg = preferences.preferences().epg_enabled;
         }
-        let volume_level = preferences.preferences().volume.fraction();
+        let audio_output =
+            playback::audio_output::Output::Audible(preferences.preferences().volume);
+        let volume_level = audio_output.volume().fraction();
         let playback = playback::take_preloaded();
         if let Some(playback) = &playback {
-            playback.set_volume(volume_level);
+            playback.set_audio_output(audio_output);
         }
         let network = services::Network::new();
         let status = network
@@ -71,6 +73,8 @@ impl Default for PlayerRust {
             epg_status: QString::from("無効"),
             diagnostics: QString::default(),
             volume_level,
+            audio_muted: audio_output.muted(),
+            audio_output,
             settings_error: QString::from(settings_error),
             preferences,
             autoplay_pending: std::env::var("MIRAKURUN_AUTOPLAY").as_deref() == Ok("1"),

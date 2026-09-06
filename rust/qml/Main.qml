@@ -99,7 +99,12 @@ ApplicationWindow {
             Button { text: "次"; enabled: root.channelRows.length > 0; onClicked: root.step(1) }
             Button { text: "再生"; enabled: player.selected >= 0; onClicked: player.play() }
             Button { text: "停止"; onClicked: player.stop() }
-            Label { text: "音量"; color: "white" }
+            Button {
+                text: player.audio_muted ? "消音解除" : "消音"
+                highlighted: player.audio_muted
+                onClicked: player.mute(!player.audio_muted)
+                Accessible.name: player.audio_muted ? "消音を解除" : "音声を消音"
+            }
             Slider { from: 0; to: 1; value: player.volume_level; Layout.preferredWidth: 110; onMoved: player.volume(value) }
         }
         Label { text: player.settings_error; visible: text.length > 0; color: "#ffb080"; Layout.fillWidth: true; wrapMode: Text.Wrap; Layout.leftMargin: 8 }
