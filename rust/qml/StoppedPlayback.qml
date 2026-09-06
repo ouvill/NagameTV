@@ -42,7 +42,7 @@ Rectangle {
             implicitWidth: 180
             implicitHeight: 44
             enabled: !root.loading
-            text: root.loading ? "取得中…" : root.canPlay ? (root.playbackError.length ? "再試行" : "視聴する") : root.hasChannels ? "チャンネルを選択" : "接続設定"
+            text: root.loading ? "取得中…" : root.canPlay ? (root.playbackError.length ? qsTranslate("Main", "Retry") : qsTranslate("Main", "Watch")) : root.hasChannels ? "チャンネルを選択" : qsTranslate("Main", "Connection settings")
             contentItem: Label {
                 text: action.text
                 color: "#191a1b"
@@ -72,12 +72,12 @@ Rectangle {
                 onClicked: root.channelsRequested()
             }
             TextAction {
-                text: "接続設定"
+                text: qsTranslate("Main", "Connection settings")
                 onClicked: root.settingsRequested()
             }
             TextAction {
                 objectName: "errorDetailsAction"
-                text: "エラー詳細"
+                text: qsTranslate("Main", "Error details")
                 onClicked: root.showDetails = true
             }
         }

@@ -266,13 +266,13 @@ ApplicationWindow {
             visible: overlayVisibility.controlsVisible && !root.showProgram
             IconAction {
                 iconSource: "qrc:/qt/qml/MinimalViewer/assets/icons/calendar-days.svg"
-                tip: "番組表"
+                tip: qsTranslate("Main", "Program guide")
                 enabled: player.epg_enabled
                 onClicked: root.toggleGuide()
             }
             IconAction {
                 iconSource: "qrc:/qt/qml/MinimalViewer/assets/icons/settings-2.svg"
-                tip: "設定"
+                tip: qsTranslate("Main", "Settings")
                 onClicked: settings.open()
             }
             WindowButtons {
@@ -376,7 +376,7 @@ ApplicationWindow {
                     spacing: 12
                     IconAction {
                         iconSource: "qrc:/qt/qml/MinimalViewer/assets/icons/" + (player.playing ? "square.svg" : "play.svg")
-                        tip: player.playing ? "停止" : "再生"
+                        tip: player.playing ? qsTranslate("Main", "Stop") : "再生"
                         primary: !player.playing
                         enabled: player.playing || player.selected >= 0
                         onClicked: player.playing ? player.stop() : player.play()
@@ -400,7 +400,7 @@ ApplicationWindow {
                         to: 1
                         value: player.volume_level
                         subdued: player.audio_muted
-                        Accessible.name: "音量"
+                        Accessible.name: qsTranslate("Main", "Volume")
                         Layout.preferredWidth: 132
                         onMoved: {
                             player.volume(value)
@@ -422,24 +422,24 @@ ApplicationWindow {
                     }
                     IconAction {
                         iconSource: "qrc:/qt/qml/MinimalViewer/assets/icons/grid-2x2.svg"
-                        tip: "チャンネル"
+                        tip: qsTranslate("Main", "Channels")
                         onClicked: root.showChannels = true
                     }
                     IconAction {
                         iconSource: "qrc:/qt/qml/MinimalViewer/assets/icons/captions.svg"
-                        tip: player.subtitle_display ? "字幕を非表示" : "字幕を表示"
+                        tip: player.subtitle_display ? qsTranslate("Main", "Hide subtitles") : qsTranslate("Main", "Show subtitles")
                         active: player.subtitles_enabled && player.subtitle_display
                         enabled: player.subtitles_enabled
                         onClicked: player.display_subtitles(!player.subtitle_display)
                     }
                     IconAction {
                         iconSource: "qrc:/qt/qml/MinimalViewer/assets/icons/settings-2.svg"
-                        tip: "再生設定"
+                        tip: qsTranslate("Main", "Playback settings")
                         onClicked: settings.open()
                     }
                     IconAction {
                         iconSource: "qrc:/qt/qml/MinimalViewer/assets/icons/maximize.svg"
-                        tip: "全画面"
+                        tip: qsTranslate("Main", "Fullscreen")
                         onClicked: windowActions.toggleFullscreen()
                     }
                     Rectangle {
@@ -451,7 +451,7 @@ ApplicationWindow {
                     }
                     IconAction {
                         iconSource: "qrc:/qt/qml/MinimalViewer/assets/icons/" + (root.showProgram ? "panel-right-close.svg" : "panel-right-open.svg")
-                        tip: root.showProgram ? "サイドパネルを閉じる" : "番組情報"
+                        tip: root.showProgram ? qsTranslate("Main", "Close side panel") : qsTranslate("Main", "Program information")
                         onClicked: root.showProgram = !root.showProgram
                     }
                 }

@@ -57,7 +57,7 @@ Rectangle {
         Action {
             objectName: "closeWindow"
             iconName: "x"
-            label: "閉じる"
+            label: qsTranslate("Main", "Close")
             destructive: true
             // Window.close delivers onClosing, including the player's shutdown.
             onClicked: root.targetWindow.close()

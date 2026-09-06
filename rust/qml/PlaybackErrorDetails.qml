@@ -23,13 +23,13 @@ Popup {
         RowLayout {
             Layout.fillWidth: true
             Label {
-                text: "エラー詳細"
+                text: qsTranslate("Main", "Error details")
                 color: "#f4f5f3"
                 font.pixelSize: 18
                 Layout.fillWidth: true
             }
             TextAction {
-                text: "閉じる"
+                text: qsTranslate("Main", "Close")
                 onClicked: root.close()
             }
         }

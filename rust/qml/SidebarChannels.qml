@@ -115,7 +115,7 @@ Item {
                         top: heading.bottom
                         topMargin: 8
                     }
-                    text: card.program ? (card.program.name || "番組名未取得") : "番組情報なし"
+                    text: card.program ? (card.program.name || "番組名未取得") : qsTranslate("Main", "No program information")
                     color: "#f4f5f3"
                     font.bold: true
                     elide: Text.ElideRight

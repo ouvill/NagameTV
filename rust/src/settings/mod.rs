@@ -1,7 +1,9 @@
 //! Bounded, compatible preference storage. IO occurs at startup and explicit save.
 mod comment_style;
+mod language;
 mod model;
 pub use comment_style::{CommentFontSize, CommentOpacity, CommentSpeed};
+pub use language::Language;
 pub use model::{Preferences, Volume};
 use std::{
     fs,

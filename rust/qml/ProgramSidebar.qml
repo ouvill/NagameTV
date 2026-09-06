@@ -50,13 +50,13 @@ Rectangle {
         spacing: 10
         IconAction {
             iconSource: root.iconDirectory + "calendar-days.svg"
-            tip: "番組表"
+            tip: qsTranslate("Main", "Program guide")
             enabled: root.guideEnabled
             onClicked: root.guideRequested()
         }
         IconAction {
             iconSource: root.iconDirectory + "settings-2.svg"
-            tip: "設定"
+            tip: qsTranslate("Main", "Settings")
             onClicked: root.settingsRequested()
         }
         WindowButtons {
@@ -74,11 +74,11 @@ Rectangle {
             Layout.fillWidth: true
             IconAction {
                 iconSource: root.iconDirectory + "panel-right-close.svg"
-                tip: "閉じる"
+                tip: qsTranslate("Main", "Close")
                 onClicked: root.closeRequested()
             }
             Label {
-                text: root.page === ProgramSidebar.Comments ? "実況" : (root.page === ProgramSidebar.Channels ? "チャンネル" : "番組情報")
+                text: root.page === ProgramSidebar.Comments ? "実況" : (root.page === ProgramSidebar.Channels ? qsTranslate("Main", "Channels") : qsTranslate("Main", "Program information"))
                 color: "#f4f5f3"
                 font.pixelSize: 17
                 font.bold: true
@@ -120,7 +120,7 @@ Rectangle {
                         logoUrl: root.logoUrl
                     }
                     Label {
-                        text: root.channelLabel.replace(/^\d+\s+/, "") || "チャンネル"
+                        text: root.channelLabel.replace(/^\d+\s+/, "") || qsTranslate("Main", "Channels")
                         color: "#f4f5f3"
                         font.weight: Font.DemiBold
                         textFormat: Text.PlainText
@@ -131,7 +131,7 @@ Rectangle {
                 Label {
                     objectName: "programTitle"
                     Layout.fillWidth: true
-                    text: root.program ? (root.program.name || "番組名未取得") : "番組情報なし"
+                    text: root.program ? (root.program.name || "番組名未取得") : qsTranslate("Main", "No program information")
                     color: "#f4f5f3"
                     font.pixelSize: 23
                     font.bold: true
@@ -162,7 +162,7 @@ Rectangle {
                     }
                 }
                 Label {
-                    text: "概要"
+                    text: qsTranslate("Main", "Summary")
                     color: "#b6bab6"
                     font.weight: Font.DemiBold
                 }
@@ -235,14 +235,14 @@ Rectangle {
                 Layout.fillWidth: true
                 iconSource: root.iconDirectory + "info.svg"
                 selected: root.page === ProgramSidebar.Program
-                text: "番組情報"
+                text: qsTranslate("Main", "Program information")
                 onClicked: root.pageRequested(ProgramSidebar.Program)
             }
             SidebarTab {
                 Layout.fillWidth: true
                 iconSource: root.iconDirectory + "grid-2x2.svg"
                 selected: root.page === ProgramSidebar.Channels
-                text: "チャンネル"
+                text: qsTranslate("Main", "Channels")
                 onClicked: root.pageRequested(ProgramSidebar.Channels)
             }
         }

@@ -40,11 +40,11 @@ Rectangle {
     ColumnLayout {
         id: content
         anchors { left: parent.left; right: parent.right; top: parent.top; margins: 12 }
-        Label { text: "動画統計"; font.bold: true; color: "white" }
+        Label { text: qsTranslate("Main", "Stats for nerds"); font.bold: true; color: "white" }
         Repeater {
             // Constant rows: replace values, not delegate objects, on each sample.
             model: [
-                ["状態", "state"], ["入力", "input"], ["走査 / PAR", "scan"],
+                [qsTranslate("Main", "State"), "state"], ["入力", "input"], ["走査 / PAR", "scan"],
                 ["出力", "output"], ["画素形式", "pixels"],
                 ["デインターレース", "deinterlace"], ["sink平均fps", "rate"],
                 ["sink描画 / 破棄", "frames"], ["キュー", "queue"],

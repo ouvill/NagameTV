@@ -29,12 +29,13 @@ int main(int argc, char **argv) {
   check(resolveUiLanguage("unsupported", "ja_JP") == "en", "Unknown preference uses English");
   check(initializeUiLanguage(engine, "en"), "Initialize English");
   engine.loadData(R"(import QtQml
-    QtObject { property string heading: qsTr("Stats for nerds") })", QUrl("file:///Main.qml"));
+    QtObject { property string heading: qsTr("Stats for nerds"); property string closeLabel: qsTranslate("Main", "Close") })", QUrl("file:///Main.qml"));
   check(engine.rootObjects().size() == 1, "Load translation test object");
   auto *root = engine.rootObjects().first();
   check(root->property("heading").toString() == "Stats for nerds", "English source text");
   check(applyUiLanguage("ja") == "ja", "Load Japanese catalog");
   check(root->property("heading").toString() == QString::fromUtf8("動画統計"), "Retranslate existing QML to Japanese");
+  check(root->property("closeLabel").toString() == QString::fromUtf8("閉じる"), "Explicit shared translation context");
   check(QCoreApplication::translate("Backend", "Loading channels...") == QString::fromUtf8("チャンネルを取得中…"), "Japanese backend message");
   check(applyUiLanguage("en") == "en", "Switch back to English");
   check(root->property("heading").toString() == "Stats for nerds", "Retranslate existing QML to English");

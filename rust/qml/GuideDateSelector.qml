@@ -21,7 +21,7 @@ Rectangle {
     function itemX(index) { return 3 + (index === 0 ? 0 : 62 + (index - 1) * 84) }
     function itemWidth(index) { return index === 0 ? 62 : 84 }
     function label(index) {
-        return index === 0 ? "今日" : days[index] ? dateLocale.toString(new Date(days[index].start), "M/d（ddd）") : ""
+        return index === 0 ? qsTranslate("Main", "Today") : days[index] ? dateLocale.toString(new Date(days[index].start), "M/d（ddd）") : ""
     }
     function revealSelected() {
         if (!flick || compact) return

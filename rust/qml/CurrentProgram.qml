@@ -19,7 +19,7 @@ Column {
         }
         Label {
             anchors.verticalCenter: parent.verticalCenter
-            text: root.channelLabel ? root.channelLabel.replace(/^\d+\s+/, "") : "チャンネル"
+            text: root.channelLabel ? root.channelLabel.replace(/^\d+\s+/, "") : qsTranslate("Main", "Channels")
             color: "#b6bab6"
             font.pixelSize: 13
             textFormat: Text.PlainText
@@ -32,7 +32,7 @@ Column {
         objectName: "currentProgramButton"
         width: parent.width
         implicitHeight: contentItem.implicitHeight
-        text: root.program ? (root.program.name || "番組名未取得") : "番組情報なし"
+        text: root.program ? (root.program.name || "番組名未取得") : qsTranslate("Main", "No program information")
         enabled: root.program !== null
         onClicked: root.detailsRequested()
         background: Rectangle {

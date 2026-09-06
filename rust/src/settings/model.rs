@@ -1,5 +1,5 @@
 //! Preferences and normalization without filesystem, Qt or playback dependencies.
-use super::{CommentFontSize, CommentOpacity, CommentSpeed};
+use super::{CommentFontSize, CommentOpacity, CommentSpeed, Language};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -40,6 +40,7 @@ impl From<Volume> for f64 {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Preferences {
+    pub language: Language,
     pub server: String,
     pub service_id: String,
     pub volume: Volume,
@@ -50,7 +51,7 @@ pub struct Preferences {
     pub comment_font_size: CommentFontSize,
     pub comment_opacity: CommentOpacity,
     pub comment_speed: CommentSpeed,
-    // Preserve main's language settings and future fields until their
+    // Preserve future settings until their
     // features are migrated; opening this version must not erase preferences.
     #[serde(flatten)]
     pub extra: BTreeMap<String, toml::Value>,
@@ -58,6 +59,7 @@ pub struct Preferences {
 impl Default for Preferences {
     fn default() -> Self {
         Self {
+            language: Language::default(),
             server: "http://127.0.0.1:40772".into(),
             service_id: String::new(),
             volume: Volume::default(),

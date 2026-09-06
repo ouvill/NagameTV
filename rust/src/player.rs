@@ -4,6 +4,7 @@ mod channel_programs;
 mod channels;
 mod comments;
 mod guide;
+mod language;
 mod playback_failure;
 mod preferences;
 mod program_info;
@@ -29,6 +30,18 @@ pub mod ffi {
         fn open_playback_log_directory(path: &QString) -> bool;
         #[cxx_name = "installQtGcLogging"]
         fn install_qt_gc_logging(callback: fn(category: &str, message: &str));
+        include!("cxx-qt-lib/qqmlapplicationengine.h");
+        type QQmlApplicationEngine = cxx_qt_lib::QQmlApplicationEngine;
+        include!("localization.h");
+        #[cxx_name = "initializeUiLanguage"]
+        fn initialize_ui_language(
+            engine: Pin<&mut QQmlApplicationEngine>,
+            preference: &QString,
+        ) -> bool;
+        #[cxx_name = "applyUiLanguage"]
+        fn apply_ui_language(preference: &QString) -> QString;
+        #[cxx_name = "currentUiLanguage"]
+        fn current_ui_language() -> QString;
         type QQuickItem;
         include!("pointer_activity.h");
         #[cxx_name = "installPointerActivity"]
@@ -41,6 +54,8 @@ pub mod ffi {
     unsafe extern "RustQt" {
         #[qobject]
         #[qml_element]
+        #[qproperty(QString, language, READ, NOTIFY)]
+        #[qproperty(QString, ui_language, READ, NOTIFY)]
         #[qproperty(QString, server, READ, NOTIFY)]
         #[qproperty(QString, status, READ, NOTIFY)]
         #[qproperty(QString, playback_error, READ, NOTIFY)]
@@ -77,6 +92,8 @@ pub mod ffi {
         #[qproperty(QString, settings_error, READ, NOTIFY)]
         #[qproperty(QString, diagnostics, READ, NOTIFY)]
         type Player = super::PlayerRust;
+        #[qinvokable]
+        fn request_language(self: Pin<&mut Player>, language: QString) -> bool;
         #[qinvokable]
         fn configure_features(self: Pin<&mut Player>, subtitles: bool, epg: bool);
         #[qinvokable]
@@ -162,6 +179,8 @@ use std::pin::Pin;
 use std::time::{Duration, Instant};
 
 pub struct PlayerRust {
+    language: QString,
+    ui_language: QString,
     server: QString,
     status: QString,
     playback_error: QString,
@@ -274,6 +293,8 @@ impl ffi::Player {
     );
     property_setter!(set_comment_speed, comment_speed, comment_speed_changed, f64);
     property_setter!(set_log_error, log_error, log_error_changed, QString);
+    property_setter!(set_language, language, language_changed, QString);
+    property_setter!(set_ui_language, ui_language, ui_language_changed, QString);
     property_setter!(set_server, server, server_changed, QString);
     property_setter!(set_status, status, status_changed, QString);
     property_setter!(

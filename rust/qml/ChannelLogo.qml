@@ -20,7 +20,7 @@ Item {
     Label {
         anchors.centerIn: parent
         visible: image.status !== Image.Ready
-        text: "局ロゴ"
+        text: qsTranslate("Main", "Channel logo")
         font.pixelSize: 9
         color: "#b6bab6"
     }

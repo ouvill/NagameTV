@@ -71,7 +71,7 @@ Pane {
                 onClicked: root.closeRequested()
             }
             Label {
-                text: "チャンネル"
+                text: qsTranslate("Main", "Channels")
                 color: "#f4f5f3"
                 font.pixelSize: 22
                 font.bold: true

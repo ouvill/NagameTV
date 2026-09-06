@@ -1,3 +1,4 @@
+pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -35,7 +36,7 @@ Drawer {
             RowLayout {
                 Layout.fillWidth: true
                 Label {
-                    text: "設定"
+                    text: qsTranslate("Main", "Settings")
                     color: "#f4f5f3"
                     font.pixelSize: 23
                     font.bold: true
@@ -46,9 +47,92 @@ Drawer {
                 IconAction {
                     objectName: "collapseSettings"
                     iconSource: root.collapseIcon
-                    tip: "閉じる"
+                    tip: qsTranslate("Main", "Close")
                     onClicked: root.close()
                 }
+            }
+            Label { text: qsTranslate("Main", "Language"); color: "#b6bab6" }
+            ComboBox {
+                id: languageBox
+                Layout.fillWidth: true
+                palette.button: "#1c1f1c"
+                palette.buttonText: "#f4f5f3"
+                palette.base: "#151715"
+                palette.text: "#f4f5f3"
+                palette.highlight: "#9caf9f"
+                palette.highlightedText: "#17201a"
+                implicitHeight: 46
+                leftPadding: 14
+                rightPadding: 40
+                contentItem: Label {
+                    text: languageBox.displayText
+                    color: "#f4f5f3"
+                    verticalAlignment: Text.AlignVCenter
+                    elide: Text.ElideRight
+                }
+                indicator: Image {
+                    x: languageBox.width - width - 14
+                    y: (languageBox.height - height) / 2
+                    width: 18; height: 18
+                    source: "qrc:/qt/qml/MinimalViewer/assets/icons/chevron-down.svg"
+                }
+                background: Rectangle {
+                    radius: 12
+                    color: "#1c1f1c"
+                    border.color: languageBox.activeFocus ? "#9caf9f" : "#30ffffff"
+                }
+                delegate: ItemDelegate {
+                    id: languageOption
+                    required property int index
+                    required property string modelData
+                    width: languageBox.width - 12
+                    height: 42
+                    highlighted: languageBox.highlightedIndex === index
+                    contentItem: Label {
+                        text: languageOption.modelData
+                        color: "#f4f5f3"
+                        font.bold: languageBox.currentIndex === languageOption.index
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideRight
+                    }
+                    background: Rectangle {
+                        radius: 8
+                        color: languageOption.highlighted ? "#389caf9f"
+                            : languageBox.currentIndex === languageOption.index ? "#209caf9f" : "transparent"
+                    }
+                }
+                popup: Popup {
+                    y: languageBox.height + 6
+                    width: languageBox.width
+                    padding: 6
+                    implicitHeight: contentItem.implicitHeight + topPadding + bottomPadding
+                    background: Rectangle {
+                        radius: 12
+                        color: "#151715"
+                        border.color: "#40ffffff"
+                    }
+                    contentItem: ListView {
+                        clip: true
+                        implicitHeight: contentHeight
+                        model: languageBox.popup.visible ? languageBox.delegateModel : null
+                        currentIndex: languageBox.highlightedIndex
+                    }
+                }
+                model: [qsTranslate("Main", "System default"), "日本語", "English"]
+                currentIndex: ["system", "ja", "en"].indexOf(root.backend.language)
+                onActivated: function(index) {
+                    languageError.visible = !root.backend.request_language(["system", "ja", "en"][index]);
+                    // Restore the model binding even if Qt rejected the requested catalog.
+                    languageBox.currentIndex = Qt.binding(function() { return ["system", "ja", "en"].indexOf(root.backend.language); });
+                }
+            }
+            Label {
+                id: languageError
+                visible: false
+                Layout.fillWidth: true
+                wrapMode: Text.Wrap
+                text: qsTranslate("Backend", "Could not load UI translation")
+                color: "#b6bab6"
             }
             Label {
                 text: "Mirakurun サーバー"
@@ -107,7 +191,7 @@ Drawer {
                 onClicked: root.backend.configure_features(checked, root.backend.epg_enabled)
             }
             CheckBox {
-                text: "字幕を表示"
+                text: qsTranslate("Main", "Show subtitles")
                 palette.windowText: "#f4f5f3"
                 checked: root.backend.subtitle_display
                 enabled: root.backend.subtitles_enabled
@@ -150,7 +234,7 @@ Drawer {
                 spacing: 12
                 RowLayout {
                     Layout.fillWidth: true
-                    Label { text: "文字サイズ"; color: "#b6bab6"; font.pixelSize: 11 }
+                    Label { text: qsTranslate("Main", "Text size"); color: "#b6bab6"; font.pixelSize: 11 }
                     Item { Layout.fillWidth: true }
                     Label { text: Math.round(root.backend.comment_font_size || 21) + " px"; color: "#f4f5f3"; font.pixelSize: 11 }
                 }
@@ -174,7 +258,7 @@ Drawer {
                 }
                 RowLayout {
                     Layout.fillWidth: true
-                    Label { text: "速度"; color: "#b6bab6"; font.pixelSize: 11 }
+                    Label { text: qsTranslate("Main", "Speed"); color: "#b6bab6"; font.pixelSize: 11 }
                     Item { Layout.fillWidth: true }
                     Label { text: (root.backend.comment_speed || 1).toFixed(1) + "×"; color: "#f4f5f3"; font.pixelSize: 11 }
                 }
@@ -197,7 +281,7 @@ Drawer {
                 }
             }
             CheckBox {
-                text: "動画統計"
+                text: qsTranslate("Main", "Stats for nerds")
                 palette.windowText: "#f4f5f3"
                 checked: root.statsVisible
                 onClicked: root.statsRequested(checked)
@@ -213,7 +297,7 @@ Drawer {
             Button {
                 id: logFolder
                 Layout.fillWidth: true
-                text: "ログフォルダーを開く"
+                text: qsTranslate("Main", "Open log folder")
                 onClicked: root.backend.open_log_folder()
                 contentItem: Label {
                     text: logFolder.text

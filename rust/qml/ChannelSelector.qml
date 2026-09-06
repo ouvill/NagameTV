@@ -21,7 +21,7 @@ RowLayout {
         Layout.preferredWidth: 90
         model: [
             { label: "すべて", value: "ALL" },
-            { label: "地デジ", value: "GR" },
+            { label: qsTranslate("Main", "Terrestrial"), value: "GR" },
             { label: "BS", value: "BS" },
             { label: "CS", value: "CS" },
             { label: "SKY", value: "SKY" },

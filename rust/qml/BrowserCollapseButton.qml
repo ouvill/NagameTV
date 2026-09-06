@@ -31,6 +31,6 @@ ToolButton {
         }
     }
     ToolTip.visible: hovered
-    ToolTip.text: "閉じる"
+    ToolTip.text: qsTranslate("Main", "Close")
     ToolTip.delay: 150
 }

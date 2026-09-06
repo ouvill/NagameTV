@@ -76,6 +76,8 @@ impl Default for PlayerRust {
             Err(_) => None,
         };
         Self {
+            language: QString::from(preferences.preferences().language.code()),
+            ui_language: super::ffi::current_ui_language(),
             diagnostic_recorder,
             diagnostic_ui: Default::default(),
             subtitle_cells: 0,

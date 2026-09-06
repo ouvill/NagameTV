@@ -45,7 +45,7 @@ Rectangle {
         }
         Label {
             visible: root.width >= 900
-            text: "番組表"; color: "#e6e8e6"; font.pixelSize: 26; font.bold: true
+            text: qsTranslate("Main", "Program guide"); color: "#e6e8e6"; font.pixelSize: 26; font.bold: true
             elide: Text.ElideRight
         }
         BroadcastTabs { rows: root.rows; value: root.band; onSelected: function(band) { root.bandRequested(band) } }
@@ -64,7 +64,7 @@ Rectangle {
         IconAction {
             objectName: "guideSettings"
             iconSource: root.iconDirectory + "settings-2.svg"
-            tip: "設定"
+            tip: qsTranslate("Main", "Settings")
             onClicked: root.settingsRequested()
         }
     }

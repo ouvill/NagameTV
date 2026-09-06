@@ -32,10 +32,11 @@ Popup {
         };
         const language = languages[track.language] || track.language;
         const number = track.number || index + 1;
-        const role = track.role === "main" ? "主音声" : track.role === "sub" ? "副音声" : track.role === "both" ? "主／副" : "";
+        const role = track.role === "main" ? qsTranslate("Main", "Main audio") : track.role === "sub" ? qsTranslate("Main", "Sub audio") : track.role === "both" ? qsTranslate("Main", "Main / sub") : "";
         const name = track.role === "both" ? role : (language ? language + (role ? " · " + role : "") : role);
         const duplicate = tracks.some(other => other.id !== track.id && other.language === track.language && other.role === track.role);
-        return !name ? "音声 " + number : duplicate ? name + " · 音声 " + number : name;
+        const audioName = qsTranslate("Main", "Audio %1").arg(number);
+        return !name ? audioName : duplicate ? name + " · " + audioName : name;
     }
     signal refreshRequested
     signal selectRequested(string trackId)
@@ -70,7 +71,7 @@ Popup {
         RowLayout {
             Layout.fillWidth: true
             Label {
-                text: "音声選択"
+                text: qsTranslate("Main", "Audio selection")
                 color: "#f4f5f3"
                 font.pixelSize: 17
                 font.bold: true
@@ -78,7 +79,7 @@ Popup {
             }
             IconAction {
                 iconSource: popup.iconDirectory + "x.svg"
-                tip: "閉じる"
+                tip: qsTranslate("Main", "Close")
                 implicitWidth: 28
                 implicitHeight: 28
                 onClicked: popup.close()
@@ -121,7 +122,7 @@ Popup {
                 Label {
                     visible: popup.tracks.length === 0
                     Layout.fillWidth: true
-                    text: "音声トラックはまだありません。"
+                    text: qsTranslate("Main", "No audio tracks are available yet.")
                     color: "#b6bab6"
                     wrapMode: Text.Wrap
                     font.pixelSize: 12

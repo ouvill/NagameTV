@@ -40,6 +40,23 @@ fn main() {
     }
     let mut engine = QQmlApplicationEngine::new();
     if let Some(mut engine) = engine.as_mut() {
+        // Match main: resolve the startup language before constructing QML.
+        // Player loads the complete settings session and reports load errors separately.
+        let language = if plan.locked {
+            settings::Language::System
+        } else {
+            settings::settings_path()
+                .and_then(settings::Session::open)
+                .map(|session| session.preferences().language)
+                .unwrap_or_default()
+        };
+        if !player::ffi::initialize_ui_language(
+            engine.as_mut(),
+            &cxx_qt_lib::QString::from(language.code()),
+        ) {
+            eprintln!("Could not load UI translation");
+            std::process::exit(1);
+        }
         let failed = Arc::new(AtomicBool::new(false));
         let flag = failed.clone();
         let _connection = engine.as_mut().on_object_creation_failed(move |_, _| {

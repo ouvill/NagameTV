@@ -16,7 +16,7 @@ Popup {
     contentItem: ColumnLayout {
         RowLayout {
             Label { text: "番組詳細"; Layout.fillWidth: true; font.bold: true }
-            Button { objectName: "closeProgramDetails"; text: "閉じる"; onClicked: popup.close() }
+            Button { objectName: "closeProgramDetails"; text: qsTranslate("Main", "Close"); onClicked: popup.close() }
         }
         ScrollView {
             id: scroll

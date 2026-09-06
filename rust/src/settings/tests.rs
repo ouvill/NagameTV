@@ -59,7 +59,7 @@ subtitles_enabled = true
     let loaded = load(&path)?;
     assert_eq!(loaded.volume.fraction(), 0.2);
     assert!(loaded.comments_enabled);
-    assert_eq!(loaded.extra["language"].as_str(), Some("ja"));
+    assert_eq!(loaded.language, Language::Japanese);
     assert!(loaded.danmaku_enabled);
     assert_eq!(f64::from(loaded.comment_speed), 1.25);
     assert_eq!(f64::from(loaded.comment_font_size), 28.0);
@@ -141,5 +141,25 @@ fn comment_presentation_bounds_survive_invalid_persisted_values()
     assert!(CommentSpeed::checked(f64::NEG_INFINITY).is_none());
     let saved = toml::to_string(&prefs)?;
     assert_eq!(toml::from_str::<Preferences>(&saved)?, prefs);
+    Ok(())
+}
+
+#[test]
+fn language_codes_follow_main_and_unknown_ui_requests_are_rejected()
+-> Result<(), Box<dyn std::error::Error>> {
+    let prefs: Preferences = toml::from_str("")?;
+    assert_eq!(prefs.language, Language::System);
+    for (code, expected) in [
+        ("ja", Language::Japanese),
+        ("en", Language::English),
+        ("system", Language::System),
+        ("unsupported", Language::English),
+    ] {
+        let prefs: Preferences = toml::from_str(&format!("language = {code:?}"))?;
+        assert_eq!(prefs.language, expected);
+        let saved = toml::to_string(&prefs)?;
+        assert_eq!(toml::from_str::<Preferences>(&saved)?.language, expected);
+    }
+    assert!(Language::parse("unsupported").is_none());
     Ok(())
 }

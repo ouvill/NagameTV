@@ -10,7 +10,7 @@ Rectangle {
     readonly property var options: [
         {
             value: "GR",
-            label: "地デジ"
+            label: qsTranslate("Main", "Terrestrial")
         },
         {
             value: "BS",
