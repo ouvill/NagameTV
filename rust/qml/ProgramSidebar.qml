@@ -7,8 +7,11 @@ Rectangle {
     id: root
     enum Page {
         Program,
-        Channels
+        Channels,
+        Comments
     }
+    property string commentsJson: "[]"
+    property string commentStatus: ""
     property int page: ProgramSidebar.Program
     property var channelRows: []
     property int selectedChannel: -1
@@ -72,7 +75,7 @@ Rectangle {
                 onClicked: root.closeRequested()
             }
             Label {
-                text: root.page === ProgramSidebar.Channels ? "チャンネル" : "番組情報"
+                text: root.page === ProgramSidebar.Comments ? "実況" : (root.page === ProgramSidebar.Channels ? "チャンネル" : "番組情報")
                 color: "#f4f5f3"
                 font.pixelSize: 17
                 font.bold: true
@@ -183,6 +186,16 @@ Rectangle {
                 }
             }
         }
+        Loader {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            active: root.page === ProgramSidebar.Comments
+            visible: active
+            sourceComponent: CommentList {
+                commentsJson: root.commentsJson
+                status: root.commentStatus
+            }
+        }
         Rectangle {
             Layout.fillWidth: true
             Layout.preferredHeight: 1
@@ -191,6 +204,13 @@ Rectangle {
         RowLayout {
             Layout.fillWidth: true
             spacing: 8
+            SidebarTab {
+                Layout.fillWidth: true
+                iconSource: root.iconDirectory + "message-square.svg"
+                selected: root.page === ProgramSidebar.Comments
+                text: "実況"
+                onClicked: root.pageRequested(ProgramSidebar.Comments)
+            }
             SidebarTab {
                 Layout.fillWidth: true
                 iconSource: root.iconDirectory + "info.svg"

@@ -18,6 +18,7 @@ impl Default for PlayerRust {
                     volume: settings::Volume::from(50.0),
                     subtitles_enabled: plan.subtitles,
                     epg_enabled: plan.epg,
+                    comments_enabled: plan.comments,
                     ..Default::default()
                 }),
                 String::new(),
@@ -41,6 +42,7 @@ impl Default for PlayerRust {
         if !plan.locked {
             plan.subtitles = preferences.preferences().subtitles_enabled;
             plan.epg = preferences.preferences().epg_enabled;
+            plan.comments = preferences.preferences().comments_enabled;
         }
         let audio_output =
             playback::audio_output::Output::Audible(preferences.preferences().volume);
@@ -69,6 +71,12 @@ impl Default for PlayerRust {
             playing: false,
             subtitles_enabled: plan.subtitles,
             epg_enabled: plan.epg,
+            comments_enabled: plan.comments,
+            comments_allowed: !plan.locked || plan.comments,
+            comment_data: QString::from("[]"),
+            comment_status: QString::from("無効"),
+            comments_visible: false,
+            comments: Default::default(),
             subtitles_allowed: !plan.locked || plan.subtitles,
             epg_allowed: !plan.locked || plan.epg,
             subtitles_active: false,

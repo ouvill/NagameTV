@@ -52,10 +52,13 @@ subtitles_enabled = true
     assert_eq!(session.preferences().volume.fraction(), 0.425);
     assert!(session.preferences().subtitles_enabled);
     assert!(session.preferences().epg_enabled);
+    assert!(!session.preferences().comments_enabled);
+    session.preferences_mut().comments_enabled = true;
     session.preferences_mut().volume = Volume::from(20.0);
     session.flush()?;
     let loaded = load(&path)?;
     assert_eq!(loaded.volume.fraction(), 0.2);
+    assert!(loaded.comments_enabled);
     assert_eq!(loaded.extra["language"].as_str(), Some("ja"));
     assert_eq!(loaded.extra["danmaku_enabled"].as_bool(), Some(true));
     assert_eq!(loaded.extra["comment_speed"].as_float(), Some(1.25));

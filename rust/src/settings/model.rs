@@ -44,6 +44,7 @@ pub struct Preferences {
     pub volume: Volume,
     pub subtitles_enabled: bool,
     pub epg_enabled: bool,
+    pub comments_enabled: bool,
     // Preserve main's language/comment settings and future fields until their
     // features are migrated; opening this version must not erase preferences.
     #[serde(flatten)]
@@ -57,6 +58,7 @@ impl Default for Preferences {
             volume: Volume::default(),
             subtitles_enabled: false,
             epg_enabled: true,
+            comments_enabled: false,
             extra: BTreeMap::new(),
         }
     }

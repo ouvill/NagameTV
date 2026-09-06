@@ -22,6 +22,7 @@ fn main() {
             .qml_file("qml/GuideToolbar.qml")
             .qml_file("qml/CurrentProgram.qml")
             .qml_file("qml/ProgramSidebar.qml")
+            .qml_file("qml/CommentList.qml")
             .qml_file("qml/SidebarChannels.qml")
             .qml_file("qml/SidebarTab.qml")
             .qml_file("qml/SidePanel.qml")
@@ -44,6 +45,7 @@ fn main() {
     )
     .qrc_resources([
         "../assets/icons/info.svg",
+        "../assets/icons/message-square.svg",
         "../assets/icons/chevron-down.svg",
         "../assets/icons/chevron-left.svg",
         "../assets/icons/panel-right-open.svg",

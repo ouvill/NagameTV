@@ -2,6 +2,7 @@ mod audio_output;
 mod audio_streams;
 mod channel_programs;
 mod channels;
+mod comments;
 mod guide;
 mod playback_failure;
 mod preferences;
@@ -45,6 +46,10 @@ pub mod ffi {
         #[qproperty(bool, playing, READ, NOTIFY)]
         #[qproperty(bool, subtitles_enabled, READ, NOTIFY)]
         #[qproperty(bool, epg_enabled, READ, NOTIFY)]
+        #[qproperty(bool, comments_enabled, READ, NOTIFY)]
+        #[qproperty(bool, comments_allowed, READ, NOTIFY)]
+        #[qproperty(QString, comment_data, READ, NOTIFY)]
+        #[qproperty(QString, comment_status, READ, NOTIFY)]
         #[qproperty(bool, subtitles_allowed, READ, NOTIFY)]
         #[qproperty(bool, epg_allowed, READ, NOTIFY)]
         #[qproperty(bool, subtitles_active, READ, NOTIFY)]
@@ -103,6 +108,10 @@ pub mod ffi {
         #[qinvokable]
         fn save_settings(self: Pin<&mut Player>);
         #[qinvokable]
+        fn enable_comments(self: Pin<&mut Player>, enabled: bool);
+        #[qinvokable]
+        fn comments_open(self: Pin<&mut Player>, opened: bool);
+        #[qinvokable]
         fn step_channel(self: Pin<&mut Player>, offset: i32);
         #[qinvokable]
         fn audio_tracks(self: &Player) -> QString;
@@ -139,6 +148,12 @@ pub struct PlayerRust {
     playing: bool,
     subtitles_enabled: bool,
     epg_enabled: bool,
+    comments_enabled: bool,
+    comments_allowed: bool,
+    comment_data: QString,
+    comment_status: QString,
+    comments_visible: bool,
+    comments: crate::features::comments::Comments,
     subtitles_allowed: bool,
     epg_allowed: bool,
     subtitles_active: bool,
@@ -185,6 +200,24 @@ macro_rules! property_setter {
 }
 
 impl ffi::Player {
+    property_setter!(
+        set_comments_enabled,
+        comments_enabled,
+        comments_enabled_changed,
+        bool
+    );
+    property_setter!(
+        set_comment_data,
+        comment_data,
+        comment_data_changed,
+        QString
+    );
+    property_setter!(
+        set_comment_status,
+        comment_status,
+        comment_status_changed,
+        QString
+    );
     property_setter!(set_server, server, server_changed, QString);
     property_setter!(set_status, status, status_changed, QString);
     property_setter!(
@@ -355,6 +388,7 @@ impl ffi::Player {
         }
     }
     fn poll_features(mut self: Pin<&mut Self>) {
+        self.as_mut().poll_comments();
         {
             let mut this = self.as_mut().rust_mut();
             let this = &mut *this;
@@ -447,6 +481,7 @@ impl ffi::Player {
         unsafe { ffi::install_pointer_activity(item) };
     }
     pub fn connect_server(mut self: Pin<&mut Self>, server: QString) {
+        self.as_mut().rust_mut().comments.configure(false, None);
         self.as_mut().set_playback_error(QString::default());
         self.as_mut().rust_mut().request = None;
         self.as_mut().set_loading(false);
@@ -649,6 +684,7 @@ impl ffi::Player {
         }
     }
     pub fn shutdown(mut self: Pin<&mut Self>) {
+        self.as_mut().rust_mut().comments.configure(false, None);
         self.as_mut().browser_open(false);
         self.as_mut().rust_mut().epg.configure(None);
         self.as_mut().guide_open(false);

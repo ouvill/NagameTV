@@ -49,6 +49,17 @@ pub struct Network {
 }
 
 impl Network {
+    pub fn poll_comments(
+        &self,
+        controller: &mut viewer_comments::controller::Controller,
+    ) -> Vec<viewer_comments::Comment> {
+        controller.poll(
+            self.runtime.handle(),
+            &self.client,
+            std::time::Instant::now(),
+        )
+    }
+
     pub fn new() -> Result<Self, NetworkError> {
         Ok(Self {
             runtime: tokio::runtime::Builder::new_multi_thread()

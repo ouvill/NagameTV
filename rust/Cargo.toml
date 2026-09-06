@@ -5,6 +5,7 @@ edition = "2024"
 build = "build.rs"
 
 [dependencies]
+viewer-comments = { path = "crates/viewer-comments", features = ["network"] }
 libaribcaption = { path = "crates/libaribcaption" }
 tracing = "0.1"
 cxx = "1.0"

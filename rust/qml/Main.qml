@@ -22,6 +22,8 @@ ApplicationWindow {
     property bool showProgram: false
     property int sidebarPage: ProgramSidebar.Program
     readonly property bool summariesVisible: !closing && (channelPanel.active || (sidebar.active && sidebarPage === ProgramSidebar.Channels))
+    readonly property bool commentaryVisible: !closing && sidebar.active && sidebarPage === ProgramSidebar.Comments
+    onCommentaryVisibleChanged: player.comments_open(commentaryVisible)
     onSummariesVisibleChanged: player.browser_open(summariesVisible)
     readonly property real panelWidth: Math.min(408, Math.max(360, width * 0.32))
     readonly property var channelRows: JSON.parse(player.channel_data)
@@ -503,6 +505,8 @@ ApplicationWindow {
         open: root.showProgram
         shuttingDown: root.closing
         sourceComponent: ProgramSidebar {
+            commentsJson: player.comment_data
+            commentStatus: player.comment_status
             page: root.sidebarPage
             channelRows: root.channelRows
             selectedChannel: player.selected

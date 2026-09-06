@@ -123,6 +123,21 @@ Drawer {
                 wrapMode: Text.Wrap
             }
             CheckBox {
+                text: "実況機能"
+                palette.windowText: "#f4f5f3"
+                checked: root.backend.comments_enabled === true
+                enabled: root.backend.comments_allowed === true
+                onClicked: root.backend.enable_comments(checked)
+            }
+            Label {
+                text: root.backend.comment_status || ""
+                visible: root.backend.comments_enabled === true
+                textFormat: Text.PlainText
+                color: "#b6bab6"
+                Layout.fillWidth: true
+                wrapMode: Text.Wrap
+            }
+            CheckBox {
                 text: "EPG"
                 palette.windowText: "#f4f5f3"
                 checked: root.backend.epg_enabled
