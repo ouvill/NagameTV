@@ -1,30 +1,14 @@
 use gst::prelude::*;
 use gstreamer as gst;
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{
     Arc,
     atomic::{AtomicI32, Ordering},
 };
 
-/// Mirakurun /api/programs audio_component_descriptor fields (ARIB STD-B10).
-#[derive(Clone, Debug, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub struct ProgramAudio {
-    pub component_tag: u8,
-    pub component_type: u8,
-    pub is_main: bool,
-    #[serde(default)]
-    pub langs: Vec<String>,
-}
-
-/// Audio metadata owned by one playback programme, independent of the EPG snapshot.
-#[derive(Clone, Debug, PartialEq)]
-pub struct AudioProgram {
-    pub service_id: u16,
-    pub start_at: u64,
-    pub audios: Vec<ProgramAudio>,
-}
+pub use viewer_core::audio::AudioProgram;
+#[cfg(test)]
+pub use viewer_core::audio::ProgramAudio;
 
 pub type ComponentMap = HashMap<u16, HashMap<u16, u8>>;
 
@@ -88,27 +72,7 @@ pub fn pmt_components(section: &[u8]) -> Option<(u16, HashMap<u16, u8>)> {
     Some((u16::from_be_bytes([section[3], section[4]]), components))
 }
 
-#[derive(Debug, Serialize)]
-pub struct AudioOption {
-    pub key: String,
-    pub number: usize,
-    pub language: String,
-    pub role: &'static str,
-    pub mode: i32,
-    pub selected: bool,
-    pub enabled: bool,
-    #[serde(skip)]
-    pub track: usize,
-    #[serde(skip)]
-    pub default: bool,
-}
-
-#[derive(Debug, Serialize)]
-pub struct AudioTrack {
-    pub id: String,
-    pub language: String,
-    pub title: String,
-}
+pub use viewer_core::audio::{AudioOption, AudioTrack};
 
 #[derive(Default)]
 pub struct AudioStreams {

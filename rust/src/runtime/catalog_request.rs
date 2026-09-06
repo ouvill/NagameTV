@@ -36,6 +36,7 @@ impl CatalogRequest {
         }
     }
 
+    #[cfg(test)]
     pub fn is_loading(&self) -> bool {
         matches!(self, Self::Loading { .. })
     }
@@ -62,7 +63,7 @@ impl CatalogRequest {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::epg::{EpgSnapshot, EpgStore};
+    use crate::epg::EpgSnapshot;
     use std::sync::Arc;
 
     fn pending(runtime: &tokio::runtime::Runtime) -> NetworkTask {
@@ -142,12 +143,9 @@ mod tests {
     fn completed_snapshot_is_published_only_after_acceptance()
     -> Result<(), Box<dyn std::error::Error>> {
         let runtime = tokio::runtime::Builder::new_current_thread().build()?;
-        let public = EpgStore::default();
-        public.replace(Vec::new(), Vec::new(), 100);
-        let previous = public.snapshot();
-        let detached = EpgStore::default();
-        detached.replace(Vec::new(), Vec::new(), 200);
-        let snapshot = detached.snapshot();
+        let mut public = Arc::new(EpgSnapshot::new(Vec::new(), Vec::new(), 100));
+        let previous = public.clone();
+        let snapshot = Arc::new(EpgSnapshot::new(Vec::new(), Vec::new(), 200));
         let catalog = crate::channels::build_catalog(&snapshot, 200);
         let (sender, result) = mpsc::sync_channel(1);
         assert!(
@@ -160,13 +158,13 @@ mod tests {
             _task: pending(&runtime),
             result,
         };
-        assert_eq!(public.snapshot().synced_at, 100);
+        assert_eq!(public.synced_at, 100);
         let Some((server, response)) = request.poll() else {
             return Err("queued result was not delivered".into());
         };
         assert_eq!(server, "A");
-        public.publish(response?.snapshot);
-        assert_eq!(public.snapshot().synced_at, 200);
+        public = response?.snapshot;
+        assert_eq!(public.synced_at, 200);
         assert_eq!(
             previous.synced_at, 100,
             "existing readers keep a coherent snapshot"

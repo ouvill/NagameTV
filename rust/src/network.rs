@@ -1,8 +1,6 @@
 use std::time::Duration;
 use thiserror::Error;
 
-use crate::epg::EpgStore;
-
 #[derive(Debug, Error)]
 pub enum NetworkError {
     #[error("Could not start the network runtime: {0}")]
@@ -15,7 +13,6 @@ pub struct NetworkRuntime {
     runtime: Option<tokio::runtime::Runtime>,
     handle: tokio::runtime::Handle,
     client: reqwest::Client,
-    epg: EpgStore,
     stream_client: reqwest::Client,
 }
 
@@ -45,7 +42,6 @@ impl NetworkRuntime {
             handle: runtime.handle().clone(),
             runtime: Some(runtime),
             client,
-            epg: EpgStore::default(),
         })
     }
 
@@ -59,10 +55,6 @@ impl NetworkRuntime {
 
     pub fn stream_client(&self) -> reqwest::Client {
         self.stream_client.clone()
-    }
-
-    pub fn epg(&self) -> EpgStore {
-        self.epg.clone()
     }
 }
 

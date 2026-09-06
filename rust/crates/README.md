@@ -1,5 +1,6 @@
-# libaribcaption Rust crates
+# Rust crates
 
+- `viewer-core`: Qt・GStreamer・通信・ファイルIOに依存しないアプリ本体。immutableな状態、純粋なイベント遷移、副作用の指示を定義する。`cargo test --manifest-path rust/Cargo.toml -p viewer-core` だけで検証可能。設計は [player-architecture.md](../../docs/player-architecture.md) を参照。
 - `libaribcaption-sys`: 同じソースからC++ライブラリをビルドし、インストール済みCヘッダーからbindgenでFFIを生成する。生成コードはOUT_DIRのみ。
 - `libaribcaption`: デコーダーとコンテキストを所有し、Dropで解放する安全なRust API。結果はRust所有の文字列・領域・文字・色・時刻情報。Qt/GStreamer/Mirakurunには依存しない。
 - アプリの`subtitles/decoder.rs`: Rustの字幕データからQML用モデルへの変換のみ。PTSと表示時間を保持し、色をQML用文字列に変換する。表示・消去の判定はアプリの`subtitles/timing.rs`で映像の再生時刻に合わせて行う。

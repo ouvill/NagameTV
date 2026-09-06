@@ -533,7 +533,7 @@ impl Playback {
         }
     }
 
-    pub fn audio_state(&self) -> (String, String) {
+    pub fn audio_state(&self) -> (Vec<crate::audio::AudioOption>, String) {
         let mut audio = self.audio.borrow_mut();
         if let Ok(extractor) = self.extractor.lock() {
             if audio.components != extractor.audio_components {
@@ -566,8 +566,7 @@ impl Playback {
             }
         }
         (
-            serde_json::to_string(&audio.options(self.routing.mode(), self.routing.channels()))
-                .unwrap_or_else(|_| "[]".into()),
+            audio.options(self.routing.mode(), self.routing.channels()),
             audio.error.clone(),
         )
     }

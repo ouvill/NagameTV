@@ -7,6 +7,7 @@ mod epg_events;
 mod network;
 mod playback;
 mod player;
+mod runtime;
 mod settings;
 mod subtitles;
 mod transport;
@@ -32,7 +33,7 @@ fn main() {
 
     let mut engine = QQmlApplicationEngine::new();
     if let Some(mut engine) = engine.as_mut() {
-        let language = settings::Settings::load()
+        let language = settings::load()
             .map(|s| s.language)
             .unwrap_or_else(|_| "system".to_owned());
         if !player::ffi::initialize_ui_language(engine.as_mut(), &QString::from(language)) {

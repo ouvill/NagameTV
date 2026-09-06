@@ -5,10 +5,11 @@ edition = "2024"
 build = "build.rs"
 
 [workspace]
-members = ["crates/libaribcaption-sys", "crates/libaribcaption"]
+members = ["crates/viewer-core", "crates/libaribcaption-sys", "crates/libaribcaption"]
 resolver = "3"
 
 [dependencies]
+viewer-core = { path = "crates/viewer-core" }
 libaribcaption = { path = "crates/libaribcaption" }
 cxx = "1.0"
 cxx-qt = "0.10"

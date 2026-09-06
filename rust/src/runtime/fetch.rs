@@ -1,4 +1,4 @@
-use crate::epg::{EpgSnapshot, EpgStore, Program, Service};
+use crate::epg::{EpgSnapshot, Program, Service};
 use serde::Deserialize;
 use std::sync::Arc;
 use std::{
@@ -68,9 +68,7 @@ pub(super) async fn fetch_services(
         .duration_since(UNIX_EPOCH)
         .map_err(FetchServicesError::SystemTime)?
         .as_millis() as u64;
-    let epg = EpgStore::default();
-    epg.replace(services, programs, now);
-    let snapshot = epg.snapshot();
+    let snapshot = Arc::new(EpgSnapshot::new(services, programs, now));
     let mut catalog = crate::channels::build_catalog(&snapshot, now);
     if let Ok(forces) = fetch_jikkyo_forces(client).await {
         for channel in &mut catalog.channels {

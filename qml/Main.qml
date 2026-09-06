@@ -33,13 +33,12 @@ ApplicationWindow {
     property alias commentSpeed: player.commentSpeed
     property bool overlayVisible: true
     property bool videoAttached: false
-    property bool autoplayStarted: false
+    property bool videoReadyReported: false
     property int selectedGuideIndex: -1
     property int guideDayOffset: 0
     property string guideType: "GR"
     property string channelPickerType: "GR"
     property double nowMs: Date.now()
-    property double lastChannelRefreshMs: 0
     property var subtitleCue: null
     readonly property var audioTrackList: JSON.parse(player.audioTracks)
     function audioTrackLabel(track, index) {
@@ -124,13 +123,7 @@ ApplicationWindow {
     }
 
     function reveal() { overlayVisible = true; hideTimer.restart() }
-    function refreshChannelsIfDue(force) {
-        const now = Date.now()
-        if (!force && now - lastChannelRefreshMs < 60000) return
-        lastChannelRefreshMs = now
-        player.refreshChannels()
-    }
-    onPanelChanged: if (panel === "channels") refreshChannelsIfDue(false)
+    onPanelChanged: if (panel === "channels") player.refreshChannels(false)
     onOverlayPinnedChanged: {
         if (!overlayPinned && player.playing) {
             overlayVisible = true
@@ -201,7 +194,7 @@ ApplicationWindow {
     }
 
     Shortcut { sequence: "F11"; onActivated: root.toggleFullscreen() }
-    Shortcut { sequence: "C"; onActivated: { channelsOpen = !channelsOpen; if (channelsOpen) refreshChannelsIfDue(false); reveal() } }
+    Shortcut { sequence: "C"; onActivated: { channelsOpen = !channelsOpen; if (channelsOpen) player.refreshChannels(false); reveal() } }
     Shortcut { sequence: "G"; onActivated: { guideOpen = !guideOpen; reveal() } }
     Shortcut { sequence: "PgUp"; onActivated: player.changeChannel(-1) }
     Shortcut { sequence: "PgDown"; onActivated: player.changeChannel(1) }
@@ -216,10 +209,9 @@ ApplicationWindow {
     Timer { interval: 50; running: true; repeat: true; onTriggered: player.pollEvents() }
     Timer { interval: 16; running: player.playing; repeat: true; onTriggered: player.pollSubtitles() }
     Timer { interval: 30000; running: true; repeat: true; triggeredOnStart: true; onTriggered: root.nowMs = Date.now() }
-    Timer { interval: 1000; running: true; repeat: true; onTriggered: player.refreshCurrentPrograms() }
-    Timer { interval: 300000; running: true; repeat: true; onTriggered: root.refreshChannelsIfDue(false) }
-    onFrameSwapped: if (videoAttached && player.autoplay && !autoplayStarted) {
-        autoplayStarted = true; Qt.callLater(function() { player.play() })
+    // Report presentation readiness; Rust decides whether to start playback.
+    onFrameSwapped: if (videoAttached && !videoReadyReported) {
+        videoReadyReported = true; Qt.callLater(function() { player.videoReady() })
     }
 
     component RoundAction: Rectangle {
@@ -401,14 +393,14 @@ ApplicationWindow {
                 anchors.centerIn: parent; spacing: 14
                 Label { anchors.horizontalCenter: parent.horizontalCenter; text: player.playbackError.length ? qsTr("Playback unavailable") : qsTr("Live TV"); color: root.ink; font.pixelSize: player.playbackError.length ? 26 : 32; font.bold: true }
                 Label { anchors.horizontalCenter: parent.horizontalCenter; width: Math.min(420, videoItem.width - 32); horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap; text: player.playbackError.length ? root.backendText(player.playbackError) : player.serviceId.length || !player.services.length ? root.backendText(player.status) : qsTr("Select a channel to watch"); color: root.muted }
-                Rectangle { anchors.horizontalCenter: parent.horizontalCenter; width: 180; height: 44; radius: 22; color: root.accent; Label { anchors.centerIn: parent; text: player.serviceId.length ? (player.playbackError.length ? qsTr("Retry") : qsTr("Watch")) : player.services.length ? qsTr("Choose a channel") : qsTr("Connection settings"); color: "#191a1b"; font.bold: true } MouseArea { anchors.fill: parent; onClicked: { if (player.serviceId.length) player.play(); else if (player.services.length) { root.channelsOpen = true; root.refreshChannelsIfDue(false); root.reveal() } else settings.open() } } }
+                Rectangle { anchors.horizontalCenter: parent.horizontalCenter; width: 180; height: 44; radius: 22; color: root.accent; Label { anchors.centerIn: parent; text: player.serviceId.length ? (player.playbackError.length ? qsTr("Retry") : qsTr("Watch")) : player.services.length ? qsTr("Choose a channel") : qsTr("Connection settings"); color: "#191a1b"; font.bold: true } MouseArea { anchors.fill: parent; onClicked: { if (player.serviceId.length) player.play(); else if (player.services.length) { root.channelsOpen = true; player.refreshChannels(false); root.reveal() } else settings.open() } } }
                 Row {
                     anchors.horizontalCenter: parent.horizontalCenter
                     spacing: 8
                     visible: player.playbackError.length > 0
                     TextAction {
                         text: qsTr("Choose a channel")
-                        onClicked: { root.channelsOpen = true; root.refreshChannelsIfDue(true); root.reveal() }
+                        onClicked: { root.channelsOpen = true; player.refreshChannels(true); root.reveal() }
                     }
                     TextAction { text: qsTr("Connection settings"); onClicked: settings.open() }
                     TextAction { text: qsTr("Error details"); onClicked: playbackErrorDialog.open() }
@@ -679,7 +671,7 @@ ApplicationWindow {
                     onPressedChanged: if (!pressed) player.saveSettings()
                 }
                 Item { Layout.fillWidth: true }
-                RoundAction { iconSource: root.uiIcon("grid-2x2"); tip: qsTr("Channels"); onTriggered: { channelsOpen = true; root.refreshChannelsIfDue(false); reveal() } }
+                RoundAction { iconSource: root.uiIcon("grid-2x2"); tip: qsTr("Channels"); onTriggered: { channelsOpen = true; player.refreshChannels(false); reveal() } }
                 RoundAction { iconSource: root.uiIcon("pencil"); tip: qsTr("Post a comment") }
                 RoundAction { iconSource: root.uiIcon("captions"); tip: player.subtitlesEnabled ? qsTr("Hide subtitles") : qsTr("Show subtitles"); active: player.subtitlesEnabled; onTriggered: { player.subtitlesEnabled = !player.subtitlesEnabled; player.saveSettings() } }
                 RoundAction { iconSource: root.uiIcon("settings-2"); tip: qsTr("Playback settings"); onTriggered: { playbackSettings.open(); root.reveal() } }
@@ -1373,6 +1365,6 @@ ApplicationWindow {
         root.recordUsage()
         videoAttached = player.attachVideoItem(videoItem)
         if (!videoAttached) return
-        root.refreshChannelsIfDue(true); hideTimer.start()
+        hideTimer.start()
     }
 }
