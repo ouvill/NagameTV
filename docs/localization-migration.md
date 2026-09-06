@@ -206,3 +206,22 @@ QtCore/QMLの翻訳基盤・カタログ欠落試験と全ターゲットClippy�
 エラー詳細中の低層thiserrorメッセージ、動画統計の値・その他診断文等の日本語も残る。
 
 CMakeリリースビルドも成功。
+
+
+## 音声選択のエラー案内
+
+player/audio_streams.rsのaudio_programを再確認し、選択indexから得た局IDがactive_serviceと
+一致する場合だけEPG音声情報を参照する既存ガードを確認した。別の局の音声情報への
+誤ったフォールバックを追加する必要はない。
+
+audio_error / select_audioは既存の型付きErrorを網羅的に対応付け、固定の翻訳原文をQMLへ渡す。
+Unavailable / Rejectedはmainの既存キーを共有し、Unsupported / Presentationは2キーを追加した。
+AudioSettingsのerrorTextは翻訳原文と明示し、qsTranslate(Backend, errorText)で表示する。
+これにより表示中の失敗案内もQQmlEngineの再翻訳対象となり、再選択要求を出す必要がない。
+受信データ・局名を翻訳キーとして使わず、エラーの技術的なDisplayは診断用として維持する。
+
+4キーのカタログ存在確認、音声トラックのCPUテスト3件、翻訳基盤・カタログ欠落試験と
+AudioSettingsのqmllintが成功。CPU試験のsinkはイベントを受けるだけで、音声・映像を再生しない。
+GUIでの失敗状態の再翻訳と、実放送の二か国語音声の確認は未実施。
+
+全ターゲットClippy（警告をエラー扱い）とCMakeリリースビルドも成功。

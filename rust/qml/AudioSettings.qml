@@ -9,6 +9,7 @@ Popup {
     required property real windowHeight
     property bool playing: false
     property string tracksJson: "[]"
+    // Backend error translation source, not diagnostic text.
     property string errorText: ""
     property url iconDirectory: "qrc:/qt/qml/MinimalViewer/assets/icons/"
     readonly property var tracks: JSON.parse(tracksJson)
@@ -141,7 +142,7 @@ Popup {
             Layout.fillWidth: true
             objectName: "audioError"
             visible: popup.errorText.length > 0
-            text: popup.errorText
+            text: popup.errorText.length ? qsTranslate("Backend", popup.errorText) : ""
             textFormat: Text.PlainText
             color: "#f4f5f3"
             wrapMode: Text.Wrap

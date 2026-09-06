@@ -315,6 +315,14 @@
   <context>
     <name>Backend</name>
     <message>
+      <source>Could not determine the audio format. Choose a track again.</source>
+      <translation>音声形式を確認できません。もう一度選択してください</translation>
+    </message>
+    <message>
+      <source>Could not prepare the audio choices.</source>
+      <translation>音声選択肢を作成できませんでした</translation>
+    </message>
+    <message>
       <source>Connect to a server</source>
       <translation>サーバーに接続してください</translation>
     </message>

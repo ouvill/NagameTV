@@ -260,3 +260,5 @@ CPU試験ではメタデータ待ち、二重音声のMainのみが初期候補�
 PLAYING、エラーなし、正常終了を確認した。証跡はGit対象外の
 benchmark/viewing-design/audio-default.log。これは単一音声の通常放送であり、
 二重音声のMain出力や副音声との切り替え成功を示すものではない。
+
+音声選択の4種類の失敗案内をQt境界で翻訳原文に対応付け、AudioSettingsで再翻訳する経路を追加した。既存の選択・確定・コレクション解放のCPU試験3件が成功。実放送・実画面検証は残る。詳細はlocalization-migration.md参照。

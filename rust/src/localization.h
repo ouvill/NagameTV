@@ -10,6 +10,9 @@
 
 // Extraction markers for the status strings emitted by the Rust backend.
 inline constexpr const char *backendTranslationSources[] = {
+    QT_TRANSLATE_NOOP("Backend", "Could not determine the audio format. Choose a track again."),
+    QT_TRANSLATE_NOOP("Backend", "Could not prepare the audio choices."),
+
     QT_TRANSLATE_NOOP("Backend", "Connect to a server"),
     QT_TRANSLATE_NOOP("Backend", "Connecting: %1"),
     QT_TRANSLATE_NOOP("Backend", "Playing: %1"),
