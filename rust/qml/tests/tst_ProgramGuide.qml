@@ -12,6 +12,7 @@ TestCase {
         id: component
         Viewer.ProgramGuide {
             width: 600; height: 460
+            iconDirectory: Qt.resolvedUrl("../../../assets/icons/")
             programsJson: "[]"
             channel: "Test channel"
             status: "Ready"
@@ -35,6 +36,26 @@ TestCase {
         guide.dayOffset = 6
         compare(selector.currentIndex, 6)
         compare(guide.requests[guide.requests.length-1][0], guide.days[6].start)
+    }
+    function test_compact_boundaries_and_wide_date_click() {
+        const selector = findChild(guide, "guideDay")
+        const previous = findChild(selector, "previousGuideDay")
+        const next = findChild(selector, "nextGuideDay")
+        compare(selector.compact, true)
+        compare(previous.enabled, false)
+        verify(waitForRendering(selector))
+        mouseClick(next)
+        compare(guide.dayOffset, 1)
+        guide.dayOffset = 6
+        compare(next.enabled, false)
+        mouseClick(previous)
+        compare(guide.dayOffset, 5)
+        selector.compact = false
+        guide.dayOffset = 0
+        verify(waitForRendering(selector))
+        mouseClick(findChild(selector, "guideDate6"))
+        compare(guide.dayOffset, 6)
+        compare(guide.requests[guide.requests.length - 1][0], guide.days[6].start)
     }
     function test_calendar_days_follow_local_midnight_through_dst() {
         const january = new Date(2026,0,1).getTimezoneOffset()

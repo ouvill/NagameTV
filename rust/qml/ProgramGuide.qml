@@ -8,6 +8,7 @@ Rectangle {
     required property string programsJson
     required property string status
     required property string channel
+    property url iconDirectory: "qrc:/qt/qml/MinimalViewer/assets/icons/"
     property var rows: []
     property string band: rows.length ? rows[0].band : "GR"
     signal refreshRequested()
@@ -51,13 +52,14 @@ Rectangle {
             Button { text: "更新"; onClicked: root.refreshRequested() }
             Button { text: "閉じる"; onClicked: root.closeRequested() }
         }
-        ComboBox {
+        GuideDateSelector {
             objectName: "guideDay"
-            Layout.fillWidth: true
-            model: root.days
-            textRole: "label"
+            Layout.preferredWidth: compact ? 202 : Math.min(572, root.width - 20)
+            days: root.days
             currentIndex: root.dayOffset
-            onActivated: root.dayOffset = currentIndex
+            compact: root.width < 1280
+            iconDirectory: root.iconDirectory
+            onSelected: function(index) { root.dayOffset = index }
         }
         Label { text: root.status; color: "#cccccc" }
         BroadcastTabs { rows: root.rows; value: root.band; onSelected: function(band) { root.band = band; root.selectedProgram = null } }
