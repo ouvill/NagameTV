@@ -7,11 +7,13 @@ Pane {
     id: root
     required property var rows
     required property int selected
+    property string visibilityJson: "[]"
+    readonly property var visibleIndices: new Set(JSON.parse(visibilityJson))
     property string programsJson: "[]"
     property real now: 0
     readonly property var programs: JSON.parse(programsJson)
     property string band: "GR"
-    readonly property var filteredRows: rows.filter(row => row.band === band)
+    readonly property var filteredRows: rows.filter(row => row.band === band && (!visibleIndices.size || visibleIndices.has(row.index)))
     signal selectRequested(int index)
     signal closeRequested
     function focusBrowser() {

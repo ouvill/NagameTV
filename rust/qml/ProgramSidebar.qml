@@ -12,6 +12,7 @@ Rectangle {
     property int page: ProgramSidebar.Program
     property var channelRows: []
     property int selectedChannel: -1
+    property string channelVisibility: "[]"
     property string channelPrograms: "[]"
     property real now: 0
     signal pageRequested(int page)
@@ -175,6 +176,7 @@ Rectangle {
                 rows: root.channelRows
                 selected: root.selectedChannel
                 programsJson: root.channelPrograms
+                visibilityJson: root.channelVisibility
                 now: root.now
                 onSelectRequested: function (index) {
                     root.selectRequested(index);

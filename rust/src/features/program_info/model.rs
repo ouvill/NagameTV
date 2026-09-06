@@ -7,6 +7,8 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "camelCase")]
 pub struct Program {
     pub id: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub event_id: Option<u16>,
     #[serde(flatten)]
     service: BroadcastService,
     pub start_at: u64,

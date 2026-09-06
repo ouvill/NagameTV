@@ -27,6 +27,7 @@ struct Card<'a> {
 pub struct Projection {
     revision: Option<u64>,
     keys: Vec<Key>,
+    pub visible_json: String,
 }
 impl Projection {
     pub(super) fn update(
@@ -59,11 +60,14 @@ impl Projection {
             })
             .collect();
         let json = serde_json::to_string(&cards)?;
+        let visible = super::visibility::indices(channels, |channel| current(channel));
+        let visible_json = serde_json::to_string(&visible)?;
         // Commit keys only after successful serialization so errors remain retryable.
         self.keys = channels
             .iter()
             .map(|channel| Key::new(channel, current(channel)))
             .collect();
+        self.visible_json = visible_json;
         self.revision = Some(revision);
         Ok(Some(json))
     }

@@ -434,6 +434,7 @@ ApplicationWindow {
             sourceComponent: ChannelBrowser {
                 rows: root.channelRows
                 programsJson: player.channel_program_data
+                visibilityJson: player.channel_visibility_data
                 now: player.channel_program_now
                 selected: player.selected
                 onSelectRequested: function (index) {
@@ -470,6 +471,7 @@ ApplicationWindow {
             channelRows: root.channelRows
             selectedChannel: player.selected
             channelPrograms: player.channel_program_data
+            channelVisibility: player.channel_visibility_data
             now: player.channel_program_now
             onPageRequested: function (page) {
                 root.sidebarPage = page;

@@ -12,6 +12,8 @@ impl ffi::Player {
         self.as_mut().rust_mut().browser_projection = open.then(Default::default);
         self.as_mut().rust_mut().next_current_program = Instant::now();
         self.as_mut().set_channel_program_data(QString::from("[]"));
+        self.as_mut()
+            .set_channel_visibility_data(QString::from("[]"));
         self.set_channel_program_now(0.0);
     }
     pub(super) fn poll_channel_programs(mut self: Pin<&mut Self>, now: Option<u64>) {
@@ -21,15 +23,21 @@ impl ffi::Player {
             let Some(projection) = &mut this.browser_projection else {
                 return;
             };
-            let channels = if this.epg_enabled {
-                &this.entries[..]
-            } else {
-                &[]
-            };
-            this.epg.browser_presentation(projection, channels, now)
+            let current_time = if this.epg_enabled { now } else { None };
+            this.epg
+                .browser_presentation(projection, &this.entries, current_time)
         };
         match update {
-            Ok(Some(json)) => self.as_mut().set_channel_program_data(QString::from(json)),
+            Ok(Some(json)) => {
+                let visible = self
+                    .rust()
+                    .browser_projection
+                    .as_ref()
+                    .map(|projection| QString::from(projection.visible_json.as_str()))
+                    .unwrap_or_else(|| QString::from("[]"));
+                self.as_mut().set_channel_visibility_data(visible);
+                self.as_mut().set_channel_program_data(QString::from(json));
+            }
             Ok(None) => {}
             Err(error) => {
                 eprintln!("Channel program presentation failed: {error}");

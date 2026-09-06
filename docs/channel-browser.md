@@ -136,3 +136,30 @@ Qt全体59件成功（初期化・終了を含む）、qmllint警告なし、ビ
 証跡はGit対象外のbenchmark/viewing-design/sidebar-channels.pyと同名ログ・画像。
 実画像を見て放送種別タブを中央へ補正した後、一覧試験3件とビルドを再実行した。
 両一覧の同時開閉・長時間のメモリー推移・全体画像のmainとの差分比較は未検証。
+
+## 同時放送の副チャンネル
+
+mainのviewer-core/channels.rsの判定をRustのvisibility.rsへ移植した。
+PhysicalChannelはnetworkId・Band・channelの組であり、ProgramのeventIdと開始・長さを
+比較する。配信用idや番組名は同時放送の判定に使わない。
+ソート済みの各物理チャンネルの先頭を残し、異なる番組署名だけを追加で残す。
+番組不明／EPG無効時はmainと同様に先頭を残す。物理情報が欠けるサービスは
+安全に同一視できないためそのまま表示する。
+
+表示用indexのJSONを番組要約の更新時に作る。判定用HashMap/HashSetはその更新内だけの
+借用で、毎フレームや同一番組の毎秒tickでは再生成しない。QMLはindexをSetにして照合し、
+下部・右側の両一覧で使う。選局indexと実際の配信用idは変更しない。
+この段階の除外対象は両一覧であり、PgUp/PgDownによる全サービス巡回と将来の
+複数局番組表カタログの統合は残る。表示中の局を除外しても再生を強制停止しない。
+
+Rust51件成功・外部TS依存1件未実行、Clippy成功、Qt59件成功。
+同一番組で異なるid/タイトル、別番組で同じタイトル、番組終了、EPG不明、別搬送波／
+別networkId、物理情報欠落を試験した。Qt側のindex絞り込み・解除も成功。
+実アプリではNHK総合2等の同時放送が消え、別物理チャンネルの局が残る画像と
+カードからの実放送PLAYING・正常終了を確認した。
+
+最初の増分releaseビルドは起動時のobserve_pointer呼び出しでSIGSEGVとなった。
+gdbはQMetaObject::methodOffsetとMain.qmlのAOT生成コードを示した。
+アプリpackageだけをcargo clean -p mirakurun-viewer --releaseした後、同じソースを
+再ビルドすると正常起動した。生成物の不整合が疑われるが根因は未確定。
+Qtブリッジ変更後のビルド成功だけでは実起動の保証にならないため、起動試験を必要とする。

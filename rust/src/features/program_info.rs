@@ -5,6 +5,7 @@ pub mod browser;
 pub mod guide;
 mod model;
 pub mod presentation;
+mod visibility;
 use model::{Snapshot, parse};
 use std::time::{Duration, Instant};
 

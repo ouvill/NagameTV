@@ -33,6 +33,11 @@ TestCase {
         verify(waitForRendering(view));
         const cards = list.contentItem.children.filter(item => item.objectName === "sidebarChannelCard");
         verify(cards.length > 0 && cards.length < 20, "virtualized delegates: " + cards.length);
+        view.visibilityJson = "[1,5,7]";
+        compare(list.count, 3);
+        compare(view.filtered[1].index, 5);
+        view.visibilityJson = "[]";
+        compare(list.count, 250);
         view.rows = [];
         compare(list.count, 0);
         compare(list.currentIndex, -1);

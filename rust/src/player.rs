@@ -36,6 +36,7 @@ pub mod ffi {
         #[qproperty(QString, playback_error, READ, NOTIFY)]
         #[qproperty(QString, channel_data, READ, NOTIFY)]
         #[qproperty(QString, channel_program_data, READ, NOTIFY)]
+        #[qproperty(QString, channel_visibility_data, READ, NOTIFY)]
         #[qproperty(f64, channel_program_now, READ, NOTIFY)]
         #[qproperty(i32, selected, READ, NOTIFY)]
         #[qproperty(bool, loading, READ, NOTIFY)]
@@ -116,6 +117,7 @@ pub struct PlayerRust {
     playback_error: QString,
     channel_data: QString,
     channel_program_data: QString,
+    channel_visibility_data: QString,
     channel_program_now: f64,
     browser_projection: Option<crate::features::program_info::browser::Projection>,
     selected: i32,
@@ -250,6 +252,13 @@ impl ffi::Player {
         set_settings_error,
         settings_error,
         settings_error_changed,
+        QString
+    );
+
+    property_setter!(
+        set_channel_visibility_data,
+        channel_visibility_data,
+        channel_visibility_data_changed,
         QString
     );
 

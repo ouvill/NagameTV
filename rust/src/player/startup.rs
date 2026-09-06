@@ -61,6 +61,7 @@ impl Default for PlayerRust {
             playback_error: QString::default(),
             channel_data: QString::from("[]"),
             channel_program_data: QString::from("[]"),
+            channel_visibility_data: QString::from("[]"),
             channel_program_now: 0.0,
             browser_projection: None,
             selected: -1,

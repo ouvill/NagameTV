@@ -11,7 +11,9 @@ pub enum Error {
 }
 
 /// Declaration order is the channel browser's broadcast priority.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord, Hash,
+)]
 pub enum Band {
     #[serde(rename = "GR")]
     Terrestrial,
@@ -34,6 +36,13 @@ pub struct BroadcastService {
     pub service_id: u16,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct PhysicalChannel {
+    pub network_id: u16,
+    pub band: Band,
+    pub channel: String,
+}
+
 #[derive(Debug)]
 pub struct Channel {
     pub id: u64,
@@ -42,6 +51,7 @@ pub struct Channel {
     pub band: Band,
     pub has_logo_data: bool,
     pub broadcast: Option<BroadcastService>,
+    pub physical: Option<PhysicalChannel>,
     number: Option<u16>,
     service_id: Option<u16>,
 }
@@ -67,6 +77,7 @@ struct Service {
 
 #[derive(Default, Deserialize)]
 struct ServiceChannel {
+    channel: Option<String>,
     #[serde(rename = "type", default)]
     band: Band,
 }
@@ -95,6 +106,16 @@ pub fn parse(bytes: &[u8]) -> Result<Vec<Channel>, Error> {
                 name: s.name,
                 label,
                 band: s.channel.band,
+                physical: s
+                    .network_id
+                    .zip(s.channel.channel)
+                    .and_then(|(network_id, channel)| {
+                        (!channel.trim().is_empty()).then_some(PhysicalChannel {
+                            network_id,
+                            band: s.channel.band,
+                            channel,
+                        })
+                    }),
                 has_logo_data: s.has_logo_data,
                 broadcast: s
                     .network_id
