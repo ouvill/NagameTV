@@ -16,7 +16,7 @@ viewer-coreを照合し、機能単位で移植する。表の「一部」はmai
 | 音量・ミュート | playback、QML | 音量復元とミュートUIを移植。型付き出力状態とnativeプロパティ保持を試験。実再生音声の確認は未実施 |
 | 実況接続・チャンネル追随・描画・調整 | comments、runtime、QML | 受信・接続切り替え・再接続・200件上限の履歴一覧・有効無効設定を組み込み。流れる実況と表示調整も組み込み。mainとの実画面比較と実サービス／長時間検証は未完了 |
 | 接続先・局・音量・字幕の設定保存 | settings、viewer-core/settings | 互換TOMLの読み書きを追加。接続・選局・機能変更、音量操作確定、設定画面を閉じた時と正常終了時に変更分を保存 |
-| 言語設定・動的翻訳切替 | localization.h、translations、QML | 未移植。既存のlanguage設定は保持 |
+| 言語設定・動的翻訳切替 | localization.h、translations、QML | mainの108項目のカタログ・Qt切り替えヘルパー・リソース生成を移植。QtCore/QML試験で再翻訳と翻訳器寿命を確認。設定保存と実アプリ各文言への接続は未実施 |
 | 自動再生・環境変数による上書き | runtime、README | SERVER/SERVICE_ID/AUTOPLAY対応を追加 |
 | デインターレース設定 | playback、README | YADIF/Linear/Offの起動設定を移植。型検証とCPU試験済み |
 | 全画面・自動非表示・ウィンドウ操作・ショートカット | QML、pointer_activity.h | 全画面、C、G、PgUp/PgDown、Escape、操作部の重ね合わせと3.2秒後の自動非表示を追加。入力欄・ポップアップとの競合、監視の解放を検証。独自枠とシステム移動・リサイズ要求を追加。外部キー入力と実環境の移動・リサイズは未検証 |
@@ -125,3 +125,5 @@ CPU試験ではSessionが生存中に別Sessionで保存内容を読めること
 再生エラー保存とデスクトップ連携の仕様・検証範囲は [error-log-migration.md](error-log-migration.md)。
 
 継続的な資源診断の分離と残作業は [resource-diagnostics-migration.md](resource-diagnostics-migration.md)。
+
+言語切り替えの移植状況とQtの検証範囲は [localization-migration.md](localization-migration.md)。

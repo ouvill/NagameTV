@@ -1,6 +1,10 @@
 use cxx_qt_build::{CxxQtBuilder, QmlModule};
 
-fn main() {
+#[path = "build/translations.rs"]
+mod translations;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let translations = translations::compile()?;
     CxxQtBuilder::new_qml_module(
         QmlModule::new("MinimalViewer")
             .qml_file("qml/Main.qml")
@@ -45,6 +49,7 @@ fn main() {
             .depend("QtQuick.Layouts")
             .depend("QtQuick.Shapes"),
     )
+    .qrc(&translations)
     .qrc_resources([
         "../assets/icons/info.svg",
         "../assets/icons/message-square.svg",
@@ -70,4 +75,5 @@ fn main() {
     .include_dir("src")
     .qt_module("Quick")
     .build();
+    Ok(())
 }
