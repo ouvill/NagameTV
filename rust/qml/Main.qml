@@ -13,6 +13,7 @@ ApplicationWindow {
     color: "#151515"
     property bool closing: false
     property bool showGuide: false
+    property bool showStats: false
     Player { id: player }
     function step(offset) {
         if (player.channels.length)
@@ -47,6 +48,7 @@ ApplicationWindow {
             Label { text: player.subtitles_enabled ? player.subtitle_status : "無効"; color: "#cccccc" }
             CheckBox { palette.windowText: "#eeeeee"; text: "EPG"; checked: player.epg_enabled; enabled: player.epg_allowed; onClicked: { player.configure_features(player.subtitles_enabled, checked); if (!checked) root.showGuide = false } }
             Button { text: root.showGuide ? "番組表を閉じる" : "番組表"; enabled: player.epg_enabled; onClicked: { root.showGuide = !root.showGuide; player.guide_open(root.showGuide) } }
+            CheckBox { text: "動画統計"; palette.windowText: "#eeeeee"; checked: root.showStats; onClicked: root.showStats = checked }
             Item { Layout.fillWidth: true }
         }
         RowLayout {
@@ -54,6 +56,13 @@ ApplicationWindow {
             Item {
                 Layout.fillWidth: true; Layout.fillHeight: true
                 GstGLQt6VideoItem { id: video; anchors.fill: parent }
+                Loader {
+                    anchors { top: parent.top; right: parent.right; margins: 8 }
+                    width: Math.min(480, parent.width - 16)
+                    active: !root.closing && root.showStats
+                    z: 2
+                    sourceComponent: Component { VideoStats { backend: player } }
+                }
                 Loader {
                     // Match a 16:9 broadcast's letterboxed video area.
                     anchors.centerIn: parent

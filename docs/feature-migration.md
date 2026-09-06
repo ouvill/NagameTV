@@ -18,10 +18,10 @@ viewer-coreを照合し、機能単位で移植する。表の「一部」はmai
 | 接続先・局・音量・字幕の設定保存 | settings、viewer-core/settings | 互換TOMLの読み書きを追加。現状は正常終了時に保存 |
 | 言語設定・動的翻訳切替 | localization.h、translations、QML | 未移植。既存のlanguage設定は保持 |
 | 自動再生・環境変数による上書き | runtime、README | SERVER/SERVICE_ID/AUTOPLAY対応を追加 |
-| デインターレース設定 | playback、README | 未移植。現状YADIF固定 |
+| デインターレース設定 | playback、README | YADIF/Linear/Offの起動設定を移植。型検証とCPU試験済み |
 | 全画面・自動非表示・ウィンドウ操作・ショートカット | QML、pointer_activity.h | 一部。PgUp/PgDownのみ |
 | エラー種別表示・復旧操作・詳細コピー・診断保存 | viewer-core、runtime、QML、diagnostics | 型付きエラーあり。main相当の案内・操作・保存は未移植 |
-| 動画統計・表示中のみ収集 | video_stats、QML | 未移植。検証用RSS等の簡易表示のみ |
+| 動画統計・表示中のみ収集 | video_stats、QML | 表示中のみ1秒ごとに収集する統計パネルを移植。長時間併用試験は未実施 |
 | 診断ログ・継続的な資源測定 | diagnostics、scripts | 簡易allocator計測あり。配布向け診断は未移植 |
 
 動作仕様の差を見つけたらこの表を追加・修正する。表だけを根拠に機能互換と判断せず、
@@ -71,3 +71,5 @@ CMakeビルド成功。設定テストはmain形式の読み込み・未知項�
 
 起動時の組み立ては `player/startup.rs` に分離した。既存Player制御全体の分離、
 字幕等の既存unwrapの監査、機能移植後の長時間メモリー／性能検証は引き続き必要。
+
+デインターレースと動画統計の設計・検証は [video-statistics.md](video-statistics.md)。

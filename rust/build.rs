@@ -6,6 +6,7 @@ fn main() {
             .qml_file("qml/Main.qml")
             .qml_file("qml/SubtitleOverlay.qml")
             .qml_file("qml/ProgramGuide.qml")
+            .qml_file("qml/VideoStats.qml")
             .depend("QtQuick")
             .depend("QtQuick.Controls")
             .depend("QtQuick.Layouts"),

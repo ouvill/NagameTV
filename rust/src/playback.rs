@@ -1,3 +1,6 @@
+pub mod deinterlace;
+pub mod stats;
+
 use gstreamer::{self as gst, prelude::*};
 use std::cell::RefCell;
 use std::sync::{Mutex, OnceLock};
@@ -6,6 +9,8 @@ type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error("{0}")]
+    Deinterlace(#[from] deinterlace::Error),
     #[error("GStreamer initialization failed: {0}")]
     Initialization(#[from] gst::glib::Error),
     #[error("GStreamer operation failed: {0}")]
@@ -76,6 +81,9 @@ pub fn take_preloaded() -> Option<Playback> {
 pub struct Playback {
     playbin: gst::Element,
     sink: gst::Element,
+    processor: gst::Element,
+    queue: gst::Element,
+    mode: deinterlace::Mode,
     attached: bool,
     requested_uri: RefCell<Option<String>>,
 }
@@ -83,6 +91,15 @@ pub struct Playback {
 impl Playback {
     pub fn element(&self) -> &gst::Element {
         &self.playbin
+    }
+    pub fn video_stats(&self) -> stats::VideoStats {
+        stats::snapshot(
+            &self.playbin,
+            &self.processor,
+            &self.queue,
+            &self.sink,
+            self.mode.label(),
+        )
     }
     pub fn position(&self) -> Option<gst::ClockTime> {
         self.sink.query_position::<gst::ClockTime>()
@@ -93,10 +110,9 @@ impl Playback {
             .property("enable-last-sample", false)
             .build()?;
         let input = gst::ElementFactory::make("videoconvert").build()?;
-        let deinterlace = gst::ElementFactory::make("deinterlace").build()?;
-        deinterlace.set_property_from_str("method", "yadif");
-        deinterlace.set_property_from_str("mode", "auto");
-        deinterlace.set_property_from_str("fields", "all");
+        let mode = deinterlace::Mode::from_environment()?;
+        let deinterlace = mode.build()?;
+        eprintln!("Video processing: {}", mode.label());
         let queue = gst::ElementFactory::make("queue")
             .property("max-size-buffers", 8_u32)
             .property("max-size-bytes", 0_u32)
@@ -150,6 +166,9 @@ impl Playback {
         Ok(Self {
             playbin,
             sink,
+            processor: deinterlace,
+            queue,
+            mode,
             attached: false,
             requested_uri: RefCell::new(None),
         })

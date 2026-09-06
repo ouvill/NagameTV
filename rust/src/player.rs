@@ -1,4 +1,5 @@
 mod startup;
+mod statistics;
 
 #[cxx_qt::bridge]
 pub mod ffi {
@@ -56,6 +57,8 @@ pub mod ffi {
         fn play(self: Pin<&mut Player>);
         #[qinvokable]
         fn stop(self: Pin<&mut Player>);
+        #[qinvokable]
+        fn video_stats(self: &Player) -> QString;
         #[qinvokable]
         fn volume(self: Pin<&mut Player>, value: f64);
         #[qinvokable]

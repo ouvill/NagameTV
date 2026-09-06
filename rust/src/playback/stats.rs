@@ -1,0 +1,181 @@
+//! On-demand snapshots. No frame retention, probes, timers or historical samples.
+use gst::prelude::*;
+use gstreamer as gst;
+use serde::Serialize;
+
+#[derive(Default, Serialize)]
+pub struct VideoFormat {
+    width: Option<i32>,
+    height: Option<i32>,
+    fps: Option<f64>,
+    interlace: Option<String>,
+    pixel_format: Option<String>,
+    pixel_aspect_ratio: Option<String>,
+}
+
+impl VideoFormat {
+    fn from_caps(caps: Option<&gst::CapsRef>) -> Self {
+        let Some(s) = caps.and_then(|caps| caps.structure(0)) else {
+            return Self::default();
+        };
+        Self {
+            width: s.get("width").ok(),
+            height: s.get("height").ok(),
+            fps: s
+                .get::<gst::Fraction>("framerate")
+                .ok()
+                .filter(|rate| rate.numer() > 0 && rate.denom() > 0)
+                .map(|rate| f64::from(rate.numer()) / f64::from(rate.denom())),
+            interlace: s.get::<&str>("interlace-mode").ok().map(str::to_owned),
+            pixel_format: s.get::<&str>("format").ok().map(str::to_owned),
+            pixel_aspect_ratio: s
+                .get::<gst::Fraction>("pixel-aspect-ratio")
+                .ok()
+                .map(|ratio| format!("{}:{}", ratio.numer(), ratio.denom())),
+        }
+    }
+}
+
+#[derive(Serialize)]
+pub struct VideoStats {
+    state: String,
+    input: VideoFormat,
+    output: VideoFormat,
+    deinterlacer: String,
+    rendered: Option<u64>,
+    dropped: Option<u64>,
+    average_fps: Option<f64>,
+    queue_buffers: u32,
+    queue_bytes: u32,
+    queue_ms: f64,
+    gstreamer: String,
+}
+
+pub fn snapshot(
+    player: &gst::Element,
+    processor: &gst::Element,
+    queue: &gst::Element,
+    sink: &gst::Element,
+    deinterlacer: &str,
+) -> VideoStats {
+    let state = player.current_state();
+    let active = matches!(state, gst::State::Paused | gst::State::Playing);
+    let caps = |element: &gst::Element| {
+        if active {
+            element
+                .static_pad("sink")
+                .and_then(|pad| pad.current_caps())
+        } else {
+            None
+        }
+    };
+    let stats = active.then(|| sink.property::<gst::Structure>("stats"));
+    VideoStats {
+        state: format!("{state:?}"),
+        input: VideoFormat::from_caps(caps(processor).as_deref()),
+        output: VideoFormat::from_caps(caps(sink).as_deref()),
+        deinterlacer: deinterlacer.to_owned(),
+        rendered: stats.as_ref().and_then(|s| s.get("rendered").ok()),
+        dropped: stats.as_ref().and_then(|s| s.get("dropped").ok()),
+        average_fps: stats
+            .as_ref()
+            .and_then(|s| s.get::<f64>("average-rate").ok())
+            .filter(|value| value.is_finite() && *value > 0.0),
+        queue_buffers: queue.property("current-level-buffers"),
+        queue_bytes: queue.property("current-level-bytes"),
+        queue_ms: queue.property::<u64>("current-level-time") as f64 / 1_000_000.0,
+        gstreamer: gst::version_string().to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::playback::deinterlace::Mode;
+
+    // Ensure native streaming tasks stop even when a Result/assertion exits a test.
+    struct Running(gst::Pipeline);
+    impl Drop for Running {
+        fn drop(&mut self) {
+            let _ = self.0.set_state(gst::State::Null);
+        }
+    }
+
+    #[test]
+    fn reads_exact_format_and_handles_unknown_rate() -> Result<(), Box<dyn std::error::Error>> {
+        gst::init()?;
+        let caps: gst::Caps = "video/x-raw,width=1440,height=1080,framerate=30000/1001,interlace-mode=interleaved,format=I420,pixel-aspect-ratio=4/3".parse()?;
+        let format = VideoFormat::from_caps(Some(&caps));
+        assert_eq!(format.width, Some(1440));
+        assert_eq!(format.pixel_aspect_ratio.as_deref(), Some("4:3"));
+        assert!((format.fps.ok_or("missing fps")? - 29.97002997).abs() < 0.000001);
+        let unknown: gst::Caps = "video/x-raw,framerate=0/1".parse()?;
+        assert!(VideoFormat::from_caps(Some(&unknown)).fps.is_none());
+        assert!(VideoFormat::from_caps(None).width.is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn each_mode_processes_frames_and_stopped_snapshot_clears_counts()
+    -> Result<(), Box<dyn std::error::Error>> {
+        gst::init()?;
+        // CPU-only video into a fakesink: no display, GPU, audio or network.
+        for mode in [Mode::Yadif, Mode::Linear, Mode::Off] {
+            let pipeline = Running(gst::Pipeline::new());
+            let source = gst::ElementFactory::make("videotestsrc")
+                .property("num-buffers", 6_i32)
+                .build()?;
+            let caps: gst::Caps = "video/x-raw,format=I420,width=320,height=240,framerate=30/1,interlace-mode=interleaved".parse()?;
+            let filter = gst::ElementFactory::make("capsfilter")
+                .property("caps", &caps)
+                .build()?;
+            let processor = mode.build()?;
+            let queue = gst::ElementFactory::make("queue").build()?;
+            let sink = gst::ElementFactory::make("fakesink")
+                .property("sync", false)
+                .build()?;
+            let elements = [&source, &filter, &processor, &queue, &sink];
+            pipeline.0.add_many(elements)?;
+            gst::Element::link_many(elements)?;
+            pipeline.0.set_state(gst::State::Playing)?;
+            let message = pipeline.0.bus().ok_or("missing bus")?.timed_pop_filtered(
+                gst::ClockTime::from_seconds(5),
+                &[gst::MessageType::Eos, gst::MessageType::Error],
+            );
+            assert!(
+                matches!(
+                    message.as_ref().map(|m| m.view()),
+                    Some(gst::MessageView::Eos(_))
+                ),
+                "{message:?}"
+            );
+            let running = snapshot(
+                pipeline.0.upcast_ref(),
+                &processor,
+                &queue,
+                &sink,
+                mode.label(),
+            );
+            assert_eq!(running.input.fps, Some(30.0));
+            assert_eq!(
+                running.output.fps,
+                Some(if mode == Mode::Off { 30.0 } else { 60.0 })
+            );
+            assert!(running.rendered.is_some_and(|n| n > 0));
+            assert_eq!(running.dropped, Some(0));
+            assert_eq!(running.output.width, Some(320));
+            pipeline.0.set_state(gst::State::Ready)?;
+            let stopped = snapshot(
+                pipeline.0.upcast_ref(),
+                &processor,
+                &queue,
+                &sink,
+                mode.label(),
+            );
+            assert!(stopped.rendered.is_none());
+            assert!(stopped.output.width.is_none());
+            assert!(serde_json::to_string(&stopped).is_ok());
+        }
+        Ok(())
+    }
+}
