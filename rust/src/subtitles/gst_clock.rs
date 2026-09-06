@@ -32,8 +32,8 @@ impl SubtitleClock {
 
     pub fn reset(&self) {
         if let Ok(mut state) = self.0.lock() {
-            state.raw_pts.clear();
-            state.video = None;
+            // Release old stream keys and queue allocations at channel boundaries.
+            *state = State::default();
             state.timeline.reset();
         }
     }

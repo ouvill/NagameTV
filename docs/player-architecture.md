@@ -66,3 +66,36 @@ CPU・メモリー上の単体テストで、取消し後のタスク終了、�
 - [Qt: Implicit Sharing](https://doc.qt.io/qt-6/implicit-sharing.html): QStringなどの参照共有とcopy-on-write。
 - [Tokio: JoinHandle](https://docs.rs/tokio/latest/tokio/task/struct.JoinHandle.html): Dropだけではタスクを取り消さず、abortは取消しを要求する。
 - [Qt: JavaScript memory management](https://doc.qt.io/qt-6.10/qtqml-javascript-memory.html): QMLのJSヒープとネイティブ割当の区別。
+
+## チャンネル切り替え
+
+選局の判断は `selection/policy.rs` の `SelectionAction` に分離する。
+同一サービスが接続中・再生中なら `Keep` として戻り、再接続、設定保存、実況再起動、
+字幕や音声のリセットを行わない。停止・エラー時は `Start` として同じ局にも再試行できる。
+未選局または現在局が一覧にない場合、「次」は先頭、「前」は末尾を選ぶ。
+
+再生開始は `playback/session.rs` の処理を通り、次の順序を守る。
+
+1. Busをflushし、旧ストリームをREADYまで停止してからflushを解除する。
+2. 旧音声ストリームの参照、字幕待ち行列、TSのPES/PSIバッファー、ARIBデコーダーを破棄する。
+3. 選択した局の現在番組から取得した `AudioProgram` を設定する。
+4. URIを変更し、PLAYINGへの遷移を開始する。
+
+EPG検索は選択したサービスのスケジュールを二分探索し、その音声情報だけを複製する。
+番組未取得・番組の空白時間は `None` とし、以前の局の情報を持ち越さない。
+1秒周期の番組更新は引き続き番組境界を反映するが、初回の音声情報設定はそれを待たない。
+リセットに失敗した場合はResultで再生開始を中断し、既存のエラー表示・停止処理へ渡す。
+
+GStreamerの[状態遷移仕様](https://gstreamer.freedesktop.org/documentation/additional/design/states.html)では
+PAUSED→READYでストリーミングスレッドを停止し、動的padを削除する。
+[READY/NULLへの遷移はASYNCを返さない](https://gstreamer.freedesktop.org/documentation/gstreamer/gstelement.html#gst_element_set_state)。
+そのため旧ストリーム停止後に新しい状態を設定する。Qtの映像sinkとGLコンテキストは再利用し、
+通常停止・破棄時はNULLへ戻す。QObject/QQuickItemの操作は
+[Qtのスレッド規則](https://doc.qt.io/qt-6/threads-qobject.html)に従いGUIスレッドに維持する。
+
+回帰テストは選局・再試行・折り返し・EPG時間境界、再生開始前の音声情報設定、
+旧音声ストリーム参照の解放、字幕状態の初期化を確認する。
+ローカルHTTP配信を使った5回の反復テストでは、実際のsouphttpsrcとqueueを通して
+READYによる応答受信の中断、ソケット切断、キューの空化、Bus内の旧参照解放を確認する。
+このテストは明示的なテスト用fakesinkでバイト列を消費し、映像・音声デバイスを使用しない。
+実Mirakurunのチューナー解放完了時間、実画面・実音声、長時間のRSS推移の測定を代替しない。

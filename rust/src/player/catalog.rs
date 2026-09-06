@@ -160,12 +160,13 @@ impl ffi::Player {
 
         let current_id = self.as_ref().service_id().to_string().parse::<u64>().ok();
         if let Some(playback) = self.as_ref().rust().playback.as_ref() {
-            playback.set_audio_program(
-                current_id
-                    .as_ref()
-                    .and_then(program_for)
-                    .map(|program| (program.service_id, program.start_at, program.audios.clone())),
-            );
+            playback.set_audio_program(current_id.as_ref().and_then(program_for).map(|program| {
+                crate::audio::AudioProgram {
+                    service_id: program.service_id,
+                    start_at: program.start_at,
+                    audios: program.audios.clone(),
+                }
+            }));
         }
         if let Some(program) = current_id.as_ref().and_then(program_for) {
             self.as_mut()

@@ -18,6 +18,14 @@ pub struct ProgramAudio {
     pub langs: Vec<String>,
 }
 
+/// Audio metadata owned by one playback programme, independent of the EPG snapshot.
+#[derive(Clone, Debug, PartialEq)]
+pub struct AudioProgram {
+    pub service_id: u16,
+    pub start_at: u64,
+    pub audios: Vec<ProgramAudio>,
+}
+
 pub type ComponentMap = HashMap<u16, HashMap<u16, u8>>;
 
 /// Accept only complete, current, CRC-valid single-section PMTs. Map ES PID to
@@ -108,7 +116,7 @@ pub struct AudioStreams {
     selected: Vec<String>,
     requested: Option<String>,
     pub error: String,
-    pub program: Option<(u16, u64, Vec<ProgramAudio>)>,
+    pub program: Option<AudioProgram>,
     pub components: ComponentMap,
     pub choice: Option<String>,
 }
@@ -126,14 +134,17 @@ impl AudioStreams {
             .enumerate()
             .flat_map(|(index, track)| {
                 // Gst mpegtsbase uses <upstream collection ID>/<8-digit hex PID>.
-                let metadata = self.program.as_ref().and_then(|(service, _, audios)| {
+                let metadata = self.program.as_ref().and_then(|program| {
                     let suffix = track.id.rsplit_once('/')?.1;
                     if suffix.len() != 8 {
                         return None;
                     }
                     let pid = u16::from_str_radix(suffix, 16).ok()?;
-                    let tag = self.components.get(service)?.get(&pid)?;
-                    let mut matches = audios.iter().filter(|audio| audio.component_tag == *tag);
+                    let tag = self.components.get(&program.service_id)?.get(&pid)?;
+                    let mut matches = program
+                        .audios
+                        .iter()
+                        .filter(|audio| audio.component_tag == *tag);
                     let audio = matches.next()?;
                     if matches.next().is_some() {
                         return None;
@@ -168,7 +179,7 @@ impl AudioStreams {
                             key: format!(
                                 "{}:{}:{}",
                                 track.id,
-                                self.program.as_ref().map_or(0, |(_, start, _)| *start),
+                                self.program.as_ref().map_or(0, |program| program.start_at),
                                 option_mode
                             ),
                             number: index + 1,
@@ -453,17 +464,17 @@ mod tests {
             })
             .collect();
         result.selected = vec!["source/00000201".into()];
-        result.program = Some((
-            10,
-            1000,
-            serde_json::from_str(
+        result.program = Some(AudioProgram {
+            service_id: 10,
+            start_at: 1000,
+            audios: serde_json::from_str(
                 r#"[
             {"componentTag":16,"componentType":2,"isMain":true,"langs":["jpn","eng"]},
             {"componentTag":17,"componentType":3,"isMain":false,"langs":["eng"]}
         ]"#,
             )
             .unwrap(),
-        ));
+        });
         result
             .components
             .insert(10, HashMap::from([(0x201, 16), (0x202, 17)]));
@@ -508,9 +519,10 @@ mod tests {
         gst::init().unwrap();
         let mut audio = broadcast_streams();
         let key = audio.options(0, 2)[1].key.clone();
-        let (_, start, metadata) = audio.program.as_mut().unwrap();
-        *start += 1;
-        metadata.push(metadata[0].clone());
+        // broadcast_streams constructs Some(AudioProgram) with two descriptors.
+        let program = audio.program.as_mut().unwrap();
+        program.start_at += 1;
+        program.audios.push(program.audios[0].clone());
         let options = audio.options(0, 2);
         assert_eq!(options.len(), 2);
         assert!(

@@ -1,3 +1,7 @@
+mod session;
+#[cfg(test)]
+mod session_tests;
+
 use crate::audio::{AudioRouting, AudioStreams};
 use gst::prelude::*;
 use gstreamer as gst;
@@ -63,6 +67,8 @@ pub enum PlaybackError {
     },
     #[error("The GStreamer message bus is unavailable")]
     BusUnavailable,
+    #[error("The MPEG-TS extractor lock is poisoned")]
+    ExtractorLockPoisoned,
     #[error("GStreamer playback error: {source} (HTTP: {http_status:?}, debug: {debug:?})")]
     Pipeline {
         #[source]
@@ -376,10 +382,6 @@ impl Playback {
                 source.set_property("timeout", 15_u32);
             }
             tracing::debug!(source = %factory, "Attaching MPEG-TS subtitle extractor");
-            subtitles_for_source.reset();
-            if let Ok(mut extractor) = extractor_for_source.lock() {
-                *extractor = TsSubtitleExtractor::new();
-            }
             attach_subtitle_probe(
                 &source,
                 extractor_for_source.clone(),
@@ -432,7 +434,12 @@ impl Playback {
         Ok(())
     }
 
-    pub fn play_service(&self, server: &str, service_id: u64) -> Result<(), PlaybackError> {
+    pub fn play_service(
+        &self,
+        server: &str,
+        service_id: u64,
+        program: Option<crate::audio::AudioProgram>,
+    ) -> Result<(), PlaybackError> {
         if !self.video_attached {
             return Err(PlaybackError::VideoItemNotAttached);
         }
@@ -441,20 +448,7 @@ impl Playback {
             self.prepare_video_sink()?;
         }
         let bus = self.playbin.bus().ok_or(PlaybackError::BusUnavailable)?;
-        // Discard messages from the previous stream, including queued failures.
-        bus.set_flushing(true);
-        let reset = self.playbin.set_state(gst::State::Ready);
-        bus.set_flushing(false);
-        reset.map_err(|source| PlaybackError::StateChange {
-            operation: "reset pipeline",
-            source,
-        })?;
-        self.subtitles.reset();
-        *self.audio.borrow_mut() = AudioStreams::default();
-        self.routing.reset();
-        if let Ok(mut extractor) = self.extractor.lock() {
-            extractor.audio_components.clear();
-        }
+        self.prepare_stream(&bus, program)?;
         self.playbin.set_property("uri", url);
         if let Err(source) = self.playbin.set_state(gst::State::Playing) {
             // A synchronous state failure can already have the useful HTTP error queued.
@@ -480,21 +474,14 @@ impl Playback {
     }
 
     pub fn stop(&self) -> Result<(), PlaybackError> {
-        let result = self
-            .playbin
+        self.playbin
             .set_state(gst::State::Null)
             .map(|_| ())
             .map_err(|source| PlaybackError::StateChange {
                 operation: "stop playback",
                 source,
-            });
-        self.subtitles.reset();
-        *self.audio.borrow_mut() = AudioStreams::default();
-        self.routing.reset();
-        if let Ok(mut extractor) = self.extractor.lock() {
-            extractor.audio_components.clear();
-        }
-        result
+            })?;
+        self.reset_stream_state()
     }
 
     pub fn pending_subtitles(&self) -> Option<usize> {
@@ -526,7 +513,7 @@ impl Playback {
         })
     }
 
-    pub fn set_audio_program(&self, program: Option<(u16, u64, Vec<crate::audio::ProgramAudio>)>) {
+    pub fn set_audio_program(&self, program: Option<crate::audio::AudioProgram>) {
         let mut audio = self.audio.borrow_mut();
         if audio.program != program {
             audio.program = program;

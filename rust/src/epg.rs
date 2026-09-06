@@ -130,6 +130,22 @@ impl EpgStore {
 }
 
 impl EpgSnapshot {
+    /// Borrow only the requested service's current programme; no full-catalog clone.
+    pub fn current_program(&self, service_id: u64, now: u64) -> Option<&Program> {
+        let service = self
+            .services
+            .iter()
+            .find(|service| service.id == service_id)?;
+        let schedule = self
+            .programs_by_service
+            .get(&(service.network_id, service.service_id))?;
+        let index = schedule
+            .partition_point(|program| program.start_at <= now)
+            .checked_sub(1)?;
+        let program = schedule.get(index)?;
+        (program.start_at.saturating_add(program.duration) > now).then_some(program)
+    }
+
     pub fn current_programs(&self, now: u64) -> Vec<CurrentProgram> {
         self.programs_by_service
             .values()
@@ -198,6 +214,40 @@ mod tests {
         let second = store.snapshot();
         assert_eq!(second.current_programs(2_250).len(), 1);
         assert_eq!(first.current_programs(1_250).len(), 1);
+    }
+
+    #[test]
+    fn selected_program_lookup_respects_service_and_time_boundaries()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let service: Service = serde_json::from_str(
+            r#"{
+            "id":30020,"serviceId":20,"networkId":30,"name":"Test","type":1,
+            "channel":{"type":"GR","channel":"26"}
+        }"#,
+        )?;
+        let store = EpgStore::default();
+        store.replace(
+            vec![service],
+            vec![program(1000, 500), program(1500, 500)],
+            900,
+        );
+        let snapshot = store.snapshot();
+        assert!(snapshot.current_program(30020, 999).is_none());
+        assert_eq!(
+            snapshot.current_program(30020, 1000).map(|p| p.start_at),
+            Some(1000)
+        );
+        assert_eq!(
+            snapshot.current_program(30020, 1499).map(|p| p.start_at),
+            Some(1000)
+        );
+        assert_eq!(
+            snapshot.current_program(30020, 1500).map(|p| p.start_at),
+            Some(1500)
+        );
+        assert!(snapshot.current_program(30020, 2000).is_none());
+        assert!(snapshot.current_program(99999, 1250).is_none());
+        Ok(())
     }
 
     #[test]

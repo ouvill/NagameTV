@@ -1,6 +1,9 @@
+mod policy;
+
 use super::ffi;
 use cxx_qt::CxxQtType;
 use cxx_qt_lib::QString;
+use policy::{SelectionAction, adjacent_index};
 use std::pin::Pin;
 
 impl ffi::Player {
@@ -11,6 +14,12 @@ impl ffi::Player {
         let Some(&service_id) = self.as_ref().rust().service_ids.get(index) else {
             return;
         };
+        let current = self.as_ref().service_id().to_string().parse::<u64>().ok();
+        if SelectionAction::for_request(current, service_id, *self.as_ref().playing())
+            == SelectionAction::Keep
+        {
+            return;
+        }
         self.as_ref().record_diagnostics("channel_selected");
         let channel_name = self
             .as_ref()
@@ -62,22 +71,10 @@ impl ffi::Player {
     }
 
     pub fn change_channel(self: Pin<&mut Self>, offset: i32) {
-        let count = self.as_ref().rust().service_ids.len();
-        if count == 0 {
-            return;
+        let current = self.as_ref().service_id().to_string().parse::<u64>().ok();
+        if let Some(next) = adjacent_index(&self.as_ref().rust().service_ids, current, offset) {
+            self.select_channel(next);
         }
-        let current_id = self.as_ref().service_id().to_string().parse::<u64>().ok();
-        let current = current_id
-            .and_then(|id| {
-                self.as_ref()
-                    .rust()
-                    .service_ids
-                    .iter()
-                    .position(|item| *item == id)
-            })
-            .unwrap_or(0);
-        let next = (current as i64 + i64::from(offset)).rem_euclid(count as i64) as i32;
-        self.select_channel(next);
     }
 }
 

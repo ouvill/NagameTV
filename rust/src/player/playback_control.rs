@@ -48,7 +48,20 @@ impl ffi::Player {
         let result: Result<(), PlayerError> =
             match (self.as_ref().rust().playback.as_ref(), service_id) {
                 (Some(playback), Ok(id)) if id > 0 => {
-                    playback.play_service(&server, id).map_err(Into::into)
+                    let program = self.as_ref().rust().network.as_ref().and_then(|network| {
+                        let now = SystemTime::now().duration_since(UNIX_EPOCH).ok()?;
+                        let now = u64::try_from(now.as_millis()).ok()?;
+                        let snapshot = network.epg().snapshot();
+                        let program = snapshot.current_program(id, now)?;
+                        Some(crate::audio::AudioProgram {
+                            service_id: program.service_id,
+                            start_at: program.start_at,
+                            audios: program.audios.clone(),
+                        })
+                    });
+                    playback
+                        .play_service(&server, id, program)
+                        .map_err(Into::into)
                 }
                 (None, _) => Err(PlayerError::PlaybackUnavailable),
                 _ => Err(PlayerError::InvalidServiceId),
