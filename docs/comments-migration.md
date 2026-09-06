@@ -198,3 +198,35 @@ mainの投稿欄風の装飾、言語切り替え、勢い表示、画面全体�
 この段階の検証結果は、実況モデル3件・設定6件のCPUテスト、全ターゲットClippy、
 fmt、DanmakuOverlay / ToggleSwitch / ProgramSidebar / SettingsDrawerのqmllint、
 CMakeリリースビルドが成功。音声接続問題の解消確認がないため実アプリは起動していない。
+
+
+## 勢い表示の解析境界（取得・UI接続は未完了）
+
+mainのruntime/fetch.rsとQMLのjikkyoForceを照合した。mainはチャンネル取得時に
+NX-Jikkyoの/api/v1/channelsも読み、最初のACTIVEスレッドのjikkyo_forceを採用する。
+チャンネルのサイドバーと下部選択一覧の右端に、Activity / 勢いの文言と数値を表示する。
+実験版にはこの通信・表示がまだない。
+
+2026-09-07、公開API https://nx-jikkyo.tsukumijima.net/api/v1/channels を読み取り確認。
+HTTP 200、JSON応答94,814 bytesで、id: jk1、threads中にPAST / ACTIVE / UPCOMING、
+jikkyo_forceは整数またはnullだった。/openapi.jsonはJSONではなく、/api/openapi.jsonは404。
+スキーマ取得に成功したとは扱わず、実応答とmainの契約を根拠とした。
+
+viewer-comments/activity.rsにQt・通信に依存しないSnapshot::parseを追加した。
+入力上限1MiB、局配列上限256件。根の配列とスレッド列を逐次デシリアライズし、
+不要な番組情報・説明をserdeで読み飛ばす。保持するのはBTreeMap<u16, u64>だけで、
+局ID・状態文字列は可能なら入力から借用する。エスケープ文字列の場合だけCowが所有する。
+最新スナップショットの取得・置換・破棄の管理はまだ実装していない。
+
+最初のACTIVEの値がnullなら、後続のACTIVEを代わりに採用しない（main同様）。
+0は有効値、最大u64も欠落させない。jk+1やjk01等はアプリの局対応と一致しないため除外する。
+応答過大・局数過多・不正JSONはResultで失敗させ、部分的な成功として返さない。
+サーバー本文や全スレッドのVecをスナップショットへ保持しない。
+
+単独crateのネットワーク機能込みCPU・ローカル通信テスト16件が成功。
+追加3件は先頭ACTIVEの選択、0/null/u64最大値、サイズ・局数上限、不正JSON、
+未対応局ID・不要な情報の除外を確認する。
+次の作業は既存Network上の取得タスクの所有・無効化時キャンセル・取得結果の置換と、
+main同様の2か所の表示への接続。実況無効時に勢い取得もしないことを検証する必要がある。
+
+単独crateの全ターゲットClippy（network有効、警告をエラー扱い）も成功。
