@@ -282,6 +282,7 @@ ApplicationWindow {
                     IconAction {
                         iconSource: "qrc:/qt/qml/MinimalViewer/assets/icons/" + (player.playing ? "square.svg" : "play.svg")
                         tip: player.playing ? "停止" : "再生"
+                        primary: !player.playing
                         enabled: player.playing || player.selected >= 0
                         onClicked: player.playing ? player.stop() : player.play()
                     }

@@ -6,13 +6,14 @@ ToolButton {
     required property url iconSource
     required property string tip
     property bool active: false
+    property bool primary: false
     implicitWidth: 42
     implicitHeight: 42
     Accessible.name: tip
     background: Rectangle {
         radius: 21
-        color: control.hovered ? "#28ffffff" : (control.active ? "#389caf9f" : "#17000000")
-        border.color: control.visualFocus || control.active ? "#9caf9f" : "#16ffffff"
+        color: control.hovered ? "#28ffffff" : (control.primary ? "#eeeeec" : (control.active ? "#389caf9f" : "#17000000"))
+        border.color: control.visualFocus ? "#9caf9f" : (control.primary ? "#80ffffff" : (control.active ? "#9caf9f" : "#16ffffff"))
     }
     contentItem: Item {
         Image {
