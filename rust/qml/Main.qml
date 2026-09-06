@@ -465,6 +465,7 @@ ApplicationWindow {
             sourceComponent: Component {
                 ProgramGuide {
                     id: guidePanel
+                    uiLanguage: player.ui_language
                     onWatchRequested: function(key) {
                         const error = player.watch_program(key)
                         if (error.length) guidePanel.watchError = error

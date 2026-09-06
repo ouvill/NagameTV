@@ -86,3 +86,22 @@ QtCore/QML試験で追加Viewerコンテキストの日本語・英語への再�
 既存の翻訳器100往復・カタログ欠落試験、変更した18コンポーネントのqmllint、
 CMakeリリースビルドが成功。動画統計のdelegate参照はidで明示し、静的解析警告も解消した。
 番組名未取得表示のQMLテスト期待値を翻訳対応にしたが、GUI試験そのものは未実行。
+
+
+## 番組表の日付ロケール
+
+Player.ui_languageをProgramGuide → GuideToolbar → GuideDateSelectorへ渡し、
+曜日のロケールを選択言語に連動させた。単独利用時はQt.uiLanguageを使用する。
+mainのMainコンテキストの日付書式を共有し、英語はddd, MMM d、日本語はM/d（ddd）。
+通常表示とコンパクト表示は同じlabel関数を使う。
+Qtの[Date.toLocaleDateString](https://doc.qt.io/qt-6/qml-qtqml-date.html#string-date-tolocaledatestring-locale-format)
+へロケールと書式を明示する。
+
+calendarDaysの未使用labelを削除し、取得範囲にはstart/endのみ保持する。
+言語変更はdays/selectedWindowの依存関係に入らず、EPG取得要求や選択の解除を起こさない。
+既存のローカル日付による日境界と固定24時間表記の番組時刻は維持する。
+
+QtCore/QML試験で既定ロケールをde_DEにし、英語Tue, Sep 8 → 日本語9/8（火）→
+英語への再翻訳と元の日付値の保持を確認。これはQtの日付・翻訳連動の試験であり、
+GuideDateSelector自体のGUI試験ではない。カタログ欠落試験、対象3コンポーネントの
+qmllint、CMakeリリースビルドも成功。英語の日付ラベルの実画面での収まりは未検証。

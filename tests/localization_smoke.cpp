@@ -27,19 +27,29 @@ int main(int argc, char **argv) {
   check(resolveUiLanguage("ja", "en_US") == "ja", "Explicit Japanese override");
   check(resolveUiLanguage("en", "ja_JP") == "en", "Explicit English override");
   check(resolveUiLanguage("unsupported", "ja_JP") == "en", "Unknown preference uses English");
+  // Deliberately differ from both supported UI languages to detect OS locale leakage.
+  QLocale::setDefault(QLocale("de_DE"));
   check(initializeUiLanguage(engine, "en"), "Initialize English");
   engine.loadData(R"(import QtQml
-    QtObject { property string heading: qsTr("Stats for nerds"); property string closeLabel: qsTranslate("Main", "Close"); property string emptyChannels: qsTranslate("Viewer", "No matching channels") })", QUrl("file:///Main.qml"));
+    QtObject {
+      readonly property var day: new Date(2026, 8, 8, 12, 0, 0)
+      readonly property string dateLabel: day.toLocaleDateString(Qt.locale(Qt.uiLanguage), qsTranslate("Main", "ddd, MMM d"))
+      property string heading: qsTr("Stats for nerds"); property string closeLabel: qsTranslate("Main", "Close"); property string emptyChannels: qsTranslate("Viewer", "No matching channels") })", QUrl("file:///Main.qml"));
   check(engine.rootObjects().size() == 1, "Load translation test object");
   auto *root = engine.rootObjects().first();
   check(root->property("heading").toString() == "Stats for nerds", "English source text");
+  const auto dayBeforeSwitch = root->property("day");
+  check(root->property("dateLabel").toString() == "Tue, Sep 8", "English date independent of system locale");
   check(applyUiLanguage("ja") == "ja", "Load Japanese catalog");
+  check(root->property("dateLabel").toString() == QString::fromUtf8("9/8（火）"), "Japanese date and translated format update together");
+  check(root->property("day") == dayBeforeSwitch, "Language change preserves the date");
   check(root->property("heading").toString() == QString::fromUtf8("動画統計"), "Retranslate existing QML to Japanese");
   check(root->property("closeLabel").toString() == QString::fromUtf8("閉じる"), "Explicit shared translation context");
   check(root->property("emptyChannels").toString() == QString::fromUtf8("該当するチャンネルなし"), "Feature UI catalog context");
   check(QCoreApplication::translate("Backend", "Loading channels...") == QString::fromUtf8("チャンネルを取得中…"), "Japanese backend message");
   check(applyUiLanguage("en") == "en", "Switch back to English");
   check(root->property("heading").toString() == "Stats for nerds", "Retranslate existing QML to English");
+  check(root->property("dateLabel").toString() == "Tue, Sep 8", "Date returns to English");
   check(root->property("emptyChannels").toString() == "No matching channels", "Feature UI context returns to English");
   check(applyUiLanguage("ja") == "ja", "Reuse Japanese translator");
   check(root->property("heading").toString() == QString::fromUtf8("動画統計"), "Switch repeatedly");

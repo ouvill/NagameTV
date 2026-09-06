@@ -7,6 +7,7 @@ Rectangle {
     id: root
     required property string programsJson
     required property string status
+    property string uiLanguage: Qt.uiLanguage
     required property string channel
     property url iconDirectory: "qrc:/qt/qml/MinimalViewer/assets/icons/"
     property var rows: []
@@ -38,7 +39,8 @@ Rectangle {
             date.setDate(date.getDate() + i)
             const end = new Date(date.getTime())
             end.setDate(end.getDate() + 1)
-            result.push({ label: Qt.formatDateTime(date, "MM/dd (ddd)"), start: date.getTime(), end: end.getTime() })
+            // Keep retrieval windows independent of display language.
+            result.push({ start: date.getTime(), end: end.getTime() })
         }
         return result
     }
@@ -56,6 +58,7 @@ Rectangle {
         GuideToolbar {
             Layout.fillWidth: true
             Layout.preferredHeight: 84
+            uiLanguage: root.uiLanguage
             rows: root.rows; days: root.days; dayOffset: root.dayOffset; band: root.band
             targetWindow: root.targetWindow; iconDirectory: root.iconDirectory
             onCloseRequested: root.closeRequested()

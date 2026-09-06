@@ -9,6 +9,7 @@ Rectangle {
     required property var rows
     required property var days
     required property int dayOffset
+    property string uiLanguage: Qt.uiLanguage
     required property string band
     property Window targetWindow: null
     property url iconDirectory: "qrc:/qt/qml/MinimalViewer/assets/icons/"
@@ -56,6 +57,7 @@ Rectangle {
             Layout.preferredWidth: compact ? 202 : 572
             Layout.maximumWidth: compact ? 202 : 572
             days: root.days; currentIndex: root.dayOffset
+            uiLanguage: root.uiLanguage
             compact: root.width < 1280
             iconDirectory: root.iconDirectory
             onSelected: function(index) { root.dayRequested(index) }

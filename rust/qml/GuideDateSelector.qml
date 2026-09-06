@@ -8,7 +8,8 @@ Rectangle {
     required property int currentIndex
     property bool compact: false
     property url iconDirectory: "qrc:/qt/qml/MinimalViewer/assets/icons/"
-    readonly property var dateLocale: Qt.locale("ja_JP")
+    property string uiLanguage: Qt.uiLanguage
+    readonly property var dateLocale: Qt.locale(uiLanguage)
     signal selected(int index)
     implicitWidth: compact ? 202 : 572
     implicitHeight: 40
@@ -21,7 +22,7 @@ Rectangle {
     function itemX(index) { return 3 + (index === 0 ? 0 : 62 + (index - 1) * 84) }
     function itemWidth(index) { return index === 0 ? 62 : 84 }
     function label(index) {
-        return index === 0 ? qsTranslate("Main", "Today") : days[index] ? dateLocale.toString(new Date(days[index].start), "M/d（ddd）") : ""
+        return index === 0 ? qsTranslate("Main", "Today") : days[index] ? new Date(days[index].start).toLocaleDateString(dateLocale, qsTranslate("Main", "ddd, MMM d")) : ""
     }
     function revealSelected() {
         if (!flick || compact) return
