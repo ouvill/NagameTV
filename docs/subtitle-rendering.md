@@ -77,7 +77,35 @@ CPU回帰試験はid=777、networkId=4、serviceId=42のサービスJSONから�
 パーサーを構成する。サービス7と42を持つ生成PATをTSパケットとして渡し、
 42に対応するPMT PIDだけが登録されることと、情報欠落が型付きエラーになることを確認する。
 受信機器や映像・音声出力は使用しない。この試験は実放送の字幕描画や選局の長時間試験を
-代替するものではない。字幕parserと購読管理のMutex処理の監査は引き続き残る。
+代替するものではない。字幕parserのMutex処理の監査は引き続き残る。
+
+## 購読管理の終了状態とMutex
+
+Subscriptionsの状態をOpen(Vec<Entry>) / Closedに分け、終了済みの状態には
+購読一覧を持てない形にした。closeはロック中にClosedへ置き換え、ロックを解放してから
+逆順にGStreamerのsignal・probe・emit-statsを解除する。遅れて追加された登録も即時解除する。
+
+登録・件数取得・終了にあったlock().unwrap()を除いた。
+[Rust Mutexのpoisoning仕様](https://doc.rust-lang.org/std/sync/struct.Mutex.html#poisoning)
+に従い、PoisonErrorからガードを取り出して解除可能な登録情報を保持する。
+ここにはそれぞれ独立して解除できるEntryと終了状態だけがあり、複数Entryにまたがる
+復元対象の不変条件はない。ClosedをOpenへ戻したり、データを捨てて登録を忘れたりしない。
+この理由はコードにも記述した。メモリー割当・スレッド・継続タスクは追加しない。
+
+これは任意のパニックから復帰する仕組みではない。特にGStreamerのFFI境界で発生した
+パニックや、字幕パーサー内部の不整合を復元するものではない。
+parser.lock().unwrap()と、SubtitleClockのロック失敗時の扱いは引き続き監査が必要。
+
+CPU試験では意図的にpoisonした登録一覧を終了し、probeの保持オブジェクトの解放、
+emit-stats停止、終了後に追加したsignal/probeの即時解放、複数回closeを検証する。
+さらにコールバックの破棄時点で状態がClosedかつロックが解放済みであることを確認する。
+GStreamerのPad・NULL状態のtsdemuxのみを使い、表示・音声・GPUは利用しない。
+
+変更後のfeaturesモジュール試験は41件成功、外部TSを要求する1件は未実行。
+字幕のdemux・時刻対応試験はファイルからメモリーへのCPU処理で検証した。
+全ターゲットClippyは警告なし、fmt・diff検査も成功。
+実再生検証はPulseAudio接続切断のため保留しており、この変更で音声接続の問題が
+解決したことや、長時間のメモリー安定性を確認したことを意味しない。
 
 変更後の字幕関連CPU試験20件成功・外部TS依存1件未実行。Clippy全ターゲット、fmt、
 releaseビルド成功。今回の変更後の実放送による字幕表示確認は未実施。

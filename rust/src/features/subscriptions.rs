@@ -1,13 +1,19 @@
 //! Explicitly removable GStreamer observers. Weak object references prevent cycles.
 use gstreamer::{self as gst, glib, prelude::*};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 
-#[derive(Default, Clone)]
+#[derive(Clone)]
 pub struct Subscriptions(Arc<Mutex<State>>);
+impl Default for Subscriptions {
+    fn default() -> Self {
+        Self(Arc::new(Mutex::new(State::Open(Vec::new()))))
+    }
+}
 #[derive(Default)]
-struct State {
-    closed: bool,
-    entries: Vec<Entry>,
+enum State {
+    Open(Vec<Entry>),
+    #[default]
+    Closed,
 }
 enum Entry {
     Signal(glib::WeakRef<gst::Object>, glib::SignalHandlerId),
@@ -44,14 +50,28 @@ impl Entry {
     }
 }
 impl Subscriptions {
+    fn state(&self) -> MutexGuard<'_, State> {
+        match self.0.lock() {
+            Ok(state) => state,
+            // This is an ownership ledger, not partially decoded stream data.
+            // Each Entry remains independently removable after unwinding; there
+            // are no cross-entry invariants to restore. Recover the ledger so
+            // close (including during Drop) can still release callbacks. Never
+            // reset it to Open: a closed scope must reject late registrations.
+            Err(poisoned) => poisoned.into_inner(),
+        }
+    }
     fn add(&self, entry: Entry) {
-        let mut state = self.0.lock().unwrap();
-        if state.closed {
-            drop(state);
-            entry.remove();
-        } else {
-            state.entries.retain(Entry::alive);
-            state.entries.push(entry);
+        let mut state = self.state();
+        match &mut *state {
+            State::Closed => {
+                drop(state);
+                entry.remove();
+            }
+            State::Open(entries) => {
+                entries.retain(Entry::alive);
+                entries.push(entry);
+            }
         }
     }
     pub fn signal(&self, object: &impl IsA<gst::Object>, id: glib::SignalHandlerId) {
@@ -69,23 +89,27 @@ impl Subscriptions {
         self.add(Entry::Stats(element.downgrade()));
     }
     pub fn count(&self) -> usize {
-        self.0.lock().unwrap().entries.len()
+        match &*self.state() {
+            State::Open(entries) => entries.len(),
+            State::Closed => 0,
+        }
     }
     /// Caller first brings the pipeline to READY, joining streaming tasks.
     pub fn close(&self) {
-        let entries = {
-            let mut state = self.0.lock().unwrap();
-            state.closed = true;
-            std::mem::take(&mut state.entries)
-        };
-        for entry in entries.into_iter().rev() {
-            entry.remove();
+        let previous = std::mem::take(&mut *self.state());
+        // Disconnecting can drop captures or call back into the registry.
+        // The guard above is gone before any GStreamer removal takes place.
+        if let State::Open(entries) = previous {
+            for entry in entries.into_iter().rev() {
+                entry.remove();
+            }
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
+    // unwrap/expect in tests assert fixture setup and expected outcomes.
     use super::*;
     #[test]
     fn close_removes_probe_and_releases_callback_capture() {
@@ -103,5 +127,93 @@ mod tests {
         scope.close();
         assert!(weak.upgrade().is_none());
         assert_eq!(scope.count(), 0);
+    }
+
+    #[test]
+    fn poisoned_registry_still_closes_and_rejects_late_registrations() {
+        // Pads and tsdemux stay in NULL: no display, audio or GPU is used.
+        gst::init().unwrap();
+        let scope = Subscriptions::default();
+        let pad = gst::Pad::builder(gst::PadDirection::Src).build();
+        let demux = gst::ElementFactory::make("tsdemux").build().unwrap();
+        demux.set_property("emit-stats", true);
+        scope.stats(&demux);
+        let captured = Arc::new(());
+        let weak = Arc::downgrade(&captured);
+        scope.probe(
+            &pad,
+            pad.add_probe(gst::PadProbeType::BUFFER, move |_, _| {
+                let _ = &captured;
+                gst::PadProbeReturn::Ok
+            }),
+        );
+        let other = scope.clone();
+        assert!(
+            std::thread::spawn(move || {
+                let _guard = other.0.lock().unwrap();
+                panic!("inject a poisoned registry");
+            })
+            .join()
+            .is_err()
+        );
+        assert!(scope.0.is_poisoned());
+        assert_eq!(scope.count(), 2);
+        scope.close();
+        scope.close();
+        assert_eq!(scope.count(), 0);
+        assert!(weak.upgrade().is_none());
+        assert!(!demux.property::<bool>("emit-stats"));
+
+        let captured = Arc::new(());
+        let weak = Arc::downgrade(&captured);
+        let signal = demux.connect_pad_added(move |_, _| {
+            let _ = &captured;
+        });
+        scope.signal(&demux, signal);
+        assert!(weak.upgrade().is_none());
+        let captured = Arc::new(());
+        let weak = Arc::downgrade(&captured);
+        scope.probe(
+            &pad,
+            pad.add_probe(gst::PadProbeType::BUFFER, move |_, _| {
+                let _ = &captured;
+                gst::PadProbeReturn::Ok
+            }),
+        );
+        assert!(weak.upgrade().is_none());
+        demux.set_property("emit-stats", true);
+        scope.stats(&demux);
+        assert!(!demux.property::<bool>("emit-stats"));
+        assert_eq!(scope.count(), 0);
+    }
+
+    #[test]
+    fn callback_destruction_observes_closed_state_without_holding_the_lock() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        struct Capture(Subscriptions, Arc<AtomicBool>);
+        impl Drop for Capture {
+            fn drop(&mut self) {
+                let closed = self
+                    .0
+                    .0
+                    .try_lock()
+                    .is_ok_and(|state| matches!(*state, State::Closed));
+                self.1.store(closed, Ordering::Relaxed);
+            }
+        }
+        gst::init().unwrap();
+        let scope = Subscriptions::default();
+        let pad = gst::Pad::builder(gst::PadDirection::Src).build();
+        let observed = Arc::new(AtomicBool::new(false));
+        let capture = Capture(scope.clone(), observed.clone());
+        scope.probe(
+            &pad,
+            pad.add_probe(gst::PadProbeType::BUFFER, move |_, _| {
+                let _ = &capture;
+                gst::PadProbeReturn::Ok
+            }),
+        );
+        scope.close();
+        assert!(observed.load(Ordering::Relaxed));
     }
 }
