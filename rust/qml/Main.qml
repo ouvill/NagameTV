@@ -179,10 +179,8 @@ ApplicationWindow {
                 tip: "設定"
                 onClicked: settings.open()
             }
-            IconAction {
-                iconSource: "qrc:/qt/qml/MinimalViewer/assets/icons/maximize.svg"
-                tip: "全画面"
-                onClicked: windowActions.toggleFullscreen()
+            WindowButtons {
+                targetWindow: root
             }
         }
         SettingsDrawer {

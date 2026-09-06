@@ -5,6 +5,7 @@ fn main() {
         QmlModule::new("MinimalViewer")
             .qml_file("qml/Main.qml")
             .qml_file("qml/WindowActions.qml")
+            .qml_file("qml/WindowButtons.qml")
             .qml_file("qml/OverlayVisibility.qml")
             .qml_file("qml/SubtitleOverlay.qml")
             .qml_file("qml/SubtitleGlyph.qml")
@@ -28,6 +29,8 @@ fn main() {
             .depend("QtQuick.Shapes"),
     )
     .qrc_resources([
+        "../assets/icons/minus.svg",
+        "../assets/icons/x.svg",
         "../assets/icons/panel-right-close.svg",
         "../assets/icons/square.svg",
         "../assets/icons/play.svg",
