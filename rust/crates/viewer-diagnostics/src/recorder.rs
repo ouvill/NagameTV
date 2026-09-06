@@ -64,6 +64,16 @@ pub struct Recorder {
     version: &'static str,
 }
 impl Recorder {
+    /// One recorder per process/directory, matching main's usage-<pid>.jsonl naming.
+    pub fn start_directory(directory: PathBuf, version: &'static str) -> Result<Self, Error> {
+        std::fs::create_dir_all(&directory).map_err(storage::Error::Io)?;
+        crate::retention::prune(&directory).map_err(storage::Error::Io)?;
+        Self::start(
+            directory.join(format!("usage-{}.jsonl", std::process::id())),
+            version,
+        )
+    }
+
     /// Opens the output at startup; all measurement and record writes run on the worker.
     pub fn start(path: PathBuf, version: &'static str) -> Result<Self, Error> {
         let mut writer = storage::RotatingWriter::new(path)?;

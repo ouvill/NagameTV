@@ -4,3 +4,4 @@ pub mod recorder;
 mod snapshot;
 pub mod storage;
 pub use snapshot::Snapshot;
+pub mod retention;
