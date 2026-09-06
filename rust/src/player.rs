@@ -62,7 +62,11 @@ pub mod ffi {
 }
 
 use crate::{
-    features::{self, program_info::ProgramInfo, subtitles},
+    features::{
+        self,
+        program_info::{ProgramInfo, Status as ProgramStatus},
+        subtitles,
+    },
     playback, services,
 };
 use cxx_qt::CxxQtType;
@@ -111,7 +115,7 @@ impl Default for PlayerRust {
         let status = network
             .as_ref()
             .err()
-            .cloned()
+            .map(ToString::to_string)
             .unwrap_or_else(|| "サーバーに接続してください".into());
         Self {
             server: QString::from(std::env::var("MIRAKURUN_SERVER").unwrap_or_default()),
@@ -200,9 +204,9 @@ impl ffi::Player {
     property_setter!(set_diagnostics, diagnostics, diagnostics_changed, QString);
 
     /// READY joins streaming callbacks before dropping their subscriptions/state.
-    fn end_stream(mut self: Pin<&mut Self>) -> Result<(), String> {
+    fn end_stream(mut self: Pin<&mut Self>) -> Result<(), playback::Error> {
         if let Some(playback) = &self.rust().playback {
-            playback.stop().map_err(|e| e.to_string())?;
+            playback.stop()?;
         }
         self.as_mut().rust_mut().subtitle_session = None;
         self.as_mut().rust_mut().active_service = None;
@@ -227,11 +231,9 @@ impl ffi::Player {
         let epg = epg && self.rust().epg_allowed;
         let restart =
             subtitles != self.rust().subtitles_enabled && self.rust().active_service.is_some();
-        if restart {
-            if let Err(error) = self.as_mut().end_stream() {
-                self.status_text(error);
-                return;
-            }
+        if restart && let Err(error) = self.as_mut().end_stream() {
+            self.status_text(error);
+            return;
         }
         self.as_mut().set_subtitles_enabled(subtitles);
         self.as_mut().set_epg_enabled(epg);
@@ -281,7 +283,14 @@ impl ffi::Player {
                 this.epg.poll(network);
             }
         }
-        let status = self.rust().epg.status.clone();
+        let status = match self.rust().epg.status() {
+            ProgramStatus::Disabled => "無効".into(),
+            ProgramStatus::Waiting => "取得待ち".into(),
+            ProgramStatus::Fetching => "取得中".into(),
+            ProgramStatus::Cancelling => "停止処理中".into(),
+            ProgramStatus::Ready(count) => format!("{count} 番組"),
+            ProgramStatus::Failed(error) => format!("取得失敗: {error}"),
+        };
         self.as_mut().set_epg_status(QString::from(status));
         let service = self
             .rust()
@@ -329,8 +338,8 @@ impl ffi::Player {
             self.as_mut().rust_mut().next_diagnostic = Instant::now() + Duration::from_secs(10);
         }
     }
-    fn status_text(mut self: Pin<&mut Self>, text: impl Into<String>) {
-        self.as_mut().set_status(QString::from(text.into()));
+    fn status_text(mut self: Pin<&mut Self>, text: impl std::fmt::Display) {
+        self.as_mut().set_status(QString::from(text.to_string()));
     }
     /// QML supplies a live GUI-thread item and calls shutdown before destroying it.
     pub unsafe fn attach(mut self: Pin<&mut Self>, item: *mut ffi::QQuickItem) -> bool {
@@ -340,8 +349,8 @@ impl ffi::Player {
             .rust_mut()
             .playback
             .as_mut()
-            .ok_or_else(|| "Playback unavailable".to_owned())
-            .and_then(|p| unsafe { p.attach(address) }.map_err(|e| e.to_string()));
+            .ok_or(playback::Error::Unavailable)
+            .and_then(|p| unsafe { p.attach(address) });
         if let Err(error) = result {
             self.status_text(error);
             return false;
@@ -406,7 +415,7 @@ impl ffi::Player {
                 .rust()
                 .playback
                 .as_ref()
-                .ok_or_else(|| "Playback unavailable".to_owned())
+                .ok_or(subtitles::Error::PlaybackUnavailable)
                 .and_then(|p| subtitles::Session::start(p.element(), id));
             match result {
                 Ok(session) => {
@@ -414,7 +423,9 @@ impl ffi::Player {
                     self.as_mut().set_subtitles_active(true);
                     self.as_mut().set_subtitle_status(QString::from("解析中"));
                 }
-                Err(error) => self.as_mut().set_subtitle_status(QString::from(error)),
+                Err(error) => self
+                    .as_mut()
+                    .set_subtitle_status(QString::from(error.to_string())),
             }
         }
         let result = self.rust().playback.as_ref().map(|p| p.play(&server, id));
@@ -482,7 +493,7 @@ impl ffi::Player {
             Some(Err(error)) => {
                 let text = error.to_string();
                 eprintln!("Playback error: {text}");
-                let recover = error.is::<playback::LiveResumeRejected>()
+                let recover = error.is_live_resume_rejected()
                     && self.rust().active_service.is_some()
                     && !self.rust().resume_retry_used;
                 if let Err(stop_error) = self.as_mut().end_stream() {

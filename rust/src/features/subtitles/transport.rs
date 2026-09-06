@@ -94,7 +94,7 @@ impl TransportParser {
         if pid == 0 || self.pmt_pids.contains(&pid) {
             if payload_start && !payload.is_empty() {
                 let pointer = payload[0] as usize;
-                if 1 + pointer <= payload.len() {
+                if pointer < payload.len() {
                     if let Some(section) = self.psi.get_mut(&pid) {
                         section.extend_from_slice(&payload[1..1 + pointer]);
                     }
@@ -184,13 +184,15 @@ impl TransportParser {
                     break;
                 }
                 let descriptors = &section[pos + 5..pos + 5 + info_len];
-                if stream_type == 0x06 && is_caption_stream(descriptors) {
-                    if self.subtitle_pids.len() < 8 && self.subtitle_pids.insert(elementary_pid) {
-                        tracing::debug!(
-                            pid = format_args!("0x{elementary_pid:04x}"),
-                            "ARIB subtitle stream detected"
-                        );
-                    }
+                if stream_type == 0x06
+                    && is_caption_stream(descriptors)
+                    && self.subtitle_pids.len() < 8
+                    && self.subtitle_pids.insert(elementary_pid)
+                {
+                    tracing::debug!(
+                        pid = format_args!("0x{elementary_pid:04x}"),
+                        "ARIB subtitle stream detected"
+                    );
                 }
                 pos += 5 + info_len;
             }

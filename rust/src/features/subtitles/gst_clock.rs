@@ -46,14 +46,14 @@ impl SubtitleClock {
     }
 
     pub fn set_enabled(&self, enabled: bool) {
-        if let Ok(mut state) = self.0.lock() {
-            if state.disabled == enabled {
-                *state = State {
-                    disabled: !enabled,
-                    ..State::default()
-                };
-                state.timeline.reset();
-            }
+        if let Ok(mut state) = self.0.lock()
+            && state.disabled == enabled
+        {
+            *state = State {
+                disabled: !enabled,
+                ..State::default()
+            };
+            state.timeline.reset();
         }
     }
 
@@ -412,7 +412,9 @@ mod tests {
         // Only demux to memory: this test needs no decoder, display, GPU or sound device.
         let data = include_bytes!("../../../../tests/fixtures/subtitle-clock.ts");
         let raw_pts: Vec<i64> = data
-            .chunks_exact(188)
+            .as_chunks::<188>()
+            .0
+            .iter()
             .filter_map(|packet| {
                 if packet[1] & 0x40 == 0 || packet[3] & 0x10 == 0 {
                     return None;

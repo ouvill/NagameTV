@@ -3,6 +3,9 @@
 Qt Quick + GStreamerの最小版から、字幕とEPGを独立して検証するブランチ。
 基準は別worktreeの `minimal/qt-gstreamer` / `9fa758d`。通常版mainもそのまま保持する。
 
+このブランチをmainを置き換える実装へ育てます。
+コード品質、整理の順序、置き換え条件は [開発方針](docs/main-replacement.md) に記載しています。
+
 ## ビルド
 
 Qt 6 Quick / Controls、GStreamer 1.24以降（qml6glsink・tsdemux・映像デコーダー・
@@ -67,3 +70,5 @@ Linux/glibcでは起動時に `M_MMAP_THRESHOLD` を128KiBに固定します（�
 EPG有効時の停止・再開で、解放済み領域が大量に残る挙動を抑えるためです。
 設定理由とアロケーター変更の選択肢は [allocator-controls.md](docs/allocator-controls.md)。
 `HTTP_JSON` 行に受信バッファー、`EPG_MEMORY` 行に解析後の保持容量をバイトで記録します。
+
+型付きエラーとEPG取得状態の整理、および回帰検証は [refactoring-verification.md](docs/refactoring-verification.md)。

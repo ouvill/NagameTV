@@ -1,11 +1,19 @@
 //! EPG acquisition lives independently of playback and of the guide's visibility.
-use crate::services::{Job, Network};
+use crate::services::{FetchError, Job, Network, NetworkError};
 use serde::{Deserialize, Serialize};
 use std::time::{Duration, Instant};
 
 const MAX_RESPONSE: usize = 32 * 1024 * 1024;
 const MAX_PROGRAMS: usize = 50_000;
 const REFRESH: Duration = Duration::from_secs(300);
+
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("番組JSONの解析失敗: {0}")]
+    Json(#[from] serde_json::Error),
+    #[error("番組数が上限を超えています（{actual} > {limit}）")]
+    TooManyPrograms { actual: usize, limit: usize },
+}
 
 #[derive(Deserialize, Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -27,16 +35,22 @@ impl Program {
             .checked_add(self.service_id)
     }
 }
-fn parse(bytes: &[u8]) -> Result<Vec<Program>, String> {
-    let mut entries: Vec<Program> = serde_json::from_slice(bytes).map_err(|e| e.to_string())?;
+fn parse(bytes: &[u8]) -> Result<Vec<Program>, Error> {
+    let mut entries: Vec<Program> = serde_json::from_slice(bytes)?;
     if entries.len() > MAX_PROGRAMS {
-        return Err("番組数が上限を超えています".into());
+        return Err(Error::TooManyPrograms {
+            actual: entries.len(),
+            limit: MAX_PROGRAMS,
+        });
     }
     entries.sort_unstable_by_key(|p| (p.start_at, p.id));
     entries.dedup_by_key(|p| (p.start_at, p.id));
-    // Owned storage only: excludes malloc metadata, temporary parser allocations,
-    // the HTTP body (still alive here), and the previous snapshot during refresh.
-    let record_bytes = entries.capacity() * std::mem::size_of::<Program>();
+    Ok(entries)
+}
+
+fn record_storage(entries: &[Program], capacity: usize) {
+    // Excludes allocator metadata and transient HTTP/parser allocations.
+    let record_bytes = capacity * std::mem::size_of::<Program>();
     let string_bytes: usize = entries
         .iter()
         .map(|p| p.name.capacity() + p.description.capacity())
@@ -46,18 +60,53 @@ fn parse(bytes: &[u8]) -> Result<Vec<Program>, String> {
         entries.len(),
         record_bytes + string_bytes
     );
-    Ok(entries)
+}
+
+type Request = Job<Vec<Program>, Error>;
+type RequestError = FetchError<Error>;
+
+#[derive(Default)]
+enum Outcome {
+    #[default]
+    Waiting,
+    Ready,
+    Failed(RequestError),
+}
+
+// Each active state owns exactly one job. Cancelling retains ownership until
+// the worker finishes; its result can never be accepted as a fresh snapshot.
+enum Acquisition {
+    Idle {
+        next: Option<Instant>,
+        outcome: Outcome,
+    },
+    Fetching(Request),
+    Cancelling(Request),
+}
+impl Default for Acquisition {
+    fn default() -> Self {
+        Self::Idle {
+            next: None,
+            outcome: Outcome::Waiting,
+        }
+    }
+}
+
+pub enum Status<'a> {
+    Disabled,
+    Waiting,
+    Fetching,
+    Cancelling,
+    Ready(usize),
+    Failed(&'a RequestError),
 }
 
 #[derive(Default)]
 pub struct ProgramInfo {
     desired: Option<String>,
-    job: Option<Job<Vec<Program>>>,
-    stopping: bool,
+    acquisition: Acquisition,
     snapshot: Vec<Program>,
-    next: Option<Instant>,
     pub revision: u64,
-    pub status: String,
 }
 impl ProgramInfo {
     /// Invalidate before cancellation. Never reuse results, even for A -> B -> A.
@@ -68,59 +117,72 @@ impl ProgramInfo {
         self.desired = server;
         self.snapshot = Vec::new();
         self.revision += 1;
-        self.next = None;
-        if let Some(job) = &self.job {
-            job.cancel();
-            self.stopping = true;
-            self.status = "停止処理中".into();
-        } else {
-            self.status = if self.desired.is_some() {
-                "取得待ち"
-            } else {
-                "無効"
+        self.acquisition = match std::mem::take(&mut self.acquisition) {
+            Acquisition::Fetching(job) | Acquisition::Cancelling(job) => {
+                job.cancel();
+                Acquisition::Cancelling(job)
             }
-            .into();
-        }
+            Acquisition::Idle { .. } => Acquisition::default(),
+        };
     }
     pub fn refresh(&mut self) {
-        self.next = None;
+        if let Acquisition::Idle { next, .. } = &mut self.acquisition {
+            *next = None;
+        }
     }
     pub fn poll(&mut self, network: &Network) {
-        if self.stopping {
-            if self.job.as_ref().is_some_and(|job| !job.is_finished()) {
-                return;
-            }
-            self.job = None;
-            self.stopping = false;
-            self.status = if self.desired.is_some() {
-                "取得待ち"
-            } else {
-                "無効"
-            }
-            .into();
-        }
-        if self.job.as_ref().is_some_and(Job::is_finished) {
-            let job = self.job.take().unwrap();
-            match job
-                .poll()
-                .unwrap_or_else(|| Err("番組情報の取得結果がありません".into()))
-            {
-                Ok(programs) => {
-                    self.snapshot = programs;
-                    self.revision += 1;
-                    self.status = format!("{} 番組", self.snapshot.len());
+        self.poll_at(network, Instant::now());
+    }
+    fn poll_at(&mut self, network: &Network, now: Instant) {
+        self.acquisition = match std::mem::take(&mut self.acquisition) {
+            Acquisition::Cancelling(job) if job.is_finished() => Acquisition::default(),
+            Acquisition::Fetching(job) if job.is_finished() => {
+                let outcome = match job
+                    .poll()
+                    .unwrap_or_else(|| Err(NetworkError::WorkerStopped.into()))
+                {
+                    Ok(programs) => {
+                        record_storage(&programs, programs.capacity());
+                        self.snapshot = programs;
+                        self.revision += 1;
+                        Outcome::Ready
+                    }
+                    Err(error) => Outcome::Failed(error),
+                };
+                Acquisition::Idle {
+                    next: Some(now + REFRESH),
+                    outcome,
                 }
-                Err(error) => self.status = format!("取得失敗: {error}"),
             }
-            self.next = Some(Instant::now() + REFRESH);
-        }
+            state => state,
+        };
         if let Some(server) = &self.desired
-            && self.job.is_none()
-            && self.next.is_none_or(|next| Instant::now() >= next)
+            && matches!(&self.acquisition, Acquisition::Idle { next, .. } if next.is_none_or(|deadline| now >= deadline))
         {
-            self.job =
-                Some(network.fetch_json(format!("{server}/api/programs"), MAX_RESPONSE, parse));
-            self.status = "取得中".into();
+            self.acquisition = Acquisition::Fetching(network.fetch_json(
+                format!("{server}/api/programs"),
+                MAX_RESPONSE,
+                parse,
+            ));
+        }
+    }
+    pub fn status(&self) -> Status<'_> {
+        match &self.acquisition {
+            Acquisition::Fetching(_) => Status::Fetching,
+            Acquisition::Cancelling(_) => Status::Cancelling,
+            Acquisition::Idle { .. } if self.desired.is_none() => Status::Disabled,
+            Acquisition::Idle {
+                outcome: Outcome::Waiting,
+                ..
+            } => Status::Waiting,
+            Acquisition::Idle {
+                outcome: Outcome::Ready,
+                ..
+            } => Status::Ready(self.snapshot.len()),
+            Acquisition::Idle {
+                outcome: Outcome::Failed(error),
+                ..
+            } => Status::Failed(error),
         }
     }
     /// Only project one channel and a bounded horizon while the guide is open.
@@ -139,9 +201,9 @@ impl ProgramInfo {
     }
     pub fn counters(&self) -> (usize, usize, bool) {
         (
-            usize::from(self.job.is_some()),
+            usize::from(!matches!(self.acquisition, Acquisition::Idle { .. })),
             self.snapshot.len(),
-            self.stopping,
+            matches!(self.acquisition, Acquisition::Cancelling(_)),
         )
     }
 }
@@ -159,7 +221,7 @@ mod tests {
         thread,
     };
     #[test]
-    fn disabled_makes_no_request_and_updates_replace_then_disable_clears() {
+    fn updates_replace_failure_retains_refresh_waits_and_disable_clears() {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         listener.set_nonblocking(true).unwrap();
         let address = format!("http://{}", listener.local_addr().unwrap());
@@ -167,7 +229,7 @@ mod tests {
         let requests = count.clone();
         let server = thread::spawn(move || {
             let deadline = Instant::now() + Duration::from_secs(5);
-            while requests.load(Ordering::SeqCst) < 2 && Instant::now() < deadline {
+            while requests.load(Ordering::SeqCst) < 3 && Instant::now() < deadline {
                 if let Ok((mut stream, _)) = listener.accept() {
                     stream
                         .set_read_timeout(Some(Duration::from_secs(1)))
@@ -175,8 +237,9 @@ mod tests {
                     let mut input = [0; 4096];
                     let n = stream.read(&mut input).unwrap();
                     assert!(String::from_utf8_lossy(&input[..n]).starts_with("GET /api/programs "));
-                    requests.fetch_add(1, Ordering::SeqCst);
-                    let body = r#"[{"id":1,"serviceId":1024,"networkId":32096,"startAt":100,"duration":500,"name":"番組"}]"#;
+                    let request = requests.fetch_add(1, Ordering::SeqCst);
+                    let valid = r#"[{"id":1,"serviceId":1024,"networkId":32096,"startAt":100,"duration":500,"name":"番組"}]"#;
+                    let body = if request == 2 { "invalid JSON" } else { valid };
                     write!(
                         stream,
                         "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
@@ -207,7 +270,30 @@ mod tests {
             assert!(feature.view(Some(3209601024), 100).contains("番組"));
             feature.refresh();
         }
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while !matches!(feature.status(), Status::Failed(_)) {
+            assert!(Instant::now() < deadline);
+            feature.poll(&network);
+            thread::sleep(Duration::from_millis(1));
+        }
+        assert!(matches!(
+            feature.status(),
+            Status::Failed(FetchError::Parse(Error::Json(_)))
+        ));
+        assert_eq!(feature.revision, 3);
+        assert!(feature.view(Some(3209601024), 100).contains("番組"));
+        feature.poll_at(&network, Instant::now() + REFRESH - Duration::from_secs(1));
+        assert_eq!(count.load(Ordering::SeqCst), 3);
+        assert_eq!(feature.counters().0, 0);
+        feature.poll_at(&network, Instant::now() + REFRESH + Duration::from_secs(1));
+        assert!(matches!(feature.status(), Status::Fetching));
         feature.configure(None);
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while !matches!(feature.status(), Status::Disabled) {
+            assert!(Instant::now() < deadline);
+            feature.poll(&network);
+            thread::sleep(Duration::from_millis(1));
+        }
         assert_eq!(feature.counters(), (0, 0, false));
         assert_eq!(feature.view(Some(3209601024), 100), "[]");
         server.join().unwrap();
@@ -220,14 +306,16 @@ mod tests {
         feature.poll(&network);
         feature.configure(None);
         feature.configure(Some("http://127.0.0.1:1".into()));
-        assert!(feature.stopping);
+        assert!(matches!(feature.status(), Status::Cancelling));
         let deadline = Instant::now() + Duration::from_secs(2);
-        while feature.job.as_ref().is_some_and(|j| !j.is_finished()) && Instant::now() < deadline {
+        while matches!(&feature.acquisition, Acquisition::Cancelling(job) if !job.is_finished())
+            && Instant::now() < deadline
+        {
             thread::sleep(Duration::from_millis(1));
         }
         feature.configure(None);
         feature.poll(&network);
         assert_eq!(feature.counters(), (0, 0, false));
-        assert_eq!(feature.status, "無効");
+        assert!(matches!(feature.status(), Status::Disabled));
     }
 }

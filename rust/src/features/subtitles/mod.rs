@@ -17,6 +17,20 @@ use std::sync::{
     atomic::{AtomicU64, Ordering},
 };
 
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("Playback unavailable")]
+    PlaybackUnavailable,
+    #[error("Missing playback bin")]
+    MissingBin,
+    #[error("Missing playback bus")]
+    MissingBus,
+    #[error("Invalid service ID: {0}")]
+    InvalidServiceId(#[from] std::num::TryFromIntError),
+    #[error("字幕デコーダーを初期化できません")]
+    DecoderUnavailable,
+}
+
 /// A single playback generation. Construct before PLAYING; drop after READY.
 pub struct Session {
     clock: SubtitleClock,
@@ -25,15 +39,15 @@ pub struct Session {
     decoded: Arc<AtomicU64>,
 }
 impl Session {
-    pub fn start(playbin: &gst::Element, service: u64) -> Result<Self, String> {
+    pub fn start(playbin: &gst::Element, service: u64) -> Result<Self, Error> {
         let bin = playbin
             .downcast_ref::<gst::Bin>()
-            .ok_or("Missing playback bin")?;
-        let bus = playbin.bus().ok_or("Missing playback bus")?;
+            .ok_or(Error::MissingBin)?;
+        let bus = playbin.bus().ok_or(Error::MissingBus)?;
         let mut parser = transport::TransportParser::new(true);
-        parser.select_service(u16::try_from(service % 100_000).map_err(|_| "Invalid service ID")?);
+        parser.select_service(u16::try_from(service % 100_000)?);
         if !parser.decoder_available() {
-            return Err("字幕デコーダーを初期化できません".into());
+            return Err(Error::DecoderUnavailable);
         }
         let parser = Arc::new(Mutex::new(parser));
         let clock = SubtitleClock::default();

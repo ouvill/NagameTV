@@ -2,28 +2,61 @@ use gstreamer::{self as gst, prelude::*};
 use std::cell::RefCell;
 use std::sync::{Mutex, OnceLock};
 
-type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
-#[derive(Debug)]
-pub struct LiveResumeRejected(String);
-impl std::fmt::Display for LiveResumeRejected {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.0.fmt(f)
+type Result<T> = std::result::Result<T, Error>;
+
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("GStreamer initialization failed: {0}")]
+    Initialization(#[from] gst::glib::Error),
+    #[error("GStreamer operation failed: {0}")]
+    Operation(#[from] gst::glib::BoolError),
+    #[error("GStreamer state change failed: {0}")]
+    StateChange(#[from] gst::StateChangeError),
+    #[error("Playback already initialized")]
+    AlreadyInitialized,
+    #[error("Playback unavailable")]
+    Unavailable,
+    #[error("Missing video sink pad")]
+    MissingSinkPad,
+    #[error("Missing Qt video item")]
+    MissingVideoItem,
+    #[error("Video output is not ready")]
+    OutputNotReady,
+    #[error("Missing GStreamer bus")]
+    MissingBus,
+    #[error("配信が終了しました")]
+    EndOfStream,
+    #[error("{source} ({debug:?})")]
+    LiveResumeRejected {
+        source: gst::glib::Error,
+        debug: Option<String>,
+    },
+    #[error("{source} ({debug:?})")]
+    Stream {
+        source: gst::glib::Error,
+        debug: Option<String>,
+    },
+}
+
+impl Error {
+    pub fn is_live_resume_rejected(&self) -> bool {
+        matches!(self, Self::LiveResumeRejected { .. })
     }
 }
-impl std::error::Error for LiveResumeRejected {}
 
-fn stream_error(message: &gst::message::Error) -> Box<dyn std::error::Error> {
-    let text = format!("{} ({:?})", message.error(), message.debug());
-    if message.error().matches(gst::ResourceError::Seek)
+fn stream_error(message: &gst::message::Error) -> Error {
+    let source = message.error();
+    let debug = message.debug().map(|s| s.to_string());
+    if source.matches(gst::ResourceError::Seek)
         && message
             .src()
             .and_then(|s| s.downcast_ref::<gst::Element>())
             .and_then(|s| s.factory())
             .is_some_and(|f| f.name() == "souphttpsrc")
     {
-        Box::new(LiveResumeRejected(text))
+        Error::LiveResumeRejected { source, debug }
     } else {
-        text.into()
+        Error::Stream { source, debug }
     }
 }
 
@@ -32,7 +65,7 @@ static PRELOADED: OnceLock<Mutex<Option<Playback>>> = OnceLock::new();
 pub fn preload() -> Result<()> {
     PRELOADED
         .set(Mutex::new(Some(Playback::new()?)))
-        .map_err(|_| "Playback already initialized")?;
+        .map_err(|_| Error::AlreadyInitialized)?;
     Ok(())
 }
 
@@ -94,7 +127,7 @@ impl Playback {
         output.add_many(elements)?;
         gst::Element::link_many(elements)?;
         let pad =
-            gst::GhostPad::with_target(&input.static_pad("sink").ok_or("Missing video sink pad")?)?;
+            gst::GhostPad::with_target(&input.static_pad("sink").ok_or(Error::MissingSinkPad)?)?;
         pad.set_active(true)?;
         output.add_pad(&pad)?;
         let audio = gst::ElementFactory::make("pulsesink")
@@ -106,11 +139,11 @@ impl Playback {
         playbin.set_property("audio-sink", &audio);
         playbin.set_property("volume", 0.5_f64);
         playbin.connect("source-setup", false, |values| {
-            if let Some(source) = values.get(1).and_then(|v| v.get::<gst::Element>().ok()) {
-                if source.factory().is_some_and(|f| f.name() == "souphttpsrc") {
-                    source.set_property("timeout", 15_u32);
-                    source.set_property("retries", 0_i32);
-                }
+            if let Some(source) = values.get(1).and_then(|v| v.get::<gst::Element>().ok())
+                && source.factory().is_some_and(|f| f.name() == "souphttpsrc")
+            {
+                source.set_property("timeout", 15_u32);
+                source.set_property("retries", 0_i32);
             }
             None
         });
@@ -125,7 +158,7 @@ impl Playback {
     /// The GUI owns the live QQuickItem until shutdown has stopped the sink.
     pub unsafe fn attach(&mut self, item: usize) -> Result<()> {
         if item == 0 {
-            return Err("Missing Qt video item".into());
+            return Err(Error::MissingVideoItem);
         }
         self.sink
             .set_property("widget", item as *mut std::ffi::c_void);
@@ -136,7 +169,7 @@ impl Playback {
     /// Returns false when this stream is already connecting or playing.
     pub fn play(&self, server: &str, service: u64) -> Result<bool> {
         if !self.attached {
-            return Err("Video output is not ready".into());
+            return Err(Error::OutputNotReady);
         }
         let uri = format!("{server}/api/services/{service}/stream");
         if self.requested_uri.borrow().as_ref() == Some(&uri) {
@@ -165,7 +198,7 @@ impl Playback {
     }
 
     pub fn poll(&self) -> Result<bool> {
-        let bus = self.playbin.bus().ok_or("Missing GStreamer bus")?;
+        let bus = self.playbin.bus().ok_or(Error::MissingBus)?;
         let mut playing = false;
         let mut failure = None;
         while let Some(message) = bus.pop() {
@@ -176,7 +209,7 @@ impl Playback {
                     }
                 }
                 gst::MessageView::Eos(_) => {
-                    failure.get_or_insert("配信が終了しました".into());
+                    failure.get_or_insert(Error::EndOfStream);
                 }
                 gst::MessageView::StateChanged(s) if s.src() == Some(self.playbin.upcast_ref()) => {
                     playing |= s.current() == gst::State::Playing;
@@ -213,7 +246,7 @@ impl Drop for Playback {
 // Reusing playbin must not reset streamsynchronizer's pad numbering while
 // playsink can still own its request pads. NULL is only for final destruction.
 fn stop_stream(playbin: &gst::Element) -> Result<()> {
-    let bus = playbin.bus().ok_or("Missing GStreamer bus")?;
+    let bus = playbin.bus().ok_or(Error::MissingBus)?;
     bus.set_flushing(true);
     let result = if playbin.current_state() == gst::State::Null {
         Ok(gst::StateChangeSuccess::Success)
@@ -244,14 +277,14 @@ mod tests {
             let gst::MessageView::Error(error) = message.view() else {
                 panic!("expected error")
             };
-            assert_eq!(stream_error(error).is::<LiveResumeRejected>(), recoverable);
+            assert_eq!(stream_error(error).is_live_resume_rejected(), recoverable);
         }
         let message =
             gst::message::Error::builder(gst::ResourceError::Seek, "other source").build();
         let gst::MessageView::Error(error) = message.view() else {
             panic!("expected error")
         };
-        assert!(!stream_error(error).is::<LiveResumeRejected>());
+        assert!(!stream_error(error).is_live_resume_rejected());
     }
 
     // Uses only native stream-synchronization pads: no display, GPU, or audio.
