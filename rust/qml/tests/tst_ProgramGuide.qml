@@ -23,6 +23,7 @@ TestCase {
     property var guide
     SignalSpy { id: settingsSpy; target: testCase.guide || null; signalName: "settingsRequested" }
     SignalSpy { id: closeSpy; target: testCase.guide || null; signalName: "closeRequested" }
+    SignalSpy { id: watchSpy; target: testCase.guide || null; signalName: "watchRequested" }
     function initTestCase() { failOnWarning(/.*/) }
     function init() { failOnWarning(/.*/); guide = createTemporaryObject(component, testCase); verify(guide !== null) }
     function test_seven_calendar_days_and_selection() {
@@ -50,6 +51,25 @@ TestCase {
         compare(settingsSpy.count, 1)
         mouseClick(findChild(toolbar, "closeGuide"))
         compare(closeSpy.count, 1)
+    }
+    function test_watch_key_is_unchanged_and_expired_program_cannot_request() {
+        watchSpy.clear()
+        const key = '{"endpoint":18446744073709551615}'
+        const start = Date.now() - 1000
+        guide.selectedProgram = {name:"Live",description:"Description",startAt:start,duration:60000,watchKey:key}
+        const popup = findChild(guide, "scheduledDetailsLoader").item
+        tryCompare(popup, "opened", true)
+        const button = findChild(popup, "watchGuideProgram")
+        verify(button.visible)
+        mouseClick(button)
+        compare(watchSpy.count, 1)
+        compare(watchSpy.signalArguments[0][0], key)
+        guide.watchError = "番組情報が更新されています"
+        compare(findChild(popup, "watchGuideError").text, guide.watchError)
+        popup.now = start + 60000
+        compare(button.visible, false)
+        popup.now = start - 1
+        compare(button.visible, false)
     }
     function test_shift_wheel_steps_columns_and_normal_wheel_stays_vertical() {
         guide.dayOffset = 1

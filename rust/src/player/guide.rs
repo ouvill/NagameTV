@@ -33,6 +33,32 @@ impl ffi::Player {
         self.as_mut().rust_mut().guide_dirty = true;
         self.set_epg_data(QString::from("[]"));
     }
+    pub fn watch_program(mut self: Pin<&mut Self>, key: QString) -> QString {
+        use crate::features::program_info::watch::Error;
+        let result = (|| {
+            if !self.rust().epg_enabled || !matches!(self.rust().guide, Guide::Showing(_)) {
+                return Err(Error::Unavailable);
+            }
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .ok()
+                .and_then(|time| u64::try_from(time.as_millis()).ok())
+                .ok_or(Error::Unavailable)?;
+            let index =
+                self.rust()
+                    .epg
+                    .watch_channel(&key.to_string(), &self.rust().entries, now)?;
+            i32::try_from(index).map_err(|_| Error::Unavailable)
+        })();
+        match result {
+            Ok(index) => {
+                self.as_mut().guide_open(false);
+                self.select(index);
+                QString::default()
+            }
+            Err(error) => QString::from(error.to_string()),
+        }
+    }
     pub fn refresh_epg(mut self: Pin<&mut Self>) {
         self.as_mut().rust_mut().epg.refresh();
     }

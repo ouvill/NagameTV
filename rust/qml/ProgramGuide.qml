@@ -13,11 +13,14 @@ Rectangle {
     property string band: rows.length ? rows[0].band : "GR"
     property Window targetWindow: null
     signal settingsRequested()
+    signal watchRequested(string key)
+    property string watchError: ""
     signal closeRequested()
     signal dayRequested(double start, double end)
     property int dayOffset: 0
     property double baseDay: midnight()
     property var selectedProgram: null
+    onSelectedProgramChanged: watchError = ""
     readonly property var days: calendarDays(baseDay)
     readonly property var selectedWindow: days[dayOffset]
     color: "#0b0c0b"
@@ -79,6 +82,9 @@ Rectangle {
         active: root.selectedProgram !== null
         sourceComponent: ProgramDetails {
             program: root.selectedProgram
+            watchEnabled: true
+            watchError: root.watchError
+            onWatchRequested: function(key) { root.watchRequested(key) }
             onClosed: root.selectedProgram = null
         }
     }

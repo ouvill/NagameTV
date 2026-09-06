@@ -21,7 +21,7 @@ pub struct Program {
     pub audios: Box<[crate::audio::Descriptor]>,
 }
 impl Program {
-    fn service(&self) -> BroadcastService {
+    pub(super) fn service(&self) -> BroadcastService {
         self.service
     }
     fn contains(&self, now: u64) -> bool {
@@ -90,9 +90,19 @@ impl Snapshot {
         window: super::guide::DayWindow,
     ) -> Result<String, serde_json::Error> {
         #[derive(Serialize)]
+        struct Cell<'a> {
+            #[serde(flatten)]
+            program: &'a Program,
+            #[serde(
+                rename = "watchKey",
+                serialize_with = "super::watch::Identity::serialize_key"
+            )]
+            identity: super::watch::Identity,
+        }
+        #[derive(Serialize)]
         struct Column<'a> {
             index: usize,
-            programs: Vec<&'a Program>,
+            programs: Vec<Cell<'a>>,
         }
         // Borrow records from the one snapshot; only the selected calendar day crosses Qt.
         let columns: Vec<_> = channels
@@ -104,6 +114,10 @@ impl Snapshot {
                     .schedule(channel.broadcast)
                     .iter()
                     .filter(|p| window.overlaps(p.start_at, p.duration))
+                    .map(|program| Cell {
+                        program,
+                        identity: super::watch::Identity::new(channel.id, program),
+                    })
                     .collect(),
             })
             .collect();

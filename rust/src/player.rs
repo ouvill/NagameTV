@@ -72,6 +72,8 @@ pub mod ffi {
         #[qinvokable]
         fn guide_day(self: Pin<&mut Player>, start: f64, end: f64);
         #[qinvokable]
+        fn watch_program(self: Pin<&mut Player>, key: QString) -> QString;
+        #[qinvokable]
         fn refresh_epg(self: Pin<&mut Player>);
         #[qinvokable]
         unsafe fn attach(self: Pin<&mut Player>, item: *mut QQuickItem) -> bool;

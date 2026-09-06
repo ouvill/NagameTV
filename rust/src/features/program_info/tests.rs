@@ -453,3 +453,64 @@ fn grid_columns_use_explicit_services_and_only_overlap_the_requested_day()
     );
     Ok(())
 }
+
+#[test]
+fn watch_revalidates_opaque_ids_current_time_and_reordered_channels()
+-> Result<(), Box<dyn std::error::Error>> {
+    let mut channels = crate::channels::parse(
+        br#"[
+        {"id":18446744073709551615,"name":"A","type":1,"networkId":4,"serviceId":42},
+        {"id":123,"name":"B","type":1,"networkId":5,"serviceId":42}
+    ]"#,
+    )?;
+    let mut feature = ProgramInfo {
+        snapshot: parse(
+            br#"[
+            {"id":18446744073709551615,"networkId":4,"serviceId":42,"startAt":100,"duration":100}
+        ]"#,
+        )?,
+        ..ProgramInfo::default()
+    };
+    let data: serde_json::Value =
+        serde_json::from_str(&feature.grid_view(&channels, guide::DayWindow::new(100.0, 200.0)?)?)?;
+    let column = channels
+        .iter()
+        .position(|c| c.id == u64::MAX)
+        .ok_or("missing channel")?;
+    let key = data[column]["programs"][0]["watchKey"]
+        .as_str()
+        .ok_or("missing key")?;
+    assert!(key.contains("18446744073709551615"));
+    assert_eq!(feature.watch_channel(key, &channels, 100)?, column);
+    channels.reverse();
+    let reordered = feature.watch_channel(key, &channels, 199)?;
+    assert_eq!(channels[reordered].id, u64::MAX);
+    for now in [99, 200] {
+        assert!(matches!(
+            feature.watch_channel(key, &channels, now),
+            Err(watch::Error::NotLive)
+        ));
+    }
+    channels[reordered].id = 456;
+    assert!(matches!(
+        feature.watch_channel(key, &channels, 150),
+        Err(watch::Error::Unavailable)
+    ));
+    channels[reordered].id = u64::MAX;
+    feature.snapshot = parse(
+        br#"[
+        {"id":2,"networkId":4,"serviceId":42,"startAt":100,"duration":100}
+    ]"#,
+    )?;
+    assert!(matches!(
+        feature.watch_channel(key, &channels, 150),
+        Err(watch::Error::NotLive)
+    ));
+    for bad in ["{}".to_owned(), "x".repeat(513)] {
+        assert!(matches!(
+            feature.watch_channel(&bad, &channels, 150),
+            Err(watch::Error::Unavailable)
+        ));
+    }
+    Ok(())
+}

@@ -407,6 +407,12 @@ ApplicationWindow {
             visible: active
             sourceComponent: Component {
                 ProgramGuide {
+                    id: guidePanel
+                    onWatchRequested: function(key) {
+                        const error = player.watch_program(key)
+                        if (error.length) guidePanel.watchError = error
+                        else root.showGuide = false
+                    }
                     targetWindow: root
                     onSettingsRequested: settings.open()
                     rows: root.channelRows
