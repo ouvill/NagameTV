@@ -3,6 +3,30 @@ use std::cell::RefCell;
 use std::sync::{Mutex, OnceLock};
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+#[derive(Debug)]
+pub struct LiveResumeRejected(String);
+impl std::fmt::Display for LiveResumeRejected {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+impl std::error::Error for LiveResumeRejected {}
+
+fn stream_error(message: &gst::message::Error) -> Box<dyn std::error::Error> {
+    let text = format!("{} ({:?})", message.error(), message.debug());
+    if message.error().matches(gst::ResourceError::Seek)
+        && message
+            .src()
+            .and_then(|s| s.downcast_ref::<gst::Element>())
+            .and_then(|s| s.factory())
+            .is_some_and(|f| f.name() == "souphttpsrc")
+    {
+        Box::new(LiveResumeRejected(text))
+    } else {
+        text.into()
+    }
+}
+
 static PRELOADED: OnceLock<Mutex<Option<Playback>>> = OnceLock::new();
 
 pub fn preload() -> Result<()> {
@@ -148,7 +172,7 @@ impl Playback {
             match message.view() {
                 gst::MessageView::Error(e) => {
                     if failure.is_none() {
-                        failure = Some(format!("{} ({:?})", e.error(), e.debug()));
+                        failure = Some(stream_error(e));
                     }
                 }
                 gst::MessageView::Eos(_) => {
@@ -161,7 +185,7 @@ impl Playback {
             }
         }
         if let Some(error) = failure {
-            return Err(error.into());
+            return Err(error);
         }
         Ok(playing)
     }
@@ -204,6 +228,31 @@ fn stop_stream(playbin: &gst::Element) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn recovery_is_limited_to_http_source_seek_errors() {
+        gst::init().unwrap();
+        let source = gst::ElementFactory::make("souphttpsrc").build().unwrap();
+        for (code, recoverable) in [
+            (gst::ResourceError::Seek, true),
+            (gst::ResourceError::NotFound, false),
+            (gst::ResourceError::Read, false),
+        ] {
+            let message = gst::message::Error::builder(code, "test")
+                .src(&source)
+                .build();
+            let gst::MessageView::Error(error) = message.view() else {
+                panic!("expected error")
+            };
+            assert_eq!(stream_error(error).is::<LiveResumeRejected>(), recoverable);
+        }
+        let message =
+            gst::message::Error::builder(gst::ResourceError::Seek, "other source").build();
+        let gst::MessageView::Error(error) = message.view() else {
+            panic!("expected error")
+        };
+        assert!(!stream_error(error).is::<LiveResumeRejected>());
+    }
 
     // Uses only native stream-synchronization pads: no display, GPU, or audio.
     #[test]

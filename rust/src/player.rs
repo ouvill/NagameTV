@@ -90,6 +90,7 @@ pub struct PlayerRust {
     subtitle_session: Option<subtitles::Session>,
     epg: ProgramInfo,
     active_service: Option<u64>,
+    resume_retry_used: bool,
     guide_visible: bool,
     guide_revision: u64,
     guide_service: Option<u64>,
@@ -132,6 +133,7 @@ impl Default for PlayerRust {
             subtitle_session: None,
             epg: ProgramInfo::default(),
             active_service: None,
+            resume_retry_used: false,
             guide_visible: false,
             guide_revision: 0,
             guide_service: None,
@@ -382,6 +384,10 @@ impl ffi::Player {
         self.play();
     }
     pub fn play(mut self: Pin<&mut Self>) {
+        self.as_mut().rust_mut().resume_retry_used = false;
+        self.start_stream();
+    }
+    fn start_stream(mut self: Pin<&mut Self>) {
         let Some(entry) = self.rust().entries.get(*self.selected() as usize) else {
             return;
         };
@@ -475,8 +481,23 @@ impl ffi::Player {
             Some(Err(error)) => {
                 let text = error.to_string();
                 eprintln!("Playback error: {text}");
-                self.as_mut().stop();
-                self.status_text(format!("再生エラー: {text}"));
+                let recover = error.is::<playback::LiveResumeRejected>()
+                    && self.rust().active_service.is_some()
+                    && !self.rust().resume_retry_used;
+                if let Err(stop_error) = self.as_mut().end_stream() {
+                    self.status_text(format!("停止失敗: {stop_error}（{text}）"));
+                    return;
+                }
+                if recover {
+                    self.as_mut().rust_mut().resume_retry_used = true;
+                    eprintln!("Live resume rejected; opening one fresh stream connection");
+                    self.as_mut().start_stream();
+                    if self.rust().active_service.is_some() {
+                        self.status_text("配信接続が途切れたため再接続中…");
+                    }
+                } else {
+                    self.status_text(format!("再生エラー: {text}"));
+                }
             }
             _ => {}
         }

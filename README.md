@@ -56,3 +56,6 @@ EPGの通信取消しが完了するまでは停止待ちになる。
 詳しい所有関係、停止順序、上限と通常版との差は [architecture.md](docs/architecture.md)。
 
 実施済みの確認と未検証範囲は [verification.md](docs/verification.md) に記載。
+
+配信中にHTTPの途中再開を拒否された場合は、新規接続で1回復旧します。
+繰り返し失敗する場合は停止します。[再現・修正の記録](docs/live-stream-errors.md)。
