@@ -22,6 +22,10 @@ pub mod ffi {
         #[cxx_name = "subtitleOutlinePath"]
         fn subtitle_outline_path(text: &QString, font: &QFont) -> QString;
         include!("qt_helpers.h");
+        #[cxx_name = "playbackLogDirectory"]
+        fn playback_log_directory() -> QString;
+        #[cxx_name = "openPlaybackLogDirectory"]
+        fn open_playback_log_directory(path: &QString) -> bool;
         type QQuickItem;
         include!("pointer_activity.h");
         #[cxx_name = "installPointerActivity"]
@@ -37,6 +41,7 @@ pub mod ffi {
         #[qproperty(QString, server, READ, NOTIFY)]
         #[qproperty(QString, status, READ, NOTIFY)]
         #[qproperty(QString, playback_error, READ, NOTIFY)]
+        #[qproperty(QString, log_error, READ, NOTIFY)]
         #[qproperty(QString, channel_data, READ, NOTIFY)]
         #[qproperty(QString, channel_program_data, READ, NOTIFY)]
         #[qproperty(QString, channel_visibility_data, READ, NOTIFY)]
@@ -110,6 +115,8 @@ pub mod ffi {
         #[qinvokable]
         fn shutdown(self: Pin<&mut Player>);
         #[qinvokable]
+        fn open_log_folder(self: Pin<&mut Player>) -> bool;
+        #[qinvokable]
         fn save_settings(self: Pin<&mut Player>);
         #[qinvokable]
         fn enable_comments(self: Pin<&mut Player>, enabled: bool);
@@ -153,6 +160,8 @@ pub struct PlayerRust {
     server: QString,
     status: QString,
     playback_error: QString,
+    log_error: QString,
+    error_log: Result<crate::error_log::ErrorLog, crate::error_log::Error>,
     channel_data: QString,
     channel_program_data: QString,
     channel_visibility_data: QString,
@@ -256,6 +265,7 @@ impl ffi::Player {
         f64
     );
     property_setter!(set_comment_speed, comment_speed, comment_speed_changed, f64);
+    property_setter!(set_log_error, log_error, log_error_changed, QString);
     property_setter!(set_server, server, server_changed, QString);
     property_setter!(set_status, status, status_changed, QString);
     property_setter!(

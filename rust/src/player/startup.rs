@@ -57,7 +57,17 @@ impl Default for PlayerRust {
             .err()
             .map(ToString::to_string)
             .unwrap_or_else(|| "サーバーに接続してください".into());
+        let error_log = crate::error_log::ErrorLog::new(
+            super::ffi::playback_log_directory().to_string().into(),
+        );
+        let log_error = error_log
+            .as_ref()
+            .err()
+            .map(ToString::to_string)
+            .unwrap_or_default();
         Self {
+            error_log,
+            log_error: QString::from(log_error),
             server: QString::from(preferences.preferences().server.clone()),
             status: QString::from(status),
             playback_error: QString::default(),

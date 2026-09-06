@@ -1,5 +1,6 @@
 mod audio;
 mod channels;
+mod error_log;
 mod features;
 mod memory;
 mod playback;

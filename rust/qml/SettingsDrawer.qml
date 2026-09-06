@@ -210,6 +210,32 @@ Drawer {
                 wrapMode: Text.Wrap
                 Layout.leftMargin: 8
             }
+            Button {
+                id: logFolder
+                Layout.fillWidth: true
+                text: "ログフォルダーを開く"
+                onClicked: root.backend.open_log_folder()
+                contentItem: Label {
+                    text: logFolder.text
+                    color: "#f4f5f3"
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                }
+                background: Rectangle {
+                    implicitHeight: 40
+                    radius: 12
+                    color: logFolder.hovered ? "#1c1f1c" : "transparent"
+                    border.color: "#30ffffff"
+                }
+            }
+            Label {
+                text: root.backend.log_error || ""
+                visible: text.length > 0
+                textFormat: Text.PlainText
+                color: "#b6bab6"
+                Layout.fillWidth: true
+                wrapMode: Text.Wrap
+            }
             Label {
                 text: root.backend.diagnostics
                 color: "#aaaaaa"
