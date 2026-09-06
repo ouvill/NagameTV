@@ -1,4 +1,5 @@
 use gstreamer::{self as gst, prelude::*};
+use std::cell::RefCell;
 use std::sync::{Mutex, OnceLock};
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
@@ -19,6 +20,7 @@ pub struct Playback {
     playbin: gst::Element,
     sink: gst::Element,
     attached: bool,
+    requested_uri: RefCell<Option<String>>,
 }
 
 impl Playback {
@@ -86,6 +88,7 @@ impl Playback {
             playbin,
             sink,
             attached: false,
+            requested_uri: RefCell::new(None),
         })
     }
 
@@ -100,27 +103,28 @@ impl Playback {
         Ok(())
     }
 
-    pub fn play(&self, server: &str, service: u64) -> Result<()> {
+    /// Returns false when this stream is already connecting or playing.
+    pub fn play(&self, server: &str, service: u64) -> Result<bool> {
         if !self.attached {
             return Err("Video output is not ready".into());
+        }
+        let uri = format!("{server}/api/services/{service}/stream");
+        if self.requested_uri.borrow().as_ref() == Some(&uri) {
+            return Ok(false);
         }
         self.stop()?;
         // Qt must supply the GL display before any other GL element starts.
         self.sink.set_state(gst::State::Ready)?;
-        self.playbin
-            .set_property("uri", format!("{server}/api/services/{service}/stream"));
+        self.playbin.set_property("uri", &uri);
         self.playbin.set_state(gst::State::Playing)?;
+        *self.requested_uri.borrow_mut() = Some(uri);
         eprintln!("Starting service {service}");
-        Ok(())
+        Ok(true)
     }
 
     pub fn stop(&self) -> Result<()> {
-        let bus = self.playbin.bus().ok_or("Missing GStreamer bus")?;
-        bus.set_flushing(true);
-        // Reuse playbin but fully stop its old stream before changing the URI.
-        let result = self.playbin.set_state(gst::State::Null);
-        bus.set_flushing(false);
-        result?;
+        stop_stream(&self.playbin)?;
+        *self.requested_uri.borrow_mut() = None;
         Ok(())
     }
 
@@ -160,6 +164,9 @@ impl Playback {
         if let Err(error) = self.stop() {
             eprintln!("Stop failed: {error}");
         }
+        if let Err(error) = self.playbin.set_state(gst::State::Null) {
+            eprintln!("Playback shutdown failed: {error}");
+        }
         let _ = self.sink.set_state(gst::State::Null);
         self.sink
             .set_property("widget", std::ptr::null_mut::<std::ffi::c_void>());
@@ -170,5 +177,46 @@ impl Playback {
 impl Drop for Playback {
     fn drop(&mut self) {
         self.shutdown();
+    }
+}
+
+// Reusing playbin must not reset streamsynchronizer's pad numbering while
+// playsink can still own its request pads. NULL is only for final destruction.
+fn stop_stream(playbin: &gst::Element) -> Result<()> {
+    let bus = playbin.bus().ok_or("Missing GStreamer bus")?;
+    bus.set_flushing(true);
+    let result = if playbin.current_state() == gst::State::Null {
+        Ok(gst::StateChangeSuccess::Success)
+    } else {
+        playbin.set_state(gst::State::Ready)
+    };
+    bus.set_flushing(false);
+    result?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Uses only native stream-synchronization pads: no display, GPU, or audio.
+    #[test]
+    fn stopping_preserves_unique_names_for_retained_stream_pads() {
+        gst::init().unwrap();
+        let pipeline = gst::Pipeline::new();
+        let sync = gst::ElementFactory::make("streamsynchronizer")
+            .build()
+            .unwrap();
+        pipeline.add(&sync).unwrap();
+        pipeline.set_state(gst::State::Ready).unwrap();
+        let retained = sync.request_pad_simple("sink_%u").unwrap();
+        // playsink may still hold a request pad across a channel change.
+        stop_stream(pipeline.upcast_ref()).unwrap();
+        let next = sync.request_pad_simple("sink_%u").unwrap();
+        assert_ne!(retained.name(), next.name());
+        assert_eq!(sync.sink_pads().len(), 2);
+        sync.release_request_pad(&retained);
+        sync.release_request_pad(&next);
+        pipeline.set_state(gst::State::Null).unwrap();
     }
 }

@@ -32,8 +32,9 @@ Rust + Qt 6/QML + GStreamerの最小視聴アプリです。
 
 映像はvideoconvert → YADIF（全フィールド）→ 8フレームqueue → glupload →
 glcolorconvert → RGBA → qml6glsink。音声はpulsesinkを明示的に使います。
-再生のたびにパイプラインをNULLへ戻し、旧配信を停止してからURIを交換します。
-通常版と停止方式・機能・診断負荷が異なるため、メモリー差を単一機能の効果と断定しません。
+選局・停止ではパイプラインをREADYへ戻し、旧配信を停止してからURIを交換します。
+NULLへの遷移は終了時だけに限定します。同じ局への再生要求は、接続中・再生中なら何もしません。
+通常版と機能・診断負荷が異なるため、メモリー差を単一機能の効果と断定しません。
 GStreamerの字幕処理も無効で、アプリ独自のTS解析は行いません。
 
 ## ビルド・起動
@@ -85,3 +86,20 @@ releaseにもデバッグ行情報を付け、プロファイラーで確保元�
 - 長時間のメモリー安定性を保証する計測はまだ行っていない。
 
 ローカルの画面・ログは`benchmark/verification/`に保存（Git対象外）。
+
+### チャンネル切り替えのクラッシュ修正
+
+旧版では再利用するplaybin3を選局ごとにNULLへ戻していた。
+実環境でstreamsynchronizerのpad名重複に続くplaysinkのassertionによる異常終了を観測した。
+選局と停止をREADYへの遷移に変更し、同じ局の重複要求も抑止した。
+停止中はGL表示基盤を再利用用に保持し、終了時にNULLで解放する。
+
+回帰テストは、実際のGStreamer streamsynchronizerが既存padを保持する状況で、
+停止後の新しいpad名が衝突しないことを検証する。ディスプレイ・GPU・音声は使わない。
+[上流実装](https://github.com/GStreamer/gstreamer/blob/1.28.2/subprojects/gst-plugins-base/gst/playback/gststreamsynchronizer.c)
+でもREADY→NULLで番号をリセットすることを確認できる。
+
+修正版の実画面では同じ局への再生20回、通常の往復選局12回、高速選局100操作、
+停止・再生20組を実施し、異常終了・pad重複を観測しなかった。
+高速操作はGUIの処理状況により入力がまとめられるため、100回の再生完了を意味しない。
+ログと実行スクリプトは`benchmark/switch-fix/`に保存（Git対象外）。

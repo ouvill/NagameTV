@@ -159,7 +159,8 @@ impl ffi::Player {
         let server = self.server().to_string();
         if let Some(playback) = &self.rust().playback {
             match playback.play(&server, id) {
-                Ok(()) => self.as_mut().status_text(format!("接続中: {name}")),
+                Ok(true) => self.as_mut().status_text(format!("接続中: {name}")),
+                Ok(false) => {}
                 Err(error) => {
                     let text = error.to_string();
                     let _ = playback.stop();
