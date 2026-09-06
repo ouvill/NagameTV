@@ -162,6 +162,7 @@ ApplicationWindow {
             sourceComponent: StoppedPlayback {
                 status: player.status
                 playbackError: player.playback_error
+                playbackMessage: player.playback_message
                 canPlay: player.selected >= 0
                 hasChannels: root.channelRows.length > 0
                 loading: player.loading

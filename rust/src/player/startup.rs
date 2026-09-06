@@ -86,6 +86,7 @@ impl Default for PlayerRust {
             server: QString::from(preferences.preferences().server.clone()),
             status: QString::from(status),
             playback_error: QString::default(),
+            playback_message: QString::default(),
             channel_data: QString::from("[]"),
             channel_program_data: QString::from("[]"),
             channel_visibility_data: QString::from("[]"),

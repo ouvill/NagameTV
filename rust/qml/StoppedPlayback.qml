@@ -9,6 +9,7 @@ Rectangle {
     required property bool hasChannels
     property bool loading: false
     property string playbackError: ""
+    property string playbackMessage: ""
     property bool showDetails: false
     onPlaybackErrorChanged: if (!playbackError.length)
         showDetails = false
@@ -32,7 +33,7 @@ Rectangle {
             horizontalAlignment: Text.AlignHCenter
             wrapMode: Text.Wrap
             textFormat: Text.PlainText
-            text: root.playbackError.length ? qsTranslate("Viewer", "Could not play the video. Retry or check the channel and connection settings.") : root.status
+            text: root.playbackError.length ? (root.playbackMessage.length ? qsTranslate("Backend", root.playbackMessage) : qsTranslate("Viewer", "Could not play the video. Retry or check the channel and connection settings.")) : root.status
             color: "#b6bab6"
         }
         Button {

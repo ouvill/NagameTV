@@ -1,9 +1,14 @@
 use super::ffi::Player;
 use cxx_qt::CxxQtType;
 use cxx_qt_lib::QString;
-use std::{fmt::Display, pin::Pin};
+use std::pin::Pin;
 
 impl Player {
+    pub(super) fn clear_playback_failure(mut self: Pin<&mut Self>) {
+        self.as_mut().set_playback_error(QString::default());
+        self.as_mut().set_playback_message(QString::default());
+    }
+
     pub fn open_log_folder(mut self: Pin<&mut Self>) -> bool {
         let result = match &self.rust().error_log {
             Ok(log) => log
@@ -27,7 +32,10 @@ impl Player {
 
     /// Retain only the latest failure for the UI; ordinary status updates do not erase it.
     /// User retry/server replacement and successful PLAYING clear this projection.
-    pub(super) fn playback_failed(mut self: Pin<&mut Self>, error: impl Display) {
+    pub(super) fn playback_failed(mut self: Pin<&mut Self>, error: crate::playback::Error) {
+        // Store only a static translation source plus the existing latest diagnostics.
+        self.as_mut()
+            .set_playback_message(QString::from(error.hint().source()));
         let text = error.to_string();
         let result = match &self.rust().error_log {
             Ok(log) => log.save(&text).map_err(|error| error.to_string()),

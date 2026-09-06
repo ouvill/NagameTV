@@ -134,3 +134,34 @@ QtCore/QML試験では件数の位置の翻訳、再接続状態の日英切り�
 実接続中に言語を切り替えた場合の操作確認は未実施。
 
 CMakeリリースビルドも成功。
+
+
+## 再生失敗の案内とジャンル記述の訂正
+
+mainのplayback.rsを参照し、HTTP 503 / 404 / 401・403 / 408・504 /
+その他5xx / その他4xxに応じた案内を移植した。HTTP情報がなければ、souphttpsrcの
+ResourceErrorだけを通信失敗として扱い、出力装置のエラーを通信障害と誤表示しない。
+Errorを文字列化する前にHint enumへ分類し、診断用のnative errorとdebug情報は保持する。
+Cleanupはprimaryの分類を引き継ぐ。同期的なPLAYING遷移失敗でも、停止がbusを破棄する前に
+既に届いた具体的なエラーを取り出す。
+
+[GStreamerの公式API](https://gstreamer.freedesktop.org/documentation/gstreamer/gstmessage.html#gst_message_parse_error_details)
+でdetailsは省略可能な借用構造であることを確認。Rust bindingでhttp-status-codeをu32として
+取り出し、欠落・型不一致はNoneにする。エラー文の数字をHTTPコードと推測しない。
+
+QMLへは固定の翻訳原文を一つ渡し、qsTranslateのBackendコンテキストで案内を表示する。
+mainの既存9キーを共有し、言語変更時に表示中の案内も再翻訳される。
+再生再試行・接続先変更・PLAYING到達で案内と診断詳細をまとめて解除する。
+既存の詳細表示・ログ保存には技術的な診断文を使い、これらの全面翻訳は残る。
+
+以前の残作業に「ジャンルの翻訳」と書いたが、main・実験版のQMLとEPG投影を再確認すると、
+ジャンル値は番組表の色分けにだけ使われており、翻訳対象のジャンルラベルはない。
+これは未移植機能ではなかったため訂正する。言語変更によるEPG JSON再生成も不要。
+
+生成GStreamerメッセージを使うCPU試験2件で12種類のHTTPコード、details欠落・型不一致、
+ネットワーク発生元の区別、元の失敗をCleanup後も保持することを確認。
+既存のHTTPソースのseek失敗だけを自動再接続対象とする試験も成功した。
+QtCore/QML試験で動的な翻訳原文による表示中エラーの再翻訳、qmllint、全ターゲットClippyも成功。
+実サーバーの503等を引き起こす試験、同期遷移失敗の実再生試験、実画面の配置確認は未実施。
+
+CMakeリリースビルドも成功。

@@ -34,6 +34,8 @@ int main(int argc, char **argv) {
     QtObject {
       readonly property var day: new Date(2026, 8, 8, 12, 0, 0)
       readonly property string dateLabel: day.toLocaleDateString(Qt.locale(Qt.uiLanguage), qsTranslate("Main", "ddd, MMM d"))
+      property string failureSource: "This channel was not found on Mirakurun. Refresh the channel list and choose a channel again."
+      readonly property string failureLabel: qsTranslate("Backend", failureSource)
       property string heading: qsTr("Stats for nerds"); property string closeLabel: qsTranslate("Main", "Close"); property string emptyChannels: qsTranslate("Viewer", "No matching channels") })", QUrl("file:///Main.qml"));
   check(engine.rootObjects().size() == 1, "Load translation test object");
   auto *root = engine.rootObjects().first();
@@ -44,6 +46,8 @@ int main(int argc, char **argv) {
   check(applyUiLanguage("ja") == "ja", "Load Japanese catalog");
   check(translateBackend("Programs: %1").arg("13000") == QString::fromUtf8("13000 番組"), "Japanese feature count template reorders argument");
   check(translateBackend("Waiting to reconnect") == QString::fromUtf8("再接続待ち"), "Japanese retry status");
+  check(root->property("failureLabel").toString() == translateBackend(root->property("failureSource").toString()), "Dynamic failure source is retranslated");
+  check(root->property("failureLabel") != root->property("failureSource"), "Failure guidance has a Japanese translation");
   const QString detail = QString::fromUtf8("source %1 <tag> 日本語");
   check(translateBackend("Fetch failed: %1").arg(detail) == QString::fromUtf8("取得失敗: ") + detail, "Diagnostics remain literal data including placeholders");
   check(root->property("dateLabel").toString() == QString::fromUtf8("9/8（火）"), "Japanese date and translated format update together");
@@ -56,6 +60,7 @@ int main(int argc, char **argv) {
   check(root->property("heading").toString() == "Stats for nerds", "Retranslate existing QML to English");
   check(root->property("dateLabel").toString() == "Tue, Sep 8", "Date returns to English");
   check(translateBackend("Waiting to reconnect") == "Waiting to reconnect", "Feature status returns to English");
+  check(root->property("failureLabel") == root->property("failureSource"), "Existing failure guidance returns to English");
   check(root->property("emptyChannels").toString() == "No matching channels", "Feature UI context returns to English");
   check(applyUiLanguage("ja") == "ja", "Reuse Japanese translator");
   check(root->property("heading").toString() == QString::fromUtf8("動画統計"), "Switch repeatedly");

@@ -62,6 +62,7 @@ pub mod ffi {
         #[qproperty(QString, server, READ, NOTIFY)]
         #[qproperty(QString, status, READ, NOTIFY)]
         #[qproperty(QString, playback_error, READ, NOTIFY)]
+        #[qproperty(QString, playback_message, READ, NOTIFY)]
         #[qproperty(QString, log_error, READ, NOTIFY)]
         #[qproperty(QString, channel_data, READ, NOTIFY)]
         #[qproperty(QString, channel_program_data, READ, NOTIFY)]
@@ -187,6 +188,7 @@ pub struct PlayerRust {
     server: QString,
     status: QString,
     playback_error: QString,
+    playback_message: QString,
     log_error: QString,
     diagnostic_recorder: Option<viewer_diagnostics::recorder::Recorder>,
     diagnostic_ui: telemetry::UiState,
@@ -300,6 +302,12 @@ impl ffi::Player {
     property_setter!(set_ui_language, ui_language, ui_language_changed, QString);
     property_setter!(set_server, server, server_changed, QString);
     property_setter!(set_status, status, status_changed, QString);
+    property_setter!(
+        set_playback_message,
+        playback_message,
+        playback_message_changed,
+        QString
+    );
     property_setter!(
         set_playback_error,
         playback_error,
@@ -565,7 +573,7 @@ impl ffi::Player {
     }
     pub fn connect_server(mut self: Pin<&mut Self>, server: QString) {
         self.as_mut().rust_mut().comments.configure(false, None);
-        self.as_mut().set_playback_error(QString::default());
+        self.as_mut().clear_playback_failure();
         self.as_mut().rust_mut().request = None;
         self.as_mut().set_loading(false);
         self.as_mut().rust_mut().epg.configure(None);
@@ -618,7 +626,7 @@ impl ffi::Player {
     }
     pub fn play(mut self: Pin<&mut Self>) {
         self.record_diagnostic(viewer_diagnostics::recorder::Event::PlayRequested);
-        self.as_mut().set_playback_error(QString::default());
+        self.as_mut().clear_playback_failure();
         self.as_mut().rust_mut().resume_retry_used = false;
         self.start_stream();
     }
@@ -737,7 +745,7 @@ impl ffi::Player {
         self.poll_audio_choice();
         match result {
             Some(Ok(true)) => {
-                self.as_mut().set_playback_error(QString::default());
+                self.as_mut().clear_playback_failure();
                 self.as_mut().set_playing(true);
                 if let Some(entry) = self.rust().entries.get(*self.selected() as usize) {
                     let text = format!("再生中: {}", entry.name);
@@ -752,7 +760,10 @@ impl ffi::Player {
                     && self.rust().active_service.is_some()
                     && !self.rust().resume_retry_used;
                 if let Err(stop_error) = self.as_mut().end_stream() {
-                    self.playback_failed(format!("停止失敗: {stop_error}（{text}）"));
+                    self.playback_failed(playback::Error::Cleanup {
+                        primary: Box::new(error),
+                        cleanup: Box::new(stop_error),
+                    });
                     return;
                 }
                 if recover {
@@ -763,7 +774,7 @@ impl ffi::Player {
                         self.status_text("配信接続が途切れたため再接続中…");
                     }
                 } else {
-                    self.playback_failed(text);
+                    self.playback_failed(error);
                 }
             }
             _ => {}

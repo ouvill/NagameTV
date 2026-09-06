@@ -5,6 +5,7 @@ pub mod audio_output;
 mod audio_routing;
 pub mod audio_streams;
 pub mod deinterlace;
+pub mod failure;
 pub mod stats;
 
 use gstreamer::{self as gst, prelude::*};
@@ -48,8 +49,10 @@ pub enum Error {
         source: gst::glib::Error,
         debug: Option<String>,
     },
-    #[error("{source} ({debug:?})")]
+    #[error("{source} (HTTP: {http_status:?}, debug: {debug:?})")]
     Stream {
+        http_status: Option<u32>,
+        network_source: bool,
         source: gst::glib::Error,
         debug: Option<String>,
     },
@@ -73,7 +76,18 @@ fn stream_error(message: &gst::message::Error) -> Error {
     {
         Error::LiveResumeRejected { source, debug }
     } else {
-        Error::Stream { source, debug }
+        Error::Stream {
+            http_status: message
+                .details()
+                .and_then(|details| details.get::<u32>("http-status-code").ok()),
+            network_source: message
+                .src()
+                .and_then(|src| src.downcast_ref::<gst::Element>())
+                .and_then(|element| element.factory())
+                .is_some_and(|factory| factory.name() == "souphttpsrc"),
+            source,
+            debug,
+        }
     }
 }
 
@@ -228,7 +242,11 @@ impl Playback {
         // Qt must supply the GL display before any other GL element starts.
         self.sink.set_state(gst::State::Ready)?;
         self.playbin.set_property("uri", &uri);
-        self.playbin.set_state(gst::State::Playing)?;
+        if let Err(error) = self.playbin.set_state(gst::State::Playing) {
+            // A synchronous failure may already have a more specific HTTP error queued.
+            // Read it before cleanup flushes the bus; never parse diagnostic prose.
+            return Err(self.poll().err().unwrap_or(Error::StateChange(error)));
+        }
         *self.requested_uri.borrow_mut() = Some(uri);
         eprintln!("Starting service {service}");
         Ok(true)
