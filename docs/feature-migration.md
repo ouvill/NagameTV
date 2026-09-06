@@ -119,3 +119,5 @@ CPU試験ではSessionが生存中に別Sessionで保存内容を読めること
 全画面とショートカットの責務・検証は [window-actions.md](window-actions.md)。
 
 音声トラック選択の設計・検証と未移植部分は [audio-selection.md](audio-selection.md)。
+
+実況のプロトコル分離・接続と表示の残作業は [comments-migration.md](comments-migration.md)。
