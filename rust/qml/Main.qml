@@ -185,7 +185,7 @@ ApplicationWindow {
                 onClicked: windowActions.toggleFullscreen()
             }
         }
-        SettingsPopup {
+        SettingsDrawer {
             id: settings
             backend: player
             statsVisible: root.showStats

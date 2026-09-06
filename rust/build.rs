@@ -12,7 +12,7 @@ fn main() {
             .qml_file("qml/CurrentProgram.qml")
             .qml_file("qml/IconAction.qml")
             .qml_file("qml/ThemedSlider.qml")
-            .qml_file("qml/SettingsPopup.qml")
+            .qml_file("qml/SettingsDrawer.qml")
             .qml_file("qml/ProgramDetails.qml")
             .qml_file("qml/VideoStats.qml")
             .qml_file("qml/ChannelSelector.qml")
@@ -28,6 +28,7 @@ fn main() {
             .depend("QtQuick.Shapes"),
     )
     .qrc_resources([
+        "../assets/icons/panel-right-close.svg",
         "../assets/icons/square.svg",
         "../assets/icons/play.svg",
         "../assets/icons/volume-x.svg",
