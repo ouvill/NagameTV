@@ -27,7 +27,7 @@ impl Ingest {
         if self.failed.load(Ordering::Relaxed) {
             Err(Error::ParserPoisoned)
         } else {
-            Ok(())
+            self.clock.check()
         }
     }
 
@@ -90,7 +90,7 @@ mod tests {
         ingest.consume([buffer.as_ref()]);
         assert!(matches!(ingest.check(), Err(Error::ParserPoisoned)));
         assert_eq!(clock.pending_count(), Some(0));
-        assert!(matches!(clock.poll(None), SubtitleUpdate::Clear));
+        assert!(matches!(clock.poll(None).unwrap(), SubtitleUpdate::Clear));
         ingest.consume([buffer.as_ref()]);
         assert!(ingest.parser.is_poisoned());
         assert!(matches!(ingest.check(), Err(Error::ParserPoisoned)));

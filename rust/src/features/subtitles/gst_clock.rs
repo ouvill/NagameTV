@@ -1,14 +1,18 @@
 use super::{
-    SubtitleCue,
+    Error, SubtitleCue,
     timing::{Anchor, SubtitleUpdate, Timeline},
 };
 use crate::features::subscriptions::Subscriptions;
 use gst::prelude::*;
 use gstreamer as gst;
 use std::collections::{HashMap, VecDeque};
-use std::sync::{Arc, Mutex};
+use std::sync::{
+    Arc, Mutex, MutexGuard,
+    atomic::{AtomicBool, Ordering},
+};
 
 type StreamKey = (String, u32);
+type Segment = Option<gst::FormattedSegment<gst::ClockTime>>;
 
 #[derive(Default)]
 struct State {
@@ -22,11 +26,42 @@ struct State {
 /// The synchronous stats handler runs before the corresponding demuxed PES is
 /// pushed. Matching them by PID and PES order also covers initial pending PES.
 #[derive(Clone, Default)]
-pub(crate) struct SubtitleClock(Arc<Mutex<State>>);
+pub(crate) struct SubtitleClock(Arc<Shared>);
+
+#[derive(Default)]
+struct Shared {
+    state: Mutex<State>,
+    segment_failed: AtomicBool,
+}
 
 impl SubtitleClock {
+    pub fn check(&self) -> Result<(), Error> {
+        // These flags publish no associated data. Never reuse poisoned clock
+        // state or a segment whose mapping may have been partially updated.
+        if self.0.state.is_poisoned() || self.0.segment_failed.load(Ordering::Relaxed) {
+            Err(Error::ClockPoisoned)
+        } else {
+            Ok(())
+        }
+    }
+
+    fn state(&self) -> Result<MutexGuard<'_, State>, Error> {
+        self.check()?;
+        self.0.state.lock().map_err(|_| Error::ClockPoisoned)
+    }
+
+    fn segment<'a>(&self, segment: &'a Mutex<Segment>) -> Result<MutexGuard<'a, Segment>, Error> {
+        self.check()?;
+        segment.lock().map_err(|_| {
+            self.0.segment_failed.store(true, Ordering::Relaxed);
+            Error::ClockPoisoned
+        })
+    }
+
     pub fn pending_count(&self) -> Option<usize> {
+        self.check().ok()?;
         self.0
+            .state
             .try_lock()
             .ok()
             .map(|state| state.timeline.pending_count())
@@ -34,7 +69,7 @@ impl SubtitleClock {
 
     #[cfg(test)]
     pub fn reset(&self) {
-        if let Ok(mut state) = self.0.lock() {
+        if let Ok(mut state) = self.state() {
             // Release old stream keys and queue allocations at channel boundaries.
             let disabled = state.disabled;
             *state = State {
@@ -46,7 +81,7 @@ impl SubtitleClock {
     }
 
     pub fn set_enabled(&self, enabled: bool) {
-        if let Ok(mut state) = self.0.lock()
+        if let Ok(mut state) = self.state()
             && state.disabled == enabled
         {
             *state = State {
@@ -58,7 +93,7 @@ impl SubtitleClock {
     }
 
     pub fn push(&self, cues: Vec<SubtitleCue>) {
-        if let Ok(mut state) = self.0.lock() {
+        if let Ok(mut state) = self.state() {
             if state.disabled {
                 return;
             }
@@ -68,11 +103,11 @@ impl SubtitleClock {
         }
     }
 
-    pub fn poll(&self, position: Option<gst::ClockTime>) -> SubtitleUpdate {
-        self.0
-            .lock()
-            .map(|mut state| state.timeline.poll(position.map(|time| time.nseconds())))
-            .unwrap_or(SubtitleUpdate::Unchanged)
+    pub fn poll(&self, position: Option<gst::ClockTime>) -> Result<SubtitleUpdate, Error> {
+        Ok(self
+            .state()?
+            .timeline
+            .poll(position.map(|time| time.nseconds())))
     }
 
     pub fn attach(&self, playbin: &gst::Bin) -> Subscriptions {
@@ -89,7 +124,7 @@ impl SubtitleClock {
                         element.src(),
                         structure.get::<u32>("pid"),
                         structure.get::<u64>("pts"),
-                    ) && let Ok(mut state) = clock.0.lock()
+                    ) && let Ok(mut state) = clock.state()
                     {
                         if state.disabled {
                             return gst::BusSyncReply::Drop;
@@ -131,7 +166,7 @@ impl SubtitleClock {
                     return;
                 };
                 let key = (demux.name().to_string(), pid);
-                if let Ok(mut state) = removed_clock.0.lock() {
+                if let Ok(mut state) = removed_clock.state() {
                     state.raw_pts.remove(&key);
                     if state.video.as_ref() == Some(&key) {
                         state.video = None;
@@ -155,7 +190,7 @@ impl SubtitleClock {
                     return;
                 };
                 let key = (demux.name().to_string(), pid);
-                if let Ok(mut state) = clock.0.lock() {
+                if let Ok(mut state) = clock.state() {
                     if state
                         .video
                         .as_ref()
@@ -164,6 +199,8 @@ impl SubtitleClock {
                         return;
                     }
                     state.video = Some(key.clone());
+                } else {
+                    return;
                 }
                 clock.attach_video_pad(pad, key, &pads);
             });
@@ -181,7 +218,7 @@ impl SubtitleClock {
                 | gst::PadProbeType::BUFFER_LIST
                 | gst::PadProbeType::EVENT_DOWNSTREAM,
             move |_, info| {
-                let Ok(mut segment) = segment_state.lock() else {
+                let Ok(mut segment) = clock.segment(&segment_state) else {
                     return gst::PadProbeReturn::Ok;
                 };
                 if let Some(event) = info.event() {
@@ -217,7 +254,7 @@ impl SubtitleClock {
         let Some(pts) = buffer.pts() else {
             return;
         };
-        if let Ok(mut state) = self.0.lock() {
+        if let Ok(mut state) = self.state() {
             if state.disabled {
                 return;
             }
@@ -278,6 +315,58 @@ mod tests {
     // Failures intentionally fail the test; they are not assumed impossible IO.
     use super::*;
 
+    #[test]
+    fn poisoned_clock_is_reported_and_never_reenabled() {
+        let clock = SubtitleClock::default();
+        clock.push(vec![SubtitleCue::clear(100)]);
+        let other = clock.clone();
+        assert!(
+            std::thread::spawn(move || {
+                let _guard = other.0.state.lock().unwrap();
+                panic!("inject clock poison");
+            })
+            .join()
+            .is_err()
+        );
+        assert!(matches!(clock.poll(None), Err(Error::ClockPoisoned)));
+        clock.set_enabled(false);
+        clock.set_enabled(true);
+        clock.push(vec![SubtitleCue::clear(200)]);
+        assert!(matches!(clock.check(), Err(Error::ClockPoisoned)));
+        assert_eq!(clock.pending_count(), None);
+        let ingest = super::super::ingest::Ingest::new(
+            super::super::transport::TransportParser::new(false),
+            clock,
+        );
+        assert!(matches!(ingest.check(), Err(Error::ClockPoisoned)));
+        ingest.consume(std::iter::empty());
+        assert_eq!(ingest.decoded(), 0);
+        assert!(SubtitleClock::default().check().is_ok());
+    }
+
+    #[test]
+    fn segment_poison_invalidates_the_whole_clock_generation() {
+        let clock = SubtitleClock::default();
+        let segment = Arc::new(Mutex::new(None));
+        let other = segment.clone();
+        assert!(
+            std::thread::spawn(move || {
+                let _guard = other.lock().unwrap();
+                panic!("inject segment poison");
+            })
+            .join()
+            .is_err()
+        );
+        assert!(matches!(clock.segment(&segment), Err(Error::ClockPoisoned)));
+        assert!(matches!(clock.poll(None), Err(Error::ClockPoisoned)));
+        // A new pad must not reset a failure within the old playback generation.
+        assert!(matches!(
+            clock.segment(&Mutex::new(None)),
+            Err(Error::ClockPoisoned)
+        ));
+        assert!(matches!(clock.state(), Err(Error::ClockPoisoned)));
+    }
+
     struct PipelineGuard(gst::Pipeline);
     impl Drop for PipelineGuard {
         fn drop(&mut self) {
@@ -312,21 +401,23 @@ mod tests {
         clock.push(vec![SubtitleCue::clear(100)]);
         clock
             .0
+            .state
             .lock()
             .unwrap()
             .raw_pts
             .insert(key.clone(), VecDeque::from([9000]));
         clock.set_enabled(false);
-        assert!(clock.0.lock().unwrap().raw_pts.is_empty());
+        assert!(clock.0.state.lock().unwrap().raw_pts.is_empty());
         assert_eq!(clock.pending_count(), Some(0));
         clock.push(vec![SubtitleCue::clear(100)]);
         assert_eq!(clock.pending_count(), Some(0));
         clock.reset();
-        assert!(clock.0.lock().unwrap().disabled);
+        assert!(clock.0.state.lock().unwrap().disabled);
         clock.set_enabled(true);
-        assert!(matches!(clock.poll(None), SubtitleUpdate::Clear));
+        assert!(matches!(clock.poll(None).unwrap(), SubtitleUpdate::Clear));
         clock
             .0
+            .state
             .lock()
             .unwrap()
             .raw_pts
@@ -339,7 +430,7 @@ mod tests {
             .set_pts(gst::ClockTime::from_mseconds(500));
         clock.observe_buffer(&key, Some(&segment), &buffer);
         assert_eq!(
-            clock.0.lock().unwrap().timeline.map_ticks(9000),
+            clock.0.state.lock().unwrap().timeline.map_ticks(9000),
             Some(500_000_000)
         );
         clock.push(vec![SubtitleCue {
@@ -348,7 +439,9 @@ mod tests {
             ..SubtitleCue::clear(100)
         }]);
         assert!(matches!(
-            clock.poll(Some(gst::ClockTime::from_mseconds(500))),
+            clock
+                .poll(Some(gst::ClockTime::from_mseconds(500)))
+                .unwrap(),
             SubtitleUpdate::Show(_)
         ));
     }
@@ -359,7 +452,7 @@ mod tests {
         let clock = SubtitleClock::default();
         let key = ("tsdemux-test".to_owned(), 256);
         {
-            let mut state = clock.0.lock().unwrap();
+            let mut state = clock.0.state.lock().unwrap();
             state.video = Some(key.clone());
             state.timeline.anchor(Anchor {
                 pts: 900_000,
@@ -377,31 +470,36 @@ mod tests {
             .set_pts(gst::ClockTime::from_mseconds(2080));
         // The PES at 10.04s was lost; the next output belongs to 10.08s.
         clock.observe_buffer(&key, Some(&segment), &buffer);
-        assert!(clock.0.lock().unwrap().raw_pts[&key].is_empty());
+        assert!(clock.0.state.lock().unwrap().raw_pts[&key].is_empty());
         clock.push(vec![SubtitleCue {
             text: "test".into(),
             clear_screen: false,
             ..SubtitleCue::clear(10080)
         }]);
         assert!(matches!(
-            clock.poll(Some(gst::ClockTime::from_mseconds(2079))),
+            clock
+                .poll(Some(gst::ClockTime::from_mseconds(2079)))
+                .unwrap(),
             SubtitleUpdate::Unchanged
         ));
         assert!(matches!(
-            clock.poll(Some(gst::ClockTime::from_mseconds(2080))),
+            clock
+                .poll(Some(gst::ClockTime::from_mseconds(2080)))
+                .unwrap(),
             SubtitleUpdate::Show(_)
         ));
         clock.reset();
-        assert!(matches!(clock.poll(None), SubtitleUpdate::Clear));
+        assert!(matches!(clock.poll(None).unwrap(), SubtitleUpdate::Clear));
         clock
             .0
+            .state
             .lock()
             .unwrap()
             .raw_pts
             .insert(key.clone(), VecDeque::from([450_000]));
         clock.observe_buffer(&key, Some(&segment), &buffer);
         assert_eq!(
-            clock.0.lock().unwrap().timeline.map_ticks(450_000),
+            clock.0.state.lock().unwrap().timeline.map_ticks(450_000),
             Some(2_080_000_000)
         );
     }
@@ -483,13 +581,18 @@ mod tests {
             }]);
             assert!(
                 matches!(
-                    clock.poll(stream_time.checked_sub(gst::ClockTime::NSECOND)),
+                    clock
+                        .poll(stream_time.checked_sub(gst::ClockTime::NSECOND))
+                        .unwrap(),
                     SubtitleUpdate::Unchanged
                 ),
                 "sample {samples} appeared early"
             );
             assert!(
-                matches!(clock.poll(Some(stream_time)), SubtitleUpdate::Show(_)),
+                matches!(
+                    clock.poll(Some(stream_time)).unwrap(),
+                    SubtitleUpdate::Show(_)
+                ),
                 "sample {samples} was not aligned with its video PTS"
             );
             samples += 1;

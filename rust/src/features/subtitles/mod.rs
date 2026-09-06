@@ -30,6 +30,8 @@ pub enum Error {
     DecoderUnavailable,
     #[error("字幕解析の内部状態に異常があります。停止してから再生し直してください")]
     ParserPoisoned,
+    #[error("字幕の時刻対応に異常があります。停止してから再生し直してください")]
+    ClockPoisoned,
 }
 
 fn parser_for(service: Option<BroadcastService>) -> Result<transport::TransportParser, Error> {
@@ -98,7 +100,7 @@ impl Session {
     }
     pub fn poll(&self, position: Option<gst::ClockTime>) -> Result<SubtitleUpdate, Error> {
         self.ingest.check()?;
-        Ok(self.clock.poll(position))
+        self.clock.poll(position)
     }
     pub fn counters(&self) -> (usize, usize, u64) {
         (
