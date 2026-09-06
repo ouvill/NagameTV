@@ -82,3 +82,6 @@ mainからの機能移植状況と設定保存の仕様は [feature-migration.md
 `MIRAKURUN_DEINTERLACE=yadif|linear|off` で起動時の映像処理を指定できます。
 「動画統計」で入力・出力形式、sinkとキューの集計を表示します。
 表示中だけ1秒ごとに更新します。[仕様と検証](docs/video-statistics.md)。
+
+字幕は同梱ARIBフォントと輪郭描画を使用します（Qt 6.6以降）。
+描画と資源の検証手順は [docs/subtitle-rendering.md](docs/subtitle-rendering.md) を参照してください。

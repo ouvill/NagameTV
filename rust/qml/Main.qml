@@ -70,7 +70,7 @@ ApplicationWindow {
                     width: Math.min(parent.width, parent.height * 16 / 9)
                     height: width * 9 / 16
                     active: !root.closing && player.subtitles_active && player.subtitle_display
-                    sourceComponent: Component { SubtitleOverlay { captionJson: player.subtitle_data } }
+                    sourceComponent: Component { SubtitleOverlay { captionJson: player.subtitle_data; outlineProvider: player } }
                 }
             }
             Loader {

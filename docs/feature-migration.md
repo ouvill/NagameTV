@@ -9,7 +9,7 @@ viewer-coreを照合し、機能単位で移植する。表の「一部」はmai
 | Mirakurun接続・ライブ再生・選局 | playback、runtime、channels | 基本動作あり。異常時の詳細UIは未移植 |
 | チャンネル分類・リモコン順・ロゴ | viewer-core/channels、QML | 分類・番号順・種別絞り込みを追加。ロゴ、mainのチャンネルブラウザー、EPG連動の同時放送サブ局整理は未移植 |
 | 字幕PTS同期・表示期限・選局時破棄 | subtitles | 移植済みの同期を回帰検証。実放送での再検証も継続 |
-| 字幕の書体・縁取り・配置再現性 | subtitle_outline.h、QML | 一部。標準Textによる簡略表示 |
+| 字幕の書体・縁取り・配置再現性 | subtitle_outline.h、QML | mainの同梱ARIBフォント・基準線を保持する輪郭描画を移植。Qt描画試験済み、実放送と長時間併用の検証を継続 |
 | EPG全局取得・定期更新・更新失敗時保持 | epg、runtime、viewer-core | 基本取得あり。現在24時間先・選択局200件の投影 |
 | EPG時間軸・複数局表示・詳細・現在番組 | QML、epg、epg_events | 未移植。現在は選択局の一覧 |
 | 複数音声・主/副/主副・言語の照合 | audio、transport、viewer-core/audio | 未移植。推測せず放送メタデータと照合する |
@@ -75,3 +75,5 @@ CMakeビルド成功。設定テストはmain形式の読み込み・未知項�
 デインターレースと動画統計の設計・検証は [video-statistics.md](video-statistics.md)。
 
 チャンネルの分類・番号順・種別絞り込みの契約と検証は [channel-selection.md](channel-selection.md)。
+
+字幕の書体・輪郭描画の設計と検証は [subtitle-rendering.md](subtitle-rendering.md)。

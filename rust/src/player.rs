@@ -1,12 +1,18 @@
 mod channels;
 mod startup;
 mod statistics;
+mod subtitle_rendering;
 
 #[cxx_qt::bridge]
 pub mod ffi {
     unsafe extern "C++" {
         include!("cxx-qt-lib/qstring.h");
         type QString = cxx_qt_lib::QString;
+        include!("cxx-qt-lib/qfont.h");
+        type QFont = cxx_qt_lib::QFont;
+        include!("subtitle_outline.h");
+        #[cxx_name = "subtitleOutlinePath"]
+        fn subtitle_outline_path(text: &QString, font: &QFont) -> QString;
         include!("qt_helpers.h");
         type QQuickItem;
         #[cxx_name = "configureQtQuickOpenGl"]
@@ -58,6 +64,8 @@ pub mod ffi {
         fn stop(self: Pin<&mut Player>);
         #[qinvokable]
         fn video_stats(self: &Player) -> QString;
+        #[qinvokable]
+        fn subtitle_glyph_outline(self: &Player, text: QString, font: QFont) -> QString;
         #[qinvokable]
         fn volume(self: Pin<&mut Player>, value: f64);
         #[qinvokable]
