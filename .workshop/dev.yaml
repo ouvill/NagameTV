@@ -30,14 +30,3 @@ actions:
     cmake --build build
   test: cargo test --manifest-path rust/Cargo.toml "$@"
   run: QT_QPA_PLATFORM=xcb ./build/mirakurun-viewer "$@"
-  test-ui: |
-    MIRAKURUN_SERVER=http://192.168.3.3:40772 \
-    MIRAKURUN_SERVICE_ID= \
-    MIRAKURUN_AUTOPLAY=0 \
-    scripts/run-isolated-ui.sh "$@"
-  test-stream-isolated: |
-    MIRAKURUN_SERVER=http://192.168.3.3:40772 \
-    MIRAKURUN_SERVICE_ID=3203246080 \
-    MIRAKURUN_AUTOPLAY=1 \
-    MIRAKURUN_DEINTERLACE=linear \
-    scripts/run-isolated-ui.sh "$@"

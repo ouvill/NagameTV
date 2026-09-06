@@ -1,240 +1,87 @@
-# Mirakurun Viewer
+# Mirakurun Viewer — Minimal Rust
 
-Qt 6/QML のUIとRustバックエンドを組み合わせたMirakurunライブ視聴クライアントです。
-Mirakurunの `/api/services/{id}/stream` をGStreamerで直接再生します。
+Rust + Qt 6/QML + GStreamerの最小視聴アプリです。
+ブランチ: `minimal/qt-gstreamer`。通常版とは独立した比較用実装です。
 
-## アーキテクチャ
+## 機能
 
-- CXX-QtがRustの`Player`をQtの`QObject`として生成し、QMLへ直接公開
-- アプリのエントリーポイント、状態管理、再生制御はRustで実装
-- 手書きC++は`QQuickItem*`のアドレス取得とQt QuickのOpenGL指定だけを行う
-- QMLは表示とユーザー操作に限定し、バックエンド機能を保持しない
-- CMakeはWorkshop互換のためCargoビルドを呼び出す薄いラッパーとしてのみ使用
-- 通信は専用の単一worker Tokio runtimeで実行し、QtのGUIスレッドをブロックしない
-- Mirakurun APIは再利用可能な`reqwest::Client`で取得し、容量1件の結果キューでGUIスレッドへ返す
-- 同じruntimeへNX-JikkyoのWebSocketタスクを追加できる構造にする
-- EPGはMirakurunを正本とし、時間順に索引した不変のメモリースナップショットで保持
-- EPG更新は完成した新スナップショットとの交換で行い、古いデータを蓄積しない
-- 字幕のFFIは`libaribcaption-sys`でbindgen自動生成し、`libaribcaption`が所有権・解放を管理。アプリには安全なRust APIのみ公開（[詳細](rust/crates/README.md)）
+- Mirakurunの `/api/services` でチャンネル一覧を取得
+- `/api/services/{id}/stream` の映像・音声を再生
+- チャンネル選択、前／次（Page Up / Page Down）、再生・停止、音量
+- 接続・再生エラーを画面と端末に表示
 
-## 設計上のメモリー境界
+字幕、実況、番組表、ロゴ、番組情報、設定保存、自動更新はありません。
+チャンネル一覧はサーバーの順序を使用し、type=1のTVサービスを表示します。
+初回接続後は再生ボタン、またはチャンネル選択で再生を開始します。
 
-- Rustの公式`gstreamer-rs` bindingで`playbin3`の所有権と状態を管理
-- 停止・終了時にパイプラインを`NULL`へ戻し、バッファーを解放
-- Busイベントは50msごとに空になるまで処理し、アプリ側に蓄積しない
-- `qml6glsink`でQt QuickへGLテクスチャを渡し、映像フレームをCPUコピーしない
-- YADIFの全フィールド出力でインターレース映像の時間解像度を維持
-- 描画待ちqueueを8フレームに制限し、フレームを捨てずにbackpressureをかける
-- チャンネル再読み込みは同じ`playbin3`を`READY`へ戻してURIを交換する
+## 構成
 
-これらは各処理の保持量を抑える設計です。YADIF版の実機試験では
-ウォームアップ後のRSS/PSS、FD数、スレッド数の安定を確認していますが、
-すべての入力・視聴条件で増加しないことを保証するものではありません。
+| ファイル | 責任 |
+| --- | --- |
+| `rust/src/main.rs` | QtとGStreamerの初期化 |
+| `rust/src/player.rs` | UI操作、状態、取得結果・Busの処理 |
+| `rust/src/playback.rs` | 一つのplaybin3と映像・音声sinkの所有 |
+| `rust/src/services.rs` | チャンネル取得・検証、容量1件の結果キュー |
+| `qml/Main.qml` | 操作と映像表示 |
+| `rust/src/qt_helpers.h` | OpenGL指定とQQuickItemポインターの橋渡しのみ |
 
-## ビルド
+アプリのロジックはRustです。CXX-QtでQObjectを公開します。
+通信は1ワーカーのTokioで処理し、GUIスレッドでHTTP完了を待ちません。
+要求の置換は旧タスクと旧受信キューを破棄し、古いサーバーの結果を適用しません。
+応答は1 MiB、接続5秒、要求全体10秒に制限します。
 
-### Canonical Workshop
+映像はvideoconvert → YADIF（全フィールド）→ 8フレームqueue → glupload →
+glcolorconvert → RGBA → qml6glsink。音声はpulsesinkを明示的に使います。
+再生のたびにパイプラインをNULLへ戻し、旧配信を停止してからURIを交換します。
+通常版と停止方式・機能・診断負荷が異なるため、メモリー差を単一機能の効果と断定しません。
+GStreamerの字幕処理も無効で、アプリ独自のTS解析は行いません。
 
-必要なツールとライブラリはin-project SDK
-`.workshop/mirakurun-viewer/` に定義されています。環境を作り直す場合は
-ホスト側から次を実行します。
+## ビルド・起動
 
-```bash
-workshop refresh dev
-workshop run dev build
-workshop run dev run
-workshop run dev test-ui
-workshop run dev test-stream-isolated
-```
+既存WorkshopのRust、Qt 6、GStreamer SDKを利用できます。
+libaribcaption、libmpv、字幕フォントはこのアプリのビルドには使用しません。
 
-`project-mirakurun-viewer` SDKのhealth checkは、Rust、CMake、Qt 6、GStreamer、libmpvを
-refreshのたびに検証します。GUI、GPU、PulseAudioは既存の`project-gui` SDKと
-`.workshop/dev.yaml`の接続定義から提供されます。
-
-`test-ui`はWorkshop内に専用のXvfbディスプレイ`:99`とOpenboxを作り、映像を
-自動再生せず軽量にUIを検証します。`test-stream-isolated`は同じ隔離環境でMesaの
-ソフトウェアOpenGLとGStreamerのテスト用音声sinkを使い、NHK大津を再生します。
-どちらもホストのデスクトップ、入力、音声出力を使用しないため、
-`DISPLAY=:99 xdotool ...`で決定論的に操作できます。実GPU、実音声、画質、負荷の
-確認には通常の`run`を使用してください。
-
-隔離ディスプレイの解像度も変更できます。
-
-```bash
-MIRAKURUN_TEST_SCREEN=1920x1080x24 workshop run dev test-ui
-```
-
-アプリのウィンドウはボーダーレスのまま、四辺または四隅のドラッグでサイズを
-変更できます。最小サイズは820×480です。
-
-### Ubuntuへ直接導入する場合
-
-Ubuntu 24.04:
-
-```bash
-sudo apt install build-essential cmake ninja-build rustc cargo lld libclang-dev \
-  fonts-noto-cjk \
-  qt6-base-dev qt6-declarative-dev qt6-l10n-tools qml6-module-qtquick \
-  qml6-module-qtquick-controls qml6-module-qtquick-layouts qml6-module-qtquick-shapes \
-  qml6-module-qtquick-templates \
-  libmpv-dev qt6-wayland mpv gstreamer1.0-tools gstreamer1.0-qt6 \
-  gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
-  gstreamer1.0-plugins-bad gstreamer1.0-libav gstreamer1.0-gl gstreamer1.0-x \
-  libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libaribb24-dev
-cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+```sh
+cmake -S . -B build -G Ninja
 cmake --build build
+QT_QPA_PLATFORM=xcb MIRAKURUN_SERVER=http://192.168.3.3:40772 ./build/mirakurun-viewer
 ```
 
-実行:
+サーバーは画面からも入力できます。通常版の保存設定は読み書きしません。
+NVIDIA環境の比較では通常版と同じ`QT_QPA_PLATFORM=xcb`を明示してください。
+ディスプレイ・OpenGL GPU・PulseAudio接続が必要です。自動でソフトウェア描画や
+無音出力へ切り替える処理はありません。
 
-```bash
-./build/mirakurun-viewer
+このブランチのworktreeでビルド・起動してください。元の`/project`のバイナリは通常版です。
+共有SDKには通常版用の追加ツールも残りますが、このアプリからは呼び出しません。
+
+## 検証・メモリー計測
+
+デバイスを使用しない取得データ・要求寿命のテスト:
+
+```sh
+CARGO_TARGET_DIR=build/cargo cargo test --manifest-path rust/Cargo.toml --release --locked
 ```
 
-> [!WARNING]
-> Ubuntu 26.04のNVIDIA環境では、Qt/GStreamerのネイティブWayland GL共有により
-> 映像が緑色に崩れる問題があります。WaylandセッションでXwaylandが利用できる場合、
-> アプリは暫定的に`xcb`を選択します。これは恒久的な描画方式ではありません。
-> ネイティブWaylandを再検証する場合は、`QT_QPA_PLATFORM=wayland`を明示してください。
-> 関連する上流問題は[GStreamer Issue #5178](https://gitlab.freedesktop.org/gstreamer/gstreamer/-/work_items/5178)
-> で追跡されています。
+実ディスプレイ・GPU・音声の接続を確認した後に、手動で再生と複数回の選局、
+停止・再生、接続失敗からの再接続を確認してください。
 
-```bash
-QT_QPA_PLATFORM=wayland ./build/mirakurun-viewer
+```sh
+scripts/monitor-memory.sh <PID> 10
+QT_QPA_PLATFORM=xcb MIRAKURUN_SERVER=http://192.168.3.3:40772 \
+  heaptrack --record-only ./build/mirakurun-viewer
 ```
 
-診断や自動試験では環境変数で接続先を指定できます。
+releaseにもデバッグ行情報を付け、プロファイラーで確保元を追えるようにしています。
 
-```bash
-MIRAKURUN_SERVER=http://192.168.3.3:40772 \
-MIRAKURUN_SERVICE_ID=3203246080 \
-MIRAKURUN_AUTOPLAY=1 \
-QT_QPA_PLATFORM=xcb ./build/mirakurun-viewer
-```
+### 今回の確認（2026-09-06）
 
-インターレース解除は`MIRAKURUN_DEINTERLACE`で選択できます。既定は高品質な
-`yadif`です。CPU負荷を抑える場合は`linear`、無効化する場合は`off`を指定します。
+- CMakeのreleaseビルドと3件のRustテストが成功。
+- 実ディスプレイ・NVIDIA OpenGL・PulseAudioで起動。
+- NHK総合2京都、NHK総合1大津、NHK Eテレ1大阪への切り替えで
+  PLAYING到達と映像表示を確認。停止・同じ局の再開も確認。
+- 最終ビルドでQtの更新スレッドに関する警告を一度観測。再生は継続したが、
+  この警告の発生元と長時間の安定性は未検証。
+- 長時間のメモリー安定性を保証する計測はまだ行っていない。
 
-## 二か国語・複数音声
-
-音声ボタン横の「⌄」から音声切替を開けます。音声ボタン自体はミュート切り替えです。
-
-- 二重音声: 放送情報で確認できた場合に「主音声」「副音声」「主／副」を表示し、言語情報があれば併記します。主・副の単独選択は両スピーカーへ出力し、主／副は左に主、右に副を出力します。
-- 複数音声: 配信されている音声を一覧から選択します。映像の選択は保持します。
-- 通常のステレオ・モノラル: 音声が1種類なら現在の音声だけを表示します。左右の切り替えは表示しません。
-- 情報不明: 確認できた言語タグ、または「音声1」などを表示し、左右の切り替えは表示しません。
-
-Mirakurunの番組情報 `audios` を、PMTの `stream_identifier_descriptor` の
-`component_tag` とGStreamerのストリームPIDで照合します。配列の並びから言語を推測しません。
-二重音声の判定はARIB STD-B10の `component_type` に従います。
-番組・チャンネル変更や音声構成の更新時は選択をリセットします。
-音量・ミュートは選択した音声にも適用されます。
-
-仕様の参照: [ARIB STD-B10](https://www.arib.or.jp/english/html/overview/doc/6-STD-B10v5_13-E1.pdf)、
-[Mirakurun API](https://github.com/Chinachu/Mirakurun/blob/master/api.d.ts)、
-[GStreamerのストリームID生成](https://gitlab.freedesktop.org/gstreamer/gstreamer/-/blob/main/subprojects/gst-plugins-bad/gst/mpegtsdemux/mpegtsbase.c)。
-
-音声処理のテストは生成したPCMをメモリー上で処理し、音声デバイスを使わずに実行します。
-実放送のAACデコード結果が左右に分かれていない場合、この左右選択では言語を分離できません。
-
-## 字幕の同期
-
-ARIB字幕のPTSと表示時間を保持し、GStreamerの映像sinkが返す再生位置に合わせて
-表示・消去します。`tsdemux`のPTS統計と分離後の映像PES・segmentを対応付けて、
-放送の90 kHz時刻を映像のstream timeへ変換します。受信時刻や固定の7秒タイマーは使いません。
-
-表示時間が未指定の字幕は次の字幕または消去指示まで保持します。表示時間がある場合は
-字幕PTSから計算した終了時刻で消し、遅れて届いても表示時間を延ばしません。
-チャンネル変更・停止・再生エラーでは字幕と待機キューをリセットします。
-PTSの周回、映像の一時停止、複数字幕の先行受信もタイムライン側で扱います。
-
-タイムラインの単体テストと、生成したMPEG-TSをメモリー上で分離する同期テストは
-`cargo test --manifest-path rust/Cargo.toml --bin mirakurun-viewer`で実行できます。
-これらはディスプレイ・GPU・音声デバイスを使用しません。
-
-`bash scripts/test-subtitle-outline.sh`で字幕の縁取り配置の回帰テストを実行できます
-（Qt SVGの開発パッケージ `libqt6svg6-dev` が必要）。
-
-## 表示言語
-
-設定の「言語 / Language」から「システムに従う / System default」「日本語」「English」
-を選べます。初回はシステム言語に従い、日本語以外の言語は英語にフォールバックします。
-変更は再起動せずに反映され、選択は設定ファイルの`language`へ保存されます。
-既存の設定ファイルにこの項目がない場合も、システム言語を使用します。
-
-英語をソース文言とし、日本語訳は`translations/app_ja.ts`で管理します。
-Qtの`lrelease`で翻訳をコンパイルし、アプリ本体に埋め込みます。
-独自のQt環境では`QT_LRELEASE`でlrelease実行ファイルのパスを指定できます。
-番組・局名、放送字幕、コメント本文は配信内容を維持します。低レベルの技術的な
-エラー詳細も原文で表示します。動画統計の英語名は「Stats for nerds」です。
-
-翻訳更新にはQtの`lupdate qml/Main.qml rust/src/localization.h -ts translations/app_ja.ts`
-を使用できます（Ubuntuでは`lupdate`は`qtpaths6 --query QT_HOST_BINS`のディレクトリ内）。
-`localization.h`にはRustが出力する状態メッセージの翻訳抽出マーカーもあります。
-`bash scripts/test-localization.sh`で画面・GPU不要の言語切り替えテストを実行できます。
-
-## 再生エラー
-
-チューナーを確保できない場合（HTTP 503）、チャンネルが見つからない場合（404）、
-アクセス拒否、サーバー障害、通信エラーを区別して案内します。
-503はチューナーが使用中の場合だけでなく、利用できない状態でも発生します。
-
-失敗時は配信を停止し、「再試行」「チャンネルを選ぶ」「接続設定」から復帰できます。
-チャンネルを選ぶ操作では一覧を再取得します。自動で再試行を繰り返さず、
-ユーザーが再試行したときに接続し直します。HTTP通信の無応答タイムアウトは15秒です。
-最初のエラーを保持し、後続のエラーやチャンネル一覧の更新で案内を上書きしません。
-
-「エラー詳細」からコピー可能な診断情報を表示できます。同じ情報を端末と
-ユーザー別の状態保存ディレクトリの `playback-error.log` に最新の1件として保存します。
-設定画面の「ログフォルダーを開く」からOSのファイルマネージャーで確認できます。
-
-Qt 6.7以降は`QStandardPaths::StateLocation`を使用します。
-Linuxでは通常`~/.local/state/mirakurun-viewer`（`XDG_STATE_HOME`指定時はその配下）、
-Windowsでは通常`%LOCALAPPDATA%/mirakurun-viewer/State`です。
-古いQtではLinuxのXDG規約、その他のOSではQtの`AppLocalDataLocation/State`を使用します。
-Workshop内ではコンテナ側に保存されます。保存やフォルダー表示の失敗は端末に警告し、
-元の再生エラーはそのまま表示します。
-
-## 操作
-
-再生設定の「動画統計」を有効にすると、入力・出力の解像度とfps、画素形式、
-デインターレース設定、映像sinkのフレーム集計、キュー使用量を表示します。
-統計は表示中だけ1秒ごとに更新します。sinkの集計は画面への実表示回数とは異なり、
-映像キューの時間も放送からの遅延を表すものではありません。
-
-- 画面下部の`Channels`または`C`: Mirakurunから取得したチャンネル一覧を開く
-- `Page Up` / `Page Down`: 前後のチャンネルへ切り替える
-- `F11`: フルスクリーン切り替え
-
-チャンネルを選ぶと、再生プロセスを作り直さず同じGStreamerパイプラインのURIを
-交換します。地上波、BS、CS、SKYの順にまとめ、地上波はリモコンキー順に表示します。
-HTTP接続には5秒、リクエスト全体には10秒のtimeoutを設け、接続プールも上限付きで
-再利用します。
-
-EPGは永続化せず、起動後にMirakurunから再構築します。視聴・録画予約などの
-ユーザー固有データを追加する段階で、それらだけを別の永続ストアへ保存します。
-
-接続先、最後に選択したService ID、音量はユーザー設定として次のTOMLへ保存します。
-
-```text
-$XDG_CONFIG_HOME/mirakurun-viewer/settings.toml
-```
-
-`XDG_CONFIG_HOME`が未設定の場合は`~/.config/mirakurun-viewer/settings.toml`です。
-`MIRAKURUN_SERVER`と`MIRAKURUN_SERVICE_ID`を指定した場合は、保存値より環境変数を
-優先します。
-
-## 長時間試験
-
-普段の視聴ログにはglibcの使用中・空き容量も記録します。
-`MIRAKURUN_GC_LOG=1`で起動するとQtのGC統計も保存します。
-保存場所・集計・項目の読み方は[診断ログの説明](docs/passive-diagnostics.md)を参照してください。
-
-`scripts/monitor-memory.sh <PID> [interval]`でRSS、PSS、FD数、スレッド数をCSVへ記録できます。
-
-NHK大津を同じ条件で比較するには、`scripts/benchmark-player.sh mpv`または
-`scripts/benchmark-player.sh gstreamer`を実行します。既定の測定時間は10分で、
-結果は開始日時ごとの`benchmark/`ディレクトリに保存されます。
-ウォームアップ後のメモリーが時間比例で増えないことを判定してください。
-
-Rust側の責務分割と非同期処理の所有権は[Playerの設計](docs/player-architecture.md)を参照してください。
+ローカルの画面・ログは`benchmark/verification/`に保存（Git対象外）。

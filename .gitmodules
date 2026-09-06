@@ -1,3 +1,0 @@
-[submodule "third_party/libaribcaption"]
-	path = third_party/libaribcaption
-	url = https://github.com/xqq/libaribcaption.git

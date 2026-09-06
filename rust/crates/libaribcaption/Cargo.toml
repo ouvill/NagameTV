@@ -1,9 +1,0 @@
-[package]
-name = "libaribcaption"
-version = "0.1.0"
-edition = "2024"
-publish = false
-description = "Ownership-safe ARIB caption decoding, independent of player and UI frameworks"
-
-[dependencies]
-libaribcaption-sys = { path = "../libaribcaption-sys" }

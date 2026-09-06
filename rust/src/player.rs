@@ -3,222 +3,232 @@ pub mod ffi {
     unsafe extern "C++" {
         include!("cxx-qt-lib/qstring.h");
         type QString = cxx_qt_lib::QString;
-        include!("cxx-qt-lib/qfont.h");
-        type QFont = cxx_qt_lib::QFont;
-        include!("subtitle_outline.h");
-        #[cxx_name = "subtitleOutlinePath"]
-        fn subtitle_outline_path(text: &QString, font: &QFont) -> QString;
         include!("cxx-qt-lib/qstringlist.h");
         type QStringList = cxx_qt_lib::QStringList;
-        include!("cxx-qt-lib/qqmlapplicationengine.h");
-        type QQmlApplicationEngine = cxx_qt_lib::QQmlApplicationEngine;
-        include!("localization.h");
-        #[cxx_name = "initializeUiLanguage"]
-        fn initialize_ui_language(
-            engine: Pin<&mut QQmlApplicationEngine>,
-            preference: &QString,
-        ) -> bool;
-        #[cxx_name = "applyUiLanguage"]
-        fn apply_ui_language(preference: &QString) -> QString;
-        #[cxx_name = "currentUiLanguage"]
-        fn current_ui_language() -> QString;
-
         include!("qt_helpers.h");
-        include!("pointer_activity.h");
-        #[cxx_name = "installPointerActivity"]
-        unsafe fn install_pointer_activity(item: *mut QQuickItem);
         type QQuickItem;
         #[cxx_name = "configureQtQuickOpenGl"]
         fn configure_qt_quick_open_gl();
-        #[cxx_name = "installQtGcLogging"]
-        fn install_qt_gc_logging(callback: fn(category: &str, message: &str));
-        #[cxx_name = "playbackLogDirectory"]
-        fn playback_log_directory() -> QString;
-        #[cxx_name = "openPlaybackLogDirectory"]
-        fn open_playback_log_directory(path: &QString) -> bool;
         #[cxx_name = "qQuickItemAddress"]
         unsafe fn q_quick_item_address(item: *mut QQuickItem) -> usize;
     }
-
     unsafe extern "RustQt" {
         #[qobject]
         #[qml_element]
         #[qproperty(QString, server, READ, NOTIFY)]
-        #[qproperty(QString, language, READ, NOTIFY)]
-        #[qproperty(QString, ui_language, cxx_name = "uiLanguage", READ, NOTIFY)]
-        #[qproperty(QString, service_id, cxx_name = "serviceId", READ, NOTIFY)]
         #[qproperty(QString, status, READ, NOTIFY)]
-        #[qproperty(QString, playback_error, cxx_name = "playbackError", READ, NOTIFY)]
-        #[qproperty(
-            QString,
-            playback_error_details,
-            cxx_name = "playbackErrorDetails",
-            READ,
-            NOTIFY
-        )]
-        #[qproperty(bool, playing, READ, NOTIFY)]
-        #[qproperty(f64, volume, READ, WRITE = request_volume, NOTIFY)]
-        #[qproperty(bool, audio_muted, cxx_name = "audioMuted", READ, WRITE = request_audio_muted, NOTIFY)]
-        #[qproperty(QString, audio_tracks, cxx_name = "audioTracks", READ, NOTIFY)]
-        #[qproperty(QString, audio_error, cxx_name = "audioError", READ, NOTIFY)]
-        #[qproperty(bool, danmaku_enabled, cxx_name = "danmakuEnabled", READ, WRITE = request_danmaku_enabled, NOTIFY)]
-        #[qproperty(f64, comment_font_size, cxx_name = "commentFontSize", READ, WRITE = request_comment_font_size, NOTIFY)]
-        #[qproperty(f64, comment_opacity, cxx_name = "commentOpacity", READ, WRITE = request_comment_opacity, NOTIFY)]
-        #[qproperty(f64, comment_speed, cxx_name = "commentSpeed", READ, WRITE = request_comment_speed, NOTIFY)]
-        #[qproperty(bool, subtitles_enabled, cxx_name = "subtitlesEnabled", READ, WRITE = request_subtitles_enabled, NOTIFY)]
-        #[qproperty(QString, subtitle_text, cxx_name = "subtitleText", READ, NOTIFY)]
-        #[qproperty(QString, subtitle_data, cxx_name = "subtitleData", READ, NOTIFY)]
-        #[qproperty(bool, autoplay, READ, NOTIFY)]
-        #[qproperty(QString, channel_name, cxx_name = "channelName", READ, NOTIFY)]
-        #[qproperty(QString, program_name, cxx_name = "programName", READ, NOTIFY)]
-        #[qproperty(
-            QString,
-            program_description,
-            cxx_name = "programDescription",
-            READ,
-            NOTIFY
-        )]
-        #[qproperty(QString, channel_logo_url, cxx_name = "channelLogoUrl", READ, NOTIFY)]
-        #[qproperty(f64, program_progress, cxx_name = "programProgress", READ, NOTIFY)]
-        #[qproperty(QStringList, services, READ, NOTIFY)]
-        #[qproperty(QStringList, program_titles, cxx_name = "programTitles", READ, NOTIFY)]
-        #[qproperty(
-            QStringList,
-            program_descriptions,
-            cxx_name = "programDescriptions",
-            READ,
-            NOTIFY
-        )]
-        #[qproperty(QStringList, program_starts, cxx_name = "programStarts", READ, NOTIFY)]
-        #[qproperty(
-            QStringList,
-            program_durations,
-            cxx_name = "programDurations",
-            READ,
-            NOTIFY
-        )]
-        #[qproperty(
-            QStringList,
-            channel_logo_urls,
-            cxx_name = "channelLogoUrls",
-            READ,
-            NOTIFY
-        )]
-        #[qproperty(QStringList, channel_types, cxx_name = "channelTypes", READ, NOTIFY)]
-        #[qproperty(QStringList, jikkyo_forces, cxx_name = "jikkyoForces", READ, NOTIFY)]
-        #[qproperty(QString, guide_start, cxx_name = "guideStart", READ, NOTIFY)]
-        #[qproperty(
-            QStringList,
-            guide_program_ids,
-            cxx_name = "guideProgramIds",
-            READ,
-            NOTIFY
-        )]
-        #[qproperty(
-            QStringList,
-            guide_channel_indices,
-            cxx_name = "guideChannelIndices",
-            READ,
-            NOTIFY
-        )]
-        #[qproperty(QStringList, guide_titles, cxx_name = "guideTitles", READ, NOTIFY)]
-        #[qproperty(
-            QStringList,
-            guide_descriptions,
-            cxx_name = "guideDescriptions",
-            READ,
-            NOTIFY
-        )]
-        #[qproperty(QStringList, guide_starts, cxx_name = "guideStarts", READ, NOTIFY)]
-        #[qproperty(
-            QStringList,
-            guide_durations,
-            cxx_name = "guideDurations",
-            READ,
-            NOTIFY
-        )]
-        #[qproperty(QStringList, guide_genres, cxx_name = "guideGenres", READ, NOTIFY)]
-        #[qproperty(QStringList, comment_times, cxx_name = "commentTimes", READ, NOTIFY)]
-        #[qproperty(QStringList, comment_texts, cxx_name = "commentTexts", READ, NOTIFY)]
-        #[qproperty(
-            QStringList,
-            comment_sources,
-            cxx_name = "commentSources",
-            READ,
-            NOTIFY
-        )]
-        #[qproperty(QString, comment_status, cxx_name = "commentStatus", READ, NOTIFY)]
+        #[qproperty(QStringList, channels, READ, NOTIFY)]
+        #[qproperty(i32, selected, READ, NOTIFY)]
+        #[qproperty(bool, loading, READ, NOTIFY)]
         type Player = super::PlayerRust;
-
-        #[qsignal]
-        #[cxx_name = "commentReceived"]
-        fn comment_received(self: Pin<&mut Player>, text: QString);
-
-        fn request_volume(self: Pin<&mut Player>, value: f64);
-        fn request_audio_muted(self: Pin<&mut Player>, value: bool);
-        fn request_danmaku_enabled(self: Pin<&mut Player>, value: bool);
-        fn request_comment_font_size(self: Pin<&mut Player>, value: f64);
-        fn request_comment_opacity(self: Pin<&mut Player>, value: f64);
-        fn request_comment_speed(self: Pin<&mut Player>, value: f64);
-        fn request_subtitles_enabled(self: Pin<&mut Player>, value: bool);
-
         #[qinvokable]
-        #[cxx_name = "attachVideoItem"]
-        unsafe fn attach_video_item(self: Pin<&mut Player>, item: *mut QQuickItem) -> bool;
+        unsafe fn attach(self: Pin<&mut Player>, item: *mut QQuickItem) -> bool;
         #[qinvokable]
-        #[cxx_name = "attachPointerActivity"]
-        unsafe fn attach_pointer_activity(self: Pin<&mut Player>, item: *mut QQuickItem);
+        fn connect_server(self: Pin<&mut Player>, server: QString);
+        #[qinvokable]
+        fn select(self: Pin<&mut Player>, index: i32);
         #[qinvokable]
         fn play(self: Pin<&mut Player>);
         #[qinvokable]
         fn stop(self: Pin<&mut Player>);
         #[qinvokable]
-        #[cxx_name = "selectAudioTrack"]
-        fn select_audio_track(self: Pin<&mut Player>, key: QString);
+        fn volume(self: Pin<&mut Player>, value: f64);
         #[qinvokable]
-        #[cxx_name = "subtitleGlyphOutline"]
-        fn subtitle_glyph_outline(self: &Player, text: QString, font: QFont) -> QString;
+        fn poll(self: Pin<&mut Player>);
         #[qinvokable]
-        #[cxx_name = "pollEvents"]
-        fn poll_events(self: Pin<&mut Player>);
-        #[qinvokable]
-        #[cxx_name = "pollSubtitles"]
-        fn poll_subtitles(self: Pin<&mut Player>);
-        #[qinvokable]
-        #[cxx_name = "refreshChannels"]
-        fn refresh_channels(self: Pin<&mut Player>, force: bool);
-        #[qinvokable]
-        #[cxx_name = "videoReady"]
-        fn video_ready(self: Pin<&mut Player>);
-        #[qinvokable]
-        #[cxx_name = "selectChannel"]
-        fn select_channel(self: Pin<&mut Player>, index: i32);
-        #[qinvokable]
-        #[cxx_name = "changeChannel"]
-        fn change_channel(self: Pin<&mut Player>, offset: i32);
-        #[qinvokable]
-        #[cxx_name = "saveSettings"]
-        fn save_settings(self: Pin<&mut Player>);
-        #[qinvokable]
-        #[cxx_name = "recordUiState"]
-        fn record_ui_state(self: Pin<&mut Player>, guide: bool, channels: bool, live_comments: i32);
-        #[qinvokable]
-        #[cxx_name = "connectServer"]
-        fn connect_server(self: Pin<&mut Player>, server: QString) -> bool;
-        #[qinvokable]
-        #[cxx_name = "openLogFolder"]
-        fn open_log_folder(self: Pin<&mut Player>) -> bool;
-        #[qinvokable]
-        #[cxx_name = "videoStats"]
-        fn video_stats(self: &Player) -> QString;
-        #[qinvokable]
-        #[cxx_name = "changeLanguage"]
-        fn change_language(self: Pin<&mut Player>, language: QString) -> bool;
+        fn shutdown(self: Pin<&mut Player>);
     }
 }
 
-mod adapter;
-mod pointer_activity;
-mod render;
-mod state;
-pub use state::PlayerRust;
+use crate::{playback, services};
+use cxx_qt::CxxQtType;
+use cxx_qt_lib::{QString, QStringList};
+use std::pin::Pin;
+
+pub struct PlayerRust {
+    server: QString,
+    status: QString,
+    channels: QStringList,
+    selected: i32,
+    loading: bool,
+    request: Option<services::Request>,
+    network: Option<services::Network>,
+    playback: Option<playback::Playback>,
+    entries: Vec<services::Service>,
+}
+
+impl Default for PlayerRust {
+    fn default() -> Self {
+        let network = services::Network::new();
+        let status = network
+            .as_ref()
+            .err()
+            .cloned()
+            .unwrap_or_else(|| "サーバーに接続してください".into());
+        Self {
+            server: QString::from(std::env::var("MIRAKURUN_SERVER").unwrap_or_default()),
+            status: QString::from(status),
+            channels: QStringList::default(),
+            selected: -1,
+            loading: false,
+            request: None,
+            network: network.ok(),
+            playback: playback::take_preloaded(),
+            entries: vec![],
+        }
+    }
+}
+
+macro_rules! property_setter {
+    ($method:ident, $field:ident, $signal:ident, $ty:ty) => {
+        fn $method(mut self: Pin<&mut Self>, value: $ty) {
+            if self.rust().$field != value {
+                self.as_mut().rust_mut().$field = value;
+                self.as_mut().$signal();
+            }
+        }
+    };
+}
+
+impl ffi::Player {
+    property_setter!(set_server, server, server_changed, QString);
+    property_setter!(set_status, status, status_changed, QString);
+    property_setter!(set_channels, channels, channels_changed, QStringList);
+    property_setter!(set_selected, selected, selected_changed, i32);
+    property_setter!(set_loading, loading, loading_changed, bool);
+    fn status_text(mut self: Pin<&mut Self>, text: impl Into<String>) {
+        self.as_mut().set_status(QString::from(text.into()));
+    }
+    /// QML supplies a live GUI-thread item and calls shutdown before destroying it.
+    pub unsafe fn attach(mut self: Pin<&mut Self>, item: *mut ffi::QQuickItem) -> bool {
+        let address = unsafe { ffi::q_quick_item_address(item) };
+        let result = self
+            .as_mut()
+            .rust_mut()
+            .playback
+            .as_mut()
+            .ok_or_else(|| "Playback unavailable".to_owned())
+            .and_then(|p| unsafe { p.attach(address) }.map_err(|e| e.to_string()));
+        if let Err(error) = result {
+            self.status_text(error);
+            return false;
+        }
+        true
+    }
+    pub fn connect_server(mut self: Pin<&mut Self>, server: QString) {
+        self.as_mut().rust_mut().request = None;
+        self.as_mut().set_loading(false);
+        if let Some(playback) = &self.rust().playback {
+            if let Err(error) = playback.stop() {
+                self.status_text(error.to_string());
+                return;
+            }
+        }
+        self.as_mut().rust_mut().entries.clear();
+        self.as_mut().set_channels(QStringList::default());
+        self.as_mut().set_selected(-1);
+        let server = match services::server_url(&server.to_string()) {
+            Ok(server) => server,
+            Err(error) => {
+                self.status_text(error);
+                return;
+            }
+        };
+        let Some(network) = &self.rust().network else {
+            self.status_text("Network unavailable");
+            return;
+        };
+        let request = network.fetch(&server);
+        self.as_mut().rust_mut().request = Some(request);
+        self.as_mut().set_server(QString::from(server));
+        self.as_mut().set_loading(true);
+        self.status_text("チャンネルを取得中…");
+    }
+    pub fn select(mut self: Pin<&mut Self>, index: i32) {
+        if index < 0 || index as usize >= self.rust().entries.len() {
+            return;
+        }
+        self.as_mut().set_selected(index);
+        self.play();
+    }
+    pub fn play(mut self: Pin<&mut Self>) {
+        let Some(entry) = self.rust().entries.get(*self.selected() as usize) else {
+            return;
+        };
+        let (id, name) = (entry.id, entry.name.clone());
+        let server = self.server().to_string();
+        if let Some(playback) = &self.rust().playback {
+            match playback.play(&server, id) {
+                Ok(()) => self.as_mut().status_text(format!("接続中: {name}")),
+                Err(error) => {
+                    let text = error.to_string();
+                    let _ = playback.stop();
+                    self.as_mut().status_text(text);
+                }
+            }
+        }
+    }
+    pub fn stop(mut self: Pin<&mut Self>) {
+        if let Some(playback) = &self.rust().playback {
+            match playback.stop() {
+                Ok(()) => self.as_mut().status_text("停止"),
+                Err(error) => self.as_mut().status_text(error.to_string()),
+            }
+        }
+    }
+    pub fn volume(self: Pin<&mut Self>, value: f64) {
+        if let Some(playback) = &self.rust().playback {
+            playback.set_volume(value);
+        }
+    }
+    pub fn poll(mut self: Pin<&mut Self>) {
+        let fetched = self
+            .rust()
+            .request
+            .as_ref()
+            .and_then(services::Request::poll);
+        if let Some(result) = fetched {
+            self.as_mut().rust_mut().request = None;
+            self.as_mut().set_loading(false);
+            match result {
+                Ok(entries) => {
+                    let mut names = QStringList::default();
+                    for entry in &entries {
+                        names.append(QString::from(entry.name.clone()));
+                    }
+                    self.as_mut().rust_mut().entries = entries;
+                    self.as_mut().set_channels(names);
+                    self.as_mut().set_selected(0);
+                    self.as_mut()
+                        .status_text("チャンネルを選んで再生してください");
+                }
+                Err(error) => self
+                    .as_mut()
+                    .status_text(format!("チャンネル取得失敗: {error}")),
+            }
+        }
+        let result = self.rust().playback.as_ref().map(playback::Playback::poll);
+        match result {
+            Some(Ok(true)) => {
+                if let Some(entry) = self.rust().entries.get(*self.selected() as usize) {
+                    let text = format!("再生中: {}", entry.name);
+                    eprintln!("Pipeline PLAYING service {}", entry.id);
+                    self.as_mut().status_text(text);
+                }
+            }
+            Some(Err(error)) => {
+                let text = error.to_string();
+                eprintln!("Playback error: {text}");
+                self.as_mut().stop();
+                self.status_text(format!("再生エラー: {text}"));
+            }
+            _ => {}
+        }
+    }
+    pub fn shutdown(mut self: Pin<&mut Self>) {
+        self.as_mut().rust_mut().request = None;
+        if let Some(playback) = self.as_mut().rust_mut().playback.as_mut() {
+            playback.shutdown();
+        }
+    }
+}
