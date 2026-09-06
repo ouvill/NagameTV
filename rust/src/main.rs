@@ -1,5 +1,6 @@
 mod audio;
 mod channels;
+mod diagnostics;
 mod error_log;
 mod features;
 mod memory;
@@ -28,6 +29,7 @@ fn main() {
         eprintln!("Feature plan was already initialized");
         std::process::exit(1);
     }
+    player::ffi::install_qt_gc_logging(diagnostics::record_qt_gc);
     cxx_qt::init_qml_module!("MinimalViewer");
     player::ffi::configure_qt_quick_open_gl();
     let mut app = QGuiApplication::new();

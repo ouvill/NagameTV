@@ -1,8 +1,8 @@
 # 継続的な資源診断の移植
 
 mainのrust/src/diagnostics.rsを参照し、viewer-diagnostics crateへ計測と保存を分離した。
-この段階ではアプリ本体から呼んでおらず、定期記録・Qt GC通知・
-終了済みプロセスのログ整理は未移植。mainのSnapshotの項目を揃えて接続する必要がある。
+アプリ本体へ定期記録・Qt GC通知・終了済みログ整理を接続した。
+以下は段階ごとの実装記録で、現在の接続状況は末尾を参照。
 
 ## 計測
 
@@ -120,3 +120,44 @@ poison状態は記録の継続に使わず、送信口を閉じる目的だけ�
 競合中の非待機・破棄件数、Snapshotで満杯のキューへのGC通知を検証した。
 合計15件、Clippy全ターゲット、fmtが成功。これはRustの受け口を直接呼んだ試験であり、
 Qtメッセージハンドラーの登録と実GC通知、アプリの定期記録への接続はまだ未実施。
+
+
+## アプリへの接続
+
+診断ディレクトリーはmainと同じStateLocation内のusage。通常起動は既定で有効、
+MIRAKURUN_DIAGNOSTICS=0で無効にする。比較実験の--features指定時は既定で無効にし、
+MIRAKURUN_DIAGNOSTICS=1の明示指定でのみ有効にする。無効時はRecorder・usageディレクトリー
+整理を生成しない。再生エラー単体の保存は従来どおり別機能。
+
+QMLから起動時・10秒ごと・パネルや機能設定変更時にrecord_ui_stateを呼ぶ。
+再生・停止・選局、EPG取得開始／成功／失敗も対応するEventを渡す。
+表示側のUiStateは前回のフラグと描画中の実況数だけを保持する。GUIからは固定項目の
+Snapshotを渡すだけとし、従来のGUI内/proc・mallinfo2定期取得を削除した。
+従来のstderr ALLOC計測行とGUIのRSS表示に代わり、JSONLのprocess/allocatorへ記録する。
+起動時のM_MMAP_THRESHOLD設定とその説明・ログは維持する。
+
+EPG文字列容量は取得成功時の既存record_storage集計から保存し、定期記録で全件走査しない。
+無効化・サーバー変更でゼロへ戻し、取得失敗時は表示に使う旧データの値を維持する。
+実況履歴は最大200件のBox<str>本文長を合計する。mainのtime/source文字列は新実装で
+保持しないため、その分を架空の容量として加算しない。字幕は表示へ投影したセル数を
+保持し、クリア・停止・表示設定変更でゼロへ戻す。pending値の取得失敗はNoneとする。
+既存commentsは画面表示設定を表し、受信機能のcomments_enabledとepg_enabledを追加した。
+
+[Qtメッセージハンドラー仕様](https://doc.qt.io/qt-6/qtlogging.html#qInstallMessageHandler)
+に合わせ、Qt/GStreamerの初期化前に一度ハンドラーを登録する。mainと同じ2カテゴリを
+RustのGcSinkへ渡し、既存ハンドラーがあれば通常メッセージを引き継ぐ。
+C++側は8192 UTF-16 code unitまで、Rust側は4096 Unicode scalarまでとする。
+MIRAKURUN_GC_LOG=1でカテゴリを有効にし、QT_LOGGING_RULES/CONFの優先順位は
+[QLoggingCategoryの仕様](https://doc.qt.io/qt-6/qloggingcategory.html#setFilterRules)に従う。
+明示的に有効化しなければ通常のカテゴリ設定を変更しない。
+
+正常終了では送信口を閉じてjoinし、受理した記録を処理した後に戻る。ディスクIOが遅ければ
+終了が遅れる可能性は残る。処理中にワーカーが終了した場合は次のUI記録要求時に結果を取り出し、
+保存失敗をlog_errorへ表示する。GC登録はWeakのみを保持し、終了後の通知を捨てる。
+
+EPG更新・失敗時保持・無効化のテストに容量カウンターの検証を加えた。12件が成功。
+診断の既定値・比較実験・明示指定のテスト1件も成功。単独診断crateの15件が成功。
+実アプリでのGC発生、定期ログ生成、画面上のカウンターとの照合、長時間測定は未実施。
+音声接続問題の解消確認がないため、今回も実アプリは起動していない。
+
+組み込み後の全ターゲットClippy、fmt、CMakeリリースビルドも成功。

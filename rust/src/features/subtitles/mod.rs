@@ -102,6 +102,9 @@ impl Session {
         self.ingest.check()?;
         self.clock.poll(position)
     }
+    pub fn pending_diagnostic(&self) -> Option<usize> {
+        self.clock.pending_count()
+    }
     pub fn counters(&self) -> (usize, usize, u64) {
         (
             self.subscriptions.count() + 1,

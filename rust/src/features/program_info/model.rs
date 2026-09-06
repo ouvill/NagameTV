@@ -123,7 +123,7 @@ impl Snapshot {
             .collect();
         serde_json::to_string(&columns)
     }
-    pub fn record_storage(&self) {
+    pub fn record_storage(&self) -> usize {
         let record_bytes = self.0.capacity() * std::mem::size_of::<Program>();
         let string_bytes: usize = self
             .0
@@ -150,5 +150,6 @@ impl Snapshot {
             self.len(),
             record_bytes + string_bytes + audio_bytes
         );
+        string_bytes
     }
 }

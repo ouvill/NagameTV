@@ -96,6 +96,7 @@ fn updates_replace_failure_retains_refresh_waits_and_disable_clears()
         }
         assert_eq!(feature.revision, revision);
         assert_eq!(feature.counters().1, 1);
+        assert!(feature.text_capacity_bytes >= "番組".len());
         assert!(
             feature
                 .view(
@@ -117,6 +118,7 @@ fn updates_replace_failure_retains_refresh_waits_and_disable_clears()
         Status::Failed(FetchError::Parse(Error::Json(_)))
     ));
     assert_eq!(feature.revision, 3);
+    assert!(feature.text_capacity_bytes >= "番組".len());
     assert!(
         feature
             .view(
@@ -138,6 +140,7 @@ fn updates_replace_failure_retains_refresh_waits_and_disable_clears()
         thread::sleep(Duration::from_millis(1));
     }
     assert_eq!(feature.counters(), (0, 0, false));
+    assert_eq!(feature.text_capacity_bytes, 0);
     assert_eq!(
         feature.view(
             key(32096, 1024),
@@ -166,6 +169,7 @@ fn cancelled_generation_cannot_return_on_same_server() -> Result<(), Box<dyn std
     feature.configure(None);
     feature.poll(&network);
     assert_eq!(feature.counters(), (0, 0, false));
+    assert_eq!(feature.text_capacity_bytes, 0);
     assert!(matches!(feature.status(), Status::Disabled));
     Ok(())
 }

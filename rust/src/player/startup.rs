@@ -60,12 +60,25 @@ impl Default for PlayerRust {
         let error_log = crate::error_log::ErrorLog::new(
             super::ffi::playback_log_directory().to_string().into(),
         );
-        let log_error = error_log
+        let mut log_error = error_log
             .as_ref()
             .err()
             .map(ToString::to_string)
             .unwrap_or_default();
+        let diagnostic_recorder = match &error_log {
+            Ok(log) => match crate::diagnostics::start(log.directory().to_owned(), plan.locked) {
+                Ok(recorder) => recorder,
+                Err(error) => {
+                    log_error = error;
+                    None
+                }
+            },
+            Err(_) => None,
+        };
         Self {
+            diagnostic_recorder,
+            diagnostic_ui: Default::default(),
+            subtitle_cells: 0,
             error_log,
             log_error: QString::from(log_error),
             server: QString::from(preferences.preferences().server.clone()),

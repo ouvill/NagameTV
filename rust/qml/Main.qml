@@ -16,6 +16,22 @@ ApplicationWindow {
     color: "#0b0c0b"
     font.family: "Noto Sans CJK JP"
     property bool closing: false
+    property bool usageReady: false
+    function recordUsage() {
+        if (usageReady && !closing)
+            player.record_ui_state(showGuide, showChannels, danmaku.item ? danmaku.item.liveEntries.length : 0);
+    }
+    onShowGuideChanged: recordUsage()
+    onShowChannelsChanged: recordUsage()
+    Timer { interval: 10000; repeat: true; running: root.usageReady && !root.closing; onTriggered: root.recordUsage() }
+    Connections {
+        target: player
+        function onPlayingChanged() { root.recordUsage(); }
+        function onSubtitles_enabledChanged() { root.recordUsage(); }
+        function onDanmaku_enabledChanged() { root.recordUsage(); }
+        function onComments_enabledChanged() { root.recordUsage(); }
+        function onEpg_enabledChanged() { root.recordUsage(); }
+    }
     property bool showGuide: false
     property bool showChannels: false
     property bool showStats: false
@@ -107,6 +123,8 @@ ApplicationWindow {
         player.shutdown();
     }
     Component.onCompleted: {
+        root.usageReady = true;
+        root.recordUsage();
         surface.forceActiveFocus();
         if (player.attach(video) && player.server.length)
             player.connect_server(player.server);

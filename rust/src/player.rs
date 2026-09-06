@@ -10,6 +10,7 @@ mod program_info;
 mod startup;
 mod statistics;
 mod subtitle_rendering;
+mod telemetry;
 
 #[cxx_qt::bridge]
 pub mod ffi {
@@ -26,6 +27,8 @@ pub mod ffi {
         fn playback_log_directory() -> QString;
         #[cxx_name = "openPlaybackLogDirectory"]
         fn open_playback_log_directory(path: &QString) -> bool;
+        #[cxx_name = "installQtGcLogging"]
+        fn install_qt_gc_logging(callback: fn(category: &str, message: &str));
         type QQuickItem;
         include!("pointer_activity.h");
         #[cxx_name = "installPointerActivity"]
@@ -115,6 +118,8 @@ pub mod ffi {
         #[qinvokable]
         fn shutdown(self: Pin<&mut Player>);
         #[qinvokable]
+        fn record_ui_state(self: Pin<&mut Player>, guide: bool, channels: bool, live_comments: i32);
+        #[qinvokable]
         fn open_log_folder(self: Pin<&mut Player>) -> bool;
         #[qinvokable]
         fn save_settings(self: Pin<&mut Player>);
@@ -161,6 +166,9 @@ pub struct PlayerRust {
     status: QString,
     playback_error: QString,
     log_error: QString,
+    diagnostic_recorder: Option<viewer_diagnostics::recorder::Recorder>,
+    diagnostic_ui: telemetry::UiState,
+    subtitle_cells: usize,
     error_log: Result<crate::error_log::ErrorLog, crate::error_log::Error>,
     channel_data: QString,
     channel_program_data: QString,
@@ -367,6 +375,7 @@ impl ffi::Player {
         self.as_mut().rust_mut().subtitle_session = None;
         self.as_mut().rust_mut().active_service = None;
         self.as_mut().set_subtitles_active(false);
+        self.as_mut().rust_mut().subtitle_cells = 0;
         self.as_mut().set_subtitle_data(QString::default());
         self.as_mut().set_subtitle_status(QString::from("停止中"));
         Ok(())
@@ -407,6 +416,7 @@ impl ffi::Player {
     }
     pub fn display_subtitles(mut self: Pin<&mut Self>, display: bool) {
         self.as_mut().set_subtitle_display(display);
+        self.as_mut().rust_mut().subtitle_cells = 0;
         self.set_subtitle_data(QString::default());
     }
     pub fn poll_subtitles(mut self: Pin<&mut Self>) {
@@ -420,15 +430,18 @@ impl ffi::Player {
         });
         match update {
             Some(Ok(subtitles::SubtitleUpdate::Show(cue))) if self.rust().subtitle_display => {
+                self.as_mut().rust_mut().subtitle_cells = cue.cells.len();
                 self.set_subtitle_data(QString::from(
                     serde_json::to_string(&cue).unwrap_or_default(),
                 ));
             }
             Some(Ok(subtitles::SubtitleUpdate::Clear)) => {
+                self.as_mut().rust_mut().subtitle_cells = 0;
                 self.set_subtitle_data(QString::default())
             }
             Some(Err(error)) => {
                 self.as_mut().set_subtitles_active(false);
+                self.as_mut().rust_mut().subtitle_cells = 0;
                 self.as_mut().set_subtitle_data(QString::default());
                 self.set_subtitle_status(QString::from(error.to_string()));
             }
@@ -437,12 +450,27 @@ impl ffi::Player {
     }
     fn poll_features(mut self: Pin<&mut Self>) {
         self.as_mut().poll_comments();
-        {
+        let epg_event = {
+            use viewer_diagnostics::recorder::Event;
             let mut this = self.as_mut().rust_mut();
             let this = &mut *this;
+            let was_fetching = matches!(this.epg.status(), ProgramStatus::Fetching);
+            let revision = this.epg.revision;
             if let Some(network) = &this.network {
                 this.epg.poll(network);
             }
+            let fetching = matches!(this.epg.status(), ProgramStatus::Fetching);
+            match (was_fetching, fetching) {
+                (false, true) => Some(Event::EpgFetchStarted),
+                (true, false) if this.epg.revision != revision => Some(Event::EpgFetchFinished),
+                (true, false) if matches!(this.epg.status(), ProgramStatus::Failed(_)) => {
+                    Some(Event::EpgFetchFailed)
+                }
+                _ => None,
+            }
+        };
+        if let Some(event) = epg_event {
+            self.record_diagnostic(event);
         }
         let status = match self.rust().epg.status() {
             ProgramStatus::Disabled => "無効".into(),
@@ -487,19 +515,10 @@ impl ffi::Player {
                 .map(|s| s.counters())
                 .unwrap_or_default();
             let (tasks, programs, stopping) = self.rust().epg.counters();
-            let rss = std::fs::read_to_string("/proc/self/status")
-                .ok()
-                .and_then(|s| {
-                    s.lines()
-                        .find(|l| l.starts_with("VmRSS:"))
-                        .map(str::to_owned)
-                })
-                .unwrap_or_default();
             let text = format!(
-                "{rss} | 字幕: 購読 {subscriptions}, 待機 {pending}, 受信 {decoded} | EPG: タスク {tasks}, 番組 {programs}, 停止待ち {stopping}"
+                "字幕: 購読 {subscriptions}, 待機 {pending}, 受信 {decoded} | EPG: タスク {tasks}, 番組 {programs}, 停止待ち {stopping}"
             );
             eprintln!("METRICS {text}");
-            crate::memory::record();
             self.as_mut().set_diagnostics(QString::from(text));
             self.as_mut().rust_mut().next_diagnostic = Instant::now() + Duration::from_secs(10);
         }
@@ -577,10 +596,12 @@ impl ffi::Player {
             .preferences_mut()
             .service_id = id.to_string();
         self.as_mut().set_selected(index);
+        self.record_diagnostic(viewer_diagnostics::recorder::Event::ChannelSelected);
         self.as_mut().save_settings();
         self.play();
     }
     pub fn play(mut self: Pin<&mut Self>) {
+        self.record_diagnostic(viewer_diagnostics::recorder::Event::PlayRequested);
         self.as_mut().set_playback_error(QString::default());
         self.as_mut().rust_mut().resume_retry_used = false;
         self.start_stream();
@@ -645,6 +666,7 @@ impl ffi::Player {
         }
     }
     pub fn stop(mut self: Pin<&mut Self>) {
+        self.record_diagnostic(viewer_diagnostics::recorder::Event::StopRequested);
         match self.as_mut().end_stream() {
             Ok(()) => self.status_text("停止"),
             Err(error) => self.playback_failed(error),
@@ -732,6 +754,7 @@ impl ffi::Player {
         }
     }
     pub fn shutdown(mut self: Pin<&mut Self>) {
+        self.as_mut().stop_diagnostics();
         self.as_mut().rust_mut().comments.configure(false, None);
         self.as_mut().browser_open(false);
         self.as_mut().rust_mut().epg.configure(None);

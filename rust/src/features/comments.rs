@@ -87,6 +87,12 @@ impl Comments {
         }
     }
 
+    pub fn storage(&self) -> (usize, usize) {
+        (
+            self.history.len(),
+            self.history.iter().map(|comment| comment.text.len()).sum(),
+        )
+    }
     pub fn status(&self, enabled: bool) -> String {
         if !enabled {
             return "無効".into();

@@ -38,4 +38,39 @@ inline bool openPlaybackLogDirectory(const QString &path) {
   return QDesktopServices::openUrl(QUrl::fromLocalFile(path));
 }
 
+// Installed once at startup, before Qt or playback creates worker threads.
+#include "rust/cxx.h"
+#include <QtCore/QLoggingCategory>
+#include <optional>
+#include <cstdio>
+#include <cstring>
+
+inline std::optional<rust::Fn<void(rust::Str, rust::Str)>> qtGcCallback;
+inline QtMessageHandler previousQtHandler = nullptr;
+
+inline void viewerQtMessageHandler(QtMsgType type, const QMessageLogContext &context,
+                                   const QString &message) {
+  if (context.category && qtGcCallback &&
+      (std::strcmp(context.category, "qt.qml.gc.statistics") == 0 ||
+       std::strcmp(context.category, "qt.qml.gc.allocatorStats") == 0)) {
+    const auto text = message.left(8192).toUtf8();
+    (*qtGcCallback)(rust::Str(context.category), rust::Str(text.constData(), text.size()));
+  }
+  if (previousQtHandler) previousQtHandler(type, context, message);
+  else {
+    const auto text = qFormatLogMessage(type, context, message).toLocal8Bit();
+    if (!text.isEmpty()) std::fprintf(stderr, "%s\n", text.constData());
+  }
+}
+
+inline void installQtGcLogging(rust::Fn<void(rust::Str, rust::Str)> callback) {
+  qtGcCallback = callback;
+  previousQtHandler = qInstallMessageHandler(viewerQtMessageHandler);
+  if (qEnvironmentVariable("MIRAKURUN_GC_LOG") == QStringLiteral("1")) {
+    // Explicit QT_LOGGING_RULES/QT_LOGGING_CONF still take precedence.
+    QLoggingCategory::setFilterRules(QStringLiteral(
+        "qt.qml.gc.statistics.debug=true\nqt.qml.gc.allocatorStats.debug=true"));
+  }
+}
+
 #endif

@@ -68,6 +68,7 @@ pub struct ProgramInfo {
     acquisition: Acquisition,
     snapshot: Snapshot,
     pub revision: u64,
+    pub text_capacity_bytes: usize,
 }
 impl ProgramInfo {
     /// Invalidate before cancellation. Never reuse results, even for A -> B -> A.
@@ -77,6 +78,7 @@ impl ProgramInfo {
         }
         self.desired = server;
         self.snapshot = Snapshot::default();
+        self.text_capacity_bytes = 0;
         self.revision += 1;
         self.acquisition = match std::mem::take(&mut self.acquisition) {
             Acquisition::Fetching(job) | Acquisition::Cancelling(job) => {
@@ -103,7 +105,7 @@ impl ProgramInfo {
                     .unwrap_or_else(|| Err(NetworkError::WorkerStopped.into()))
                 {
                     Ok(programs) => {
-                        programs.record_storage();
+                        self.text_capacity_bytes = programs.record_storage();
                         self.snapshot = programs;
                         self.revision += 1;
                         Outcome::Ready

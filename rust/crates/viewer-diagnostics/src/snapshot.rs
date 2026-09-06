@@ -5,6 +5,8 @@ pub struct Snapshot {
     pub playing: bool,
     pub subtitles: bool,
     pub comments: bool,
+    pub comments_enabled: bool,
+    pub epg_enabled: bool,
     pub guide_open: bool,
     pub channels_open: bool,
     pub live_comments: usize,
