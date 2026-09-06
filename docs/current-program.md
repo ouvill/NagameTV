@@ -146,3 +146,25 @@ Qtスタイルによる方向別paddingの既定値を避けるため上下左�
 再生エラー専用の見出し、リトライ表記、エラー詳細ダイアログと補助操作は未移植。
 中央の「視聴する」を実アプリでクリックし、実放送のPLAYING通知と正常終了を確認した。
 証跡はGit対象外のbenchmark/viewing-design/center-play.py、center-play.log、center-play.png。
+
+### 再生エラーと詳細
+
+再生失敗は通常statusとは別のplayback_errorへ投影する。Rustの既存playback::Errorを
+処理する箇所から明示的に設定し、statusの文言からエラー状態を推測しない。
+保持は最新1件で履歴を追加しない。ユーザーの再試行・接続先変更・PLAYING通知で消す。
+自動ライブ再接続に成功する場合はエラー画面を残さない。停止失敗も再生エラーとして示す。
+
+StoppedPlaybackはmainに合わせてエラー見出し26px、再試行ボタン、チャンネル／設定／
+詳細の補助操作を表示する。通常画面は短い対処案とし、GStreamerの内部情報は
+PlaybackErrorDetailsの選択可能・読み取り専用PlainTextに表示する。
+詳細Popupは最大640×420px、余白20px、角丸18px。開いた時だけ生成し、閉じた時・
+エラー消去・再生成功時に破棄する。閉じるボタンは現在TextActionで、mainの丸形SVGとの差は残る。
+
+Rustテスト49件成功、外部TS依存1件は未実行。Clippy全ターゲット警告なし。
+既存Qt全体では52件成功・追加詳細試験1件失敗だったが、原因は描画前のクリックと判明。
+描画を待つ修正後、停止画面の4件（初期化・終了含む）が成功した。
+詳細本文の更新、Escape終了、エラー消去での破棄を試験する。
+テスト専用HTTPサーバーから配信503を返し、実GStreamerの失敗通知とエラー画面を確認、
+アプリは正常終了した。実Mirakurunを停止する試験ではない。
+証跡はGit対象外のbenchmark/viewing-design/playback-error.py、playback-error.log、playback-error.png。
+復旧後の同じ画面からの再試行成功、詳細の実アプリでの操作、全画面のmainとの画像比較は未検証。

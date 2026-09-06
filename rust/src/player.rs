@@ -2,6 +2,7 @@ mod audio_output;
 mod channel_programs;
 mod channels;
 mod guide;
+mod playback_failure;
 mod program_info;
 mod startup;
 mod statistics;
@@ -32,6 +33,7 @@ pub mod ffi {
         #[qml_element]
         #[qproperty(QString, server, READ, NOTIFY)]
         #[qproperty(QString, status, READ, NOTIFY)]
+        #[qproperty(QString, playback_error, READ, NOTIFY)]
         #[qproperty(QString, channel_data, READ, NOTIFY)]
         #[qproperty(QString, channel_program_data, READ, NOTIFY)]
         #[qproperty(f64, channel_program_now, READ, NOTIFY)]
@@ -111,6 +113,7 @@ use std::time::{Duration, Instant};
 pub struct PlayerRust {
     server: QString,
     status: QString,
+    playback_error: QString,
     channel_data: QString,
     channel_program_data: QString,
     channel_program_now: f64,
@@ -168,6 +171,12 @@ macro_rules! property_setter {
 impl ffi::Player {
     property_setter!(set_server, server, server_changed, QString);
     property_setter!(set_status, status, status_changed, QString);
+    property_setter!(
+        set_playback_error,
+        playback_error,
+        playback_error_changed,
+        QString
+    );
     property_setter!(
         set_channel_data,
         channel_data,
@@ -396,7 +405,7 @@ impl ffi::Player {
             .ok_or(playback::Error::Unavailable)
             .and_then(|p| unsafe { p.attach(address) });
         if let Err(error) = result {
-            self.status_text(error);
+            self.playback_failed(error);
             return false;
         }
         true
@@ -407,12 +416,13 @@ impl ffi::Player {
         unsafe { ffi::install_pointer_activity(item) };
     }
     pub fn connect_server(mut self: Pin<&mut Self>, server: QString) {
+        self.as_mut().set_playback_error(QString::default());
         self.as_mut().rust_mut().request = None;
         self.as_mut().set_loading(false);
         self.as_mut().rust_mut().epg.configure(None);
         self.as_mut().set_epg_data(QString::from("[]"));
         if let Err(error) = self.as_mut().end_stream() {
-            self.status_text(error);
+            self.playback_failed(error);
             return;
         }
         self.as_mut().set_channel_program_data(QString::from("[]"));
@@ -455,6 +465,7 @@ impl ffi::Player {
         self.play();
     }
     pub fn play(mut self: Pin<&mut Self>) {
+        self.as_mut().set_playback_error(QString::default());
         self.as_mut().rust_mut().resume_retry_used = false;
         self.start_stream();
     }
@@ -468,7 +479,7 @@ impl ffi::Player {
             return;
         }
         if let Err(error) = self.as_mut().end_stream() {
-            self.status_text(error);
+            self.playback_failed(error);
             return;
         }
         if self.rust().subtitles_enabled {
@@ -503,15 +514,15 @@ impl ffi::Player {
             Some(Err(error)) => {
                 let text = error.to_string();
                 let _ = self.as_mut().end_stream();
-                self.as_mut().status_text(text);
+                self.as_mut().playback_failed(text);
             }
-            None => self.as_mut().status_text("Playback unavailable"),
+            None => self.as_mut().playback_failed(playback::Error::Unavailable),
         }
     }
     pub fn stop(mut self: Pin<&mut Self>) {
         match self.as_mut().end_stream() {
             Ok(()) => self.status_text("停止"),
-            Err(error) => self.status_text(error),
+            Err(error) => self.playback_failed(error),
         }
     }
     pub fn poll(mut self: Pin<&mut Self>) {
@@ -562,6 +573,7 @@ impl ffi::Player {
         let result = self.rust().playback.as_ref().map(playback::Playback::poll);
         match result {
             Some(Ok(true)) => {
+                self.as_mut().set_playback_error(QString::default());
                 self.as_mut().set_playing(true);
                 if let Some(entry) = self.rust().entries.get(*self.selected() as usize) {
                     let text = format!("再生中: {}", entry.name);
@@ -576,7 +588,7 @@ impl ffi::Player {
                     && self.rust().active_service.is_some()
                     && !self.rust().resume_retry_used;
                 if let Err(stop_error) = self.as_mut().end_stream() {
-                    self.status_text(format!("停止失敗: {stop_error}（{text}）"));
+                    self.playback_failed(format!("停止失敗: {stop_error}（{text}）"));
                     return;
                 }
                 if recover {
@@ -587,7 +599,7 @@ impl ffi::Player {
                         self.status_text("配信接続が途切れたため再接続中…");
                     }
                 } else {
-                    self.status_text(format!("再生エラー: {text}"));
+                    self.playback_failed(text);
                 }
             }
             _ => {}

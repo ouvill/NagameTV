@@ -5,6 +5,8 @@ fn main() {
         QmlModule::new("MinimalViewer")
             .qml_file("qml/Main.qml")
             .qml_file("qml/StoppedPlayback.qml")
+            .qml_file("qml/TextAction.qml")
+            .qml_file("qml/PlaybackErrorDetails.qml")
             .qml_file("qml/WindowActions.qml")
             .qml_file("qml/WindowButtons.qml")
             .qml_file("qml/WindowDragArea.qml")
@@ -41,7 +43,6 @@ fn main() {
         "../assets/icons/volume-2.svg",
         "../assets/icons/grid-2x2.svg",
         "../assets/icons/captions.svg",
-
         "../assets/icons/calendar-days.svg",
         "../assets/icons/settings-2.svg",
         "../assets/icons/maximize.svg",

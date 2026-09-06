@@ -118,6 +118,7 @@ ApplicationWindow {
             active: !root.closing && !player.playing
             sourceComponent: StoppedPlayback {
                 status: player.status
+                playbackError: player.playback_error
                 canPlay: player.selected >= 0
                 hasChannels: root.channelRows.length > 0
                 loading: player.loading
