@@ -2,7 +2,7 @@
 use super::PlayerRust;
 use crate::features::program_info::ProgramInfo;
 use crate::{features, playback, services, settings};
-use cxx_qt_lib::{QString, QStringList};
+use cxx_qt_lib::QString;
 use std::time::Instant;
 
 impl Default for PlayerRust {
@@ -56,7 +56,7 @@ impl Default for PlayerRust {
         Self {
             server: QString::from(preferences.preferences().server.clone()),
             status: QString::from(status),
-            channels: QStringList::default(),
+            channel_data: QString::from("[]"),
             selected: -1,
             loading: false,
             subtitles_enabled: plan.subtitles,

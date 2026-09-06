@@ -7,7 +7,7 @@ viewer-coreを照合し、機能単位で移植する。表の「一部」はmai
 | 機能・契約 | mainの参照元 | 後継ブランチの状況・残作業 |
 | --- | --- | --- |
 | Mirakurun接続・ライブ再生・選局 | playback、runtime、channels | 基本動作あり。異常時の詳細UIは未移植 |
-| チャンネル分類・リモコン順・ロゴ | viewer-core/channels、QML | 未移植。現状は受信順のコンボボックス |
+| チャンネル分類・リモコン順・ロゴ | viewer-core/channels、QML | 分類・番号順・種別絞り込みを追加。ロゴ、mainのチャンネルブラウザー、EPG連動の同時放送サブ局整理は未移植 |
 | 字幕PTS同期・表示期限・選局時破棄 | subtitles | 移植済みの同期を回帰検証。実放送での再検証も継続 |
 | 字幕の書体・縁取り・配置再現性 | subtitle_outline.h、QML | 一部。標準Textによる簡略表示 |
 | EPG全局取得・定期更新・更新失敗時保持 | epg、runtime、viewer-core | 基本取得あり。現在24時間先・選択局200件の投影 |
@@ -73,3 +73,5 @@ CMakeビルド成功。設定テストはmain形式の読み込み・未知項�
 字幕等の既存unwrapの監査、機能移植後の長時間メモリー／性能検証は引き続き必要。
 
 デインターレースと動画統計の設計・検証は [video-statistics.md](video-statistics.md)。
+
+チャンネルの分類・番号順・種別絞り込みの契約と検証は [channel-selection.md](channel-selection.md)。

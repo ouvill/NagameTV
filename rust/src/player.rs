@@ -1,3 +1,4 @@
+mod channels;
 mod startup;
 mod statistics;
 
@@ -6,8 +7,6 @@ pub mod ffi {
     unsafe extern "C++" {
         include!("cxx-qt-lib/qstring.h");
         type QString = cxx_qt_lib::QString;
-        include!("cxx-qt-lib/qstringlist.h");
-        type QStringList = cxx_qt_lib::QStringList;
         include!("qt_helpers.h");
         type QQuickItem;
         #[cxx_name = "configureQtQuickOpenGl"]
@@ -20,7 +19,7 @@ pub mod ffi {
         #[qml_element]
         #[qproperty(QString, server, READ, NOTIFY)]
         #[qproperty(QString, status, READ, NOTIFY)]
-        #[qproperty(QStringList, channels, READ, NOTIFY)]
+        #[qproperty(QString, channel_data, READ, NOTIFY)]
         #[qproperty(i32, selected, READ, NOTIFY)]
         #[qproperty(bool, loading, READ, NOTIFY)]
         #[qproperty(bool, subtitles_enabled, READ, NOTIFY)]
@@ -76,14 +75,14 @@ use crate::{
     playback, services, settings,
 };
 use cxx_qt::CxxQtType;
-use cxx_qt_lib::{QString, QStringList};
+use cxx_qt_lib::QString;
 use std::pin::Pin;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 pub struct PlayerRust {
     server: QString,
     status: QString,
-    channels: QStringList,
+    channel_data: QString,
     selected: i32,
     loading: bool,
     subtitles_enabled: bool,
@@ -113,7 +112,7 @@ pub struct PlayerRust {
     request: Option<services::Request>,
     network: Option<services::Network>,
     playback: Option<playback::Playback>,
-    entries: Vec<services::Service>,
+    entries: Vec<crate::channels::Channel>,
 }
 
 macro_rules! property_setter {
@@ -130,7 +129,12 @@ macro_rules! property_setter {
 impl ffi::Player {
     property_setter!(set_server, server, server_changed, QString);
     property_setter!(set_status, status, status_changed, QString);
-    property_setter!(set_channels, channels, channels_changed, QStringList);
+    property_setter!(
+        set_channel_data,
+        channel_data,
+        channel_data_changed,
+        QString
+    );
     property_setter!(set_selected, selected, selected_changed, i32);
     property_setter!(set_loading, loading, loading_changed, bool);
     property_setter!(
@@ -345,7 +349,7 @@ impl ffi::Player {
             return;
         }
         self.as_mut().rust_mut().entries.clear();
-        self.as_mut().set_channels(QStringList::default());
+        self.as_mut().set_channel_data(QString::from("[]"));
         self.as_mut().set_selected(-1);
         let server = match services::server_url(&server.to_string()) {
             Ok(server) => server,
@@ -467,10 +471,13 @@ impl ffi::Player {
             self.as_mut().set_loading(false);
             match result {
                 Ok(entries) => {
-                    let mut names = QStringList::default();
-                    for entry in &entries {
-                        names.append(QString::from(entry.name.clone()));
-                    }
+                    let presentation = match channels::presentation(&entries) {
+                        Ok(json) => QString::from(json),
+                        Err(error) => {
+                            self.status_text(format!("チャンネル表示データの作成失敗: {error}"));
+                            return;
+                        }
+                    };
                     let selected = self
                         .rust()
                         .preferences
@@ -479,7 +486,7 @@ impl ffi::Player {
                         .and_then(|index| i32::try_from(index).ok())
                         .unwrap_or(-1);
                     self.as_mut().rust_mut().entries = entries;
-                    self.as_mut().set_channels(names);
+                    self.as_mut().set_channel_data(presentation);
                     self.as_mut().set_selected(selected);
                     self.as_mut().configure_epg();
                     self.as_mut()

@@ -29,6 +29,8 @@ MIRAKURUN_SERVER=http://192.168.3.3:40772 QT_QPA_PLATFORM=xcb ./build/mirakurun-
 
 通常起動は設定から接続先・選択局・音量・字幕・EPGを復元します。設定がなければ字幕OFF・EPG ONです。
 接続後は選択局を復元して待機し、チャンネルを選ぶか再生ボタンで開始します。
+チャンネルは放送種別・リモコン番号順に表示し、地デジ／BS／CS／SKYなどで絞り込めます。
+種別を変えるだけでは再生局は変わりません。
 `MIRAKURUN_AUTOPLAY=1` で取得後に自動再生し、`MIRAKURUN_SERVICE_ID` で選択局を上書きできます。
 PgUp/PgDownで選局。チェックボックスで機能を切り替える。
 

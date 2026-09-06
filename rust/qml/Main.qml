@@ -14,10 +14,11 @@ ApplicationWindow {
     property bool closing: false
     property bool showGuide: false
     property bool showStats: false
+    readonly property var channelRows: JSON.parse(player.channel_data)
     Player { id: player }
     function step(offset) {
-        if (player.channels.length)
-            player.select((player.selected + offset + player.channels.length) % player.channels.length)
+        if (root.channelRows.length)
+            player.select((player.selected + offset + root.channelRows.length) % root.channelRows.length)
     }
     Shortcut { sequence: "PgDown"; onActivated: root.step(1) }
     Shortcut { sequence: "PgUp"; onActivated: root.step(-1) }
@@ -79,7 +80,7 @@ ApplicationWindow {
                 sourceComponent: Component {
                     ProgramGuide {
                         programsJson: player.epg_data; status: player.epg_status
-                        channel: player.selected >= 0 ? player.channels[player.selected] : ""
+                        channel: player.selected >= 0 && player.selected < root.channelRows.length ? root.channelRows[player.selected].label : ""
                         onRefreshRequested: player.refresh_epg()
                         onCloseRequested: { root.showGuide = false; player.guide_open(false) }
                     }
@@ -88,14 +89,14 @@ ApplicationWindow {
         }
         RowLayout {
             Layout.fillWidth: true; Layout.margins: 8
-            Button { text: "前"; enabled: player.channels.length > 0; onClicked: root.step(-1) }
-            ComboBox {
+            Button { text: "前"; enabled: root.channelRows.length > 0; onClicked: root.step(-1) }
+            ChannelSelector {
                 Layout.fillWidth: true
-                model: player.channels
-                currentIndex: player.selected
-                onActivated: player.select(currentIndex)
+                rows: root.channelRows
+                selected: player.selected
+                onSelectRequested: function(index) { player.select(index) }
             }
-            Button { text: "次"; enabled: player.channels.length > 0; onClicked: root.step(1) }
+            Button { text: "次"; enabled: root.channelRows.length > 0; onClicked: root.step(1) }
             Button { text: "再生"; enabled: player.selected >= 0; onClicked: player.play() }
             Button { text: "停止"; onClicked: player.stop() }
             Label { text: "音量"; color: "white" }

@@ -1,12 +1,8 @@
-use serde::Deserialize;
-use std::{collections::HashSet, sync::mpsc, time::Duration};
+use crate::channels;
+use std::{sync::mpsc, time::Duration};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("チャンネルJSONの解析失敗: {0}")]
-    Json(#[from] serde_json::Error),
-    #[error("TVチャンネルがありません")]
-    NoTvChannels,
     #[error("サーバーURLの解析失敗: {0}")]
     Url(#[from] url::ParseError),
     #[error("http:// または https:// のサーバーURLを入力してください")]
@@ -32,27 +28,6 @@ pub enum FetchError<E> {
     Network(#[from] NetworkError),
     #[error("{0}")]
     Parse(#[source] E),
-}
-
-#[derive(Deserialize, Debug)]
-pub struct Service {
-    pub id: u64,
-    pub name: String,
-    #[serde(rename = "type")]
-    kind: u32,
-}
-
-pub fn parse(bytes: &[u8]) -> Result<Vec<Service>, Error> {
-    let entries: Vec<Service> = serde_json::from_slice(bytes)?;
-    let mut seen = HashSet::new();
-    let entries: Vec<_> = entries
-        .into_iter()
-        .filter(|s| s.kind == 1 && s.id != 0 && !s.name.is_empty() && seen.insert(s.id))
-        .collect();
-    if entries.is_empty() {
-        return Err(Error::NoTvChannels);
-    }
-    Ok(entries)
 }
 
 pub fn server_url(value: &str) -> Result<String, Error> {
@@ -88,7 +63,11 @@ impl Network {
         })
     }
     pub fn fetch(&self, server: &str) -> Request {
-        self.fetch_json(format!("{server}/api/services"), 1024 * 1024, parse)
+        self.fetch_json(
+            format!("{server}/api/services"),
+            1024 * 1024,
+            channels::parse,
+        )
     }
     pub fn fetch_json<T: Send + 'static, E: Send + 'static>(
         &self,
@@ -131,7 +110,7 @@ impl Network {
     }
 }
 
-pub type Request = Job<Vec<Service>, Error>;
+pub type Request = Job<Vec<channels::Channel>, channels::Error>;
 
 pub struct Job<T, E> {
     task: tokio::task::JoinHandle<()>,
@@ -162,31 +141,19 @@ impl<T, E> Drop for Job<T, E> {
 mod tests {
     use super::*;
     #[test]
-    fn selects_tv_preserving_large_ids_and_deduplicating() {
-        let entries = parse(
-            br#"[{"id":3203246080,"name":"TV","type":1},
-            {"id":3203246080,"name":"duplicate","type":1},
-            {"id":2,"name":"Radio","type":2}]"#,
-        )
-        .unwrap();
-        assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].id, 3203246080);
-    }
-    #[test]
-    fn rejects_bad_or_empty_services_and_urls() {
-        for bytes in [b"broken".as_slice(), b"{}", b"[]"] {
-            assert!(parse(bytes).is_err());
-        }
+    fn rejects_bad_urls() -> Result<(), Error> {
         for url in ["file:///tmp/a", "http://", "http://localhost/?q=1"] {
             assert!(server_url(url).is_err());
         }
         assert_eq!(
-            server_url(" http://localhost:40772/ ").unwrap(),
+            server_url(" http://localhost:40772/ ")?,
             "http://localhost:40772"
         );
+        Ok(())
     }
     #[test]
-    fn fetch_preserves_http_parse_and_capacity_failures() {
+    fn fetch_preserves_http_parse_and_capacity_failures() -> Result<(), Box<dyn std::error::Error>>
+    {
         use std::error::Error as _;
         use std::{
             io::{Read, Write},
@@ -195,17 +162,17 @@ mod tests {
             time::Instant,
         };
 
-        let network = Network::new().unwrap();
+        let network = Network::new()?;
         for (status, body, limit) in [
             (503, "unavailable", 1024),
             (200, "not json", 1024),
             (200, "[]", 1),
             (200, "[]", 2),
         ] {
-            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-            listener.set_nonblocking(true).unwrap();
-            let url = format!("http://{}/api/services", listener.local_addr().unwrap());
-            let server = thread::spawn(move || {
+            let listener = TcpListener::bind("127.0.0.1:0")?;
+            listener.set_nonblocking(true)?;
+            let url = format!("http://{}/api/services", listener.local_addr()?);
+            let server = thread::spawn(move || -> std::io::Result<()> {
                 let deadline = Instant::now() + Duration::from_secs(3);
                 let mut stream = loop {
                     match listener.accept() {
@@ -216,52 +183,54 @@ mod tests {
                         {
                             thread::sleep(Duration::from_millis(1))
                         }
-                        Err(e) => panic!("test server accept failed: {e}"),
+                        Err(e) => return Err(e),
                     }
                 };
-                stream
-                    .set_read_timeout(Some(Duration::from_secs(1)))
-                    .unwrap();
+                stream.set_read_timeout(Some(Duration::from_secs(1)))?;
                 let mut header = Vec::new();
                 while !header.ends_with(b"\r\n\r\n") {
                     assert!(header.len() < 4096);
                     let mut byte = [0];
-                    stream.read_exact(&mut byte).unwrap();
+                    stream.read_exact(&mut byte)?;
                     header.push(byte[0]);
                 }
-                write!(stream, "HTTP/1.1 {status} Test\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
+                write!(
+                    stream,
+                    "HTTP/1.1 {status} Test\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                )?;
+                Ok(())
             });
-            let job = network.fetch_json(url, limit, parse);
+            let job = network.fetch_json(url, limit, channels::parse);
             let deadline = Instant::now() + Duration::from_secs(3);
             let error = loop {
                 if let Some(result) = job.poll() {
-                    break result.unwrap_err();
+                    break result.err().ok_or("expected request failure")?;
                 }
                 assert!(Instant::now() < deadline, "request did not finish");
                 thread::sleep(Duration::from_millis(1));
             };
-            server.join().unwrap();
+            server.join().map_err(|_| "test server panicked")??;
             match (status, limit, &error) {
                 (503, _, FetchError::Network(NetworkError::Http(source))) => {
-                    assert_eq!(source.status().unwrap().as_u16(), 503);
-                    assert!(error.source().unwrap().source().is_some());
+                    assert_eq!(source.status().map(|status| status.as_u16()), Some(503));
+                    assert!(error.source().and_then(|source| source.source()).is_some());
                 }
-                (200, 1024, FetchError::Parse(Error::Json(source))) => {
+                (200, 1024, FetchError::Parse(channels::Error::Json(source))) => {
                     assert!(source.is_syntax());
-                    assert!(error.source().unwrap().source().is_some());
+                    assert!(error.source().and_then(|source| source.source()).is_some());
                 }
                 (200, 1, FetchError::Network(NetworkError::ResponseTooLarge { limit: 1 })) => {}
-                (200, 2, FetchError::Parse(Error::NoTvChannels)) => {}
+                (200, 2, FetchError::Parse(channels::Error::NoTvChannels)) => {}
                 _ => panic!("unexpected classification: {error:?}"),
             }
         }
+        Ok(())
     }
 
     #[test]
-    fn replaced_request_cannot_publish_an_old_result() {
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .build()
-            .unwrap();
+    fn replaced_request_cannot_publish_an_old_result() -> Result<(), std::io::Error> {
+        let runtime = tokio::runtime::Builder::new_current_thread().build()?;
         let (tx, rx) = mpsc::sync_channel(1);
         let task = runtime.spawn(std::future::pending());
         let handle = task.abort_handle();
@@ -273,5 +242,6 @@ mod tests {
         );
         runtime.block_on(tokio::task::yield_now());
         assert!(handle.is_finished());
+        Ok(())
     }
 }
