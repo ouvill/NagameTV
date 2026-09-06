@@ -90,7 +90,7 @@ Rectangle {
                 width: 44; height: root.height
                 enabled: index === 0 ? root.currentIndex > 0 : root.currentIndex < root.days.length - 1
                 opacity: enabled ? 1 : .35
-                Accessible.name: index === 0 ? "前日" : "翌日"
+                Accessible.name: index === 0 ? qsTranslate("Viewer", "Previous day") : qsTranslate("Viewer", "Next day")
                 background: Rectangle { radius: height / 2; color: arrow.hovered && arrow.enabled ? "#28ffffff" : "transparent" }
                 contentItem: Item { Image { anchors.centerIn: parent; width: 16; height: 16; source: root.iconDirectory + "chevron-left.svg"; mirror: arrow.index === 1 } }
                 onClicked: root.selectDay(root.currentIndex + (index === 0 ? -1 : 1))

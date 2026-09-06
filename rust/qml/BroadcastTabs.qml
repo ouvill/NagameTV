@@ -26,7 +26,7 @@ Rectangle {
         },
         {
             value: "OTHER",
-            label: "その他"
+            label: qsTranslate("Viewer", "Other")
         }
     ].filter(option => rows.some(row => row.band === option.value))
     readonly property int selectedIndex: options.findIndex(option => option.value === value)

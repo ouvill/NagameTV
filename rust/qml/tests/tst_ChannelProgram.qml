@@ -37,6 +37,6 @@ TestCase {
         compare(card.progress, 1);
         card.program = null;
         compare(card.progress, 0);
-        compare(title.text, "現在の番組情報がありません");
+        compare(title.text, qsTranslate("Viewer", "No current program information"));
     }
 }

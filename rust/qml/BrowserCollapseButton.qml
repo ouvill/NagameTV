@@ -6,7 +6,7 @@ ToolButton {
     id: control
     implicitWidth: 42
     implicitHeight: 42
-    Accessible.name: "チャンネル選択を閉じる"
+    Accessible.name: qsTranslate("Viewer", "Close channel selection")
     background: Rectangle {
         radius: 21
         color: control.hovered ? "#28ffffff" : "#17000000"

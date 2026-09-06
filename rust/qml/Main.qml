@@ -376,20 +376,20 @@ ApplicationWindow {
                     spacing: 12
                     IconAction {
                         iconSource: "qrc:/qt/qml/MinimalViewer/assets/icons/" + (player.playing ? "square.svg" : "play.svg")
-                        tip: player.playing ? qsTranslate("Main", "Stop") : "再生"
+                        tip: player.playing ? qsTranslate("Main", "Stop") : qsTranslate("Viewer", "Play")
                         primary: !player.playing
                         enabled: player.playing || player.selected >= 0
                         onClicked: player.playing ? player.stop() : player.play()
                     }
                     IconAction {
                         iconSource: "qrc:/qt/qml/MinimalViewer/assets/icons/" + (player.audio_muted || player.volume_level === 0 ? "volume-x.svg" : "volume-2.svg")
-                        tip: player.audio_muted ? "消音解除" : "消音"
+                        tip: player.audio_muted ? qsTranslate("Viewer", "Unmute") : qsTranslate("Viewer", "Mute")
                         active: player.audio_muted
                         onClicked: player.mute(!player.audio_muted)
                     }
                     IconAction {
                         iconSource: "qrc:/qt/qml/MinimalViewer/assets/icons/chevron-down.svg"
-                        tip: "音声選択"
+                        tip: qsTranslate("Viewer", "Audio selection")
                         implicitWidth: 28
                         implicitHeight: 28
                         onClicked: audioSettings.open()

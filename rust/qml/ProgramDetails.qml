@@ -15,7 +15,7 @@ Popup {
     Component.onCompleted: open()
     contentItem: ColumnLayout {
         RowLayout {
-            Label { text: "番組詳細"; Layout.fillWidth: true; font.bold: true }
+            Label { text: qsTranslate("Viewer", "Program details"); Layout.fillWidth: true; font.bold: true }
             Button { objectName: "closeProgramDetails"; text: qsTranslate("Main", "Close"); onClicked: popup.close() }
         }
         ScrollView {
@@ -30,7 +30,7 @@ Popup {
                 Label {
                     objectName: "programTitle"
                     width: parent.width
-                    text: popup.program ? (popup.program.name || "番組名未取得") : "現在の番組情報がありません"
+                    text: popup.program ? (popup.program.name || qsTranslate("Viewer", "Program title unavailable")) : qsTranslate("Viewer", "No current program information")
                     textFormat: Text.PlainText
                     wrapMode: Text.Wrap
                     font.bold: true
@@ -44,7 +44,7 @@ Popup {
                 Label {
                     objectName: "programDescription"
                     width: parent.width
-                    text: popup.program ? (popup.program.description || "番組の説明はありません") : ""
+                    text: popup.program ? (popup.program.description || qsTranslate("Viewer", "No program description")) : ""
                     textFormat: Text.PlainText
                     wrapMode: Text.Wrap
                 }

@@ -20,12 +20,12 @@ RowLayout {
         objectName: "bandSelector"
         Layout.preferredWidth: 90
         model: [
-            { label: "すべて", value: "ALL" },
+            { label: qsTranslate("Viewer", "All"), value: "ALL" },
             { label: qsTranslate("Main", "Terrestrial"), value: "GR" },
             { label: "BS", value: "BS" },
             { label: "CS", value: "CS" },
             { label: "SKY", value: "SKY" },
-            { label: "その他", value: "OTHER" }
+            { label: qsTranslate("Viewer", "Other"), value: "OTHER" }
         ]
         textRole: "label"
         valueRole: "value"
@@ -39,7 +39,7 @@ RowLayout {
         textRole: "label"
         valueRole: "index"
         currentValue: root.selected
-        displayText: currentIndex >= 0 ? currentText : (count === 0 ? "該当するチャンネルなし" : "チャンネルを選択")
+        displayText: currentIndex >= 0 ? currentText : (count === 0 ? qsTranslate("Viewer", "No matching channels") : qsTranslate("Viewer", "Choose a channel"))
         enabled: count > 0
         onActivated: root.selectRequested(currentValue)
     }

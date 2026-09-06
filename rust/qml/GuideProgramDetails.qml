@@ -55,7 +55,7 @@ Popup {
                 - timeLabel.height - channelLabel.height - 1 - 4 - 5 * body.spacing
                 - (popup.live ? 44 + body.spacing : 0)
                 - (errorLabel.visible ? errorLabel.height + body.spacing : 0)))
-            text: popup.program ? (popup.program.name || "番組情報がありません") : ""
+            text: popup.program ? (popup.program.name || qsTranslate("Viewer", "No program information")) : ""
             textFormat: Text.PlainText
             color: "#e6e8e6"; font.pixelSize: 22; font.bold: true
             wrapMode: Text.Wrap; maximumLineCount: 3; elide: Text.ElideRight
@@ -95,7 +95,7 @@ Popup {
             objectName: "watchGuideProgram"
             visible: popup.live
             width: 168; height: 44
-            text: "この番組を見る"
+            text: qsTranslate("Viewer", "Watch this program")
             background: Rectangle { radius: 22; color: "#9caf9f" }
             contentItem: Label {
                 text: watchButton.text; color: "#17201a"; font.bold: true

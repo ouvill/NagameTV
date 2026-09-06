@@ -12,7 +12,7 @@ ColumnLayout {
     Label {
         objectName: "cardProgramTitle"
         Layout.fillWidth: true
-        text: root.program ? (root.program.name || "番組名未取得") : "現在の番組情報がありません"
+        text: root.program ? (root.program.name || qsTranslate("Viewer", "Program title unavailable")) : qsTranslate("Viewer", "No current program information")
         color: "#f4f5f3"
         font.pixelSize: root.emphasized ? 16 : 14
         font.bold: true

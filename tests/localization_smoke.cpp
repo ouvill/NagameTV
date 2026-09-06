@@ -29,16 +29,18 @@ int main(int argc, char **argv) {
   check(resolveUiLanguage("unsupported", "ja_JP") == "en", "Unknown preference uses English");
   check(initializeUiLanguage(engine, "en"), "Initialize English");
   engine.loadData(R"(import QtQml
-    QtObject { property string heading: qsTr("Stats for nerds"); property string closeLabel: qsTranslate("Main", "Close") })", QUrl("file:///Main.qml"));
+    QtObject { property string heading: qsTr("Stats for nerds"); property string closeLabel: qsTranslate("Main", "Close"); property string emptyChannels: qsTranslate("Viewer", "No matching channels") })", QUrl("file:///Main.qml"));
   check(engine.rootObjects().size() == 1, "Load translation test object");
   auto *root = engine.rootObjects().first();
   check(root->property("heading").toString() == "Stats for nerds", "English source text");
   check(applyUiLanguage("ja") == "ja", "Load Japanese catalog");
   check(root->property("heading").toString() == QString::fromUtf8("動画統計"), "Retranslate existing QML to Japanese");
   check(root->property("closeLabel").toString() == QString::fromUtf8("閉じる"), "Explicit shared translation context");
+  check(root->property("emptyChannels").toString() == QString::fromUtf8("該当するチャンネルなし"), "Feature UI catalog context");
   check(QCoreApplication::translate("Backend", "Loading channels...") == QString::fromUtf8("チャンネルを取得中…"), "Japanese backend message");
   check(applyUiLanguage("en") == "en", "Switch back to English");
   check(root->property("heading").toString() == "Stats for nerds", "Retranslate existing QML to English");
+  check(root->property("emptyChannels").toString() == "No matching channels", "Feature UI context returns to English");
   check(applyUiLanguage("ja") == "ja", "Reuse Japanese translator");
   check(root->property("heading").toString() == QString::fromUtf8("動画統計"), "Switch repeatedly");
   for (int i = 0; i < 100; ++i) {

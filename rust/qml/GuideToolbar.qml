@@ -40,7 +40,7 @@ Rectangle {
         IconAction {
             objectName: "closeGuide"
             iconSource: root.iconDirectory + "chevron-left.svg"
-            tip: "番組表を閉じる"
+            tip: qsTranslate("Viewer", "Close program guide")
             onClicked: root.closeRequested()
         }
         Label {

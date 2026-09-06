@@ -165,7 +165,7 @@ Pane {
             Label {
                 anchors.centerIn: parent
                 visible: list.count === 0
-                text: "該当するチャンネルなし"
+                text: qsTranslate("Viewer", "No matching channels")
                 color: "#cccccc"
             }
         }

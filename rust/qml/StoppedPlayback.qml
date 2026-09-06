@@ -21,7 +21,7 @@ Rectangle {
         spacing: 14
         Label {
             anchors.horizontalCenter: parent.horizontalCenter
-            text: root.playbackError.length ? "再生できません" : "テレビ視聴"
+            text: root.playbackError.length ? qsTranslate("Viewer", "Playback unavailable") : qsTranslate("Viewer", "Watch TV")
             color: "#f4f5f3"
             font.pixelSize: root.playbackError.length ? 26 : 32
         }
@@ -32,7 +32,7 @@ Rectangle {
             horizontalAlignment: Text.AlignHCenter
             wrapMode: Text.Wrap
             textFormat: Text.PlainText
-            text: root.playbackError.length ? "映像を再生できませんでした。再試行するか、チャンネルや接続設定を確認してください。" : root.status
+            text: root.playbackError.length ? qsTranslate("Viewer", "Could not play the video. Retry or check the channel and connection settings.") : root.status
             color: "#b6bab6"
         }
         Button {
@@ -42,7 +42,7 @@ Rectangle {
             implicitWidth: 180
             implicitHeight: 44
             enabled: !root.loading
-            text: root.loading ? "取得中…" : root.canPlay ? (root.playbackError.length ? qsTranslate("Main", "Retry") : qsTranslate("Main", "Watch")) : root.hasChannels ? "チャンネルを選択" : qsTranslate("Main", "Connection settings")
+            text: root.loading ? qsTranslate("Viewer", "Loading\u2026") : root.canPlay ? (root.playbackError.length ? qsTranslate("Main", "Retry") : qsTranslate("Main", "Watch")) : root.hasChannels ? qsTranslate("Viewer", "Choose a channel") : qsTranslate("Main", "Connection settings")
             contentItem: Label {
                 text: action.text
                 color: "#191a1b"
@@ -68,7 +68,7 @@ Rectangle {
             spacing: 8
             visible: root.playbackError.length > 0
             TextAction {
-                text: "チャンネルを選択"
+                text: qsTranslate("Viewer", "Choose a channel")
                 onClicked: root.channelsRequested()
             }
             TextAction {

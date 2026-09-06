@@ -45,13 +45,13 @@ Rectangle {
         Action {
             objectName: "minimizeWindow"
             iconName: "minus"
-            label: "最小化"
+            label: qsTranslate("Viewer", "Minimize")
             onClicked: root.targetWindow.showMinimized()
         }
         Action {
             objectName: "maximizeWindow"
             iconName: "square"
-            label: root.targetWindow.visibility === Window.Maximized ? "元のサイズに戻す" : "最大化"
+            label: root.targetWindow.visibility === Window.Maximized ? qsTranslate("Viewer", "Restore window") : qsTranslate("Viewer", "Maximize")
             onClicked: root.targetWindow.visibility === Window.Maximized ? root.targetWindow.showNormal() : root.targetWindow.showMaximized()
         }
         Action {

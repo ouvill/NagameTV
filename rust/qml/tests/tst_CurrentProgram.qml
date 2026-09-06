@@ -39,7 +39,7 @@ TestCase {
         compare(button.enabled, false);
         view.programJson = program(null, null);
         compare(button.enabled, true);
-        compare(button.text, "番組名未取得");
+        compare(button.text, qsTranslate("Viewer", "Program title unavailable"));
         view.programJson = "null";
         compare(button.enabled, false);
     }

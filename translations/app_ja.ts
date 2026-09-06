@@ -439,4 +439,195 @@
       <translation>翻訳ファイルを読み込めませんでした</translation>
     </message>
   </context>
+  <context>
+    <name>Viewer</name>
+    <message>
+      <source>Play</source>
+      <translation>再生</translation>
+    </message>
+    <message>
+      <source>Unmute</source>
+      <translation>消音解除</translation>
+    </message>
+    <message>
+      <source>Mute</source>
+      <translation>消音</translation>
+    </message>
+    <message>
+      <source>Audio selection</source>
+      <translation>音声選択</translation>
+    </message>
+    <message>
+      <source>All</source>
+      <translation>すべて</translation>
+    </message>
+    <message>
+      <source>Other</source>
+      <translation>その他</translation>
+    </message>
+    <message>
+      <source>No matching channels</source>
+      <translation>該当するチャンネルなし</translation>
+    </message>
+    <message>
+      <source>Choose a channel</source>
+      <translation>チャンネルを選択</translation>
+    </message>
+    <message>
+      <source>No program information</source>
+      <translation>番組情報がありません</translation>
+    </message>
+    <message>
+      <source>Comments</source>
+      <translation>実況</translation>
+    </message>
+    <message>
+      <source>On-screen comments</source>
+      <translation>画面表示</translation>
+    </message>
+    <message>
+      <source>Program title unavailable</source>
+      <translation>番組名未取得</translation>
+    </message>
+    <message>
+      <source>No program description</source>
+      <translation>番組の説明はありません</translation>
+    </message>
+    <message>
+      <source>Program information provided by Mirakurun</source>
+      <translation>番組情報は Mirakurun より提供されています</translation>
+    </message>
+    <message>
+      <source>This broadcast has only one audio track.</source>
+      <translation>この放送の音声は1つです。</translation>
+    </message>
+    <message>
+      <source>Close program guide</source>
+      <translation>番組表を閉じる</translation>
+    </message>
+    <message>
+      <source>Watch this program</source>
+      <translation>この番組を見る</translation>
+    </message>
+    <message>
+      <source>Minimize</source>
+      <translation>最小化</translation>
+    </message>
+    <message>
+      <source>Restore window</source>
+      <translation>元のサイズに戻す</translation>
+    </message>
+    <message>
+      <source>Maximize</source>
+      <translation>最大化</translation>
+    </message>
+    <message>
+      <source>Close channel selection</source>
+      <translation>チャンネル選択を閉じる</translation>
+    </message>
+    <message>
+      <source>No current program information</source>
+      <translation>現在の番組情報がありません</translation>
+    </message>
+    <message>
+      <source>Mirakurun server</source>
+      <translation>Mirakurun サーバー</translation>
+    </message>
+    <message>
+      <source>Enter your Mirakurun server URL.</source>
+      <translation>Mirakurun サーバーの URL を入力してください。</translation>
+    </message>
+    <message>
+      <source>Loading…</source>
+      <translation>取得中…</translation>
+    </message>
+    <message>
+      <source>Connect</source>
+      <translation>接続</translation>
+    </message>
+    <message>
+      <source>Subtitles</source>
+      <translation>字幕</translation>
+    </message>
+    <message>
+      <source>Comment reception</source>
+      <translation>実況機能</translation>
+    </message>
+    <message>
+      <source>Show comments over video</source>
+      <translation>画面に実況を流す</translation>
+    </message>
+    <message>
+      <source>Opacity</source>
+      <translation>透明度</translation>
+    </message>
+    <message>
+      <source>Input</source>
+      <translation>入力</translation>
+    </message>
+    <message>
+      <source>Scan / PAR</source>
+      <translation>走査 / PAR</translation>
+    </message>
+    <message>
+      <source>Output</source>
+      <translation>出力</translation>
+    </message>
+    <message>
+      <source>Pixel format</source>
+      <translation>画素形式</translation>
+    </message>
+    <message>
+      <source>Deinterlacing</source>
+      <translation>デインターレース</translation>
+    </message>
+    <message>
+      <source>Sink average FPS</source>
+      <translation>sink平均fps</translation>
+    </message>
+    <message>
+      <source>Sink rendered / dropped</source>
+      <translation>sink描画 / 破棄</translation>
+    </message>
+    <message>
+      <source>Queue</source>
+      <translation>キュー</translation>
+    </message>
+    <message>
+      <source>Queue memory</source>
+      <translation>キューメモリー</translation>
+    </message>
+    <message>
+      <source>Engine</source>
+      <translation>エンジン</translation>
+    </message>
+    <message>
+      <source>Sink counts do not measure actual screen presentations, and queue time does not measure broadcast latency.</source>
+      <translation>sink集計は画面の実表示回数、キュー時間は放送からの遅延とは異なります。</translation>
+    </message>
+    <message>
+      <source>Program details</source>
+      <translation>番組詳細</translation>
+    </message>
+    <message>
+      <source>Previous day</source>
+      <translation>前日</translation>
+    </message>
+    <message>
+      <source>Next day</source>
+      <translation>翌日</translation>
+    </message>
+    <message>
+      <source>Playback unavailable</source>
+      <translation>再生できません</translation>
+    </message>
+    <message>
+      <source>Watch TV</source>
+      <translation>テレビ視聴</translation>
+    </message>
+    <message>
+      <source>Could not play the video. Retry or check the channel and connection settings.</source>
+      <translation>映像を再生できませんでした。再試行するか、チャンネルや接続設定を確認してください。</translation>
+    </message>
+  </context>
 </TS>

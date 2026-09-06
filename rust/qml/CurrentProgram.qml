@@ -32,7 +32,7 @@ Column {
         objectName: "currentProgramButton"
         width: parent.width
         implicitHeight: contentItem.implicitHeight
-        text: root.program ? (root.program.name || "番組名未取得") : qsTranslate("Main", "No program information")
+        text: root.program ? (root.program.name || qsTranslate("Viewer", "Program title unavailable")) : qsTranslate("Main", "No program information")
         enabled: root.program !== null
         onClicked: root.detailsRequested()
         background: Rectangle {

@@ -1,3 +1,4 @@
+pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -44,21 +45,22 @@ Rectangle {
         Repeater {
             // Constant rows: replace values, not delegate objects, on each sample.
             model: [
-                [qsTranslate("Main", "State"), "state"], ["入力", "input"], ["走査 / PAR", "scan"],
-                ["出力", "output"], ["画素形式", "pixels"],
-                ["デインターレース", "deinterlace"], ["sink平均fps", "rate"],
-                ["sink描画 / 破棄", "frames"], ["キュー", "queue"],
-                ["キューメモリー", "memory"], ["エンジン", "engine"]
+                [qsTranslate("Main", "State"), "state"], [qsTranslate("Viewer", "Input"), "input"], [qsTranslate("Viewer", "Scan / PAR"), "scan"],
+                [qsTranslate("Viewer", "Output"), "output"], [qsTranslate("Viewer", "Pixel format"), "pixels"],
+                [qsTranslate("Viewer", "Deinterlacing"), "deinterlace"], [qsTranslate("Viewer", "Sink average FPS"), "rate"],
+                [qsTranslate("Viewer", "Sink rendered / dropped"), "frames"], [qsTranslate("Viewer", "Queue"), "queue"],
+                [qsTranslate("Viewer", "Queue memory"), "memory"], [qsTranslate("Viewer", "Engine"), "engine"]
             ]
             delegate: RowLayout {
+                id: metricRow
                 required property var modelData
                 Layout.fillWidth: true
-                Label { text: modelData[0]; color: "#b8c4d4"; Layout.preferredWidth: 128; font.pixelSize: 12 }
-                Label { text: panel.metric(modelData[1]); color: "white"; Layout.fillWidth: true; wrapMode: Text.Wrap; font.pixelSize: 12 }
+                Label { text: metricRow.modelData[0]; color: "#b8c4d4"; Layout.preferredWidth: 128; font.pixelSize: 12 }
+                Label { text: panel.metric(metricRow.modelData[1]); color: "white"; Layout.fillWidth: true; wrapMode: Text.Wrap; font.pixelSize: 12 }
             }
         }
         Label {
-            text: "sink集計は画面の実表示回数、キュー時間は放送からの遅延とは異なります。"
+            text: qsTranslate("Viewer", "Sink counts do not measure actual screen presentations, and queue time does not measure broadcast latency.")
             color: "#b8c4d4"; font.pixelSize: 11; wrapMode: Text.Wrap; Layout.fillWidth: true
         }
     }

@@ -106,7 +106,7 @@ Item {
                             Column {
                                 anchors.fill: parent; anchors.margins: 10; spacing: 5
                                 Label {
-                                    width: parent.width; text: cell.modelData.name || "番組情報がありません"
+                                    width: parent.width; text: cell.modelData.name || qsTranslate("Viewer", "No program information")
                                     color: "#1b201d"; font.pixelSize: 13; font.bold: true
                                     textFormat: Text.PlainText; wrapMode: Text.Wrap
                                     maximumLineCount: Math.max(1, Math.floor((parent.height - 22) / 17)); elide: Text.ElideRight

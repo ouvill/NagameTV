@@ -135,7 +135,7 @@ Drawer {
                 color: "#b6bab6"
             }
             Label {
-                text: "Mirakurun サーバー"
+                text: qsTranslate("Viewer", "Mirakurun server")
                 color: "#b6bab6"
             }
             TextField {
@@ -160,14 +160,14 @@ Drawer {
             Label {
                 Layout.fillWidth: true
                 wrapMode: Text.Wrap
-                text: "Mirakurun サーバーの URL を入力してください。"
+                text: qsTranslate("Viewer", "Enter your Mirakurun server URL.")
                 color: "#b6bab6"
             }
             Button {
                 id: connect
                 objectName: "connectServer"
                 Layout.fillWidth: true
-                text: root.backend.loading ? "取得中…" : "接続"
+                text: root.backend.loading ? qsTranslate("Viewer", "Loading\u2026") : qsTranslate("Viewer", "Connect")
                 enabled: !root.backend.loading
                 contentItem: Label {
                     text: connect.text
@@ -184,7 +184,7 @@ Drawer {
                 onClicked: root.backend.connect_server(server.text)
             }
             CheckBox {
-                text: "字幕"
+                text: qsTranslate("Viewer", "Subtitles")
                 palette.windowText: "#f4f5f3"
                 checked: root.backend.subtitles_enabled
                 enabled: root.backend.subtitles_allowed
@@ -207,7 +207,7 @@ Drawer {
                 wrapMode: Text.Wrap
             }
             CheckBox {
-                text: "実況機能"
+                text: qsTranslate("Viewer", "Comment reception")
                 palette.windowText: "#f4f5f3"
                 checked: root.backend.comments_enabled === true
                 enabled: root.backend.comments_allowed === true
@@ -222,7 +222,7 @@ Drawer {
                 wrapMode: Text.Wrap
             }
             CheckBox {
-                text: "画面に実況を流す"
+                text: qsTranslate("Viewer", "Show comments over video")
                 palette.windowText: "#f4f5f3"
                 checked: root.backend.danmaku_enabled === true
                 enabled: root.backend.comments_enabled === true
@@ -246,7 +246,7 @@ Drawer {
                 }
                 RowLayout {
                     Layout.fillWidth: true
-                    Label { text: "透明度"; color: "#b6bab6"; font.pixelSize: 11 }
+                    Label { text: qsTranslate("Viewer", "Opacity"); color: "#b6bab6"; font.pixelSize: 11 }
                     Item { Layout.fillWidth: true }
                     Label { text: Math.round((root.backend.comment_opacity || 1) * 100) + "%"; color: "#f4f5f3"; font.pixelSize: 11 }
                 }

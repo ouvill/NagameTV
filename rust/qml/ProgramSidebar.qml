@@ -78,7 +78,7 @@ Rectangle {
                 onClicked: root.closeRequested()
             }
             Label {
-                text: root.page === ProgramSidebar.Comments ? "実況" : (root.page === ProgramSidebar.Channels ? qsTranslate("Main", "Channels") : qsTranslate("Main", "Program information"))
+                text: root.page === ProgramSidebar.Comments ? qsTranslate("Viewer", "Comments") : (root.page === ProgramSidebar.Channels ? qsTranslate("Main", "Channels") : qsTranslate("Main", "Program information"))
                 color: "#f4f5f3"
                 font.pixelSize: 17
                 font.bold: true
@@ -92,7 +92,7 @@ Rectangle {
                 Label {
                     height: parent.height
                     verticalAlignment: Text.AlignVCenter
-                    text: "画面表示"
+                    text: qsTranslate("Viewer", "On-screen comments")
                     color: root.danmakuEnabled ? "#f4f5f3" : "#b6bab6"
                     font.pixelSize: 13
                 }
@@ -131,7 +131,7 @@ Rectangle {
                 Label {
                     objectName: "programTitle"
                     Layout.fillWidth: true
-                    text: root.program ? (root.program.name || "番組名未取得") : qsTranslate("Main", "No program information")
+                    text: root.program ? (root.program.name || qsTranslate("Viewer", "Program title unavailable")) : qsTranslate("Main", "No program information")
                     color: "#f4f5f3"
                     font.pixelSize: 23
                     font.bold: true
@@ -169,7 +169,7 @@ Rectangle {
                 Label {
                     objectName: "programDescription"
                     Layout.fillWidth: true
-                    text: root.program ? (root.program.description || "番組の説明はありません") : "番組の説明はありません"
+                    text: root.program ? (root.program.description || qsTranslate("Viewer", "No program description")) : qsTranslate("Viewer", "No program description")
                     color: "#e4e4e3"
                     font.pixelSize: 15
                     wrapMode: Text.Wrap
@@ -183,7 +183,7 @@ Rectangle {
                 }
                 Label {
                     Layout.fillWidth: true
-                    text: "番組情報は Mirakurun より提供されています"
+                    text: qsTranslate("Viewer", "Program information provided by Mirakurun")
                     color: "#929497"
                     font.pixelSize: 12
                     wrapMode: Text.Wrap
@@ -228,7 +228,7 @@ Rectangle {
                 Layout.fillWidth: true
                 iconSource: root.iconDirectory + "message-square.svg"
                 selected: root.page === ProgramSidebar.Comments
-                text: "実況"
+                text: qsTranslate("Viewer", "Comments")
                 onClicked: root.pageRequested(ProgramSidebar.Comments)
             }
             SidebarTab {
