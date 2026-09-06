@@ -22,7 +22,7 @@ viewer-coreを照合し、機能単位で移植する。表の「一部」はmai
 | 全画面・自動非表示・ウィンドウ操作・ショートカット | QML、pointer_activity.h | 全画面、C、G、PgUp/PgDown、Escape、操作部の重ね合わせと3.2秒後の自動非表示を追加。入力欄・ポップアップとの競合、監視の解放を検証。独自枠とシステム移動・リサイズ要求を追加。外部キー入力と実環境の移動・リサイズは未検証 |
 | エラー種別表示・復旧操作・詳細コピー・診断保存 | viewer-core、runtime、QML、diagnostics | 型付きエラー、停止／失敗案内、再試行と選択可能な詳細表示を追加。最新再生エラーの64KiB上限保存とログフォルダーを開く設定ボタンを追加。実再生エラーからの保存、デスクトップ連携の実動作は未検証 |
 | 動画統計・表示中のみ収集 | video_stats、QML | 表示中のみ1秒ごとに収集する統計パネルを移植。長時間併用試験は未実施 |
-| 診断ログ・継続的な資源測定 | diagnostics、scripts | 簡易allocator計測あり。配布向け診断は未移植 |
+| 診断ログ・継続的な資源測定 | diagnostics、scripts | 簡易allocator計測あり。配布向けの計測・サイズ上限付きログ保存を単独crateへ分離。定期記録、Qt GC通知、終了済みログ整理とアプリへの接続は未移植 |
 
 動作仕様の差を見つけたらこの表を追加・修正する。表だけを根拠に機能互換と判断せず、
 各機能の型・エラー・終了条件、CPUテスト、実機の検証記録を揃えてから移植済みとする。
@@ -123,3 +123,5 @@ CPU試験ではSessionが生存中に別Sessionで保存内容を読めること
 実況のプロトコル分離・接続と表示の残作業は [comments-migration.md](comments-migration.md)。
 
 再生エラー保存とデスクトップ連携の仕様・検証範囲は [error-log-migration.md](error-log-migration.md)。
+
+継続的な資源診断の分離と残作業は [resource-diagnostics-migration.md](resource-diagnostics-migration.md)。
