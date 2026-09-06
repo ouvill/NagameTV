@@ -51,6 +51,32 @@ TestCase {
         mouseClick(findChild(toolbar, "closeGuide"))
         compare(closeSpy.count, 1)
     }
+    function test_shift_wheel_steps_columns_and_normal_wheel_stays_vertical() {
+        guide.dayOffset = 1
+        const rows = []
+        for (let i = 0; i < 8; ++i) rows.push({index:i,label:"Channel " + i,band:"GR",logo:""})
+        guide.rows = rows
+        const view = findChild(guide, "guideTimeline")
+        const wheel = findChild(guide, "guideWheelArea")
+        verify(waitForRendering(guide))
+        mouseWheel(wheel, 20, 130, 0, -120, Qt.NoButton, Qt.ShiftModifier)
+        tryCompare(view, "contentX", 222)
+        compare(view.contentY, 0)
+        mouseWheel(wheel, 20, 130, 0, -120, Qt.NoButton, Qt.NoModifier)
+        tryVerify(function() { return view.contentY > 0 })
+        compare(view.contentX, 222)
+        mouseWheel(wheel, 20, 130, 0, 120, Qt.NoButton, Qt.ShiftModifier)
+        tryCompare(view, "contentX", 0)
+        view.contentX = view.contentWidth - view.width
+        const end = view.contentX
+        mouseWheel(wheel, 20, 130, 0, -120, Qt.NoButton, Qt.ShiftModifier)
+        wait(200)
+        compare(view.contentX, end)
+        mouseWheel(wheel, 20, 130, 0, 120, Qt.NoButton, Qt.ShiftModifier)
+        guide.band = "BS"
+        wait(200)
+        compare(view.contentX, 0)
+    }
     function test_compact_boundaries_and_wide_date_click() {
         const selector = findChild(guide, "guideDay")
         const previous = findChild(selector, "previousGuideDay")

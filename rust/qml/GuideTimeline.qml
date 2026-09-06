@@ -25,12 +25,28 @@ Item {
         const column = columns.find(column => column.index === index)
         return column ? column.programs : []
     }
+    function scrollHorizontally(event) {
+        const delta = event.angleDelta.y || event.angleDelta.x
+        if (!delta) return
+        view.cancelFlick()
+        horizontalScroll.stop()
+        horizontalScroll.from = view.contentX
+        horizontalScroll.to = Math.max(0, Math.min(Math.max(0, view.contentWidth - view.width),
+            view.contentX + (delta < 0 ? channelWidth : -channelWidth)))
+        horizontalScroll.start()
+        event.accepted = true
+    }
+    NumberAnimation { id: horizontalScroll; target: view; property: "contentX"; duration: 150; easing.type: Easing.OutCubic }
     function resetPosition() {
         view.contentY = now >= dayStart && now < dayEnd
             ? Math.max(0, Math.min(view.contentHeight - view.height, 88 + (now - dayStart) / 60000 * pixelsPerMinute - view.height * 0.34)) : 0
     }
     onDayStartChanged: Qt.callLater(resetPosition)
-    onRowsChanged: view.contentX = 0
+    onRowsChanged: {
+        horizontalScroll.stop()
+        view.cancelFlick()
+        view.contentX = 0
+    }
     Component.onCompleted: resetPosition()
     Timer { interval: 1000; repeat: true; running: root.visible; onTriggered: root.now = Date.now() }
     Item {
@@ -122,5 +138,18 @@ Item {
         }
         ScrollBar.vertical: ScrollBar {}
         ScrollBar.horizontal: ScrollBar {}
+    }
+    MouseArea {
+        objectName: "guideWheelArea"
+        x: view.x; y: view.y; width: view.width; height: view.height
+        acceptedButtons: Qt.LeftButton
+        propagateComposedEvents: true
+        scrollGestureEnabled: false
+        onPressed: function(mouse) { mouse.accepted = false }
+        onClicked: function(mouse) { mouse.accepted = false }
+        onWheel: function(event) {
+            if (event.modifiers & Qt.ShiftModifier) root.scrollHorizontally(event)
+            else event.accepted = false
+        }
     }
 }

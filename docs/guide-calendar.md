@@ -165,3 +165,21 @@ Git対象外のbenchmark/viewing-design/tst_guide_toolbar_preview.qmlと
 
 最終検証は番組表Qt試験7件、描画採取3件（初期化・終了を含む）、qmllint、fmt、
 releaseビルド成功。スクロール修正後の画像では時刻線が見出しに重ならないことを確認した。
+
+
+## Shift＋ホイール
+
+mainと同じくShift＋ホイールの角度deltaから左右を決め、1回につき222pxの局幅を移動する。
+移動は150ms OutCubicで、開始前に慣性移動と以前のアニメーションを止める。
+左右端へclampし、放送種別変更で局一覧が変わった場合もアニメーションを止めて左端へ戻す。
+新たなモデルやキャッシュ、継続Timerは追加しない。
+
+重ねたMouseAreaは通常のwheelを拒否してFlickableへ渡し、押下・クリックも拒否して
+番組セルへ渡す。[MouseAreaの伝播仕様](https://doc.qt.io/qt-6/qml-qtquick-mousearea.html#propagateComposedEvents-prop)
+を参照し、mainと同じpropagateComposedEventsとscrollGestureEnabled=falseを使う。
+既存の番組クリック・詳細保持試験を残し、QtのmouseWheelイベントで左右1列移動、
+通常ホイールの縦移動、端のclamp、移動中の放送種別変更を検証する。
+実マウス・タッチパッドのOS経由入力は別途確認が必要。
+
+変更後の番組表Qt試験8件、qmllint、releaseビルド成功。実OS経由のホイール入力と
+長時間操作時の資源測定は未実施。
