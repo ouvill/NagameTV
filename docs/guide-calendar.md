@@ -91,3 +91,27 @@ benchmark/viewing-design/tst_guide_preview.qmlが証跡。画像保存APIの戻�
 guide-grid.pngとguide-grid-xtest.pngはいずれも再生画面だった。実データでの番組表表示を
 成功扱いにしない。現在の描画確認は生成データによるQt試験であり、実アプリの開閉・
 選局併用・長時間測定とmainとの同一データ画像比較が残る。
+
+
+## ジャンル配色
+
+mainのviewer-core/channels.rsとQMLのguideColorに合わせ、最初のgenres[].lv1だけを
+番組表の配色へ使う。genre.rsのGenre enumはニュースから福祉までの12分類とUnknownを
+表す。JSON入力の配列はSerde Visitorで先頭の大分類を読み、残りをIgnoredAnyで消費する。
+ジャンルVecやサブ分類を番組ごとに保持しない。
+[SerdeのDeserialize実装](https://serde.rs/impl-deserialize.html)を参照した。
+
+未取得・空配列はUnknown、12以上の有効なu8値もUnknownに正規化する。
+負数・u8範囲外・先頭項目のlv1欠落・配列以外は既存のEPG解析エラー経路へ返す。
+Qtにはgenreという単一の数値を渡す。入力のgenresと出力のgenreは異なる表示用契約であり、
+このJSONをMirakurunの入力形式へそのまま戻す用途はない。
+
+Genre自体はrepr(u8)だがProgram全体の容量には配置のpaddingが影響するため、
+EPG_MEMORYのrecord_capacity_bytesで構造体全体を引き続き計測する。
+Qtはmainと同一の12色を使い、15・欠落・nullは灰色とする。
+この追加によってジャンル配色は実装されたが、上部操作と詳細のデザイン一致、
+実アプリの番組表操作と長時間メモリー検証は引き続き残る。
+
+検証はEPG関連Rust16件成功。続いてジャンルのJSON出力・欠落時のUnknownを追加した
+複数局試験も成功。Qt番組表試験5件、Clippy全ターゲット、fmt、qmllint、
+releaseビルド成功。実描画delegateのニュース色と未知・null・欠落時の灰色を確認した。

@@ -419,7 +419,7 @@ fn grid_columns_use_explicit_services_and_only_overlap_the_requested_day()
     )?;
     let snapshot = parse(
         br#"[
-        {"id":1,"networkId":4,"serviceId":42,"name":"Crossing","startAt":50,"duration":100},
+        {"id":1,"networkId":4,"serviceId":42,"name":"Crossing","genres":[{"lv1":1,"lv2":0}],"startAt":50,"duration":100},
         {"id":2,"networkId":5,"serviceId":42,"name":"Other network","startAt":100,"duration":100},
         {"id":3,"networkId":4,"serviceId":42,"name":"Already ended","startAt":0,"duration":100},
         {"id":4,"networkId":4,"serviceId":42,"name":"Next day","startAt":200,"duration":100}
@@ -437,10 +437,12 @@ fn grid_columns_use_explicit_services_and_only_overlap_the_requested_day()
             777 => {
                 assert_eq!(programs.len(), 1);
                 assert_eq!(programs[0]["id"], 1);
+                assert_eq!(programs[0]["genre"], 1);
             }
             888 => {
                 assert_eq!(programs.len(), 1);
                 assert_eq!(programs[0]["id"], 2);
+                assert_eq!(programs[0]["genre"], 15);
             }
             _ => assert!(programs.is_empty()),
         }

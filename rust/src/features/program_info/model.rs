@@ -15,6 +15,8 @@ pub struct Program {
     pub duration: u64,
     pub name: Option<String>,
     pub description: Option<String>,
+    #[serde(default, rename(deserialize = "genres"))]
+    pub genre: super::genre::Genre,
     #[serde(default, skip_serializing)]
     pub audios: Box<[crate::audio::Descriptor]>,
 }

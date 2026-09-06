@@ -2,6 +2,7 @@
 use crate::channels::BroadcastService;
 use crate::services::{FetchError, Job, Network, NetworkError};
 pub mod browser;
+mod genre;
 pub mod guide;
 mod model;
 pub mod presentation;

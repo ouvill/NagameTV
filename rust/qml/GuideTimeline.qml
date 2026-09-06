@@ -17,6 +17,10 @@ Item {
     // Boundary bindings can update separately during a date change.
     readonly property double dayDuration: Math.max(0, dayEnd - dayStart)
     readonly property int hours: Math.ceil(dayDuration / 3600000)
+    function genreColor(genre) {
+        const colors = ["#ffffe0", "#e0e0ff", "#ffe0f0", "#ffe0e0", "#e0ffe0", "#e0ffff", "#fff0e0", "#ffe0ff", "#ffffe0", "#fff0e0", "#e0f0ff", "#e0f0ff"]
+        return Number.isInteger(genre) && genre >= 0 && genre < colors.length ? colors[genre] : "#f0f0f0"
+    }
     function schedule(index) {
         const column = columns.find(column => column.index === index)
         return column ? column.programs : []
@@ -81,7 +85,7 @@ Item {
                             y: 88 + (begin - root.dayStart) / 60000 * root.pixelsPerMinute
                             width: column.width
                             height: Math.max(24, (end - begin) / 60000 * root.pixelsPerMinute - 4)
-                            color: "#f0f0f0"
+                            color: root.genreColor(modelData.genre)
                             border.width: modelData === root.selectedProgram ? 4 : 1
                             border.color: modelData === root.selectedProgram ? "#9caf9f" : "#5b625e"
                             Column {

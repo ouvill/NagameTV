@@ -58,7 +58,7 @@ TestCase {
         const columns = []
         for (let i=0;i<30;++i) {
             rows.push({ index:i, label:"Channel "+i, band:"GR", logo:"" })
-            columns.push({index:i, programs:[{id:i,name:"Program "+i,description:"Full description "+i,startAt:guide.days[1].start,duration:3600000}]})
+            columns.push({index:i, programs:[{id:i,genre:0,name:"Program "+i,description:"Full description "+i,startAt:guide.days[1].start,duration:3600000}]})
         }
         guide.rows = rows
         guide.programsJson = JSON.stringify(columns)
@@ -68,6 +68,10 @@ TestCase {
         compare(findChild(guide, "guideColumn29").item, null)
         const first = findChild(guide, "guideCell")
         verify(first !== null)
+        compare(first.color, "#ffffe0")
+        compare(list.parent.genreColor(15), "#f0f0f0")
+        compare(list.parent.genreColor(undefined), "#f0f0f0")
+        compare(list.parent.genreColor(null), "#f0f0f0")
         mouseClick(first, 20, 30)
         const loader = findChild(guide, "scheduledDetailsLoader")
         verify(loader.item !== null)
