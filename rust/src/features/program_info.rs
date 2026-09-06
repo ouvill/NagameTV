@@ -1,6 +1,7 @@
 //! EPG acquisition lives independently of playback and of the guide's visibility.
 use crate::channels::BroadcastService;
 use crate::services::{FetchError, Job, Network, NetworkError};
+pub mod browser;
 pub mod guide;
 mod model;
 pub mod presentation;
@@ -149,6 +150,14 @@ impl ProgramInfo {
         window: guide::DayWindow,
     ) -> Result<String, serde_json::Error> {
         self.snapshot.view(service, window)
+    }
+    pub fn browser_presentation(
+        &self,
+        projection: &mut browser::Projection,
+        channels: &[crate::channels::Channel],
+        now: Option<u64>,
+    ) -> Result<Option<String>, serde_json::Error> {
+        projection.update(&self.snapshot, self.revision, channels, now)
     }
     pub fn current_presentation(
         &self,

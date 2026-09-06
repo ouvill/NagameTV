@@ -15,6 +15,7 @@ fn main() {
             .qml_file("qml/ChannelSelector.qml")
             .qml_file("qml/ChannelLogo.qml")
             .qml_file("qml/ChannelBrowser.qml")
+            .qml_file("qml/ChannelProgram.qml")
             .depend("QtQuick")
             .depend("QtQuick.Controls")
             .depend("QtQuick.Layouts")

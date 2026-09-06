@@ -16,6 +16,7 @@ ApplicationWindow {
     property bool closing: false
     property bool showGuide: false
     property bool showChannels: false
+    onShowChannelsChanged: player.browser_open(showChannels)
     property bool showStats: false
     readonly property var channelRows: JSON.parse(player.channel_data)
     Player {
@@ -346,6 +347,8 @@ ApplicationWindow {
             onLoaded: item.focusBrowser()
             sourceComponent: ChannelBrowser {
                 rows: root.channelRows
+                programsJson: player.channel_program_data
+                now: player.channel_program_now
                 selected: player.selected
                 onSelectRequested: function (index) {
                     player.select(index);

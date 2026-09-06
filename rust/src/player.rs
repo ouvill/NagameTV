@@ -1,4 +1,5 @@
 mod audio_output;
+mod channel_programs;
 mod channels;
 mod guide;
 mod program_info;
@@ -32,6 +33,8 @@ pub mod ffi {
         #[qproperty(QString, server, READ, NOTIFY)]
         #[qproperty(QString, status, READ, NOTIFY)]
         #[qproperty(QString, channel_data, READ, NOTIFY)]
+        #[qproperty(QString, channel_program_data, READ, NOTIFY)]
+        #[qproperty(f64, channel_program_now, READ, NOTIFY)]
         #[qproperty(i32, selected, READ, NOTIFY)]
         #[qproperty(bool, loading, READ, NOTIFY)]
         #[qproperty(bool, playing, READ, NOTIFY)]
@@ -58,6 +61,8 @@ pub mod ffi {
         fn display_subtitles(self: Pin<&mut Player>, display: bool);
         #[qinvokable]
         fn poll_subtitles(self: Pin<&mut Player>);
+        #[qinvokable]
+        fn browser_open(self: Pin<&mut Player>, open: bool);
         #[qinvokable]
         fn guide_open(self: Pin<&mut Player>, open: bool);
         #[qinvokable]
@@ -107,6 +112,9 @@ pub struct PlayerRust {
     server: QString,
     status: QString,
     channel_data: QString,
+    channel_program_data: QString,
+    channel_program_now: f64,
+    browser_projection: Option<crate::features::program_info::browser::Projection>,
     selected: i32,
     loading: bool,
     playing: bool,
@@ -165,6 +173,18 @@ impl ffi::Player {
         channel_data,
         channel_data_changed,
         QString
+    );
+    property_setter!(
+        set_channel_program_data,
+        channel_program_data,
+        channel_program_data_changed,
+        QString
+    );
+    property_setter!(
+        set_channel_program_now,
+        channel_program_now,
+        channel_program_now_changed,
+        f64
     );
     property_setter!(set_selected, selected, selected_changed, i32);
     property_setter!(set_loading, loading, loading_changed, bool);
@@ -395,6 +415,7 @@ impl ffi::Player {
             self.status_text(error);
             return;
         }
+        self.as_mut().set_channel_program_data(QString::from("[]"));
         self.as_mut().rust_mut().entries.clear();
         self.as_mut().set_channel_data(QString::from("[]"));
         self.as_mut().set_selected(-1);
@@ -573,6 +594,7 @@ impl ffi::Player {
         }
     }
     pub fn shutdown(mut self: Pin<&mut Self>) {
+        self.as_mut().browser_open(false);
         self.as_mut().rust_mut().epg.configure(None);
         self.as_mut().guide_open(false);
         let _ = self.as_mut().end_stream();

@@ -34,6 +34,19 @@ TestCase {
                 }
             ]
             selected: 2
+            programsJson: JSON.stringify([null,
+                {
+                    name: "BS First",
+                    startAt: 100,
+                    duration: 100
+                },
+                {
+                    name: "BS Second",
+                    startAt: 100,
+                    duration: 100
+                }
+            ])
+            now: 150
         }
     }
     SignalSpy {
@@ -55,6 +68,9 @@ TestCase {
         const list = findChild(browser, "browserList");
         compare(browser.band, "BS");
         compare(list.currentIndex, 1);
+        list.forceLayout();
+        verify(list.currentItem !== null);
+        compare(findChild(list.currentItem, "cardProgramTitle").text, "BS Second");
         browser.focusBrowser();
         keyClick(Qt.Key_Left);
         compare(selection.count, 0);

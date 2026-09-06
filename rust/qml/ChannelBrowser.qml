@@ -7,6 +7,9 @@ Pane {
     id: root
     required property var rows
     required property int selected
+    property string programsJson: "[]"
+    property real now: 0
+    readonly property var programs: JSON.parse(programsJson)
     property string band: "GR"
     readonly property var filteredRows: rows.filter(row => row.band === band)
     signal selectRequested(int index)
@@ -101,6 +104,11 @@ Pane {
                     }
                     Item {
                         Layout.fillHeight: true
+                    }
+                    ChannelProgram {
+                        Layout.fillWidth: true
+                        program: root.programs[card.modelData.index] || null
+                        now: root.now
                     }
                 }
                 Rectangle {
