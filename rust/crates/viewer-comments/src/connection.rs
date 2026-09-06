@@ -41,6 +41,7 @@ pub enum State {
 }
 
 /// URLs are supplied by the adapter; tests use loopback rather than public services.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Endpoints {
     pub threads: String,
     pub comments: String,

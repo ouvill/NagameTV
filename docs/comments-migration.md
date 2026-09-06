@@ -96,3 +96,32 @@ HTTP宣言サイズ超過、WebSocket frame上限、HTTPヘッダー待機中と
 CARGO_TARGET_DIR=build/comments-protocol cargo test --locked --manifest-path rust/crates/viewer-comments/Cargo.toml --features network
 CARGO_TARGET_DIR=build/comments-protocol cargo clippy --locked --manifest-path rust/crates/viewer-comments/Cargo.toml --all-targets --features network -- -D warnings
 ```
+
+## 接続切り替えと再接続
+
+Controllerを追加し、Idle / Running / Stopping / Waitingのenumで接続の所有権を管理する。
+接続先の変更は旧Connectionをstopしてキューを捨て、Stopping::is_finishedの確認後に
+新しいタスクを生成する。停止中の変更はdesiredを上書きするだけで、要求一覧や待機タスクは
+追加しない。同じ接続先を繰り返し指定しても接続や待機期限をやり直さない。
+
+通常切断・エラーの後は5秒待って同じ接続先へ再接続する。これは受信モジュールの
+明示的な再試行方針で、mainに同じ5秒タイマーがあったという意味ではない。
+再試行の判断には呼び出し側から渡されたInstantを使い、GUI側に新しいタイマーやsleepは
+持たない。無効化はdesired=Noneとし、終了待ち中も後続を作らない。
+Disabledという表示状態だけで終了完了と判断せず、is_stoppedで停止完了を確認できる。
+
+1回のpollが返すコメントは最大64件。空のpollではコメント用Vecのヒープ割当を行わない。
+通常切断時は最後のキューを渡し終えてから停止・再試行へ移る。終了状態を先に観測してから
+キューを読み出すことで、空キューの確認と終了通知の間に最後のコメントが届く競合でも
+そのコメントを破棄しない。選局・無効化による明示的な変更では旧キューを即時破棄する。
+
+Controller内に表示履歴はない。アプリ側は選択した放送サービスの変更時に表示履歴を消す
+必要がある（複数の放送サービスが同じ実況URLに対応する場合も含む）。
+Controller自身をDropすると現在の接続をキャンセルする。アプリ終了の待機方法は
+今後のアダプター側で既存ネットワークruntimeの終了処理と合わせて実装する。
+
+ローカル通信を使い、A→B→Cの連続変更でBを接続しないこと、終了前のpollでCを開始しない
+こと、無効化後の停止完了、再試行の期限直前／期限到達、同じ接続先の再指定、
+通常切断直前の130件を64・64・2件で失わず配送することを検証した。
+network有効の試験13件と全ターゲットClippyが成功。放送局対応、アプリ本体への接続、
+Qtの履歴・描画と設定、実NX-Jikkyo受信、長時間測定はまだ残る。
