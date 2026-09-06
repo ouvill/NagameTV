@@ -113,6 +113,19 @@ ApplicationWindow {
         HoverHandler {
             cursorShape: overlayVisibility.controlsVisible ? Qt.ArrowCursor : Qt.BlankCursor
         }
+        Loader {
+            anchors.fill: parent
+            active: !root.closing && !player.playing
+            sourceComponent: StoppedPlayback {
+                status: player.status
+                canPlay: player.selected >= 0
+                hasChannels: root.channelRows.length > 0
+                loading: player.loading
+                onPlayRequested: player.play()
+                onChannelsRequested: root.showChannels = true
+                onSettingsRequested: settings.open()
+            }
+        }
         WindowDragArea {
             anchors {
                 left: parent.left

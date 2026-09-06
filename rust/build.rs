@@ -4,6 +4,7 @@ fn main() {
     CxxQtBuilder::new_qml_module(
         QmlModule::new("MinimalViewer")
             .qml_file("qml/Main.qml")
+            .qml_file("qml/StoppedPlayback.qml")
             .qml_file("qml/WindowActions.qml")
             .qml_file("qml/WindowButtons.qml")
             .qml_file("qml/WindowDragArea.qml")
