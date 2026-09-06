@@ -1,0 +1,34 @@
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -373,6 +373,16 @@
+                 .expect("Could note write qrc file");
+         }
+ 
++        // Generate current type metadata before AOT compilation. Reusing last build's
++        // method indices after adding an invokable can crash QMetaObject lookup.
++        // Run qmltyperegistrar over the meta types
++        let qmltyperegistrar_path = self.qmltyperegistrar().compile(
++            metatypes_json,
++            &qmltypes_path,
++            uri,
++            Version::new(version_major as u64, version_minor as u64, 0),
++        );
++
+         // Run qmlcachegen
+         // qmlcachegen needs to be run once for each .qml file with --resource-path,
+         // then once for the module with --resource-name.
+@@ -405,14 +415,6 @@
+         let qml_plugin_dir = PathBuf::from(format!("{out_dir}/qt-build-utils/qml_plugin"));
+         std::fs::create_dir_all(&qml_plugin_dir).expect("Could not create qml_plugin dir");
+ 
+-        // Run qmltyperegistrar over the meta types
+-        let qmltyperegistrar_path = self.qmltyperegistrar().compile(
+-            metatypes_json,
+-            &qmltypes_path,
+-            uri,
+-            Version::new(version_major as u64, version_minor as u64, 0),
+-        );
+-
+         // Generate QQmlEngineExtensionPlugin
+         let qml_plugin_cpp_path = qml_plugin_dir.join(format!("{plugin_class_name}.cpp"));
+         let include_path;
