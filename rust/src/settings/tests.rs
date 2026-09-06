@@ -60,8 +60,10 @@ subtitles_enabled = true
     assert_eq!(loaded.volume.fraction(), 0.2);
     assert!(loaded.comments_enabled);
     assert_eq!(loaded.extra["language"].as_str(), Some("ja"));
-    assert_eq!(loaded.extra["danmaku_enabled"].as_bool(), Some(true));
-    assert_eq!(loaded.extra["comment_speed"].as_float(), Some(1.25));
+    assert!(loaded.danmaku_enabled);
+    assert_eq!(f64::from(loaded.comment_speed), 1.25);
+    assert_eq!(f64::from(loaded.comment_font_size), 28.0);
+    assert_eq!(f64::from(loaded.comment_opacity), 0.7);
     assert_eq!(fs::read_dir(dir.path())?.count(), 1);
     Ok(())
 }
@@ -123,5 +125,21 @@ fn overrides_normalization_and_selection_are_independent_of_io()
     session.preferences_mut().volume = Volume::from(30.0);
     session.flush()?;
     assert!(matches!(session.persistence, Persistence::Transient));
+    Ok(())
+}
+
+#[test]
+fn comment_presentation_bounds_survive_invalid_persisted_values()
+-> Result<(), Box<dyn std::error::Error>> {
+    let prefs: Preferences =
+        toml::from_str("comment_font_size = 500.0\ncomment_opacity = nan\ncomment_speed = -1.0")?;
+    assert_eq!(f64::from(prefs.comment_font_size), 48.0);
+    assert_eq!(f64::from(prefs.comment_opacity), 1.0);
+    assert_eq!(f64::from(prefs.comment_speed), 0.5);
+    assert!(CommentFontSize::checked(f64::NAN).is_none());
+    assert!(CommentOpacity::checked(f64::INFINITY).is_none());
+    assert!(CommentSpeed::checked(f64::NEG_INFINITY).is_none());
+    let saved = toml::to_string(&prefs)?;
+    assert_eq!(toml::from_str::<Preferences>(&saved)?, prefs);
     Ok(())
 }

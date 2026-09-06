@@ -47,6 +47,10 @@ pub mod ffi {
         #[qproperty(bool, subtitles_enabled, READ, NOTIFY)]
         #[qproperty(bool, epg_enabled, READ, NOTIFY)]
         #[qproperty(bool, comments_enabled, READ, NOTIFY)]
+        #[qproperty(bool, danmaku_enabled, READ, NOTIFY)]
+        #[qproperty(f64, comment_font_size, READ, NOTIFY)]
+        #[qproperty(f64, comment_opacity, READ, NOTIFY)]
+        #[qproperty(f64, comment_speed, READ, NOTIFY)]
         #[qproperty(bool, comments_allowed, READ, NOTIFY)]
         #[qproperty(QString, comment_data, READ, NOTIFY)]
         #[qproperty(QString, comment_status, READ, NOTIFY)]
@@ -109,6 +113,17 @@ pub mod ffi {
         fn save_settings(self: Pin<&mut Player>);
         #[qinvokable]
         fn enable_comments(self: Pin<&mut Player>, enabled: bool);
+        #[qsignal]
+        #[cxx_name = "commentReceived"]
+        fn comment_received(self: Pin<&mut Player>, text: QString);
+        #[qinvokable]
+        fn configure_danmaku(
+            self: Pin<&mut Player>,
+            enabled: bool,
+            size: f64,
+            opacity: f64,
+            speed: f64,
+        ) -> bool;
         #[qinvokable]
         fn comments_open(self: Pin<&mut Player>, opened: bool);
         #[qinvokable]
@@ -150,6 +165,10 @@ pub struct PlayerRust {
     epg_enabled: bool,
     comments_enabled: bool,
     comments_allowed: bool,
+    danmaku_enabled: bool,
+    comment_font_size: f64,
+    comment_opacity: f64,
+    comment_speed: f64,
     comment_data: QString,
     comment_status: QString,
     comments_visible: bool,
@@ -218,6 +237,25 @@ impl ffi::Player {
         comment_status_changed,
         QString
     );
+    property_setter!(
+        set_danmaku_enabled,
+        danmaku_enabled,
+        danmaku_enabled_changed,
+        bool
+    );
+    property_setter!(
+        set_comment_font_size,
+        comment_font_size,
+        comment_font_size_changed,
+        f64
+    );
+    property_setter!(
+        set_comment_opacity,
+        comment_opacity,
+        comment_opacity_changed,
+        f64
+    );
+    property_setter!(set_comment_speed, comment_speed, comment_speed_changed, f64);
     property_setter!(set_server, server, server_changed, QString);
     property_setter!(set_status, status, status_changed, QString);
     property_setter!(

@@ -1,4 +1,5 @@
 //! Preferences and normalization without filesystem, Qt or playback dependencies.
+use super::{CommentFontSize, CommentOpacity, CommentSpeed};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -45,7 +46,11 @@ pub struct Preferences {
     pub subtitles_enabled: bool,
     pub epg_enabled: bool,
     pub comments_enabled: bool,
-    // Preserve main's language/comment settings and future fields until their
+    pub danmaku_enabled: bool,
+    pub comment_font_size: CommentFontSize,
+    pub comment_opacity: CommentOpacity,
+    pub comment_speed: CommentSpeed,
+    // Preserve main's language settings and future fields until their
     // features are migrated; opening this version must not erase preferences.
     #[serde(flatten)]
     pub extra: BTreeMap<String, toml::Value>,
@@ -59,6 +64,10 @@ impl Default for Preferences {
             subtitles_enabled: false,
             epg_enabled: true,
             comments_enabled: false,
+            danmaku_enabled: true,
+            comment_font_size: Default::default(),
+            comment_opacity: Default::default(),
+            comment_speed: Default::default(),
             extra: BTreeMap::new(),
         }
     }

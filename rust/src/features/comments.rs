@@ -63,8 +63,17 @@ impl Comments {
         }));
     }
 
-    pub fn poll(&mut self, network: &Network) {
+    pub fn poll(&mut self, network: &Network, live: impl FnMut(&str)) {
         let comments = network.poll_comments(&mut self.controller);
+        self.ingest(comments, live);
+    }
+
+    fn ingest(&mut self, comments: Vec<Comment>, mut live: impl FnMut(&str)) {
+        for comment in &comments {
+            if comment.phase == viewer_comments::Phase::Live {
+                live(&comment.text);
+            }
+        }
         self.append(comments);
     }
 
@@ -150,6 +159,35 @@ mod tests {
         assert_eq!(jikkyo(&channel(1, "GR", "未対応", Some(101))?), None);
         assert_eq!(jikkyo(&channel(1, "OTHER", "ＮＨＫ総合", Some(101))?), None);
         Ok(())
+    }
+
+    #[test]
+    fn only_new_comments_are_projected_to_motion_and_both_phases_enter_history() {
+        let mut comments = Comments::default();
+        let mut live = Vec::new();
+        comments.ingest(
+            vec![
+                Comment {
+                    text: "old".into(),
+                    origin: viewer_comments::Origin::Nx,
+                    phase: viewer_comments::Phase::History,
+                    unix_seconds: 0,
+                },
+                Comment {
+                    text: "new".into(),
+                    origin: viewer_comments::Origin::Nx,
+                    phase: viewer_comments::Phase::Live,
+                    unix_seconds: 1,
+                },
+            ],
+            |text| live.push(text.to_owned()),
+        );
+        assert_eq!(live, ["new"]);
+        assert_eq!(comments.history.len(), 2);
+        live.clear();
+        comments.ingest(Vec::new(), |text| live.push(text.to_owned()));
+        assert!(live.is_empty());
+        assert_eq!(comments.history.len(), 2);
     }
 
     #[test]

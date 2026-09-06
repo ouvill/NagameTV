@@ -10,6 +10,9 @@ Rectangle {
         Channels,
         Comments
     }
+    property bool danmakuEnabled: false
+    property bool commentsEnabled: false
+    signal danmakuRequested(bool enabled)
     property string commentsJson: "[]"
     property string commentStatus: ""
     property int page: ProgramSidebar.Program
@@ -80,6 +83,23 @@ Rectangle {
                 font.pixelSize: 17
                 font.bold: true
                 Layout.fillWidth: true
+            }
+            Row {
+                visible: root.page === ProgramSidebar.Comments
+                enabled: root.commentsEnabled
+                spacing: 9
+                Layout.alignment: Qt.AlignVCenter
+                Label {
+                    height: parent.height
+                    verticalAlignment: Text.AlignVCenter
+                    text: "画面表示"
+                    color: root.danmakuEnabled ? "#f4f5f3" : "#b6bab6"
+                    font.pixelSize: 13
+                }
+                ToggleSwitch {
+                    checked: root.danmakuEnabled
+                    onToggled: root.danmakuRequested(!root.danmakuEnabled)
+                }
             }
         }
         ScrollView {

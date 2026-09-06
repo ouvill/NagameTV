@@ -164,6 +164,28 @@ ApplicationWindow {
             onActivity: overlayVisibility.reveal()
         }
         Loader {
+            id: danmaku
+            anchors.centerIn: video
+            width: video.width
+            height: Math.min(video.height, width * 9 / 16)
+            active: !root.closing && player.comments_enabled && player.danmaku_enabled && player.playing
+            sourceComponent: DanmakuOverlay {
+                fontSize: player.comment_font_size
+                textOpacity: player.comment_opacity
+                speed: player.comment_speed
+                titleOverlapsVideo: programIdentity.visible
+                    && programIdentity.y < danmaku.y + danmaku.height
+                    && programIdentity.y + programIdentity.height > danmaku.y
+                titleBottomInVideo: programIdentity.y + programIdentity.height - danmaku.y
+            }
+        }
+        Connections {
+            target: player
+            function onSelectedChanged() { if (danmaku.item) danmaku.item.clearComments(); }
+            function onServerChanged() { if (danmaku.item) danmaku.item.clearComments(); }
+            function onCommentReceived(text) { if (danmaku.item) danmaku.item.receive(text); }
+        }
+        Loader {
             // Match a 16:9 broadcast's letterboxed video area.
             anchors.centerIn: parent
             width: Math.min(parent.width, parent.height * 16 / 9)
@@ -196,6 +218,7 @@ ApplicationWindow {
             }
         }
         Loader {
+            id: programIdentity
             anchors {
                 left: parent.left
                 top: parent.top
@@ -505,6 +528,12 @@ ApplicationWindow {
         open: root.showProgram
         shuttingDown: root.closing
         sourceComponent: ProgramSidebar {
+            danmakuEnabled: player.danmaku_enabled
+            commentsEnabled: player.comments_enabled
+            onDanmakuRequested: function (enabled) {
+                player.configure_danmaku(enabled, player.comment_font_size, player.comment_opacity, player.comment_speed);
+                player.save_settings();
+            }
             commentsJson: player.comment_data
             commentStatus: player.comment_status
             page: root.sidebarPage
