@@ -24,6 +24,9 @@ pub mod ffi {
         fn current_ui_language() -> QString;
 
         include!("qt_helpers.h");
+        include!("pointer_activity.h");
+        #[cxx_name = "installPointerActivity"]
+        unsafe fn install_pointer_activity(item: *mut QQuickItem);
         type QQuickItem;
         #[cxx_name = "configureQtQuickOpenGl"]
         fn configure_qt_quick_open_gl();
@@ -95,6 +98,9 @@ pub mod ffi {
         #[cxx_name = "attachVideoItem"]
         unsafe fn attach_video_item(self: Pin<&mut Player>, item: *mut QQuickItem) -> bool;
         #[qinvokable]
+        #[cxx_name = "attachPointerActivity"]
+        unsafe fn attach_pointer_activity(self: Pin<&mut Player>, item: *mut QQuickItem);
+        #[qinvokable]
         fn play(self: Pin<&mut Player>);
         #[qinvokable]
         fn stop(self: Pin<&mut Player>);
@@ -149,6 +155,7 @@ mod catalog_view;
 mod comments;
 mod fetch;
 mod playback_control;
+mod pointer_activity;
 mod preferences;
 mod selection;
 mod state;

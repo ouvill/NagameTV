@@ -99,3 +99,21 @@ PAUSED→READYでストリーミングスレッドを停止し、動的padを削
 READYによる応答受信の中断、ソケット切断、キューの空化、Bus内の旧参照解放を確認する。
 このテストは明示的なテスト用fakesinkでバイト列を消費し、映像・音声デバイスを使用しない。
 実Mirakurunのチューナー解放完了時間、実画面・実音声、長時間のRSS推移の測定を代替しない。
+
+## 操作UIとマウス移動
+
+`pointer_activity.h` の監視オブジェクトは、プレイヤー領域のQQuickItemが所有する。
+`player/pointer_activity.rs` がQMLからの取付けを仲介し、ウィンドウのMouseMove/Enter/Leaveを
+イベントフィルターで観測する。領域内への進入・座標の変化で `activity()` を通知し、
+QMLの `reveal()` が表示と3.2秒の非表示タイマーを更新する。
+同じ座標の通知はタイマーを延長しない。フィルターは常にfalseを返し、クリックやドラッグを消費しない。
+ウィンドウ変更時は旧フィルターを外し、Item破棄時はQObjectの親子所有権で監視を破棄する。
+
+Wayland上の実アプリで、ウィンドウには移動イベントが届いてもHoverHandlerが反応しないケースを
+確認したため、ホバー配送や定期座標ポーリングには依存しない。
+[Qtのイベントフィルター](https://doc.qt.io/qt-6/qobject.html#installEventFilter)を用い、
+QObject・QQuickItem操作はGUIスレッド内に限定する。
+
+`scripts/test-pointer-activity.sh` は実ディスプレイで、移動・再進入・クリックの通過・
+ウィンドウ移動後の再接続・監視の解放を検証する。実アプリでもX11/Waylandそれぞれで、
+非表示からの再表示、連続移動中の表示維持、移動停止後の非表示を確認する。

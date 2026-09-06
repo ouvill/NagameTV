@@ -624,55 +624,18 @@ ApplicationWindow {
         Label { text: root.programTime(Math.max(0, player.services.indexOf(player.channelName))); color: "#d7d7d6"; font.pixelSize: 12; style: Text.Outline; styleColor: "#90000000" }
     }
 
-    HoverHandler {
-        id: videoHover
-        parent: videoItem
-        acceptedDevices: PointerDevice.Mouse
-        blocking: false
-        onHoveredChanged: {
-            if (hovered) {
-                pointerMotionTracker.recordPosition(point.scenePosition.x,
-                                                    point.scenePosition.y)
-            }
-        }
-    }
-    Timer {
-        id: pointerMotionTracker
-        property real lastX: 0
-        property real lastY: 0
-        property bool hasPosition: false
-        function recordPosition(nextX, nextY) {
-            const moved = !hasPosition || nextX !== lastX || nextY !== lastY
-            lastX = nextX
-            lastY = nextY
-            hasPosition = true
-            if (moved)
-                root.reveal()
-        }
-        interval: 100
-        repeat: true
-        running: videoHover.hovered || controlsHover.hovered
-        onTriggered: {
-            const trackedPoint = controlsHover.hovered ? controlsHover.point : videoHover.point
-            recordPosition(trackedPoint.scenePosition.x, trackedPoint.scenePosition.y)
-        }
+    Item {
+        id: pointerActivity
+        signal activity()
+        anchors.fill: videoRegion
+        z: 402
+        onActivity: root.reveal()
     }
     MouseArea { anchors.fill: videoRegion; z: controls.opacity > .01 ? -1 : 100; acceptedButtons: Qt.AllButtons; onPressed: root.reveal() }
     Item {
         id: controls; anchors.fill: videoRegion; visible: opacity > 0 && !guideOpen; z: 401
         opacity: overlayVisible || !player.playing ? 1 : 0
         Behavior on opacity { NumberAnimation { duration: 180 } }
-        HoverHandler {
-            id: controlsHover
-            acceptedDevices: PointerDevice.Mouse
-            blocking: false
-            onHoveredChanged: {
-                if (hovered) {
-                    pointerMotionTracker.recordPosition(point.scenePosition.x,
-                                                        point.scenePosition.y)
-                }
-            }
-        }
         Rectangle { anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top; height: Math.min(210, parent.height * .28)
             gradient: Gradient { GradientStop { position: 0; color: "#a8000000" } GradientStop { position: 1; color: "#00000000" } }
         }
@@ -1405,6 +1368,7 @@ ApplicationWindow {
     ResizeEdge { edges: Qt.RightEdge | Qt.BottomEdge; anchors { right: parent.right; bottom: parent.bottom } width: 18; height: 18; z: 1001; cursorShape: Qt.SizeFDiagCursor }
 
     Component.onCompleted: {
+        player.attachPointerActivity(pointerActivity)
         usageReady = true
         root.recordUsage()
         videoAttached = player.attachVideoItem(videoItem)
