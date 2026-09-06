@@ -25,6 +25,7 @@ Item {
                     property alias editor: editor
                     property alias popup: popup
                     property int guideRequests: 0
+                    property int channelRequests: 0
                     property int steps: 0
                     property int escapes: 0
                     Viewer.WindowActions {
@@ -32,6 +33,7 @@ Item {
                         targetWindow: host
                         guideEnabled: true
                         onGuideToggleRequested: parent.guideRequests++
+                        onChannelsToggleRequested: parent.channelRequests++
                         onChannelStepRequested: function (offset) {
                             parent.steps += offset;
                         }
@@ -58,6 +60,7 @@ Item {
                 failOnWarning(/.*/);
             }
             function init() {
+                failOnWarning(/.*/);
                 originalVisibility = host.visibility;
                 view = createTemporaryObject(component, testCase);
                 verify(view !== null);
@@ -69,6 +72,8 @@ Item {
                 host.visibility = originalVisibility;
             }
             function test_shortcuts_and_editable_text() {
+                keyClick(Qt.Key_C);
+                compare(view.channelRequests, 1);
                 keyClick(Qt.Key_G);
                 compare(view.guideRequests, 1);
                 keyClick(Qt.Key_PageDown);
@@ -79,6 +84,9 @@ Item {
                 compare(view.actions.editingText, true);
                 keyClick(Qt.Key_G);
                 compare(view.editor.text.toLowerCase(), "g");
+                keyClick(Qt.Key_C);
+                compare(view.editor.text.toLowerCase(), "gc");
+                compare(view.channelRequests, 1);
                 compare(view.guideRequests, 1);
                 keyClick(Qt.Key_PageDown);
                 compare(view.steps, 0);

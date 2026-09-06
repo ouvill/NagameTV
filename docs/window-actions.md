@@ -17,7 +17,8 @@ Escapeはポップアップ自身のclosePolicyを優先し、その後はMain�
 このモジュールはWindowと同じ寿命で、タイマー、通信、映像バッファー、履歴を追加しない。
 全画面で描画領域が変わった際のQt/GPU側の確保量は別途実測の対象となる。
 操作部の自動非表示は [overlay-visibility.md](overlay-visibility.md) を参照。
-mainの独自ウィンドウ枠、チャンネルブラウザーはまだ未移植。
+mainの独自ウィンドウ枠はまだ未移植。
+チャンネルブラウザーのC開閉は [channel-browser.md](channel-browser.md) を参照。
 
 ## APIの根拠
 

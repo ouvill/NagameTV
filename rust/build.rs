@@ -13,6 +13,8 @@ fn main() {
             .qml_file("qml/ProgramDetails.qml")
             .qml_file("qml/VideoStats.qml")
             .qml_file("qml/ChannelSelector.qml")
+            .qml_file("qml/ChannelLogo.qml")
+            .qml_file("qml/ChannelBrowser.qml")
             .depend("QtQuick")
             .depend("QtQuick.Controls")
             .depend("QtQuick.Layouts")

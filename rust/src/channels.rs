@@ -40,6 +40,7 @@ pub struct Channel {
     pub name: String,
     pub label: String,
     pub band: Band,
+    pub has_logo_data: bool,
     pub broadcast: Option<BroadcastService>,
     number: Option<u16>,
     service_id: Option<u16>,
@@ -58,6 +59,8 @@ struct Service {
     service_id: Option<u16>,
     network_id: Option<u16>,
     remote_control_key_id: Option<u16>,
+    #[serde(default)]
+    has_logo_data: bool,
     #[serde(default)]
     channel: ServiceChannel,
 }
@@ -92,6 +95,7 @@ pub fn parse(bytes: &[u8]) -> Result<Vec<Channel>, Error> {
                 name: s.name,
                 label,
                 band: s.channel.band,
+                has_logo_data: s.has_logo_data,
                 broadcast: s
                     .network_id
                     .zip(s.service_id)

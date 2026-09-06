@@ -15,6 +15,7 @@ ApplicationWindow {
     color: "#151515"
     property bool closing: false
     property bool showGuide: false
+    property bool showChannels: false
     property bool showStats: false
     readonly property var channelRows: JSON.parse(player.channel_data)
     Player {
@@ -34,7 +35,9 @@ ApplicationWindow {
     }
     function closeTopmost() {
         overlayVisibility.reveal();
-        if (root.showGuide)
+        if (root.showChannels)
+            root.showChannels = false;
+        else if (root.showGuide)
             root.toggleGuide();
         else if (root.showStats)
             root.showStats = false;
@@ -45,7 +48,7 @@ ApplicationWindow {
         id: overlayVisibility
         enabled: !root.closing
         playing: player.playing
-        pinned: root.showGuide || windowActions.popupOpen || windowActions.editingText || volumeSlider.pressed
+        pinned: root.showChannels || root.showGuide || windowActions.popupOpen || windowActions.editingText || volumeSlider.pressed
     }
     WindowActions {
         id: windowActions
@@ -53,6 +56,10 @@ ApplicationWindow {
         enabled: !root.closing
         guideEnabled: player.epg_enabled
         onFullscreenChanged: overlayVisibility.reveal()
+        onChannelsToggleRequested: {
+            overlayVisibility.reveal();
+            root.showChannels = !root.showChannels;
+        }
         onGuideToggleRequested: root.toggleGuide()
         onChannelStepRequested: function (offset) {
             root.step(offset);
@@ -221,6 +228,10 @@ ApplicationWindow {
                         enabled: root.channelRows.length > 0
                         onClicked: root.step(-1)
                     }
+                    Button {
+                        text: "チャンネル"
+                        onClicked: root.showChannels = !root.showChannels
+                    }
                     ChannelSelector {
                         Layout.fillWidth: true
                         rows: root.channelRows
@@ -320,6 +331,27 @@ ApplicationWindow {
                         player.guide_open(false);
                     }
                 }
+            }
+        }
+        Loader {
+            anchors {
+                left: parent.left
+                right: parent.right
+                bottom: bottomPanel.top
+            }
+            height: Math.min(260, surface.height - topPanel.height - bottomPanel.height)
+            active: !root.closing && root.showChannels
+            visible: active
+            z: 5
+            onLoaded: item.focusBrowser()
+            sourceComponent: ChannelBrowser {
+                rows: root.channelRows
+                selected: player.selected
+                onSelectRequested: function (index) {
+                    player.select(index);
+                    root.showChannels = false;
+                }
+                onCloseRequested: root.showChannels = false
             }
         }
         Loader {

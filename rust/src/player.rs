@@ -504,13 +504,16 @@ impl ffi::Player {
             self.as_mut().set_loading(false);
             match result {
                 Ok(entries) => {
-                    let presentation = match channels::presentation(&entries) {
-                        Ok(json) => QString::from(json),
-                        Err(error) => {
-                            self.status_text(format!("チャンネル表示データの作成失敗: {error}"));
-                            return;
-                        }
-                    };
+                    let presentation =
+                        match channels::presentation(&entries, &self.server().to_string()) {
+                            Ok(json) => QString::from(json),
+                            Err(error) => {
+                                self.status_text(format!(
+                                    "チャンネル表示データの作成失敗: {error}"
+                                ));
+                                return;
+                            }
+                        };
                     let selected = self
                         .rust()
                         .preferences

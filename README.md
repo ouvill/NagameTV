@@ -33,8 +33,10 @@ MIRAKURUN_SERVER=http://192.168.3.3:40772 QT_QPA_PLATFORM=xcb ./build/mirakurun-
 種別を変えるだけでは再生局は変わりません。
 `MIRAKURUN_AUTOPLAY=1` で取得後に自動再生し、`MIRAKURUN_SERVICE_ID` で選択局を上書きできます。
 PgUp/PgDownで選局、Gで番組表、F11で全画面を切り替えます。
-Escapeはポップアップ、番組表、動画統計、全画面の順に閉じます。
-文字入力中はGとPgUp/PgDownによる画面・選局操作を抑止します。
+Cまたは「チャンネル」でロゴ付きのチャンネル選択画面を開きます。
+矢印キーで移動しEnterで選局できます。[仕様と検証](docs/channel-browser.md)。
+Escapeはポップアップ、チャンネル選択、番組表、動画統計、全画面の順に閉じます。
+文字入力中はC・GとPgUp/PgDownによる画面・選局操作を抑止します。
 チェックボックスで機能を切り替えます。[ウィンドウ操作の仕様と検証](docs/window-actions.md)。
 
 操作部は映像の上に重なり、再生中は無操作が3.2秒続くと隠れます。マウス移動で再表示します。

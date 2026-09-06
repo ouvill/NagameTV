@@ -10,6 +10,7 @@ Item {
     readonly property bool popupOpen: Overlay.overlay ? Overlay.overlay.visible : false
     readonly property bool editingText: targetWindow !== null && (targetWindow.activeFocusItem instanceof TextInput || targetWindow.activeFocusItem instanceof TextEdit)
     readonly property bool navigationEnabled: enabled && !editingText && !popupOpen
+    signal channelsToggleRequested
     signal guideToggleRequested
     signal channelStepRequested(int offset)
     signal escapeRequested
@@ -38,6 +39,13 @@ Item {
         autoRepeat: false
         enabled: actions.enabled
         onActivated: actions.toggleFullscreen()
+    }
+    Shortcut {
+        sequence: "C"
+        context: Qt.WindowShortcut
+        autoRepeat: false
+        enabled: actions.navigationEnabled
+        onActivated: actions.channelsToggleRequested()
     }
     Shortcut {
         sequence: "G"
