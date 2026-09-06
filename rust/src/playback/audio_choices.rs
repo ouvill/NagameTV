@@ -17,6 +17,8 @@ pub struct Choice {
     pub selected: bool,
     pub enabled: bool,
     #[serde(skip)]
+    pub(super) default: bool,
+    #[serde(skip)]
     native: String,
     #[serde(skip)]
     mode: Mode,
@@ -46,7 +48,7 @@ impl Intent {
     }
 }
 
-fn choices(
+pub(super) fn choices(
     tracks: Vec<Track>,
     program: Option<Program<'_>>,
     format: Format,
@@ -97,6 +99,8 @@ fn choices(
                 mode,
                 selected: track.selected && (!dual || format.mode.unwrap_or(Mode::Both) == mode),
                 enabled: !track.selected || !dual || format.mode.is_some(),
+                default: descriptor.is_some_and(audio::Descriptor::is_main)
+                    && (!dual || mode == Mode::Main),
             });
         }
     }
@@ -118,6 +122,9 @@ impl Playback {
         self.audio_streams
             .borrow_mut()
             .set_failure(result.as_ref().err().copied());
+        if result.is_ok() {
+            self.audio_default.borrow_mut().user_choice(key);
+        }
         result
     }
     fn request_audio(&self, key: &str, program: Option<Program<'_>>) -> Result<(), Error> {

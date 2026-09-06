@@ -1,5 +1,6 @@
 mod audio_choices;
 mod audio_components;
+mod audio_default;
 pub mod audio_output;
 mod audio_routing;
 pub mod audio_streams;
@@ -99,6 +100,7 @@ pub struct Playback {
     audio_streams: RefCell<audio_streams::Streams>,
     routing: audio_routing::Routing,
     audio_intent: RefCell<Option<audio_choices::Intent>>,
+    audio_default: RefCell<audio_default::Policy>,
     requested_uri: RefCell<Option<String>>,
 }
 
@@ -190,6 +192,7 @@ impl Playback {
             audio_streams: RefCell::default(),
             routing,
             audio_intent: RefCell::default(),
+            audio_default: RefCell::default(),
             requested_uri: RefCell::new(None),
         })
     }
@@ -237,6 +240,7 @@ impl Playback {
         *self.audio_streams.borrow_mut() = audio_streams::Streams::default();
         self.routing.reset();
         *self.audio_intent.borrow_mut() = None;
+        *self.audio_default.borrow_mut() = audio_default::Policy::default();
         Ok(())
     }
 

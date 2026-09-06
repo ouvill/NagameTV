@@ -43,6 +43,9 @@ impl Descriptor {
             Kind::Other => Role::Sub,
         }
     }
+    pub fn is_main(&self) -> bool {
+        self.is_main
+    }
     pub fn heap_bytes(&self) -> usize {
         self.langs.len() * std::mem::size_of::<String>()
             + self.langs.iter().map(String::capacity).sum::<usize>()

@@ -18,10 +18,13 @@ impl super::ffi::Player {
         state.epg.audio_program(entry.broadcast, now)
     }
     pub(super) fn poll_audio_choice(&self) {
-        if let Some(playback) = self.rust().playback.as_ref()
-            && playback.has_audio_intent()
-        {
-            playback.update_audio_choice(self.audio_program());
+        if let Some(playback) = self.rust().playback.as_ref() {
+            if playback.has_audio_intent() {
+                playback.update_audio_choice(self.audio_program());
+            }
+            if playback.audio_default_due() {
+                playback.apply_audio_default(self.audio_program());
+            }
         }
     }
     pub fn audio_error(&self) -> QString {
