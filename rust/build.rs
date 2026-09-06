@@ -17,6 +17,8 @@ fn main() {
             .qml_file("qml/ProgramGuide.qml")
             .qml_file("qml/CurrentProgram.qml")
             .qml_file("qml/ProgramSidebar.qml")
+            .qml_file("qml/SidebarChannels.qml")
+            .qml_file("qml/SidebarTab.qml")
             .qml_file("qml/SidePanel.qml")
             .qml_file("qml/IconAction.qml")
             .qml_file("qml/ThemedSlider.qml")
@@ -36,6 +38,7 @@ fn main() {
             .depend("QtQuick.Shapes"),
     )
     .qrc_resources([
+        "../assets/icons/info.svg",
         "../assets/icons/panel-right-open.svg",
         "../assets/icons/minus.svg",
         "../assets/icons/x.svg",

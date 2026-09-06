@@ -1,9 +1,21 @@
+pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 
 Rectangle {
     id: root
+    enum Page {
+        Program,
+        Channels
+    }
+    property int page: ProgramSidebar.Program
+    property var channelRows: []
+    property int selectedChannel: -1
+    property string channelPrograms: "[]"
+    property real now: 0
+    signal pageRequested(int page)
+    signal selectRequested(int index)
     required property string programJson
     required property Window targetWindow
     property url iconDirectory: "qrc:/qt/qml/MinimalViewer/assets/icons/"
@@ -59,7 +71,7 @@ Rectangle {
                 onClicked: root.closeRequested()
             }
             Label {
-                text: "番組情報"
+                text: root.page === ProgramSidebar.Channels ? "チャンネル" : "番組情報"
                 color: "#f4f5f3"
                 font.pixelSize: 17
                 font.bold: true
@@ -68,6 +80,7 @@ Rectangle {
         }
         ScrollView {
             id: scroll
+            visible: root.page === ProgramSidebar.Program
             Layout.fillWidth: true
             Layout.fillHeight: true
             contentWidth: availableWidth
@@ -151,6 +164,44 @@ Rectangle {
                     font.pixelSize: 12
                     wrapMode: Text.Wrap
                 }
+            }
+        }
+        Loader {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            active: root.page === ProgramSidebar.Channels
+            visible: active
+            sourceComponent: SidebarChannels {
+                rows: root.channelRows
+                selected: root.selectedChannel
+                programsJson: root.channelPrograms
+                now: root.now
+                onSelectRequested: function (index) {
+                    root.selectRequested(index);
+                }
+            }
+        }
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.preferredHeight: 1
+            color: "#18ffffff"
+        }
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: 8
+            SidebarTab {
+                Layout.fillWidth: true
+                iconSource: root.iconDirectory + "info.svg"
+                selected: root.page === ProgramSidebar.Program
+                text: "番組情報"
+                onClicked: root.pageRequested(ProgramSidebar.Program)
+            }
+            SidebarTab {
+                Layout.fillWidth: true
+                iconSource: root.iconDirectory + "grid-2x2.svg"
+                selected: root.page === ProgramSidebar.Channels
+                text: "チャンネル"
+                onClicked: root.pageRequested(ProgramSidebar.Channels)
             }
         }
     }

@@ -20,6 +20,9 @@ ApplicationWindow {
     property bool showChannels: false
     property bool showStats: false
     property bool showProgram: false
+    property int sidebarPage: ProgramSidebar.Program
+    readonly property bool summariesVisible: !closing && (channelPanel.active || (sidebar.active && sidebarPage === ProgramSidebar.Channels))
+    onSummariesVisibleChanged: player.browser_open(summariesVisible)
     readonly property real panelWidth: Math.min(408, Math.max(360, width * 0.32))
     readonly property var channelRows: JSON.parse(player.channel_data)
     Player {
@@ -188,7 +191,10 @@ ApplicationWindow {
             visible: overlayVisibility.controlsVisible && !root.showGuide
             sourceComponent: CurrentProgram {
                 programJson: player.current_program_data
-                onDetailsRequested: root.showProgram = true
+                onDetailsRequested: {
+                    root.sidebarPage = ProgramSidebar.Program;
+                    root.showProgram = true;
+                }
                 channelLabel: player.selected >= 0 && player.selected < root.channelRows.length ? root.channelRows[player.selected].label : ""
                 logoUrl: player.selected >= 0 && player.selected < root.channelRows.length ? root.channelRows[player.selected].logo : ""
             }
@@ -423,7 +429,6 @@ ApplicationWindow {
             height: Math.min(304, surface.height - 150)
             open: root.showChannels
             shuttingDown: root.closing
-            onActiveChanged: player.browser_open(active)
             z: 6
             onLoaded: item.focusBrowser()
             sourceComponent: ChannelBrowser {
@@ -456,10 +461,22 @@ ApplicationWindow {
         }
     }
     SidePanel {
+        id: sidebar
         width: root.panelWidth
         open: root.showProgram
         shuttingDown: root.closing
         sourceComponent: ProgramSidebar {
+            page: root.sidebarPage
+            channelRows: root.channelRows
+            selectedChannel: player.selected
+            channelPrograms: player.channel_program_data
+            now: player.channel_program_now
+            onPageRequested: function (page) {
+                root.sidebarPage = page;
+            }
+            onSelectRequested: function (index) {
+                player.select(index);
+            }
             targetWindow: root
             programJson: player.current_program_data
             progress: player.program_progress
