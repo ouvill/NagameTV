@@ -20,8 +20,25 @@ ApplicationWindow {
         if (root.channelRows.length)
             player.select((player.selected + offset + root.channelRows.length) % root.channelRows.length)
     }
-    Shortcut { sequence: "PgDown"; onActivated: root.step(1) }
-    Shortcut { sequence: "PgUp"; onActivated: root.step(-1) }
+    function toggleGuide() {
+        if (!player.epg_enabled) return
+        player.guide_open(!root.showGuide)
+        root.showGuide = !root.showGuide
+    }
+    function closeTopmost() {
+        if (root.showGuide) root.toggleGuide()
+        else if (root.showStats) root.showStats = false
+        else windowActions.leaveFullscreen()
+    }
+    WindowActions {
+        id: windowActions
+        targetWindow: root
+        enabled: !root.closing
+        guideEnabled: player.epg_enabled
+        onGuideToggleRequested: root.toggleGuide()
+        onChannelStepRequested: function(offset) { root.step(offset) }
+        onEscapeRequested: root.closeTopmost()
+    }
     Timer { interval: 50; repeat: true; running: !root.closing; onTriggered: player.poll() }
     Timer { interval: 16; repeat: true; running: !root.closing && player.subtitles_active; onTriggered: player.poll_subtitles() }
     onClosing: { root.closing = true; player.shutdown() }
@@ -48,9 +65,15 @@ ApplicationWindow {
             CheckBox { palette.windowText: "#eeeeee"; text: "字幕を表示"; checked: player.subtitle_display; enabled: player.subtitles_enabled; onClicked: player.display_subtitles(checked) }
             Label { text: player.subtitles_enabled ? player.subtitle_status : "無効"; color: "#cccccc" }
             CheckBox { palette.windowText: "#eeeeee"; text: "EPG"; checked: player.epg_enabled; enabled: player.epg_allowed; onClicked: { player.configure_features(player.subtitles_enabled, checked); if (!checked) root.showGuide = false } }
-            Button { text: root.showGuide ? "番組表を閉じる" : "番組表"; enabled: player.epg_enabled; onClicked: { player.guide_open(!root.showGuide); root.showGuide = !root.showGuide } }
+            Button { text: root.showGuide ? "番組表を閉じる" : "番組表"; enabled: player.epg_enabled; onClicked: root.toggleGuide() }
             CheckBox { text: "動画統計"; palette.windowText: "#eeeeee"; checked: root.showStats; onClicked: root.showStats = checked }
             Item { Layout.fillWidth: true }
+            Button {
+                text: windowActions.fullscreen ? "全画面解除" : "全画面"
+                onClicked: windowActions.toggleFullscreen()
+                ToolTip.visible: hovered
+                ToolTip.text: "F11"
+            }
         }
         RowLayout {
             Layout.fillWidth: true; Layout.fillHeight: true

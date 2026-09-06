@@ -19,7 +19,7 @@ viewer-coreを照合し、機能単位で移植する。表の「一部」はmai
 | 言語設定・動的翻訳切替 | localization.h、translations、QML | 未移植。既存のlanguage設定は保持 |
 | 自動再生・環境変数による上書き | runtime、README | SERVER/SERVICE_ID/AUTOPLAY対応を追加 |
 | デインターレース設定 | playback、README | YADIF/Linear/Offの起動設定を移植。型検証とCPU試験済み |
-| 全画面・自動非表示・ウィンドウ操作・ショートカット | QML、pointer_activity.h | 一部。PgUp/PgDownのみ |
+| 全画面・自動非表示・ウィンドウ操作・ショートカット | QML、pointer_activity.h | F11全画面と元の通常／最大化状態への復帰、G、PgUp/PgDown、Escapeを追加。入力欄・ポップアップとの競合を検証。自動非表示・独自ウィンドウ枠・Cによるチャンネルブラウザーは未移植 |
 | エラー種別表示・復旧操作・詳細コピー・診断保存 | viewer-core、runtime、QML、diagnostics | 型付きエラーあり。main相当の案内・操作・保存は未移植 |
 | 動画統計・表示中のみ収集 | video_stats、QML | 表示中のみ1秒ごとに収集する統計パネルを移植。長時間併用試験は未実施 |
 | 診断ログ・継続的な資源測定 | diagnostics、scripts | 簡易allocator計測あり。配布向け診断は未移植 |
@@ -83,3 +83,5 @@ CMakeビルド成功。設定テストはmain形式の読み込み・未知項�
 現在番組の検索・詳細表示とEPGのデータ整理は [current-program.md](current-program.md)。
 
 番組表の日付選択・予定番組の詳細は [guide-calendar.md](guide-calendar.md)。
+
+全画面とショートカットの責務・検証は [window-actions.md](window-actions.md)。
