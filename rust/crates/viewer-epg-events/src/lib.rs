@@ -1,4 +1,6 @@
 //! Bounded Mirakurun open-array event decoding. No Qt, networking or playback resources.
+#[cfg(feature = "network")]
+pub mod connection;
 mod gate;
 pub use gate::RefreshGate;
 use serde::Deserialize;

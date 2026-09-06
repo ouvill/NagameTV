@@ -5,12 +5,17 @@ const INTERVAL: Duration = Duration::from_secs(60);
 pub struct RefreshGate {
     dirty: bool,
     next: Instant,
+    interval: Duration,
 }
 impl RefreshGate {
     pub fn new(now: Instant) -> Self {
+        Self::with_interval(now, INTERVAL)
+    }
+    pub(crate) fn with_interval(now: Instant, interval: Duration) -> Self {
         Self {
             dirty: false,
-            next: now + INTERVAL,
+            next: now + interval,
+            interval,
         }
     }
     /// Also call after a disconnected stream: events may have been missed.
@@ -23,7 +28,7 @@ impl RefreshGate {
             return false;
         }
         self.dirty = false;
-        self.next = now + INTERVAL;
+        self.next = now + self.interval;
         true
     }
 }
