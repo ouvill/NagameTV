@@ -1,5 +1,6 @@
 mod audio_output;
 mod channels;
+mod guide;
 mod program_info;
 mod startup;
 mod statistics;
@@ -56,6 +57,8 @@ pub mod ffi {
         #[qinvokable]
         fn guide_open(self: Pin<&mut Player>, open: bool);
         #[qinvokable]
+        fn guide_day(self: Pin<&mut Player>, start: f64, end: f64);
+        #[qinvokable]
         fn refresh_epg(self: Pin<&mut Player>);
         #[qinvokable]
         unsafe fn attach(self: Pin<&mut Player>, item: *mut QQuickItem) -> bool;
@@ -92,7 +95,7 @@ use crate::{
 use cxx_qt::CxxQtType;
 use cxx_qt_lib::QString;
 use std::pin::Pin;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 
 pub struct PlayerRust {
     server: QString,
@@ -125,10 +128,10 @@ pub struct PlayerRust {
     epg: ProgramInfo,
     active_service: Option<u64>,
     resume_retry_used: bool,
-    guide_visible: bool,
+    guide: crate::features::program_info::guide::Guide,
+    guide_dirty: bool,
     guide_revision: u64,
     guide_service: Option<crate::channels::BroadcastService>,
-    next_guide: Instant,
     next_diagnostic: Instant,
     request: Option<services::Request>,
     network: Option<services::Network>,
@@ -281,16 +284,6 @@ impl ffi::Player {
             _ => {}
         }
     }
-    pub fn guide_open(mut self: Pin<&mut Self>, open: bool) {
-        self.as_mut().rust_mut().guide_visible = open && self.rust().epg_enabled;
-        self.as_mut().rust_mut().next_guide = Instant::now();
-        if !self.rust().guide_visible {
-            self.set_epg_data(QString::from("[]"));
-        }
-    }
-    pub fn refresh_epg(mut self: Pin<&mut Self>) {
-        self.as_mut().rust_mut().epg.refresh();
-    }
     fn poll_features(mut self: Pin<&mut Self>) {
         {
             let mut this = self.as_mut().rust_mut();
@@ -314,16 +307,12 @@ impl ffi::Player {
             .get(self.rust().selected as usize)
             .and_then(|s| s.broadcast);
         self.as_mut().poll_current_program(service);
-        if self.rust().guide_visible
+        if let crate::features::program_info::guide::Guide::Showing(window) = self.rust().guide
             && (self.rust().guide_revision != self.rust().epg.revision
                 || self.rust().guide_service != service
-                || Instant::now() >= self.rust().next_guide)
+                || self.rust().guide_dirty)
         {
-            let now = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis() as u64;
-            let data = match self.rust().epg.view(service, now) {
+            let data = match self.rust().epg.view(service, window) {
                 Ok(data) => data,
                 Err(error) => {
                     eprintln!("Program guide presentation failed: {error}");
@@ -335,7 +324,7 @@ impl ffi::Player {
             let revision = self.rust().epg.revision;
             self.as_mut().rust_mut().guide_revision = revision;
             self.as_mut().rust_mut().guide_service = service;
-            self.as_mut().rust_mut().next_guide = Instant::now() + Duration::from_secs(30);
+            self.as_mut().rust_mut().guide_dirty = false;
             self.as_mut().set_epg_data(QString::from(data));
         }
         if Instant::now() >= self.rust().next_diagnostic {

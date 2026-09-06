@@ -68,16 +68,12 @@ impl Snapshot {
     pub fn view(
         &self,
         service: Option<BroadcastService>,
-        now: u64,
+        window: super::guide::DayWindow,
     ) -> Result<String, serde_json::Error> {
         let programs: Vec<_> = self
             .schedule(service)
             .iter()
-            .filter(|p| {
-                p.start_at.saturating_add(p.duration) > now
-                    && p.start_at < now.saturating_add(24 * 60 * 60 * 1000)
-            })
-            .take(200)
+            .filter(|p| window.overlaps(p.start_at, p.duration))
             .collect();
         serde_json::to_string(&programs)
     }

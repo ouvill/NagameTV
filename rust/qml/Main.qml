@@ -48,7 +48,7 @@ ApplicationWindow {
             CheckBox { palette.windowText: "#eeeeee"; text: "字幕を表示"; checked: player.subtitle_display; enabled: player.subtitles_enabled; onClicked: player.display_subtitles(checked) }
             Label { text: player.subtitles_enabled ? player.subtitle_status : "無効"; color: "#cccccc" }
             CheckBox { palette.windowText: "#eeeeee"; text: "EPG"; checked: player.epg_enabled; enabled: player.epg_allowed; onClicked: { player.configure_features(player.subtitles_enabled, checked); if (!checked) root.showGuide = false } }
-            Button { text: root.showGuide ? "番組表を閉じる" : "番組表"; enabled: player.epg_enabled; onClicked: { root.showGuide = !root.showGuide; player.guide_open(root.showGuide) } }
+            Button { text: root.showGuide ? "番組表を閉じる" : "番組表"; enabled: player.epg_enabled; onClicked: { player.guide_open(!root.showGuide); root.showGuide = !root.showGuide } }
             CheckBox { text: "動画統計"; palette.windowText: "#eeeeee"; checked: root.showStats; onClicked: root.showStats = checked }
             Item { Layout.fillWidth: true }
         }
@@ -81,6 +81,7 @@ ApplicationWindow {
                     ProgramGuide {
                         programsJson: player.epg_data; status: player.epg_status
                         channel: player.selected >= 0 && player.selected < root.channelRows.length ? root.channelRows[player.selected].label : ""
+                        onDayRequested: function(start, end) { player.guide_day(start, end) }
                         onRefreshRequested: player.refresh_epg()
                         onCloseRequested: { root.showGuide = false; player.guide_open(false) }
                     }

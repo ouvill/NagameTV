@@ -54,7 +54,14 @@ fn updates_replace_failure_retains_refresh_waits_and_disable_clears()
         }
         assert_eq!(feature.revision, revision);
         assert_eq!(feature.counters().1, 1);
-        assert!(feature.view(key(32096, 1024), 100)?.contains("番組"));
+        assert!(
+            feature
+                .view(
+                    key(32096, 1024),
+                    guide::DayWindow::new(100.0, 100.0 + 86_400_000.0)?
+                )?
+                .contains("番組")
+        );
         feature.refresh();
     }
     let deadline = Instant::now() + Duration::from_secs(3);
@@ -68,7 +75,14 @@ fn updates_replace_failure_retains_refresh_waits_and_disable_clears()
         Status::Failed(FetchError::Parse(Error::Json(_)))
     ));
     assert_eq!(feature.revision, 3);
-    assert!(feature.view(key(32096, 1024), 100)?.contains("番組"));
+    assert!(
+        feature
+            .view(
+                key(32096, 1024),
+                guide::DayWindow::new(100.0, 100.0 + 86_400_000.0)?
+            )?
+            .contains("番組")
+    );
     feature.poll_at(&network, Instant::now() + REFRESH - Duration::from_secs(1));
     assert_eq!(count.load(Ordering::SeqCst), 3);
     assert_eq!(feature.counters().0, 0);
@@ -82,7 +96,13 @@ fn updates_replace_failure_retains_refresh_waits_and_disable_clears()
         thread::sleep(Duration::from_millis(1));
     }
     assert_eq!(feature.counters(), (0, 0, false));
-    assert_eq!(feature.view(key(32096, 1024), 100)?, "[]");
+    assert_eq!(
+        feature.view(
+            key(32096, 1024),
+            guide::DayWindow::new(100.0, 100.0 + 86_400_000.0)?
+        )?,
+        "[]"
+    );
     server.join().map_err(|_| "EPG test server panicked")??;
     Ok(())
 }
@@ -144,10 +164,16 @@ fn current_program_boundaries_gaps_and_missing_metadata() -> Result<(), Box<dyn 
     assert!(unnamed.name.is_none());
     assert!(unnamed.description.is_none());
     assert_eq!(snapshot.current(key(3, 21), 2000).map(|p| p.id), Some(4));
-    let guide: serde_json::Value = serde_json::from_str(&snapshot.view(service, 1500)?)?;
+    let guide: serde_json::Value = serde_json::from_str(&snapshot.view(
+        service,
+        guide::DayWindow::new(1500.0, 1500.0 + 86_400_000.0)?,
+    )?)?;
     assert_eq!(guide.as_array().ok_or("guide must be an array")?.len(), 2);
     assert_eq!(guide[0]["id"], 2);
-    assert_eq!(snapshot.view(None, 1000)?, "[]");
+    assert_eq!(
+        snapshot.view(None, guide::DayWindow::new(1000.0, 1000.0 + 86_400_000.0)?)?,
+        "[]"
+    );
     Ok(())
 }
 
@@ -254,4 +280,50 @@ fn epg_uses_broadcast_metadata_instead_of_deriving_endpoint_ids()
     assert!(unknown.broadcast.is_none());
     assert!(snapshot.current(unknown.broadcast, 1000).is_none());
     Ok(())
+}
+
+#[test]
+fn guide_day_includes_crossing_programs_and_does_not_truncate_at_200()
+-> Result<(), Box<dyn std::error::Error>> {
+    let mut entries = (0..250)
+        .map(|i| {
+            serde_json::json!({
+                "id": i+1, "networkId": 3, "serviceId": 20, "startAt": i*1000+10000, "duration":1000
+            })
+        })
+        .collect::<Vec<_>>();
+    entries.push(
+        serde_json::json!({"id":999,"networkId":3,"serviceId":20,"startAt":9999,"duration":2}),
+    );
+    let snapshot = parse(&serde_json::to_vec(&entries)?)?;
+    let view: Vec<serde_json::Value> = serde_json::from_str(
+        &snapshot.view(key(3, 20), guide::DayWindow::new(10000.0, 260000.0)?)?,
+    )?;
+    assert_eq!(view.len(), 251);
+    assert_eq!(view[0]["id"], 999);
+    let next: Vec<serde_json::Value> = serde_json::from_str(
+        &snapshot.view(key(3, 20), guide::DayWindow::new(260000.0, 261000.0)?)?,
+    )?;
+    assert!(next.is_empty()); // Exclusive end: an event ending at midnight is not repeated.
+    Ok(())
+}
+
+#[test]
+fn guide_window_rejects_invalid_numbers_and_accepts_dst_days() {
+    use guide::DayWindow;
+    for hours in [23.0, 24.0, 25.0] {
+        assert!(DayWindow::new(1000.0, 1000.0 + hours * 3600000.0).is_ok());
+    }
+    for (start, end) in [
+        (f64::NAN, 100.0),
+        (0.0, f64::INFINITY),
+        (-1.0, 1.0),
+        (0.1, 1.0),
+        (1.0, 1.0),
+        (2.0, 1.0),
+        (0.0, 27.0 * 3600000.0),
+        (9e15, 9e15 + 1000.0),
+    ] {
+        assert!(DayWindow::new(start, end).is_err());
+    }
 }
