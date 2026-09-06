@@ -24,7 +24,9 @@ JSONが同じならQMLのプロパティ変更は生じず、閉じるとJSON・
 トラック順から主／副や言語を推測しない。
 
 ユーザーの切り替え失敗はメニュー内に表示し、映像の停止エラーとは分離する。
-コレクション更新時の自動再適用失敗は現状では端末に記録する。この通知のUI統合は残る。
+コレクション更新時の自動再適用失敗もOption<Error>で最新1件を保持し、メニューへ渡す。
+次の要求成功または再生停止で消す。メニューを開き直しても、未解決の失敗を再取得する。
+エラー文字列や履歴は蓄積せず、QString化は表示を更新する境界だけで行う。
 
 ## UI
 
@@ -54,3 +56,35 @@ DISPLAY・NVIDIA OpenGL・PulseAudioを検出・検証後、実放送のPLAYING�
 benchmark/viewing-design/audio-menu.py、audio-menu.log、audio-menu.png。
 今回の放送は1トラックだったため、複数トラック間の実音声切り替えは未確認。
 二重音声、番組変更との併用、長時間の資源測定、mainとの同一データ画像比較は残る。
+
+## ネイティブの複数音声検証と次の統合
+
+GStreamer公式の[testsrcbin](https://gstreamer.freedesktop.org/documentation/debugutilsbad/testsrcbin.html)
+を使い、振幅0.1と0.8の2音声と小さな映像をplaybin3へ渡すCPU試験を追加した。
+音声はF32LEとして試験用sinkのhandoffで測定する。ストリーム順を仮定せず、最初の振幅を
+基準として、別トラックと元のトラックの往復後にそれぞれの振幅範囲へ戻ることを検証する。
+選択通知だけで成功とせず、音声バッファーと映像フレームが両方とも進むことを要求する。
+条件の待機は5秒上限で、失敗時もRAIIでNULLへ遷移する。これは生成メディアの結合試験であり、
+実放送の複数音声・音声出力機器・二重音声の検証とは区別する。
+
+主／副の統合では、字幕のsource probeを常駐させる案より先に、既存tsdemuxがbusへ送る
+PMTの利用を検証する。[GstMpegtsSection](https://gstreamer.freedesktop.org/documentation/mpegts/gstmpegtssection.html)
+はElementメッセージからPMTとPID／descriptorを取得するAPIを提供する。
+稼働環境と同じ[1.28.2のmpegtsbase.c](https://github.com/GStreamer/gstreamer/blob/1.28.2/subprojects/gst-plugins-bad/gst/mpegtsdemux/mpegtsbase.c)
+ではPMT適用後、壊れていないsectionをbusへ投稿する経路を確認した。
+これにより追加のTSバッファー・ストリームスレッドのMutexを避けられる可能性があるが、
+実サービスのcomponent_tagを取得できることはまだ未検証。依存導入と実PMTの確認が次の段階。
+現在の環境にはlibgstmpegtsの実行時ライブラリーはあるが、gstreamer-mpegts-1.0.pcはない。
+
+番組側はmainのaudio_programと同じ現在番組を参照し、serviceId・component_tagで照合する。
+字幕Sessionに残る配信用idからのserviceId剰余計算を流用しない。
+PMT更新・選局・EPG無効・メタデータ欠落で主／副の推測を残さない設計が必要。
+
+今回の検証はRust全体57件成功・外部TS依存1件未実行、Clippy全ターゲット成功、
+音声メニューのQt試験3件成功、qmllint警告なし。Clippy指摘で試験のサンプル読み取りを
+as_chunks::<4>()へ修正した後、該当する結合試験を再実行して成功した。
+
+修正後のreleaseビルド成功。表示・NVIDIA OpenGL・PulseAudioの再検証後、実放送の
+PLAYING・音声メニューの表示・正常終了を確認した。新しいaudio_error呼び出しを含め
+QML実行エラーは検出されなかった。証跡はGit対象外のaudio-recovery.logとaudio-recovery.png
+（benchmark/viewing-design内）。実放送での自動再選択失敗そのものの再現は未実施。

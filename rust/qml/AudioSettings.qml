@@ -113,6 +113,7 @@ Popup {
         }
         Label {
             Layout.fillWidth: true
+            objectName: "audioError"
             visible: popup.errorText.length > 0
             text: popup.errorText
             textFormat: Text.PlainText

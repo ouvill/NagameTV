@@ -2,7 +2,7 @@
 use gstreamer::{self as gst, prelude::*};
 use serde::Serialize;
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum Error {
     #[error("音声トラックが更新されています。もう一度選択してください")]
     Unavailable,
@@ -23,6 +23,7 @@ pub struct Streams {
     collection: Option<gst::StreamCollection>,
     selected: Vec<gst::glib::GString>,
     requested: Option<String>,
+    failure: Option<Error>,
 }
 
 impl Streams {
@@ -89,7 +90,17 @@ impl Streams {
         Ok(ids)
     }
 
+    pub fn failure(&self) -> Option<Error> {
+        self.failure
+    }
+
     pub fn select(&mut self, player: &gst::Element, audio_id: &str) -> Result<(), Error> {
+        let result = self.request(player, audio_id);
+        self.failure = result.as_ref().err().copied();
+        result
+    }
+
+    fn request(&mut self, player: &gst::Element, audio_id: &str) -> Result<(), Error> {
         let ids = self.selection(audio_id)?;
         if !player.send_event(gst::event::SelectStreams::new(
             ids.iter().map(|id| id.as_str()),
@@ -159,6 +170,7 @@ mod tests {
             ])),
             selected: vec!["v".into(), "ja".into(), "t".into()],
             requested: None,
+            failure: None,
         };
         assert_eq!(streams.selection("en")?, ["v", "t", "en"]);
         assert!(matches!(streams.selection("gone"), Err(Error::Unavailable)));
@@ -204,6 +216,7 @@ mod tests {
             collection: Some(collection.clone()),
             selected: vec!["v".into(), "ja".into(), "t".into()],
             requested: None,
+            failure: None,
         };
         streams.select(&sink, "en")?;
         assert_eq!(
@@ -228,6 +241,9 @@ mod tests {
             Err(Error::Unavailable)
         ));
         assert!(streams.requested.is_none());
+        assert_eq!(streams.failure(), Some(Error::Unavailable));
+        streams.select(&sink, "new")?;
+        assert_eq!(streams.failure(), None);
         assert!(streams.tracks().iter().all(|track| !track.selected));
         pad.remove_probe(probe);
         pad.set_active(false)?;
@@ -259,3 +275,6 @@ mod tests {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod playback_tests;

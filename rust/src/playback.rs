@@ -225,6 +225,10 @@ impl Playback {
         output.apply(&self.playbin);
     }
 
+    pub fn audio_failure(&self) -> Option<audio_streams::Error> {
+        self.audio_streams.borrow().failure()
+    }
+
     pub fn audio_tracks(&self) -> Vec<audio_streams::Track> {
         self.audio_streams.borrow().tracks()
     }

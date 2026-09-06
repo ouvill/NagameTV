@@ -3,6 +3,14 @@ use cxx_qt::CxxQtType;
 use cxx_qt_lib::QString;
 
 impl super::ffi::Player {
+    pub fn audio_error(&self) -> QString {
+        self.rust()
+            .playback
+            .as_ref()
+            .and_then(|player| player.audio_failure())
+            .map(|error| QString::from(error.to_string()))
+            .unwrap_or_default()
+    }
     pub fn audio_tracks(&self) -> QString {
         let tracks = self
             .rust()

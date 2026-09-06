@@ -103,6 +103,8 @@ pub mod ffi {
         fn audio_tracks(self: &Player) -> QString;
         #[qinvokable]
         fn select_audio(self: &Player, id: QString) -> QString;
+        #[qinvokable]
+        fn audio_error(self: &Player) -> QString;
     }
 }
 

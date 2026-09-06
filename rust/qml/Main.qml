@@ -63,7 +63,10 @@ ApplicationWindow {
         windowWidth: root.width
         windowHeight: root.height
         playing: player.playing
-        onRefreshRequested: tracksJson = player.audio_tracks()
+        onRefreshRequested: {
+            tracksJson = player.audio_tracks();
+            errorText = player.audio_error();
+        }
         onSelectRequested: function (trackId) {
             errorText = player.select_audio(trackId);
         }

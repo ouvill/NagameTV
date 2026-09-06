@@ -35,6 +35,13 @@ TestCase {
         compare(selection.signalArguments[0][0], "source/audio-a");
         compare(popup.tracks[1].selected, false);
         compare(option.contentItem.textFormat, Text.PlainText);
+        popup.errorText = "<b>音声トラックが更新されています</b>";
+        const error = findChild(popup.contentItem, "audioError");
+        compare(error.visible, true);
+        compare(error.text, popup.errorText);
+        compare(error.textFormat, Text.PlainText);
+        popup.errorText = "";
+        compare(error.visible, false);
         popup.playing = false;
         compare(option.enabled, false);
         popup.close();
