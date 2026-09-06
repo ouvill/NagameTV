@@ -315,6 +315,42 @@
   <context>
     <name>Backend</name>
     <message>
+      <source>Connect to a server</source>
+      <translation>サーバーに接続してください</translation>
+    </message>
+    <message>
+      <source>Connecting: %1</source>
+      <translation>接続中: %1</translation>
+    </message>
+    <message>
+      <source>Playing: %1</source>
+      <translation>再生中: %1</translation>
+    </message>
+    <message>
+      <source>The stream connection was interrupted. Reconnecting…</source>
+      <translation>配信接続が途切れたため再接続中…</translation>
+    </message>
+    <message>
+      <source>Operation failed: %1</source>
+      <translation>操作失敗: %1</translation>
+    </message>
+    <message>
+      <source>Invalid server settings: %1</source>
+      <translation>接続設定が不正です: %1</translation>
+    </message>
+    <message>
+      <source>Network initialization failed: %1</source>
+      <translation>ネットワーク初期化失敗: %1</translation>
+    </message>
+    <message>
+      <source>Could not prepare the channel display: %1</source>
+      <translation>チャンネル表示データの作成失敗: %1</translation>
+    </message>
+    <message>
+      <source>Could not load channels: %1</source>
+      <translation>チャンネル取得失敗: %1</translation>
+    </message>
+    <message>
       <source>Parsing subtitles</source>
       <translation>解析中</translation>
     </message>

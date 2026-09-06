@@ -52,11 +52,13 @@ impl Default for PlayerRust {
             playback.set_audio_output(audio_output);
         }
         let network = services::Network::new();
-        let status = network
-            .as_ref()
-            .err()
-            .map(ToString::to_string)
-            .unwrap_or_else(|| "サーバーに接続してください".into());
+        let lifecycle_status = match &network {
+            Ok(_) => super::lifecycle::Status::Connect,
+            Err(error) => super::lifecycle::Status::Failure(
+                super::lifecycle::Failure::Network,
+                error.to_string(),
+            ),
+        };
         let error_log = crate::error_log::ErrorLog::new(
             super::ffi::playback_log_directory().to_string().into(),
         );
@@ -84,7 +86,8 @@ impl Default for PlayerRust {
             error_log,
             log_error: QString::from(log_error),
             server: QString::from(preferences.preferences().server.clone()),
-            status: QString::from(status),
+            status: lifecycle_status.render(),
+            lifecycle_status,
             playback_error: QString::default(),
             playback_message: QString::default(),
             channel_data: QString::from("[]"),

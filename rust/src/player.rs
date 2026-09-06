@@ -5,6 +5,8 @@ mod channels;
 mod comments;
 mod guide;
 mod language;
+mod lifecycle;
+use lifecycle::{Failure as StatusFailure, Status as PlaybackStatus};
 mod playback_failure;
 mod preferences;
 mod program_info;
@@ -189,6 +191,7 @@ pub struct PlayerRust {
     ui_language: QString,
     server: QString,
     status: QString,
+    lifecycle_status: PlaybackStatus,
     playback_error: QString,
     playback_message: QString,
     log_error: QString,
@@ -441,7 +444,7 @@ impl ffi::Player {
         let restart =
             subtitles != self.rust().subtitles_enabled && self.rust().active_service.is_some();
         if restart && let Err(error) = self.as_mut().end_stream() {
-            self.status_text(error);
+            self.status_error(StatusFailure::Operation, error);
             return;
         }
         self.as_mut().set_subtitles_enabled(subtitles);
@@ -559,9 +562,6 @@ impl ffi::Player {
             self.as_mut().rust_mut().next_diagnostic = Instant::now() + Duration::from_secs(10);
         }
     }
-    fn status_text(mut self: Pin<&mut Self>, text: impl std::fmt::Display) {
-        self.as_mut().set_status(QString::from(text.to_string()));
-    }
     /// QML supplies a live GUI-thread item and calls shutdown before destroying it.
     pub unsafe fn attach(mut self: Pin<&mut Self>, item: *mut ffi::QQuickItem) -> bool {
         let address = unsafe { ffi::q_quick_item_address(item) };
@@ -603,12 +603,12 @@ impl ffi::Player {
         let server = match services::server_url(&server.to_string()) {
             Ok(server) => server,
             Err(error) => {
-                self.status_text(error);
+                self.status_error(StatusFailure::Server, error);
                 return;
             }
         };
         let Some(network) = &self.rust().network else {
-            self.status_text("Network unavailable");
+            self.update_status(PlaybackStatus::NetworkUnavailable);
             return;
         };
         let request = network.fetch(&server);
@@ -621,7 +621,7 @@ impl ffi::Player {
         self.as_mut().set_server(QString::from(server));
         self.as_mut().set_loading(true);
         self.as_mut().save_settings();
-        self.status_text("チャンネルを取得中…");
+        self.update_status(PlaybackStatus::Loading);
     }
     pub fn select(mut self: Pin<&mut Self>, index: i32) {
         if index < 0 || index as usize >= self.rust().entries.len() {
@@ -689,7 +689,8 @@ impl ffi::Player {
                     .preferences_mut()
                     .service_id = id.to_string();
                 self.as_mut().rust_mut().active_service = Some(id);
-                self.as_mut().status_text(format!("接続中: {name}"));
+                self.as_mut()
+                    .update_status(PlaybackStatus::Connecting(name));
             }
             Some(Err(error)) => {
                 let failure = match self.as_mut().end_stream() {
@@ -707,7 +708,7 @@ impl ffi::Player {
     pub fn stop(mut self: Pin<&mut Self>) {
         self.record_diagnostic(viewer_diagnostics::recorder::Event::StopRequested);
         match self.as_mut().end_stream() {
-            Ok(()) => self.status_text("停止"),
+            Ok(()) => self.update_status(PlaybackStatus::Stopped),
             Err(error) => self.playback_failed(error),
         }
     }
@@ -726,9 +727,7 @@ impl ffi::Player {
                         match channels::presentation(&entries, &self.server().to_string()) {
                             Ok(json) => QString::from(json),
                             Err(error) => {
-                                self.status_text(format!(
-                                    "チャンネル表示データの作成失敗: {error}"
-                                ));
+                                self.status_error(StatusFailure::ChannelPresentation, error);
                                 return;
                             }
                         };
@@ -744,8 +743,12 @@ impl ffi::Player {
                     self.as_mut().set_channel_data(presentation);
                     self.as_mut().set_selected(selected);
                     self.as_mut().configure_epg();
-                    self.as_mut()
-                        .status_text("チャンネルを選んで再生してください");
+                    let status = if self.rust().entries.is_empty() {
+                        PlaybackStatus::Empty
+                    } else {
+                        PlaybackStatus::Select
+                    };
+                    self.as_mut().update_status(status);
                     if self.rust().autoplay_pending {
                         self.as_mut().rust_mut().autoplay_pending = false;
                         self.as_mut().play();
@@ -753,7 +756,7 @@ impl ffi::Player {
                 }
                 Err(error) => self
                     .as_mut()
-                    .status_text(format!("チャンネル取得失敗: {error}")),
+                    .status_error(StatusFailure::ChannelFetch, error),
             }
         }
         self.as_mut().poll_features();
@@ -764,9 +767,9 @@ impl ffi::Player {
                 self.as_mut().clear_playback_failure();
                 self.as_mut().set_playing(true);
                 if let Some(entry) = self.rust().entries.get(*self.selected() as usize) {
-                    let text = format!("再生中: {}", entry.name);
+                    let status = PlaybackStatus::Playing(entry.name.clone());
                     eprintln!("Pipeline PLAYING service {}", entry.id);
-                    self.as_mut().status_text(text);
+                    self.as_mut().update_status(status);
                 }
             }
             Some(Err(error)) => {
@@ -787,7 +790,7 @@ impl ffi::Player {
                     eprintln!("Live resume rejected; opening one fresh stream connection");
                     self.as_mut().start_stream();
                     if self.rust().active_service.is_some() {
-                        self.status_text("配信接続が途切れたため再接続中…");
+                        self.update_status(PlaybackStatus::Reconnecting);
                     }
                 } else {
                     self.playback_failed(error);

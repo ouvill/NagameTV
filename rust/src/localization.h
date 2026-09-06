@@ -10,6 +10,16 @@
 
 // Extraction markers for the status strings emitted by the Rust backend.
 inline constexpr const char *backendTranslationSources[] = {
+    QT_TRANSLATE_NOOP("Backend", "Connect to a server"),
+    QT_TRANSLATE_NOOP("Backend", "Connecting: %1"),
+    QT_TRANSLATE_NOOP("Backend", "Playing: %1"),
+    QT_TRANSLATE_NOOP("Backend", "The stream connection was interrupted. Reconnecting…"),
+    QT_TRANSLATE_NOOP("Backend", "Operation failed: %1"),
+    QT_TRANSLATE_NOOP("Backend", "Invalid server settings: %1"),
+    QT_TRANSLATE_NOOP("Backend", "Network initialization failed: %1"),
+    QT_TRANSLATE_NOOP("Backend", "Could not prepare the channel display: %1"),
+    QT_TRANSLATE_NOOP("Backend", "Could not load channels: %1"),
+
     QT_TRANSLATE_NOOP("Backend", "Parsing subtitles"),
     QT_TRANSLATE_NOOP("Backend", "Playback is unavailable for subtitles"),
     QT_TRANSLATE_NOOP("Backend", "The playback bin is unavailable for subtitles"),

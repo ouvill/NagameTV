@@ -48,6 +48,6 @@ impl Player {
         self.as_mut().set_log_error(QString::from(log_error));
         self.as_mut()
             .set_playback_error(QString::from(text.as_str()));
-        self.status_text(format!("再生エラー: {text}"));
+        self.update_status(super::lifecycle::Status::PlaybackFailed(error.hint()));
     }
 }

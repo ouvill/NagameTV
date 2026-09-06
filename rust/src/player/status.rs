@@ -9,7 +9,7 @@ pub(super) fn tr(source: &'static str) -> QString {
     ffi::translate_backend(&QString::from(source))
 }
 
-fn with_detail(source: &'static str, detail: impl std::fmt::Display) -> QString {
+pub(super) fn with_detail(source: &'static str, detail: impl std::fmt::Display) -> QString {
     // Translate the template first; diagnostics are data, never translation keys.
     tr(source).arg(&QString::from(detail.to_string()))
 }
