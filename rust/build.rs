@@ -6,6 +6,8 @@ fn main() {
             .qml_file("qml/Main.qml")
             .qml_file("qml/WindowActions.qml")
             .qml_file("qml/WindowButtons.qml")
+            .qml_file("qml/WindowDragArea.qml")
+            .qml_file("qml/WindowResizeFrame.qml")
             .qml_file("qml/OverlayVisibility.qml")
             .qml_file("qml/SubtitleOverlay.qml")
             .qml_file("qml/SubtitleGlyph.qml")

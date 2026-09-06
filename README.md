@@ -8,7 +8,7 @@ Qt Quick + GStreamerの最小版から、字幕とEPGを独立して検証する
 
 ## ビルド
 
-Qt 6 Quick / Controls、GStreamer 1.24以降（qml6glsink・tsdemux・映像デコーダー・
+Qt 6.8以降の Quick / Controls、GStreamer 1.24以降（qml6glsink・tsdemux・映像デコーダー・
 pulsesink）、Rust、CMake、C++コンパイラー、libclangが必要。
 
 ```sh

@@ -7,6 +7,7 @@ import MinimalViewer 1.0
 ApplicationWindow {
     id: root
     visible: true
+    flags: Qt.Window | Qt.FramelessWindowHint
     width: 1440
     height: 900
     minimumWidth: 900
@@ -111,6 +112,17 @@ ApplicationWindow {
         }
         HoverHandler {
             cursorShape: overlayVisibility.controlsVisible ? Qt.ArrowCursor : Qt.BlankCursor
+        }
+        WindowDragArea {
+            anchors {
+                left: parent.left
+                right: parent.right
+                top: parent.top
+            }
+            height: 76
+            targetWindow: root
+            enabled: !root.closing && !root.showGuide && !root.showChannels
+            onActivity: overlayVisibility.reveal()
         }
         Loader {
             // Match a 16:9 broadcast's letterboxed video area.
@@ -407,6 +419,12 @@ ApplicationWindow {
                     backend: player
                 }
             }
+        }
+        WindowResizeFrame {
+            anchors.fill: parent
+            z: 1000
+            targetWindow: root
+            enabled: !root.closing
         }
     }
 }

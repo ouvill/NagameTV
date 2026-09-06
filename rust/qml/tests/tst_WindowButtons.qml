@@ -7,6 +7,7 @@ Item {
     ApplicationWindow {
         id: host
         visible: true
+        flags: Qt.Window | Qt.FramelessWindowHint
         width: 640
         height: 480
         property int closeRequests: 0
@@ -19,6 +20,18 @@ Item {
             targetWindow: host
             iconDirectory: Qt.resolvedUrl("../../../assets/icons/")
         }
+        WindowDragArea {
+            id: dragArea
+            x: 140
+            width: 300
+            height: 76
+            targetWindow: host
+        }
+        WindowResizeFrame {
+            id: resizeFrame
+            anchors.fill: parent
+            targetWindow: host
+        }
         TestCase {
             name: "WindowButtons"
             when: windowShown
@@ -28,6 +41,19 @@ Item {
                 tryCompare(host, "visibility", Window.Windowed);
             }
             function cleanup() { host.showNormal(); }
+            function test_title_double_click_and_fullscreen_guard() {
+                mouseDoubleClickSequence(dragArea, 100, 30);
+                tryCompare(host, "visibility", Window.Maximized);
+                mouseDoubleClickSequence(dragArea, 100, 30);
+                tryCompare(host, "visibility", Window.Windowed);
+                host.showFullScreen();
+                tryCompare(host, "visibility", Window.FullScreen);
+                mouseDoubleClickSequence(dragArea, 100, 30);
+                compare(host.visibility, Window.FullScreen);
+                // Resize hit regions must not consume fullscreen/maximized input.
+                for (let child of resizeFrame.children)
+                    compare(child.enabled, false);
+            }
             function test_maximize_restore_and_fullscreen_exit() {
                 const maximize = findChild(buttons, "maximizeWindow");
                 const originalWidth = host.width;
