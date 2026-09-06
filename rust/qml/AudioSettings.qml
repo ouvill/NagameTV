@@ -12,6 +12,30 @@ Popup {
     property string errorText: ""
     property url iconDirectory: "qrc:/qt/qml/MinimalViewer/assets/icons/"
     readonly property var tracks: JSON.parse(tracksJson)
+    function trackLabel(track, index) {
+        const languages = {
+            "ja": "日本語",
+            "jpn": "日本語",
+            "en": "English",
+            "eng": "English",
+            "de": "Deutsch",
+            "deu": "Deutsch",
+            "ger": "Deutsch",
+            "fr": "Français",
+            "fra": "Français",
+            "fre": "Français",
+            "ko": "한국어",
+            "kor": "한국어",
+            "zh": "中文",
+            "zho": "中文",
+            "chi": "中文"
+        };
+        const language = languages[track.language] || track.language;
+        const role = track.role === "main" ? "主音声" : track.role === "sub" ? "副音声" : track.role === "both" ? "主／副" : "";
+        const name = track.role === "both" ? role : (language ? language + (role ? " · " + role : "") : role);
+        const duplicate = tracks.some(other => other.id !== track.id && other.language === track.language && other.role === track.role);
+        return !name ? "音声 " + (index + 1) : duplicate ? name + " · 音声 " + (index + 1) : name;
+    }
     signal refreshRequested
     signal selectRequested(string trackId)
     parent: Overlay.overlay
@@ -77,7 +101,7 @@ Popup {
                         required property var modelData
                         Layout.fillWidth: true
                         enabled: popup.playing && popup.tracks.length > 1
-                        text: "音声 " + (index + 1) + (modelData.language ? " · " + modelData.language : "") + (modelData.title ? " · " + modelData.title : "")
+                        text: popup.trackLabel(modelData, index)
                         contentItem: Label {
                             text: option.text
                             textFormat: Text.PlainText

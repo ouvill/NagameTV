@@ -17,6 +17,23 @@ TestCase {
     }
     SignalSpy { id: refresh; target: popup; signalName: "refreshRequested" }
     SignalSpy { id: selection; target: popup; signalName: "selectRequested" }
+    function test_main_labels_and_duplicate_disambiguation() {
+        popup.tracksJson = JSON.stringify([
+            {id: "a", language: "jpn", role: "main"},
+            {id: "b", language: "eng", role: "sub"},
+            {id: "c", language: "jpn", role: "both"}
+        ]);
+        compare(popup.trackLabel(popup.tracks[0], 0), "日本語 · 主音声");
+        compare(popup.trackLabel(popup.tracks[1], 1), "English · 副音声");
+        compare(popup.trackLabel(popup.tracks[2], 2), "主／副");
+        popup.tracksJson = JSON.stringify([
+            {id: "a", language: "jpn", role: "main"},
+            {id: "b", language: "jpn", role: "main"}
+        ]);
+        compare(popup.trackLabel(popup.tracks[1], 1), "日本語 · 主音声 · 音声 2");
+        compare(popup.trackLabel({id: "c", language: "", role: ""}, 2), "音声 3");
+        popup.tracksJson = "[]";
+    }
     function test_identity_confirmation_and_closed_updates() {
         failOnWarning(/.*/);
         popup.open();

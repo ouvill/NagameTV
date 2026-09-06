@@ -1,3 +1,4 @@
+mod audio;
 mod channels;
 mod features;
 mod memory;

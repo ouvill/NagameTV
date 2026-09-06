@@ -15,6 +15,8 @@ pub struct Program {
     pub duration: u64,
     pub name: Option<String>,
     pub description: Option<String>,
+    #[serde(default, skip_serializing)]
+    pub audios: Box<[crate::audio::Descriptor]>,
 }
 impl Program {
     fn service(&self) -> BroadcastService {
@@ -89,10 +91,22 @@ impl Snapshot {
                     + p.description.as_ref().map_or(0, String::capacity)
             })
             .sum();
+        let audio_bytes: usize = self
+            .0
+            .iter()
+            .map(|program| {
+                program.audios.len() * std::mem::size_of::<crate::audio::Descriptor>()
+                    + program
+                        .audios
+                        .iter()
+                        .map(crate::audio::Descriptor::heap_bytes)
+                        .sum::<usize>()
+            })
+            .sum();
         eprintln!(
-            "EPG_MEMORY programs={} record_capacity_bytes={record_bytes} string_capacity_bytes={string_bytes} snapshot_capacity_bytes={}",
+            "EPG_MEMORY programs={} record_capacity_bytes={record_bytes} string_capacity_bytes={string_bytes} audio_heap_bytes={audio_bytes} snapshot_capacity_bytes={}",
             self.len(),
-            record_bytes + string_bytes
+            record_bytes + string_bytes + audio_bytes
         );
     }
 }

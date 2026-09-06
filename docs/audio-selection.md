@@ -1,8 +1,8 @@
 # 音声トラック選択の移植
 
 mainのrust/src/audio.rsとqml/Main.qmlのaudioSettingsを参照する。
-ネイティブトラックの選択を実装した段階であり、PMT・番組情報の照合による主／副／主副、
-言語の表示名、主音声の初期選択は未移植。音声機能全体の互換完了ではない。
+ネイティブトラック選択、PMTと現在番組の照合、言語・主音声／副音声の表示を実装した。
+二重音声の片側出力と3モード選択、主音声の初期選択は未移植。音声機能全体の互換完了ではない。
 
 ## 責務と寿命
 
@@ -127,3 +127,39 @@ Clippy全ターゲット・releaseビルド成功。フィールド検査とCRC�
 サービスAPIと一致するPMT、音声メニューの表示、正常終了を確認した。EPG_MEMORYログなし、
 字幕購読0・EPGタスク0も確認。証跡はGit対象外のbenchmark/viewing-design/audio-pmt.py、
 audio-pmt-isolated.log、audio-pmt-isolated.png。主／副の表示・音声ルーティングは未検証。
+
+## 現在番組との照合と言語・役割表示
+
+Mirakurunの[ProgramAudio定義](https://github.com/Chinachu/Mirakurun/blob/master/api.d.ts)と
+mainのAudioStreams::options、audioTrackLabel、日本語翻訳を参照した。
+audio.rsにDescriptor、Kind、Roleを置き、Qt・GStreamer・時刻に依存しない判定へ分離する。
+component_tagが一意に一致した場合だけisMain、componentType、langsを使う。
+同じタグが重複していれば、並び順で選ばずUnknownとする。
+
+EPGのProgramがaudiosをBox<[Descriptor]>として保持し、各langsもBox<[String]>とする。
+ProgramInfo::audio_descriptorsは既存Snapshotの現在番組からスライスを返す。
+別のEPG取得、音声専用Snapshot、番組単位のキャッシュやTimerは追加しない。
+番組表のJSONではaudiosをskip_serializingし、QMLへ全番組の音声情報を渡さない。
+
+メニュー更新時に実再生中サービスの明示メタデータとUTC時刻を照合する。
+EPG無効、無効な時計、番組終了、サービス不一致では空のdescriptorを使う。
+毎回ネイティブトラックから表示を作るため、以前の役割・言語を保持しない。
+役割不明ならネイティブの言語タグへ戻る。通常の音声は言語＋主音声／副音声、
+二重音声は現時点の両方出力を「主／副」と表示する。二重音声の片側選択はまだ生成しない。
+同じ表示名の複数トラックだけ音声番号を加える。表示位置・寸法・配色は既存メニューを保つ。
+
+Rust62件成功・外部TS依存1件未実行、Clippy成功、音声UI試験4件成功、qmllint警告なし、
+releaseビルド成功。タグ順序、重複、欠落、主／副／二重音声の判定、別サービス、
+番組境界・終了、EPG無効化、番組表JSONからの除外とmain相当のラベルを検証した。
+実放送でPMTのタグとEPGを照合し「日本語 · 主音声」を表示、PLAYING・正常終了を確認した。
+証跡はGit対象外のbenchmark/viewing-design/audio-metadata.log、audio-metadata.png。
+
+同じ14,865番組・同じHTTP本文10,130,531バイトの前後で容量を比較した。
+以前のSnapshotは2,966,093バイト。追加後は3,725,931バイトで、増分759,838バイト（約0.72MiB）。
+内訳はProgram配列容量の増分262,144バイトと音声用ヒープ497,694バイト。
+EPG_MEMORYにaudio_heap_bytesを加え、文字列・配列の容量を含めて記録する。
+これはアロケーターの管理領域・断片化・Qt/GStreamerを含まないデータ構造の容量であり、
+RSSや長時間のメモリー安定性の検証とは区別する。
+
+次の段階は二重音声の型付きモード・PCMルーティング・主音声の初期選択。
+番組変更／PMT変更で以前の片側選択が残らないこと、実放送での二重音声の確認は残る。

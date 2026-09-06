@@ -369,3 +369,40 @@ fn guide_window_rejects_invalid_numbers_and_accepts_dst_days() {
         assert!(DayWindow::new(start, end).is_err());
     }
 }
+
+#[test]
+fn audio_metadata_tracks_program_boundaries_and_disable_without_guide_payloads()
+-> Result<(), Box<dyn std::error::Error>> {
+    let mut feature = ProgramInfo {
+        desired: Some("http://example.test".into()),
+        snapshot: parse(
+            br#"[
+            {"id":1,"networkId":10,"serviceId":1,"startAt":100,"duration":100,
+             "audios":[{"componentTag":16,"componentType":3,"isMain":true,"langs":["jpn"]}]},
+            {"id":2,"networkId":10,"serviceId":1,"startAt":200,"duration":100,
+             "audios":[{"componentTag":16,"componentType":3,"isMain":false,"langs":["eng"]}]}
+        ]"#,
+        )?,
+        ..ProgramInfo::default()
+    };
+    let service = Some(BroadcastService {
+        network_id: 10,
+        service_id: 1,
+    });
+    let role = |feature: &ProgramInfo, now| {
+        crate::audio::matching(feature.audio_descriptors(service, now), Some(16))
+            .map(crate::audio::Descriptor::role)
+    };
+    assert_eq!(role(&feature, 99), None);
+    assert_eq!(role(&feature, 199), Some(crate::audio::Role::Main));
+    assert_eq!(role(&feature, 200), Some(crate::audio::Role::Sub));
+    assert_eq!(role(&feature, 300), None);
+    assert!(feature.audio_descriptors(None, 100).is_empty());
+    assert!(feature.audio_descriptors(key(11, 1), 100).is_empty());
+    let guide = feature.view(service, guide::DayWindow::new(0.0, 86_400_000.0)?)?;
+    assert!(!guide.contains("audios"));
+    assert!(!guide.contains("langs"));
+    feature.configure(None);
+    assert_eq!(role(&feature, 199), None);
+    Ok(())
+}
