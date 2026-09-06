@@ -5,13 +5,6 @@ import QtQuick.Layouts
 Popup {
     id: popup
     required property var program
-    property bool watchEnabled: false
-    property string watchError: ""
-    property double now: Date.now()
-    readonly property bool live: watchEnabled && !!program && typeof program.watchKey === "string"
-        && program.startAt <= now && now < program.startAt + program.duration
-    signal watchRequested(string key)
-    Timer { interval: 1000; repeat: true; running: popup.opened && popup.watchEnabled; onTriggered: popup.now = Date.now() }
     parent: Overlay.overlay
     anchors.centerIn: parent
     width: Math.min(560, parent ? parent.width - 32 : 560)
@@ -56,17 +49,6 @@ Popup {
                     wrapMode: Text.Wrap
                 }
             }
-        }
-        Label { objectName: "watchGuideError"; visible: popup.watchError !== ""; text: popup.watchError; textFormat: Text.PlainText; wrapMode: Text.Wrap; Layout.fillWidth: true; color: "#ffb4ab" }
-        Button {
-            id: watchButton
-            objectName: "watchGuideProgram"
-            visible: popup.live
-            Layout.preferredWidth: 168; Layout.preferredHeight: 44
-            text: "この番組を見る"
-            background: Rectangle { radius: 22; color: "#9caf9f" }
-            contentItem: Label { text: watchButton.text; color: "#17201a"; font.bold: true; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-            onClicked: popup.watchRequested(popup.program.watchKey)
         }
     }
 }

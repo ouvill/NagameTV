@@ -19,6 +19,8 @@ Rectangle {
     signal dayRequested(double start, double end)
     property int dayOffset: 0
     property double baseDay: midnight()
+    property point selectedPosition: Qt.point(104, 88)
+    property string selectedChannel: ""
     property var selectedProgram: null
     onSelectedProgramChanged: watchError = ""
     readonly property var days: calendarDays(baseDay)
@@ -62,13 +64,18 @@ Rectangle {
             onBandRequested: function(band) { root.band = band; root.selectedProgram = null }
         }
         GuideTimeline {
+            id: timeline
             Layout.fillWidth: true; Layout.fillHeight: true
             rows: root.rows.filter(row => row.band === root.band)
             programsJson: root.programsJson
             dayStart: root.selectedWindow.start
             dayEnd: root.selectedWindow.end
             selectedProgram: root.selectedProgram
-            onSelected: function(program) { root.selectedProgram = program }
+            onSelected: function(program, cellPosition, channelLabel) {
+                root.selectedPosition = cellPosition
+                root.selectedChannel = channelLabel
+                root.selectedProgram = program
+            }
         }
     }
 
@@ -77,12 +84,21 @@ Rectangle {
         visible: root.programsJson === "[]"
         text: root.status; color: "#b6bab6"; textFormat: Text.PlainText
     }
+    // Block the grid behind the card, keeping main's toolbar usable.
+    MouseArea {
+        x: timeline.x; y: timeline.y; width: timeline.width; height: timeline.height
+        visible: detailsLoader.active
+        scrollGestureEnabled: false
+    }
     Loader {
+        id: detailsLoader
         objectName: "scheduledDetailsLoader"
         active: root.selectedProgram !== null
-        sourceComponent: ProgramDetails {
+        sourceComponent: GuideProgramDetails {
+            parent: timeline
+            cellPosition: root.selectedPosition
+            channelLabel: root.selectedChannel
             program: root.selectedProgram
-            watchEnabled: true
             watchError: root.watchError
             onWatchRequested: function(key) { root.watchRequested(key) }
             onClosed: root.selectedProgram = null

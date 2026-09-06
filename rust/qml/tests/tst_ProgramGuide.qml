@@ -25,7 +25,40 @@ TestCase {
     SignalSpy { id: closeSpy; target: testCase.guide || null; signalName: "closeRequested" }
     SignalSpy { id: watchSpy; target: testCase.guide || null; signalName: "watchRequested" }
     function initTestCase() { failOnWarning(/.*/) }
-    function init() { failOnWarning(/.*/); guide = createTemporaryObject(component, testCase); verify(guide !== null) }
+    function init() {
+        failOnWarning(/.*/)
+        testCase.Window.window.width = 640; testCase.Window.window.height = 480
+        testCase.width = 640; testCase.height = 480
+        guide = createTemporaryObject(component, testCase)
+        verify(guide !== null)
+    }
+    function test_detail_position_resize_and_animated_dismissal() {
+        testCase.Window.window.width = 1440; testCase.Window.window.height = 900
+        testCase.width = 1440; testCase.height = 900
+        guide.width = 1440; guide.height = 880
+        verify(waitForRendering(guide))
+        guide.selectedPosition = Qt.point(104, 140)
+        guide.selectedChannel = "101 NHK BS"
+        guide.selectedProgram = {name:"World news",description:"Description",startAt:0,duration:1}
+        const loader = findChild(guide, "scheduledDetailsLoader")
+        const popup = loader.item
+        tryCompare(popup, "opened", true)
+        compare(popup.width, 500); compare(popup.height, 360)
+        compare(popup.x, 350); compare(popup.y, 140)
+        compare(popup.dim, false)
+        compare(findChild(popup, "programChannel").text, "101 NHK BS")
+        guide.selectedPosition = Qt.point(1100, 1000)
+        compare(popup.x, 572)
+        compare(popup.y, popup.parent.height - 380)
+        guide.width = 640; guide.height = 480
+        verify(popup.x + popup.width <= guide.width - 24)
+        verify(popup.y + popup.height <= popup.parent.height - 20)
+        keyClick(Qt.Key_Escape)
+        // The loader must survive until the exit transition completes.
+        verify(loader.item !== null)
+        tryCompare(loader, "item", null)
+        compare(guide.selectedProgram, null)
+    }
     function test_seven_calendar_days_and_selection() {
         compare(guide.days.length, 7)
         verify(guide.requests.length > 0)
@@ -66,10 +99,27 @@ TestCase {
         compare(watchSpy.signalArguments[0][0], key)
         guide.watchError = "番組情報が更新されています"
         compare(findChild(popup, "watchGuideError").text, guide.watchError)
+        guide.selectedProgram = {name:"長い番組名の表示確認 ".repeat(30),description:"Description",startAt:start,duration:60000,watchKey:key}
+        guide.watchError = "番組情報が更新されています。番組表から選び直してください"
+        verify(waitForRendering(guide))
+        verify(button.y + button.height <= popup.availableHeight)
         popup.now = start + 60000
         compare(button.visible, false)
         popup.now = start - 1
         compare(button.visible, false)
+    }
+    function test_details_allow_toolbar_and_outside_click_dismisses() {
+        settingsSpy.clear()
+        guide.selectedProgram = {name:"Program",description:"Description",startAt:0,duration:1}
+        const loader = findChild(guide, "scheduledDetailsLoader")
+        tryCompare(loader.item, "opened", true)
+        mouseClick(findChild(guide, "guideSettings"))
+        compare(settingsSpy.count, 1)
+        tryCompare(loader, "item", null)
+        guide.selectedProgram = {name:"Program",description:"Description",startAt:0,duration:1}
+        tryCompare(loader.item, "opened", true)
+        mouseClick(guide, 10, 150)
+        tryCompare(loader, "item", null)
     }
     function test_shift_wheel_steps_columns_and_normal_wheel_stays_vertical() {
         guide.dayOffset = 1
@@ -160,6 +210,8 @@ TestCase {
         const loader = findChild(guide, "scheduledDetailsLoader")
         verify(loader.item !== null)
         tryCompare(loader.item, "opened", true)
+        compare(guide.selectedChannel, "Channel 0")
+        compare(guide.selectedPosition.x, 104)
         compare(findChild(loader.item, "programDescription").text, "Full description 0")
         list.contentX = list.contentWidth - list.width
         verify(waitForRendering(guide))

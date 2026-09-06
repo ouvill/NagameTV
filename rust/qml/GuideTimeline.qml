@@ -9,7 +9,7 @@ Item {
     required property double dayStart
     required property double dayEnd
     property var selectedProgram: null
-    signal selected(var program)
+    signal selected(var program, point cellPosition, string channelLabel)
     readonly property real channelWidth: 222
     readonly property real pixelsPerMinute: 2.4
     readonly property var columns: JSON.parse(programsJson)
@@ -117,7 +117,7 @@ Item {
                                     color: "#4e5651"; font.pixelSize: 10
                                 }
                             }
-                            MouseArea { anchors.fill: parent; onClicked: root.selected(cell.modelData) }
+                            MouseArea { anchors.fill: parent; onClicked: root.selected(cell.modelData, cell.mapToItem(root, 0, 0), column.modelData.label) }
                         }
                     }
                     Rectangle {

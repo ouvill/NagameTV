@@ -17,6 +17,7 @@ fn main() {
             .qml_file("qml/SubtitleGlyph.qml")
             .qml_file("qml/ProgramGuide.qml")
             .qml_file("qml/GuideTimeline.qml")
+            .qml_file("qml/GuideProgramDetails.qml")
             .qml_file("qml/GuideDateSelector.qml")
             .qml_file("qml/GuideToolbar.qml")
             .qml_file("qml/CurrentProgram.qml")
