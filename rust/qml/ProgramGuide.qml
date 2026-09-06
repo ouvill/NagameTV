@@ -8,6 +8,8 @@ Rectangle {
     required property string programsJson
     required property string status
     required property string channel
+    property var rows: []
+    property string band: rows.length ? rows[0].band : "GR"
     signal refreshRequested()
     signal closeRequested()
     signal dayRequested(double start, double end)
@@ -16,7 +18,7 @@ Rectangle {
     property var selectedProgram: null
     readonly property var days: calendarDays(baseDay)
     readonly property var selectedWindow: days[dayOffset]
-    color: "#24282e"
+    color: "#0b0c0b"
     function midnight() {
         const date = new Date()
         date.setHours(0, 0, 0, 0)
@@ -58,36 +60,18 @@ Rectangle {
             onActivated: root.dayOffset = currentIndex
         }
         Label { text: root.status; color: "#cccccc" }
-        ListView {
-            id: programs
-            objectName: "guidePrograms"
+        BroadcastTabs { rows: root.rows; value: root.band; onSelected: function(band) { root.band = band; root.selectedProgram = null } }
+        GuideTimeline {
             Layout.fillWidth: true; Layout.fillHeight: true
-            clip: true; spacing: 8
-            model: JSON.parse(root.programsJson)
-            onModelChanged: positionViewAtBeginning()
-            delegate: ItemDelegate {
-                id: card
-                required property var modelData
-                width: programs.width
-                padding: 8
-                onClicked: root.selectedProgram = modelData
-                Accessible.name: modelData.name || "番組名未取得"
-                background: Rectangle { color: card.down ? "#465363" : "#333940" }
-                contentItem: Column {
-                    spacing: 4
-                    Label {
-                        width: parent.width; color: "#a6caff"
-                        text: Qt.formatDateTime(new Date(card.modelData.startAt), "MM/dd hh:mm")
-                            + " – " + Qt.formatDateTime(new Date(card.modelData.startAt + card.modelData.duration), "hh:mm")
-                    }
-                    Label { width: parent.width; color: "white"; text: card.modelData.name || "番組名未取得"; textFormat: Text.PlainText; wrapMode: Text.Wrap; font.bold: true }
-                    Label { width: parent.width; color: "#dddddd"; text: card.modelData.description || ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; maximumLineCount: 4; elide: Text.ElideRight }
-                }
-            }
-            Label { anchors.centerIn: parent; visible: programs.count === 0; text: "表示できる番組がありません"; color: "white" }
-            ScrollBar.vertical: ScrollBar {}
+            rows: root.rows.filter(row => row.band === root.band)
+            programsJson: root.programsJson
+            dayStart: root.selectedWindow.start
+            dayEnd: root.selectedWindow.end
+            selectedProgram: root.selectedProgram
+            onSelected: function(program) { root.selectedProgram = program }
         }
     }
+
     Loader {
         objectName: "scheduledDetailsLoader"
         active: root.selectedProgram !== null

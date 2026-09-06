@@ -406,3 +406,48 @@ fn audio_metadata_tracks_program_boundaries_and_disable_without_guide_payloads()
     assert_eq!(role(&feature, 199), None);
     Ok(())
 }
+
+#[test]
+fn grid_columns_use_explicit_services_and_only_overlap_the_requested_day()
+-> Result<(), Box<dyn std::error::Error>> {
+    let channels = crate::channels::parse(
+        br#"[
+        {"id":777,"name":"A","type":1,"networkId":4,"serviceId":42},
+        {"id":888,"name":"B","type":1,"networkId":5,"serviceId":42},
+        {"id":999,"name":"Unknown","type":1}
+    ]"#,
+    )?;
+    let snapshot = parse(
+        br#"[
+        {"id":1,"networkId":4,"serviceId":42,"name":"Crossing","startAt":50,"duration":100},
+        {"id":2,"networkId":5,"serviceId":42,"name":"Other network","startAt":100,"duration":100},
+        {"id":3,"networkId":4,"serviceId":42,"name":"Already ended","startAt":0,"duration":100},
+        {"id":4,"networkId":4,"serviceId":42,"name":"Next day","startAt":200,"duration":100}
+    ]"#,
+    )?;
+    let data: serde_json::Value = serde_json::from_str(
+        &snapshot.grid_view(&channels, guide::DayWindow::new(100.0, 200.0)?)?,
+    )?;
+    for (index, channel) in channels.iter().enumerate() {
+        assert_eq!(data[index]["index"], index);
+        let programs = data[index]["programs"]
+            .as_array()
+            .ok_or("missing programs")?;
+        match channel.id {
+            777 => {
+                assert_eq!(programs.len(), 1);
+                assert_eq!(programs[0]["id"], 1);
+            }
+            888 => {
+                assert_eq!(programs.len(), 1);
+                assert_eq!(programs[0]["id"], 2);
+            }
+            _ => assert!(programs.is_empty()),
+        }
+    }
+    assert_eq!(
+        snapshot.grid_view(&[], guide::DayWindow::new(100.0, 200.0)?)?,
+        "[]"
+    );
+    Ok(())
+}

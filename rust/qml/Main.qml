@@ -401,18 +401,13 @@ ApplicationWindow {
             }
         }
         Loader {
-            anchors {
-                top: parent.top
-                topMargin: 150
-                bottom: bottomPanel.top
-                right: parent.right
-            }
-            width: Math.max(320, root.width * 0.40)
-            z: 3
+            anchors.fill: parent
+            z: 500
             active: !root.closing && player.epg_enabled && root.showGuide
             visible: active
             sourceComponent: Component {
                 ProgramGuide {
+                    rows: root.channelRows
                     programsJson: player.epg_data
                     status: player.epg_status
                     channel: player.selected >= 0 && player.selected < root.channelRows.length ? root.channelRows[player.selected].label : ""

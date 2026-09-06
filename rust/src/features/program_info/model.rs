@@ -69,6 +69,7 @@ impl Snapshot {
             .checked_sub(1)?;
         schedule.get(index).filter(|p| p.contains(now))
     }
+    #[cfg(test)]
     pub fn view(
         &self,
         service: Option<BroadcastService>,
@@ -80,6 +81,31 @@ impl Snapshot {
             .filter(|p| window.overlaps(p.start_at, p.duration))
             .collect();
         serde_json::to_string(&programs)
+    }
+    pub fn grid_view(
+        &self,
+        channels: &[crate::channels::Channel],
+        window: super::guide::DayWindow,
+    ) -> Result<String, serde_json::Error> {
+        #[derive(Serialize)]
+        struct Column<'a> {
+            index: usize,
+            programs: Vec<&'a Program>,
+        }
+        // Borrow records from the one snapshot; only the selected calendar day crosses Qt.
+        let columns: Vec<_> = channels
+            .iter()
+            .enumerate()
+            .map(|(index, channel)| Column {
+                index,
+                programs: self
+                    .schedule(channel.broadcast)
+                    .iter()
+                    .filter(|p| window.overlaps(p.start_at, p.duration))
+                    .collect(),
+            })
+            .collect();
+        serde_json::to_string(&columns)
     }
     pub fn record_storage(&self) {
         let record_bytes = self.0.capacity() * std::mem::size_of::<Program>();

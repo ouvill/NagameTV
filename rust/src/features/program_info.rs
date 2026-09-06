@@ -145,12 +145,20 @@ impl ProgramInfo {
         }
     }
     /// Borrow only the requested service's bounded schedule while the guide is open.
+    #[cfg(test)]
     pub fn view(
         &self,
         service: Option<BroadcastService>,
         window: guide::DayWindow,
     ) -> Result<String, serde_json::Error> {
         self.snapshot.view(service, window)
+    }
+    pub fn grid_view(
+        &self,
+        channels: &[crate::channels::Channel],
+        window: guide::DayWindow,
+    ) -> Result<String, serde_json::Error> {
+        self.snapshot.grid_view(channels, window)
     }
     /// Compute navigation on demand; do not retain browser widgets or a second EPG.
     pub fn adjacent_channel(

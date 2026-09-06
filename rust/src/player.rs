@@ -369,7 +369,7 @@ impl ffi::Player {
                 || self.rust().guide_service != service
                 || self.rust().guide_dirty)
         {
-            let data = match self.rust().epg.view(service, window) {
+            let data = match self.rust().epg.grid_view(&self.rust().entries, window) {
                 Ok(data) => data,
                 Err(error) => {
                     eprintln!("Program guide presentation failed: {error}");

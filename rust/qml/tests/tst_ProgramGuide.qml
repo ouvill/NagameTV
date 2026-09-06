@@ -21,7 +21,7 @@ TestCase {
     }
     property var guide
     function initTestCase() { failOnWarning(/.*/) }
-    function init() { guide = createTemporaryObject(component, testCase); verify(guide !== null) }
+    function init() { failOnWarning(/.*/); guide = createTemporaryObject(component, testCase); verify(guide !== null) }
     function test_seven_calendar_days_and_selection() {
         compare(guide.days.length, 7)
         verify(guide.requests.length > 0)
@@ -53,24 +53,32 @@ TestCase {
         }
     }
     function test_scheduled_details_survive_delegate_disposal_and_close_on_day_change() {
-        const entries = []
-        for (let i=0;i<300;++i) entries.push({id:i,name:"Program "+i,description:"Full description "+i,startAt:guide.days[0].start+i*60000,duration:60000})
-        guide.programsJson = JSON.stringify(entries)
-        const list = findChild(guide, "guidePrograms")
+        guide.dayOffset = 1
+        const rows = []
+        const columns = []
+        for (let i=0;i<30;++i) {
+            rows.push({ index:i, label:"Channel "+i, band:"GR", logo:"" })
+            columns.push({index:i, programs:[{id:i,name:"Program "+i,description:"Full description "+i,startAt:guide.days[1].start,duration:3600000}]})
+        }
+        guide.rows = rows
+        guide.programsJson = JSON.stringify(columns)
+        const list = findChild(guide, "guideTimeline")
         verify(waitForRendering(guide))
-        compare(list.count, 300)
-        verify(list.contentItem.children.length < 100, "all delegates were created")
-        const first = list.itemAtIndex(0)
+        verify(findChild(guide, "guideColumn0").item !== null)
+        compare(findChild(guide, "guideColumn29").item, null)
+        const first = findChild(guide, "guideCell")
         verify(first !== null)
-        mouseClick(first)
+        mouseClick(first, 20, 30)
         const loader = findChild(guide, "scheduledDetailsLoader")
         verify(loader.item !== null)
         tryCompare(loader.item, "opened", true)
         compare(findChild(loader.item, "programDescription").text, "Full description 0")
-        list.positionViewAtEnd()
+        list.contentX = list.contentWidth - list.width
         verify(waitForRendering(guide))
+        compare(findChild(guide, "guideColumn0").item, null)
+        verify(findChild(guide, "guideColumn29").item !== null)
         compare(findChild(loader.item, "programTitle").text, "Program 0")
-        guide.dayOffset = 1
+        guide.dayOffset = 2
         compare(loader.item, null)
         compare(guide.selectedProgram, null)
     }
