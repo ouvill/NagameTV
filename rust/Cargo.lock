@@ -1104,6 +1104,7 @@ dependencies = [
  "cxx-qt-lib",
  "gstreamer",
  "libaribcaption",
+ "libc",
  "reqwest",
  "serde",
  "serde_json",

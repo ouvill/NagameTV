@@ -59,3 +59,6 @@ EPGの通信取消しが完了するまでは停止待ちになる。
 
 配信中にHTTPの途中再開を拒否された場合は、新規接続で1回復旧します。
 繰り返し失敗する場合は停止します。[再現・修正の記録](docs/live-stream-errors.md)。
+
+停止・再開時のRSS増加については [allocator-investigation.md](docs/allocator-investigation.md)
+を参照。Linux/glibcでは `ALLOC` 行に使用中・空き領域・直接mmap確保量をKiBで出力します。

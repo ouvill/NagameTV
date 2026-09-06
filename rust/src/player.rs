@@ -324,6 +324,7 @@ impl ffi::Player {
                 "{rss} | 字幕: 購読 {subscriptions}, 待機 {pending}, 受信 {decoded} | EPG: タスク {tasks}, 番組 {programs}, 停止待ち {stopping}"
             );
             eprintln!("METRICS {text}");
+            crate::memory::record();
             self.as_mut().set_diagnostics(QString::from(text));
             self.as_mut().rust_mut().next_diagnostic = Instant::now() + Duration::from_secs(10);
         }

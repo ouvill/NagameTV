@@ -1,4 +1,5 @@
 mod features;
+mod memory;
 mod playback;
 mod player;
 mod services;
