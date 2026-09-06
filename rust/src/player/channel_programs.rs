@@ -6,6 +6,9 @@ use std::{pin::Pin, time::Instant};
 
 impl ffi::Player {
     pub fn browser_open(mut self: Pin<&mut Self>, open: bool) {
+        if open {
+            self.as_mut().refresh_channels(false);
+        }
         if open == self.rust().browser_projection.is_some() {
             return;
         }

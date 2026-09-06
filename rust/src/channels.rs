@@ -49,7 +49,7 @@ pub struct PhysicalChannel {
     pub channel: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Channel {
     pub id: u64,
     pub name: String,

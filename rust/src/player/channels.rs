@@ -35,7 +35,61 @@ pub fn presentation(channels: &[Channel], server: &str) -> Result<String, serde_
     serde_json::to_string(&rows)
 }
 
+/// First connection may choose a default. Refresh must not select a different broadcast
+/// merely because the old index moved or its service disappeared from the catalog.
+pub(super) fn selected_after_update(
+    previous: &[Channel],
+    selected: i32,
+    next: &[Channel],
+    preferences: &crate::settings::Preferences,
+) -> Option<usize> {
+    if previous.is_empty() {
+        return preferences.selected_index(next.iter().map(|channel| channel.id));
+    }
+    let id = usize::try_from(selected)
+        .ok()
+        .and_then(|index| previous.get(index))
+        .map(|channel| channel.id)
+        .or_else(|| preferences.service_id.parse::<u64>().ok())?;
+    next.iter().position(|channel| channel.id == id)
+}
+
 impl super::ffi::Player {
+    pub(super) fn refresh_channels_if_due(self: std::pin::Pin<&mut Self>) {
+        use cxx_qt::CxxQtType;
+        let now = std::time::Instant::now();
+        if !self
+            .rust()
+            .channel_refresh
+            .due(now, self.rust().request.is_some())
+        {
+            return;
+        }
+        self.request_channel_refresh(now);
+    }
+
+    pub fn refresh_channels(self: std::pin::Pin<&mut Self>, force: bool) {
+        use cxx_qt::CxxQtType;
+        let now = std::time::Instant::now();
+        if self
+            .rust()
+            .channel_refresh
+            .requested_by_user(now, self.rust().request.is_some(), force)
+        {
+            self.request_channel_refresh(now);
+        }
+    }
+
+    fn request_channel_refresh(mut self: std::pin::Pin<&mut Self>, now: std::time::Instant) {
+        use cxx_qt::CxxQtType;
+        let Some(network) = &self.rust().network else {
+            return;
+        };
+        let request = network.fetch(&self.rust().server.to_string());
+        self.as_mut().rust_mut().request = Some(request);
+        self.as_mut().rust_mut().channel_refresh.requested(now);
+    }
+
     pub fn step_channel(self: std::pin::Pin<&mut Self>, offset: i32) {
         use crate::channels::Step;
         use cxx_qt::CxxQtType;
@@ -68,6 +122,39 @@ impl super::ffi::Player {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn refresh_preserves_identity_and_missing_service_never_selects_another()
+    -> Result<(), Box<dyn std::error::Error>> {
+        const INPUT: &[u8] = br#"[
+            {"id":10,"name":"A","type":1,"channel":{"type":"GR"}},
+            {"id":20,"name":"B","type":1,"channel":{"type":"GR"}}
+        ]"#;
+        let rows = crate::channels::parse(INPUT)?;
+        let mut reversed = crate::channels::parse(INPUT)?;
+        reversed.reverse();
+        let preferences = crate::settings::Preferences {
+            service_id: "10".into(),
+            ..Default::default()
+        };
+        assert_eq!(
+            selected_after_update(&rows, 0, &reversed, &preferences),
+            Some(1)
+        );
+        assert_eq!(
+            selected_after_update(&rows, 0, &reversed[..1], &preferences),
+            None
+        );
+        assert_eq!(
+            selected_after_update(&reversed[..1], -1, &rows, &preferences),
+            Some(0)
+        );
+        assert_eq!(
+            selected_after_update(&[], -1, &reversed[..1], &preferences),
+            Some(0)
+        );
+        Ok(())
+    }
 
     #[test]
     fn selection_indices_match_sorted_channels_and_ids_stay_in_rust()

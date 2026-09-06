@@ -1,6 +1,7 @@
 mod audio_output;
 mod audio_streams;
 mod channel_programs;
+mod channel_refresh;
 mod channels;
 mod comments;
 mod guide;
@@ -164,6 +165,8 @@ pub mod ffi {
         #[qinvokable]
         fn comments_open(self: Pin<&mut Player>, opened: bool);
         #[qinvokable]
+        fn refresh_channels(self: Pin<&mut Player>, force: bool);
+        #[qinvokable]
         fn step_channel(self: Pin<&mut Player>, offset: i32);
         #[qinvokable]
         fn audio_tracks(self: &Player) -> QString;
@@ -251,6 +254,7 @@ pub struct PlayerRust {
     guide_service: Option<crate::channels::BroadcastService>,
     next_diagnostic: Instant,
     request: Option<services::Request>,
+    channel_refresh: channel_refresh::Refresh,
     network: Option<services::Network>,
     playback: Option<playback::Playback>,
     entries: Vec<crate::channels::Channel>,
@@ -584,6 +588,7 @@ impl ffi::Player {
         unsafe { ffi::install_pointer_activity(item) };
     }
     pub fn connect_server(mut self: Pin<&mut Self>, server: QString) {
+        self.as_mut().rust_mut().channel_refresh = channel_refresh::Refresh::Disabled;
         self.as_mut().rust_mut().comments.configure(false, None);
         self.as_mut().rust_mut().activity.configure(false);
         self.as_mut().set_activity_data(QString::from("[]"));
@@ -618,6 +623,10 @@ impl ffi::Player {
             .preferences_mut()
             .apply_overrides(Some(server.clone()), None);
         self.as_mut().rust_mut().request = Some(request);
+        self.as_mut()
+            .rust_mut()
+            .channel_refresh
+            .requested(Instant::now());
         self.as_mut().set_server(QString::from(server));
         self.as_mut().set_loading(true);
         self.as_mut().save_settings();
@@ -713,6 +722,7 @@ impl ffi::Player {
         }
     }
     pub fn poll(mut self: Pin<&mut Self>) {
+        self.as_mut().refresh_channels_if_due();
         let fetched = self
             .rust()
             .request
@@ -723,32 +733,45 @@ impl ffi::Player {
             self.as_mut().set_loading(false);
             match result {
                 Ok(entries) => {
-                    let presentation =
-                        match channels::presentation(&entries, &self.server().to_string()) {
-                            Ok(json) => QString::from(json),
-                            Err(error) => {
-                                self.status_error(StatusFailure::ChannelPresentation, error);
-                                return;
-                            }
-                        };
-                    let selected = self
-                        .rust()
-                        .preferences
-                        .preferences()
-                        .selected_index(entries.iter().map(|entry| entry.id))
+                    // Unchanged catalogs must not rebuild the guide or browser payloads.
+                    if self.rust().entries != entries {
+                        let presentation =
+                            match channels::presentation(&entries, &self.server().to_string()) {
+                                Ok(json) => QString::from(json),
+                                Err(error) => {
+                                    self.status_error(StatusFailure::ChannelPresentation, error);
+                                    return;
+                                }
+                            };
+                        let selected = channels::selected_after_update(
+                            &self.rust().entries,
+                            self.rust().selected,
+                            &entries,
+                            self.rust().preferences.preferences(),
+                        )
                         .and_then(|index| i32::try_from(index).ok())
                         .unwrap_or(-1);
-                    self.as_mut().rust_mut().entries = entries;
-                    self.as_mut().rust_mut().activity.dirty = true;
-                    self.as_mut().set_channel_data(presentation);
-                    self.as_mut().set_selected(selected);
-                    self.as_mut().configure_epg();
+                        self.as_mut().rust_mut().entries = entries;
+                        self.as_mut().rust_mut().activity.dirty = true;
+                        self.as_mut().rust_mut().guide_dirty = true;
+                        // Physical channel metadata also affects subchannel visibility.
+                        // Reset the small browser projection even if EPG revision is unchanged.
+                        if self.rust().browser_projection.is_some() {
+                            self.as_mut().rust_mut().browser_projection = Some(Default::default());
+                        }
+                        self.as_mut().rust_mut().next_current_program = Instant::now();
+                        self.as_mut().set_channel_data(presentation);
+                        self.as_mut().set_selected(selected);
+                        self.as_mut().configure_epg();
+                    }
                     let status = if self.rust().entries.is_empty() {
                         PlaybackStatus::Empty
                     } else {
                         PlaybackStatus::Select
                     };
-                    self.as_mut().update_status(status);
+                    if self.rust().active_service.is_none() {
+                        self.as_mut().update_status(status);
+                    }
                     if self.rust().autoplay_pending {
                         self.as_mut().rust_mut().autoplay_pending = false;
                         self.as_mut().play();
@@ -800,6 +823,7 @@ impl ffi::Player {
         }
     }
     pub fn shutdown(mut self: Pin<&mut Self>) {
+        self.as_mut().rust_mut().channel_refresh = channel_refresh::Refresh::Disabled;
         self.as_mut().stop_diagnostics();
         self.as_mut().rust_mut().comments.configure(false, None);
         self.as_mut().rust_mut().activity.configure(false);

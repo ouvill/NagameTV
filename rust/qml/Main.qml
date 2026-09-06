@@ -167,7 +167,10 @@ ApplicationWindow {
                 hasChannels: root.channelRows.length > 0
                 loading: player.loading
                 onPlayRequested: player.play()
-                onChannelsRequested: root.showChannels = true
+                onChannelsRequested: {
+                    if (player.playback_error.length) player.refresh_channels(true)
+                    root.showChannels = true
+                }
                 onSettingsRequested: settings.open()
             }
         }

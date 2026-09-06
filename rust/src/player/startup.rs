@@ -142,6 +142,7 @@ impl Default for PlayerRust {
             guide_service: None,
             next_diagnostic: Instant::now(),
             request: None,
+            channel_refresh: Default::default(),
             network: network.ok(),
             playback,
             entries: vec![],
