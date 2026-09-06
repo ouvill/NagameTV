@@ -324,7 +324,7 @@ impl ffi::Player {
         self.as_mut().set_subtitle_display(display);
         self.set_subtitle_data(QString::default());
     }
-    pub fn poll_subtitles(self: Pin<&mut Self>) {
+    pub fn poll_subtitles(mut self: Pin<&mut Self>) {
         let update = self.rust().subtitle_session.as_ref().map(|session| {
             session.poll(
                 self.rust()
@@ -334,12 +334,19 @@ impl ffi::Player {
             )
         });
         match update {
-            Some(subtitles::SubtitleUpdate::Show(cue)) if self.rust().subtitle_display => {
+            Some(Ok(subtitles::SubtitleUpdate::Show(cue))) if self.rust().subtitle_display => {
                 self.set_subtitle_data(QString::from(
                     serde_json::to_string(&cue).unwrap_or_default(),
                 ));
             }
-            Some(subtitles::SubtitleUpdate::Clear) => self.set_subtitle_data(QString::default()),
+            Some(Ok(subtitles::SubtitleUpdate::Clear)) => {
+                self.set_subtitle_data(QString::default())
+            }
+            Some(Err(error)) => {
+                self.as_mut().set_subtitles_active(false);
+                self.as_mut().set_subtitle_data(QString::default());
+                self.set_subtitle_status(QString::from(error.to_string()));
+            }
             _ => {}
         }
     }

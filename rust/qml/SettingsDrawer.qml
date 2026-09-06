@@ -113,6 +113,15 @@ Drawer {
                 enabled: root.backend.subtitles_enabled
                 onClicked: root.backend.display_subtitles(checked)
             }
+            Label {
+                objectName: "subtitleStatus"
+                text: root.backend.subtitle_status || ""
+                visible: root.backend.subtitles_enabled && text.length > 0
+                textFormat: Text.PlainText
+                color: "#b6bab6"
+                Layout.fillWidth: true
+                wrapMode: Text.Wrap
+            }
             CheckBox {
                 text: "EPG"
                 palette.windowText: "#f4f5f3"
