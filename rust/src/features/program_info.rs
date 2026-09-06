@@ -152,6 +152,20 @@ impl ProgramInfo {
     ) -> Result<String, serde_json::Error> {
         self.snapshot.view(service, window)
     }
+    /// Compute navigation on demand; do not retain browser widgets or a second EPG.
+    pub fn adjacent_channel(
+        &self,
+        channels: &[crate::channels::Channel],
+        selected: Option<usize>,
+        step: crate::channels::Step,
+        now: Option<u64>,
+    ) -> Option<usize> {
+        let visible = visibility::indices(channels, |channel| {
+            now.and_then(|time| self.snapshot.current(channel.broadcast, time))
+        });
+        visibility::adjacent(&visible, selected, step)
+    }
+
     pub fn browser_presentation(
         &self,
         projection: &mut browser::Projection,

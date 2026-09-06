@@ -17,7 +17,7 @@ Escapeはポップアップ自身のclosePolicyを優先し、その後はMain�
 このモジュールはWindowと同じ寿命で、タイマー、通信、映像バッファー、履歴を追加しない。
 全画面で描画領域が変わった際のQt/GPU側の確保量は別途実測の対象となる。
 操作部の自動非表示は [overlay-visibility.md](overlay-visibility.md) を参照。
-mainの独自ウィンドウ枠はまだ未移植。
+mainの独自ウィンドウ枠の移植と未検証事項は後述。
 チャンネルブラウザーのC開閉は [channel-browser.md](channel-browser.md) を参照。
 
 ## APIの根拠
@@ -79,3 +79,9 @@ CMakeビルド、qmllint成功。Qt試験49件成功（初期化・終了を含�
 変化しなかった。XSendEvent/XTestを用いた試行の両方で、入力配送か操作自体かは未切り分け。
 したがって実環境の移動・リサイズ成功は未検証として残す。移植完了の根拠には含めない。
 証跡はGit対象外のbenchmark/viewing-design/frameless.py、frameless.log、frameless.png。
+
+## 前後選局の候補
+
+PgUp/PgDownはRustのstep_channelを呼び、一覧と同じ同時放送除外規則で巡回する。
+一覧が閉じていても操作時のEPGを参照する。番組境界・非表示局からの移動・循環の
+検証は [channel-browser.md](channel-browser.md) に記録する。

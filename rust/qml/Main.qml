@@ -30,8 +30,7 @@ ApplicationWindow {
     }
     function step(offset) {
         overlayVisibility.reveal();
-        if (root.channelRows.length)
-            player.select((player.selected + offset + root.channelRows.length) % root.channelRows.length);
+        player.step_channel(offset);
     }
     function toggleGuide() {
         overlayVisibility.reveal();

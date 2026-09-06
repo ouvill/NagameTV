@@ -8,6 +8,48 @@ use std::{
     },
     thread,
 };
+
+#[test]
+fn navigation_uses_current_snapshot_without_a_browser_and_tracks_program_boundaries()
+-> Result<(), Box<dyn std::error::Error>> {
+    use crate::channels::Step::{Next, Previous};
+    let channels = crate::channels::parse(br#"[
+        {"id":1,"name":"A","type":1,"networkId":10,"serviceId":1,"channel":{"type":"GR","channel":"27"}},
+        {"id":2,"name":"B","type":1,"networkId":10,"serviceId":2,"channel":{"type":"GR","channel":"27"}},
+        {"id":3,"name":"C","type":1,"networkId":10,"serviceId":3,"channel":{"type":"GR","channel":"28"}}
+    ]"#)?;
+    let feature = ProgramInfo {
+        snapshot: parse(br#"[
+            {"id":1,"eventId":7,"networkId":10,"serviceId":1,"name":"A","startAt":100,"duration":200},
+            {"id":2,"eventId":7,"networkId":10,"serviceId":2,"name":"A","startAt":100,"duration":200},
+            {"id":3,"eventId":8,"networkId":10,"serviceId":2,"name":"B","startAt":200,"duration":100}
+        ]"#)?,
+        ..ProgramInfo::default()
+    };
+    assert_eq!(
+        feature.adjacent_channel(&channels, Some(0), Next, Some(199)),
+        Some(2)
+    );
+    assert_eq!(
+        feature.adjacent_channel(&channels, Some(0), Next, Some(200)),
+        Some(1)
+    );
+    assert_eq!(
+        feature.adjacent_channel(&channels, Some(2), Previous, Some(200)),
+        Some(1)
+    );
+    assert_eq!(
+        feature.adjacent_channel(&channels, Some(1), Previous, Some(300)),
+        Some(0)
+    );
+    assert_eq!(
+        feature.adjacent_channel(&channels, Some(0), Next, None),
+        Some(2)
+    );
+    assert_eq!(feature.counters(), (0, 3, false));
+    Ok(())
+}
+
 #[test]
 fn updates_replace_failure_retains_refresh_waits_and_disable_clears()
 -> Result<(), Box<dyn std::error::Error>> {

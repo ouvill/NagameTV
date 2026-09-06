@@ -96,6 +96,8 @@ pub mod ffi {
         fn poll(self: Pin<&mut Player>);
         #[qinvokable]
         fn shutdown(self: Pin<&mut Player>);
+        #[qinvokable]
+        fn step_channel(self: Pin<&mut Player>, offset: i32);
     }
 }
 

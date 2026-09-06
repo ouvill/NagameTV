@@ -1,4 +1,4 @@
-//! One atomic presentation snapshot, produced only when the service list changes.
+//! Channel navigation and the atomic service-list projection.
 use crate::channels::{Band, Channel};
 use serde::Serialize;
 
@@ -33,6 +33,36 @@ pub fn presentation(channels: &[Channel], server: &str) -> Result<String, serde_
         })
         .collect();
     serde_json::to_string(&rows)
+}
+
+impl super::ffi::Player {
+    pub fn step_channel(self: std::pin::Pin<&mut Self>, offset: i32) {
+        use crate::channels::Step;
+        use cxx_qt::CxxQtType;
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let step = match offset {
+            -1 => Step::Previous,
+            1 => Step::Next,
+            _ => return,
+        };
+        let this = self.rust();
+        let now = if this.epg_enabled {
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .ok()
+                .and_then(|duration| u64::try_from(duration.as_millis()).ok())
+        } else {
+            None
+        };
+        let selected = usize::try_from(this.selected).ok();
+        let target = this
+            .epg
+            .adjacent_channel(&this.entries, selected, step, now)
+            .and_then(|index| i32::try_from(index).ok());
+        if let Some(index) = target {
+            self.select(index);
+        }
+    }
 }
 
 #[cfg(test)]

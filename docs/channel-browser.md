@@ -121,7 +121,7 @@ SidebarChannels.qmlはmainの縦一覧を移植する。カード132px・間隔1
 ロゴ56×32px、局名12px、時刻11px、進行バー3pxを使う。放送種別は中央配置し、
 多数の種別が狭い幅を超える場合は横スクロールできる。
 番組情報／チャンネルのタブはProgramSidebar.Page enumで選択し、一覧はLoaderで必要時に生成する。
-コメントタブと勢い表示、同時放送の副チャンネル除外は未移植。
+コメントタブと勢い表示は未移植。副チャンネル除外は後述。
 
 ListViewはcacheBuffer=0で仮想化する。500局からの放送種別抽出、キーでの選局が元indexを
 保持すること、末尾へスクロール後も実体化カード数が1〜19件であることを試験した。
@@ -149,8 +149,8 @@ PhysicalChannelはnetworkId・Band・channelの組であり、ProgramのeventId�
 表示用indexのJSONを番組要約の更新時に作る。判定用HashMap/HashSetはその更新内だけの
 借用で、毎フレームや同一番組の毎秒tickでは再生成しない。QMLはindexをSetにして照合し、
 下部・右側の両一覧で使う。選局indexと実際の配信用idは変更しない。
-この段階の除外対象は両一覧であり、PgUp/PgDownによる全サービス巡回と将来の
-複数局番組表カタログの統合は残る。表示中の局を除外しても再生を強制停止しない。
+両一覧とPgUp/PgDownの候補に同じ除外規則を使う。将来の複数局番組表カタログへの
+統合は残る。表示中の局を除外しても再生を強制停止しない。
 
 Rust51件成功・外部TS依存1件未実行、Clippy成功、Qt59件成功。
 同一番組で異なるid/タイトル、別番組で同じタイトル、番組終了、EPG不明、別搬送波／
@@ -163,3 +163,26 @@ gdbはQMetaObject::methodOffsetとMain.qmlのAOT生成コードを示した。
 アプリpackageだけをcargo clean -p mirakurun-viewer --releaseした後、同じソースを
 再ビルドすると正常起動した。生成物の不整合が疑われるが根因は未確定。
 Qtブリッジ変更後のビルド成功だけでは実起動の保証にならないため、起動試験を必要とする。
+
+## 一覧を閉じた状態の前後選局
+
+PgUp/PgDownはPlayer境界で±1をStep::Previous/Nextへ変換する。
+それ以外の値は選局しない。ProgramInfoは共有Snapshotと操作時刻から同時放送を判定し、
+元のカタログ順で前後の候補を返す。表示中の局が番組変更で非表示になった場合も、
+その元indexを基準に前後を選ぶ。両端は循環し、空一覧では選局しない。
+EPG無効／時計不明では各物理チャンネルの先頭を残す規則を使う。
+
+候補を求める一時領域はキー操作時だけ生成する。ブラウザーProjectionやQMLの一覧を
+常駐させず、EPG全件の複製・JSON変換・追加の通信やTimerも行わない。
+候補確定後は既存のselect経路で再生する。
+
+検証では前後・循環・非表示の選択局・空一覧に加え、実際のSnapshot検索を使って
+番組境界で候補が変わることを試験する。外部xdotoolのPgDownでは再生開始を確認できず、
+実アプリのキーボード入力から再生までの結合確認は未完了。
+サーバー停止だけを原因とは断定しない。Qt Testのキー配送とRustの候補計算を分けて記録する。
+
+この変更の検証結果はRust53件成功・外部TS依存1件未実行、Qt59件成功、
+Clippy全ターゲット警告なし、releaseビルド成功。DISPLAY・NVIDIA OpenGL・PulseAudioを
+確認後、実サーバーのサービス一覧HTTP 200、実アプリのEPG取得と正常終了を確認した。
+起動時のQMLエラーは検出されなかった。証跡はGit対象外の
+benchmark/viewing-design/navigation-startup.logとnavigation-startup.png。

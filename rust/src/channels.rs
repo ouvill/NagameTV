@@ -10,6 +10,12 @@ pub enum Error {
     NoTvChannels,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub enum Step {
+    Previous,
+    Next,
+}
+
 /// Declaration order is the channel browser's broadcast priority.
 #[derive(
     Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord, Hash,
