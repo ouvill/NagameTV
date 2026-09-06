@@ -24,6 +24,12 @@ pub struct Playback {
 }
 
 impl Playback {
+    pub fn element(&self) -> &gst::Element {
+        &self.playbin
+    }
+    pub fn position(&self) -> Option<gst::ClockTime> {
+        self.sink.query_position::<gst::ClockTime>()
+    }
     fn new() -> Result<Self> {
         gst::init()?;
         let sink = gst::ElementFactory::make("qml6glsink")

@@ -8,6 +8,6 @@ add_custom_target(mirakurun-viewer-build ALL
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
             ${CARGO_TARGET_DIR}/release/mirakurun-viewer ${CMAKE_BINARY_DIR}/mirakurun-viewer
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-    SOURCES ${SOURCES} rust/Cargo.toml rust/build.rs qml/Main.qml
+    SOURCES ${SOURCES} rust/Cargo.toml rust/build.rs rust/qml/Main.qml rust/qml/SubtitleOverlay.qml rust/qml/ProgramGuide.qml
     VERBATIM)
 install(PROGRAMS "${CMAKE_BINARY_DIR}/mirakurun-viewer" DESTINATION bin)

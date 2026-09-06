@@ -57,8 +57,15 @@ impl Network {
         })
     }
     pub fn fetch(&self, server: &str) -> Request {
+        self.fetch_json(format!("{server}/api/services"), 1024 * 1024, parse)
+    }
+    pub fn fetch_json<T: Send + 'static>(
+        &self,
+        url: String,
+        limit: usize,
+        parse: fn(&[u8]) -> Result<T, String>,
+    ) -> Job<T> {
         let (tx, rx) = mpsc::sync_channel(1);
-        let url = format!("{server}/api/services");
         let client = self.client.clone();
         let task = self.runtime.spawn(async move {
             let result = async {
@@ -71,8 +78,8 @@ impl Network {
                     .map_err(|e| e.to_string())?;
                 let mut bytes = Vec::new();
                 while let Some(chunk) = response.chunk().await.map_err(|e| e.to_string())? {
-                    if bytes.len() + chunk.len() > 1024 * 1024 {
-                        return Err("Service list exceeds 1 MiB".into());
+                    if bytes.len() + chunk.len() > limit {
+                        return Err(format!("Response exceeds {limit} bytes"));
                     }
                     bytes.extend_from_slice(&chunk);
                 }
@@ -81,16 +88,24 @@ impl Network {
             .await;
             let _ = tx.try_send(result);
         });
-        Request { task, rx }
+        Job { task, rx }
     }
 }
 
-pub struct Request {
+pub type Request = Job<Vec<Service>>;
+
+pub struct Job<T> {
     task: tokio::task::JoinHandle<()>,
-    rx: mpsc::Receiver<Result<Vec<Service>, String>>,
+    rx: mpsc::Receiver<Result<T, String>>,
 }
-impl Request {
-    pub fn poll(&self) -> Option<Result<Vec<Service>, String>> {
+impl<T> Job<T> {
+    pub fn cancel(&self) {
+        self.task.abort();
+    }
+    pub fn is_finished(&self) -> bool {
+        self.task.is_finished()
+    }
+    pub fn poll(&self) -> Option<Result<T, String>> {
         match self.rx.try_recv() {
             Ok(result) => Some(result),
             Err(mpsc::TryRecvError::Empty) => None,
@@ -98,7 +113,7 @@ impl Request {
         }
     }
 }
-impl Drop for Request {
+impl<T> Drop for Job<T> {
     fn drop(&mut self) {
         self.task.abort();
     }

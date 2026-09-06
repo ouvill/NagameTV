@@ -1,3 +1,4 @@
+mod features;
 mod playback;
 mod player;
 mod services;
@@ -9,6 +10,12 @@ use std::sync::{
 };
 
 fn main() {
+    let plan = features::LaunchPlan::parse(std::env::args().skip(1)).unwrap_or_else(|error| {
+        eprintln!("{error}");
+        std::process::exit(2);
+    });
+    eprintln!("Feature plan: {plan:?}");
+    features::PLAN.set(plan).unwrap();
     cxx_qt::init_qml_module!("MinimalViewer");
     player::ffi::configure_qt_quick_open_gl();
     let mut app = QGuiApplication::new();
