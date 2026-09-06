@@ -96,6 +96,7 @@ impl Default for PlayerRust {
             channel_program_now: 0.0,
             browser_projection: None,
             selected: -1,
+            catalog_selection: Default::default(),
             loading: false,
             playing: false,
             subtitles_enabled: plan.subtitles,

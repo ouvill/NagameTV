@@ -6,8 +6,6 @@ use std::collections::HashSet;
 pub enum Error {
     #[error("チャンネルJSONの解析失敗: {0}")]
     Json(#[from] serde_json::Error),
-    #[error("TVチャンネルがありません")]
-    NoTvChannels,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -135,9 +133,6 @@ pub fn parse(bytes: &[u8]) -> Result<Vec<Channel>, Error> {
             }
         })
         .collect();
-    if channels.is_empty() {
-        return Err(Error::NoTvChannels);
-    }
     // Same primary order as main. Compare borrowed strings, never allocate labels
     // in the comparator. Endpoint ID breaks otherwise identical ties independently
     // of the server's response order. Missing/zero numbers follow numbered channels.

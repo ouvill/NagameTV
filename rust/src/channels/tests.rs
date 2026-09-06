@@ -69,7 +69,7 @@ fn equal_numbers_use_main_label_order_and_keep_distinct_services() -> TestResult
 }
 
 #[test]
-fn rejects_invalid_schema_and_empty_catalog() {
+fn rejects_invalid_schema_but_accepts_valid_empty_catalog() {
     for bytes in [
         b"broken".as_slice(),
         b"{}",
@@ -79,6 +79,6 @@ fn rejects_invalid_schema_and_empty_catalog() {
         assert!(matches!(parse(bytes), Err(Error::Json(_))));
     }
     for bytes in [b"[]".as_slice(), br#"[{"id":1,"name":"Radio","type":2}]"#] {
-        assert!(matches!(parse(bytes), Err(Error::NoTvChannels)));
+        assert!(parse(bytes).is_ok_and(|channels| channels.is_empty()));
     }
 }

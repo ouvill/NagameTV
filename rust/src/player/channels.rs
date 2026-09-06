@@ -35,15 +35,24 @@ pub fn presentation(channels: &[Channel], server: &str) -> Result<String, serde_
     serde_json::to_string(&rows)
 }
 
+/// An empty snapshot does not mean this is a new connection.
+#[derive(Default, Clone, Copy)]
+pub(super) enum SelectionPolicy {
+    #[default]
+    Initial,
+    Preserve,
+}
+
 /// First connection may choose a default. Refresh must not select a different broadcast
 /// merely because the old index moved or its service disappeared from the catalog.
 pub(super) fn selected_after_update(
+    policy: SelectionPolicy,
     previous: &[Channel],
     selected: i32,
     next: &[Channel],
     preferences: &crate::settings::Preferences,
 ) -> Option<usize> {
-    if previous.is_empty() {
+    if matches!(policy, SelectionPolicy::Initial) {
         return preferences.selected_index(next.iter().map(|channel| channel.id));
     }
     let id = usize::try_from(selected)
@@ -138,20 +147,56 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(
-            selected_after_update(&rows, 0, &reversed, &preferences),
+            selected_after_update(SelectionPolicy::Preserve, &rows, 0, &reversed, &preferences),
             Some(1)
         );
         assert_eq!(
-            selected_after_update(&rows, 0, &reversed[..1], &preferences),
+            selected_after_update(
+                SelectionPolicy::Preserve,
+                &rows,
+                0,
+                &reversed[..1],
+                &preferences
+            ),
             None
         );
         assert_eq!(
-            selected_after_update(&reversed[..1], -1, &rows, &preferences),
+            selected_after_update(
+                SelectionPolicy::Preserve,
+                &reversed[..1],
+                -1,
+                &rows,
+                &preferences
+            ),
             Some(0)
         );
         assert_eq!(
-            selected_after_update(&[], -1, &reversed[..1], &preferences),
+            selected_after_update(
+                SelectionPolicy::Initial,
+                &[],
+                -1,
+                &reversed[..1],
+                &preferences
+            ),
             Some(0)
+        );
+        assert_eq!(
+            selected_after_update(
+                SelectionPolicy::Preserve,
+                &[],
+                -1,
+                &reversed[..1],
+                &preferences
+            ),
+            None
+        );
+        assert_eq!(
+            selected_after_update(SelectionPolicy::Preserve, &[], -1, &rows, &preferences),
+            Some(0)
+        );
+        assert_eq!(
+            selected_after_update(SelectionPolicy::Preserve, &rows, 0, &[], &preferences),
+            None
         );
         Ok(())
     }

@@ -214,14 +214,19 @@ mod tests {
             });
             let job = network.fetch_json(url, limit, channels::parse);
             let deadline = Instant::now() + Duration::from_secs(3);
-            let error = loop {
+            let outcome = loop {
                 if let Some(result) = job.poll() {
-                    break result.err().ok_or("expected request failure")?;
+                    break result;
                 }
                 assert!(Instant::now() < deadline, "request did not finish");
                 thread::sleep(Duration::from_millis(1));
             };
             server.join().map_err(|_| "test server panicked")??;
+            if status == 200 && limit == 2 {
+                assert!(outcome?.is_empty());
+                continue;
+            }
+            let error = outcome.err().ok_or("expected request failure")?;
             match (status, limit, &error) {
                 (503, _, FetchError::Network(NetworkError::Http(source))) => {
                     assert_eq!(source.status().map(|status| status.as_u16()), Some(503));
@@ -232,7 +237,6 @@ mod tests {
                     assert!(error.source().and_then(|source| source.source()).is_some());
                 }
                 (200, 1, FetchError::Network(NetworkError::ResponseTooLarge { limit: 1 })) => {}
-                (200, 2, FetchError::Parse(channels::Error::NoTvChannels)) => {}
                 _ => panic!("unexpected classification: {error:?}"),
             }
         }

@@ -208,6 +208,7 @@ pub struct PlayerRust {
     channel_program_now: f64,
     browser_projection: Option<crate::features::program_info::browser::Projection>,
     selected: i32,
+    catalog_selection: channels::SelectionPolicy,
     loading: bool,
     playing: bool,
     subtitles_enabled: bool,
@@ -588,6 +589,7 @@ impl ffi::Player {
         unsafe { ffi::install_pointer_activity(item) };
     }
     pub fn connect_server(mut self: Pin<&mut Self>, server: QString) {
+        self.as_mut().rust_mut().catalog_selection = channels::SelectionPolicy::Initial;
         self.as_mut().rust_mut().channel_refresh = channel_refresh::Refresh::Disabled;
         self.as_mut().rust_mut().comments.configure(false, None);
         self.as_mut().rust_mut().activity.configure(false);
@@ -715,6 +717,8 @@ impl ffi::Player {
         }
     }
     pub fn stop(mut self: Pin<&mut Self>) {
+        // An explicit stop supersedes startup autoplay, including a still-empty catalog.
+        self.as_mut().rust_mut().autoplay_pending = false;
         self.record_diagnostic(viewer_diagnostics::recorder::Event::StopRequested);
         match self.as_mut().end_stream() {
             Ok(()) => self.update_status(PlaybackStatus::Stopped),
@@ -744,6 +748,7 @@ impl ffi::Player {
                                 }
                             };
                         let selected = channels::selected_after_update(
+                            self.rust().catalog_selection,
                             &self.rust().entries,
                             self.rust().selected,
                             &entries,
@@ -764,6 +769,10 @@ impl ffi::Player {
                         self.as_mut().set_selected(selected);
                         self.as_mut().configure_epg();
                     }
+                    if !self.rust().entries.is_empty() {
+                        self.as_mut().rust_mut().catalog_selection =
+                            channels::SelectionPolicy::Preserve;
+                    }
                     let status = if self.rust().entries.is_empty() {
                         PlaybackStatus::Empty
                     } else {
@@ -772,7 +781,7 @@ impl ffi::Player {
                     if self.rust().active_service.is_none() {
                         self.as_mut().update_status(status);
                     }
-                    if self.rust().autoplay_pending {
+                    if self.rust().autoplay_pending && self.rust().selected >= 0 {
                         self.as_mut().rust_mut().autoplay_pending = false;
                         self.as_mut().play();
                     }
