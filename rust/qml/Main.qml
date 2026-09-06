@@ -514,6 +514,7 @@ ApplicationWindow {
             onLoaded: item.focusBrowser()
             sourceComponent: ChannelBrowser {
                 rows: root.channelRows
+                activityJson: player.activity_data
                 programsJson: player.channel_program_data
                 visibilityJson: player.channel_visibility_data
                 now: player.channel_program_now
@@ -559,6 +560,7 @@ ApplicationWindow {
             page: root.sidebarPage
             channelRows: root.channelRows
             selectedChannel: player.selected
+            activityJson: player.activity_data
             channelPrograms: player.channel_program_data
             channelVisibility: player.channel_visibility_data
             now: player.channel_program_now

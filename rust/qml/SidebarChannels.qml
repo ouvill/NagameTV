@@ -8,6 +8,8 @@ Item {
     required property int selected
     property string visibilityJson: "[]"
     readonly property var visibleIndices: new Set(JSON.parse(visibilityJson))
+    property string activityJson: "[]"
+    readonly property var activity: JSON.parse(activityJson)
     property string programsJson: "[]"
     property real now: 0
     property string band: "GR"
@@ -97,7 +99,7 @@ Item {
                         logoUrl: card.modelData.logo
                     }
                     Label {
-                        width: card.width - 28 - 64
+                        width: Math.max(0, card.width - 28 - 64 - (activityLabel.visible ? activityLabel.width + 8 : 0))
                         height: 32
                         verticalAlignment: Text.AlignVCenter
                         text: card.modelData.label.replace(/^\d+\s+/, "")
@@ -105,6 +107,14 @@ Item {
                         font.pixelSize: 12
                         elide: Text.ElideRight
                         textFormat: Text.PlainText
+                    }
+                    Label {
+                        id: activityLabel
+                        readonly property string force: root.activity[card.modelData.index] ?? ""
+                        text: force.length ? qsTranslate("Main", "Activity ") + force : ""
+                        visible: text.length > 0
+                        height: 32; verticalAlignment: Text.AlignVCenter
+                        color: "#9caf9f"; font.pixelSize: 11; font.bold: true
                     }
                 }
                 Label {

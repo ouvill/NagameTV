@@ -104,6 +104,8 @@ impl Default for PlayerRust {
             comment_opacity: preferences.preferences().comment_opacity.into(),
             comment_speed: preferences.preferences().comment_speed.into(),
             comment_data: QString::from("[]"),
+            activity_data: QString::from("[]"),
+            activity: Default::default(),
             comment_status: super::status::tr("Disabled"),
             comments_visible: false,
             comments: Default::default(),

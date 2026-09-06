@@ -57,6 +57,7 @@ impl ffi::Player {
     }
 
     pub(super) fn poll_comments(mut self: Pin<&mut Self>) {
+        self.as_mut().poll_activity();
         let (data, live) = {
             let mut this = self.as_mut().rust_mut();
             let this = &mut *this;
@@ -90,6 +91,31 @@ impl ffi::Player {
         }
         for text in live {
             self.as_mut().comment_received(text);
+        }
+    }
+    fn poll_activity(mut self: Pin<&mut Self>) {
+        let data = {
+            let mut this = self.as_mut().rust_mut();
+            let this = &mut *this;
+            this.activity
+                .configure(this.comments_enabled && !this.entries.is_empty());
+            if let Some(network) = &this.network {
+                this.activity.poll(network);
+            }
+            if this.activity.dirty {
+                this.activity.dirty = false;
+                Some(this.activity.json(&this.entries))
+            } else {
+                None
+            }
+        };
+        match data {
+            Some(Ok(json)) => self.set_activity_data(QString::from(json)),
+            Some(Err(error)) => {
+                eprintln!("Comment activity projection failed: {error}");
+                self.set_activity_data(QString::from("[]"));
+            }
+            None => {}
         }
     }
 }

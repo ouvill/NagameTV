@@ -81,6 +81,7 @@ pub mod ffi {
         #[qproperty(f64, comment_speed, READ, NOTIFY)]
         #[qproperty(bool, comments_allowed, READ, NOTIFY)]
         #[qproperty(QString, comment_data, READ, NOTIFY)]
+        #[qproperty(QString, activity_data, READ, NOTIFY)]
         #[qproperty(QString, comment_status, READ, NOTIFY)]
         #[qproperty(bool, subtitles_allowed, READ, NOTIFY)]
         #[qproperty(bool, epg_allowed, READ, NOTIFY)]
@@ -212,6 +213,8 @@ pub struct PlayerRust {
     comment_opacity: f64,
     comment_speed: f64,
     comment_data: QString,
+    activity_data: QString,
+    activity: crate::features::comments::activity::Activity,
     comment_status: QString,
     comments_visible: bool,
     comments: crate::features::comments::Comments,
@@ -267,6 +270,12 @@ impl ffi::Player {
         comments_enabled,
         comments_enabled_changed,
         bool
+    );
+    property_setter!(
+        set_activity_data,
+        activity_data,
+        activity_data_changed,
+        QString
     );
     property_setter!(
         set_comment_data,
@@ -576,6 +585,8 @@ impl ffi::Player {
     }
     pub fn connect_server(mut self: Pin<&mut Self>, server: QString) {
         self.as_mut().rust_mut().comments.configure(false, None);
+        self.as_mut().rust_mut().activity.configure(false);
+        self.as_mut().set_activity_data(QString::from("[]"));
         self.as_mut().clear_playback_failure();
         self.as_mut().rust_mut().request = None;
         self.as_mut().set_loading(false);
@@ -729,6 +740,7 @@ impl ffi::Player {
                         .and_then(|index| i32::try_from(index).ok())
                         .unwrap_or(-1);
                     self.as_mut().rust_mut().entries = entries;
+                    self.as_mut().rust_mut().activity.dirty = true;
                     self.as_mut().set_channel_data(presentation);
                     self.as_mut().set_selected(selected);
                     self.as_mut().configure_epg();
@@ -787,6 +799,8 @@ impl ffi::Player {
     pub fn shutdown(mut self: Pin<&mut Self>) {
         self.as_mut().stop_diagnostics();
         self.as_mut().rust_mut().comments.configure(false, None);
+        self.as_mut().rust_mut().activity.configure(false);
+        self.as_mut().set_activity_data(QString::from("[]"));
         self.as_mut().browser_open(false);
         self.as_mut().rust_mut().epg.configure(None);
         self.as_mut().guide_open(false);

@@ -1,4 +1,5 @@
 //! Playback-independent commentary selection and bounded history.
+pub mod activity;
 use crate::{
     channels::{Band, Channel},
     services::Network,

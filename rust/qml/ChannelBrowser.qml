@@ -9,6 +9,8 @@ Pane {
     required property int selected
     property string visibilityJson: "[]"
     readonly property var visibleIndices: new Set(JSON.parse(visibilityJson))
+    property string activityJson: "[]"
+    readonly property var activity: JSON.parse(activityJson)
     property string programsJson: "[]"
     property real now: 0
     readonly property var programs: JSON.parse(programsJson)
@@ -137,6 +139,12 @@ Pane {
                             font.pixelSize: 12
                             textFormat: Text.PlainText
                             elide: Text.ElideRight
+                        }
+                        Label {
+                            readonly property string force: root.activity[card.modelData.index] ?? ""
+                            text: force.length ? qsTranslate("Main", "Activity ") + force : ""
+                            visible: text.length > 0
+                            color: "#9caf9f"; font.pixelSize: 11; font.bold: true
                         }
                     }
                     ChannelProgram {

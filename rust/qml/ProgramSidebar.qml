@@ -19,6 +19,7 @@ Rectangle {
     property var channelRows: []
     property int selectedChannel: -1
     property string channelVisibility: "[]"
+    property string activityJson: "[]"
     property string channelPrograms: "[]"
     property real now: 0
     signal pageRequested(int page)
@@ -197,6 +198,7 @@ Rectangle {
             visible: active
             sourceComponent: SidebarChannels {
                 rows: root.channelRows
+                activityJson: root.activityJson
                 selected: root.selectedChannel
                 programsJson: root.channelPrograms
                 visibilityJson: root.channelVisibility
