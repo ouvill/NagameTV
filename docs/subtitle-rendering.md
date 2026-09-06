@@ -62,3 +62,22 @@ Qt描画7ケース成功（初期化と終了を含む9件）、qmllint警告な
 再生後約35秒待機したが字幕受信数は0だったため、この試験を実放送字幕の描画成功とは数えない。
 証跡はGit対象外の `benchmark/subtitle-rendering/smoke.py`、`smoke.log`、`playing-*.png`。
 受信する放送での確認、全機能併用・長時間メモリー測定は未完了。
+
+
+## 放送サービスの選択
+
+字幕Sessionにも音声・EPGと同じBroadcastServiceを渡す。HTTP配信用idからの
+剰余計算を廃止し、PATのprogram_numberにはサービスAPIの明示的なserviceIdを使う。
+[MirakurunのService定義](https://github.com/Chinachu/Mirakurun/blob/master/api.d.ts)でも
+idとserviceIdは別のフィールドである。networkId/serviceIdが取得できない場合は
+MissingServiceエラーを字幕状態に表示し、callback・probeを登録する前に終了する。
+映像再生は既存の字幕失敗経路に従って続けられる。停止成功後にSessionを破棄する寿命は保つ。
+
+CPU回帰試験はid=777、networkId=4、serviceId=42のサービスJSONから実際のSession用
+パーサーを構成する。サービス7と42を持つ生成PATをTSパケットとして渡し、
+42に対応するPMT PIDだけが登録されることと、情報欠落が型付きエラーになることを確認する。
+受信機器や映像・音声出力は使用しない。この試験は実放送の字幕描画や選局の長時間試験を
+代替するものではない。字幕parserと購読管理のMutex処理の監査は引き続き残る。
+
+変更後の字幕関連CPU試験20件成功・外部TS依存1件未実行。Clippy全ターゲット、fmt、
+releaseビルド成功。今回の変更後の実放送による字幕表示確認は未実施。

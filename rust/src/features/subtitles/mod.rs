@@ -10,6 +10,7 @@ pub use model::SubtitleCue;
 pub(crate) use pes::CaptionDecoder;
 mod transport;
 
+use crate::channels::BroadcastService;
 use crate::features::subscriptions::Subscriptions;
 use gstreamer::{self as gst, prelude::*};
 use std::sync::{
@@ -25,10 +26,21 @@ pub enum Error {
     MissingBin,
     #[error("Missing playback bus")]
     MissingBus,
-    #[error("Invalid service ID: {0}")]
-    InvalidServiceId(#[from] std::num::TryFromIntError),
+    #[error("放送サービス情報がないため字幕を開始できません")]
+    MissingService,
     #[error("字幕デコーダーを初期化できません")]
     DecoderUnavailable,
+}
+
+fn parser_for(service: Option<BroadcastService>) -> Result<transport::TransportParser, Error> {
+    let service = service.ok_or(Error::MissingService)?;
+    let mut parser = transport::TransportParser::new(true);
+    // Endpoint IDs identify HTTP resources; PAT uses the explicit broadcast serviceId.
+    parser.select_service(service.service_id);
+    if !parser.decoder_available() {
+        return Err(Error::DecoderUnavailable);
+    }
+    Ok(parser)
 }
 
 /// A single playback generation. Construct before PLAYING; drop after READY.
@@ -39,16 +51,13 @@ pub struct Session {
     decoded: Arc<AtomicU64>,
 }
 impl Session {
-    pub fn start(playbin: &gst::Element, service: u64) -> Result<Self, Error> {
+    pub fn start(playbin: &gst::Element, service: Option<BroadcastService>) -> Result<Self, Error> {
+        // Reject missing metadata before attaching any callbacks or probes.
+        let parser = parser_for(service)?;
         let bin = playbin
             .downcast_ref::<gst::Bin>()
             .ok_or(Error::MissingBin)?;
         let bus = playbin.bus().ok_or(Error::MissingBus)?;
-        let mut parser = transport::TransportParser::new(true);
-        parser.select_service(u16::try_from(service % 100_000)?);
-        if !parser.decoder_available() {
-            return Err(Error::DecoderUnavailable);
-        }
         let parser = Arc::new(Mutex::new(parser));
         let clock = SubtitleClock::default();
         let subscriptions = clock.attach(bin);

@@ -506,7 +506,7 @@ impl ffi::Player {
                 .playback
                 .as_ref()
                 .ok_or(subtitles::Error::PlaybackUnavailable)
-                .and_then(|p| subtitles::Session::start(p.element(), id));
+                .and_then(|p| subtitles::Session::start(p.element(), broadcast));
             match result {
                 Ok(session) => {
                     self.as_mut().rust_mut().subtitle_session = Some(session);

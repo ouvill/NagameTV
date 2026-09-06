@@ -248,6 +248,38 @@ mod tests {
     }
 
     #[test]
+    fn session_parser_uses_explicit_service_metadata_with_an_unrelated_endpoint_id()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let channels = crate::channels::parse(
+            br#"[{"id":777,"name":"Fixture","type":1,"networkId":4,"serviceId":42}]"#,
+        )?;
+        let channel = channels.first().ok_or("missing test channel")?;
+        let mut parser = super::super::parser_for(channel.broadcast)?;
+        // PAT maps service 7 to PID 0x100 and service 42 to PID 0x101.
+        let mut section = vec![0, 0xb0, 17, 0, 1, 0xc1, 0, 0, 0, 7, 0xe1, 0, 0, 42, 0xe1, 1];
+        let mut crc = 0xffff_ffff_u32;
+        for &byte in &section {
+            crc ^= u32::from(byte) << 24;
+            for _ in 0..8 {
+                crc = if crc & 0x8000_0000 == 0 {
+                    crc << 1
+                } else {
+                    (crc << 1) ^ 0x04c1_1db7
+                };
+            }
+        }
+        section.extend_from_slice(&crc.to_be_bytes());
+        section.insert(0, 0); // PSI pointer field.
+        parser.push(&ts_packet(0, true, &section));
+        assert_eq!(parser.pmt_pids, std::collections::HashSet::from([0x101]));
+        assert!(matches!(
+            super::super::parser_for(None),
+            Err(super::super::Error::MissingService)
+        ));
+        Ok(())
+    }
+
+    #[test]
     fn disabling_drops_partial_subtitles_and_reenable_waits_for_start() {
         let mut parser = TransportParser::new(false);
         parser.subtitle_pids.insert(0x120);
