@@ -16,7 +16,6 @@ ApplicationWindow {
     property bool closing: false
     property bool showGuide: false
     property bool showChannels: false
-    onShowChannelsChanged: player.browser_open(showChannels)
     property bool showStats: false
     readonly property var channelRows: JSON.parse(player.channel_data)
     Player {
@@ -334,16 +333,30 @@ ApplicationWindow {
                 }
             }
         }
-        Loader {
+        MouseArea {
+            anchors {
+                left: parent.left
+                right: parent.right
+                top: parent.top
+                bottom: channelPanel.top
+            }
+            visible: root.showChannels && !root.closing
+            z: 5
+            cursorShape: Qt.PointingHandCursor
+            onClicked: root.showChannels = false
+        }
+        AnimatedPanel {
+            id: channelPanel
             anchors {
                 left: parent.left
                 right: parent.right
                 bottom: parent.bottom
             }
             height: Math.min(304, surface.height - topPanel.height)
-            active: !root.closing && root.showChannels
-            visible: active
-            z: 5
+            open: root.showChannels
+            shuttingDown: root.closing
+            onActiveChanged: player.browser_open(active)
+            z: 6
             onLoaded: item.focusBrowser()
             sourceComponent: ChannelBrowser {
                 rows: root.channelRows
