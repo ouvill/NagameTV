@@ -1,5 +1,6 @@
 mod audio_output;
 mod channels;
+mod program_info;
 mod startup;
 mod statistics;
 mod subtitle_rendering;
@@ -39,6 +40,8 @@ pub mod ffi {
         #[qproperty(QString, subtitle_status, READ, NOTIFY)]
         #[qproperty(QString, epg_data, READ, NOTIFY)]
         #[qproperty(QString, epg_status, READ, NOTIFY)]
+        #[qproperty(QString, current_program_data, READ, NOTIFY)]
+        #[qproperty(f64, program_progress, READ, NOTIFY)]
         #[qproperty(f64, volume_level, READ, NOTIFY)]
         #[qproperty(bool, audio_muted, READ, NOTIFY)]
         #[qproperty(QString, settings_error, READ, NOTIFY)]
@@ -107,6 +110,10 @@ pub struct PlayerRust {
     subtitle_status: QString,
     epg_data: QString,
     epg_status: QString,
+    current_program_data: QString,
+    program_progress: f64,
+    current_projection: crate::features::program_info::presentation::Projection,
+    next_current_program: Instant,
     diagnostics: QString,
     volume_level: f64,
     audio_muted: bool,
@@ -120,7 +127,7 @@ pub struct PlayerRust {
     resume_retry_used: bool,
     guide_visible: bool,
     guide_revision: u64,
-    guide_service: Option<u64>,
+    guide_service: Option<crate::channels::BroadcastService>,
     next_guide: Instant,
     next_diagnostic: Instant,
     request: Option<services::Request>,
@@ -183,6 +190,18 @@ impl ffi::Player {
         QString
     );
     property_setter!(set_epg_data, epg_data, epg_data_changed, QString);
+    property_setter!(
+        set_current_program_data,
+        current_program_data,
+        current_program_data_changed,
+        QString
+    );
+    property_setter!(
+        set_program_progress,
+        program_progress,
+        program_progress_changed,
+        f64
+    );
     property_setter!(set_epg_status, epg_status, epg_status_changed, QString);
     property_setter!(set_diagnostics, diagnostics, diagnostics_changed, QString);
     property_setter!(set_audio_muted, audio_muted, audio_muted_changed, bool);
@@ -293,7 +312,8 @@ impl ffi::Player {
             .rust()
             .entries
             .get(self.rust().selected as usize)
-            .map(|s| s.id);
+            .and_then(|s| s.broadcast);
+        self.as_mut().poll_current_program(service);
         if self.rust().guide_visible
             && (self.rust().guide_revision != self.rust().epg.revision
                 || self.rust().guide_service != service
@@ -303,7 +323,15 @@ impl ffi::Player {
                 .duration_since(UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_millis() as u64;
-            let data = self.rust().epg.view(service, now);
+            let data = match self.rust().epg.view(service, now) {
+                Ok(data) => data,
+                Err(error) => {
+                    eprintln!("Program guide presentation failed: {error}");
+                    self.as_mut()
+                        .set_epg_status(QString::from(format!("番組表の表示失敗: {error}")));
+                    "[]".into()
+                }
+            };
             let revision = self.rust().epg.revision;
             self.as_mut().rust_mut().guide_revision = revision;
             self.as_mut().rust_mut().guide_service = service;

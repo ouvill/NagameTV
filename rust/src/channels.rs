@@ -26,12 +26,21 @@ pub enum Band {
     Other,
 }
 
+/// Broadcast metadata identifies EPG schedules independently of endpoint IDs.
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(rename_all = "camelCase")]
+pub struct BroadcastService {
+    pub network_id: u16,
+    pub service_id: u16,
+}
+
 #[derive(Debug)]
 pub struct Channel {
     pub id: u64,
     pub name: String,
     pub label: String,
     pub band: Band,
+    pub broadcast: Option<BroadcastService>,
     number: Option<u16>,
     service_id: Option<u16>,
 }
@@ -47,6 +56,7 @@ struct Service {
     #[serde(rename = "type")]
     kind: u32,
     service_id: Option<u16>,
+    network_id: Option<u16>,
     remote_control_key_id: Option<u16>,
     #[serde(default)]
     channel: ServiceChannel,
@@ -82,6 +92,13 @@ pub fn parse(bytes: &[u8]) -> Result<Vec<Channel>, Error> {
                 name: s.name,
                 label,
                 band: s.channel.band,
+                broadcast: s
+                    .network_id
+                    .zip(s.service_id)
+                    .map(|(network_id, service_id)| BroadcastService {
+                        network_id,
+                        service_id,
+                    }),
                 number,
                 service_id: s.service_id,
             }

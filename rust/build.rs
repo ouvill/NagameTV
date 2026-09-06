@@ -7,6 +7,8 @@ fn main() {
             .qml_file("qml/SubtitleOverlay.qml")
             .qml_file("qml/SubtitleGlyph.qml")
             .qml_file("qml/ProgramGuide.qml")
+            .qml_file("qml/CurrentProgram.qml")
+            .qml_file("qml/ProgramDetails.qml")
             .qml_file("qml/VideoStats.qml")
             .qml_file("qml/ChannelSelector.qml")
             .depend("QtQuick")

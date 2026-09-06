@@ -35,8 +35,8 @@ Rectangle {
                         text: Qt.formatDateTime(new Date(modelData.startAt), "MM/dd hh:mm")
                             + " – " + Qt.formatDateTime(new Date(modelData.startAt + modelData.duration), "hh:mm")
                     }
-                    Label { width: parent.width; color: "white"; text: modelData.name.length ? modelData.name : "番組名未取得"; textFormat: Text.PlainText; wrapMode: Text.Wrap; font.bold: true }
-                    Label { width: parent.width; color: "#dddddd"; text: modelData.description; textFormat: Text.PlainText; wrapMode: Text.Wrap; maximumLineCount: 4; elide: Text.ElideRight }
+                    Label { width: parent.width; color: "white"; text: modelData.name ? modelData.name : "番組名未取得"; textFormat: Text.PlainText; wrapMode: Text.Wrap; font.bold: true }
+                    Label { width: parent.width; color: "#dddddd"; text: modelData.description || ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; maximumLineCount: 4; elide: Text.ElideRight }
                 }
             }
             Label { anchors.centerIn: parent; visible: programs.count === 0; text: "表示できる番組がありません"; color: "white" }

@@ -85,3 +85,6 @@ mainからの機能移植状況と設定保存の仕様は [feature-migration.md
 
 字幕は同梱ARIBフォントと輪郭描画を使用します（Qt 6.6以降）。
 描画と資源の検証手順は [docs/subtitle-rendering.md](docs/subtitle-rendering.md) を参照してください。
+
+EPG有効時は選択局の現在番組・放送時間・進行率を表示します。番組名を押すと詳細を開けます。
+取得は5分間隔、現在番組と進行率は取得済みデータから1秒間隔で更新します。

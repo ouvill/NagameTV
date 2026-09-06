@@ -107,6 +107,16 @@ ApplicationWindow {
             }
             Slider { from: 0; to: 1; value: player.volume_level; Layout.preferredWidth: 110; onMoved: player.volume(value) }
         }
+        Loader {
+            Layout.fillWidth: true
+            Layout.leftMargin: 8; Layout.rightMargin: 8
+            active: !root.closing && player.epg_enabled
+            visible: active
+            sourceComponent: CurrentProgram {
+                programJson: player.current_program_data
+                progress: player.program_progress
+            }
+        }
         Label { text: player.settings_error; visible: text.length > 0; color: "#ffb080"; Layout.fillWidth: true; wrapMode: Text.Wrap; Layout.leftMargin: 8 }
         Label { text: player.diagnostics; color: "#aaaaaa"; font.pixelSize: 11; Layout.fillWidth: true; Layout.leftMargin: 8; elide: Text.ElideRight }
         Label {
