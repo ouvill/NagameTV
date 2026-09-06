@@ -83,6 +83,14 @@ impl Network {
                     }
                     bytes.extend_from_slice(&chunk);
                 }
+                // Capacity includes spare buffer space; neither value is process RSS.
+                // Log only the endpoint path, never server credentials or query data.
+                eprintln!(
+                    "HTTP_JSON path={} body_bytes={} buffer_capacity_bytes={}",
+                    response.url().path(),
+                    bytes.len(),
+                    bytes.capacity()
+                );
                 parse(&bytes)
             }
             .await;

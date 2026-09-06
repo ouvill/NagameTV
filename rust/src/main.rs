@@ -11,6 +11,10 @@ use std::sync::{
 };
 
 fn main() {
+    if let Err(error) = memory::configure() {
+        eprintln!("Allocator initialization failed: {error}");
+        std::process::exit(1);
+    }
     let plan = features::LaunchPlan::parse(std::env::args().skip(1)).unwrap_or_else(|error| {
         eprintln!("{error}");
         std::process::exit(2);

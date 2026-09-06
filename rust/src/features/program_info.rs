@@ -34,6 +34,18 @@ fn parse(bytes: &[u8]) -> Result<Vec<Program>, String> {
     }
     entries.sort_unstable_by_key(|p| (p.start_at, p.id));
     entries.dedup_by_key(|p| (p.start_at, p.id));
+    // Owned storage only: excludes malloc metadata, temporary parser allocations,
+    // the HTTP body (still alive here), and the previous snapshot during refresh.
+    let record_bytes = entries.capacity() * std::mem::size_of::<Program>();
+    let string_bytes: usize = entries
+        .iter()
+        .map(|p| p.name.capacity() + p.description.capacity())
+        .sum();
+    eprintln!(
+        "EPG_MEMORY programs={} record_capacity_bytes={record_bytes} string_capacity_bytes={string_bytes} snapshot_capacity_bytes={}",
+        entries.len(),
+        record_bytes + string_bytes
+    );
     Ok(entries)
 }
 

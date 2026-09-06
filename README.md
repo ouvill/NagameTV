@@ -62,3 +62,8 @@ EPGの通信取消しが完了するまでは停止待ちになる。
 
 停止・再開時のRSS増加については [allocator-investigation.md](docs/allocator-investigation.md)
 を参照。Linux/glibcでは `ALLOC` 行に使用中・空き領域・直接mmap確保量をKiBで出力します。
+
+Linux/glibcでは起動時に `M_MMAP_THRESHOLD` を128KiBに固定します（環境変数不要）。
+EPG有効時の停止・再開で、解放済み領域が大量に残る挙動を抑えるためです。
+設定理由とアロケーター変更の選択肢は [allocator-controls.md](docs/allocator-controls.md)。
+`HTTP_JSON` 行に受信バッファー、`EPG_MEMORY` 行に解析後の保持容量をバイトで記録します。

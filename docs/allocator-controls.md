@@ -1,7 +1,8 @@
 # glibcとRustのメモリー制御機構の調査
 
 2026-09-06。調査環境はRust 1.98.1、Ubuntu glibc 2.43。
-今回の実装は読み取り専用の `mallinfo2()` 診断まで。以下の本体組み込み案は未実装。
+`memory::configure()` をmainの先頭で呼び、Linux/glibcでは `M_MMAP_THRESHOLD` を128KiBに固定する実装を追加した。
+`mallinfo2()` の診断も継続する。
 
 ## 結論
 
@@ -12,7 +13,7 @@ Rustのglobal allocator変更とは効果範囲が異なる。
 | 制御 | 対象・目的 | 今回の位置づけ |
 | --- | --- | --- |
 | `MALLOC_MMAP_THRESHOLD_` / `GLIBC_TUNABLES` | プロセス起動時のglibc設定 | 環境変数での比較は実施済み |
-| `mallopt(M_MMAP_THRESHOLD, n)` | 大きな確保のmmapしきい値を固定 | Rustから設定する第一候補 |
+| `mallopt(M_MMAP_THRESHOLD, n)` | 大きな確保のmmapしきい値を固定 | 起動時に128KiBを設定済み |
 | `mallopt(M_TRIM_THRESHOLD, n)` | 返却可能なheap末尾の自動返却しきい値 | 必要が判明してから別に比較 |
 | `mallopt(M_ARENA_MAX, n)` | arena数の上限 | 保持量と並列確保の競合を比較する必要あり |
 | `glibc.malloc.tcache_count` | スレッドごとのキャッシュ量 | 今回の大きな領域保持への優先対策ではない |
@@ -25,7 +26,7 @@ glibcのパラメーターと効果は [mallopt公式説明](https://sourceware.
 
 ## Rustからglibcを設定する
 
-既にこのブランチにはLinux/glibc限定で `libc` crateがある。例えば次のように扱える。
+既にこのブランチにはLinux/glibc限定で `libc` crateがある。実装は `rust/src/memory.rs` にまとめている。呼び出しの要点は次のとおり。
 
 ```rust
 #[cfg(all(target_os = "linux", target_env = "gnu"))]
@@ -46,7 +47,7 @@ fn configure_allocator() -> Result<(), &'static str> {
 使うネイティブライブラリー側も対象。ただしライブラリー独自のプール、直接mmap、GPUの
 VRAMまで制御するわけではない。すでに確保・保持されたメモリーをこの呼び出しで返すわけでもない。
 
-設定の呼び出し位置は `main` の起動計画決定直後、QML登録・QGuiApplication・再生preload前を候補とする。
+設定は `main` の先頭で呼び、QML登録・QGuiApplication・再生preloadより前に行う。
 main以前のランタイム／共有ライブラリー初期化もあるので、起動環境変数と完全に同じタイミングではない。
 glibcマニュアルはmalloptに初期化・スレッド安全性の制約を示すため、再生中の設定変更にはしない。
 返り値を確認し、設定できたふりをしない。
@@ -104,13 +105,13 @@ Rust側の `Vec::clear()` は要素を削除するがVec自身のcapacityは残�
 これらを呼んでもOSへのページ返却まで保証するものではない。
 [Vec公式説明](https://doc.rust-lang.org/std/vec/struct.Vec.html#method.shrink_to_fit)
 
-## このリポジトリへの提案
+## 採用した方針
 
-起動計画に「標準方針」と「glibc mmapしきい値128KiB固定」の明示的な選択を追加し、
-Linux/glibcの場合だけ `memory` モジュールで初期設定する形が小さく実装できる。
-明示的なアプリ設定を選んだ場合だけmalloptを呼ぶ案なら、標準方針では既存の環境指定を維持できる。
-設定は再生・字幕・EPGの内部には置かず、プロセスの起動責務にまとめる。
+ユーザーの指定により、Linux/glibcでは起動時に128KiB固定を常時適用する。
+環境変数でmmapしきい値を指定していても、mainでこの値に上書きする。
+設定失敗時はエラーを表示して終了し、非glibc環境では既存のsystem方針を維持する。
+再生・字幕・EPGの内部には置かず、プロセスの起動責務にまとめた。
 
-採用判断は、設定固定での長時間視聴、停止再開、選局、EPG更新、字幕描画を通し、
-RSSだけでなくCPU負荷・フレーム落ち・開始時間も比較して行う。
-今回の調査でアプリの通常の確保方針や稼働中プロセスの設定は変更していない。
+他のmalloptパラメーター、malloc_trim、アロケーター置換は追加していない。
+長時間視聴、CPU負荷・フレーム落ち・開始時間の定量比較は今後の検証対象。
+本体での停止・再開試験は [allocator-investigation.md](allocator-investigation.md) を参照。
