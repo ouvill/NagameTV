@@ -4,6 +4,7 @@ fn main() {
     CxxQtBuilder::new_qml_module(
         QmlModule::new("MinimalViewer")
             .qml_file("qml/Main.qml")
+            .qml_file("qml/AudioSettings.qml")
             .qml_file("qml/StoppedPlayback.qml")
             .qml_file("qml/TextAction.qml")
             .qml_file("qml/PlaybackErrorDetails.qml")
@@ -39,6 +40,7 @@ fn main() {
     )
     .qrc_resources([
         "../assets/icons/info.svg",
+        "../assets/icons/chevron-down.svg",
         "../assets/icons/panel-right-open.svg",
         "../assets/icons/minus.svg",
         "../assets/icons/x.svg",

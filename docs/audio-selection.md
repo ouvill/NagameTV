@@ -1,0 +1,56 @@
+# 音声トラック選択の移植
+
+mainのrust/src/audio.rsとqml/Main.qmlのaudioSettingsを参照する。
+ネイティブトラックの選択を実装した段階であり、PMT・番組情報の照合による主／副／主副、
+言語の表示名、主音声の初期選択は未移植。音声機能全体の互換完了ではない。
+
+## 責務と寿命
+
+playback/audio_streams.rsは現在のStreamCollectionを1つだけ保持し、選択済みのIDと
+ユーザーが要求したIDを分ける。古いコレクションは置換時に解放する。
+要求には配列indexを使わず、現在のコレクションで音声IDが実在することを確認する。
+選択イベントには選択中の非音声ストリームも含める。初回確認前なら最初の映像を残す。
+イベント送信成功だけではselectedを書き換えず、StreamsSelected通知で確定する。
+番組中のコレクション変更時は要求を再送し、対象が消えた場合は要求を破棄して型付きErrorを返す。
+
+Playbackの既存bus pollから通知を受ける。専用のスレッド・Timer・通信は追加しない。
+停止に成功した後でコレクション・選択・要求を破棄し、次の局へ持ち越さない。
+停止失敗時は再生状態が確定していないため、状態を先に消して成功を装わない。
+
+player/audio_streams.rsがJSONとQStringの境界を担当する。
+音声メニューの表示中に限り1秒間隔で小さなトラック一覧を投影する。
+JSONが同じならQMLのプロパティ変更は生じず、閉じるとJSON・行モデルを空にする。
+ストリームのタグは言語コード・タイトルのみ参照する。EPG全体やデコード済み音声を複製しない。
+トラック順から主／副や言語を推測しない。
+
+ユーザーの切り替え失敗はメニュー内に表示し、映像の停止エラーとは分離する。
+コレクション更新時の自動再適用失敗は現状では端末に記録する。この通知のUI統合は残る。
+
+## UI
+
+AudioSettings.qmlはmainと同じ左下x=24、下部から100px、最大380×340px、
+padding20、角丸18、背景#f21a1c1a、選択色#389caf9fを使う。
+音量ボタン横の28pxのchevron-downから開く。Escapeと外側クリックで閉じる。
+1トラックまたは停止中は選択操作を無効化し、エラーと放送由来の文字列はPlainTextで表示する。
+主／副メタデータ未統合のため、ラベルは音声番号と取得できたネイティブの言語コード・タイトル。
+
+参照した公式API:
+- [playbin3](https://gstreamer.freedesktop.org/documentation/playback/playbin3.html)：StreamCollectionとSelectStreams、再生中のコレクション更新。
+- [Stream selection](https://gstreamer.freedesktop.org/documentation/additional/design/stream-selection.html)：選択要求は維持する映像IDも含める。
+- [Qt Popup](https://doc.qt.io/qt-6.8/qml-qtquick-controls-popup.html)：opened、closed、Overlay、closePolicy。
+
+## 検証
+
+Rust56件成功・外部TS依存1件未実行、Clippy全ターゲット成功。
+Qt62件成功（初期化・終了を含む）、AudioSettingsのqmllint警告なし、releaseビルド成功。
+Rust試験は映像／テキストを保持する選択イベントの実送信、選択通知前後の状態、
+消滅・非音声IDの拒否、初回の映像保持、古いコレクションの弱参照による解放確認を含む。
+ネイティブイベント試験は明示したCPU用fakesinkでイベントのみを受け、再生機器を使用しない。
+Qt試験は行からの実ID配送、要求だけでは選択状態を変えないこと、停止中の無効化、
+PlainText、閉じた後のモデル解放と更新停止を確認する。
+
+DISPLAY・NVIDIA OpenGL・PulseAudioを検出・検証後、実放送のPLAYING、メニュー内の
+音声1トラックと選択色、正常終了を確認した。証跡はGit対象外の
+benchmark/viewing-design/audio-menu.py、audio-menu.log、audio-menu.png。
+今回の放送は1トラックだったため、複数トラック間の実音声切り替えは未確認。
+二重音声、番組変更との併用、長時間の資源測定、mainとの同一データ画像比較は残る。

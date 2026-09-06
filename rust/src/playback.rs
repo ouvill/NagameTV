@@ -1,4 +1,5 @@
 pub mod audio_output;
+pub mod audio_streams;
 pub mod deinterlace;
 pub mod stats;
 
@@ -92,6 +93,7 @@ pub struct Playback {
     queue: gst::Element,
     mode: deinterlace::Mode,
     attached: bool,
+    audio_streams: RefCell<audio_streams::Streams>,
     requested_uri: RefCell<Option<String>>,
 }
 
@@ -177,6 +179,7 @@ impl Playback {
             queue,
             mode,
             attached: false,
+            audio_streams: RefCell::default(),
             requested_uri: RefCell::new(None),
         })
     }
@@ -214,6 +217,7 @@ impl Playback {
     pub fn stop(&self) -> Result<()> {
         stop_stream(&self.playbin)?;
         *self.requested_uri.borrow_mut() = None;
+        *self.audio_streams.borrow_mut() = audio_streams::Streams::default();
         Ok(())
     }
 
@@ -221,11 +225,26 @@ impl Playback {
         output.apply(&self.playbin);
     }
 
+    pub fn audio_tracks(&self) -> Vec<audio_streams::Track> {
+        self.audio_streams.borrow().tracks()
+    }
+
+    pub fn select_audio(&self, id: &str) -> std::result::Result<(), audio_streams::Error> {
+        self.audio_streams.borrow_mut().select(&self.playbin, id)
+    }
+
     pub fn poll(&self) -> Result<bool> {
         let bus = self.playbin.bus().ok_or(Error::MissingBus)?;
         let mut playing = false;
         let mut failure = None;
         while let Some(message) = bus.pop() {
+            if let Err(error) = self
+                .audio_streams
+                .borrow_mut()
+                .observe(&self.playbin, &message)
+            {
+                eprintln!("Audio selection: {error}");
+            }
             match message.view() {
                 gst::MessageView::Error(e) => {
                     if failure.is_none() {

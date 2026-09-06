@@ -1,4 +1,5 @@
 mod audio_output;
+mod audio_streams;
 mod channel_programs;
 mod channels;
 mod guide;
@@ -98,6 +99,10 @@ pub mod ffi {
         fn shutdown(self: Pin<&mut Player>);
         #[qinvokable]
         fn step_channel(self: Pin<&mut Player>, offset: i32);
+        #[qinvokable]
+        fn audio_tracks(self: &Player) -> QString;
+        #[qinvokable]
+        fn select_audio(self: &Player, id: QString) -> QString;
     }
 }
 

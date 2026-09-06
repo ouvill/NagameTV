@@ -58,6 +58,17 @@ ApplicationWindow {
         playing: player.playing
         pinned: root.showProgram || root.showChannels || root.showGuide || windowActions.popupOpen || windowActions.editingText || volumeSlider.pressed
     }
+    AudioSettings {
+        id: audioSettings
+        windowWidth: root.width
+        windowHeight: root.height
+        playing: player.playing
+        onRefreshRequested: tracksJson = player.audio_tracks()
+        onSelectRequested: function (trackId) {
+            errorText = player.select_audio(trackId);
+        }
+        onClosed: overlayVisibility.reveal()
+    }
     WindowActions {
         id: windowActions
         targetWindow: root
@@ -328,6 +339,13 @@ ApplicationWindow {
                         tip: player.audio_muted ? "消音解除" : "消音"
                         active: player.audio_muted
                         onClicked: player.mute(!player.audio_muted)
+                    }
+                    IconAction {
+                        iconSource: "qrc:/qt/qml/MinimalViewer/assets/icons/chevron-down.svg"
+                        tip: "音声選択"
+                        implicitWidth: 28
+                        implicitHeight: 28
+                        onClicked: audioSettings.open()
                     }
                     ThemedSlider {
                         id: volumeSlider
