@@ -10,6 +10,9 @@ fn main() {
             .qml_file("qml/SubtitleGlyph.qml")
             .qml_file("qml/ProgramGuide.qml")
             .qml_file("qml/CurrentProgram.qml")
+            .qml_file("qml/IconAction.qml")
+            .qml_file("qml/ThemedSlider.qml")
+            .qml_file("qml/SettingsPopup.qml")
             .qml_file("qml/ProgramDetails.qml")
             .qml_file("qml/VideoStats.qml")
             .qml_file("qml/ChannelSelector.qml")
@@ -25,6 +28,16 @@ fn main() {
             .depend("QtQuick.Shapes"),
     )
     .qrc_resources([
+        "../assets/icons/square.svg",
+        "../assets/icons/play.svg",
+        "../assets/icons/volume-x.svg",
+        "../assets/icons/volume-2.svg",
+        "../assets/icons/grid-2x2.svg",
+        "../assets/icons/captions.svg",
+
+        "../assets/icons/calendar-days.svg",
+        "../assets/icons/settings-2.svg",
+        "../assets/icons/maximize.svg",
         "../assets/fonts/rounded-mplus-1m-arib.ttf",
         "../assets/fonts/LICENSE-Rounded-Mplus-1m-for-ARIB.txt",
     ])
