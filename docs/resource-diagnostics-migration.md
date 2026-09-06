@@ -1,7 +1,7 @@
 # 継続的な資源診断の移植
 
 mainのrust/src/diagnostics.rsを参照し、viewer-diagnostics crateへ計測と保存を分離した。
-この段階ではアプリ本体から呼んでおらず、定期記録・受信キュー・終了待ち・Qt GC通知・
+この段階ではアプリ本体から呼んでおらず、定期記録・Qt GC通知・
 終了済みプロセスのログ整理は未移植。mainのSnapshotの項目を揃えて接続する必要がある。
 
 ## 計測
@@ -43,3 +43,31 @@ JSONエスケープによるサイズ超過と既存ログの保持を確認し�
 CARGO_TARGET_DIR=build/diagnostics cargo test --locked --manifest-path rust/crates/viewer-diagnostics/Cargo.toml
 CARGO_TARGET_DIR=build/diagnostics cargo clippy --locked --manifest-path rust/crates/viewer-diagnostics/Cargo.toml --all-targets -- -D warnings
 ```
+
+
+## 有限キューと終了待ち
+
+Recorderを追加し、mainと同じ上限32件のsync_channelへtry_sendする。
+Snapshotはmainと同名の固定個数の数値・真偽値だけを所有する。イベントはEvent enumで
+許可された名前へ限定し、任意の長い文字列や番組・実況の本文をキューへ渡さない。
+受理・満杯による破棄・停止済みはEnqueue enumで区別する。満杯ではブロックせず、
+AtomicU64の破棄件数を以降のレコードへ記録する。終了済みキューへの要求は破棄数に含めない。
+
+出力ファイルのオープンとワーカー生成は起動時に行い、/procとallocatorの計測、JSON生成、
+ファイル書き込みは専用スレッドで実行する。独自タイマー・Tokio runtimeは作らない。
+記録要求時刻と実際の計測時刻を別に保持し、混雑時に両者がずれたことを確認できる。
+
+stopはRecorderを消費して送信口を閉じ、Stoppingを返す。キューに受理された最大32件と
+処理中の1件をワーカーが処理して終了する。Stopping::is_finishedで終了を確認でき、
+joinは保存エラー・ワーカーパニックをResultで返す。IOエラーの後は処理を終え、
+後続レコードを途中まで壊れたファイルへ追加しない。
+
+明示stopを忘れた場合もDropは送信口を閉じてjoinし、スレッドを切り離したまま残さない。
+このフォールバックとStoppingのDropはブロックする。低速・停止したファイルシステムへの
+書き込みを強制キャンセルする機能はなく、終了時間の上限は保証しない。アプリ側では
+stop→終了確認→joinの順に扱い、正常終了時に保存エラーを取り出す必要がある。
+
+書き込みを明示的に止めた状態で32件だけ受理し、その後1000件を破棄する試験、
+停止後の全受理分保存、join復帰前の最終JSON保存、保存失敗とパニックのResult化を追加した。
+合計9件とClippy全ターゲット、fmtが成功。実アプリの定期記録・設定への接続、
+Qt GC通知、終了済みログ整理、長時間測定は依然として未実施。
