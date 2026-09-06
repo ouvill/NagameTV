@@ -166,6 +166,24 @@ impl ProgramInfo {
         visibility::adjacent(&visible, selected, step)
     }
 
+    pub fn audio_program(
+        &self,
+        service: Option<BroadcastService>,
+        now: u64,
+    ) -> Option<crate::audio::Program<'_>> {
+        let service = service?;
+        let program = self.snapshot.current(Some(service), now)?;
+        Some(crate::audio::Program {
+            key: crate::audio::ProgramKey {
+                id: program.id,
+                start: program.start_at,
+                duration: program.duration,
+                service,
+            },
+            descriptors: self.audio_descriptors(Some(service), now),
+        })
+    }
+
     /// Borrow only the current program's audio descriptors; never retain a second snapshot.
     pub fn audio_descriptors(
         &self,

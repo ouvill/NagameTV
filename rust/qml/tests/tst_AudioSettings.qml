@@ -17,6 +17,26 @@ TestCase {
     }
     SignalSpy { id: refresh; target: popup; signalName: "refreshRequested" }
     SignalSpy { id: selection; target: popup; signalName: "selectRequested" }
+    function init() { refresh.clear(); selection.clear(); }
+    function test_dual_modes_dispatch_opaque_keys_and_honor_backend_availability() {
+        failOnWarning(/.*/);
+        popup.open();
+        tryCompare(popup, "opened", true);
+        popup.playing = true;
+        popup.tracksJson = JSON.stringify([
+            {id: "opaque-main", language: "jpn", role: "main", enabled: true, selected: false},
+            {id: "opaque-sub", language: "eng", role: "sub", enabled: false, selected: false},
+            {id: "opaque-both", language: "", role: "both", enabled: true, selected: true}
+        ]);
+        const main = findChild(popup.contentItem, "audioOption0");
+        verify(waitForRendering(main));
+        mouseClick(main);
+        compare(selection.signalArguments[0][0], "opaque-main");
+        compare(popup.tracks[2].selected, true);
+        compare(findChild(popup.contentItem, "audioOption1").enabled, false);
+        popup.close();
+        tryCompare(popup, "visible", false);
+    }
     function test_main_labels_and_duplicate_disambiguation() {
         popup.tracksJson = JSON.stringify([
             {id: "a", language: "jpn", role: "main"},

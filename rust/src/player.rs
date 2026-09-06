@@ -598,6 +598,7 @@ impl ffi::Player {
         }
         self.as_mut().poll_features();
         let result = self.rust().playback.as_ref().map(playback::Playback::poll);
+        self.poll_audio_choice();
         match result {
             Some(Ok(true)) => {
                 self.as_mut().set_playback_error(QString::default());

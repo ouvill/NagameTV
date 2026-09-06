@@ -82,10 +82,8 @@ fn switching_native_audio_changes_samples_while_video_continues() -> TestResult 
         rendered.fetch_add(1, Ordering::Release);
         None
     });
-    let filter = gst::parse::bin_from_description(
-        "audioconvert ! capsfilter caps=audio/x-raw,format=F32LE,layout=interleaved",
-        true,
-    )?;
+    let routing = crate::playback::audio_routing::Routing::default();
+    let filter = routing.filter()?;
     let player = gst::ElementFactory::make("playbin3")
         .property("audio-sink", &audio).property("video-sink", &video)
         .property("audio-filter", &filter)

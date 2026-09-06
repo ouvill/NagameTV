@@ -8,6 +8,10 @@ pub enum Error {
     Unavailable,
     #[error("音声切り替え要求が拒否されました")]
     Rejected,
+    #[error("音声形式を確認できません。もう一度選択してください")]
+    Unsupported,
+    #[error("音声選択肢を作成できませんでした")]
+    Presentation,
 }
 
 #[derive(Serialize)]
@@ -97,6 +101,20 @@ impl Streams {
         }
         ids.push(audio);
         Ok(ids)
+    }
+
+    pub fn set_failure(&mut self, error: Option<Error>) {
+        self.failure = error;
+    }
+    pub fn state_for_id(&self, id: &str) -> Option<(Option<u8>, bool)> {
+        self.collection.as_ref()?.iter().find(|stream| {
+            stream.stream_type().contains(gst::StreamType::AUDIO)
+                && stream.stream_id().as_deref() == Some(id)
+        })?;
+        Some((
+            self.components.tag_for_stream(id),
+            self.selected.iter().any(|selected| selected.as_str() == id),
+        ))
     }
 
     pub fn failure(&self) -> Option<Error> {

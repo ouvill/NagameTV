@@ -1,7 +1,7 @@
 //! Broadcast audio metadata and roles, independent of Qt, GStreamer and clocks.
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Descriptor {
     pub component_tag: u8,
@@ -47,6 +47,19 @@ impl Descriptor {
         self.langs.len() * std::mem::size_of::<String>()
             + self.langs.iter().map(String::capacity).sum::<usize>()
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+pub struct ProgramKey {
+    pub id: u64,
+    pub start: u64,
+    pub duration: u64,
+    pub service: crate::channels::BroadcastService,
+}
+#[derive(Clone, Copy)]
+pub struct Program<'a> {
+    pub key: ProgramKey,
+    pub descriptors: &'a [Descriptor],
 }
 
 /// Ambiguous descriptors cannot assign a language or enable dual-mono routing.

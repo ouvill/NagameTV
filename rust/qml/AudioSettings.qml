@@ -31,10 +31,11 @@ Popup {
             "chi": "中文"
         };
         const language = languages[track.language] || track.language;
+        const number = track.number || index + 1;
         const role = track.role === "main" ? "主音声" : track.role === "sub" ? "副音声" : track.role === "both" ? "主／副" : "";
         const name = track.role === "both" ? role : (language ? language + (role ? " · " + role : "") : role);
         const duplicate = tracks.some(other => other.id !== track.id && other.language === track.language && other.role === track.role);
-        return !name ? "音声 " + (index + 1) : duplicate ? name + " · 音声 " + (index + 1) : name;
+        return !name ? "音声 " + number : duplicate ? name + " · 音声 " + number : name;
     }
     signal refreshRequested
     signal selectRequested(string trackId)
@@ -100,7 +101,7 @@ Popup {
                         required property int index
                         required property var modelData
                         Layout.fillWidth: true
-                        enabled: popup.playing && popup.tracks.length > 1
+                        enabled: popup.playing && modelData.enabled !== false && popup.tracks.length > 1
                         text: popup.trackLabel(modelData, index)
                         contentItem: Label {
                             text: option.text

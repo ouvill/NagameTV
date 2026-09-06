@@ -1,5 +1,7 @@
+mod audio_choices;
 mod audio_components;
 pub mod audio_output;
+mod audio_routing;
 pub mod audio_streams;
 pub mod deinterlace;
 pub mod stats;
@@ -95,6 +97,8 @@ pub struct Playback {
     mode: deinterlace::Mode,
     attached: bool,
     audio_streams: RefCell<audio_streams::Streams>,
+    routing: audio_routing::Routing,
+    audio_intent: RefCell<Option<audio_choices::Intent>>,
     requested_uri: RefCell<Option<String>>,
 }
 
@@ -159,7 +163,10 @@ impl Playback {
         let audio = gst::ElementFactory::make("pulsesink")
             .property("enable-last-sample", false)
             .build()?;
+        let routing = audio_routing::Routing::default();
+        let audio_filter = routing.filter()?;
         let playbin = gst::ElementFactory::make("playbin3").build()?;
+        playbin.set_property("audio-filter", &audio_filter);
         playbin.set_property_from_str("flags", "video+audio+soft-volume+buffering+native-video");
         playbin.set_property("video-sink", &output);
         playbin.set_property("audio-sink", &audio);
@@ -181,6 +188,8 @@ impl Playback {
             mode,
             attached: false,
             audio_streams: RefCell::default(),
+            routing,
+            audio_intent: RefCell::default(),
             requested_uri: RefCell::new(None),
         })
     }
@@ -226,6 +235,8 @@ impl Playback {
         stop_stream(&self.playbin)?;
         *self.requested_uri.borrow_mut() = None;
         *self.audio_streams.borrow_mut() = audio_streams::Streams::default();
+        self.routing.reset();
+        *self.audio_intent.borrow_mut() = None;
         Ok(())
     }
 

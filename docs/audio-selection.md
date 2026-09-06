@@ -1,8 +1,11 @@
 # 音声トラック選択の移植
 
 mainのrust/src/audio.rsとqml/Main.qmlのaudioSettingsを参照する。
-ネイティブトラック選択、PMTと現在番組の照合、言語・主音声／副音声の表示を実装した。
-二重音声の片側出力と3モード選択、主音声の初期選択は未移植。音声機能全体の互換完了ではない。
+ネイティブトラック選択、PMTと現在番組の照合、言語・主音声／副音声の表示、
+二重音声の片側出力と3モード選択を実装した。主音声の初期選択は未移植。
+実放送の二重音声・長時間の検証も残り、音声機能全体の互換完了ではない。
+以下の途中段階の検証記録にある未実装の記述は、その段階の状態を表す。
+現在の二重音声実装は末尾の節を参照する。
 
 ## 責務と寿命
 
@@ -163,3 +166,61 @@ RSSや長時間のメモリー安定性の検証とは区別する。
 
 次の段階は二重音声の型付きモード・PCMルーティング・主音声の初期選択。
 番組変更／PMT変更で以前の片側選択が残らないこと、実放送での二重音声の確認は残る。
+
+
+## 二重音声の3モードとPCM出力
+
+`audio_choices.rs`が現在番組とPMTの一意な照合から主・副・主／副の選択肢を作る。
+Qtは選択肢の表示と要求の配送を担当し、ネイティブトラックID・番組の同一性・記述子・
+Modeを含む不透明な文字列キーを返す。クリック時に現時点の選択肢を作り直して照合するため、
+古い番組やPMTに対する要求をそのまま適用しない。音声番号は展開した行番号でなく
+元のネイティブトラック番号を使い、mainのメニューの位置・寸法・配色を維持する。
+
+`audio_routing.rs`のModeとFormatは音声形式の世代と選択状態を1つのAtomicU64で管理する。
+`audio_routing/element.rs`はGStreamer BaseTransformのAlwaysInPlaceを実装し、
+playbin3のaudio-filterへaudioconvertとともに接続する。F32LE・interleavedの
+2チャンネルでだけ片側選択を認め、主は左を両側へ、副は右を両側へビット単位でコピーする。
+主／副と非2チャンネルでは書き込みmapを行わない。PTS・durationは書き換えない。
+BaseTransformの書き込み可能なバッファーを使い、共有メモリーのmapはcopy-on-writeに従う。
+フィルター自体の変換やバッファーヘッダーの処理コストがゼロという保証ではない。
+
+制御側は実デコード中のstream IDも確認する。Mutexはstreamイベント・選択操作でだけ取得し、
+バッファー処理ではatomicの読み取りだけを行う。要求は最新1件、確認待ちは5秒上限で、
+選択済みのトラックへの主／副変更では不要なSelectStreamsを送らない。
+適用後も既存pollから番組・記述子・形式の世代を照合するため、メニューを閉じていても
+変更を検知して片側選択を解除する。要求がない場合はこの追加の番組照合を行わない。
+
+StreamStart・CAPS更新・flushは前の片側選択を無効にする。flushはCAPSとStreamStartの
+再送を要求しないので、形式とstream IDを保持して選択の世代だけを更新する。
+停止成功と要素のstopでは形式も破棄する。停止失敗を成功として扱う変更はない。
+エラーはthiserrorの型にし、履歴を蓄積しない。追加のunsafe・unwrapはない。
+PadTemplate生成のexpectは固定名・方向・capsの契約と、クラス初期化がResultを
+返せない理由をその箇所に記載している。
+
+参照した公式資料:
+- [playbin3](https://gstreamer.freedesktop.org/documentation/playback/playbin3.html): audio-filter。
+- [Pipeline manipulation](https://gstreamer.freedesktop.org/documentation/application-development/advanced/pipeline-manipulation.html): データ変換用の要素。
+- [GstBuffer](https://gstreamer.freedesktop.org/documentation/gstreamer/gstbuffer.html): writable mapと共有メモリー。
+- [Events](https://gstreamer.freedesktop.org/documentation/additional/design/events.html): flush・CAPS・stickyイベントの寿命。
+
+検証は生成したPCMを使う明示的なCPU試験として、appsrc→実フィルター→fakesinkの
+出力バイト列、共有入力の不変性、時刻の維持、古い世代の要求拒否を確認する。
+CAPS・StreamStartを再送しないflush後も再選択して出力できることを確認した。
+既存のplaybin3複数音声試験にも同じフィルターを組み込み、音声切り替えと映像継続を確認する。
+Qt試験は3行の要求キー配送・無効な形式の操作禁止・要求だけでは選択表示を変えないことを確認する。
+
+通常放送では追加フィルターを通したPLAYINGログを確認した
+（Git対象外のbenchmark/viewing-design/dual-routing-normal.log）。
+J SPORTS2はPMT取得後にPLAYING待ちが終了したが、ユーザーは有料放送を未契約のため、
+二重音声の実放送検証には使わない。この結果だけでフィルター異常とも復号異常とも断定しない。
+ユーザーが挙げた06:30のNHK BS「ワールドニュース」を実放送確認の候補とする。
+実放送で主・副・主／副の音と表示が一致すること、番組切り替わり、長時間の資源使用は未確認。
+
+
+今回の確認結果: Rust全体66件成功・外部TS依存1件未実行。flush回帰試験を加えた後も
+該当するネイティブ変換試験が成功。Clippy全ターゲット・fmt・qmllint・releaseビルド成功。
+Qtの音声UI試験はX11接続を明示して5件成功（初期化・終了を含む）。既定のWayland接続では
+ウィンドウがexposeされず中断したため、その試行を成功件数には含めない。
+DISPLAY・NVIDIA OpenGL・PulseAudioの検出と動作確認後、最新ビルドで通常放送の
+PLAYING・実映像・正常終了を確認した。証跡はGit対象外のdual-routing-verified.log/png。
+この画像では音声メニューが開いていないため、実アプリのメニュー操作成功の証拠にはしない。
