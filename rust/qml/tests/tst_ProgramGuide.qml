@@ -21,6 +21,8 @@ TestCase {
         }
     }
     property var guide
+    SignalSpy { id: settingsSpy; target: testCase.guide || null; signalName: "settingsRequested" }
+    SignalSpy { id: closeSpy; target: testCase.guide || null; signalName: "closeRequested" }
     function initTestCase() { failOnWarning(/.*/) }
     function init() { failOnWarning(/.*/); guide = createTemporaryObject(component, testCase); verify(guide !== null) }
     function test_seven_calendar_days_and_selection() {
@@ -36,6 +38,18 @@ TestCase {
         guide.dayOffset = 6
         compare(selector.currentIndex, 6)
         compare(guide.requests[guide.requests.length-1][0], guide.days[6].start)
+    }
+    function test_toolbar_forwards_actions_and_reserves_main_height() {
+        settingsSpy.clear()
+        closeSpy.clear()
+        const toolbar = findChild(guide, "guideToolbar")
+        compare(toolbar.height, 84)
+        compare(findChild(guide, "guideTimeline").parent.y, 84)
+        verify(waitForRendering(toolbar))
+        mouseClick(findChild(toolbar, "guideSettings"))
+        compare(settingsSpy.count, 1)
+        mouseClick(findChild(toolbar, "closeGuide"))
+        compare(closeSpy.count, 1)
     }
     function test_compact_boundaries_and_wide_date_click() {
         const selector = findChild(guide, "guideDay")
@@ -53,6 +67,9 @@ TestCase {
         selector.compact = false
         guide.dayOffset = 0
         verify(waitForRendering(selector))
+        wait(200)
+        const dateFlick = findChild(selector, "guideDateFlick")
+        dateFlick.contentX = dateFlick.contentWidth - dateFlick.width
         mouseClick(findChild(selector, "guideDate6"))
         compare(guide.dayOffset, 6)
         compare(guide.requests[guide.requests.length - 1][0], guide.days[6].start)

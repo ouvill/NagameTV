@@ -407,6 +407,8 @@ ApplicationWindow {
             visible: active
             sourceComponent: Component {
                 ProgramGuide {
+                    targetWindow: root
+                    onSettingsRequested: settings.open()
                     rows: root.channelRows
                     programsJson: player.epg_data
                     status: player.epg_status
@@ -414,7 +416,6 @@ ApplicationWindow {
                     onDayRequested: function (start, end) {
                         player.guide_day(start, end);
                     }
-                    onRefreshRequested: player.refresh_epg()
                     onCloseRequested: {
                         root.showGuide = false;
                         player.guide_open(false);

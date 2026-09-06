@@ -11,7 +11,8 @@ Rectangle {
     property url iconDirectory: "qrc:/qt/qml/MinimalViewer/assets/icons/"
     property var rows: []
     property string band: rows.length ? rows[0].band : "GR"
-    signal refreshRequested()
+    property Window targetWindow: null
+    signal settingsRequested()
     signal closeRequested()
     signal dayRequested(double start, double end)
     property int dayOffset: 0
@@ -46,23 +47,17 @@ Rectangle {
     onChannelChanged: selectedProgram = null
     Timer { interval: 60000; repeat: true; running: root.visible; onTriggered: root.baseDay = root.midnight() }
     ColumnLayout {
-        anchors.fill: parent; anchors.margins: 10
-        RowLayout {
-            Label { text: "番組表 — " + root.channel; color: "white"; Layout.fillWidth: true; elide: Text.ElideRight }
-            Button { text: "更新"; onClicked: root.refreshRequested() }
-            Button { text: "閉じる"; onClicked: root.closeRequested() }
+        anchors.fill: parent; spacing: 0
+        GuideToolbar {
+            Layout.fillWidth: true
+            Layout.preferredHeight: 84
+            rows: root.rows; days: root.days; dayOffset: root.dayOffset; band: root.band
+            targetWindow: root.targetWindow; iconDirectory: root.iconDirectory
+            onCloseRequested: root.closeRequested()
+            onSettingsRequested: root.settingsRequested()
+            onDayRequested: function(index) { root.dayOffset = index }
+            onBandRequested: function(band) { root.band = band; root.selectedProgram = null }
         }
-        GuideDateSelector {
-            objectName: "guideDay"
-            Layout.preferredWidth: compact ? 202 : Math.min(572, root.width - 20)
-            days: root.days
-            currentIndex: root.dayOffset
-            compact: root.width < 1280
-            iconDirectory: root.iconDirectory
-            onSelected: function(index) { root.dayOffset = index }
-        }
-        Label { text: root.status; color: "#cccccc" }
-        BroadcastTabs { rows: root.rows; value: root.band; onSelected: function(band) { root.band = band; root.selectedProgram = null } }
         GuideTimeline {
             Layout.fillWidth: true; Layout.fillHeight: true
             rows: root.rows.filter(row => row.band === root.band)
@@ -74,6 +69,11 @@ Rectangle {
         }
     }
 
+    Label {
+        anchors.bottom: parent.bottom; anchors.left: parent.left; anchors.margins: 18
+        visible: root.programsJson === "[]"
+        text: root.status; color: "#b6bab6"; textFormat: Text.PlainText
+    }
     Loader {
         objectName: "scheduledDetailsLoader"
         active: root.selectedProgram !== null

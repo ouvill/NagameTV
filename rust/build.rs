@@ -18,6 +18,7 @@ fn main() {
             .qml_file("qml/ProgramGuide.qml")
             .qml_file("qml/GuideTimeline.qml")
             .qml_file("qml/GuideDateSelector.qml")
+            .qml_file("qml/GuideToolbar.qml")
             .qml_file("qml/CurrentProgram.qml")
             .qml_file("qml/ProgramSidebar.qml")
             .qml_file("qml/SidebarChannels.qml")

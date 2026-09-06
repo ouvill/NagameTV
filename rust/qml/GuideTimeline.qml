@@ -26,9 +26,8 @@ Item {
         return column ? column.programs : []
     }
     function resetPosition() {
-        view.contentX = 0
         view.contentY = now >= dayStart && now < dayEnd
-            ? Math.max(0, Math.min(view.contentHeight - view.height, 88 + (now - dayStart) / 60000 * pixelsPerMinute - 80)) : 0
+            ? Math.max(0, Math.min(view.contentHeight - view.height, 88 + (now - dayStart) / 60000 * pixelsPerMinute - view.height * 0.34)) : 0
     }
     onDayStartChanged: Qt.callLater(resetPosition)
     onRowsChanged: view.contentX = 0
@@ -117,7 +116,7 @@ Item {
             }
         }
         Rectangle {
-            visible: root.now >= root.dayStart && root.now < root.dayEnd
+            visible: root.now >= root.dayStart && root.now < root.dayEnd && y >= view.contentY + 88
             z: 12; y: 88 + (root.now - root.dayStart) / 60000 * root.pixelsPerMinute
             width: view.contentWidth; height: 2; color: "#9caf9f"
         }

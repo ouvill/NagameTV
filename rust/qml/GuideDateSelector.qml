@@ -42,6 +42,7 @@ Rectangle {
     Keys.onUpPressed: selectDay(currentIndex - 1)
     Flickable {
         id: flick
+        objectName: "guideDateFlick"
         visible: !root.compact
         anchors.fill: parent
         contentWidth: 6 + 62 + Math.max(0, root.days.length - 1) * 84
