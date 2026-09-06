@@ -10,6 +10,7 @@ mod preferences;
 mod program_info;
 mod startup;
 mod statistics;
+mod status;
 mod subtitle_rendering;
 mod telemetry;
 
@@ -42,6 +43,8 @@ pub mod ffi {
         fn apply_ui_language(preference: &QString) -> QString;
         #[cxx_name = "currentUiLanguage"]
         fn current_ui_language() -> QString;
+        #[cxx_name = "translateBackend"]
+        fn translate_backend(source: &QString) -> QString;
         type QQuickItem;
         include!("pointer_activity.h");
         #[cxx_name = "installPointerActivity"]
@@ -493,15 +496,7 @@ impl ffi::Player {
         if let Some(event) = epg_event {
             self.record_diagnostic(event);
         }
-        let status = match self.rust().epg.status() {
-            ProgramStatus::Disabled => "無効".into(),
-            ProgramStatus::Waiting => "取得待ち".into(),
-            ProgramStatus::Fetching => "取得中".into(),
-            ProgramStatus::Cancelling => "停止処理中".into(),
-            ProgramStatus::Ready(count) => format!("{count} 番組"),
-            ProgramStatus::Failed(error) => format!("取得失敗: {error}"),
-        };
-        self.as_mut().set_epg_status(QString::from(status));
+        self.as_mut().refresh_epg_status();
         let service = self
             .rust()
             .entries

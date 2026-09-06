@@ -315,6 +315,42 @@
   <context>
     <name>Backend</name>
     <message>
+      <source>Disabled</source>
+      <translation>無効</translation>
+    </message>
+    <message>
+      <source>Comment reception failed: %1</source>
+      <translation>実況受信失敗: %1</translation>
+    </message>
+    <message>
+      <source>Waiting to reconnect: %1</source>
+      <translation>再接続待ち: %1</translation>
+    </message>
+    <message>
+      <source>Waiting to reconnect</source>
+      <translation>再接続待ち</translation>
+    </message>
+    <message>
+      <source>Waiting to fetch</source>
+      <translation>取得待ち</translation>
+    </message>
+    <message>
+      <source>Fetching</source>
+      <translation>取得中</translation>
+    </message>
+    <message>
+      <source>Stopping</source>
+      <translation>停止処理中</translation>
+    </message>
+    <message>
+      <source>Programs: %1</source>
+      <translation>%1 番組</translation>
+    </message>
+    <message>
+      <source>Fetch failed: %1</source>
+      <translation>取得失敗: %1</translation>
+    </message>
+    <message>
       <source>This audio track is no longer available. Choose a track again.</source>
       <translation>この音声トラックは利用できなくなりました。音声を選び直してください。</translation>
     </message>

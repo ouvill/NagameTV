@@ -40,7 +40,12 @@ int main(int argc, char **argv) {
   check(root->property("heading").toString() == "Stats for nerds", "English source text");
   const auto dayBeforeSwitch = root->property("day");
   check(root->property("dateLabel").toString() == "Tue, Sep 8", "English date independent of system locale");
+  check(translateBackend("Programs: %1").arg("13000") == "Programs: 13000", "English feature count");
   check(applyUiLanguage("ja") == "ja", "Load Japanese catalog");
+  check(translateBackend("Programs: %1").arg("13000") == QString::fromUtf8("13000 番組"), "Japanese feature count template reorders argument");
+  check(translateBackend("Waiting to reconnect") == QString::fromUtf8("再接続待ち"), "Japanese retry status");
+  const QString detail = QString::fromUtf8("source %1 <tag> 日本語");
+  check(translateBackend("Fetch failed: %1").arg(detail) == QString::fromUtf8("取得失敗: ") + detail, "Diagnostics remain literal data including placeholders");
   check(root->property("dateLabel").toString() == QString::fromUtf8("9/8（火）"), "Japanese date and translated format update together");
   check(root->property("day") == dayBeforeSwitch, "Language change preserves the date");
   check(root->property("heading").toString() == QString::fromUtf8("動画統計"), "Retranslate existing QML to Japanese");
@@ -50,6 +55,7 @@ int main(int argc, char **argv) {
   check(applyUiLanguage("en") == "en", "Switch back to English");
   check(root->property("heading").toString() == "Stats for nerds", "Retranslate existing QML to English");
   check(root->property("dateLabel").toString() == "Tue, Sep 8", "Date returns to English");
+  check(translateBackend("Waiting to reconnect") == "Waiting to reconnect", "Feature status returns to English");
   check(root->property("emptyChannels").toString() == "No matching channels", "Feature UI context returns to English");
   check(applyUiLanguage("ja") == "ja", "Reuse Japanese translator");
   check(root->property("heading").toString() == QString::fromUtf8("動画統計"), "Switch repeatedly");

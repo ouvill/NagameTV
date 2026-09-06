@@ -12,6 +12,17 @@ use viewer_comments::{
 
 const HISTORY_LIMIT: usize = 200;
 
+/// Borrow the failure from its connection generation; presentation owns no error copy.
+#[derive(Debug)]
+pub enum PresentationStatus<'a> {
+    Disabled,
+    Unavailable,
+    Connecting,
+    Receiving,
+    Failed(&'a viewer_comments::connection::Error),
+    Retrying(Option<&'a viewer_comments::connection::Error>),
+}
+
 #[derive(Default)]
 pub struct Comments {
     controller: Controller,
@@ -93,21 +104,23 @@ impl Comments {
             self.history.iter().map(|comment| comment.text.len()).sum(),
         )
     }
-    pub fn status(&self, enabled: bool) -> String {
+    pub fn status(&self, enabled: bool) -> PresentationStatus<'_> {
         if !enabled {
-            return "無効".into();
+            return PresentationStatus::Disabled;
         }
         if self.target.is_none() {
-            return "実況対象のチャンネルを選んでください".into();
+            return PresentationStatus::Unavailable;
         }
         match self.controller.status() {
             Status::Disabled | Status::Switching | Status::Connection(State::Connecting) => {
-                "接続中…".into()
+                PresentationStatus::Connecting
             }
-            Status::Connection(State::Receiving) => "実況を受信中".into(),
-            Status::Connection(State::Failed(error)) => error.to_string(),
-            Status::Retrying(State::Failed(error)) => format!("{error}（再接続待ち）"),
-            Status::Connection(State::Ended) | Status::Retrying(_) => "再接続待ち".into(),
+            Status::Connection(State::Receiving) => PresentationStatus::Receiving,
+            Status::Connection(State::Failed(error)) => PresentationStatus::Failed(error),
+            Status::Retrying(State::Failed(error)) => PresentationStatus::Retrying(Some(error)),
+            Status::Connection(State::Ended) | Status::Retrying(_) => {
+                PresentationStatus::Retrying(None)
+            }
         }
     }
 
@@ -200,9 +213,21 @@ mod tests {
     fn history_is_bounded_and_released_on_switch_and_disable()
     -> Result<(), Box<dyn std::error::Error>> {
         let mut comments = Comments::default();
+        assert!(matches!(
+            comments.status(false),
+            PresentationStatus::Disabled
+        ));
+        assert!(matches!(
+            comments.status(true),
+            PresentationStatus::Unavailable
+        ));
         let first = channel(1, "BS", "NHK", Some(101))?;
         let second = channel(2, "BS", "NHK", Some(102))?;
         comments.configure(true, Some(&first));
+        assert!(matches!(
+            comments.status(true),
+            PresentationStatus::Connecting
+        ));
         comments.append((0..1000).map(|i| Comment {
             text: format!("<b>{i}</b>\n日本語").into_boxed_str(),
             origin: viewer_comments::Origin::Nx,
@@ -224,6 +249,10 @@ mod tests {
         assert_eq!(comments.json()?, "[]");
         assert!(comments.target.is_none());
         assert!(comments.controller.is_stopped());
+        assert!(matches!(
+            comments.status(false),
+            PresentationStatus::Disabled
+        ));
         Ok(())
     }
 }

@@ -57,7 +57,7 @@ impl ffi::Player {
     }
 
     pub(super) fn poll_comments(mut self: Pin<&mut Self>) {
-        let (status, data, live) = {
+        let (data, live) = {
             let mut this = self.as_mut().rust_mut();
             let this = &mut *this;
             let channel = usize::try_from(this.selected)
@@ -72,16 +72,15 @@ impl ffi::Player {
                     }
                 });
             }
-            let status = this.comments.status(this.comments_enabled);
             let data = if this.comments_visible && this.comments.dirty {
                 this.comments.dirty = false;
                 Some(this.comments.json())
             } else {
                 None
             };
-            (status, data, live)
+            (data, live)
         };
-        self.as_mut().set_comment_status(QString::from(status));
+        self.as_mut().refresh_comment_status();
         match data {
             Some(Ok(json)) => self.as_mut().set_comment_data(QString::from(json)),
             Some(Err(error)) => self

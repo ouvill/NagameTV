@@ -18,6 +18,9 @@ impl ffi::Player {
             .language = preference;
         self.as_mut().set_language(QString::from(preference.code()));
         self.as_mut().set_ui_language(effective);
+        // Reproject existing state only: translating must not poll or restart workers.
+        self.as_mut().refresh_comment_status();
+        self.as_mut().refresh_epg_status();
         self.save_settings();
         true
     }

@@ -10,6 +10,16 @@
 
 // Extraction markers for the status strings emitted by the Rust backend.
 inline constexpr const char *backendTranslationSources[] = {
+    QT_TRANSLATE_NOOP("Backend", "Disabled"),
+    QT_TRANSLATE_NOOP("Backend", "Comment reception failed: %1"),
+    QT_TRANSLATE_NOOP("Backend", "Waiting to reconnect: %1"),
+    QT_TRANSLATE_NOOP("Backend", "Waiting to reconnect"),
+    QT_TRANSLATE_NOOP("Backend", "Waiting to fetch"),
+    QT_TRANSLATE_NOOP("Backend", "Fetching"),
+    QT_TRANSLATE_NOOP("Backend", "Stopping"),
+    QT_TRANSLATE_NOOP("Backend", "Programs: %1"),
+    QT_TRANSLATE_NOOP("Backend", "Fetch failed: %1"),
+
     QT_TRANSLATE_NOOP("Backend", "Select a channel"),
     QT_TRANSLATE_NOOP("Backend", "Enter a server URL starting with http:// or https://"),
     QT_TRANSLATE_NOOP("Backend", "No available channels were found"),
@@ -82,5 +92,10 @@ inline bool initializeUiLanguage(QQmlApplicationEngine &engine, const QString &p
 }
 
 inline QString currentUiLanguage() { return effectiveUiLanguage; }
+
+inline QString translateBackend(const QString &source) {
+  const auto utf8 = source.toUtf8();
+  return QCoreApplication::translate("Backend", utf8.constData());
+}
 
 #endif // MIRAKURUN_VIEWER_LOCALIZATION_H
