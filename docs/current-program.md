@@ -40,7 +40,8 @@ EPG取得・キャンセルは既存Acquisition enumが一つのJobを所有す�
 
 `CurrentProgram.qml` は映像左上に局ロゴ・局名・番組名・時間を表示する。
 main の左上24px、ロゴ64×36、番組名23pxの配置に合わせ、進行率は下部操作欄へ移した。
-`ProgramDetails.qml` は現在の説明をスクロール表示し、放送由来の文字列はPlainTextとする。
+`ProgramSidebar.qml` は現在の説明をスクロール表示し、放送由来の文字列はPlainTextとする。
+予定番組の詳細には引き続き`ProgramDetails.qml`を使用する。
 [Qt Popup](https://doc.qt.io/qt-6/qml-qtquick-controls-popup.html)のOverlay中央配置を使い、
 [ScrollView](https://doc.qt.io/qt-6/qml-qtquick-controls-scrollview.html)のcontentWidthを表示幅へ制限する。
 詳細は開いている時だけLoaderで生成し、閉じた時とEPGを無効にした時に破棄する。
@@ -182,3 +183,29 @@ playback-recovered.png。長時間の再試行反復や詳細Popupを開いた�
 停止も失敗した場合はplayback::Error::Cleanupで元エラーと停止エラーを保持する。
 thiserrorのsourceは元エラーを指し、表示には両方を含める。Boxは複合失敗時のみ作る。
 通常経路で履歴やバッファを追加しない。ビルドとClippy全ターゲットは成功。
+
+### 現在番組のサイドパネル
+
+現在番組名のクリックと下部のサイドパネルアイコンから、mainと同じ右側パネルを開く。
+幅min(408, max(360, window.width×0.32))、上部操作、24pxの左右余白、番組名23px、
+説明15px・行高1.35、色と進行率を移植した。番組更新は既存投影のJSONを反映し、
+EPG全件を複製しない。説明は長文でもスクロールできる。
+開くと映像領域の幅を減らし、映像と字幕をその領域の16:9内へ配置する。
+現在番組部品は開く要求だけを発行し、Popupを所有しなくなった。
+
+SidePanelは220ms OutCubicの進行度で横位置を計算する。
+閉じる途中の再開では同じ表示を保持し、閉鎖完了・shutdownで破棄する。
+閉じたままウィンドウ幅を変えても内容を生成しない。
+Qt試験で本文のPlainText・番組更新・再開時の保持・閉鎖時破棄・shutdown時破棄を確認した。
+最初の試験でテスト用プロパティ名dataがQtの既定プロパティと衝突し、QQuickViewをWindowへ
+渡す問題も出たため、名前を変更しApplicationWindowで試験する形へ修正した。
+実アプリで番組名から開き、局ロゴと現在番組・進行率を右側に表示する画像を確認した。
+証跡はGit対象外のbenchmark/viewing-design/program-sidebar.pyとログ・画像。
+
+コメント／チャンネルのサイドパネルタブは未移植。予定番組の詳細は従来のPopupであり、
+番組表の詳細パネル全体も残る。mainと同じデータによる画面全体の画像比較は未実施。
+再生中に番組名から開く実アプリ試験でも、映像が左側の16:9領域へ縮小され、
+番組情報が右側に表示される画像と正常終了を確認した。実字幕との併用は未検証。
+証跡はbenchmark/viewing-design/program-sidebar-playing.py、同名ログ・画像。
+最終ビルドと修正後サイドパネルのQt試験3件は成功。先行の全体実行は既存53件成功、
+追加サイドパネルは上記テスト環境の型・名前衝突で失敗していたものを修正した。

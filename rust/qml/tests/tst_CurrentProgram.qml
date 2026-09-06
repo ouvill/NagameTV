@@ -43,26 +43,16 @@ TestCase {
         view.programJson = "null";
         compare(button.enabled, false);
     }
-    function test_details_follow_updates_and_are_released_on_close() {
-        view.programJson = program("First", "<b>Plain text</b>\nSecond line");
-        const button = findChild(view, "currentProgramButton");
+    SignalSpy { id: details; signalName: "detailsRequested" }
+    function test_title_requests_details_without_owning_a_popup() {
+        view.programJson = program("First", "Description");
+        details.target = view;
+        details.clear();
         verify(waitForRendering(view));
-        mouseClick(button);
-        const loader = findChild(view, "programDetailsLoader");
-        verify(loader.item !== null);
-        const popup = loader.item;
-        tryCompare(popup, "opened", true);
-        compare(findChild(popup, "programTitle").text, "First");
-        compare(findChild(popup, "programDescription").text, "<b>Plain text</b>\nSecond line");
-        compare(findChild(popup, "programDescription").textFormat, Text.PlainText);
+        mouseClick(findChild(view, "currentProgramButton"));
+        compare(details.count, 1);
         view.programJson = program("Second", "Next program");
-        compare(findChild(popup, "programTitle").text, "Second");
-        // Channel identity changes do not replace the popup or its widgets.
-        view.channelLabel = "02   教育テレビ";
-        compare(loader.item, popup);
-        popup.forceActiveFocus();
-        keyClick(Qt.Key_Escape);
-        tryCompare(loader, "item", null);
-        compare(view.showDetails, false);
+        compare(findChild(view, "currentProgramButton").text, "Second");
+        compare(details.count, 1);
     }
 }

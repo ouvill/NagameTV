@@ -8,7 +8,7 @@ Column {
     property string channelLabel: ""
     property string logoUrl: ""
     readonly property var program: JSON.parse(programJson)
-    property bool showDetails: false
+    signal detailsRequested
     spacing: 8
     Row {
         spacing: 12
@@ -34,7 +34,7 @@ Column {
         implicitHeight: contentItem.implicitHeight
         text: root.program ? (root.program.name || "番組名未取得") : "番組情報なし"
         enabled: root.program !== null
-        onClicked: root.showDetails = true
+        onClicked: root.detailsRequested()
         background: Rectangle {
             color: "transparent"
             border.width: currentButton.visualFocus ? 1 : 0
@@ -59,13 +59,5 @@ Column {
         font.pixelSize: 12
         style: Text.Outline
         styleColor: "#90000000"
-    }
-    Loader {
-        objectName: "programDetailsLoader"
-        active: root.showDetails
-        sourceComponent: ProgramDetails {
-            program: root.program
-            onClosed: root.showDetails = false
-        }
     }
 }

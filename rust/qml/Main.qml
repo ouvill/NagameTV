@@ -19,6 +19,8 @@ ApplicationWindow {
     property bool showGuide: false
     property bool showChannels: false
     property bool showStats: false
+    property bool showProgram: false
+    readonly property real panelWidth: Math.min(408, Math.max(360, width * 0.32))
     readonly property var channelRows: JSON.parse(player.channel_data)
     Player {
         id: player
@@ -43,6 +45,8 @@ ApplicationWindow {
             root.toggleGuide();
         else if (root.showStats)
             root.showStats = false;
+        else if (root.showProgram)
+            root.showProgram = false;
         else
             windowActions.leaveFullscreen();
     }
@@ -50,7 +54,7 @@ ApplicationWindow {
         id: overlayVisibility
         enabled: !root.closing
         playing: player.playing
-        pinned: root.showChannels || root.showGuide || windowActions.popupOpen || windowActions.editingText || volumeSlider.pressed
+        pinned: root.showProgram || root.showChannels || root.showGuide || windowActions.popupOpen || windowActions.editingText || volumeSlider.pressed
     }
     WindowActions {
         id: windowActions
@@ -93,14 +97,17 @@ ApplicationWindow {
     }
     Item {
         id: surface
-        anchors.fill: parent
+        width: root.width - (root.showProgram ? root.panelWidth : 0)
+        height: root.height
         focus: true
         signal activity
         onActivity: overlayVisibility.reveal()
         Component.onCompleted: player.observe_pointer(surface)
         GstGLQt6VideoItem {
             id: video
-            anchors.fill: parent
+            width: parent.width
+            height: root.showProgram ? Math.min(parent.height, width * 9 / 16) : parent.height
+            anchors.verticalCenter: parent.verticalCenter
         }
         MouseArea {
             // Below the panels: only a click on the video leaves text editing.
@@ -181,6 +188,7 @@ ApplicationWindow {
             visible: overlayVisibility.controlsVisible && !root.showGuide
             sourceComponent: CurrentProgram {
                 programJson: player.current_program_data
+                onDetailsRequested: root.showProgram = true
                 channelLabel: player.selected >= 0 && player.selected < root.channelRows.length ? root.channelRows[player.selected].label : ""
                 logoUrl: player.selected >= 0 && player.selected < root.channelRows.length ? root.channelRows[player.selected].logo : ""
             }
@@ -193,7 +201,7 @@ ApplicationWindow {
             }
             spacing: 14
             z: 7
-            visible: overlayVisibility.controlsVisible
+            visible: overlayVisibility.controlsVisible && !root.showProgram
             IconAction {
                 iconSource: "qrc:/qt/qml/MinimalViewer/assets/icons/calendar-days.svg"
                 tip: "番組表"
@@ -351,6 +359,18 @@ ApplicationWindow {
                         tip: "全画面"
                         onClicked: windowActions.toggleFullscreen()
                     }
+                    Rectangle {
+                        width: 1
+                        height: 28
+                        color: "#28ffffff"
+                        Layout.leftMargin: 4
+                        Layout.rightMargin: 4
+                    }
+                    IconAction {
+                        iconSource: "qrc:/qt/qml/MinimalViewer/assets/icons/" + (root.showProgram ? "panel-right-close.svg" : "panel-right-open.svg")
+                        tip: root.showProgram ? "サイドパネルを閉じる" : "番組情報"
+                        onClicked: root.showProgram = !root.showProgram
+                    }
                 }
             }
         }
@@ -434,11 +454,27 @@ ApplicationWindow {
                 }
             }
         }
-        WindowResizeFrame {
-            anchors.fill: parent
-            z: 1000
+    }
+    SidePanel {
+        width: root.panelWidth
+        open: root.showProgram
+        shuttingDown: root.closing
+        sourceComponent: ProgramSidebar {
             targetWindow: root
-            enabled: !root.closing
+            programJson: player.current_program_data
+            progress: player.program_progress
+            channelLabel: player.selected >= 0 && player.selected < root.channelRows.length ? root.channelRows[player.selected].label : ""
+            logoUrl: player.selected >= 0 && player.selected < root.channelRows.length ? root.channelRows[player.selected].logo : ""
+            guideEnabled: player.epg_enabled
+            onCloseRequested: root.showProgram = false
+            onGuideRequested: root.toggleGuide()
+            onSettingsRequested: settings.open()
         }
+    }
+    WindowResizeFrame {
+        anchors.fill: parent
+        z: 1000
+        targetWindow: root
+        enabled: !root.closing
     }
 }
