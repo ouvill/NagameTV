@@ -61,6 +61,7 @@ impl Default for PlayerRust {
             channel_data: QString::from("[]"),
             selected: -1,
             loading: false,
+            playing: false,
             subtitles_enabled: plan.subtitles,
             epg_enabled: plan.epg,
             subtitles_allowed: !plan.locked || plan.subtitles,

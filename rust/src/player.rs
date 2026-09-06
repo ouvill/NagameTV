@@ -18,6 +18,9 @@ pub mod ffi {
         fn subtitle_outline_path(text: &QString, font: &QFont) -> QString;
         include!("qt_helpers.h");
         type QQuickItem;
+        include!("pointer_activity.h");
+        #[cxx_name = "installPointerActivity"]
+        unsafe fn install_pointer_activity(item: *mut QQuickItem);
         #[cxx_name = "configureQtQuickOpenGl"]
         fn configure_qt_quick_open_gl();
         #[cxx_name = "qQuickItemAddress"]
@@ -31,6 +34,7 @@ pub mod ffi {
         #[qproperty(QString, channel_data, READ, NOTIFY)]
         #[qproperty(i32, selected, READ, NOTIFY)]
         #[qproperty(bool, loading, READ, NOTIFY)]
+        #[qproperty(bool, playing, READ, NOTIFY)]
         #[qproperty(bool, subtitles_enabled, READ, NOTIFY)]
         #[qproperty(bool, epg_enabled, READ, NOTIFY)]
         #[qproperty(bool, subtitles_allowed, READ, NOTIFY)]
@@ -62,6 +66,8 @@ pub mod ffi {
         fn refresh_epg(self: Pin<&mut Player>);
         #[qinvokable]
         unsafe fn attach(self: Pin<&mut Player>, item: *mut QQuickItem) -> bool;
+        #[qinvokable]
+        unsafe fn observe_pointer(self: &Player, item: *mut QQuickItem);
         #[qinvokable]
         fn connect_server(self: Pin<&mut Player>, server: QString);
         #[qinvokable]
@@ -103,6 +109,7 @@ pub struct PlayerRust {
     channel_data: QString,
     selected: i32,
     loading: bool,
+    playing: bool,
     subtitles_enabled: bool,
     epg_enabled: bool,
     subtitles_allowed: bool,
@@ -161,6 +168,7 @@ impl ffi::Player {
     );
     property_setter!(set_selected, selected, selected_changed, i32);
     property_setter!(set_loading, loading, loading_changed, bool);
+    property_setter!(set_playing, playing, playing_changed, bool);
     property_setter!(
         set_subtitles_enabled,
         subtitles_enabled,
@@ -218,6 +226,8 @@ impl ffi::Player {
 
     /// READY joins streaming callbacks before dropping their subscriptions/state.
     fn end_stream(mut self: Pin<&mut Self>) -> Result<(), playback::Error> {
+        // Reveal controls even if the native stop itself fails.
+        self.as_mut().set_playing(false);
         if let Some(playback) = &self.rust().playback {
             playback.stop()?;
         }
@@ -371,6 +381,11 @@ impl ffi::Player {
         }
         true
     }
+    /// The QML GUI-thread item owns the observer and declares activity().
+    pub unsafe fn observe_pointer(&self, item: *mut ffi::QQuickItem) {
+        // The caller guarantees a live item; the native helper accepts null.
+        unsafe { ffi::install_pointer_activity(item) };
+    }
     pub fn connect_server(mut self: Pin<&mut Self>, server: QString) {
         self.as_mut().rust_mut().request = None;
         self.as_mut().set_loading(false);
@@ -523,6 +538,7 @@ impl ffi::Player {
         let result = self.rust().playback.as_ref().map(playback::Playback::poll);
         match result {
             Some(Ok(true)) => {
+                self.as_mut().set_playing(true);
                 if let Some(entry) = self.rust().entries.get(*self.selected() as usize) {
                     let text = format!("再生中: {}", entry.name);
                     eprintln!("Pipeline PLAYING service {}", entry.id);
