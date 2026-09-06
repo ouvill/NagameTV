@@ -38,38 +38,64 @@ Pane {
             band = current.band;
         resetCursor();
     }
+    implicitHeight: 304
+    leftPadding: 24
+    rightPadding: 24
+    topPadding: 20
+    bottomPadding: 38
+    font.family: "Noto Sans CJK JP"
     background: Rectangle {
-        color: "#ed151515"
+        gradient: Gradient {
+            GradientStop {
+                position: 0
+                color: "#06000000"
+            }
+            GradientStop {
+                position: 0.35
+                color: "#52000000"
+            }
+            GradientStop {
+                position: 1
+                color: "#d6000000"
+            }
+        }
     }
     contentItem: ColumnLayout {
+        spacing: 14
         RowLayout {
             Layout.fillWidth: true
+            spacing: 14
+            BrowserCollapseButton {
+                onClicked: root.closeRequested()
+            }
             Label {
                 text: "チャンネル"
-                color: "white"
-                font.pixelSize: 20
+                color: "#f4f5f3"
+                font.pixelSize: 22
+                font.bold: true
             }
-            ComboBox {
+            Item {
+                Layout.preferredWidth: 24
+            }
+            BroadcastTabs {
                 objectName: "browserBand"
-                model: ["GR", "BS", "CS", "SKY", "OTHER"]
-                currentIndex: model.indexOf(root.band)
-                onActivated: root.band = currentText
+                rows: root.rows
+                value: root.band
+                onSelected: function (band) {
+                    root.band = band;
+                }
             }
             Item {
                 Layout.fillWidth: true
-            }
-            Button {
-                text: "閉じる"
-                onClicked: root.closeRequested()
             }
         }
         ListView {
             id: list
             objectName: "browserList"
             Layout.fillWidth: true
-            Layout.fillHeight: true
+            Layout.preferredHeight: 190
             orientation: ListView.Horizontal
-            spacing: 8
+            spacing: 14
             clip: true
             cacheBuffer: 0
             model: root.filteredRows
@@ -81,41 +107,56 @@ Pane {
                 id: card
                 required property var modelData
                 required property int index
-                width: 240
-                height: list.height - 14
+                width: highlighted ? 356 : 270
+                height: 164
+                padding: 14
                 highlighted: modelData.index === root.selected
                 onClicked: root.selectRequested(modelData.index)
                 background: Rectangle {
-                    radius: 8
-                    color: card.highlighted ? "#284a40" : "#252a2d"
+                    radius: 16
+                    color: card.highlighted ? "#26302a" : "#1c1f1c"
+                    border.color: card.highlighted ? "#9caf9f" : "#30ffffff"
                 }
-                contentItem: ColumnLayout {
-                    ChannelLogo {
-                        logoUrl: card.modelData.logo || ""
-                    }
-                    Label {
-                        Layout.fillWidth: true
-                        text: card.modelData.label
-                        color: "#eeeeee"
-                        textFormat: Text.PlainText
-                        wrapMode: Text.Wrap
-                        maximumLineCount: 2
-                        elide: Text.ElideRight
-                    }
-                    Item {
-                        Layout.fillHeight: true
+                contentItem: Item {
+                    RowLayout {
+                        id: channelHeading
+                        width: parent.width
+                        height: 32
+                        spacing: 8
+                        ChannelLogo {
+                            logoUrl: card.modelData.logo || ""
+                            Layout.preferredWidth: 56
+                            Layout.preferredHeight: 32
+                        }
+                        Label {
+                            Layout.fillWidth: true
+                            text: card.modelData.label.replace(/^\d+\s+/, "")
+                            color: "#b6bab6"
+                            font.pixelSize: 12
+                            textFormat: Text.PlainText
+                            elide: Text.ElideRight
+                        }
                     }
                     ChannelProgram {
-                        Layout.fillWidth: true
+                        anchors {
+                            top: channelHeading.bottom
+                            topMargin: 9
+                            left: parent.left
+                            right: parent.right
+                            bottom: parent.bottom
+                            bottomMargin: -6
+                        }
                         program: root.programs[card.modelData.index] || null
                         now: root.now
+                        emphasized: card.highlighted
                     }
                 }
                 Rectangle {
                     anchors.fill: parent
                     color: "transparent"
                     border.width: 2
-                    border.color: "#8ac7ae"
+                    radius: 16
+                    border.color: "#9caf9f"
                     visible: list.activeFocus && list.currentIndex === card.index
                 }
             }

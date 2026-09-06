@@ -15,6 +15,8 @@ fn main() {
             .qml_file("qml/ChannelSelector.qml")
             .qml_file("qml/ChannelLogo.qml")
             .qml_file("qml/ChannelBrowser.qml")
+            .qml_file("qml/BroadcastTabs.qml")
+            .qml_file("qml/BrowserCollapseButton.qml")
             .qml_file("qml/ChannelProgram.qml")
             .depend("QtQuick")
             .depend("QtQuick.Controls")

@@ -6,13 +6,14 @@ TestCase {
     id: testCase
     name: "ChannelBrowser"
     when: windowShown
+    visible: true
     width: 800
-    height: 300
+    height: 340
     Component {
         id: component
         Viewer.ChannelBrowser {
             width: 780
-            height: 260
+            height: 304
             rows: [
                 {
                     index: 0,
@@ -61,6 +62,7 @@ TestCase {
         failOnWarning(/.*/);
         browser = createTemporaryObject(component, testCase);
         verify(browser !== null);
+        verify(waitForRendering(browser));
         selection.target = browser;
         selection.clear();
     }
@@ -76,7 +78,7 @@ TestCase {
         compare(selection.count, 0);
         keyClick(Qt.Key_Return);
         compare(selection.signalArguments[0][0], 1);
-        browser.band = "GR";
+        mouseClick(findChild(browser, "band-GR"));
         compare(selection.count, 1);
         compare(list.count, 1);
         browser.focusBrowser();

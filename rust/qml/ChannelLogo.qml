@@ -20,7 +20,8 @@ Item {
     Label {
         anchors.centerIn: parent
         visible: image.status !== Image.Ready
-        text: "TV"
-        color: "#bbbbbb"
+        text: "局ロゴ"
+        font.pixelSize: 9
+        color: "#b6bab6"
     }
 }

@@ -43,6 +43,42 @@ Clippy全ターゲット警告なし、CMakeビルド成功。
 mainのカードにある実況勢い、EPG連動サブ局整理、
 外側クリックで閉じる操作と詳細な画面デザインは残作業。ブラウザー全体の機能互換は未完了。
 
+## mainのデザインへの変更（2026-09-07）
+
+mainの選択画面に合わせ、高さ304、左右余白24、上余白20、カード間隔14、
+カード高さ164・角丸16、選択幅356／通常幅270に変更した。
+背景グラデーション、選択色#26302a、通常色#1c1f1c、縁と進行率の#9caf9f、
+文字色とサイズ、局ロゴ56×32も移植した。カード内の局名は番号を除いて横に置く。
+ブラウザーは画面下端に置き、表示中は従来の下部操作パネルを隠す。
+
+`BroadcastTabs.qml`にmainと同じ形状の放送種別タブを分離し、存在する種別だけ表示する。
+選択位置の移動は170ms。`BrowserCollapseButton.qml`はmainのchevron-downと同じ
+ベクター形状を42pxの丸いボタンに描画する。両方ともキーボード操作を維持する。
+カードのListView仮想化、ロゴのサイズ指定、番組情報の共有は維持する。
+
+比較手順:
+
+```sh
+python3 scripts/prepare-channel-browser-comparison.py /path/to/main/qml/Main.qml
+QT_QPA_PLATFORM=xcb QSG_RHI_BACKEND=opengl /usr/lib/qt6/bin/qmltestrunner \
+  -input benchmark/browser-design/tst_Compare.qml -o -,txt
+```
+
+事前にWorkshopの表示/GPU検出と検証を行う。スクリプトはmainからRoundAction・
+BroadcastTabs・channelPickerのQMLを抽出する。表示データを同じ固定値にし、
+1440×304、同じ背景、同じNotoフォントで両方を描画する。参照側の見出しと
+ロゴ代替文言はmainの日本語翻訳に合わせる。実放送やmain全体の起動試験ではない。
+`benchmark/browser-design/main.png`と`candidate.png`を目視比較し、
+カード・タブ・番組名・時間・進行バーの配置と色が揃っていることを確認した。
+この比較は画像の完全一致を保証するものではなく、フォーカス枠などの差はある。
+空白の画像を成功扱いしない画素チェックも行う。
+QMLスイート32件、描画比較3件（初期化・終了を含む）が成功し、qmllintとビルドも成功。
+放送種別タブの実マウス入力でも選局を起こさず絞り込めることを確認した。
+
+mainと同じ開閉アニメーション、外側クリック、実況勢い、視聴画面全体のデザイン再現、
+複数サイズでの比較は引き続き残る。局ごとに幅を変えるため、ListViewの内容幅の見積もりと
+スクロールバーの安定性も実データで検証を続ける。
+
 ## 各局の現在番組（追加）
 
 `features/program_info/browser.rs`は共有Snapshotを検索し、番組名・開始時刻・長さだけを

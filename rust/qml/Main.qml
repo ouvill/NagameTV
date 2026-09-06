@@ -215,7 +215,7 @@ ApplicationWindow {
                 right: parent.right
             }
             padding: 0
-            visible: overlayVisibility.controlsVisible
+            visible: overlayVisibility.controlsVisible && !root.showChannels
             background: Rectangle {
                 color: "#df151515"
             }
@@ -338,9 +338,9 @@ ApplicationWindow {
             anchors {
                 left: parent.left
                 right: parent.right
-                bottom: bottomPanel.top
+                bottom: parent.bottom
             }
-            height: Math.min(260, surface.height - topPanel.height - bottomPanel.height)
+            height: Math.min(304, surface.height - topPanel.height)
             active: !root.closing && root.showChannels
             visible: active
             z: 5
