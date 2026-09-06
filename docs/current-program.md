@@ -168,3 +168,17 @@ Rustテスト49件成功、外部TS依存1件は未実行。Clippy全ターゲ�
 アプリは正常終了した。実Mirakurunを停止する試験ではない。
 証跡はGit対象外のbenchmark/viewing-design/playback-error.py、playback-error.log、playback-error.png。
 復旧後の同じ画面からの再試行成功、詳細の実アプリでの操作、全画面のmainとの画像比較は未検証。
+
+### 再試行の復旧経路
+
+配信用テストHTTPサーバーで503を返した後、再試行要求のみ実Mirakurunのストリームへ
+302で誘導する試験を行った。実アプリの「再試行」をクリックし、同一プロセスで
+PLAYING通知・実放送映像・エラー案内が消えた画面を確認した。終了コードは0。
+テスト用サービス一覧／EPGを使用しているため、この画像の番組情報なし表示は想定内。
+証跡はGit対象外のbenchmark/viewing-design/playback-recovery.py、playback-recovery.log、
+playback-recovered.png。長時間の再試行反復や詳細Popupを開いたままの復旧は未検証。
+
+再生開始失敗後のend_streamの戻り値を捨てる処理を廃止した。
+停止も失敗した場合はplayback::Error::Cleanupで元エラーと停止エラーを保持する。
+thiserrorのsourceは元エラーを指し、表示には両方を含める。Boxは複合失敗時のみ作る。
+通常経路で履歴やバッファを追加しない。ビルドとClippy全ターゲットは成功。

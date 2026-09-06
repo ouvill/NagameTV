@@ -512,9 +512,14 @@ impl ffi::Player {
                 self.as_mut().status_text(format!("接続中: {name}"));
             }
             Some(Err(error)) => {
-                let text = error.to_string();
-                let _ = self.as_mut().end_stream();
-                self.as_mut().playback_failed(text);
+                let failure = match self.as_mut().end_stream() {
+                    Ok(()) => error,
+                    Err(cleanup) => playback::Error::Cleanup {
+                        primary: Box::new(error),
+                        cleanup: Box::new(cleanup),
+                    },
+                };
+                self.as_mut().playback_failed(failure);
             }
             None => self.as_mut().playback_failed(playback::Error::Unavailable),
         }

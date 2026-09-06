@@ -10,6 +10,12 @@ type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error("{primary}（停止処理も失敗: {cleanup}）")]
+    Cleanup {
+        #[source]
+        primary: Box<Error>,
+        cleanup: Box<Error>,
+    },
     #[error("{0}")]
     Deinterlace(#[from] deinterlace::Error),
     #[error("GStreamer initialization failed: {0}")]
