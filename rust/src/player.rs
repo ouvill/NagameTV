@@ -12,6 +12,7 @@ mod startup;
 mod statistics;
 mod status;
 mod subtitle_rendering;
+mod subtitle_status;
 mod telemetry;
 
 #[cxx_qt::bridge]
@@ -220,6 +221,7 @@ pub struct PlayerRust {
     subtitle_display: bool,
     subtitle_data: QString,
     subtitle_status: QString,
+    subtitle_phase: subtitle_status::Status,
     epg_data: QString,
     epg_status: QString,
     current_program_data: QString,
@@ -409,7 +411,8 @@ impl ffi::Player {
         self.as_mut().set_subtitles_active(false);
         self.as_mut().rust_mut().subtitle_cells = 0;
         self.as_mut().set_subtitle_data(QString::default());
-        self.as_mut().set_subtitle_status(QString::from("停止中"));
+        self.as_mut()
+            .update_subtitle_status(subtitle_status::Status::Stopped);
         Ok(())
     }
     fn configure_epg(mut self: Pin<&mut Self>) {
@@ -475,7 +478,7 @@ impl ffi::Player {
                 self.as_mut().set_subtitles_active(false);
                 self.as_mut().rust_mut().subtitle_cells = 0;
                 self.as_mut().set_subtitle_data(QString::default());
-                self.set_subtitle_status(QString::from(error.to_string()));
+                self.update_subtitle_status(subtitle_status::Status::Failed(error));
             }
             _ => {}
         }
@@ -654,11 +657,12 @@ impl ffi::Player {
                 Ok(session) => {
                     self.as_mut().rust_mut().subtitle_session = Some(session);
                     self.as_mut().set_subtitles_active(true);
-                    self.as_mut().set_subtitle_status(QString::from("解析中"));
+                    self.as_mut()
+                        .update_subtitle_status(subtitle_status::Status::Parsing);
                 }
                 Err(error) => self
                     .as_mut()
-                    .set_subtitle_status(QString::from(error.to_string())),
+                    .update_subtitle_status(subtitle_status::Status::Failed(error)),
             }
         }
         let result = self

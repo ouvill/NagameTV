@@ -165,3 +165,22 @@ QtCore/QML試験で動的な翻訳原文による表示中エラーの再翻訳�
 実サーバーの503等を引き起こす試験、同期遷移失敗の実再生試験、実画面の配置確認は未実施。
 
 CMakeリリースビルドも成功。
+
+
+## 字幕状態の翻訳
+
+player/subtitle_status.rsに表示用のStatus enum（Stopped / Parsing / Failed(Error)）を分離した。
+字幕Errorは現在すべて値なしvariantなので、失敗状態を保存してもエラー文字列や接続資源を
+追加保持しない。機能の開始・停止・失敗で最新の状態を置き換え、Qtへ渡す直前に翻訳する。
+言語変更時はrefresh_subtitle_statusだけを呼び、字幕解析・時刻同期・購読を再作成しない。
+既存の停止時の画面クリアや失敗時のsubtitles_active解除は維持する。
+
+既存Stoppedキーと追加8キーをBackendコンテキストで使用し、全9キーのカタログ存在を照合した。
+日本語の既存エラー案内は維持し、従来英語だったPlaybackUnavailable/MissingBin/MissingBusにも
+日本語の案内を追加した。将来Errorのvariantが増えれば、網羅的matchが翻訳対応漏れを検出する。
+
+字幕のCPU試験23件が成功、実TSファイルを必要とする既存試験1件はignored。
+QtCore/QMLの翻訳基盤・カタログ欠落試験も成功。これらは字幕状態のPlayer経由での
+実画面切り替えを検証するものではなく、その実操作確認は残る。
+
+全ターゲットClippy（警告をエラー扱い）とCMakeリリースビルドも成功。

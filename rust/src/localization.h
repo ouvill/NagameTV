@@ -10,6 +10,15 @@
 
 // Extraction markers for the status strings emitted by the Rust backend.
 inline constexpr const char *backendTranslationSources[] = {
+    QT_TRANSLATE_NOOP("Backend", "Parsing subtitles"),
+    QT_TRANSLATE_NOOP("Backend", "Playback is unavailable for subtitles"),
+    QT_TRANSLATE_NOOP("Backend", "The playback bin is unavailable for subtitles"),
+    QT_TRANSLATE_NOOP("Backend", "The playback bus is unavailable for subtitles"),
+    QT_TRANSLATE_NOOP("Backend", "Cannot start subtitles without broadcast service information"),
+    QT_TRANSLATE_NOOP("Backend", "Could not initialize the subtitle decoder"),
+    QT_TRANSLATE_NOOP("Backend", "Subtitle parser state is invalid. Stop playback and play again."),
+    QT_TRANSLATE_NOOP("Backend", "Subtitle timing state is invalid. Stop playback and play again."),
+
     QT_TRANSLATE_NOOP("Backend", "Disabled"),
     QT_TRANSLATE_NOOP("Backend", "Comment reception failed: %1"),
     QT_TRANSLATE_NOOP("Backend", "Waiting to reconnect: %1"),

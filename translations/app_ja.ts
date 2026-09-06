@@ -315,6 +315,38 @@
   <context>
     <name>Backend</name>
     <message>
+      <source>Parsing subtitles</source>
+      <translation>解析中</translation>
+    </message>
+    <message>
+      <source>Playback is unavailable for subtitles</source>
+      <translation>字幕用の再生処理を利用できません</translation>
+    </message>
+    <message>
+      <source>The playback bin is unavailable for subtitles</source>
+      <translation>字幕用の再生binがありません</translation>
+    </message>
+    <message>
+      <source>The playback bus is unavailable for subtitles</source>
+      <translation>字幕用の再生busがありません</translation>
+    </message>
+    <message>
+      <source>Cannot start subtitles without broadcast service information</source>
+      <translation>放送サービス情報がないため字幕を開始できません</translation>
+    </message>
+    <message>
+      <source>Could not initialize the subtitle decoder</source>
+      <translation>字幕デコーダーを初期化できません</translation>
+    </message>
+    <message>
+      <source>Subtitle parser state is invalid. Stop playback and play again.</source>
+      <translation>字幕解析の内部状態に異常があります。停止してから再生し直してください</translation>
+    </message>
+    <message>
+      <source>Subtitle timing state is invalid. Stop playback and play again.</source>
+      <translation>字幕の時刻対応に異常があります。停止してから再生し直してください</translation>
+    </message>
+    <message>
       <source>Disabled</source>
       <translation>無効</translation>
     </message>

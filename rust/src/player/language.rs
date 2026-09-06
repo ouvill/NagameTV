@@ -21,6 +21,7 @@ impl ffi::Player {
         // Reproject existing state only: translating must not poll or restart workers.
         self.as_mut().refresh_comment_status();
         self.as_mut().refresh_epg_status();
+        self.as_mut().refresh_subtitle_status();
         self.save_settings();
         true
     }
