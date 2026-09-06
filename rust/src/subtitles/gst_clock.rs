@@ -11,6 +11,7 @@ type StreamKey = (String, u32);
 
 #[derive(Default)]
 struct State {
+    disabled: bool,
     raw_pts: HashMap<StreamKey, VecDeque<u64>>,
     video: Option<StreamKey>,
     timeline: Timeline,
@@ -33,13 +34,32 @@ impl SubtitleClock {
     pub fn reset(&self) {
         if let Ok(mut state) = self.0.lock() {
             // Release old stream keys and queue allocations at channel boundaries.
-            *state = State::default();
+            let disabled = state.disabled;
+            *state = State {
+                disabled,
+                ..State::default()
+            };
             state.timeline.reset();
+        }
+    }
+
+    pub fn set_enabled(&self, enabled: bool) {
+        if let Ok(mut state) = self.0.lock() {
+            if state.disabled == enabled {
+                *state = State {
+                    disabled: !enabled,
+                    ..State::default()
+                };
+                state.timeline.reset();
+            }
         }
     }
 
     pub fn push(&self, cues: Vec<SubtitleCue>) {
         if let Ok(mut state) = self.0.lock() {
+            if state.disabled {
+                return;
+            }
             for cue in cues {
                 state.timeline.push(cue);
             }
@@ -67,6 +87,9 @@ impl SubtitleClock {
                         structure.get::<u64>("pts"),
                     ) && let Ok(mut state) = clock.0.lock()
                     {
+                        if state.disabled {
+                            return gst::BusSyncReply::Drop;
+                        }
                         let key = (source.name().to_string(), pid);
                         // Bound streams and pending PES even for malformed input.
                         if state.raw_pts.len() < 64 || state.raw_pts.contains_key(&key) {
@@ -184,6 +207,9 @@ impl SubtitleClock {
             return;
         };
         if let Ok(mut state) = self.0.lock() {
+            if state.disabled {
+                return;
+            }
             if state.video.is_none() {
                 state.video = Some(key.clone());
             }
@@ -246,6 +272,55 @@ mod tests {
         fn drop(&mut self) {
             let _ = self.0.set_state(gst::State::Null);
         }
+    }
+
+    #[test]
+    fn disabling_releases_clock_state_and_reenable_reanchors_existing_stream() {
+        gst::init().unwrap();
+        let clock = SubtitleClock::default();
+        let key = ("tsdemux-test".to_owned(), 256);
+        clock.push(vec![SubtitleCue::clear(100)]);
+        clock
+            .0
+            .lock()
+            .unwrap()
+            .raw_pts
+            .insert(key.clone(), VecDeque::from([9000]));
+        clock.set_enabled(false);
+        assert!(clock.0.lock().unwrap().raw_pts.is_empty());
+        assert_eq!(clock.pending_count(), Some(0));
+        clock.push(vec![SubtitleCue::clear(100)]);
+        assert_eq!(clock.pending_count(), Some(0));
+        clock.reset();
+        assert!(clock.0.lock().unwrap().disabled);
+        clock.set_enabled(true);
+        assert!(matches!(clock.poll(None), SubtitleUpdate::Clear));
+        clock
+            .0
+            .lock()
+            .unwrap()
+            .raw_pts
+            .insert(key.clone(), VecDeque::from([9000]));
+        let segment = gst::FormattedSegment::<gst::ClockTime>::new();
+        let mut buffer = gst::Buffer::new();
+        buffer
+            .get_mut()
+            .unwrap()
+            .set_pts(gst::ClockTime::from_mseconds(500));
+        clock.observe_buffer(&key, Some(&segment), &buffer);
+        assert_eq!(
+            clock.0.lock().unwrap().timeline.map_ticks(9000),
+            Some(500_000_000)
+        );
+        clock.push(vec![SubtitleCue {
+            text: "new".into(),
+            clear_screen: false,
+            ..SubtitleCue::clear(100)
+        }]);
+        assert!(matches!(
+            clock.poll(Some(gst::ClockTime::from_mseconds(500))),
+            SubtitleUpdate::Show(_)
+        ));
     }
 
     #[test]
@@ -321,7 +396,7 @@ mod tests {
                 if !pes.starts_with(&[0, 0, 1, 0xe0]) {
                     return None;
                 }
-                let pts = super::super::pes_pts_ms(pes);
+                let pts = super::super::pes::pes_pts_ms(pes);
                 (pts != i64::MIN).then_some(pts)
             })
             .collect();

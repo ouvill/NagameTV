@@ -9,6 +9,7 @@ mod playback;
 mod player;
 mod settings;
 mod subtitles;
+mod transport;
 mod video_stats;
 
 use cxx_qt_lib::{QGuiApplication, QQmlApplicationEngine, QString, QUrl};

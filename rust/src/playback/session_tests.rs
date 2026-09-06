@@ -120,7 +120,7 @@ fn prepares_metadata_and_releases_old_stream_state_before_start() -> TestResult 
         video_attached: false,
         subtitles: SubtitleClock::default(),
         audio: RefCell::new(AudioStreams::default()),
-        extractor: Arc::new(Mutex::new(TsSubtitleExtractor::new())),
+        extractor: Arc::new(Mutex::new(TransportParser::new(true))),
         routing: AudioRouting::default(),
     };
     let bus = playback.playbin.bus().ok_or("missing bus")?;
@@ -172,7 +172,29 @@ fn prepares_metadata_and_releases_old_stream_state_before_start() -> TestResult 
             .audio_components
             .is_empty()
     );
+    playback.set_subtitles_enabled(false)?;
+    assert_eq!(playback.pending_subtitles(), Some(0));
     playback.prepare_stream(&bus, None)?;
+    assert!(
+        !playback
+            .extractor
+            .lock()
+            .map_err(|_| "extractor poisoned")?
+            .subtitles_enabled()
+    );
+    playback
+        .subtitles
+        .push(vec![crate::subtitles::SubtitleCue::clear(100)]);
+    assert_eq!(playback.pending_subtitles(), Some(0));
+    playback.set_subtitles_enabled(true)?;
+    assert!(
+        playback
+            .extractor
+            .lock()
+            .map_err(|_| "extractor poisoned")?
+            .subtitles_enabled()
+    );
+
     assert!(playback.audio.borrow().program.is_none());
     playback.stop()?;
     assert_eq!(playback.playbin.current_state(), gst::State::Null);

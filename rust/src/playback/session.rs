@@ -1,4 +1,4 @@
-use super::{Playback, PlaybackError, TsSubtitleExtractor};
+use super::{Playback, PlaybackError, TransportParser};
 use gst::prelude::*;
 use gstreamer as gst;
 
@@ -39,7 +39,8 @@ impl Playback {
             .lock()
             .map_err(|_| PlaybackError::ExtractorLockPoisoned)?;
         // Drop the entire old PES/PSI buffers and ARIB decoder, not just PMT metadata.
-        *extractor = TsSubtitleExtractor::new();
+        let enabled = extractor.subtitles_enabled();
+        *extractor = TransportParser::new(enabled);
         Ok(())
     }
 }

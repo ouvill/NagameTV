@@ -11,7 +11,8 @@ use std::ptr;
 use std::sync::{Arc, Mutex, OnceLock};
 use thiserror::Error;
 
-use crate::subtitles::{SubtitleClock, SubtitleUpdate, TsSubtitleExtractor};
+use crate::subtitles::{SubtitleClock, SubtitleUpdate};
+use crate::transport::TransportParser;
 
 static PRELOADED: OnceLock<Mutex<Option<Playback>>> = OnceLock::new();
 
@@ -162,7 +163,7 @@ pub struct Playback {
     video_attached: bool,
     subtitles: SubtitleClock,
     audio: RefCell<AudioStreams>,
-    extractor: Arc<Mutex<TsSubtitleExtractor>>,
+    extractor: Arc<Mutex<TransportParser>>,
     routing: AudioRouting,
 }
 
@@ -362,7 +363,7 @@ impl Playback {
             .downcast_ref::<gst::Bin>()
             .ok_or(PlaybackError::InvalidPlaybinType)?;
         subtitles.attach(playbin_bin);
-        let subtitle_extractor = Arc::new(Mutex::new(TsSubtitleExtractor::new()));
+        let subtitle_extractor = Arc::new(Mutex::new(TransportParser::new(true)));
         let extractor_for_source = subtitle_extractor.clone();
         let subtitles_for_source = subtitles.clone();
         playbin.connect("source-setup", false, move |values| {
@@ -482,6 +483,16 @@ impl Playback {
                 source,
             })?;
         self.reset_stream_state()
+    }
+
+    pub fn set_subtitles_enabled(&self, enabled: bool) -> Result<(), PlaybackError> {
+        let mut extractor = self
+            .extractor
+            .lock()
+            .map_err(|_| PlaybackError::ExtractorLockPoisoned)?;
+        extractor.set_subtitles_enabled(enabled);
+        self.subtitles.set_enabled(enabled);
+        Ok(())
     }
 
     pub fn pending_subtitles(&self) -> Option<usize> {
@@ -658,7 +669,7 @@ fn configure_video_flags(mut flags: gst::glib::Value) -> Result<gst::glib::Value
 
 fn attach_subtitle_probe(
     source: &gst::Element,
-    extractor: Arc<Mutex<TsSubtitleExtractor>>,
+    extractor: Arc<Mutex<TransportParser>>,
     subtitles: SubtitleClock,
 ) {
     let Some(pad) = source.static_pad("src") else {
@@ -672,12 +683,11 @@ fn attach_subtitle_probe(
         let Ok(data) = buffer.map_readable() else {
             return gst::PadProbeReturn::Ok;
         };
-        let texts = extractor
-            .lock()
-            .ok()
-            .map(|mut extractor| extractor.push(data.as_slice()))
-            .unwrap_or_default();
-        subtitles.push(texts);
+        // Keep the extractor lock through publication. Disabling takes the same
+        // lock before clearing the clock, so an old cue cannot arrive afterwards.
+        if let Ok(mut extractor) = extractor.lock() {
+            subtitles.push(extractor.push(data.as_slice()));
+        }
         gst::PadProbeReturn::Ok
     });
 }

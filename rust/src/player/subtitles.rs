@@ -5,6 +5,24 @@ use cxx_qt_lib::QString;
 use std::pin::Pin;
 
 impl ffi::Player {
+    pub fn set_subtitles_enabled(mut self: Pin<&mut Self>, enabled: bool) {
+        if *self.as_ref().subtitles_enabled() == enabled {
+            return;
+        }
+        if let Some(playback) = self.as_ref().rust().playback.as_ref()
+            && let Err(error) = playback.set_subtitles_enabled(enabled)
+        {
+            self.as_mut().report_playback_error(&error.into());
+            return;
+        }
+        self.as_mut().rust_mut().subtitles_enabled = enabled;
+        self.as_mut().rust_mut().subtitle_cue = None;
+        self.as_mut().rust_mut().subtitle_presented = false;
+        self.as_mut().set_subtitle_text(QString::default());
+        self.as_mut().set_subtitle_data(QString::default());
+        self.as_mut().subtitles_enabled_changed();
+    }
+
     pub fn subtitle_glyph_outline(&self, text: QString, font: ffi::QFont) -> QString {
         ffi::subtitle_outline_path(&text, &font)
     }

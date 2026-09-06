@@ -97,7 +97,10 @@ impl Default for PlayerRust {
         if let Ok(service_id) = std::env::var("MIRAKURUN_SERVICE_ID") {
             settings.service_id = service_id;
         }
-        let playback = crate::playback::take_preloaded();
+        let playback = crate::playback::take_preloaded().and_then(|playback| {
+            playback.set_subtitles_enabled(settings.subtitles_enabled)?;
+            Ok(playback)
+        });
         let network = NetworkRuntime::new();
         let status = playback
             .as_ref()

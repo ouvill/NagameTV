@@ -59,7 +59,7 @@ pub mod ffi {
         #[qproperty(f64, comment_font_size, cxx_name = "commentFontSize")]
         #[qproperty(f64, comment_opacity, cxx_name = "commentOpacity")]
         #[qproperty(f64, comment_speed, cxx_name = "commentSpeed")]
-        #[qproperty(bool, subtitles_enabled, cxx_name = "subtitlesEnabled")]
+        #[qproperty(bool, subtitles_enabled, cxx_name = "subtitlesEnabled", READ, WRITE = set_subtitles_enabled, NOTIFY)]
         #[qproperty(QString, subtitle_text, cxx_name = "subtitleText")]
         #[qproperty(QString, subtitle_data, cxx_name = "subtitleData")]
         #[qproperty(bool, autoplay)]
@@ -93,6 +93,8 @@ pub mod ffi {
         #[qsignal]
         #[cxx_name = "commentReceived"]
         fn comment_received(self: Pin<&mut Player>, text: QString);
+
+        fn set_subtitles_enabled(self: Pin<&mut Player>, enabled: bool);
 
         #[qinvokable]
         #[cxx_name = "attachVideoItem"]
