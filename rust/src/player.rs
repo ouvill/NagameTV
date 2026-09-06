@@ -4,6 +4,7 @@ mod channel_programs;
 mod channels;
 mod guide;
 mod playback_failure;
+mod preferences;
 mod program_info;
 mod startup;
 mod statistics;
@@ -99,6 +100,8 @@ pub mod ffi {
         fn poll(self: Pin<&mut Player>);
         #[qinvokable]
         fn shutdown(self: Pin<&mut Player>);
+        #[qinvokable]
+        fn save_settings(self: Pin<&mut Player>);
         #[qinvokable]
         fn step_channel(self: Pin<&mut Player>, offset: i32);
         #[qinvokable]
@@ -316,6 +319,7 @@ impl ffi::Player {
             prefs.epg_enabled = epg;
         }
         self.as_mut().configure_epg();
+        self.as_mut().save_settings();
         if restart {
             self.as_mut().play();
         }
@@ -476,6 +480,7 @@ impl ffi::Player {
         self.as_mut().rust_mut().request = Some(request);
         self.as_mut().set_server(QString::from(server));
         self.as_mut().set_loading(true);
+        self.as_mut().save_settings();
         self.status_text("チャンネルを取得中…");
     }
     pub fn select(mut self: Pin<&mut Self>, index: i32) {
@@ -489,6 +494,7 @@ impl ffi::Player {
             .preferences_mut()
             .service_id = id.to_string();
         self.as_mut().set_selected(index);
+        self.as_mut().save_settings();
         self.play();
     }
     pub fn play(mut self: Pin<&mut Self>) {
@@ -651,12 +657,7 @@ impl ffi::Player {
         if let Some(playback) = self.as_mut().rust_mut().playback.as_mut() {
             playback.shutdown();
         }
-        let saved = self.as_mut().rust_mut().preferences.flush();
-        if let Err(error) = saved {
-            eprintln!("Settings save failed: {error}");
-            self.as_mut()
-                .set_settings_error(QString::from(error.to_string()));
-        }
+        self.save_settings();
     }
 }
 

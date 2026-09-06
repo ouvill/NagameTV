@@ -238,6 +238,7 @@ ApplicationWindow {
         }
         SettingsDrawer {
             id: settings
+            onClosed: if (!root.closing) player.save_settings()
             backend: player
             statsVisible: root.showStats
             onStatsRequested: function (visible) {
@@ -358,7 +359,20 @@ ApplicationWindow {
                         subdued: player.audio_muted
                         Accessible.name: "音量"
                         Layout.preferredWidth: 132
-                        onMoved: player.volume(value)
+                        onMoved: {
+                            player.volume(value)
+                            if (!pressed) volumeSave.restart()
+                        }
+                        onPressedChanged: {
+                            volumeSave.stop()
+                            if (!pressed && !root.closing) player.save_settings()
+                        }
+                        Timer {
+                            id: volumeSave
+                            interval: 400
+                            // Wheel changes do not necessarily change pressed.
+                            onTriggered: if (!root.closing) player.save_settings()
+                        }
                     }
                     Item {
                         Layout.fillWidth: true

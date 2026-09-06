@@ -99,6 +99,12 @@ pub struct Session {
     preferences: Preferences,
     persistence: Persistence,
 }
+#[derive(Debug, PartialEq, Eq)]
+pub enum SaveStatus {
+    Transient,
+    Unchanged,
+    Saved,
+}
 enum Persistence {
     Transient,
     File { path: PathBuf, saved: Preferences },
@@ -126,14 +132,18 @@ impl Session {
     pub fn preferences_mut(&mut self) -> &mut Preferences {
         &mut self.preferences
     }
-    pub fn flush(&mut self) -> Result<(), Error> {
-        if let Persistence::File { path, saved } = &mut self.persistence
-            && *saved != self.preferences
-        {
-            save(path, &self.preferences)?;
-            saved.clone_from(&self.preferences);
+    pub fn flush(&mut self) -> Result<SaveStatus, Error> {
+        match &mut self.persistence {
+            Persistence::Transient => Ok(SaveStatus::Transient),
+            Persistence::File { path, saved } => {
+                if *saved == self.preferences {
+                    return Ok(SaveStatus::Unchanged);
+                }
+                save(path, &self.preferences)?;
+                saved.clone_from(&self.preferences);
+                Ok(SaveStatus::Saved)
+            }
         }
-        Ok(())
     }
 }
 

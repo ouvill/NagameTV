@@ -72,6 +72,38 @@ CMakeビルド成功。設定テストはmain形式の読み込み・未知項�
 起動時の組み立ては `player/startup.rs` に分離した。既存Player制御全体の分離、
 字幕等の既存unwrapの監査、機能移植後の長時間メモリー／性能検証は引き続き必要。
 
+## 操作時の設定保存
+
+mainの音量Sliderの押下終了・SettingsDrawer終了・サーバー変更・選局時の保存を移植した。
+Playerの保存処理はplayer/preferences.rsへ集約し、正常終了も同じ経路を使う。
+字幕・EPGの切り替えも確定した値を保存する。
+
+[Qt Sliderの仕様](https://doc.qt.io/qt-6/qml-qtquick-controls-slider.html#pressed-prop)
+ではpressedはマウス・タッチ・キー操作を含む。ドラッグ中は音量適用だけを行い、
+押下終了時に保存する。pressed変化を伴わないwheel等のmovedは400msの単発Timerでまとめる。
+新しい押下でTimerを止め、終了中のUIからは保存を要求せずshutdownで最終値を保存する。
+値のバインディング更新だけではmovedは発生しない。
+
+Session::flushの結果をSaved / Unchanged / Transientで表す。最後の保存値と一致する場合、
+シリアライズやファイル操作は行わない。保存に失敗した場合は最後の保存値を更新せず、
+次の確定操作で再試行できる。成功時は設定エラーを消すが、読み込み失敗や実験用起動の
+Transientは書き込みを行わず、元の読み込みエラーも消さない。
+未知のmain設定項目・64KiB上限・同じディレクトリーの一時ファイルとrenameは維持する。
+
+設定を変更するたびの書き込みや継続Timer、設定スナップショットの履歴は追加していない。
+保存自体はmain同様に同期IOで、sync_allもGUIスレッドで行う。遅いストレージでの
+UI停止時間は未測定であり、必要なら単一ワーカーで最新値をまとめる方式へ移す必要がある。
+ユーザーの通常設定ファイルへは、この検証から書き込んでいない。
+
+CPU試験ではSessionが生存中に別Sessionで保存内容を読めること、連続編集の最終値だけの
+保存、変更なしでIOを省くこと、保存失敗後の再試行、Transientの区別を検証する。
+マウス・キー・wheelの実操作、SettingsDrawer終了時の保存、追加したQtメソッドの
+実アプリ起動は音声出力の復旧待ちで未検証。
+
+設定CPU試験5件成功、全ターゲットClippyは警告なし。fmt・diff検査とreleaseビルドも成功。
+通常設定の読み書き、
+エラー表示の実操作、400msの集約動作と保存時のフレーム時間はまだ検証していない。
+
 デインターレースと動画統計の設計・検証は [video-statistics.md](video-statistics.md)。
 
 チャンネルの分類・番号順・種別絞り込みの契約と検証は [channel-selection.md](channel-selection.md)。

@@ -1,5 +1,34 @@
 use super::*;
 
+#[test]
+fn explicit_commit_persists_latest_changes_without_waiting_for_shutdown()
+-> Result<(), Box<dyn std::error::Error>> {
+    let dir = tempfile::tempdir()?;
+    let path = dir.path().join("settings.toml");
+    let mut session = Session::open(path.clone())?;
+    assert_eq!(session.flush()?, SaveStatus::Unchanged);
+    for volume in [10.0, 20.0, 30.0] {
+        session.preferences_mut().volume = Volume::from(volume);
+    }
+    assert!(!path.exists(), "editing alone must not perform IO");
+    assert_eq!(session.flush()?, SaveStatus::Saved);
+    let reader = Session::open(path.clone())?;
+    assert_eq!(reader.preferences().volume.fraction(), 0.3);
+    // Even an inaccessible destination needs no IO when the snapshot is unchanged.
+    fs::remove_file(&path)?;
+    fs::create_dir(&path)?;
+    assert_eq!(session.flush()?, SaveStatus::Unchanged);
+    session.preferences_mut().service_id = "123".into();
+    assert!(matches!(session.flush(), Err(Error::Io { .. })));
+    fs::remove_dir(&path)?;
+    assert_eq!(session.flush()?, SaveStatus::Saved);
+    assert_eq!(Session::open(path)?.preferences().service_id, "123");
+    let mut transient = Session::transient(Preferences::default());
+    transient.preferences_mut().volume = Volume::from(50.0);
+    assert_eq!(transient.flush()?, SaveStatus::Transient);
+    Ok(())
+}
+
 // Tests return Result for filesystem/setup failures; assertions describe contracts.
 #[test]
 fn compatible_main_settings_preserve_unported_fields() -> Result<(), Box<dyn std::error::Error>> {
