@@ -23,9 +23,10 @@ Playbackから字幕・EPGの型やAPIを参照しない。再生側の変更は
 
 ## 起動と完全無効化
 
-起動設定はQt/GStreamerの初期化前に確定。指定なしは両機能OFF、UIで変更可能。
+機能の許可リストはQt/GStreamerの初期化前に確定。通常起動は保存設定を復元し、UIで変更可能。
 `--features=none|subtitles|epg|subtitles,epg` は厳密な許可リストで、その実行だけに適用。
-未許可の機能はUIからも起動できない。既存アプリの保存設定は読み書きしない。
+未許可の機能はUIからも起動できない。この明示的な検証モードでは保存設定を読み書きしない。
+通常起動の設定互換性と保存タイミングは [feature-migration.md](feature-migration.md) を参照。
 
 字幕OFFはSessionそのものが不在。字幕デコーダー、TS probe、tsdemux統計、時計同期、
 字幕poll、表示Loaderを生成しない。ARIBライブラリーはバイナリーにリンクされるが

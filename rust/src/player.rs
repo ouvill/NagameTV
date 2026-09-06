@@ -1,3 +1,5 @@
+mod startup;
+
 #[cxx_qt::bridge]
 pub mod ffi {
     unsafe extern "C++" {
@@ -30,6 +32,8 @@ pub mod ffi {
         #[qproperty(QString, subtitle_status, READ, NOTIFY)]
         #[qproperty(QString, epg_data, READ, NOTIFY)]
         #[qproperty(QString, epg_status, READ, NOTIFY)]
+        #[qproperty(f64, volume_level, READ, NOTIFY)]
+        #[qproperty(QString, settings_error, READ, NOTIFY)]
         #[qproperty(QString, diagnostics, READ, NOTIFY)]
         type Player = super::PlayerRust;
         #[qinvokable]
@@ -63,11 +67,10 @@ pub mod ffi {
 
 use crate::{
     features::{
-        self,
         program_info::{ProgramInfo, Status as ProgramStatus},
         subtitles,
     },
-    playback, services,
+    playback, services, settings,
 };
 use cxx_qt::CxxQtType;
 use cxx_qt_lib::{QString, QStringList};
@@ -91,6 +94,10 @@ pub struct PlayerRust {
     epg_data: QString,
     epg_status: QString,
     diagnostics: QString,
+    volume_level: f64,
+    settings_error: QString,
+    preferences: settings::Session,
+    autoplay_pending: bool,
     subtitle_session: Option<subtitles::Session>,
     epg: ProgramInfo,
     active_service: Option<u64>,
@@ -104,51 +111,6 @@ pub struct PlayerRust {
     network: Option<services::Network>,
     playback: Option<playback::Playback>,
     entries: Vec<services::Service>,
-}
-
-impl Default for PlayerRust {
-    fn default() -> Self {
-        let plan = *features::PLAN
-            .get()
-            .expect("LaunchPlan initialized before Qt");
-        let network = services::Network::new();
-        let status = network
-            .as_ref()
-            .err()
-            .map(ToString::to_string)
-            .unwrap_or_else(|| "サーバーに接続してください".into());
-        Self {
-            server: QString::from(std::env::var("MIRAKURUN_SERVER").unwrap_or_default()),
-            status: QString::from(status),
-            channels: QStringList::default(),
-            selected: -1,
-            loading: false,
-            subtitles_enabled: plan.subtitles,
-            epg_enabled: plan.epg,
-            subtitles_allowed: !plan.locked || plan.subtitles,
-            epg_allowed: !plan.locked || plan.epg,
-            subtitles_active: false,
-            subtitle_display: true,
-            subtitle_data: QString::default(),
-            subtitle_status: QString::from("停止中"),
-            epg_data: QString::from("[]"),
-            epg_status: QString::from("無効"),
-            diagnostics: QString::default(),
-            subtitle_session: None,
-            epg: ProgramInfo::default(),
-            active_service: None,
-            resume_retry_used: false,
-            guide_visible: false,
-            guide_revision: 0,
-            guide_service: None,
-            next_guide: Instant::now(),
-            next_diagnostic: Instant::now(),
-            request: None,
-            network: network.ok(),
-            playback: playback::take_preloaded(),
-            entries: vec![],
-        }
-    }
 }
 
 macro_rules! property_setter {
@@ -202,6 +164,13 @@ impl ffi::Player {
     property_setter!(set_epg_data, epg_data, epg_data_changed, QString);
     property_setter!(set_epg_status, epg_status, epg_status_changed, QString);
     property_setter!(set_diagnostics, diagnostics, diagnostics_changed, QString);
+    property_setter!(set_volume_level, volume_level, volume_level_changed, f64);
+    property_setter!(
+        set_settings_error,
+        settings_error,
+        settings_error_changed,
+        QString
+    );
 
     /// READY joins streaming callbacks before dropping their subscriptions/state.
     fn end_stream(mut self: Pin<&mut Self>) -> Result<(), playback::Error> {
@@ -237,6 +206,12 @@ impl ffi::Player {
         }
         self.as_mut().set_subtitles_enabled(subtitles);
         self.as_mut().set_epg_enabled(epg);
+        {
+            let mut this = self.as_mut().rust_mut();
+            let prefs = this.preferences.preferences_mut();
+            prefs.subtitles_enabled = subtitles;
+            prefs.epg_enabled = epg;
+        }
         self.as_mut().configure_epg();
         if restart {
             self.as_mut().play();
@@ -381,6 +356,11 @@ impl ffi::Player {
             return;
         };
         let request = network.fetch(&server);
+        self.as_mut()
+            .rust_mut()
+            .preferences
+            .preferences_mut()
+            .apply_overrides(Some(server.clone()), None);
         self.as_mut().rust_mut().request = Some(request);
         self.as_mut().set_server(QString::from(server));
         self.as_mut().set_loading(true);
@@ -390,6 +370,12 @@ impl ffi::Player {
         if index < 0 || index as usize >= self.rust().entries.len() {
             return;
         }
+        let id = self.rust().entries[index as usize].id;
+        self.as_mut()
+            .rust_mut()
+            .preferences
+            .preferences_mut()
+            .service_id = id.to_string();
         self.as_mut().set_selected(index);
         self.play();
     }
@@ -431,6 +417,11 @@ impl ffi::Player {
         let result = self.rust().playback.as_ref().map(|p| p.play(&server, id));
         match result {
             Some(Ok(_)) => {
+                self.as_mut()
+                    .rust_mut()
+                    .preferences
+                    .preferences_mut()
+                    .service_id = id.to_string();
                 self.as_mut().rust_mut().active_service = Some(id);
                 self.as_mut().status_text(format!("接続中: {name}"));
             }
@@ -448,10 +439,19 @@ impl ffi::Player {
             Err(error) => self.status_text(error),
         }
     }
-    pub fn volume(self: Pin<&mut Self>, value: f64) {
+    pub fn volume(mut self: Pin<&mut Self>, value: f64) {
+        let Some(volume) = settings::Volume::from_fraction(value) else {
+            return;
+        };
         if let Some(playback) = &self.rust().playback {
-            playback.set_volume(value);
+            playback.set_volume(volume.fraction());
         }
+        self.as_mut()
+            .rust_mut()
+            .preferences
+            .preferences_mut()
+            .volume = volume;
+        self.set_volume_level(volume.fraction());
     }
     pub fn poll(mut self: Pin<&mut Self>) {
         let fetched = self
@@ -468,12 +468,23 @@ impl ffi::Player {
                     for entry in &entries {
                         names.append(QString::from(entry.name.clone()));
                     }
+                    let selected = self
+                        .rust()
+                        .preferences
+                        .preferences()
+                        .selected_index(entries.iter().map(|entry| entry.id))
+                        .and_then(|index| i32::try_from(index).ok())
+                        .unwrap_or(-1);
                     self.as_mut().rust_mut().entries = entries;
                     self.as_mut().set_channels(names);
-                    self.as_mut().set_selected(0);
+                    self.as_mut().set_selected(selected);
                     self.as_mut().configure_epg();
                     self.as_mut()
                         .status_text("チャンネルを選んで再生してください");
+                    if self.rust().autoplay_pending {
+                        self.as_mut().rust_mut().autoplay_pending = false;
+                        self.as_mut().play();
+                    }
                 }
                 Err(error) => self
                     .as_mut()
@@ -521,6 +532,12 @@ impl ffi::Player {
         self.as_mut().rust_mut().request = None;
         if let Some(playback) = self.as_mut().rust_mut().playback.as_mut() {
             playback.shutdown();
+        }
+        let saved = self.as_mut().rust_mut().preferences.flush();
+        if let Err(error) = saved {
+            eprintln!("Settings save failed: {error}");
+            self.as_mut()
+                .set_settings_error(QString::from(error.to_string()));
         }
     }
 }

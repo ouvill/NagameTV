@@ -27,7 +27,9 @@ CARGO_TARGET_DIR=build/cargo cargo test --manifest-path rust/Cargo.toml --releas
 MIRAKURUN_SERVER=http://192.168.3.3:40772 QT_QPA_PLATFORM=xcb ./build/mirakurun-viewer
 ```
 
-起動時は字幕・EPGとも無効。接続後にチャンネルを選ぶか再生ボタンで開始する。
+通常起動は設定から接続先・選択局・音量・字幕・EPGを復元します。設定がなければ字幕OFF・EPG ONです。
+接続後は選択局を復元して待機し、チャンネルを選ぶか再生ボタンで開始します。
+`MIRAKURUN_AUTOPLAY=1` で取得後に自動再生し、`MIRAKURUN_SERVICE_ID` で選択局を上書きできます。
 PgUp/PgDownで選局。チェックボックスで機能を切り替える。
 
 - **字幕**：解析と表示を有効化。再生中の変更は一度ストリームを再接続する。
@@ -72,3 +74,5 @@ EPG有効時の停止・再開で、解放済み領域が大量に残る挙動�
 `HTTP_JSON` 行に受信バッファー、`EPG_MEMORY` 行に解析後の保持容量をバイトで記録します。
 
 型付きエラーとEPG取得状態の整理、および回帰検証は [refactoring-verification.md](docs/refactoring-verification.md)。
+
+mainからの機能移植状況と設定保存の仕様は [feature-migration.md](docs/feature-migration.md)。

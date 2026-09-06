@@ -62,4 +62,5 @@ glibc設定による短時間試験の改善は、全機能の長期安定性や
 通信・EPG・字幕開始・再生の型付きエラーを導入し、EPGの取得状態をJobの所有関係と
 一体にしたenumへ変更した。EPGのStatusは型で返し、表示文言はQt境界で生成する。
 EPG解析からログ出力も分離した。詳細は [architecture.md](architecture.md)。
-Player全体の分離と、mainの機能移植は引き続き未実施。
+Player全体の分離は継続中。設定保存と起動時復元の移植を開始した。
+機能ごとの現状と残作業は [feature-migration.md](feature-migration.md) を参照。

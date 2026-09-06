@@ -90,8 +90,9 @@ ApplicationWindow {
             Button { text: "再生"; enabled: player.selected >= 0; onClicked: player.play() }
             Button { text: "停止"; onClicked: player.stop() }
             Label { text: "音量"; color: "white" }
-            Slider { from: 0; to: 1; value: 0.5; Layout.preferredWidth: 110; onMoved: player.volume(value) }
+            Slider { from: 0; to: 1; value: player.volume_level; Layout.preferredWidth: 110; onMoved: player.volume(value) }
         }
+        Label { text: player.settings_error; visible: text.length > 0; color: "#ffb080"; Layout.fillWidth: true; wrapMode: Text.Wrap; Layout.leftMargin: 8 }
         Label { text: player.diagnostics; color: "#aaaaaa"; font.pixelSize: 11; Layout.fillWidth: true; Layout.leftMargin: 8; elide: Text.ElideRight }
         Label {
             Layout.fillWidth: true

@@ -3,6 +3,7 @@ mod memory;
 mod playback;
 mod player;
 mod services;
+mod settings;
 
 use cxx_qt_lib::{QGuiApplication, QQmlApplicationEngine, QUrl};
 use std::sync::{
@@ -20,7 +21,10 @@ fn main() {
         std::process::exit(2);
     });
     eprintln!("Feature plan: {plan:?}");
-    features::PLAN.set(plan).unwrap();
+    if features::PLAN.set(plan).is_err() {
+        eprintln!("Feature plan was already initialized");
+        std::process::exit(1);
+    }
     cxx_qt::init_qml_module!("MinimalViewer");
     player::ffi::configure_qt_quick_open_gl();
     let mut app = QGuiApplication::new();
