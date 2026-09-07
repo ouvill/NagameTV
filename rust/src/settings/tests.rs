@@ -163,3 +163,49 @@ fn language_codes_follow_main_and_unknown_ui_requests_are_rejected()
     assert!(Language::parse("unsupported").is_none());
     Ok(())
 }
+
+/// Manual filesystem measurement; no display, audio, or user settings are used.
+#[test]
+#[ignore = "manual latency measurement; requires SETTINGS_BENCH_DIR"]
+fn measure_explicit_save_latency() -> Result<(), Box<dyn std::error::Error>> {
+    use std::time::Instant;
+    let base = std::env::var_os("SETTINGS_BENCH_DIR")
+        .ok_or("set SETTINGS_BENCH_DIR to a scratch directory")?;
+    let directory = tempfile::tempdir_in(base)?;
+    for extra_bytes in [0, 60 * 1024] {
+        let path = directory
+            .path()
+            .join(format!("settings-{extra_bytes}.toml"));
+        let mut session = Session::open(path.clone())?;
+        if extra_bytes > 0 {
+            session.preferences_mut().extra.insert(
+                "benchmark_payload".into(),
+                toml::Value::String("x".repeat(extra_bytes)),
+            );
+        }
+        let mut saves = Vec::with_capacity(100);
+        let mut unchanged = Vec::with_capacity(100);
+        for index in 0..100 {
+            session.preferences_mut().service_id = index.to_string();
+            let start = Instant::now();
+            assert_eq!(session.flush()?, SaveStatus::Saved);
+            saves.push(start.elapsed());
+            let start = Instant::now();
+            assert_eq!(session.flush()?, SaveStatus::Unchanged);
+            unchanged.push(start.elapsed());
+        }
+        assert_eq!(Session::open(path.clone())?.preferences().service_id, "99");
+        saves.sort_unstable();
+        unchanged.sort_unstable();
+        println!(
+            "settings_bytes={} samples=100 save_us_p50={} save_us_p95={} save_us_max={} unchanged_us_p95={} unchanged_us_max={}",
+            fs::metadata(path)?.len(),
+            saves[49].as_micros(),
+            saves[94].as_micros(),
+            saves[99].as_micros(),
+            unchanged[94].as_micros(),
+            unchanged[99].as_micros()
+        );
+    }
+    Ok(())
+}
