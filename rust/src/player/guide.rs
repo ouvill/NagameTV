@@ -49,8 +49,10 @@ impl ffi::Player {
         self.as_mut().rust_mut().guide = Guide::Showing(window);
         self.as_mut().rust_mut().guide_dirty = true;
         self.as_mut().rust_mut().guide_error = None;
-        self.as_mut().refresh_epg_status();
-        self.set_epg_data(QString::from("[]"));
+        // QML changes the calendar bounds in this same event. Replace the data
+        // before returning to rendering, without an empty frame or a poll delay.
+        self.as_mut().publish_guide();
+        self.refresh_epg_status();
     }
     pub fn watch_program(mut self: Pin<&mut Self>, key: QString) -> QString {
         use crate::features::program_info::watch::Error;

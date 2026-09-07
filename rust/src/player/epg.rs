@@ -69,6 +69,11 @@ impl ffi::Player {
             .get(self.rust().selected as usize)
             .and_then(|s| s.broadcast);
         self.as_mut().poll_current_program(service);
+        self.as_mut().publish_guide();
+        self.refresh_epg_status();
+    }
+    /// Publish directly from the shared snapshot; retain no per-day cache.
+    pub(super) fn publish_guide(mut self: Pin<&mut Self>) {
         if let crate::features::program_info::guide::Guide::Showing(window) = self.rust().guide
             // All-channel grid data depends on EPG, catalog and day, not selection.
             && (self.rust().guide_revision != self.rust().epg.revision || self.rust().guide_dirty)
@@ -89,6 +94,5 @@ impl ffi::Player {
             self.as_mut().rust_mut().guide_dirty = false;
             self.as_mut().set_epg_data(QString::from(data));
         }
-        self.refresh_epg_status();
     }
 }
