@@ -145,6 +145,9 @@ impl Playback {
     pub fn position(&self) -> Option<gst::ClockTime> {
         self.sink.query_position::<gst::ClockTime>()
     }
+    pub fn video_frame_counters(&self) -> Option<stats::FrameCounters> {
+        stats::frame_counters(&self.sink)
+    }
     fn new() -> Result<Self> {
         gst::init()?;
         let sink = gst::ElementFactory::make("qml6glsink")

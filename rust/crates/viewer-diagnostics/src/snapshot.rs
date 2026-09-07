@@ -3,6 +3,10 @@ use serde::Serialize;
 #[derive(Default, Serialize)]
 pub struct Snapshot {
     pub playing: bool,
+    /// Native video sink counters; null when unavailable or stopped. These do not
+    /// certify Qt presentation, and can reset when playback is restarted.
+    pub video_rendered: Option<u64>,
+    pub video_dropped: Option<u64>,
     pub subtitles: bool,
     pub comments: bool,
     pub comments_enabled: bool,

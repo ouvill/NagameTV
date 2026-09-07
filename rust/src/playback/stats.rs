@@ -1,7 +1,35 @@
 //! On-demand snapshots. No frame retention, probes, timers or historical samples.
 use gst::prelude::*;
 use gstreamer as gst;
+use gstreamer_base::{BaseSink, prelude::BaseSinkExt};
 use serde::Serialize;
+
+/// Sink rendering calls, not proof that Qt presented a new image on screen.
+#[derive(Debug, PartialEq, Eq)]
+pub struct FrameCounters {
+    pub rendered: u64,
+    pub dropped: u64,
+}
+
+fn sink_stats(sink: &gst::Element) -> Option<gst::Structure> {
+    if !matches!(
+        sink.current_state(),
+        gst::State::Paused | gst::State::Playing
+    ) {
+        return None;
+    }
+    Some(sink.downcast_ref::<BaseSink>()?.stats())
+}
+
+/// Sample native counters without retaining buffers or collecting display metadata.
+/// READY/NULL and unsupported sinks are unknown, rather than a synthetic zero.
+pub fn frame_counters(sink: &gst::Element) -> Option<FrameCounters> {
+    let stats = sink_stats(sink)?;
+    Some(FrameCounters {
+        rendered: stats.get("rendered").ok()?,
+        dropped: stats.get("dropped").ok()?,
+    })
+}
 
 #[derive(Default, Serialize)]
 pub struct VideoFormat {
@@ -69,7 +97,7 @@ pub fn snapshot(
             None
         }
     };
-    let stats = active.then(|| sink.property::<gst::Structure>("stats"));
+    let stats = active.then(|| sink_stats(sink)).flatten();
     VideoStats {
         state: format!("{state:?}"),
         input: VideoFormat::from_caps(caps(processor).as_deref()),
@@ -162,6 +190,12 @@ mod tests {
                 Some(if mode == Mode::Off { 30.0 } else { 60.0 })
             );
             assert!(running.rendered.is_some_and(|n| n > 0));
+            let completed = frame_counters(&sink).ok_or("missing native counters")?;
+            assert_eq!(Some(completed.rendered), running.rendered);
+            assert_eq!(completed.dropped, 0);
+            // EOS does not leave PLAYING. Counters remain unchanged when no new
+            // frames arrive, even though a state-only observation says PLAYING.
+            assert_eq!(frame_counters(&sink), Some(completed));
             assert_eq!(running.dropped, Some(0));
             assert_eq!(running.output.width, Some(320));
             pipeline.0.set_state(gst::State::Ready)?;
@@ -173,6 +207,7 @@ mod tests {
                 mode.label(),
             );
             assert!(stopped.rendered.is_none());
+            assert!(frame_counters(&sink).is_none());
             assert!(stopped.output.width.is_none());
             assert!(serde_json::to_string(&stopped).is_ok());
         }

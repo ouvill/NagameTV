@@ -68,8 +68,15 @@ impl ffi::Player {
         };
         let (tasks, programs, stopping) = this.epg.counters();
         let (history, text_bytes) = this.comments.storage();
+        // Only queried while diagnostics are enabled; no frame probes or history.
+        let video = this
+            .playback
+            .as_ref()
+            .and_then(|playback| playback.video_frame_counters());
         let snapshot = Snapshot {
             playing: this.playing,
+            video_rendered: video.as_ref().map(|counters| counters.rendered),
+            video_dropped: video.as_ref().map(|counters| counters.dropped),
             subtitles: this.subtitles_enabled,
             comments: this.danmaku_enabled,
             comments_enabled: this.comments_enabled,

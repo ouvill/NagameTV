@@ -794,4 +794,39 @@ playingはパイプラインの状態であり、映像フレームの継続到�
 警告・メモリー増加・映像更新停止・手動ホバーの因果関係は未特定。
 証跡はbenchmark/gstreamer-critical/current/frozen-video/の3画像、observation.json、
 診断capture、player.log、proc情報、各スレッド名とwchan。
+
+## 映像sinkカウンターの診断記録（2026-09-07）
+
+playing=trueだけではフレーム処理の停止を見分けられなかったため、診断snapshotへ
+video_renderedとvideo_droppedを追加した。既存の周期・操作イベント時にだけ
+[GstBaseSinkの統計](https://gstreamer.freedesktop.org/documentation/base/gstbasesink.html#GstBaseSink:stats)
+を読み、毎フレームのprobe・履歴・追加ワーカーは作らない。
+診断無効時は読み取らない。動画統計パネルのcaps・文字列等も同時に生成しない。
+
+ネイティブのBaseSink型へ変換できる場合だけ型付きAPIから読む。
+停止状態（READY/NULL）、未生成、取得不能はnullとして、実測の0と区別する。
+旧ログにはこの2項目がないため、読み手は欠落も未取得として扱う。
+型付きFrameCountersを再生側から返し、診断形式への変換はPlayerの境界に置いた。
+同じ取得処理を既存の統計パネルでも共有する。
+
+カウンターはsink側のrender処理の統計で、Qtが画面へ表示したフレーム数とは限らない。
+増えない区間はsinkへの進行がない候補として調べ、増えているのに画像が変わらない場合は
+下流の表示処理や入力映像自体も確認する。再開・選局でリセットされ得るため、
+play/stopイベントをまたいで単純な差分を取らない。
+状態遷移中の操作イベントには停止直前のカウンターが残ることもあり、
+停止完了後の定期sampleと区別する。この変更は停止の自動判定・自動復旧ではない。
+
+CPUのみの既存映像処理試験で、3種類のデインターレース設定すべてについて
+処理数が既存統計と一致し、EOS後は同じ値、READY停止後は未取得になることを確認。
+Rust 102件成功（外部入力等が必要な既存3件はignore）、診断crate 16件と
+実プロセス保持試験1件成功、Clippy全ターゲット・fmt・リリースビルド成功。
+
+専用Xvfb :99を検出・検証し、明示fakesinkで本体を起動した。
+EPG有効・字幕実況無効の実放送で、定期sampleのrenderedは485、752、1151と増加。
+停止操作後の約80秒・90秒sampleはplaying=false、両カウンターnullだった。
+再開後はrendered 0から164、745へ増え、停止前の3858を引き継いでいないことも確認した。
+閉じるボタンから専用プロセスは終了コード0。
+これはログへの接続と操作の試験であり、実GPUの性能測定ではない。
+証跡はbenchmark/frame-counter-ui/の専用設定、player.log、state内のJSONL。
+以前からの長時間プロセスは旧バイナリーのままで、新しい項目は記録しない。
 固定入力で縁取りを分けた実験は[字幕メモリー計測](subtitle-memory.md)に記録した。
