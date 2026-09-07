@@ -73,10 +73,14 @@ impl ffi::Player {
             .playback
             .as_ref()
             .and_then(|playback| playback.video_frame_counters());
+        let warnings = this.playback.as_ref().map(|p| p.warning_counts());
         let snapshot = Snapshot {
             playing: this.playing,
             video_rendered: video.as_ref().map(|counters| counters.rendered),
             video_dropped: video.as_ref().map(|counters| counters.dropped),
+            gst_warning_count: warnings.map(|counts| counts.total),
+            ts_continuity_warning_count: warnings.map(|counts| counts.continuity),
+            last_ts_continuity_pid: warnings.and_then(|counts| counts.last_continuity_pid),
             subtitles: this.subtitles_enabled,
             comments: this.danmaku_enabled,
             comments_enabled: this.comments_enabled,

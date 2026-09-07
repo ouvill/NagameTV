@@ -7,6 +7,10 @@ pub struct Snapshot {
     /// certify Qt presentation, and can reset when playback is restarted.
     pub video_rendered: Option<u64>,
     pub video_dropped: Option<u64>,
+    /// Cumulative bus warnings for the playback owner's lifetime, not GLib criticals.
+    pub gst_warning_count: Option<u64>,
+    pub ts_continuity_warning_count: Option<u64>,
+    pub last_ts_continuity_pid: Option<u16>,
     pub subtitles: bool,
     pub comments: bool,
     pub comments_enabled: bool,

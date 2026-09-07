@@ -829,4 +829,35 @@ EPG有効・字幕実況無効の実放送で、定期sampleのrenderedは485、
 これはログへの接続と操作の試験であり、実GPUの性能測定ではない。
 証跡はbenchmark/frame-counter-ui/の専用設定、player.log、state内のJSONL。
 以前からの長時間プロセスは旧バイナリーのままで、新しい項目は記録しない。
+
+## bus警告の固定サイズ集計（2026-09-07）
+
+GStreamerのWarningメッセージは従来pollで取り出した後に読み捨てていた。
+映像停止の調査で見つかったTS連続性異常を後から照合できるよう、
+Playback所有期間の累積件数をwarningsモジュールへ分離して追加した。
+既存のbus排出処理で更新するだけで、警告本文・native message・sourceオブジェクト・
+PID別の履歴は保持しない。状態はu64カウンター2個と直近のOption<u16>だけ。
+追加のログ行やワーカーは作らず、カウンターは飽和加算で更新する。
+
+分類は[上流tsdemuxの警告詳細](https://github.com/GStreamer/gstreamer/blob/1.28.2/subprojects/gst-plugins-bad/gst/mpegtsdemux/tsdemux.c#L3922)
+に対応するwarning-type=continuity-mismatchと、guintのpidを借用して読む。
+表示用エラー文の検索では判定しない。PIDが欠落・型不正・13bit範囲外の場合も
+連続性異常の件数は増やすが、直近PIDをNoneへ戻して古いPIDを誤って対応付けない。
+その他の警告は総数だけを増やす。警告を致命的な再生エラーには変更しない。
+
+診断snapshotへgst_warning_count、ts_continuity_warning_count、last_ts_continuity_pidを
+追加した。Playback未生成の場合はnull。旧ログの項目欠落も未取得として扱う。
+カウンターはstop/playや選局ではリセットせず、Playback所有者の寿命全体の累積値。
+直近PIDは以前の局の警告である可能性もあるため、現在局の異常と即断しない。
+これらはbusのWarning件数で、stderrに出るGLib/GStreamer-CRITICALの件数ではない。
+診断無効時もbus排出時の固定サイズ集計は行うが、ファイル記録は行わない。
+
+実際のGStreamer Warningメッセージを生成し、詳細の型照合・警告文との区別・
+PID不正時のクリア・総数の飽和をCPU試験で確認した。
+メッセージとsourceを解放した後にWeakが解決できなくなることも確認し、
+集計がsourceの所有権を延長しないことを検査した。Rust全104件成功、既存3件ignore。
+診断crateの16件と実プロセス保持試験1件も成功。
+Clippy全ターゲット、fmt、CMakeリリースビルドも成功した。
+実放送由来のWarningを新しい本体で取得する確認はまだ行っていない。
+この変更は異常の観測手段の追加であり、連続性異常・映像停止・メモリー増加の修正ではない。
 固定入力で縁取りを分けた実験は[字幕メモリー計測](subtitle-memory.md)に記録した。

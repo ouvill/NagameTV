@@ -8,9 +8,10 @@ pub mod audio_streams;
 pub mod deinterlace;
 pub mod failure;
 pub mod stats;
+pub mod warnings;
 
 use gstreamer::{self as gst, prelude::*};
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::sync::{Arc, Mutex, OnceLock, Weak};
 
 type Result<T> = std::result::Result<T, Error>;
@@ -127,6 +128,7 @@ pub struct Playback {
     audio_intent: RefCell<Option<audio_choices::Intent>>,
     audio_default: RefCell<audio_default::Policy>,
     requested_uri: RefCell<Option<String>>,
+    warnings: Cell<warnings::Counts>,
 }
 
 impl Playback {
@@ -147,6 +149,9 @@ impl Playback {
     }
     pub fn video_frame_counters(&self) -> Option<stats::FrameCounters> {
         stats::frame_counters(&self.sink)
+    }
+    pub fn warning_counts(&self) -> warnings::Counts {
+        self.warnings.get()
     }
     fn new() -> Result<Self> {
         gst::init()?;
@@ -222,6 +227,7 @@ impl Playback {
             audio_intent: RefCell::default(),
             audio_default: RefCell::default(),
             requested_uri: RefCell::new(None),
+            warnings: Cell::default(),
         })
     }
 
@@ -305,6 +311,11 @@ impl Playback {
                 eprintln!("Audio selection: {error}");
             }
             match message.view() {
+                gst::MessageView::Warning(warning) => {
+                    let mut counts = self.warnings.get();
+                    counts.observe(warning);
+                    self.warnings.set(counts);
+                }
                 gst::MessageView::Error(e) => {
                     if failure.is_none() {
                         failure = Some(stream_error(e));
