@@ -601,3 +601,45 @@ checkpoint-27m/へsample、summary、採取時のsmaps・smaps_rollup・maps・s
 末尾32KiBログを保存した。smapsはピーク後の採取でありピーク時の内訳ではない。
 ログにはフォントのOpenType support missingもあるが、時刻なしのためこのピークとの
 対応は未確認。フォントを原因と断定せず、次の割り当て元調査の候補として扱う。
+
+## 全機能併用の短時間heaptrack（2026-09-07）
+
+X11 :0、NVIDIA RTX 4070 Ti / 595.84のGLX動作、Pulse接続と無音バッファー出力を
+再検証し、専用config/stateのPID 145790をheaptrack --record-only付きで起動した。
+京都3209641984、字幕・EPG・実況受信・流れる表示ON、pulsesink、音量0。
+既存PID 78793/132581は維持し、:0へキー・ポインター入力は送っていない。
+75秒後にこのプロファイル対象だけへSIGTERMを送り、heaptrackの出力完了を待った。
+終了143で、Qtの正常終了経路ではない。全6定期sampleで再生・機能有効、字幕セル最大24、
+流れる実況最大22、EPG取得1回完了、記録破棄0。記録ファイルは約4.3MiB。
+
+heaptrack_printの既定バックトレース併合にはpeak集計が正確でないという注記があるため、
+数量の確認には-m 0で出力したunmerged-peaks.txtを使用した。
+次はツールの表示単位Mのままで、既存診断のMiB表とは混同しない。
+各スタックのpeakは同じ時刻とは限らず、足して全体peakとして扱わない。
+
+| 個別スタックのpeak表示 | 確認した呼び出し経路 |
+| --- | --- |
+| 33.55M | QSGOpaqueTextureMaterialRhiShader::updateSampledImageからQtGui、libnvidia-glcoreへ |
+| 28.00M | gst_gl_base_memory_initを含むGStreamer GLからlibnvidia-glcoreへ |
+| 8.52M | QQuickText::updatePaintNode、QTextureGlyphCache、QImageTextureGlyphCache::resizeTextureData、QImageData::create |
+| 8.39M | 同じ文字描画・glyph cacheからNVIDIAへの確保 |
+| 8.39M | 同じ文字描画からQRhiTextureSubresourceUploadDescription、QByteArrayへのコピー |
+| 8.39M | 字幕有効化時のQQuickFontLoader、QFontDatabase::addApplicationFont、QIODevice::readAll |
+
+全体peak heapは326.15M、RSS peakは448.67M（heaptrack自身の負荷を含む）。
+ツールのtotal memory leaked=295.13MはSIGTERM時点で未解放の量であり、正常終了時の
+リーク量ではない。生存中の再生資源も含むため、この数字を製品のリークとして報告しない。
+またmalloc系の追跡であり、GPU上の全資源や直接mmapの包括的測定でもない。
+
+文字描画キャッシュ・テクスチャ転送・ドライバー側確保が初期メモリーを使うことは
+スタックで確認できた。どの表示機能が各文字描画確保を要求したか、長時間プロセスの
+26分のピークや継続増加が同じ経路かは、この75秒記録だけでは特定できない。
+プロファイラーの影響と放送内容・同時実行条件があるため、通常時の性能比較には使わない。
+次の切り分けは機能別の同条件プロファイルであり、現段階で描画方式やアロケーターを
+原因と断定して変更していない。
+
+証跡はbenchmark/heaptrack-all-features/のrun.py、config/state、player.log、result.json、
+sample-summary.json、source-head.txt、binary-sha256.txt、allocations.zst、
+peaks.txt、unmerged-peaks.txt。起動時HEADは2ecef13、製品ビルドは108db22相当
+（その後の2ecef13は診断テストと文書のみ）。対象プロセスの終了と長時間2プロセスの生存を
+psで確認した。
