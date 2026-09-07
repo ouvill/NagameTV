@@ -140,6 +140,20 @@ CARGO_TARGET_DIR=build/epg-events cargo test --locked \
 今回確認できたのは静かな実接続の維持と停止まで。実更新イベントの内容、集約後のEPG再取得、
 Qt画面への反映、長時間の資源推移は未検証。アプリ本体を変更しておらず再ビルドは不要。
 
+## 実サーバー購読を90秒へ延長（2026-09-07）
+
+任意試験の観測時間を30秒から90秒へ延長し、本番の60秒集約間隔を超えて購読した。
+設定済みMirakurunに対する結果はReceiving=true、refresh通知0件、停止完了。
+試験は90.06秒で成功し、Retrying／WorkerStoppedは観測しなかった。
+並行した独立の読み取りもHTTP 200（Mirakurun/4.1.3）、本文は配列開始の
+2 bytes（`5b 0a`）だけだった。curlの終了コード28は指定した90秒の観測期限によるもの。
+
+静かな接続を60秒以上維持し、明示停止を完了できることを確認した。
+この時間帯には番組イベントを受信していないため、実通知による再取得・Qt反映の
+証拠にはしない。通常の自動試験では引き続きignoredとし、製品処理は変更していない。
+証跡はGit対象外の`benchmark/real-epg-notifications/`にあるsubscription-test.txt、
+headers.txt、events.raw、trace.txt、curl-output.txt。
+
 ## イベント集約からQt画面までの統合試験（2026-09-07）
 
 85c85ccのアプリを専用Xvfb :99 / llvmpipeで起動し、実際の60秒ゲートを変更せず検証した。

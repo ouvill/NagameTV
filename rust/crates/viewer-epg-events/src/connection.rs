@@ -229,7 +229,9 @@ mod tests {
         let url = std::env::var("MIRAKURUN_EVENT_URL")?;
         let client = Client::new()?;
         let subscription = Subscription::start(&Handle::current(), &client, url);
-        let deadline = Instant::now() + Duration::from_secs(30);
+        // Observe beyond the production 60-second refresh gate. A quiet server
+        // may still produce zero refreshes; report the count rather than inventing events.
+        let deadline = Instant::now() + Duration::from_secs(90);
         let mut receiving = false;
         let mut refreshes = 0;
         let mut failure = None;
