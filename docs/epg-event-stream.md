@@ -177,3 +177,24 @@ QML例外・イベント接続エラーなし。アプリは終了コード0、�
 before.png・after.png、diagnostic-events.jsonと元の診断JSONL。
 イベント受信→集約→再取得→Qt反映は検証用データで確認済みとなる。
 実Mirakurunが発する更新通知、実再生との同時実行、長時間の資源推移は引き続き未検証。
+
+
+## 実Mirakurunの更新通知を採取して解析（2026-09-07）
+
+最長10分・受信量1MiB上限の読み取り専用購読中に、実サーバーからprogram/updateが
+届いた。最初の確認時点では完全なイベント163件、共通フィールドはresource/type/time/data。
+元のopen-array受信はbenchmark/real-epg-notifications/extended/events.rawに保存し、
+確認できた163件を完全なJSON配列へ再シリアライズしたcomplete-events.jsonを試験に使用した。
+バイト列そのものの再現ではなく、実イベントの構造・内容の互換性を確認する試験である。
+
+外部fixtureを指定する任意の統合試験captured_events.rsを追加した。
+1MiBまで読み、programのcreate/update/removeが一つ以上あることを別途確認する。
+Decoderへ1・7・4096バイト単位で供給し、1バイトの場合は163件すべてを個別に検知。
+各分割でRefreshGateの59秒時点は要求なし、60秒で1回、120秒で追加要求なしを確認した。
+時計は注入値であり、この試験自体が60秒待ったという意味ではない。
+
+任意試験成功、network有効・全ターゲットClippy成功。製品コードの変更はない。
+証跡はextended/replay-test.txtと上記capture。通常の自動試験ではignoredとし、
+MIRAKURUN_EVENT_FIXTUREへ完全なJSON配列のパスを指定して実行する。
+実データの解析・集約の確認が進んだが、実通知から実GUIの表示変更までを
+追跡した試験ではない。検証用サーバーでのQt反映試験とは区別する。
