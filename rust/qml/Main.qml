@@ -20,7 +20,7 @@ ApplicationWindow {
     property bool usageReady: false
     function recordUsage() {
         if (usageReady && !closing)
-            player.record_ui_state(showGuide, showChannels, danmaku.item ? danmaku.item.liveEntries.length : 0);
+            player.record_ui_state(showGuide, showChannels, danmaku.item ? danmaku.item.activeCount : 0);
     }
     onShowGuideChanged: recordUsage()
     onShowChannelsChanged: recordUsage()
@@ -217,17 +217,25 @@ ApplicationWindow {
                 fontSize: player.comment_font_size
                 textOpacity: player.comment_opacity
                 speed: player.comment_speed
+                fullScreen: root.visibility === Window.FullScreen
                 titleOverlapsVideo: programIdentity.visible
                     && programIdentity.y < danmaku.y + danmaku.height
                     && programIdentity.y + programIdentity.height > danmaku.y
                 titleBottomInVideo: programIdentity.y + programIdentity.height - danmaku.y
+                controlsOverlapVideo: bottomPanel.visible
+                    && bottomPanel.y < danmaku.y + danmaku.height
+                    && bottomPanel.y + bottomPanel.height > danmaku.y
+                controlsTopInVideo: bottomPanel.y - danmaku.y
             }
         }
         Connections {
             target: player
             function onSelectedChanged() { if (danmaku.item) danmaku.item.clearComments(); }
             function onServerChanged() { if (danmaku.item) danmaku.item.clearComments(); }
-            function onCommentReceived(text) { if (danmaku.item) danmaku.item.receive(text); }
+            function onCommentReceived(text, position, color) {
+                if (danmaku.item)
+                    danmaku.item.receive(text, position, color);
+            }
         }
         Loader {
             // Match a 16:9 broadcast's letterboxed video area.

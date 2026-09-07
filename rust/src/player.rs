@@ -159,7 +159,7 @@ pub mod ffi {
         fn enable_comments(self: Pin<&mut Player>, enabled: bool);
         #[qsignal]
         #[cxx_name = "commentReceived"]
-        fn comment_received(self: Pin<&mut Player>, text: QString);
+        fn comment_received(self: Pin<&mut Player>, text: QString, position: QString, color: u32);
         #[qinvokable]
         fn configure_danmaku(
             self: Pin<&mut Player>,

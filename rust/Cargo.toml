@@ -4,6 +4,10 @@ version = "0.1.0"
 edition = "2024"
 build = "build.rs"
 
+[features]
+# Builds a runner for QML tests using the real statically linked Rust types.
+qml_tests = []
+
 [dependencies]
 viewer-epg-events = { path = "crates/viewer-epg-events", features = ["network"] }
 viewer-diagnostics = { path = "crates/viewer-diagnostics" }

@@ -5,7 +5,7 @@ mod translations;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let translations = translations::compile()?;
-    CxxQtBuilder::new_qml_module(
+    let mut builder = CxxQtBuilder::new_qml_module(
         QmlModule::new("MinimalViewer")
             .qml_file("qml/Main.qml")
             .qml_file("qml/AudioSettings.qml")
@@ -30,6 +30,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .qml_file("qml/ProgramSidebar.qml")
             .qml_file("qml/CommentList.qml")
             .qml_file("qml/DanmakuOverlay.qml")
+            .qml_file("qml/DanmakuTimeline.qml")
             .qml_file("qml/ToggleSwitch.qml")
             .qml_file("qml/SidebarChannels.qml")
             .qml_file("qml/SidebarTab.qml")
@@ -78,8 +79,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "../assets/fonts/LICENSE-Rounded-Mplus-1m-for-ARIB.txt",
     ])
     .file("src/player.rs")
+    .file("src/danmaku.rs")
     .include_dir("src")
-    .qt_module("Quick")
-    .build();
+    .qt_module("Quick");
+    if std::env::var_os("CARGO_FEATURE_QML_TESTS").is_some() {
+        builder = builder
+            .qt_module("QuickTest")
+            .file("src/danmaku_ui_tests.rs");
+    }
+    builder.build();
     Ok(())
 }

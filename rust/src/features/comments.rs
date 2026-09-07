@@ -79,17 +79,17 @@ impl Comments {
     pub fn poll(
         &mut self,
         network: &Network,
-        live: impl FnMut(&str),
+        live: impl FnMut(&Comment),
     ) -> Result<(), viewer_comments::controller::Error> {
         let comments = network.poll_comments(&mut self.controller)?;
         self.ingest(comments, live);
         Ok(())
     }
 
-    fn ingest(&mut self, comments: Vec<Comment>, mut live: impl FnMut(&str)) {
+    fn ingest(&mut self, comments: Vec<Comment>, mut live: impl FnMut(&Comment)) {
         for comment in &comments {
             if comment.phase == viewer_comments::Phase::Live {
-                live(&comment.text);
+                live(comment);
             }
         }
         self.append(comments);
@@ -209,20 +209,36 @@ mod tests {
                     origin: viewer_comments::Origin::Nx,
                     phase: viewer_comments::Phase::History,
                     unix_seconds: 0,
+                    style: viewer_comments::Style::default(),
                 },
                 Comment {
                     text: "new".into(),
                     origin: viewer_comments::Origin::Nx,
                     phase: viewer_comments::Phase::Live,
                     unix_seconds: 1,
+                    style: viewer_comments::Style {
+                        position: viewer_comments::Position::Top,
+                        color: 0xff0000,
+                    },
                 },
             ],
-            |text| live.push(text.to_owned()),
+            |comment| live.push((comment.text.to_string(), comment.style)),
         );
-        assert_eq!(live, ["new"]);
+        assert_eq!(
+            live,
+            [(
+                "new".to_owned(),
+                viewer_comments::Style {
+                    position: viewer_comments::Position::Top,
+                    color: 0xff0000
+                }
+            )]
+        );
         assert_eq!(comments.history.len(), 2);
         live.clear();
-        comments.ingest(Vec::new(), |text| live.push(text.to_owned()));
+        comments.ingest(Vec::new(), |comment| {
+            live.push((comment.text.to_string(), comment.style))
+        });
         assert!(live.is_empty());
         assert_eq!(comments.history.len(), 2);
     }
@@ -251,6 +267,7 @@ mod tests {
             origin: viewer_comments::Origin::Nx,
             phase: viewer_comments::Phase::Live,
             unix_seconds: i,
+            style: viewer_comments::Style::default(),
         }));
         let rows: Vec<serde_json::Value> = serde_json::from_str(&comments.json()?)?;
         assert_eq!(rows.len(), HISTORY_LIMIT);

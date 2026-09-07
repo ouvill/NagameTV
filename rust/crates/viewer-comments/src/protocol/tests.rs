@@ -132,3 +132,25 @@ fn thread_selection_and_subscription_keep_large_identifiers_as_strings() -> Resu
     ));
     Ok(())
 }
+
+#[test]
+fn mail_position_and_color_reach_the_comment_without_interpreting_text() -> Result<(), Error> {
+    for (mail, position, color) in [
+        ("184 ue red", Position::Top, 0xff0000),
+        ("shita #12AbEF", Position::Bottom, 0x12abef),
+        ("ue shita naka black", Position::Right, 0x000000),
+        ("blue2", Position::Right, 0x3399ff),
+        ("ue unknown #gggggg #123 #12345678", Position::Top, 0xffffff),
+        ("", Position::Right, 0xffffff),
+    ] {
+        let input = serde_json::to_vec(&serde_json::json!({"chat": {
+            "content": "<b>comment</b>", "mail": mail
+        }}))?;
+        let Event::Comment(comment) = Decoder::default().decode(&input)? else {
+            panic!("expected comment");
+        };
+        assert_eq!(comment.style, Style { position, color });
+        assert_eq!(&*comment.text, "<b>comment</b>");
+    }
+    Ok(())
+}

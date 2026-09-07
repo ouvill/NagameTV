@@ -4,6 +4,7 @@ pub mod activity;
 pub mod connection;
 #[cfg(feature = "network")]
 pub mod controller;
+pub mod danmaku;
 mod protocol;
-pub use protocol::{Comment, Decoder, Error, Event, Origin, Phase, ThreadId};
+pub use protocol::{Comment, Decoder, Error, Event, Origin, Phase, Position, Style, ThreadId};
 pub use protocol::{MAX_COMMENT_BYTES, MAX_MESSAGE_BYTES, MAX_THREAD_LIST_BYTES};

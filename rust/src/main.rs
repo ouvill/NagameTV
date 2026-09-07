@@ -1,5 +1,8 @@
 mod audio;
 mod channels;
+mod danmaku;
+#[cfg(feature = "qml_tests")]
+mod danmaku_ui_tests;
 mod diagnostics;
 mod error_log;
 mod features;
@@ -41,6 +44,11 @@ enum StartupError {
 }
 
 fn main() -> std::process::ExitCode {
+    // Qt must run on the process main thread, not a libtest worker.
+    #[cfg(feature = "qml_tests")]
+    if std::env::args().nth(1).as_deref() == Some("--qml-tests") {
+        return std::process::ExitCode::from(danmaku_ui_tests::run().clamp(0, 255) as u8);
+    }
     logging::init();
     // SAFETY: Logging initialization creates no threads. Before Qt/GStreamer, diagnostics
     // or application workers are initialized. No application thread exists yet.

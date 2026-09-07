@@ -73,12 +73,95 @@ pub enum Origin {
     Nx,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Position {
+    #[default]
+    Right,
+    Top,
+    Bottom,
+}
+
+impl Position {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Right => "right",
+            Self::Top => "top",
+            Self::Bottom => "bottom",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+pub struct Style {
+    pub position: Position,
+    pub color: u32,
+}
+
+impl Default for Style {
+    fn default() -> Self {
+        Self {
+            position: Position::Right,
+            color: 0xffffff,
+        }
+    }
+}
+
+impl Style {
+    // NX-Jikkyo/Niconico mail commands. Ignore unknown commands, never HTML/CSS.
+    fn from_mail(mail: &str) -> Self {
+        let mut style = Self::default();
+        for command in mail.split_ascii_whitespace() {
+            match command {
+                "naka" => style.position = Position::Right,
+                "ue" => style.position = Position::Top,
+                "shita" => style.position = Position::Bottom,
+                _ => {
+                    let color = match command {
+                        "white" => Some(0xffffff),
+                        "red" => Some(0xff0000),
+                        "pink" => Some(0xff8080),
+                        "orange" => Some(0xffcc00),
+                        "yellow" => Some(0xffff00),
+                        "green" => Some(0x00ff00),
+                        "cyan" => Some(0x00ffff),
+                        "blue" => Some(0x0000ff),
+                        "purple" => Some(0xc000ff),
+                        "black" => Some(0x000000),
+                        "white2" => Some(0xcccc99),
+                        "red2" => Some(0xcc0033),
+                        "pink2" => Some(0xff33cc),
+                        "orange2" => Some(0xff6600),
+                        "yellow2" => Some(0x999900),
+                        "green2" => Some(0x00cc66),
+                        "cyan2" => Some(0x00cccc),
+                        "blue2" => Some(0x3399ff),
+                        "purple2" => Some(0x6633cc),
+                        "black2" => Some(0x666666),
+                        _ => command
+                            .strip_prefix('#')
+                            .filter(|hex| {
+                                hex.len() == 6 && hex.bytes().all(|b| b.is_ascii_hexdigit())
+                            })
+                            .and_then(|hex| u32::from_str_radix(hex, 16).ok()),
+                    };
+                    if let Some(color) = color {
+                        style.color = color;
+                    }
+                }
+            }
+        }
+        style
+    }
+}
+
 #[derive(Debug, PartialEq, Eq, Serialize)]
 pub struct Comment {
     pub text: Box<str>,
     pub origin: Origin,
     pub phase: Phase,
     pub unix_seconds: u64,
+    pub style: Style,
 }
 
 impl Comment {
@@ -127,6 +210,8 @@ struct Chat<'a> {
     user_id: Cow<'a, str>,
     #[serde(default)]
     date: u64,
+    #[serde(default, borrow)]
+    mail: Cow<'a, str>,
 }
 
 impl Decoder {
@@ -161,6 +246,7 @@ impl Decoder {
             origin,
             phase: self.phase,
             unix_seconds: chat.date,
+            style: Style::from_mail(&chat.mail),
         }))
     }
 }

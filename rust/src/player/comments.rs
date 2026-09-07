@@ -67,9 +67,13 @@ impl ffi::Player {
             this.comments.configure(this.comments_enabled, channel);
             let mut live = Vec::new();
             if let Some(network) = &this.network
-                && let Err(error) = this.comments.poll(network, |text| {
+                && let Err(error) = this.comments.poll(network, |comment| {
                     if this.playing && this.danmaku_enabled {
-                        live.push(QString::from(text));
+                        live.push((
+                            QString::from(comment.text.as_ref()),
+                            QString::from(comment.style.position.as_str()),
+                            comment.style.color,
+                        ));
                     }
                 })
             {
@@ -91,8 +95,8 @@ impl ffi::Player {
                 .set_comment_status(QString::from(error.to_string())),
             None => {}
         }
-        for text in live {
-            self.as_mut().comment_received(text);
+        for (text, position, color) in live {
+            self.as_mut().comment_received(text, position, color);
         }
     }
     fn poll_activity(mut self: Pin<&mut Self>) {
