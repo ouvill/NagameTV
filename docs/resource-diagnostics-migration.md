@@ -643,3 +643,39 @@ sample-summary.json、source-head.txt、binary-sha256.txt、allocations.zst、
 peaks.txt、unmerged-peaks.txt。起動時HEADは2ecef13、製品ビルドは108db22相当
 （その後の2ecef13は診断テストと文書のみ）。対象プロセスの終了と長時間2プロセスの生存を
 psで確認した。
+
+## 実況OFF・字幕OFFの個別heaptrack比較（2026-09-07）
+
+前項と同じ製品バイナリー（SHA256一致）・京都局・:0 NVIDIA・pulsesink音量0・
+75秒・heaptrack設定で、実況のみOFFのPID 146736、字幕のみOFFのPID 147366を
+順に起動した。実GPUとPulseを再検証し、専用設定・stateを使用した。
+前の対象が終了してから次を起動し、長時間プロセス78793/132581は両条件とも維持した。
+いずれも対象だけにSIGTERMを送り終了143、記録出力完了とプロセス終了を確認した。
+
+実況OFFは7定期sampleで再生・EPG・字幕ON、実況OFF、履歴と表示0、字幕セル最大33。
+字幕OFFは6定期sampleで再生・EPG・実況ON、字幕OFF・セル0、実況履歴最大200・表示34。
+どちらも診断破棄0。番組表と局一覧は閉じたままで操作していない。
+
+| 条件 | heaptrack全体heap peak（M） | heaptrack込みRSS peak（M） | QTextureGlyphCacheを含むスタック |
+| --- | ---: | ---: | --- |
+| 字幕・実況ON（前項） | 326.15 | 448.67 | QImageの拡張8.52M、ドライバー・転送コピー等8.39Mの個別peak |
+| 実況OFF、字幕ON | 312.02 | 431.61 | ドライバー・転送コピー・QImage等8.39Mの個別peakが残る |
+| 字幕OFF、実況ON | 211.72 | 323.83 | 記録全体のスタック名フィルターで該当なし |
+
+上位15件から消えただけと誤認しないよう、全条件へ--filter-bt-function QTextureGlyphCache
+を適用した。-m 0の個別スタックを比較し、異なる時刻の個別peakを足してはいない。
+字幕描画が初期メモリーの大きな部分を使うこと、前項のglyph cache確保が実況を止めても
+残ることを確認した。一方、同じ録画TSや字幕列を再生した試験ではなく放送内容は異なる。
+全体の差を字幕機能の厳密な固定コスト、26分時点のピークの原因、リーク量とは扱わない。
+
+mainと後継のSubtitleGlyphはいずれもText.NativeRenderingを明示する。
+[QtのrenderType仕様](https://doc.qt.io/qt-6/qml-qtquick-text.html#renderType-prop)では
+NativeRenderingはプラットフォーム固有の描画で、QtRenderingとCurveRenderingは別方式。
+方式変更には字形・基準線・縁取り・拡大縮小と性能の再検証が必要である。
+この測定だけを理由にmainから移植した字幕の描画方式を変更していない。
+次の課題は同じ字幕入力での比較と、時間経過による確保・解放の内訳の確認である。
+
+証跡はbenchmark/heaptrack-without-comments/とbenchmark/heaptrack-without-subtitles/の
+run.py、config/state、player.log、result.json、sample-summary.json、source-head.txt、
+binary-sha256.txt、allocations.zst、unmerged-peaks.txt、glyph-cache.txt。
+前項のheaptrack-all-features/にも同じフィルターのglyph-cache.txtを追加した。
