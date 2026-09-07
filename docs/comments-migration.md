@@ -330,3 +330,28 @@ Qtへの変換、QMLの表示データは引き続き割り当てる。履歴・
 
 実況機能の3試験とClippy全ターゲット、fmt・diff検査が成功。
 CMakeリリースビルドも成功。実サービス受信と長時間併用の再検証は残る。
+
+
+## 実実況サービスでの受信と停止
+
+2026-09-07、mainと同じNX実況のjk101（NHK BS）のthreads APIとコメントWebSocketへ、
+本体のConnectionを用いて30秒接続した。Receivingへの遷移、履歴100件、新着0件、
+キューあふれ0件を観測し、stop().wait()は5秒の期限内に完了した。
+本文を保存・出力せず、50msごとに最大64件を消費して件数のみ保持した。
+
+任意試験real_service_reception_and_stopは、接続先をCOMMENT_THREADS_URLと
+COMMENT_STREAM_URLで明示して--ignoredで実行する。通常試験では外部サービスへ接続しない。
+HTTP／WebSocketの接続・購読要求は本体の経路を使い、コメント投稿は行わない。
+異常の観測時もタスク終了を待ってからエラーを返す。表示・GPU・音声は使用しない。
+
+```sh
+COMMENT_THREADS_URL=https://nx-jikkyo.tsukumijima.net/api/v1/channels/jk101/threads \
+COMMENT_STREAM_URL=wss://nx-jikkyo.tsukumijima.net/api/v1/channels/jk101/ws/comment \
+CARGO_TARGET_DIR=build/comments-protocol cargo test --locked \
+  --manifest-path rust/crates/viewer-comments/Cargo.toml --features network \
+  real_service_reception_and_stop -- --ignored --nocapture
+```
+
+任意試験とnetwork有効・全ターゲットClippy、fmt・diff検査が成功。
+新着コメントの到来、Qt一覧／動画上の描画、選局での切り替え、再接続、長時間メモリーは
+今回の検証に含まない。機能本体の処理変更はなく、アプリ再ビルドは行っていない。

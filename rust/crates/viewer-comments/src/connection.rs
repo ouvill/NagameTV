@@ -40,7 +40,8 @@ pub enum State {
     Failed(Arc<Error>),
 }
 
-/// URLs are supplied by the adapter; tests use loopback rather than public services.
+/// URLs are supplied by the adapter; ordinary tests use loopback.
+/// Explicitly ignored manual tests may use caller-supplied public endpoints.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Endpoints {
     pub threads: String,

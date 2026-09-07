@@ -215,3 +215,44 @@ fn websocket_size_limit_fails_before_json_decoding() -> TestResult {
         Ok(())
     })
 }
+
+#[test]
+#[ignore = "manual public-service reception; requires COMMENT_THREADS_URL and COMMENT_STREAM_URL"]
+fn real_service_reception_and_stop() -> TestResult {
+    let endpoints = Endpoints {
+        threads: std::env::var("COMMENT_THREADS_URL")?,
+        comments: std::env::var("COMMENT_STREAM_URL")?,
+    };
+    runtime()?.block_on(async {
+        let client = reqwest::Client::builder().timeout(IO_TIMEOUT).build()?;
+        let connection = Connection::start(&Handle::current(), client, endpoints);
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+        let mut receiving = false;
+        let mut history = 0;
+        let mut live = 0;
+        let mut failure = None;
+        while tokio::time::Instant::now() < deadline {
+            match connection.state() {
+                State::Connecting => {},
+                State::Receiving => receiving = true,
+                State::Ended => { failure = Some("comment stream ended".to_owned()); break; },
+                State::Failed(error) => { failure = Some(error.to_string()); break; },
+            }
+            // Match the application's bounded drain; retain only counts, never text.
+            for _ in 0..64 {
+                let Some(comment) = connection.try_next() else { break; };
+                match comment.phase {
+                    crate::Phase::History => history += 1,
+                    crate::Phase::Live => live += 1,
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        let dropped = connection.dropped();
+        timeout(Duration::from_secs(5), connection.stop().wait()).await??;
+        eprintln!("REAL_COMMENTS receiving={receiving} history={history} live={live} dropped={dropped} stopped=true");
+        if let Some(failure) = failure { return Err(failure.into()); }
+        assert!(receiving, "service never entered reception");
+        Ok(())
+    })
+}
