@@ -260,3 +260,28 @@ RSSやCPU時間の改善量は計測していないため、この変更だけ�
 既存の関西テレビの保存TS（39,436,288バイト、serviceId=2080）も逐次復号し、
 字幕2画面・配置を持つ画面1件・時刻付き2件を確認した。
 今回はファイルからの復号確認で、再生中のPTS同期・画面描画や長時間のメモリー測定は含まない。
+
+
+## 仮想画面でのUI試験を明示的に分離（2026-09-07）
+
+scripts/test-subtitle-rendering.shへ先頭引数--ui-onlyを追加した。
+通常実行は引き続きGPUデバイスとハードウェアOpenGLを必要とし、
+llvmpipe等のソフトウェア描画を拒否する。UIモードは明示指定した場合だけ
+ソフトウェアOpenGLを許可し、開始ログでGPU検証ではないことを表示する。
+表示先の自動変更やGPU検証失敗後の自動代替は行わない。
+DISPLAYの必須条件、xdpyinfoによる接続検証、glxinfoによるOpenGL確認は両モードで共通。
+
+```sh
+DISPLAY=:99 scripts/test-subtitle-rendering.sh --ui-only
+```
+
+検出・検証済みの専用Xvfb :99 / llvmpipeで実行し、既存9件が成功した。
+実際の製品用subtitleOutlinePathヘルパーをQMLから呼び、フォント基準線、
+縁取り色の画素、字幕消去時のdelegate解放、縁取り不要／更新なし時の処理抑止、
+リサイズ時の座標と線幅を確認する。これは実放送のPTS同期、NVIDIAでの描画品質、
+GPU負荷やメモリー安定性を証明する試験ではない。
+
+同じ:99を通常GPUモードへ渡す拒否試験は終了コード1となり、
+GPU validation failedを確認した。製品アプリは変更していない。
+証跡はGit対象外のbenchmark/subtitle-ui-mode/にui-tests.txtとgpu-mode-rejection.txt。
+実GPUの2つの長時間観測プロセスは維持し、UI試験の入力を送っていない。
