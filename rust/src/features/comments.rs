@@ -46,14 +46,15 @@ fn jikkyo(channel: &Channel) -> Option<u16> {
         .into_iter()
         .find(|(name, _)| channel.name.contains(name))
         .map(|(_, id)| id),
-        Band::Bs | Band::Cs | Band::Sky => channel.broadcast.map(|service| {
+        // main maps every non-terrestrial service by its broadcast service ID.
+        // Unknown transport bands still require explicit metadata, never an HTTP-ID guess.
+        Band::Bs | Band::Cs | Band::Sky | Band::Other => channel.broadcast.map(|service| {
             if service.service_id == 102 {
                 101
             } else {
                 service.service_id
             }
         }),
-        Band::Other => None,
     }
 }
 
@@ -177,7 +178,15 @@ mod tests {
             Some(1)
         );
         assert_eq!(jikkyo(&channel(1, "GR", "未対応", Some(101))?), None);
-        assert_eq!(jikkyo(&channel(1, "OTHER", "ＮＨＫ総合", Some(101))?), None);
+        assert_eq!(
+            jikkyo(&channel(1, "OTHER", "ＮＨＫ総合", Some(101))?),
+            Some(101)
+        );
+        assert_eq!(
+            jikkyo(&channel(999, "OTHER", "Other", Some(102))?),
+            Some(101)
+        );
+        assert_eq!(jikkyo(&channel(101, "OTHER", "Other", None)?), None);
         Ok(())
     }
 
