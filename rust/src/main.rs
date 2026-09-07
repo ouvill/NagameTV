@@ -4,6 +4,8 @@ mod diagnostics;
 mod error_log;
 mod features;
 mod memory;
+#[cfg(target_os = "linux")]
+mod platform;
 mod playback;
 mod player;
 mod services;
@@ -38,6 +40,12 @@ enum StartupError {
 }
 
 fn main() -> std::process::ExitCode {
+    // SAFETY: This is the first startup operation, before Qt/GStreamer, diagnostics
+    // or application workers are initialized. No application thread exists yet.
+    #[cfg(target_os = "linux")]
+    unsafe {
+        platform::configure_at_startup();
+    }
     match run() {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(error) => {
