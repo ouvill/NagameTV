@@ -696,7 +696,9 @@ RSSの上昇は小さくなったがarena内使用量は増加しており、収
 PID 78793と132581の生存を`ps`で確認し、既存プロセスを再起動せずに観測した。
 78793は従来記録と同じ旧バイナリーであり、現在のHEAD全体の検証ではない。
 EPGのみ有効、ABCテレビ1を連続再生し、字幕・実況・番組表・チャンネルパネルは無効／非表示。
-UI入力は行っていない。以下は定期sampleの最小〜最大で、単位はMiB。
+自動UI入力は行っていない。ただし後から利用者より両方のウィンドウへマウスを
+ホバーした可能性があるとの申告があった。時刻は未確定で、入力なしの統制条件とは
+扱わない。以下は定期sampleの最小〜最大で、単位はMiB。
 
 | 起動後の分（下限以上・上限未満） | sample数 | RSS | glibc arena内使用中 |
 | --- | ---: | ---: | ---: |
@@ -731,4 +733,48 @@ Git対象外の`benchmark/gstreamer-critical/current/checkpoint-206m/`と
 proc情報はcaptureの最終sampleより後の採取であり、同時刻のスナップショットではない。
 次の切り分けでは、字幕以外も含めて増加中の割当スタックを採取し、
 同じ局・同じバイナリーでEPG有無を比較する必要がある。
+
+## 同一局での短時間heaptrack比較と初回criticalのスタック
+
+2026-09-07。実GPU・X11・PulseAudioの検出と動作確認後、ABCテレビ1を
+EPG ON、OFFの順に各75秒測定した。字幕・実況はOFF、音量0、番組表は非表示。
+専用設定とコピーした同一実行ファイルを使用し、SHA256は
+`dc9d928bef1eab638477660d5eefdc14119f607a845d37aec98e635c56bc12df`。
+自動入力は行わず、長時間2プロセスは維持した。放送内容は時刻により異なり、
+手動ホバーの混入も完全には排除できないため、差額をEPG固有のコストと断定しない。
+
+| 条件 | heap peak（heaptrack表記M） | RSS peak（同M、profiler込み） | 定期sample |
+| --- | ---: | ---: | --- |
+| EPG ON | 268.78 | 383.29 | 7件すべて再生中 |
+| EPG OFF | 210.81 | 302.02 | 8件中7件再生中、1件は起動時 |
+
+各プロセスを75秒でSIGTERM終了し、heaptrackの出力終了まで確認した。
+終了時の未解放表示は通常のQt終了処理を経ておらず、リーク判定には使わない。
+非結合スタック（`heaptrack_print -m 0`）では、両条件にQt texture material経由の
+NVIDIA 33.55M、GStreamer GL経由の28.00M、gst_gl_base_memory_alloc_dataの27.99Mがある。
+ONでは別途QtのensurePipelineState経由NVIDIA 14.72Mが上位に現れた。
+これは初期確保の観測であり、3時間後の増加元の証明ではない。
+証跡は`benchmark/heaptrack-epg-pair/`の実行ファイル、設定、run.py、conditions、
+allocations.zst、peaks.txt、sample-summary.json、result.json。
+
+並行していた旧バイナリーPID 78793で、22:51:27.732 JSTに初回の
+`gst_object_get_name: assertion 'GST_IS_OBJECT (object)' failed`を捕捉した。
+212.17分までの観測ではcritical 75件、stack 1件、再生中のsampleを確認した。
+スタックは`libgstmpegtsdemux.so+0x239af`から`gst_object_get_name`へ入っている。
+実際のライブラリーはUbuntu gst-plugins-bad1.0 1.28.2-1ubuntu1.1、Build ID
+`210f945854b93e34b7ad4a9676ce18ceeb1e27cb`。
+逆アセンブルの戻り位置と直後の文字列は`CONTINUITY: Mismatch packet ...`に一致した。
+
+[上流1.28.2のtsdemux.c](https://github.com/GStreamer/gstreamer/blob/1.28.2/subprojects/gst-plugins-bad/gst/mpegtsdemux/tsdemux.c#L3916)
+では、連続性異常の警告生成時にstream->padのNULL確認がない。
+[上流修正9b4d456](https://github.com/GStreamer/gstreamer/commit/9b4d456239a7ce2144d58a389439fc548717557a)
+（2026-07-21、MR 12158）は、pad未公開のstreamでのassertを防ぐNULL確認を追加している。
+今回の発生箇所と整合する具体的な修正候補を特定できたが、修正版を適用した再現試験は
+まだ行っていない。連続性異常そのものの原因、ホバーとの関係、メモリー増加との
+因果関係はこのスタックでは判定できない。criticalだけを抑制する変更は加えていない。
+
+`benchmark/gstreamer-critical/current/first-real-critical/`へ最初の実スタックとログ、
+診断capture、proc情報を保存した。上流ソースと修正コミットのAPI応答も
+`benchmark/gstreamer-critical/`に保存した。addr2lineでは行番号を解決できず、
+ソースとの対応は呼出命令・警告文字列と上流差分による照合である。
 固定入力で縁取りを分けた実験は[字幕メモリー計測](subtitle-memory.md)に記録した。
