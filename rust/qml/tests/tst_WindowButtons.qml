@@ -32,6 +32,21 @@ Item {
             anchors.fill: parent
             targetWindow: host
         }
+        MouseArea {
+            id: otherControl
+            x: dragArea.x
+            y: 20
+            width: dragArea.width
+            height: 40
+            z: 2000
+            visible: false
+            acceptedButtons: Qt.LeftButton
+        }
+        SignalSpy {
+            id: moveRequests
+            target: dragArea
+            signalName: "activity"
+        }
         TestCase {
             name: "WindowButtons"
             when: windowShown
@@ -39,8 +54,33 @@ Item {
                 failOnWarning(/.*/);
                 host.showNormal();
                 tryCompare(host, "visibility", Window.Windowed);
+                moveRequests.clear();
             }
-            function cleanup() { host.showNormal(); }
+            function cleanup() {
+                otherControl.visible = false;
+                host.showNormal();
+            }
+            function test_other_control_press_cannot_start_title_move() {
+                otherControl.visible = true;
+                mousePress(otherControl, 30, 20);
+                try {
+                    verify(otherControl.pressed);
+                    mouseMove(otherControl, 100, 20, 20);
+                    mouseMove(otherControl, 150, 20, 20);
+                } finally {
+                    mouseRelease(otherControl, 150, 20);
+                }
+                compare(moveRequests.count, 0);
+                mouseMove(dragArea, 200, 30, 20);
+                compare(moveRequests.count, 0);
+            }
+            function test_short_title_press_and_release_does_not_move() {
+                mousePress(dragArea, 100, 30);
+                mouseMove(dragArea, 101, 30, 20);
+                mouseRelease(dragArea, 101, 30);
+                mouseMove(dragArea, 220, 40, 20);
+                compare(moveRequests.count, 0);
+            }
             function test_title_double_click_and_fullscreen_guard() {
                 mouseDoubleClickSequence(dragArea, 100, 30);
                 tryCompare(host, "visibility", Window.Maximized);

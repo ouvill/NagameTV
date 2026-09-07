@@ -367,3 +367,12 @@ QML全77件とCMakeリリースビルド成功。新規アプリでタイトル�
 証跡はbenchmark/virtual-ui/check-drag-sync.py、修正前window-drag-sync.jsonl、
 修正後window-mousearea.jsonl・window-guide-mousearea.jsonl・window-mousearea.log・
 window-mousearea-qml-tests.txt。途中の失敗記録も別名で保持している。
+
+入力の所有権を検証する回帰テストをtst_WindowButtons.qmlへ追加した。
+タイトルと重なる別MouseAreaが押下を受け付けてからドラッグし、タイトル移動開始時の
+activity信号が発生しないことを確認する。ボタン解放後の移動でも信号は発生しない。
+修正前のWindowDragAreaだけを一時的に戻すと、この試験は信号数1（期待0）で失敗。
+修正後は成功し、短いタイトルクリック後の移動がドラッグにならない試験も成功した。
+ファイルは確実に修正後へ戻したうえで全QML試験79件成功。製品コードの追加変更はない。
+証跡はbenchmark/virtual-ui/window-regression-old.txt・window-regression-new.txt・
+window-regression-all.txt。Qt単体の入力所有権テストと、前節の実WM操作試験を区別する。
