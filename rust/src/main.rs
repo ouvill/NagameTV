@@ -20,7 +20,7 @@ enum StartupError {
     #[error("Allocator initialization failed: {0}")]
     Allocator(&'static str),
     #[error("{0}")]
-    Arguments(String),
+    Arguments(#[source] features::ParseError),
     #[error("Feature plan was already initialized")]
     PlanAlreadyInitialized,
     #[error("Diagnostics initialization failed: {0}")]
