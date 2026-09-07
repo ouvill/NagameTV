@@ -198,3 +198,153 @@ fn normal_close_drains_final_comments_in_bounded_batches() -> TestResult {
             Ok(())
         })
 }
+
+#[test]
+fn websocket_disconnect_drains_final_comments_and_reconnects_with_fresh_history() -> TestResult {
+    use futures_util::{SinkExt, StreamExt};
+    use tokio_tungstenite::{WebSocketStream, tungstenite::Message};
+
+    async fn accept_subscription(
+        listener: &TcpListener,
+    ) -> Result<WebSocketStream<tokio::net::TcpStream>, Box<dyn std::error::Error + Send + Sync>>
+    {
+        let (mut http, _) = listener.accept().await?;
+        let mut request = [0; 4096];
+        assert!(http.read(&mut request).await? > 0);
+        let body = r#"[{"id":1,"status":"ACTIVE"}]"#;
+        http.write_all(
+            format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            )
+            .as_bytes(),
+        )
+        .await?;
+        drop(http);
+        let (tcp, _) = listener.accept().await?;
+        let mut socket = tokio_tungstenite::accept_async(tcp).await?;
+        let subscription = socket.next().await.ok_or("missing subscription")??;
+        assert!(subscription.is_text());
+        Ok(socket)
+    }
+
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()?
+        .block_on(async {
+            let listener = TcpListener::bind("127.0.0.1:0").await?;
+            let client = reqwest::Client::new();
+            let now = Instant::now();
+            let mut controller = Controller::default();
+            controller.configure(Some(endpoint(&listener)?));
+            controller.poll(&Handle::current(), &client, now)?;
+            let mut socket =
+                timeout(Duration::from_secs(2), accept_subscription(&listener)).await??;
+            socket
+                .send(Message::Text(
+                    r#"{"chat":{"content":"old history","date":0}}"#.into(),
+                ))
+                .await?;
+            socket
+                .send(Message::Text(r#"{"ping":{"content":"rf:0"}}"#.into()))
+                .await?;
+            // More than one GUI poll's capacity, below the connection queue limit.
+            for index in 0..70 {
+                socket
+                    .send(Message::Text(
+                        format!(r#"{{"chat":{{"content":"old live {index}","date":0}}}}"#).into(),
+                    ))
+                    .await?;
+            }
+            drop(socket); // Abrupt transport loss, without a WebSocket close handshake.
+            // Wait for the reader to finish without draining through the controller.
+            // This makes the terminal queue larger than a single poll deterministically.
+            timeout(Duration::from_secs(2), async {
+                loop {
+                    if let Phase::Running(connection) = &controller.phase
+                        && matches!(connection.state(), State::Failed(_))
+                    {
+                        break;
+                    }
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await?;
+            let mut received = controller.poll(&Handle::current(), &client, now)?;
+            assert_eq!(received.len(), MAX_POLL_COMMENTS);
+            assert!(matches!(controller.phase, Phase::Running(_)));
+            timeout(Duration::from_secs(2), async {
+                loop {
+                    let batch = controller.poll(&Handle::current(), &client, now)?;
+                    assert!(batch.len() <= MAX_POLL_COMMENTS);
+                    received.extend(batch);
+                    if matches!(controller.phase, Phase::Waiting(_)) {
+                        break;
+                    }
+                    tokio::task::yield_now().await;
+                }
+                Ok::<_, Error>(())
+            })
+            .await??;
+            assert_eq!(received.len(), 71);
+            assert_eq!(received[0].phase, crate::Phase::History);
+            for (index, comment) in received[1..].iter().enumerate() {
+                assert_eq!(comment.text.as_ref(), format!("old live {index}"));
+                assert_eq!(comment.phase, crate::Phase::Live);
+            }
+            assert!(matches!(
+                controller.status(),
+                Status::Retrying(State::Failed(_))
+            ));
+            // Injected monotonic time: verify the real controller's five-second gate.
+            controller.poll(
+                &Handle::current(),
+                &client,
+                now + RETRY_DELAY - Duration::from_millis(1),
+            )?;
+            assert!(matches!(controller.phase, Phase::Waiting(_)));
+            let retry = now + RETRY_DELAY;
+            controller.poll(&Handle::current(), &client, retry)?;
+            let mut socket =
+                timeout(Duration::from_secs(2), accept_subscription(&listener)).await??;
+            for packet in [
+                r#"{"chat":{"content":"new history","date":0}}"#,
+                r#"{"ping":{"content":"rf:0"}}"#,
+                r#"{"chat":{"content":"new live","date":0}}"#,
+            ] {
+                socket.send(Message::Text(packet.into())).await?;
+            }
+            received.clear();
+            timeout(Duration::from_secs(2), async {
+                while received.len() < 2 {
+                    received.extend(controller.poll(&Handle::current(), &client, retry)?);
+                    tokio::task::yield_now().await;
+                }
+                Ok::<_, Error>(())
+            })
+            .await??;
+            assert_eq!(received.len(), 2);
+            assert_eq!(received[0].text.as_ref(), "new history");
+            assert_eq!(received[0].phase, crate::Phase::History);
+            assert_eq!(received[1].text.as_ref(), "new live");
+            assert_eq!(received[1].phase, crate::Phase::Live);
+            assert!(matches!(
+                controller.status(),
+                Status::Connection(State::Receiving)
+            ));
+            controller.configure(None);
+            timeout(Duration::from_secs(2), async {
+                while !controller.is_stopped() {
+                    assert!(
+                        controller
+                            .poll(&Handle::current(), &client, retry)?
+                            .is_empty()
+                    );
+                    tokio::task::yield_now().await;
+                }
+                Ok::<_, Error>(())
+            })
+            .await??;
+            Ok(())
+        })
+}
