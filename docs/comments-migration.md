@@ -144,7 +144,8 @@ mainの地上波7局の名前対応を維持し、地上波以外は明示され
 必要な表示行を生成するListViewを使う。本文はPlainTextで表示する。
 大量受信時の描画負荷は実測前で、200件上限だけでは性能検証の代わりにならない。
 
-設定comments_enabledは既定false。設定画面の実況機能で変更・保存できる。
+設定comments_enabledは既定true（初期移植時のfalseからmain互換に修正）。
+流れる表示のdanmaku_enabledはmainと同じ既定false。設定画面でそれぞれ変更・保存できる。
 `--features=comments`および他機能とのカンマ区切りを受け付け、指定に含まれない実況は
 設定画面から有効にできない。CLI実験起動は従来どおり永続設定を書き換えない。
 mainのdanmaku_enabled等は既存の追加設定として保持し、履歴機能の許可と混同しない。

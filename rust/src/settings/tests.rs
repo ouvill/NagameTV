@@ -52,7 +52,7 @@ subtitles_enabled = true
     assert_eq!(session.preferences().volume.fraction(), 0.425);
     assert!(session.preferences().subtitles_enabled);
     assert!(session.preferences().epg_enabled);
-    assert!(!session.preferences().comments_enabled);
+    assert!(session.preferences().comments_enabled);
     session.preferences_mut().comments_enabled = true;
     session.preferences_mut().volume = Volume::from(20.0);
     session.flush()?;
@@ -65,6 +65,32 @@ subtitles_enabled = true
     assert_eq!(f64::from(loaded.comment_font_size), 28.0);
     assert_eq!(f64::from(loaded.comment_opacity), 0.7);
     assert_eq!(fs::read_dir(dir.path())?.count(), 1);
+    Ok(())
+}
+
+#[test]
+fn commentary_defaults_match_main_and_explicit_disable_survives_roundtrip()
+-> Result<(), Box<dyn std::error::Error>> {
+    let defaults: Preferences = toml::from_str("")?;
+    assert_eq!(defaults, Preferences::default());
+    assert!(defaults.comments_enabled);
+    assert!(!defaults.danmaku_enabled);
+    // Legacy main files only store the overlay choice. Both choices still
+    // receive history; new files may explicitly disable the entire feature.
+    for overlay in [false, true] {
+        let legacy: Preferences = toml::from_str(&format!("danmaku_enabled = {overlay}"))?;
+        assert!(legacy.comments_enabled);
+        assert_eq!(legacy.danmaku_enabled, overlay);
+        let disabled: Preferences = toml::from_str(&format!(
+            "comments_enabled = false\ndanmaku_enabled = {overlay}"
+        ))?;
+        assert!(!disabled.comments_enabled);
+        assert_eq!(disabled.danmaku_enabled, overlay);
+        assert_eq!(
+            toml::from_str::<Preferences>(&toml::to_string(&disabled)?)?,
+            disabled
+        );
+    }
     Ok(())
 }
 

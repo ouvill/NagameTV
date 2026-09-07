@@ -65,8 +65,11 @@ impl Default for Preferences {
             volume: Volume::default(),
             subtitles_enabled: false,
             epg_enabled: true,
-            comments_enabled: false,
-            danmaku_enabled: true,
+            // main receives history independently of the scrolling overlay.
+            // Its settings have no comments_enabled field; preserve reception
+            // when importing them, including danmaku_enabled=true preferences.
+            comments_enabled: true,
+            danmaku_enabled: false,
             comment_font_size: Default::default(),
             comment_opacity: Default::default(),
             comment_speed: Default::default(),

@@ -413,3 +413,27 @@ activity信号が発生しないことを確認する。ボタン解放後の移
 ファイルは確実に修正後へ戻したうえで全QML試験79件成功。製品コードの追加変更はない。
 証跡はbenchmark/virtual-ui/window-regression-old.txt・window-regression-new.txt・
 window-regression-all.txt。Qt単体の入力所有権テストと、前節の実WM操作試験を区別する。
+
+
+## 実況の起動既定値とmain設定の互換性（2026-09-07）
+
+mainのviewer-core/settings.rsはdanmaku_enabledの既定値がfalseで、
+app.rsのrestart_commentsとruntime.rsのConnectCommentsは流れる表示の設定と独立して
+履歴受信を開始する。後継ではcomments_enabled=false、danmaku_enabled=trueが既定だったため、
+mainでdanmaku_enabled=trueを保存していても、未存在のcomments_enabledがfalseとなり
+実況が動かなかった。
+
+Preferencesの既定をcomments_enabled=true、danmaku_enabled=falseへ修正した。
+初回起動・項目のないmain設定は履歴受信ON／流れる表示OFFになり、mainの明示した
+流れる表示ONも維持する。後継で明示保存済みのcomments_enabled=falseは尊重する。
+新しい移行ファイルや設定の強制書き換えは行わない。--features指定は従来どおり
+永続設定を読み書きせず、commentsを含めた明示実験では流れる表示も有効にする。
+通常起動で実況受信が既定ONになることに伴い、対応局では実況・勢い取得の通信を行う。
+
+main形式の両overlay値、明示OFFの保存往復、欠落項目とDefaultの一致をCPU試験で確認。
+通常テスト99件成功・3任意試験除外、リリースビルド成功。
+検出・検証済みXvfb :99 / llvmpipeで、実況項目を一切書かない専用設定から
+実放送を再生した。設定画面は実況機能ON・コメント受信中・流れる表示OFF。
+診断では履歴103→113→122件、live_comments=0、playing=true。正常終了コード0。
+音声は明示したfakesinkで破棄し、GPU・音声・メモリー性能の評価には使わない。
+証跡はGit対象外benchmark/comment-defaults/のplayer.log、settings.png、設定・state。

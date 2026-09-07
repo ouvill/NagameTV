@@ -19,6 +19,9 @@ impl Default for PlayerRust {
                     subtitles_enabled: plan.subtitles,
                     epg_enabled: plan.epg,
                     comments_enabled: plan.comments,
+                    // Explicit feature experiments enable the commentary display
+                    // as before, independently of normal startup defaults.
+                    danmaku_enabled: plan.comments,
                     ..Default::default()
                 }),
                 String::new(),
