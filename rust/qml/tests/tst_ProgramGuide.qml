@@ -82,6 +82,26 @@ TestCase {
         guide.visibilityJson = "[]"
         compare(timeline.rows.length, 0)
     }
+    function test_current_time_badge_tracks_scrolling_and_selected_day() {
+        const view = findChild(guide, "guideTimeline")
+        const timeline = view.parent
+        const badge = findChild(timeline, "guideCurrentTimeBadge")
+        const line = findChild(timeline, "guideCurrentTimeLine")
+        timeline.now = timeline.dayStart + 12 * 3600000
+        view.contentY = timeline.currentTimeY - 200
+        verify(badge.visible)
+        verify(line.visible)
+        compare(badge.y + badge.height / 2, 200)
+        compare(badge.mapToItem(timeline, 0, badge.height / 2).y, line.mapToItem(timeline, 0, 0).y)
+        view.contentY += 50
+        compare(badge.y + badge.height / 2, 150)
+        compare(badge.mapToItem(timeline, 0, badge.height / 2).y, line.mapToItem(timeline, 0, 0).y)
+        timeline.now = timeline.dayEnd
+        verify(!badge.visible)
+        verify(!line.visible)
+        timeline.now = timeline.dayStart - 1
+        verify(!badge.visible)
+    }
     function test_seven_calendar_days_and_selection() {
         compare(guide.days.length, 7)
         verify(guide.requests.length > 0)

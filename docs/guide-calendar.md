@@ -383,3 +383,21 @@ Eテレ大阪、びわ湖放送、MBS、KBS京都の順に表示され、比較�
 同時放送サブ局の余分な列は表示されない。画像はbenchmark/ui-comparison/guide-visibility-fixed.png、
 ログはbenchmark/virtual-ui/guide-visibility.log。これは現在の放送構成の確認であり、
 実放送での別番組開始による列の復帰はRust/QML試験とは別に検証が残る。
+
+
+## 現在時刻バッジと停止画面の見出し
+
+mainの番組表にある左端の現在時刻バッジ（x=20、68×24、角丸12、accent色、
+11px太字）を移植した。既存のnowからcurrentTimeYを一度求め、時刻の線とバッジで共有する。
+バッジはFlickableの外なので[contentY](https://doc.qt.io/qt-6/qml-qtquick-flickable.html#contentY-prop)
+を引き、中央を線へ合わせる。描画領域外は既存の時刻軸Itemでclipする。
+新しいTimerや番組JSONは追加しない。日付の判定は既存のdayEndを使い、24時間固定にはしない。
+
+QML試験で垂直スクロール前後の線とバッジの実座標一致、選択日の開始前・終了時刻での
+非表示を確認した。全体74件成功・警告なし。停止画面の見出しもmainのLive TVと
+既存の日本語カタログ、32px太字（エラー時26px太字）へ揃えた。
+
+releaseビルド成功後、専用Xvfb画面で「ライブテレビ」の見出しと現在時刻バッジを
+確認した。ホイール操作後もバッジ中央と線が揃って移動した。
+画像はbenchmark/ui-comparison/stopped-heading-fixed.png、guide-clock-fixed.png、
+guide-clock-scrolled.png。ログはbenchmark/virtual-ui/guide-clock.log。

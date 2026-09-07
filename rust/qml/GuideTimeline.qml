@@ -14,6 +14,8 @@ Item {
     readonly property real pixelsPerMinute: 2.4
     readonly property var columns: JSON.parse(programsJson)
     property double now: Date.now()
+    readonly property bool today: now >= dayStart && now < dayEnd
+    readonly property real currentTimeY: 88 + (now - dayStart) / 60000 * pixelsPerMinute
     // Boundary bindings can update separately during a date change.
     readonly property double dayDuration: Math.max(0, dayEnd - dayStart)
     readonly property int hours: Math.ceil(dayDuration / 3600000)
@@ -58,6 +60,17 @@ Item {
                 x: 24; y: 80 + index * 60 * root.pixelsPerMinute - 8 - view.contentY
                 text: Qt.formatTime(new Date(root.dayStart + index * 3600000), "hh:mm")
                 color: "#b6bab6"; font.pixelSize: 12; font.bold: true
+            }
+        }
+        Rectangle {
+            objectName: "guideCurrentTimeBadge"
+            visible: root.today
+            x: 20; y: root.currentTimeY - height / 2 - view.contentY
+            width: 68; height: 24; radius: 12; color: "#9caf9f"
+            Label {
+                anchors.centerIn: parent
+                text: Qt.formatTime(new Date(root.now), "hh:mm")
+                color: "#17201a"; font.pixelSize: 11; font.bold: true
             }
         }
     }
@@ -132,8 +145,9 @@ Item {
             }
         }
         Rectangle {
-            visible: root.now >= root.dayStart && root.now < root.dayEnd && y >= view.contentY + 88
-            z: 12; y: 88 + (root.now - root.dayStart) / 60000 * root.pixelsPerMinute
+            objectName: "guideCurrentTimeLine"
+            visible: root.today && y >= view.contentY + 88
+            z: 12; y: root.currentTimeY
             width: view.contentWidth; height: 2; color: "#9caf9f"
         }
         ScrollBar.vertical: ScrollBar {}

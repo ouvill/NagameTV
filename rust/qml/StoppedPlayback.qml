@@ -22,9 +22,10 @@ Rectangle {
         spacing: 14
         Label {
             anchors.horizontalCenter: parent.horizontalCenter
-            text: root.playbackError.length ? qsTranslate("Viewer", "Playback unavailable") : qsTranslate("Viewer", "Watch TV")
+            text: root.playbackError.length ? qsTranslate("Viewer", "Playback unavailable") : qsTranslate("Main", "Live TV")
             color: "#f4f5f3"
             font.pixelSize: root.playbackError.length ? 26 : 32
+            font.bold: true
         }
         Label {
             objectName: "stoppedStatus"
