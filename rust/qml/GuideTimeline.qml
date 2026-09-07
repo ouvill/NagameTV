@@ -19,6 +19,68 @@ Item {
     // Boundary bindings can update separately during a date change.
     readonly property double dayDuration: Math.max(0, dayEnd - dayStart)
     readonly property int hours: Math.ceil(dayDuration / 3600000)
+    // Keep only identity and position; delegates can be unloaded offscreen and
+    // the EPG snapshot can be replaced while keyboard navigation is active.
+    property int cursorColumn: 0
+    property string cursorKey: ""
+    property double cursorTime: dayStart
+    readonly property var cursorProgram: cursorColumn < rows.length && cursorKey.length
+        ? schedule(rows[cursorColumn].index).find(program => program.watchKey === cursorKey) || null : null
+    function chooseProgram(time) {
+        cursorTime = time
+        if (cursorColumn >= rows.length) return
+        const programs = schedule(rows[cursorColumn].index)
+        let closest = null
+        let distance = Number.POSITIVE_INFINITY
+        for (const program of programs) {
+            const end = program.startAt + program.duration
+            const candidate = time < program.startAt ? program.startAt - time : time >= end ? time - end + 1 : 0
+            if (candidate < distance) { closest = program; distance = candidate }
+        }
+        cursorKey = closest ? closest.watchKey : ""
+    }
+    function revealCursor() {
+        horizontalScroll.stop()
+        view.cancelFlick()
+        const left = cursorColumn * channelWidth
+        view.contentX = Math.max(0, Math.min(Math.max(0, view.contentWidth - view.width),
+            left < view.contentX ? left : Math.max(view.contentX, left + channelWidth - view.width)))
+        if (!cursorProgram) return
+        const top = 88 + (Math.max(dayStart, cursorProgram.startAt) - dayStart) / 60000 * pixelsPerMinute
+        // Align the start of long programs below the sticky channel header.
+        if (top < view.contentY + 88 || top + 24 > view.contentY + view.height)
+            view.contentY = Math.max(0, Math.min(Math.max(0, view.contentHeight - view.height), top - 88))
+    }
+    function navigate(key) {
+        if (!rows.length) return
+        if (!cursorProgram) chooseProgram(today ? now : dayStart)
+        if (key === Qt.Key_Left || key === Qt.Key_Right) {
+            const time = cursorTime
+            cursorColumn = Math.max(0, Math.min(rows.length - 1, cursorColumn + (key === Qt.Key_Left ? -1 : 1)))
+            chooseProgram(time)
+        } else if (key === Qt.Key_Up || key === Qt.Key_Down) {
+            const programs = schedule(rows[cursorColumn].index)
+            const index = programs.findIndex(program => program.watchKey === cursorKey)
+            // Rust projects programs in start-time order; do not sort/copy them per key.
+            if (index >= 0) {
+                const program = programs[Math.max(0, Math.min(programs.length - 1, index + (key === Qt.Key_Up ? -1 : 1)))]
+                cursorKey = program.watchKey
+                cursorTime = Math.max(dayStart, program.startAt)
+            }
+        }
+        revealCursor()
+        if ((key === Qt.Key_Return || key === Qt.Key_Enter) && cursorProgram) {
+            const top = 88 + (Math.max(dayStart, cursorProgram.startAt) - dayStart) / 60000 * pixelsPerMinute
+            selected(cursorProgram, Qt.point(view.x + cursorColumn * channelWidth - view.contentX, top - view.contentY), rows[cursorColumn].label)
+        }
+    }
+    Keys.onPressed: function(event) {
+        if ((event.modifiers & ~Qt.KeypadModifier) !== Qt.NoModifier || selectedProgram) return
+        if ([Qt.Key_Left, Qt.Key_Right, Qt.Key_Up, Qt.Key_Down, Qt.Key_Return, Qt.Key_Enter].includes(event.key)) {
+            navigate(event.key)
+            event.accepted = true
+        }
+    }
     function genreColor(genre) {
         const colors = ["#ffffe0", "#e0e0ff", "#ffe0f0", "#ffe0e0", "#e0ffe0", "#e0ffff", "#fff0e0", "#ffe0ff", "#ffffe0", "#fff0e0", "#e0f0ff", "#e0f0ff"]
         return Number.isInteger(genre) && genre >= 0 && genre < colors.length ? colors[genre] : "#f0f0f0"
@@ -43,8 +105,10 @@ Item {
         view.contentY = now >= dayStart && now < dayEnd
             ? Math.max(0, Math.min(view.contentHeight - view.height, 88 + (now - dayStart) / 60000 * pixelsPerMinute - view.height * 0.34)) : 0
     }
-    onDayStartChanged: Qt.callLater(resetPosition)
+    onDayStartChanged: { cursorKey = ""; Qt.callLater(resetPosition) }
     onRowsChanged: {
+        cursorColumn = 0
+        cursorKey = ""
         horizontalScroll.stop()
         view.cancelFlick()
         view.contentX = 0
@@ -114,8 +178,10 @@ Item {
                             width: column.width
                             height: Math.max(24, (end - begin) / 60000 * root.pixelsPerMinute - 4)
                             color: root.genreColor(modelData.genre)
-                            border.width: modelData === root.selectedProgram ? 4 : 1
-                            border.color: modelData === root.selectedProgram ? "#9caf9f" : "#5b625e"
+                            readonly property bool highlighted: modelData === root.selectedProgram
+                                || (root.activeFocus && column.index === root.cursorColumn && root.cursorKey.length > 0 && modelData.watchKey === root.cursorKey)
+                            border.width: highlighted ? 4 : 1
+                            border.color: highlighted ? "#9caf9f" : "#5b625e"
                             Column {
                                 anchors.fill: parent; anchors.margins: 10; spacing: 5
                                 Label {
@@ -130,7 +196,13 @@ Item {
                                     color: "#4e5651"; font.pixelSize: 10
                                 }
                             }
-                            MouseArea { anchors.fill: parent; onClicked: root.selected(cell.modelData, cell.mapToItem(root, 0, 0), column.modelData.label) }
+                            MouseArea { anchors.fill: parent; onClicked: {
+                                root.cursorColumn = column.index
+                                root.cursorKey = cell.modelData.watchKey || ""
+                                root.cursorTime = Math.max(root.dayStart, cell.modelData.startAt)
+                                root.forceActiveFocus()
+                                root.selected(cell.modelData, cell.mapToItem(root, 0, 0), column.modelData.label)
+                            } }
                         }
                     }
                     Rectangle {

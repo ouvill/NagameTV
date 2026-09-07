@@ -32,6 +32,77 @@ TestCase {
         guide = createTemporaryObject(component, testCase)
         verify(guide !== null)
     }
+    function test_keyboard_channel_change_preserves_time_inside_long_program() {
+        guide.dayOffset = 1
+        const start = guide.days[1].start
+        guide.rows = [{index:0, label:"Long", band:"GR"}, {index:1, label:"Short", band:"GR"}]
+        guide.programsJson = JSON.stringify([
+            {index:0, programs:[{watchKey:"long", name:"Long", startAt:start, duration:3*3600000}]},
+            {index:1, programs:[
+                {watchKey:"past", name:"Past", startAt:start, duration:3600000},
+                {watchKey:"current", name:"Current", startAt:start+3600000, duration:3600000}
+            ]}
+        ])
+        const timeline = findChild(guide, "guideTimeline").parent
+        timeline.now = start + 90 * 60000
+        verify(waitForRendering(guide))
+        keyClick(Qt.Key_Right)
+        keyClick(Qt.Key_Return)
+        tryCompare(findChild(guide, "scheduledDetailsLoader").item, "opened", true)
+        compare(guide.selectedProgram.watchKey, "current")
+    }
+    function test_keyboard_navigation_scrolls_and_reopens_details() {
+        guide.dayOffset = 1
+        const start = guide.days[1].start
+        const rows = []
+        const columns = []
+        for (let i = 0; i < 8; ++i) {
+            rows.push({index:i * 2, label:"Channel " + i, band:"GR", logo:""})
+            columns.push({index:i * 2, programs:[
+                {watchKey:"first-" + i, name:"First " + i, startAt:start, duration:3600000},
+                {watchKey:"second-" + i, name:"Second " + i, startAt:start + 3600000, duration:3600000}
+            ]})
+        }
+        guide.rows = rows
+        guide.programsJson = JSON.stringify(columns)
+        verify(waitForRendering(guide))
+        const view = findChild(guide, "guideTimeline")
+        const timeline = view.parent
+        verify(timeline.activeFocus)
+        keyClick(Qt.Key_Right)
+        keyClick(Qt.Key_Down)
+        keyClick(Qt.Key_Return)
+        const loader = findChild(guide, "scheduledDetailsLoader")
+        tryCompare(loader.item, "opened", true)
+        compare(guide.selectedProgram.watchKey, "second-1")
+        compare(guide.selectedChannel, "Channel 1")
+        keyClick(Qt.Key_Escape)
+        tryCompare(loader, "item", null)
+        tryCompare(timeline, "activeFocus", true)
+        for (let i = 0; i < 6; ++i) keyClick(Qt.Key_Right)
+        keyClick(Qt.Key_Up)
+        verify(view.contentX > 0)
+        compare(view.contentY, 0)
+        keyClick(Qt.Key_Enter, Qt.KeypadModifier)
+        tryCompare(loader.item, "opened", true)
+        compare(guide.selectedProgram.watchKey, "first-7")
+        verify(guide.selectedPosition.x >= view.x)
+        verify(guide.selectedPosition.x < timeline.width)
+        keyClick(Qt.Key_Escape)
+        tryCompare(loader, "item", null)
+        // Replace the snapshot and remove the focused program: Enter must resolve
+        // against current data, never reopen the obsolete object.
+        columns[7].programs.shift()
+        guide.programsJson = JSON.stringify(columns)
+        keyClick(Qt.Key_Return)
+        tryCompare(loader.item, "opened", true)
+        compare(guide.selectedProgram.watchKey, "second-7")
+        keyClick(Qt.Key_Escape)
+        tryCompare(loader, "item", null)
+        guide.visibilityJson = "[]"
+        keyClick(Qt.Key_Return)
+        compare(loader.item, null)
+    }
     function test_open_details_follow_identity_across_epg_refresh() {
         guide.dayOffset = 1
         const start = guide.days[1].start

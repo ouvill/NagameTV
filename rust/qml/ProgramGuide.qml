@@ -72,7 +72,7 @@ Rectangle {
         selectedProgram = null
     }
     onSelectedWindowChanged: requestDay()
-    Component.onCompleted: requestDay()
+    Component.onCompleted: { requestDay(); timeline.forceActiveFocus() }
     onChannelChanged: selectedProgram = null
     Timer { interval: 60000; repeat: true; running: root.visible; onTriggered: root.baseDay = root.midnight() }
     ColumnLayout {

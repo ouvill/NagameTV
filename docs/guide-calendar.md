@@ -479,3 +479,31 @@ Rust側ではu64最大値の番組IDを保持したまま開始時刻／長さ�
 Rust全102件成功・外部データを必要とする3件はignored、QML全89件成功。
 QML証跡はbenchmark/guide-detail-refresh/slot-revision.txt。今回は試験追加だけで
 製品処理の変更はない。実サーバーによる放送枠変更そのものの試験ではない。
+
+
+## 番組表のキーボード操作（2026-09-07）
+
+mainのMain.qmlは下部へ矢印・Enterの案内を表示するが、対応するキー処理がない。
+後継のGuideTimelineも同じ状態だったため、案内どおり左右で局、上下で番組、
+Return／テンキーEnterで詳細を開く処理を追加した。外観は既存の選択枠を使用する。
+
+[Qt Keysのイベント伝播](https://doc.qt.io/qt-6/qml-qtquick-keys.html)と
+[Item.forceActiveFocus](https://doc.qt.io/qt-6/qml-qtquick-item.html#forceActiveFocus-method)
+に従い、番組表を開くと時間軸へフォーカスを渡し、処理したキーだけ受理する。
+日付ComboBox・詳細Popupの操作は各コントロールが処理する。詳細終了時のフォーカス
+復帰はQtへ任せ、ツールバー操作を奪う無条件forceActiveFocusは追加しない。
+
+カーソルは表示列番号・不透明なwatchKey・時刻で保持する。左右は同じ時刻に対応する
+番組、上下はRustが開始時刻順に投影した隣の番組を選ぶ。選択セルを画面内へスクロールし、
+画面外列のLoader解放は維持する。キー入力ごとのEPGコピーやソートは行わない。
+EPG更新後は新しいsnapshotから識別子で解決し、消えた番組の古いオブジェクトを開かない。
+日付・表示局集合の変更ではカーソルを解除する。空の番組表ではEnterは何も開かない。
+
+検出・検証済みXvfb :99 / llvmpipeでQML全体90件成功。その後、長時間番組から別局へ
+移る際の時刻保持・テンキー修飾付きEnterも確認し、ProgramGuideの対象18件成功。
+最終リリースビルドも成功。
+実アプリPID 142403でもG→Right→Down→Returnで大津の22:45の番組詳細を開き、
+Escape→Up→Returnで22:00の番組詳細と視聴ボタンを表示した。閉じるボタンで終了0。
+専用設定・自動再生OFF・字幕と実況OFF・明示fakesinkで、GPU／メモリーの評価には使わない。
+実画像は時刻保持の微調整前のもの。証跡はbenchmark/guide-keyboard-ui/のplayer.log、
+details.png、reopened.png。UI操作は:99のみで、実GPUの長時間試験2プロセスは維持した。
