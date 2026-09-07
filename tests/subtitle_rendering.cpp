@@ -25,6 +25,10 @@ class Setup final : public QObject {
     Q_OBJECT
 public slots:
     void qmlEngineAvailable(QQmlEngine *engine) {
+        // Used only by the fixed-corpus memory benchmark, not by production QML.
+        engine->rootContext()->setContextProperty(
+            QStringLiteral("subtitleBenchmarkStroke"),
+            qEnvironmentVariable("VIEWER_SUBTITLE_BENCHMARK_STROKE") != QStringLiteral("0"));
         engine->rootContext()->setContextProperty(
             QStringLiteral("subtitleOutlines"), new OutlineProvider(engine));
     }

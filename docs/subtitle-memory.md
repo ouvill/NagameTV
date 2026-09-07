@@ -60,3 +60,33 @@ PID 149445、全11段階の採取成功、試験3件成功、正常終了0。
 renderer.txt、各段階のstatus/smaps_rollupとヘルパーバイナリー。
 過程はbenchmark/subtitle-repeat/のattempt1、first256、default-allocator等に保存した。
 既存の長時間再生PID 78793/132581は維持した。ユーザーの画面へ入力は送っていない。
+
+## 縁取りだけを除く比較（2026-09-07）
+
+```bash
+DISPLAY=:0 python3 scripts/benchmark-subtitle-memory.py --no-outline benchmark/subtitle-memory-no-outline-new-run
+```
+
+追加した--no-outlineは試験入力のstrokedだけをfalseにする。文字本体のNativeRendering、
+書体・サイズ・座標・色と表示順は保持する。本番の字幕設定やQMLは変更しない。
+条件はconditions.jsonに保存する。環境変数は試験ヘルパーだけが読み、QMLへboolを渡す。
+通常の描画試験はこの追加プロパティを使わず、従来の入力を維持する。
+
+最終比較ではONのPID 150167とOFFのPID 149996がそれぞれ正常終了し、
+11段階の採取と試験3件が成功した。縁取り生成の呼び出しはONで1280回、OFFで0回。
+OFFで処理が走っていないことも試験で検証した。
+
+| 段階 | 縁取りON RSS MiB | 縁取りOFF RSS MiB |
+| --- | ---: | ---: |
+| 表示前 | 100.12 | 100.30 |
+| 最初の256文字・1周目 | 162.80 | 155.29 |
+| 最初の256文字・3周目 | 163.42 | 155.35 |
+| 別の256文字・初回 | 197.44 | 189.79 |
+| 別の256文字・繰り返し | 197.22 | 189.82 |
+| 最終消去後 | 195.98 | 189.82 |
+
+縁取りを除いても、新しい文字での大きな増加と同じ文字の再利用時の小さな増加が残る。
+したがってShapeの縁取りだけではこの現象を説明できない。文字本体の描画経路を
+次の調査対象とし、字形・基準線を変えずに改善できるか検討する。
+この短い比較から各モジュールの厳密な固定コストや長時間のリークを算出しない。
+証跡はbenchmark/subtitle-outline-final/とbenchmark/subtitle-no-outline-final/。

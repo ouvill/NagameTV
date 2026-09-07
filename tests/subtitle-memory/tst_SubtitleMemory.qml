@@ -25,7 +25,7 @@ TestCase {
             cells.push({text:String.fromCharCode(0x4e00 + page * 32 + i),
                 x:24+(i%16)*56, y:350+Math.floor(i/16)*60, width:52, height:56,
                 glyphWidth:36, glyphHeight:36, foreground:"#ffffffff", background:"#80000000",
-                stroke:"#ff000000", bold:false, italic:false, underline:false, stroked:true, ruby:false})
+                stroke:"#ff000000", bold:false, italic:false, underline:false, stroked:subtitleBenchmarkStroke, ruby:false})
         }
         return JSON.stringify({text:"",planeWidth:960,planeHeight:540,cells:cells})
     }
@@ -52,5 +52,10 @@ TestCase {
             verify(waitForRendering(overlay))
             mark("clear"+round)
         }
+        if (subtitleBenchmarkStroke)
+            verify(subtitleOutlines.calls > 0)
+        else
+            compare(subtitleOutlines.calls, 0)
+        console.log("OUTLINE_CALLS " + subtitleOutlines.calls)
     }
 }

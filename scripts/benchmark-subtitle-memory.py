@@ -66,9 +66,14 @@ def sample_process(pid: int, phase: str, elapsed: float, output: Path) -> dict:
     return entry
 
 
-def measure(repo: Path, output: Path, binary: Path) -> None:
+def measure(repo: Path, output: Path, binary: Path, stroke: bool) -> None:
     env = os.environ.copy()
     env.update(QT_QPA_PLATFORM="xcb", QSG_RHI_BACKEND="opengl", MALLOC_MMAP_THRESHOLD_="131072")
+    env["VIEWER_SUBTITLE_BENCHMARK_STROKE"] = "1" if stroke else "0"
+    (output / "conditions.json").write_text(json.dumps({
+        "display": env["DISPLAY"], "stroke": stroke,
+        "mmap_threshold_bytes": 131072, "renderer": "opengl",
+    }, indent=2) + "\n")
     # An inherited glibc tunable takes precedence over the legacy environment
     # variable. Preserve other tunables, but make this benchmark's threshold explicit.
     tunables = [value for value in env.get("GLIBC_TUNABLES", "").split(":")
@@ -127,6 +132,7 @@ def measure(repo: Path, output: Path, binary: Path) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("output", type=Path)
+    parser.add_argument("--no-outline", action="store_true", help="Disable stroke in the test corpus only")
     args = parser.parse_args()
     renderer = validate_graphics()
     output = args.output.resolve()
@@ -136,7 +142,7 @@ def main() -> None:
     with (output / "source-head.txt").open("w") as destination:
         subprocess.run(["git", "-C", str(repo), "rev-parse", "HEAD"], stdout=destination, check=True)
     binary = build_helper(repo, output)
-    measure(repo, output, binary)
+    measure(repo, output, binary, stroke=not args.no_outline)
 
 
 if __name__ == "__main__":

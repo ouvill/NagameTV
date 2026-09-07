@@ -679,3 +679,15 @@ NativeRenderingはプラットフォーム固有の描画で、QtRenderingとCur
 run.py、config/state、player.log、result.json、sample-summary.json、source-head.txt、
 binary-sha256.txt、allocations.zst、unmerged-peaks.txt、glyph-cache.txt。
 前項のheaptrack-all-features/にも同じフィルターのglyph-cache.txtを追加した。
+
+## 全機能併用の1時間地点（2026-09-07）
+
+PID 132581の生存を確認し、60.49分までの362定期sampleを保存した。
+最新RSS462.32MiB、arena内使用量74.59MiB、スレッド43、FD77、再生継続。
+EPG22回完了、診断破棄0、対象critical・スタック0。
+40以上50分未満の60sampleはRSS458.68〜464.27MiB、arena内68.03〜72.43MiB。
+50以上60分未満の59sampleはRSS460.09〜468.71MiB、arena内71.14〜74.75MiB。
+RSSの上昇は小さくなったがarena内使用量は増加しており、収束やリークなしとは判定しない。
+短時間プロファイルや固定字幕の試験も同じGPUで並行した期間を含む。
+証跡はbenchmark/gpu-all-features-20260907/checkpoint-60m/のcapture.jsonl、summary.json、ranges.json。
+固定入力で縁取りを分けた実験は[字幕メモリー計測](subtitle-memory.md)に記録した。
