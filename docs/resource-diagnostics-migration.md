@@ -255,3 +255,31 @@ Player所有の診断Recorderを終了してからQtエンジンが破棄され�
 証跡はgit管理外の`benchmark/qt-gc-ui/`内の`player.log`、`guide.png`、
 `result.json`、`state/mirakurun-viewer/usage/usage-68667.jsonl`。
 仮想表示上の通知・保存経路の検証であり、GPU性能や長時間のメモリー安定性は対象外。
+
+## 終了時集計の保存修正（2026-09-07）
+
+上記の終了時集計欠落を修正。`diagnostics::Lifetime`をQMLエンジンより前に
+生成し、Rustのローカル変数の破棄順により、エンジン破棄後にRecorderを閉じてjoinする。
+[QQmlEngineの破棄仕様](https://doc.qt.io/qt-6/qqmlengine.html#dtor.QQmlEngine)
+が参照するJSエンジンの解放を含めて記録の寿命を確保する。
+途中の起動失敗でも同じRAIIの解放順になる。
+
+Playerは所有権を持たないClientを保持し、終了時はそのClientだけを解放する。
+プロセス内の登録先もWeakで、Lifetimeが唯一の継続的な所有者となる。
+GCコールバックは従来の弱参照付き送信口を使い、新しい所有者Mutexは取得しない。
+記録ワーカーのIO・キュー上限・回転処理は変更しない。通常動作中のワーカー失敗は
+Client経由で一度だけjoinしてUIへ報告し、最終終了中の失敗は標準エラーへ記録する。
+初期化・所有者不在・ロック破損・Recorder失敗はthiserrorの型で扱い、文字列化は
+PlayerのUI境界へ移した。
+
+Client破棄後のGC受付、Lifetime破棄時の保存完了、遅延コールバックの受付停止を
+回帰テストで確認。Rust全体96件成功・3件既定ignore、全ターゲットClippy警告なし、
+リリースビルド成功。QML・再生パイプラインの状態遷移順は変更していない。
+
+Qt 6.10.2 / 専用Xvfbで前節と同じ停止中の番組表表示・上下スクロール・開閉を実施。
+PID 72912は閉じるボタンから終了コード0。JSONL全296件のうちallocatorStats 274件、
+statistics 12件で、標準エラーの両カテゴリ全286件と内容・順序が一致した。
+全レコードで破棄数0。証跡は`benchmark/qt-gc-lifetime/`の`player.log`、
+`result.json`、`rust-tests.txt`、`state/mirakurun-viewer/usage/usage-72912.jsonl`。
+この修正で前節の終了時集計欠落は解消した。GPU・長時間資源測定と、Qt構築後の
+起動失敗を実際に注入する検証は引き続き別項目として残る。

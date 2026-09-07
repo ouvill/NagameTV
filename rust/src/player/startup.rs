@@ -71,7 +71,7 @@ impl Default for PlayerRust {
             Ok(log) => match crate::diagnostics::start(log.directory().to_owned(), plan.locked) {
                 Ok(recorder) => recorder,
                 Err(error) => {
-                    log_error = error;
+                    log_error = error.to_string();
                     None
                 }
             },

@@ -199,7 +199,7 @@ pub struct PlayerRust {
     playback_error: QString,
     playback_message: QString,
     log_error: QString,
-    diagnostic_recorder: Option<viewer_diagnostics::recorder::Recorder>,
+    diagnostic_recorder: Option<crate::diagnostics::Client>,
     diagnostic_ui: telemetry::UiState,
     subtitle_cells: usize,
     error_log: Result<crate::error_log::ErrorLog, crate::error_log::Error>,

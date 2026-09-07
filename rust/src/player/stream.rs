@@ -150,7 +150,8 @@ impl ffi::Player {
     pub fn shutdown(mut self: Pin<&mut Self>) {
         self.as_mut().rust_mut().epg_events.configure(None);
         self.as_mut().rust_mut().channel_refresh = channel_refresh::Refresh::Disabled;
-        self.as_mut().stop_diagnostics();
+        // Stop UI samples; the application owner retains GC logging through engine teardown.
+        self.as_mut().rust_mut().diagnostic_recorder.take();
         self.as_mut().rust_mut().comments.configure(false, None);
         self.as_mut().rust_mut().activity.configure(false);
         self.as_mut().set_activity_data(QString::from("[]"));

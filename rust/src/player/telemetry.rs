@@ -33,7 +33,7 @@ impl ffi::Player {
             .rust()
             .diagnostic_recorder
             .as_ref()
-            .is_some_and(|recorder| recorder.is_finished())
+            .is_some_and(|recorder| recorder.is_finished().unwrap_or(true))
         {
             self.as_mut().stop_diagnostics();
         }
@@ -94,7 +94,7 @@ impl ffi::Player {
     pub(super) fn stop_diagnostics(mut self: Pin<&mut Self>) {
         let recorder = self.as_mut().rust_mut().diagnostic_recorder.take();
         if let Some(recorder) = recorder
-            && let Err(error) = recorder.stop().join()
+            && let Err(error) = recorder.finish()
         {
             eprintln!("{error}");
             self.set_log_error(QString::from(error.to_string()));

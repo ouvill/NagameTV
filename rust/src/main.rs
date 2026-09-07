@@ -23,6 +23,8 @@ enum StartupError {
     Arguments(String),
     #[error("Feature plan was already initialized")]
     PlanAlreadyInitialized,
+    #[error("Diagnostics initialization failed: {0}")]
+    Diagnostics(#[from] diagnostics::Error),
     #[error("Could not create the Qt application")]
     Application,
     #[error("Could not create the Qt QML engine")]
@@ -68,6 +70,8 @@ fn run() -> Result<(), StartupError> {
         return Err(StartupError::Application);
     }
     playback::preload().map_err(StartupError::Playback)?;
+    // Reverse local drop order keeps diagnostics alive through engine destruction.
+    let _diagnostics = diagnostics::Lifetime::new()?;
     let mut engine = QQmlApplicationEngine::new();
     {
         let mut engine = engine.as_mut().ok_or(StartupError::Engine)?;
