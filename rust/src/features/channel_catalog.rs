@@ -121,4 +121,88 @@ mod tests {
         assert!(acquisition.poll(&network).is_none());
         Ok(())
     }
+
+    #[test]
+    fn cancellation_closes_partial_body_and_replacement_delivers_current_catalog()
+    -> Result<(), Box<dyn std::error::Error>> {
+        use std::{
+            io::{Read, Write},
+            net::{TcpListener, TcpStream},
+            sync::mpsc,
+        };
+        fn request(listener: &TcpListener) -> std::io::Result<TcpStream> {
+            let deadline = Instant::now() + Duration::from_secs(3);
+            let mut socket = loop {
+                match listener.accept() {
+                    Ok((socket, _)) => break socket,
+                    Err(error)
+                        if error.kind() == std::io::ErrorKind::WouldBlock
+                            && Instant::now() < deadline =>
+                    {
+                        thread::sleep(Duration::from_millis(1));
+                    }
+                    Err(error) => return Err(error),
+                }
+            };
+            socket.set_read_timeout(Some(Duration::from_secs(3)))?;
+            socket.set_write_timeout(Some(Duration::from_secs(3)))?;
+            let mut header = Vec::new();
+            while !header.ends_with(b"\r\n\r\n") {
+                let mut byte = [0];
+                socket.read_exact(&mut byte)?;
+                header.push(byte[0]);
+                if header.len() > 4096 {
+                    return Err(std::io::ErrorKind::InvalidData.into());
+                }
+            }
+            assert!(header.starts_with(b"GET /api/services "));
+            Ok(socket)
+        }
+        let listener = TcpListener::bind("127.0.0.1:0")?;
+        listener.set_nonblocking(true)?;
+        let endpoint = format!("http://{}", listener.local_addr()?);
+        let (ready, started) = mpsc::sync_channel(1);
+        let server = thread::spawn(move || -> std::io::Result<()> {
+            let mut old = request(&listener)?;
+            old.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 100\r\nConnection: close\r\n\r\n[")?;
+            ready.send(()).map_err(|_| std::io::ErrorKind::BrokenPipe)?;
+            let mut byte = [0];
+            assert_eq!(old.read(&mut byte)?, 0, "cancelled partial body must close");
+            let mut current = request(&listener)?;
+            let body = br#"[{"id":42,"name":"Current","type":1,"networkId":3,"serviceId":20}]"#;
+            write!(
+                current,
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                body.len()
+            )?;
+            current.write_all(body)?;
+            Ok(())
+        });
+        let network = Network::new()?;
+        let mut acquisition = Acquisition::default();
+        acquisition.request(endpoint.clone());
+        assert!(acquisition.poll(&network).is_none());
+        started.recv_timeout(Duration::from_secs(3))?;
+        acquisition.cancel();
+        acquisition.request(endpoint);
+        let deadline = Instant::now() + Duration::from_secs(3);
+        let entries = loop {
+            assert!(Instant::now() < deadline);
+            if let Some(result) = acquisition.poll(&network) {
+                break result?;
+            }
+            thread::sleep(Duration::from_millis(1));
+        };
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].id, 42);
+        assert!(!acquisition.is_busy());
+        assert!(
+            acquisition.poll(&network).is_none(),
+            "result is delivered only once"
+        );
+        server
+            .join()
+            .map_err(|_| "catalog test server panicked")??;
+        Ok(())
+    }
 }
