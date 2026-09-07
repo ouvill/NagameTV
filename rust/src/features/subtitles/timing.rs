@@ -95,7 +95,7 @@ impl Timeline {
             return update;
         };
         let now = i128::from(position_ns);
-        let mut due = Vec::new();
+        let mut latest: Option<(i128, SubtitleCue)> = None;
         for _ in 0..self.pending.len() {
             // The loop visits the initial queue length; each iteration removes
             // exactly one entry and may requeue it. No other code can mutate the
@@ -103,14 +103,17 @@ impl Timeline {
             let (pts_ms, cue) = self.pending.pop_front().expect("queue length checked");
             let start = anchor.map_ms(pts_ms);
             if start <= now {
-                due.push((start, cue));
+                // Only the final due screen is observable. Equal timestamps use
+                // arrival order, matching the former stable sort without a scratch Vec.
+                if latest.as_ref().is_none_or(|(time, _)| start >= *time) {
+                    latest = Some((start, cue));
+                }
             } else {
                 self.pending.push_back((pts_ms, cue));
             }
         }
-        due.sort_by_key(|(start, _)| *start);
         // A GUI stall can make several changes due at once; render the final state.
-        for (_, cue) in due {
+        if let Some((_, cue)) = latest {
             self.expires_pts_ms = cue
                 .duration_ms
                 .and_then(|duration| cue.pts_ms?.checked_add(i64::try_from(duration).ok()?));
@@ -265,6 +268,36 @@ mod tests {
             panic!()
         };
         assert_eq!(cue.pts_ms, Some(15_000));
+    }
+
+    #[test]
+    fn stalled_poll_uses_latest_timestamp_and_arrival_order_for_ties() {
+        let mut timeline = timeline();
+        timeline.push(caption(12_000, None));
+        timeline.push(caption(15_000, None)); // Future screen must stay queued.
+        timeline.push(SubtitleCue::clear(12_000)); // Same-time clear wins.
+        timeline.push(caption(11_000, None)); // Late arrival of an older screen.
+        assert!(matches!(
+            timeline.poll(Some(4_000_000_000)),
+            SubtitleUpdate::Clear
+        ));
+        assert_eq!(timeline.pending_count(), 1);
+
+        timeline.push(SubtitleCue::clear(13_000));
+        timeline.push(caption(13_000, Some(1_000))); // Same-time replacement wins.
+        let SubtitleUpdate::Show(cue) = timeline.poll(Some(5_000_000_000)) else {
+            panic!("the replacement screen should be shown");
+        };
+        assert_eq!(cue.pts_ms, Some(13_000));
+        assert!(matches!(
+            timeline.poll(Some(6_000_000_000)),
+            SubtitleUpdate::Clear
+        ));
+        let SubtitleUpdate::Show(cue) = timeline.poll(Some(7_000_000_000)) else {
+            panic!("the future screen should remain scheduled");
+        };
+        assert_eq!(cue.pts_ms, Some(15_000));
+        assert_eq!(timeline.pending_count(), 0);
     }
 
     #[test]
