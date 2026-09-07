@@ -298,10 +298,14 @@ mod tests {
             ("v", gst::StreamType::VIDEO),
             ("new", gst::StreamType::AUDIO),
         ]);
+        let next_weak = next.downgrade();
         streams.observe(&player, &gst::message::StreamCollection::new(&next))?;
+        drop(next);
         assert!(weak.upgrade().is_none());
+        assert!(next_weak.upgrade().is_some());
         assert_eq!(streams.selection("new")?, ["v", "new"]);
         streams = Streams::default();
+        assert!(next_weak.upgrade().is_none());
         assert!(streams.tracks().is_empty());
         assert!(matches!(streams.selection("new"), Err(Error::Unavailable)));
         Ok(())
