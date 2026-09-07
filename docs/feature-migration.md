@@ -191,3 +191,35 @@ qmllintがすべて終了コード0。Main.qmlは生成されるQt/GStreamer型�
 字幕と二か国語の実放送、EPGイベントと実況の実接続、ウィンドウ操作、
 全機能併用の長時間メモリー／性能検証。個々の追加実装は表の範囲で評価し、
 今回の成功件数だけでmainの置き換え完了とは判断しない。
+
+## Workshop再起動後の実描画検証（2026-09-07）
+
+再起動後、PulseAudio/PipeWireへの接続、GStreamerのpulsesinkへの短い無音出力、
+X11接続、NVIDIA GeForce RTX 4070 Tiによる直接OpenGL描画を確認した。
+音声デバイスへの出力成功は、放送音声を聴取できたことを意味しない。
+
+実X11/OpenGL環境で以下を実行した（初期化・終了処理も成功件数に含む）。
+
+- `scripts/test-subtitle-rendering.sh`: 9成功。字体・輪郭の画素、リサイズ、
+  字幕消去と表示無効化時のdelegate解放、不要な輪郭再生成の抑制。
+- `scripts/test-pointer-activity.sh`: 3成功。native入力監視の寿命とウィンドウ変更。
+- `qmltestrunner -input rust/qml/tests`: 71成功。設定接続の受付／拒否、番組表、
+  選局UI、ウィンドウ操作などの部品試験。Rustバックエンドの実接続試験ではない。
+
+設定画面の言語選択アイコンだけ単体試験でqrcを解決できない警告が出たため、
+既存の閉じるアイコンと同様にURLプロパティを公開し、試験では同じSVGのファイルURLを
+指定した。修正後のSettingsDrawer試験は5成功、警告なし。
+実アプリでは従来と同じqrc URLを既定値として使用する。
+
+同じreleaseビルドを通常設定で起動し、`MIRAKURUN_AUTOPLAY=1`と
+`MIRAKURUN_SERVICE_ID=3272402080`で関西テレビを再生した。
+ログのPipeline PLAYING、時間を隔てた画像で映像の変化、PulseAudioの
+mirakurun-viewer専用sink-input（float32le/2ch/48000Hz、corked=false、mute=false）を
+確認した。通常の設定では字幕・実況は無効。番組情報の取得も成功している。
+チャンネルボタンの実クリックでロゴ・番組情報付き一覧が開くことも確認した。
+
+一方、この実行ではxdotoolによるC/Escape/F11送信が画面に反映されなかった。
+X11上のfocus/active windowは対象アプリだが、マウスクリックは届くため、
+入力送信経路と実アプリのキーハンドリングの切り分けが必要。
+上記部品試験の成功から実アプリのショートカット成功を推定しない。
+実音の聴取、選局反復、全機能併用・長時間RSS、およびmainとのデザイン比較は未完了。

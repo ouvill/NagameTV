@@ -54,6 +54,7 @@ TestCase {
         id: drawer
         backend: backend
         collapseIcon: Qt.resolvedUrl("../../../assets/icons/panel-right-close.svg")
+        dropdownIcon: Qt.resolvedUrl("../../../assets/icons/chevron-down.svg")
     }
     SignalSpy { id: connections; target: backend; signalName: "connectRequested" }
     SignalSpy { id: accepted; target: drawer; signalName: "connectionAccepted" }

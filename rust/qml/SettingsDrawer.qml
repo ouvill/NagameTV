@@ -20,6 +20,7 @@ Drawer {
     signal epgDisabled
     parent: Overlay.overlay
     property url collapseIcon: "qrc:/qt/qml/MinimalViewer/assets/icons/panel-right-close.svg"
+    property url dropdownIcon: "qrc:/qt/qml/MinimalViewer/assets/icons/chevron-down.svg"
     edge: Qt.RightEdge
     width: Math.min(420, parent.width * 0.88)
     height: parent.height
@@ -83,7 +84,7 @@ Drawer {
                     x: languageBox.width - width - 14
                     y: (languageBox.height - height) / 2
                     width: 18; height: 18
-                    source: "qrc:/qt/qml/MinimalViewer/assets/icons/chevron-down.svg"
+                    source: root.dropdownIcon
                 }
                 background: Rectangle {
                     radius: 12
