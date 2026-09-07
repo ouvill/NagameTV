@@ -4,7 +4,7 @@ mod language;
 mod model;
 pub use comment_style::{CommentFontSize, CommentOpacity, CommentSpeed};
 pub use language::Language;
-pub use model::{Preferences, Volume};
+pub use model::{Preferences, Volume, autoplay_requested};
 use std::{
     fs,
     io::{self, Read, Write},

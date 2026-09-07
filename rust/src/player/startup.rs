@@ -139,7 +139,9 @@ impl Default for PlayerRust {
             audio_output,
             settings_error: QString::from(settings_error),
             preferences,
-            autoplay_pending: std::env::var("MIRAKURUN_AUTOPLAY").as_deref() == Ok("1"),
+            autoplay_pending: settings::autoplay_requested(
+                std::env::var("MIRAKURUN_AUTOPLAY").ok().as_deref(),
+            ),
             subtitle_session: None,
             epg: ProgramInfo::default(),
             active_service: None,

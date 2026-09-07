@@ -3,6 +3,12 @@ use super::{CommentFontSize, CommentOpacity, CommentSpeed, Language};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+/// Preserve main's environment convention: absent or exactly "0" disables
+/// autoplay; every other Unicode value requests it, including an empty value.
+pub fn autoplay_requested(value: Option<&str>) -> bool {
+    value.is_some_and(|value| value != "0")
+}
+
 /// Persisted as main's 0..100 percentage; the playback/UI boundary uses 0..1.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(from = "f64", into = "f64")]

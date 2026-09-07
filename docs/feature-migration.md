@@ -75,7 +75,8 @@ Pulse出力のまま継続しており、この短い仮想画面試験とビル
 
 通常起動はXDG_CONFIG_HOMEまたはHOME/.configのmirakurun-viewer/settings.tomlを読む。
 接続先が変更された場合は前サーバーの保存局IDを消し、SERVICE_IDの明示指定を優先する。
-AUTOPLAY=1の場合だけ一覧取得後に再生する。未指定時は選択局を復元して待機する。
+AUTOPLAYが未指定または正確に0の場合は選択局を復元して待機し、その他のUnicode値では
+一覧取得後に再生する。初期移植時の1のみという判定をmainの規則へ修正した。
 EPGは通常起動では既定ON、字幕は設定値を復元する。
 
 `--features=...` は永続化するパスを持たないTransientセッションとなり、既存設定を
@@ -437,3 +438,18 @@ main形式の両overlay値、明示OFFの保存往復、欠落項目とDefault�
 診断では履歴103→113→122件、live_comments=0、playing=true。正常終了コード0。
 音声は明示したfakesinkで破棄し、GPU・音声・メモリー性能の評価には使わない。
 証跡はGit対象外benchmark/comment-defaults/のplayer.log、settings.png、設定・state。
+
+
+## 自動再生環境変数の互換性（2026-09-07）
+
+mainのruntime.rsはMIRAKURUN_AUTOPLAYがUnicode値として存在し、正確に0でないとき
+自動再生を要求する。後継の1だけを受け付ける判定を、settings/model.rsの純粋な関数
+へ分離してmainの規則に合わせた。未指定・0はOFF、true・yes・空文字・false・空白付き0も
+ONになることをテストし、READMEに明記した。非Unicode値は従来どおり要求しない。
+
+対象テスト・全ターゲットClippy・リリースビルド成功。検出・検証済みXvfb :99 / llvmpipeで
+MIRAKURUN_AUTOPLAY=trueを指定し、再生入力なしで保存局3203246080のPLAYINGと映像を確認。
+操作部をポインター移動で再表示して閉じるボタンで正常終了コード0。
+専用設定、EPG有効、字幕・実況無効、明示したfakesinkでのUI試験である。
+証跡はGit対象外benchmark/autoplay-compat/のplayer.log・playing.png・設定とstate。
+GPU・音声・メモリー性能の確認には使用しない。

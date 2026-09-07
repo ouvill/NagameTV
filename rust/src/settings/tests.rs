@@ -1,6 +1,15 @@
 use super::*;
 
 #[test]
+fn autoplay_preserves_main_environment_convention() {
+    assert!(!autoplay_requested(None));
+    assert!(!autoplay_requested(Some("0")));
+    for value in ["1", "true", "yes", "", "false", " 0 "] {
+        assert!(autoplay_requested(Some(value)), "main enables {value:?}");
+    }
+}
+
+#[test]
 fn explicit_commit_persists_latest_changes_without_waiting_for_shutdown()
 -> Result<(), Box<dyn std::error::Error>> {
     let dir = tempfile::tempdir()?;
