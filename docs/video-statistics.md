@@ -82,3 +82,25 @@ VideoStatsのqmllint、187項目の翻訳切り替え／カタログ欠落試験
 実画面の重なり、クリック伝播、複数画面間のDPR追随は未検証。
 
 QML事前コンパイルを含むCMakeリリースビルドも成功した。
+
+## 仮想画面での描画領域表示の修正（2026-09-07）
+
+ユーザー指定のXvfb :99 / llvmpipeでUI操作を検証した。GPU性能・RSS測定とは分ける。
+実放送再生中に描画領域が `NaN × NaN / 0` となり、Main.qmlのDPR取得で
+TypeErrorが発生した。VideoStatsの `video()` 関数が、Loader越しに参照する
+親画面の `video` 要素名を隠していたため、整形関数を `formatVideo()` に変更した。
+[Qtのスコープと名前解決](https://doc.qt.io/qt-6/qtqml-documents-scope.html)を参照。
+
+Mainと同じunbound Component / Loader構成の回帰テストで、修正前はNaNと
+TypeErrorを再現し、修正後は寸法・DPRとリサイズ追随が成功した。
+閉じるアイコンのURLはテストから実ファイルを指定可能とし、製品の既定値は維持した。
+QML全77件成功、CMakeリリースビルド成功。
+
+実アプリで日本語・英語の統計表示、1440×900から900×560への寸法追随（DPR=1）、
+停止後Ready・caps未取得・キュー0を確認し、正常終了した。修正後ログに上記の例外なし。
+証跡はGit対象外の `benchmark/virtual-ui/stats-viewport-fixed.log`、
+`stats-viewport-fixed.png`、`stats-audio-en-fixed.png`、`stats-viewport-resized.png`、
+`stats-stopped-confirmed.png`、`stats-qml-results.txt`。
+実放送の音声一覧で日本語の主音声とEnglishの副音声、および英語UIのラベルを確認。
+音量0での操作なので、実際の二か国語音声の聴取確認には数えない。
+異なるDPRの画面間移動、長時間の資源測定は引き続き未検証。

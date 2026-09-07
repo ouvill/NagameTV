@@ -8,6 +8,7 @@ Rectangle {
     required property var backend
     required property size viewportSize
     required property real viewportDpr
+    property url closeIcon: "../assets/icons/x.svg"
     signal closeRequested
     property var snapshot: ({})
     color: "#ed151715"
@@ -15,7 +16,7 @@ Rectangle {
     radius: 12
     implicitHeight: content.implicitHeight + 28
     function number(value, digits) { return typeof value === "number" && isFinite(value) ? value.toFixed(digits) : "—" }
-    function video(format) {
+    function formatVideo(format) {
         return format && format.width && format.height
             ? format.width + " × " + format.height + " / " + number(format.fps, 3) + " fps" : "—"
     }
@@ -23,10 +24,10 @@ Rectangle {
         const s = panel.snapshot
         switch (key) {
         case "state": return s.state ? qsTranslate("Backend", s.state) : "—"
-        case "input": return panel.video(s.input)
+        case "input": return panel.formatVideo(s.input)
         case "scan": return (s.input?.interlace || "—") + " / " + (s.input?.pixel_aspect_ratio || "—")
         case "viewport": return Math.round(panel.viewportSize.width) + " × " + Math.round(panel.viewportSize.height) + " / " + panel.viewportDpr
-        case "output": return panel.video(s.output)
+        case "output": return panel.formatVideo(s.output)
         case "pixels": return (s.input?.pixel_format || "—") + " → " + (s.output?.pixel_format || "—")
         case "deinterlace": return s.deinterlacer || "—"
         case "rate": return panel.number(s.average_fps, 2) + " fps"
@@ -51,7 +52,7 @@ Rectangle {
             Layout.fillWidth: true
             Label { text: qsTranslate("Main", "Stats for nerds"); font.pixelSize: 14; font.bold: true; color: "#f4f5f3"; Layout.fillWidth: true }
             IconAction {
-                iconSource: "../assets/icons/x.svg"
+                iconSource: panel.closeIcon
                 tip: qsTranslate("Main", "Close stats for nerds")
                 onClicked: panel.closeRequested()
             }
