@@ -334,3 +334,21 @@ CARGO_TARGET_DIR=build/cargo cargo test --locked --manifest-path rust/Cargo.toml
 
 実応答の任意試験、Clippy全ターゲット、fmt・diff検査が成功。本体の変更はなく、
 リリースの再ビルドは行っていない。通常試験のignoredは外部入力／測定用の3件となる。
+
+
+## 容量計測値の型と出力の分離
+
+Snapshot::record_storageは合計容量をログへ出す一方で文字列容量だけを返しており、
+実データ検証の出力ラベルを誤りやすい形だった。Snapshot::storageへ変更し、
+Storage { records, strings, audio }の各バイト容量とtotal()を明示的に参照する。
+モデルは値を返すだけとし、EPG_MEMORYログは取得結果を採用する側で出力する。
+既存のtext_capacity_bytesには従来どおりstringsを代入し、診断値の意味を変えない。
+
+集計の頻度と走査回数は変えず、新しいキャッシュやヒープ割り当ては追加しない。
+実応答検証も同じStorageの内訳を出す。EPG関連17試験が成功し、実応答指定が必要な
+任意試験は通常実行ではignoredとして扱う。
+
+保存済み実応答の任意試験も成功し、records=1,703,936、strings=1,652,998、
+audio=494,226、total=3,851,160 bytesで変更前と一致した。Clippy全ターゲット・
+fmt・diff検査も成功。これは保持量削減ではなく計測APIと責務の整理である。
+CMakeリリースビルドも成功。実GUIでの計測表示と長時間検証は引き続き残る。

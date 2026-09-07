@@ -35,6 +35,19 @@ impl Program {
     }
 }
 
+/// Owned allocation capacities, excluding allocator metadata and HTTP/Qt copies.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct Storage {
+    pub records: usize,
+    pub strings: usize,
+    pub audio: usize,
+}
+impl Storage {
+    pub fn total(self) -> usize {
+        self.records + self.strings + self.audio
+    }
+}
+
 #[derive(Default)]
 pub struct Snapshot(Vec<Program>);
 
@@ -91,7 +104,7 @@ impl Snapshot {
     ) -> Result<String, serde_json::Error> {
         super::grid::json(self, channels, window)
     }
-    pub fn record_storage(&self) -> usize {
+    pub fn storage(&self) -> Storage {
         let record_bytes = self.0.capacity() * std::mem::size_of::<Program>();
         let string_bytes: usize = self
             .0
@@ -113,11 +126,10 @@ impl Snapshot {
                         .sum::<usize>()
             })
             .sum();
-        eprintln!(
-            "EPG_MEMORY programs={} record_capacity_bytes={record_bytes} string_capacity_bytes={string_bytes} audio_heap_bytes={audio_bytes} snapshot_capacity_bytes={}",
-            self.len(),
-            record_bytes + string_bytes + audio_bytes
-        );
-        string_bytes
+        Storage {
+            records: record_bytes,
+            strings: string_bytes,
+            audio: audio_bytes,
+        }
     }
 }

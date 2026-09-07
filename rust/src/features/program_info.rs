@@ -121,7 +121,16 @@ impl ProgramInfo {
                 {
                     Ok(programs) => {
                         update.completed = Some(Completion::Succeeded);
-                        self.text_capacity_bytes = programs.record_storage();
+                        let storage = programs.storage();
+                        eprintln!(
+                            "EPG_MEMORY programs={} record_capacity_bytes={} string_capacity_bytes={} audio_heap_bytes={} snapshot_capacity_bytes={}",
+                            programs.len(),
+                            storage.records,
+                            storage.strings,
+                            storage.audio,
+                            storage.total()
+                        );
+                        self.text_capacity_bytes = storage.strings;
                         self.snapshot = programs;
                         self.revision += 1;
                         Outcome::Ready

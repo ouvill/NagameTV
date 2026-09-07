@@ -596,6 +596,14 @@ fn validates_captured_server_catalog_and_guide() -> Result<(), Box<dyn std::erro
         start as f64,
         start.checked_add(DAY).ok_or("day overflow")? as f64,
     )?;
+    let storage = snapshot.storage();
+    eprintln!(
+        "CAPTURE_STORAGE records={} strings={} audio={} total={}",
+        storage.records,
+        storage.strings,
+        storage.audio,
+        storage.total()
+    );
     let json = snapshot.grid_view(&channels, window)?;
     let columns: Vec<serde_json::Value> = serde_json::from_str(&json)?;
     assert_eq!(columns.len(), channels.len());
@@ -620,7 +628,7 @@ fn validates_captured_server_catalog_and_guide() -> Result<(), Box<dyn std::erro
         channels.len(),
         snapshot.len(),
         bytes.len(),
-        snapshot.record_storage(),
+        storage.strings,
         current,
         cells,
         json.len()
