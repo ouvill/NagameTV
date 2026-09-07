@@ -335,3 +335,8 @@ startSystemMove/startSystemResize失敗警告、QML例外はログになく、�
 証跡はbenchmark/virtual-ui/window-operations.log、window-operations-geometry.txt、
 window-operations-final.png。コード変更なし。Openbox上の操作確認であり、
 通常デスクトップ／Waylandのウィンドウマネージャー差やGPU性能の検証ではない。
+
+終了時の最初のクリックでは終了せず、位置が541,123へ移ったことを観測した。
+ウィンドウマネージャー側の操作が残った可能性があるが原因は未特定。
+マウスボタン解放・Escape・検証用の位置再設定後、閉じるボタンで終了コード0を確認した。
+各操作直後の寸法結果は上記のとおりだが、連続操作の入力同期にはこの未解決事項が残る。
