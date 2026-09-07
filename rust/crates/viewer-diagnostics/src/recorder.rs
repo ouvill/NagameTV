@@ -395,6 +395,76 @@ mod tests {
     }
 
     #[test]
+    fn production_size_rotation_keeps_complete_gc_records_and_final_snapshot()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("usage.jsonl");
+        let mut writer = storage::RotatingWriter::new(path.clone())?;
+        let (written_tx, written_rx) = mpsc::channel();
+        let recorder = Recorder::spawn("rotation-test", move |value| {
+            writer.write(value)?;
+            written_tx.send(()).map_err(std::io::Error::other)?;
+            Ok(())
+        })?;
+        let callback = recorder.gc_sink();
+        // Over 8 MiB forces two rotations at the production 4 MiB limit.
+        // Acknowledge disk writes to exercise rotation without scheduler-dependent
+        // queue overflow. Queue saturation is covered separately above.
+        for sequence in 0..2100 {
+            let text = format!("{sequence:04}:{}", "x".repeat(4091));
+            assert_eq!(
+                callback.record(GcCategory::Statistics, &text),
+                Enqueue::Accepted
+            );
+            written_rx.recv_timeout(std::time::Duration::from_secs(5))?;
+        }
+        assert_eq!(
+            recorder.record(Event::StopRequested, Snapshot::default()),
+            Enqueue::Accepted
+        );
+        assert_eq!(recorder.dropped(), 0);
+        recorder.stop().join()?;
+        assert_eq!(
+            callback.record(GcCategory::Statistics, "late"),
+            Enqueue::Stopped
+        );
+
+        let mut first_sequence = None;
+        let mut next_sequence = None;
+        let mut final_snapshot = false;
+        for segment in [path.with_extension("previous.jsonl"), path] {
+            let bytes = std::fs::read(segment)?;
+            assert!(!bytes.is_empty());
+            assert!(bytes.len() as u64 <= storage::MAX_FILE_BYTES);
+            assert_eq!(bytes.last(), Some(&b'\n'));
+            for line in std::str::from_utf8(&bytes)?.lines() {
+                assert!(!final_snapshot, "snapshot must be the final record");
+                let value: serde_json::Value = serde_json::from_str(line)?;
+                assert_eq!(value["dropped_records"], 0);
+                if value["kind"] == "qt_gc" {
+                    let message = value["message"].as_str().ok_or("missing GC message")?;
+                    assert_eq!(message.len(), 4096);
+                    let (sequence, _) = message.split_once(':').ok_or("missing sequence")?;
+                    let sequence = sequence.parse::<usize>()?;
+                    first_sequence.get_or_insert(sequence);
+                    if let Some(expected) = next_sequence {
+                        assert_eq!(sequence, expected);
+                    }
+                    next_sequence = Some(sequence + 1);
+                } else {
+                    assert_eq!(value["record"]["event"], "stop_requested");
+                    final_snapshot = true;
+                }
+            }
+        }
+        assert!(first_sequence.is_some_and(|sequence| sequence > 0));
+        assert_eq!(next_sequence, Some(2100));
+        assert!(final_snapshot);
+        assert_eq!(std::fs::read_dir(dir.path())?.count(), 2);
+        Ok(())
+    }
+
+    #[test]
     fn writes_final_snapshot_before_join_returns() -> Result<(), Box<dyn std::error::Error>> {
         let dir = tempfile::tempdir()?;
         let path = dir.path().join("usage.jsonl");
