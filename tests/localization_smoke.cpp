@@ -36,10 +36,17 @@ int main(int argc, char **argv) {
       readonly property string dateLabel: day.toLocaleDateString(Qt.locale(Qt.uiLanguage), qsTranslate("Main", "ddd, MMM d"))
       property string failureSource: "This channel was not found on Mirakurun. Refresh the channel list and choose a channel again."
       readonly property string failureLabel: qsTranslate("Backend", failureSource)
+      property var snapshot: ({state: "Playing"})
+      function metric(key) {
+        const s = snapshot
+        return key === "state" && s.state ? qsTranslate("Backend", s.state) : "—"
+      }
+      readonly property string stateLabel: metric("state")
       property string heading: qsTr("Stats for nerds"); property string closeLabel: qsTranslate("Main", "Close"); property string emptyChannels: qsTranslate("Viewer", "No matching channels") })", QUrl("file:///Main.qml"));
   check(engine.rootObjects().size() == 1, "Load translation test object");
   auto *root = engine.rootObjects().first();
   check(root->property("heading").toString() == "Stats for nerds", "English source text");
+  check(root->property("stateLabel").toString() == "Playing", "State through a function starts in English");
   const auto dayBeforeSwitch = root->property("day");
   check(root->property("dateLabel").toString() == "Tue, Sep 8", "English date independent of system locale");
   check(translateBackend("Programs: %1").arg("13000") == "Programs: 13000", "English feature count");
@@ -48,6 +55,9 @@ int main(int argc, char **argv) {
   check(translateBackend("Waiting to reconnect") == QString::fromUtf8("再接続待ち"), "Japanese retry status");
   check(root->property("failureLabel").toString() == translateBackend(root->property("failureSource").toString()), "Dynamic failure source is retranslated");
   check(root->property("failureLabel") != root->property("failureSource"), "Failure guidance has a Japanese translation");
+  check(root->property("stateLabel").toString() == QString::fromUtf8("再生中"), "Function translation updates without a new snapshot");
+  check(root->setProperty("snapshot", QVariantMap{{"state", "Paused"}}), "Replace statistics snapshot");
+  check(root->property("stateLabel").toString() == QString::fromUtf8("一時停止中"), "New snapshot translates in the active language");
   const QString detail = QString::fromUtf8("source %1 <tag> 日本語");
   check(translateBackend("Fetch failed: %1").arg(detail) == QString::fromUtf8("取得失敗: ") + detail, "Diagnostics remain literal data including placeholders");
   check(root->property("dateLabel").toString() == QString::fromUtf8("9/8（火）"), "Japanese date and translated format update together");
@@ -59,6 +69,7 @@ int main(int argc, char **argv) {
   check(applyUiLanguage("en") == "en", "Switch back to English");
   check(root->property("heading").toString() == "Stats for nerds", "Retranslate existing QML to English");
   check(root->property("dateLabel").toString() == "Tue, Sep 8", "Date returns to English");
+  check(root->property("stateLabel").toString() == "Paused", "Function translation returns to English without polling");
   check(translateBackend("Waiting to reconnect") == "Waiting to reconnect", "Feature status returns to English");
   check(root->property("failureLabel") == root->property("failureSource"), "Existing failure guidance returns to English");
   check(root->property("emptyChannels").toString() == "No matching channels", "Feature UI context returns to English");
