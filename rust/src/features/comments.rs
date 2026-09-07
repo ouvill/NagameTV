@@ -133,16 +133,19 @@ impl Comments {
             text: &'a str,
             source: viewer_comments::Origin,
         }
-        let rows: Vec<_> = self
-            .history
-            .iter()
-            .map(|comment| Row {
-                time: comment.japan_time(),
-                text: &comment.text,
-                source: comment.origin,
-            })
-            .collect();
-        serde_json::to_string(&rows)
+        struct Rows<'a>(&'a VecDeque<Comment>);
+        impl serde::Serialize for Rows<'_> {
+            fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+                // Stream borrowed history in arrival order. Each formatted time
+                // lives for one row; no second array of all visible rows is retained.
+                serializer.collect_seq(self.0.iter().map(|comment| Row {
+                    time: comment.japan_time(),
+                    text: &comment.text,
+                    source: comment.origin,
+                }))
+            }
+        }
+        serde_json::to_string(&Rows(&self.history))
     }
 }
 
@@ -246,7 +249,14 @@ mod tests {
         }));
         let rows: Vec<serde_json::Value> = serde_json::from_str(&comments.json()?)?;
         assert_eq!(rows.len(), HISTORY_LIMIT);
-        assert_eq!(rows[0]["text"], "<b>800</b>\n日本語");
+        for (row, second) in rows.iter().zip(800..1000) {
+            assert_eq!(row["text"], format!("<b>{second}</b>\n日本語"));
+            assert_eq!(
+                row["time"],
+                format!("09:{:02}:{:02}", second / 60, second % 60)
+            );
+            assert_eq!(row["source"], "NX");
+        }
         comments.dirty = false;
         comments.configure(true, Some(&first));
         assert!(!comments.dirty);
