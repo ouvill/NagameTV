@@ -90,6 +90,10 @@ fn switching_native_audio_changes_samples_while_video_continues() -> TestResult 
         .property("uri", "testbin://audio,volume=0.1,is-live=true+audio,volume=0.8,is-live=true+video,is-live=true,caps=[video/x-raw,width=160,height=90,framerate=30/1]")
         .build()?;
     let guard = Playing(player.clone());
+    player.set_property_from_str("flags", "video+audio+soft-volume+buffering+native-video");
+    let output =
+        crate::playback::audio_output::Output::Audible(crate::settings::Volume::from(100.0));
+    output.apply(&player);
     let mut streams = Streams::default();
     player.set_state(gst::State::Playing)?;
     pump_until(&player, &mut streams, |streams| {
@@ -123,7 +127,7 @@ fn switching_native_audio_changes_samples_while_video_continues() -> TestResult 
     } else {
         0.65..0.9
     };
-    for (target, range) in [(&other, expected), (&initial, initial_range)] {
+    for (target, range) in [(&other, expected.clone()), (&initial, initial_range)] {
         let audio_before = audio_buffers.load(Ordering::Acquire);
         let video_before = video_buffers.load(Ordering::Acquire);
         streams.select(&player, target)?;
@@ -137,6 +141,40 @@ fn switching_native_audio_changes_samples_while_video_continues() -> TestResult 
                 && range.contains(&f32::from_bits(peak.load(Ordering::Relaxed)))
         })?;
     }
+    // Observe decoded samples, not just playbin properties: muting must survive
+    // selection of another native track while video keeps being delivered.
+    let muted = output.with_mute(true);
+    muted.apply(&player);
+    for target in [&initial, &other] {
+        let audio_before = audio_buffers.load(Ordering::Acquire);
+        let video_before = video_buffers.load(Ordering::Acquire);
+        if target == &other {
+            streams.select(&player, target)?;
+        }
+        pump_until(&player, &mut streams, |streams| {
+            streams
+                .tracks()
+                .iter()
+                .any(|track| track.id == *target && track.selected)
+                && audio_buffers.load(Ordering::Acquire) > audio_before + 3
+                && video_buffers.load(Ordering::Acquire) > video_before + 3
+                && f32::from_bits(peak.load(Ordering::Relaxed)) == 0.0
+        })?;
+    }
+    // Slider adjustment clears mute and applies the new gain to the selected
+    // track. Wait for fresh buffers so a pre-adjustment sample cannot pass.
+    let audio_before = audio_buffers.load(Ordering::Acquire);
+    let video_before = video_buffers.load(Ordering::Acquire);
+    muted
+        .adjust(0.25)
+        .ok_or("valid volume rejected")?
+        .apply(&player);
+    let adjusted = expected.start * 0.25..expected.end * 0.25;
+    pump_until(&player, &mut streams, |_| {
+        audio_buffers.load(Ordering::Acquire) > audio_before + 3
+            && video_buffers.load(Ordering::Acquire) > video_before + 3
+            && adjusted.contains(&f32::from_bits(peak.load(Ordering::Relaxed)))
+    })?;
     player.set_state(gst::State::Null)?;
     drop(guard);
     Ok(())
