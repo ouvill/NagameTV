@@ -5,6 +5,7 @@ edition = "2024"
 build = "build.rs"
 
 [dependencies]
+viewer-epg-events = { path = "crates/viewer-epg-events", features = ["network"] }
 viewer-diagnostics = { path = "crates/viewer-diagnostics" }
 viewer-comments = { path = "crates/viewer-comments", features = ["network"] }
 libaribcaption = { path = "crates/libaribcaption" }

@@ -88,6 +88,12 @@ fn updates_replace_failure_retains_refresh_waits_and_disable_clears()
     }
     assert_eq!(count.load(Ordering::SeqCst), 0);
     feature.configure(Some(address));
+    feature.poll(&network);
+    assert!(matches!(feature.status(), Status::Fetching));
+    // Updates during acquisition must coalesce into exactly one follow-up request.
+    for _ in 0..100 {
+        feature.refresh();
+    }
     for revision in [2, 3] {
         let deadline = Instant::now() + Duration::from_secs(3);
         while feature.revision < revision && Instant::now() < deadline {
@@ -105,7 +111,9 @@ fn updates_replace_failure_retains_refresh_waits_and_disable_clears()
                 )?
                 .contains("番組")
         );
-        feature.refresh();
+        if revision == 3 {
+            feature.refresh();
+        }
     }
     let deadline = Instant::now() + Duration::from_secs(3);
     while !matches!(feature.status(), Status::Failed(_)) {

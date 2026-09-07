@@ -49,6 +49,13 @@ pub struct Network {
 }
 
 impl Network {
+    pub fn poll_epg_events(
+        &self,
+        controller: &mut viewer_epg_events::controller::Controller,
+    ) -> Result<viewer_epg_events::controller::Update, viewer_epg_events::controller::Error> {
+        controller.poll(self.runtime.handle())
+    }
+
     pub fn poll_comments(
         &self,
         controller: &mut viewer_comments::controller::Controller,

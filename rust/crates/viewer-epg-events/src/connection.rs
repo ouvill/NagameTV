@@ -1,6 +1,6 @@
 //! One bounded event subscription, using the caller's existing Tokio runtime.
 use crate::{Decoder, RefreshGate};
-use futures_util::StreamExt;
+use futures_util::{FutureExt, StreamExt};
 use std::{
     sync::{
         Arc,
@@ -107,6 +107,23 @@ impl Drop for Subscription {
 #[must_use = "Wait for termination before starting a replacement subscription"]
 pub struct Stopping(Option<JoinHandle<()>>);
 impl Stopping {
+    /// Nonblocking completion for a GUI-driven poll loop. Pending retains ownership.
+    pub fn try_finish(&mut self) -> Option<Result<(), tokio::task::JoinError>> {
+        let Some(task) = self.0.as_mut() else {
+            return Some(Ok(()));
+        };
+        let mut context = std::task::Context::from_waker(std::task::Waker::noop());
+        match task.poll_unpin(&mut context) {
+            std::task::Poll::Pending => None,
+            std::task::Poll::Ready(result) => {
+                self.0 = None;
+                Some(match result {
+                    Err(error) if error.is_cancelled() => Ok(()),
+                    other => other,
+                })
+            }
+        }
+    }
     pub fn is_finished(&self) -> bool {
         self.0.as_ref().is_none_or(JoinHandle::is_finished)
     }

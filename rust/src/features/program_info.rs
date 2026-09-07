@@ -66,6 +66,8 @@ pub enum Status<'a> {
 pub struct ProgramInfo {
     desired: Option<String>,
     acquisition: Acquisition,
+    // Preserve one follow-up request even when notifications arrive during a fetch.
+    refresh_pending: bool,
     snapshot: Snapshot,
     pub revision: u64,
     pub text_capacity_bytes: usize,
@@ -77,6 +79,7 @@ impl ProgramInfo {
             return;
         }
         self.desired = server;
+        self.refresh_pending = false;
         self.snapshot = Snapshot::default();
         self.text_capacity_bytes = 0;
         self.revision += 1;
@@ -89,9 +92,7 @@ impl ProgramInfo {
         };
     }
     pub fn refresh(&mut self) {
-        if let Acquisition::Idle { next, .. } = &mut self.acquisition {
-            *next = None;
-        }
+        self.refresh_pending = true;
     }
     pub fn poll(&mut self, network: &Network) {
         self.poll_at(network, Instant::now());
@@ -120,8 +121,9 @@ impl ProgramInfo {
             state => state,
         };
         if let Some(server) = &self.desired
-            && matches!(&self.acquisition, Acquisition::Idle { next, .. } if next.is_none_or(|deadline| now >= deadline))
+            && matches!(&self.acquisition, Acquisition::Idle { next, .. } if self.refresh_pending || next.is_none_or(|deadline| now >= deadline))
         {
+            self.refresh_pending = false;
             self.acquisition = Acquisition::Fetching(network.fetch_json(
                 format!("{server}/api/programs"),
                 MAX_RESPONSE,

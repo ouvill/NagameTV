@@ -233,6 +233,7 @@ pub struct PlayerRust {
     subtitle_status: QString,
     subtitle_phase: subtitle_status::Status,
     epg_data: QString,
+    epg_events: viewer_epg_events::controller::Controller,
     epg_status: QString,
     current_program_data: QString,
     program_progress: f64,
@@ -432,7 +433,13 @@ impl ffi::Player {
             .update_subtitle_status(subtitle_status::Status::Stopped);
         Ok(())
     }
+    fn configure_epg_events(mut self: Pin<&mut Self>) {
+        let endpoint = (self.rust().epg_enabled && self.rust().channel_refresh.enabled())
+            .then(|| format!("{}/api/events/stream?resource=program", self.server()));
+        self.as_mut().rust_mut().epg_events.configure(endpoint);
+    }
     fn configure_epg(mut self: Pin<&mut Self>) {
+        self.as_mut().configure_epg_events();
         let server = if self.rust().epg_enabled && !self.rust().entries.is_empty() {
             Some(self.server().to_string())
         } else {
@@ -501,6 +508,26 @@ impl ffi::Player {
         }
     }
     fn poll_features(mut self: Pin<&mut Self>) {
+        let events = {
+            let mut this = self.as_mut().rust_mut();
+            let this = &mut *this;
+            this.network
+                .as_ref()
+                .map(|network| network.poll_epg_events(&mut this.epg_events))
+        };
+        match events {
+            Some(Ok(update)) => {
+                if let Some(error) = update.failure {
+                    eprintln!("EPG event stream: {error}");
+                }
+                if update.refresh {
+                    self.as_mut().rust_mut().epg.refresh();
+                    self.as_mut().refresh_channels(true);
+                }
+            }
+            Some(Err(error)) => eprintln!("EPG event subscription: {error}"),
+            None => {}
+        }
         self.as_mut().poll_comments();
         let epg_event = {
             use viewer_diagnostics::recorder::Event;
@@ -589,6 +616,7 @@ impl ffi::Player {
         unsafe { ffi::install_pointer_activity(item) };
     }
     pub fn connect_server(mut self: Pin<&mut Self>, server: QString) {
+        self.as_mut().rust_mut().epg_events.configure(None);
         self.as_mut().rust_mut().catalog_selection = channels::SelectionPolicy::Initial;
         self.as_mut().rust_mut().channel_refresh = channel_refresh::Refresh::Disabled;
         self.as_mut().rust_mut().comments.configure(false, None);
@@ -630,6 +658,7 @@ impl ffi::Player {
             .channel_refresh
             .requested(Instant::now());
         self.as_mut().set_server(QString::from(server));
+        self.as_mut().configure_epg_events();
         self.as_mut().set_loading(true);
         self.as_mut().save_settings();
         self.update_status(PlaybackStatus::Loading);
@@ -832,6 +861,7 @@ impl ffi::Player {
         }
     }
     pub fn shutdown(mut self: Pin<&mut Self>) {
+        self.as_mut().rust_mut().epg_events.configure(None);
         self.as_mut().rust_mut().channel_refresh = channel_refresh::Refresh::Disabled;
         self.as_mut().stop_diagnostics();
         self.as_mut().rust_mut().comments.configure(false, None);
@@ -851,6 +881,7 @@ impl ffi::Player {
 
 impl Drop for PlayerRust {
     fn drop(&mut self) {
+        self.epg_events.configure(None);
         // Qt normally calls shutdown; also cover a failed QML construction.
         if let Some(playback) = self.playback.as_mut() {
             playback.shutdown();

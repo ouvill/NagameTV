@@ -9,6 +9,9 @@ pub(super) enum Refresh {
     Scheduled(Instant),
 }
 impl Refresh {
+    pub(super) fn enabled(&self) -> bool {
+        matches!(self, Self::Scheduled(_))
+    }
     pub(super) fn requested(&mut self, now: Instant) {
         *self = Self::Scheduled(now);
     }
