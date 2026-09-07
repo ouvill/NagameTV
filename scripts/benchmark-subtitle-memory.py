@@ -139,6 +139,15 @@ def main() -> None:
     output.mkdir(parents=True, exist_ok=False)
     (output / "renderer.txt").write_text(renderer)
     repo = Path(__file__).resolve().parent.parent
+    # HEAD alone does not describe an uncommitted rendering experiment. Preserve
+    # the actual components and harness alongside its measurements.
+    for relative in ("rust/qml/SubtitleGlyph.qml", "rust/qml/SubtitleOverlay.qml",
+                     "rust/src/subtitle_outline.h", "tests/subtitle_rendering.cpp",
+                     "tests/subtitle-memory/tst_SubtitleMemory.qml",
+                     "scripts/benchmark-subtitle-memory.py"):
+        destination = output / "sources" / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes((repo / relative).read_bytes())
     with (output / "source-head.txt").open("w") as destination:
         subprocess.run(["git", "-C", str(repo), "rev-parse", "HEAD"], stdout=destination, check=True)
     binary = build_helper(repo, output)

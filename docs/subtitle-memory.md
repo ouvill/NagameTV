@@ -90,3 +90,45 @@ OFFで処理が走っていないことも試験で検証した。
 次の調査対象とし、字形・基準線を変えずに改善できるか検討する。
 この短い比較から各モジュールの厳密な固定コストや長時間のリークを算出しない。
 証跡はbenchmark/subtitle-outline-final/とbenchmark/subtitle-no-outline-final/。
+
+## 文字本体の割り当てと描画方式の比較（2026-09-07）
+
+固定512文字・縁取りOFFのヘルパーを、検証済みの同じ実GPUでheaptrack付き起動した。
+全5周・縁取り生成0回・試験3件成功、正常終了コード0。SIGTERMによる打ち切りではない。
+-m 0の個別スタックで、次のpeakを確認した（heaptrackの表示単位M）。
+
+| 個別peak | 呼び出し経路 |
+| --- | --- |
+| 33.55M | QTextureGlyphCache::fillInPendingGlyphsからQByteArray::fillへの確保 |
+| 25.17M | 同じ経路からQImageTextureGlyphCache::resizeTextureData、QImage::copyへの確保 |
+| 13.16M・512回 | QTextureGlyphCache::populateからQFontEngineFT::loadGlyphへの確保 |
+
+各peakの時刻は同じとは限らず、合計を全体使用量として扱わない。
+全体peak heapは126.80M、heaptrack込みRSS peakは256.22M、終了時の未解放表示は8.54M。
+--filter-bt-function QTextureGlyphCacheで終了時の未解放スタックを抽出すると該当なし。
+この記録では、追跡された文字キャッシュ経由の確保は正常終了までに解放された。
+Qt・ドライバーの他の未解放領域の性質や、長時間アプリ全体のリークを否定するものではない。
+
+[Qt TextのrenderType仕様](https://doc.qt.io/qt-6/qml-qtquick-text.html#renderType-prop)を
+確認し、SubtitleGlyphのrenderTypeだけを試験的に変更して同じ縁取りON入力を比較した。
+QtRenderingは距離場、CurveRenderingは曲線による別の描画方式である。
+文書のgraphics memoryに関する比較を、そのままプロセスRSSの大小とは解釈しない。
+
+| 方式 | 5周目（2番目の256文字の再表示）のRSS MiB |
+| --- | ---: |
+| NativeRendering（元の方式） | 197.22 |
+| CurveRendering | 238.79 |
+| QtRendering | 203.22 |
+
+各実行は全11段階の採取・試験3件・終了0を確認した。CurveRenderingでは既存の
+実GPU字幕描画試験9件も成功したが、この固定入力ではメモリー削減にならなかった。
+そのためrenderTypeの変更は採用せずNativeRenderingへ戻した。QtRenderingの
+見た目比較は追加実施していない。いずれも約10秒・512文字の結果で、文字集合を増やした
+長期の優劣を確定する比較ではない。稼働中アプリの描画方式は変更していない。
+
+証跡はbenchmark/subtitle-native-heaptrack/のallocations.zst、allocators.txt、
+glyph-cache-at-exit.txt、player.log、fixture.qmlとhelper.cpp。
+方式比較はbenchmark/subtitle-curve-outline/、benchmark/subtitle-qt-outline/。
+各ディレクトリーに試験時のSubtitleGlyph.qmlも保存した。
+計測スクリプトも、未コミットの実験をHEADだけで取り違えないよう、本番字幕部品・
+縁取りヘッダー・試験ヘルパー・固定入力・スクリプトの実ファイルをsources/へ保存する。
