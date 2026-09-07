@@ -9,6 +9,20 @@ use std::{pin::Pin, time::Instant};
 impl ffi::Player {
     /// Reports request acceptance; HTTP completion is delivered later by poll_channels.
     pub fn connect_server(mut self: Pin<&mut Self>, server: QString) -> bool {
+        // Reject invalid input before cancelling requests or stopping the current
+        // broadcast. An input error changes only the status shown to the user.
+        let server = match services::server_url(&server.to_string()) {
+            Ok(server) => server,
+            Err(error) => {
+                self.status_error(StatusFailure::Server, error);
+                return false;
+            }
+        };
+        if self.rust().network.is_none() {
+            self.update_status(PlaybackStatus::NetworkUnavailable);
+            return false;
+        }
+
         self.as_mut().rust_mut().epg_events.configure(None);
         self.as_mut().rust_mut().catalog_selection = channels::SelectionPolicy::Initial;
         self.as_mut().rust_mut().channel_refresh = channel_refresh::Refresh::Disabled;
@@ -28,17 +42,6 @@ impl ffi::Player {
         self.as_mut().rust_mut().entries.clear();
         self.as_mut().set_channel_data(QString::from("[]"));
         self.as_mut().set_selected(-1);
-        let server = match services::server_url(&server.to_string()) {
-            Ok(server) => server,
-            Err(error) => {
-                self.status_error(StatusFailure::Server, error);
-                return false;
-            }
-        };
-        if self.rust().network.is_none() {
-            self.update_status(PlaybackStatus::NetworkUnavailable);
-            return false;
-        }
 
         self.as_mut()
             .rust_mut()
