@@ -8,8 +8,12 @@ pub struct AllocatorMemory {
     pub provider: &'static str,
     pub version: String,
     pub arena_bytes: usize,
+    /// mallinfo2.uordblks: arena accounting only; excludes `mmap_bytes`.
+    /// This is neither total malloc usage nor the size of live Rust objects.
     pub in_use_bytes: usize,
     pub free_bytes: usize,
+    /// mallinfo2.hblkhd: mappings owned by malloc, not every process mapping
+    /// and not the resident size of those mappings.
     pub mmap_bytes: usize,
     pub mmap_regions: usize,
     pub releasable_top_bytes: usize,

@@ -540,3 +540,45 @@ PID 132581の11.08分時点でRSS386.28MiB、glibc使用中50.75MiB、
 証跡はbenchmark/gpu-all-features-20260907/checkpoint-11m/のcapture.jsonlとsummary.json。
 並行する旧EPG単独プロセス78793も137.83分時点で生存、RSS329.34MiB、
 glibc使用中61.65MiB。別局・別ビルドのため差分をそのまま機能コストに換算しない。
+
+## 全機能併用25分と計測値の区別（2026-09-07）
+
+同じPID 132581の生存をpsで確認し、25.24分までの151定期sampleを保存した。
+最新RSS399.88MiB、arena内使用量60.35MiB、スレッド44、FD77。
+EPG取得12回完了、再生継続、記録破棄0、対象critical・スタック0。
+次の表は区間内の最小〜最大で、上の1分末尾値とは集計方法が異なる。
+
+| 経過時間（分） | sample数 | RSS MiB | arena内使用量 MiB | mallocのmmap MiB |
+| --- | ---: | ---: | ---: | ---: |
+| 0以上5未満 | 29 | 281.64–334.42 | 31.83–47.55 | 185.84–215.03 |
+| 5以上10未満 | 30 | 329.19–370.74 | 44.13–54.11 | 200.02–219.82 |
+| 10以上15未満 | 30 | 385.99–391.99 | 50.33–57.33 | 217.17–220.52 |
+| 15以上20未満 | 30 | 390.82–397.93 | 55.04–59.39 | 217.17–222.58 |
+| 20〜25.24（観測途中） | 32 | 395.72–400.32 | 56.72–63.49 | 219.55–223.15 |
+
+増加は継続しており、収束・リークなしとは判定しない。最新sampleの実況履歴は
+200件・文字列3769bytes、流れる実況7件、字幕セル0・待機1、EPG13641件・
+文字列1571904bytes。保持件数だけでは増加を説明できず、割り当て元は未特定。
+
+これまで表中で「glibc使用中」と記したin_use_bytesはmallinfo2.uordblksであり、
+arena内の使用量を示す。mallocが別途mmapした領域はmmap_bytes（hblkhd）に記録する。
+[glibcのint_mallinfoとmalloc_statsの実装](https://github.com/bminor/glibc/blob/master/malloc/malloc.c)
+でもarenaとmallocのmmapを別集計している。60.35MiBをプロセス全体のmalloc使用量や
+Rustの生存オブジェクト量と解釈してはいけない。両者を足しても直接mmap・GPU資源等を
+網羅せず、常駐量RSSとも異なる。計測コードの各フィールドにこの範囲を明記した。
+
+証跡はbenchmark/gpu-all-features-20260907/checkpoint-25m/のcapture.jsonl、
+summary.json、ranges.json。旧EPG単独PID 78793も152分時点で生存し、
+RSS334.05MiB、arena内使用量61.99MiB、EPG81回完了、対象critical・スタック0。
+両プロセスを継続し、仮想ディスプレイでのUI結果とは分けて扱う。
+
+続く26.08分のsampleでRSS561.04MiB、mallocのmmap445.66MiBへ急増した。
+直前25.91分はRSS400.73MiB、mmap221.49MiB。26.23分にはRSS471.07MiB、
+mmap253.26MiBへ下がり、27.40分はRSS447.04MiB、mmap252.59MiBだった。
+arena内使用量は同じ4点で59.72→63.54→61.03→63.09MiB。
+EPG取得完了数は25.24分と27.40分で同じ12回。EPG保持13641件も変わらない。
+このピークをEPG再取得やarenaの空き領域だけに帰属させる証拠はない。
+checkpoint-27m/へsample、summary、採取時のsmaps・smaps_rollup・maps・statusと
+末尾32KiBログを保存した。smapsはピーク後の採取でありピーク時の内訳ではない。
+ログにはフォントのOpenType support missingもあるが、時刻なしのためこのピークとの
+対応は未確認。フォントを原因と断定せず、次の割り当て元調査の候補として扱う。
