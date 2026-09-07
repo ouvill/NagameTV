@@ -253,7 +253,6 @@ pub struct PlayerRust {
     guide: crate::features::program_info::guide::Guide,
     guide_dirty: bool,
     guide_revision: u64,
-    guide_service: Option<crate::channels::BroadcastService>,
     next_diagnostic: Instant,
     request: crate::features::channel_catalog::Acquisition,
     channel_refresh: channel_refresh::Refresh,

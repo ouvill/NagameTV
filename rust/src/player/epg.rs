@@ -70,9 +70,8 @@ impl ffi::Player {
             .and_then(|s| s.broadcast);
         self.as_mut().poll_current_program(service);
         if let crate::features::program_info::guide::Guide::Showing(window) = self.rust().guide
-            && (self.rust().guide_revision != self.rust().epg.revision
-                || self.rust().guide_service != service
-                || self.rust().guide_dirty)
+            // All-channel grid data depends on EPG, catalog and day, not selection.
+            && (self.rust().guide_revision != self.rust().epg.revision || self.rust().guide_dirty)
         {
             let data = match self.rust().epg.grid_view(&self.rust().entries, window) {
                 Ok(data) => {
@@ -87,7 +86,6 @@ impl ffi::Player {
             };
             let revision = self.rust().epg.revision;
             self.as_mut().rust_mut().guide_revision = revision;
-            self.as_mut().rust_mut().guide_service = service;
             self.as_mut().rust_mut().guide_dirty = false;
             self.as_mut().set_epg_data(QString::from(data));
         }

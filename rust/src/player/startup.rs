@@ -142,7 +142,6 @@ impl Default for PlayerRust {
             guide: Default::default(),
             guide_dirty: false,
             guide_revision: 0,
-            guide_service: None,
             next_diagnostic: Instant::now(),
             request: Default::default(),
             channel_refresh: Default::default(),
