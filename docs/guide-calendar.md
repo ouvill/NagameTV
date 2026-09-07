@@ -420,3 +420,25 @@ releaseビルド後の実アプリでも1440×900の案内欄を確認し、900�
 放送中の詳細を開いた。詳細カードと視聴ボタンはfooterへ重ならず表示された。
 画像はbenchmark/ui-comparison/guide-footer-wide.png、guide-footer-small-detail.png、
 ログはbenchmark/virtual-ui/guide-footer.log。
+
+
+## 案内文にあるキー操作の比較結果
+
+main 2d5d15cと実験版24f8ddfを専用Xvfb :99で順に起動し、対象ウィンドウをactiveにして
+Gで番組表を開いた。日付選択やスクロールバーへフォーカスを移す前に、修飾キーを解除して
+Right、Down、Returnを個別に送り、各操作前後の画像を比較した。
+
+mainは3操作とも差分0ピクセル。実験版はRight・Downが0、Returnが330ピクセルで、
+変化はx=20,y=329の68×25領域（現在時刻バッジ）のみだった。両方とも局や時刻の移動、
+詳細カードの表示はなかった。実験版は続けたEscapeで番組表が閉じることも画像で確認した。
+mainと実験版のプロセスはそれぞれ閉じるボタンで終了コード0。
+
+mainのQML/Rust側には番組表用の矢印・Enter処理が見つからず、実験版も番組表本体にはない。
+実験版のGuideDateSelectorにはフォーカス時の日付変更用の矢印処理があるので、
+アプリ全体で矢印キーが未対応という意味ではない。
+この比較条件では案内文と実装の不整合はmainから存在する。移植時に動作が失われた証拠はない。
+案内文に合うグリッド操作の実装は、単なるUI再現とは区別した改善課題として残す。
+全フォーカス状態やLeft/Upの送信を網羅した試験ではない。
+
+証跡はbenchmark/ui-comparison/main/keys-*.png、keys-result.txt、guide-keys.logと、
+benchmark/ui-comparison/experiment-keys/の各画像・result.txt、benchmark/virtual-ui/guide-keys.log。
