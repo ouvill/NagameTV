@@ -260,3 +260,22 @@ u64最大値の文字列化も確認した。既存実況モデル3件と対象Q
 全ターゲットClippy（警告をエラー扱い）も成功。試験用HTTPサーバーは2048 bytes上限でヘッダー終端まで読み、部分読み取りを扱う。
 
 CMakeリリースビルドも成功。
+
+
+## mainの実況パネルの表示補完
+
+mainのQMLと照合し、実況ページ下部の高さ58px・角丸20pxの入力欄風表示と送信アイコン、
+再生バーの選局と字幕の間にある鉛筆アイコンを移植した。SVGはmainから同一ファイルを
+コピーし、Qtリソースへ登録した。見出し・タブのComments、Danmaku、Collapseはmainの
+翻訳コンテキストへ揃える。
+
+mainのこれらの投稿用表示には入力・送信の実装がない。移植先でも入力状態や通信処理を
+追加せず、表示だけを再現する。投稿機能の完成を意味しない。
+既存の受信・200件上限の履歴・非表示時のListView解放は変更しない。
+
+[Qt Quick Layoutsの公式仕様](https://doc.qt.io/qt-6/qtquicklayouts-overview.html#specifying-preferred-size)
+に従い、ColumnLayout配下の高さはLayout.preferredHeightで指定する。
+幅・高さをレイアウトと二重に制御しない。ProgramSidebarのqmllintとdiff・fmt検査が成功。
+実画面の比較、縮小時や英語表示時のレイアウトは未検証。
+
+CMakeリリースビルド（QMLの事前コンパイルとアイコンのリソース組み込みを含む）も成功。

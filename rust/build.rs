@@ -52,6 +52,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     .qrc(&translations)
     .qrc_resources([
         "../assets/icons/info.svg",
+        "../assets/icons/send.svg",
+        "../assets/icons/pencil.svg",
         "../assets/icons/message-square.svg",
         "../assets/icons/chevron-down.svg",
         "../assets/icons/chevron-left.svg",

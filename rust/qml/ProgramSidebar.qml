@@ -75,11 +75,11 @@ Rectangle {
             Layout.fillWidth: true
             IconAction {
                 iconSource: root.iconDirectory + "panel-right-close.svg"
-                tip: qsTranslate("Main", "Close")
+                tip: qsTranslate("Main", "Collapse")
                 onClicked: root.closeRequested()
             }
             Label {
-                text: root.page === ProgramSidebar.Comments ? qsTranslate("Viewer", "Comments") : (root.page === ProgramSidebar.Channels ? qsTranslate("Main", "Channels") : qsTranslate("Main", "Program information"))
+                text: root.page === ProgramSidebar.Comments ? qsTranslate("Main", "Comments") : (root.page === ProgramSidebar.Channels ? qsTranslate("Main", "Channels") : qsTranslate("Main", "Program information"))
                 color: "#f4f5f3"
                 font.pixelSize: 17
                 font.bold: true
@@ -93,7 +93,7 @@ Rectangle {
                 Label {
                     height: parent.height
                     verticalAlignment: Text.AlignVCenter
-                    text: qsTranslate("Viewer", "On-screen comments")
+                    text: qsTranslate("Main", "Danmaku")
                     color: root.danmakuEnabled ? "#f4f5f3" : "#b6bab6"
                     font.pixelSize: 13
                 }
@@ -218,6 +218,30 @@ Rectangle {
                 status: root.commentStatus
             }
         }
+        // main has a presentation-only composer: no text input or posting transport.
+        // Keep its design without introducing draft state or a network action.
+        Rectangle {
+            visible: root.page === ProgramSidebar.Comments
+            Layout.fillWidth: true
+            Layout.preferredHeight: 58
+            radius: 20
+            color: "#1c1f1c"
+            border.color: "#606163"
+            Label {
+                anchors.left: parent.left
+                anchors.leftMargin: 18
+                anchors.verticalCenter: parent.verticalCenter
+                text: qsTranslate("Main", "Enter a comment…")
+                color: "#9fa0a2"
+            }
+            IconAction {
+                anchors.right: parent.right
+                anchors.rightMargin: 8
+                anchors.verticalCenter: parent.verticalCenter
+                iconSource: root.iconDirectory + "send.svg"
+                tip: qsTranslate("Main", "Send")
+            }
+        }
         Rectangle {
             Layout.fillWidth: true
             Layout.preferredHeight: 1
@@ -230,7 +254,7 @@ Rectangle {
                 Layout.fillWidth: true
                 iconSource: root.iconDirectory + "message-square.svg"
                 selected: root.page === ProgramSidebar.Comments
-                text: qsTranslate("Viewer", "Comments")
+                text: qsTranslate("Main", "Comments")
                 onClicked: root.pageRequested(ProgramSidebar.Comments)
             }
             SidebarTab {

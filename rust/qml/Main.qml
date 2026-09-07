@@ -429,6 +429,11 @@ ApplicationWindow {
                         tip: qsTranslate("Main", "Channels")
                         onClicked: root.showChannels = true
                     }
+                    // Presentation-only in main as well; posting is not implemented there.
+                    IconAction {
+                        iconSource: "qrc:/qt/qml/MinimalViewer/assets/icons/pencil.svg"
+                        tip: qsTranslate("Main", "Post a comment")
+                    }
                     IconAction {
                         iconSource: "qrc:/qt/qml/MinimalViewer/assets/icons/captions.svg"
                         tip: player.subtitle_display ? qsTranslate("Main", "Hide subtitles") : qsTranslate("Main", "Show subtitles")
