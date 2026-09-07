@@ -309,12 +309,15 @@ Drawer {
                 wrapMode: Text.Wrap
             }
             Label {
+                objectName: "featureDiagnostics"
                 text: root.backend.diagnostics
                 color: "#aaaaaa"
                 font.pixelSize: 11
                 Layout.fillWidth: true
                 Layout.leftMargin: 8
-                elide: Text.ElideRight
+                Layout.rightMargin: 8
+                textFormat: Text.PlainText
+                wrapMode: Text.Wrap
             }
             Label {
                 Layout.fillWidth: true

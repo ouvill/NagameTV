@@ -197,3 +197,21 @@ EPGは起動直後・約60秒・約120秒・約421秒・約723秒に取得が完
 この容量では4MiBローテーションを発生させていない。Qt GC通知もこの記録にはない。
 記録ワーカーの実動作・EPG更新・保持件数の照合が進んだが、ログ回転、GC、
 全機能併用、操作反復、長時間での増加収束は別途検証する。
+
+## 設定画面の診断表示（2026-09-07）
+
+診断Labelの右端省略を解除し、左右8pxの余白内でPlainTextを折り返す。
+[Qt TextのwrapMode仕様](https://doc.qt.io/qt-6/qml-qtquick-text.html#wrapMode-prop)
+に従い、Layoutで幅を制限して高さは内容に追従させる。既存ScrollViewで末尾まで
+読めるようにし、診断の収集頻度や保持データは変更しない。
+
+日英それぞれ20桁の受信カウンターを含むテストを追加し、複数行表示、省略なし、
+横方向のパネル内への収まり、レイアウト更新後の高さを確認した。
+QML全86件成功。リリースビルドも成功した。
+
+専用Xvfb :99 / llvmpipeで停止中の実アプリを900×560にし、設定のスクロールと
+言語変更を操作。日英とも診断末尾を表示でき、専用アプリは正常終了した。
+記録はgit管理外の`benchmark/virtual-ui/diagnostics-wrap.log`、
+`diagnostics-wrap-en-small.png`、`diagnostics-wrap-ja-small.png`、
+`diagnostics-wrap-qml-tests.txt`。これはUI操作・表示の検証であり、GPU動作や
+長時間のメモリー増加を検証したものではない。

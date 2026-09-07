@@ -62,6 +62,7 @@ TestCase {
         failOnWarning(/.*/);
         backend.loading = false;
         backend.acceptConnection = false;
+        backend.diagnostics = "";
         connections.clear();
         accepted.clear();
         drawer.open();
@@ -102,5 +103,21 @@ TestCase {
         fuzzyCompare(drawer.x + drawer.width, 900, 1);
         keyClick(Qt.Key_Escape);
         tryCompare(drawer, "visible", false);
+    }
+    function test_diagnostics_remain_readable_data() {
+        return [
+            {tag: "English", text: "Subtitles: subscriptions 8, pending 128, received 18446744073709551615 | EPG: tasks 1, programs 50000, stopping Yes"},
+            {tag: "Japanese", text: "字幕: 購読 8, 待機 128, 受信 18446744073709551615 | EPG: タスク 1, 番組 50000, 停止待ち はい"}
+        ];
+    }
+    function test_diagnostics_remain_readable(data) {
+        backend.diagnostics = data.text;
+        const label = findChild(drawer.contentItem, "featureDiagnostics");
+        verify(label !== null);
+        tryVerify(() => label.lineCount > 1);
+        compare(label.truncated, false);
+        compare(label.text, data.text);
+        verify(label.x + label.width <= drawer.contentItem.availableWidth);
+        tryVerify(() => label.height >= label.contentHeight);
     }
 }
