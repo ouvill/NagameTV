@@ -136,3 +136,22 @@ EPG・字幕・実況受信は有効、音量は検証用設定で0。実況の�
 仮想画面はCPU描画なので、この実行のRSS・CPU・フレームレートをNVIDIA環境の評価には使わない。
 証跡はbenchmark/virtual-uiのfixed.log、f11-events.log、send-f11.py、各png。
 通常画面のアプリには入力も終了操作も送っていない。
+
+
+## 番組表と局一覧が重なった場合のEscape（2026-09-07）
+
+mainは番組表を局一覧より先に閉じるが、後継のcloseTopmostは逆順だった。
+C→Gで両方を開くと番組表が前面（z=500）、局一覧が背面（z=6）になり、
+Escapeが背面だけを閉じて見た目に反応しない不具合を実アプリで再現した。
+判定順序を表示順に合わせ、番組表→局一覧へ修正した。
+
+検出・検証済みXvfb :99 / llvmpipe上の停止中アプリで比較。
+修正前の診断（guide_open, channels_open）は(false,true)→(true,true)→(true,false)。
+修正後は同じC→G→Escapeで(false,true)→(true,true)→(false,true)、
+もう一度Escapeで(false,false)。画面でも番組表→局一覧→停止画面を確認した。
+修正前後とも閉じるボタンで終了コード0。QML全86件とリリースビルドも成功した。
+この順序の直接の検証は実アプリ操作と診断ログであり、既存QML部品試験だけを根拠にしない。
+
+証跡はGit対象外benchmark/escape-order/のbefore/after.log、png、
+before-state/after-stateの診断JSONL、after-states.json。
+専用設定、字幕・実況無効、EPG有効、明示したfakesinkで実施し、通常画面には入力していない。

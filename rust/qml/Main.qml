@@ -60,10 +60,11 @@ ApplicationWindow {
     }
     function closeTopmost() {
         overlayVisibility.reveal();
-        if (root.showChannels)
-            root.showChannels = false;
-        else if (root.showGuide)
+        // The guide covers the channel picker; close the visible layer first.
+        if (root.showGuide)
             root.toggleGuide();
+        else if (root.showChannels)
+            root.showChannels = false;
         else if (root.showStats)
             root.showStats = false;
         else if (root.showProgram)
