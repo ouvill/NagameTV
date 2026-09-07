@@ -50,7 +50,7 @@ impl Output {
         if self == Self::TestDiscard {
             // Match main's explicit test sink: retain clock pacing, no last buffer.
             sink.set_property("sync", true);
-            eprintln!("Audio output: explicit fakesink test mode (audio discarded)");
+            tracing::info!("Audio output: explicit fakesink test mode (audio discarded)");
         }
         Ok(Some(sink))
     }

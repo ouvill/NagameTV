@@ -25,6 +25,21 @@ Rustの自動テストは表示・GPU・音声機器を使わない。GStreamer�
 音声切り替えのCPU結合試験にはtestsrcbin（GStreamer Bad Plug-insのdebugutilsbad）が必要。
 生成音声の出力サンプルと映像の継続を試験用sinkで測定する。Qtの画面試験は実際の表示環境を使う。
 
+## ログ
+
+アプリの通常ログは `tracing` / `tracing-subscriber` を通じて標準エラーへ出力します。
+既定は `info` 以上で、日時・レベル・モジュール名を付けます。
+`RUST_LOG=debug` または `RUST_LOG=info,mirakurun_viewer::features::subtitles=debug`
+で詳細度を変更できます。HTTPバッファー、EPGメモリー、音声経路、機能カウンターの
+詳細ログは `debug` です。端末以外への出力にはANSIカラーを付けません。
+
+Qt/QMLのメッセージも `qt` ターゲットへ送るため、`RUST_LOG=info,qt=debug` で
+Qtのdebugログを表示できます。Qt側で無効なカテゴリは引き続き `QT_LOGGING_RULES`
+などで有効にする必要があります。GStreamer/GLib自身のネイティブログ設定は従来どおりです。
+再生エラーファイルと資源診断JSONLは独立した記録として維持します。
+テスト専用の結果表示・停止段階のstderr記録、およびCargoビルド指示のstdout出力は
+ログフィルターの対象外です。
+
 ## 起動・操作
 
 ```sh

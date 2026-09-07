@@ -60,7 +60,7 @@ impl Components {
         match parse(section) {
             Ok(Some(entries)) => {
                 if self.entries != entries {
-                    eprintln!(
+                    tracing::debug!(
                         "AUDIO_PMT service={} components={entries:?}",
                         u16::from_be_bytes([header[3], header[4]])
                     );

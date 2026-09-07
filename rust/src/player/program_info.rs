@@ -48,7 +48,7 @@ impl ffi::Player {
                 self.set_program_progress(update.progress);
             }
             Err(error) => {
-                eprintln!("Current program presentation failed: {error}");
+                tracing::error!("Current program presentation failed: {error}");
                 self.as_mut()
                     .set_current_program_data(QString::from("null"));
                 self.set_program_progress(0.0);

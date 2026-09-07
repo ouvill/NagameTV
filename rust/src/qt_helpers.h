@@ -42,11 +42,10 @@ inline bool openPlaybackLogDirectory(const QString &path) {
 #include "rust/cxx.h"
 #include <QtCore/QLoggingCategory>
 #include <optional>
-#include <cstdio>
 #include <cstring>
 
 inline std::optional<rust::Fn<void(rust::Str, rust::Str)>> qtGcCallback;
-inline QtMessageHandler previousQtHandler = nullptr;
+inline std::optional<rust::Fn<void(std::uint8_t, rust::Str, rust::Str)>> qtLogCallback;
 
 inline void viewerQtMessageHandler(QtMsgType type, const QMessageLogContext &context,
                                    const QString &message) {
@@ -56,16 +55,29 @@ inline void viewerQtMessageHandler(QtMsgType type, const QMessageLogContext &con
     const auto text = message.left(8192).toUtf8();
     (*qtGcCallback)(rust::Str(context.category), rust::Str(text.constData(), text.size()));
   }
-  if (previousQtHandler) previousQtHandler(type, context, message);
-  else {
-    const auto text = qFormatLogMessage(type, context, message).toLocal8Bit();
-    if (!text.isEmpty()) std::fprintf(stderr, "%s\n", text.constData());
+  if (qtLogCallback) {
+    const auto text = message.toUtf8();
+    const char *category = context.category ? context.category : "default";
+    std::uint8_t level;
+    switch (type) {
+      case QtDebugMsg: level = 0; break;
+      case QtInfoMsg: level = 1; break;
+      case QtWarningMsg: level = 2; break;
+      case QtCriticalMsg: level = 3; break;
+      case QtFatalMsg: level = 4; break;
+      default: level = 3; break;
+    }
+    (*qtLogCallback)(level, rust::Str(category), rust::Str(text.constData(), text.size()));
   }
+}
+
+inline void installQtLogging(rust::Fn<void(std::uint8_t, rust::Str, rust::Str)> callback) {
+  qtLogCallback = callback;
+  qInstallMessageHandler(viewerQtMessageHandler);
 }
 
 inline void installQtGcLogging(rust::Fn<void(rust::Str, rust::Str)> callback) {
   qtGcCallback = callback;
-  previousQtHandler = qInstallMessageHandler(viewerQtMessageHandler);
   if (qEnvironmentVariable("MIRAKURUN_GC_LOG") == QStringLiteral("1")) {
     // Explicit QT_LOGGING_RULES/QT_LOGGING_CONF still take precedence.
     QLoggingCategory::setFilterRules(QStringLiteral(

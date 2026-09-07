@@ -35,14 +35,14 @@ impl ffi::Player {
         match events {
             Some(Ok(update)) => {
                 if let Some(error) = update.failure {
-                    eprintln!("EPG event stream: {error}");
+                    tracing::error!("EPG event stream: {error}");
                 }
                 if update.refresh {
                     self.as_mut().rust_mut().epg.refresh();
                     self.as_mut().refresh_channels(true);
                 }
             }
-            Some(Err(error)) => eprintln!("EPG event subscription: {error}"),
+            Some(Err(error)) => tracing::error!("EPG event subscription: {error}"),
             None => {}
         }
     }
@@ -79,7 +79,7 @@ impl ffi::Player {
                     data
                 }
                 Err(error) => {
-                    eprintln!("Program guide presentation failed: {error}");
+                    tracing::error!("Program guide presentation failed: {error}");
                     self.as_mut().rust_mut().guide_error = Some(error);
                     "[]".into()
                 }

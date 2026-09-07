@@ -107,7 +107,7 @@ impl ffi::Player {
         if let Some(recorder) = recorder
             && let Err(error) = recorder.finish()
         {
-            eprintln!("{error}");
+            tracing::error!("{error}");
             self.set_log_error(QString::from(error.to_string()));
         }
     }
@@ -157,7 +157,7 @@ impl ffi::Player {
                 .unwrap_or_default();
             let (tasks, programs, stopping) = self.rust().epg.counters();
             // Preserve the diagnostic log format independently of UI language.
-            eprintln!(
+            tracing::debug!(
                 "METRICS 字幕: 購読 {subscriptions}, 待機 {pending}, 受信 {decoded} | EPG: タスク {tasks}, 番組 {programs}, 停止待ち {stopping}"
             );
             self.as_mut().rust_mut().feature_metrics = Some(FeatureMetrics {

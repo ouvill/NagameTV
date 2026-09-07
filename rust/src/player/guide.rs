@@ -29,7 +29,7 @@ impl ffi::Player {
         let indices = self.rust().epg.visible_channels(&self.rust().entries, now);
         match serde_json::to_string(&indices) {
             Ok(json) => self.set_guide_visibility_data(QString::from(json)),
-            Err(error) => eprintln!("Guide channel visibility failed: {error}"),
+            Err(error) => tracing::error!("Guide channel visibility failed: {error}"),
         }
     }
     pub fn guide_day(mut self: Pin<&mut Self>, start: f64, end: f64) {
@@ -39,7 +39,7 @@ impl ffi::Player {
         let window = match DayWindow::new(start, end) {
             Ok(window) => window,
             Err(error) => {
-                eprintln!("{error}");
+                tracing::error!("{error}");
                 return;
             }
         };

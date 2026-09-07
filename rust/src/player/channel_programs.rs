@@ -43,7 +43,7 @@ impl ffi::Player {
             }
             Ok(None) => {}
             Err(error) => {
-                eprintln!("Channel program presentation failed: {error}");
+                tracing::error!("Channel program presentation failed: {error}");
                 self.as_mut().set_channel_program_data(QString::from("[]"));
             }
         }

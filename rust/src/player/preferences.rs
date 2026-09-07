@@ -16,7 +16,7 @@ impl ffi::Player {
                 self.set_settings_error(QString::default());
             }
             Err(error) => {
-                eprintln!("Settings save failed: {error}");
+                tracing::error!("Settings save failed: {error}");
                 self.set_settings_error(QString::from(error.to_string()));
             }
         }

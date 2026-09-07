@@ -30,7 +30,7 @@ impl Default for PlayerRust {
             match settings::settings_path().and_then(settings::Session::open) {
                 Ok(session) => (session, String::new()),
                 Err(error) => {
-                    eprintln!("Settings load failed: {error}");
+                    tracing::error!("Settings load failed: {error}");
                     (
                         settings::Session::transient(settings::Preferences::default()),
                         error.to_string(),

@@ -116,13 +116,13 @@ impl ffi::Player {
                 self.as_mut().set_playing(true);
                 if let Some(entry) = self.rust().entries.get(*self.selected() as usize) {
                     let status = PlaybackStatus::Playing(entry.name.clone());
-                    eprintln!("Pipeline PLAYING service {}", entry.id);
+                    tracing::info!("Pipeline PLAYING service {}", entry.id);
                     self.as_mut().update_status(status);
                 }
             }
             Some(Err(error)) => {
                 let text = error.to_string();
-                eprintln!("Playback error: {text}");
+                tracing::error!("Playback error: {text}");
                 let recover = error.is_live_resume_rejected()
                     && self.rust().active_service.is_some()
                     && !self.rust().resume_retry_used;
@@ -135,7 +135,7 @@ impl ffi::Player {
                 }
                 if recover {
                     self.as_mut().rust_mut().resume_retry_used = true;
-                    eprintln!("Live resume rejected; opening one fresh stream connection");
+                    tracing::warn!("Live resume rejected; opening one fresh stream connection");
                     self.as_mut().start_stream();
                     if self.rust().active_service.is_some() {
                         self.update_status(PlaybackStatus::Reconnecting);
@@ -160,7 +160,7 @@ impl ffi::Player {
         self.as_mut().guide_open(false);
         if let Err(error) = self.as_mut().end_stream() {
             // Continue to final NULL shutdown even if the initial READY stop failed.
-            eprintln!("Stream stop during shutdown failed: {error}");
+            tracing::error!("Stream stop during shutdown failed: {error}");
         }
         self.as_mut().rust_mut().request.cancel();
         if let Some(playback) = self.as_mut().rust_mut().playback.as_mut() {

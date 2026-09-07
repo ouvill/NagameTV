@@ -52,7 +52,7 @@ impl Activity {
                 {
                     Ok(snapshot) => snapshot,
                     Err(error) => {
-                        eprintln!("Comment activity fetch failed: {error}");
+                        tracing::error!("Comment activity fetch failed: {error}");
                         Snapshot::default()
                     }
                 };

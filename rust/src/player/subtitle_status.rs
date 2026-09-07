@@ -43,8 +43,10 @@ impl Status {
 impl ffi::Player {
     pub(super) fn update_subtitle_status(mut self: Pin<&mut Self>, status: Status) {
         match &status {
-            Status::Failed(error) => eprintln!("Subtitle processing failed: {error}"),
-            Status::PresentationFailed(error) => eprintln!("Subtitle presentation failed: {error}"),
+            Status::Failed(error) => tracing::error!("Subtitle processing failed: {error}"),
+            Status::PresentationFailed(error) => {
+                tracing::error!("Subtitle presentation failed: {error}")
+            }
             _ => {}
         }
         self.as_mut().rust_mut().subtitle_phase = status;

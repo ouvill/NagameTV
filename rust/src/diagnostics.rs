@@ -45,7 +45,7 @@ impl Drop for Lifetime {
         if let Some(recorder) = recorder
             && let Err(error) = recorder.stop().join()
         {
-            eprintln!("{error}");
+            tracing::error!("{error}");
         }
     }
 }

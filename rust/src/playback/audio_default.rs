@@ -55,7 +55,7 @@ impl Playback {
         let options = match self.audio_choices(program) {
             Ok(options) => options,
             Err(error) => {
-                eprintln!("Default audio presentation: {error}");
+                tracing::error!("Default audio presentation: {error}");
                 self.audio_streams
                     .borrow_mut()
                     .set_failure(Some(super::audio_streams::Error::Presentation));
@@ -74,9 +74,9 @@ impl Playback {
         // still available, and a new program/descriptor/stream identity permits a retry.
         self.audio_default.borrow_mut().selection = Selection::Automatic(key);
         if let Err(error) = result {
-            eprintln!("Default audio selection: {error}");
+            tracing::error!("Default audio selection: {error}");
         } else {
-            eprintln!("AUDIO_DEFAULT requested=true");
+            tracing::info!("AUDIO_DEFAULT requested=true");
         }
     }
 }

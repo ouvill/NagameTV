@@ -73,7 +73,7 @@ impl ffi::Player {
                     }
                 })
             {
-                eprintln!("{error}");
+                tracing::error!("{error}");
             }
             let data = if this.comments_visible && this.comments.dirty {
                 this.comments.dirty = false;
@@ -114,7 +114,7 @@ impl ffi::Player {
         match data {
             Some(Ok(json)) => self.set_activity_data(QString::from(json)),
             Some(Err(error)) => {
-                eprintln!("Comment activity projection failed: {error}");
+                tracing::error!("Comment activity projection failed: {error}");
                 self.set_activity_data(QString::from("[]"));
             }
             None => {}

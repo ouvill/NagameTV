@@ -161,7 +161,7 @@ impl Playback {
         let input = gst::ElementFactory::make("videoconvert").build()?;
         let mode = deinterlace::Mode::from_environment()?;
         let deinterlace = mode.build()?;
-        eprintln!("Video processing: {}", mode.label());
+        tracing::info!("Video processing: {}", mode.label());
         let queue = gst::ElementFactory::make("queue")
             .property("max-size-buffers", 8_u32)
             .property("max-size-bytes", 0_u32)
@@ -268,7 +268,7 @@ impl Playback {
             return Err(self.poll().err().unwrap_or(Error::StateChange(error)));
         }
         *self.requested_uri.borrow_mut() = Some(uri);
-        eprintln!("Starting service {service}");
+        tracing::info!("Starting service {service}");
         Ok(true)
     }
 
@@ -308,7 +308,7 @@ impl Playback {
                 .borrow_mut()
                 .observe(&self.playbin, &message)
             {
-                eprintln!("Audio selection: {error}");
+                tracing::error!("Audio selection: {error}");
             }
             match message.view() {
                 gst::MessageView::Warning(warning) => {
@@ -338,13 +338,13 @@ impl Playback {
 
     pub fn shutdown(&mut self) {
         if let Err(error) = self.stop() {
-            eprintln!("Stop failed: {error}");
+            tracing::error!("Stop failed: {error}");
         }
         if let Err(error) = self.playbin.set_state(gst::State::Null) {
-            eprintln!("Playback shutdown failed: {error}");
+            tracing::error!("Playback shutdown failed: {error}");
         }
         if let Err(error) = self.sink.set_state(gst::State::Null) {
-            eprintln!("Video sink shutdown failed: {error}");
+            tracing::error!("Video sink shutdown failed: {error}");
         }
         self.sink
             .set_property("widget", std::ptr::null_mut::<std::ffi::c_void>());

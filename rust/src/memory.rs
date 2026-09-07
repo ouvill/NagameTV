@@ -17,9 +17,9 @@ pub fn configure() -> Result<(), &'static str> {
         if accepted != 1 {
             return Err("glibc rejected M_MMAP_THRESHOLD=131072");
         }
-        eprintln!("ALLOC policy=glibc mmap_threshold_bytes=131072 fixed=true");
+        tracing::info!("ALLOC policy=glibc mmap_threshold_bytes=131072 fixed=true");
     }
     #[cfg(not(all(target_os = "linux", target_env = "gnu")))]
-    eprintln!("ALLOC policy=system glibc_tuning_unavailable");
+    tracing::info!("ALLOC policy=system glibc_tuning_unavailable");
     Ok(())
 }

@@ -10,6 +10,7 @@ viewer-diagnostics = { path = "crates/viewer-diagnostics" }
 viewer-comments = { path = "crates/viewer-comments", features = ["network"] }
 libaribcaption = { path = "crates/libaribcaption" }
 tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 cxx = "1.0"
 cxx-qt = "0.10"
 cxx-qt-lib = { version = "0.10", features = ["qt_gui", "qt_qml", "qt_quickcontrols"] }

@@ -37,7 +37,7 @@ pub unsafe fn configure_at_startup() {
         // SAFETY: The caller guarantees exclusive startup access to the environment.
         // Both literals are nonempty keys/valid values with no embedded NUL or '=' in the key.
         unsafe { std::env::set_var("QT_QPA_PLATFORM", "xcb") };
-        eprintln!(
+        tracing::info!(
             "Using xcb compatibility mode for video rendering; \
              set QT_QPA_PLATFORM=wayland explicitly to test native Wayland"
         );

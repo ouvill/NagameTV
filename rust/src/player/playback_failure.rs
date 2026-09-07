@@ -44,7 +44,7 @@ impl Player {
         };
         let log_error = result.err().unwrap_or_default();
         if !log_error.is_empty() {
-            eprintln!("{log_error}");
+            tracing::error!("{log_error}");
         }
         self.as_mut().set_log_error(QString::from(log_error));
         self.as_mut()

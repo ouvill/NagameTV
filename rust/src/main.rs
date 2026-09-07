@@ -3,6 +3,7 @@ mod channels;
 mod diagnostics;
 mod error_log;
 mod features;
+mod logging;
 mod memory;
 #[cfg(target_os = "linux")]
 mod platform;
@@ -40,7 +41,8 @@ enum StartupError {
 }
 
 fn main() -> std::process::ExitCode {
-    // SAFETY: This is the first startup operation, before Qt/GStreamer, diagnostics
+    logging::init();
+    // SAFETY: Logging initialization creates no threads. Before Qt/GStreamer, diagnostics
     // or application workers are initialized. No application thread exists yet.
     #[cfg(target_os = "linux")]
     unsafe {
@@ -49,7 +51,7 @@ fn main() -> std::process::ExitCode {
     match run() {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(error) => {
-            eprintln!("{error}");
+            tracing::error!("{error}");
             if matches!(error, StartupError::Arguments(_)) {
                 std::process::ExitCode::from(2)
             } else {
@@ -65,10 +67,11 @@ fn run() -> Result<(), StartupError> {
     memory::configure().map_err(StartupError::Allocator)?;
     let plan =
         features::LaunchPlan::parse(std::env::args().skip(1)).map_err(StartupError::Arguments)?;
-    eprintln!("Feature plan: {plan:?}");
+    tracing::info!("Feature plan: {plan:?}");
     features::PLAN
         .set(plan)
         .map_err(|_| StartupError::PlanAlreadyInitialized)?;
+    player::ffi::install_qt_logging(logging::record_qt);
     if diagnostics::requested(plan.locked) {
         player::ffi::install_qt_gc_logging(diagnostics::record_qt_gc);
     }

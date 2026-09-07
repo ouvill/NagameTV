@@ -120,7 +120,7 @@ impl ProgramInfo {
                     Ok(programs) => {
                         update.completed = Some(Completion::Succeeded);
                         let storage = programs.storage();
-                        eprintln!(
+                        tracing::debug!(
                             "EPG_MEMORY programs={} record_capacity_bytes={} string_capacity_bytes={} audio_heap_bytes={} snapshot_capacity_bytes={}",
                             programs.len(),
                             storage.records,

@@ -131,7 +131,7 @@ impl Playback {
         let choice = self
             .audio_choices(program)
             .map_err(|error| {
-                eprintln!("Audio choice presentation: {error}");
+                tracing::error!("Audio choice presentation: {error}");
                 Error::Presentation
             })?
             .into_iter()
@@ -188,9 +188,10 @@ impl Playback {
                 .select_for(format, &request.native, request.mode)
                 .is_ok()
         {
-            eprintln!(
+            tracing::debug!(
                 "AUDIO_ROUTE mode={:?} stream={}",
-                request.mode, request.native
+                request.mode,
+                request.native
             );
             request.applied = Some(format);
         } else if request.applied.is_some() || Instant::now() >= request.deadline {

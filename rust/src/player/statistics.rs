@@ -11,7 +11,7 @@ impl ffi::Player {
         match serde_json::to_string(&playback.video_stats()) {
             Ok(json) => QString::from(json),
             Err(error) => {
-                eprintln!("Video statistics serialization failed: {error}");
+                tracing::error!("Video statistics serialization failed: {error}");
                 QString::from("{}")
             }
         }

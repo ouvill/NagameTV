@@ -57,7 +57,7 @@ impl super::ffi::Player {
         match result {
             Ok(json) => QString::from(json),
             Err(error) => {
-                eprintln!("Audio presentation: {error}");
+                tracing::error!("Audio presentation: {error}");
                 QString::from("[]")
             }
         }

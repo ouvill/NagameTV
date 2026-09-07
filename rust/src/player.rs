@@ -36,6 +36,8 @@ pub mod ffi {
         fn playback_log_directory() -> QString;
         #[cxx_name = "openPlaybackLogDirectory"]
         fn open_playback_log_directory(path: &QString) -> bool;
+        #[cxx_name = "installQtLogging"]
+        fn install_qt_logging(callback: fn(level: u8, category: &str, message: &str));
         #[cxx_name = "installQtGcLogging"]
         fn install_qt_gc_logging(callback: fn(category: &str, message: &str));
         include!("cxx-qt-lib/qqmlapplicationengine.h");
