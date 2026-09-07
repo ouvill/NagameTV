@@ -15,31 +15,62 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
-fn main() {
-    if let Err(error) = memory::configure() {
-        eprintln!("Allocator initialization failed: {error}");
-        std::process::exit(1);
+#[derive(Debug, thiserror::Error)]
+enum StartupError {
+    #[error("Allocator initialization failed: {0}")]
+    Allocator(&'static str),
+    #[error("{0}")]
+    Arguments(String),
+    #[error("Feature plan was already initialized")]
+    PlanAlreadyInitialized,
+    #[error("Could not create the Qt application")]
+    Application,
+    #[error("Could not create the Qt QML engine")]
+    Engine,
+    #[error("Playback initialization failed: {0}")]
+    Playback(#[source] playback::Error),
+    #[error("Could not load UI translation")]
+    Translation,
+    #[error("Could not load the Qt interface")]
+    Interface,
+}
+
+fn main() -> std::process::ExitCode {
+    match run() {
+        Ok(()) => std::process::ExitCode::SUCCESS,
+        Err(error) => {
+            eprintln!("{error}");
+            if matches!(error, StartupError::Arguments(_)) {
+                std::process::ExitCode::from(2)
+            } else {
+                std::process::ExitCode::FAILURE
+            }
+        }
     }
-    let plan = features::LaunchPlan::parse(std::env::args().skip(1)).unwrap_or_else(|error| {
-        eprintln!("{error}");
-        std::process::exit(2);
-    });
+}
+
+// Returning errors unwinds local ownership normally: the QML engine (and its
+// Player) is destroyed before QGuiApplication, including failed UI creation.
+fn run() -> Result<(), StartupError> {
+    memory::configure().map_err(StartupError::Allocator)?;
+    let plan =
+        features::LaunchPlan::parse(std::env::args().skip(1)).map_err(StartupError::Arguments)?;
     eprintln!("Feature plan: {plan:?}");
-    if features::PLAN.set(plan).is_err() {
-        eprintln!("Feature plan was already initialized");
-        std::process::exit(1);
-    }
+    features::PLAN
+        .set(plan)
+        .map_err(|_| StartupError::PlanAlreadyInitialized)?;
     player::ffi::install_qt_gc_logging(diagnostics::record_qt_gc);
     cxx_qt::init_qml_module!("MinimalViewer");
     player::ffi::configure_qt_quick_open_gl();
     let mut app = QGuiApplication::new();
     // qml6glsink registers its QML video type before loading the UI.
-    if let Err(error) = playback::preload() {
-        eprintln!("Playback initialization failed: {error}");
-        std::process::exit(1);
+    if app.is_null() {
+        return Err(StartupError::Application);
     }
+    playback::preload().map_err(StartupError::Playback)?;
     let mut engine = QQmlApplicationEngine::new();
-    if let Some(mut engine) = engine.as_mut() {
+    {
+        let mut engine = engine.as_mut().ok_or(StartupError::Engine)?;
         // Match main: resolve the startup language before constructing QML.
         // Player loads the complete settings session and reports load errors separately.
         let language = if plan.locked {
@@ -54,8 +85,7 @@ fn main() {
             engine.as_mut(),
             &cxx_qt_lib::QString::from(language.code()),
         ) {
-            eprintln!("Could not load UI translation");
-            std::process::exit(1);
+            return Err(StartupError::Translation);
         }
         let failed = Arc::new(AtomicBool::new(false));
         let flag = failed.clone();
@@ -66,11 +96,9 @@ fn main() {
             .as_mut()
             .load(&QUrl::from("qrc:/qt/qml/MinimalViewer/qml/Main.qml"));
         if failed.load(Ordering::Relaxed) {
-            eprintln!("Could not load the Qt interface");
-            std::process::exit(1);
+            return Err(StartupError::Interface);
         }
     }
-    if let Some(app) = app.as_mut() {
-        app.exec();
-    }
+    app.as_mut().ok_or(StartupError::Application)?.exec();
+    Ok(())
 }

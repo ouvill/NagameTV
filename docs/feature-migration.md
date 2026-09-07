@@ -269,3 +269,28 @@ READY成功前に字幕Sessionを破棄しない順序、停止失敗時のResul
 通常試験はEPGキャンセル・再取得、字幕時刻、音声トラック変更、停止時の
 request pad命名保持を含むが、実GUIでの再生停止・選局反復を代替するものではない。
 CMake releaseビルドも成功。起動中のアプリは再起動せず、外部入力も送っていない。
+
+## 起動失敗時の通常解放
+
+mainをExitCode返却、起動本体をResult<(), StartupError>へ変更した。
+thiserrorのenumで引数・allocator・Qtアプリ・QML engine・再生初期化・翻訳・
+QML生成の失敗を区別する。従来の引数エラー2、その他の起動エラー1を保持する。
+Qtオブジェクト生成後のprocess::exitを除き、エラー返却時もengineとPlayerを
+QGuiApplicationより先に通常のDropで解放する。Qtオブジェクトがnullの場合も
+処理を黙って飛ばして成功終了せず、明示的な起動エラーにする。
+
+[Rust process::exitの仕様](https://doc.rust-lang.org/std/process/fn.exit.html)では
+スタック上のデストラクターを実行しないため、生成後の失敗に直接exitを使用しない。
+Qt自身のabortやネイティブライブラリー内部の強制終了を捕捉する変更ではない。
+
+## 自動操作用の画面分離
+
+ユーザーは自動操作の再開を許可し、今後は普段の操作と重ならない仮想画面を希望した。
+Xvfb :99を1440×900×24で起動し、glxinfo -Bで検証したところ、
+Mesa llvmpipe・Accelerated:noだった。通常画面:0のNVIDIAとは異なるため、
+GPU検証用としてアプリを起動せず、この確認用Xvfbは終了した。
+GPU対応の仮想画面、またはCPU描画を使う試験範囲の明示が必要。
+GPUのメモリー・性能をXvfbの結果で代替しない。
+起動処理の変更はClippy全ターゲット・releaseビルド・diff検査が成功。
+不正な機能引数でQt生成前に終了コード2となることを実行確認した。
+Qt生成後の失敗注入と正常GUI起動は、この変更後には未検証。
