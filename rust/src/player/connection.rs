@@ -137,6 +137,11 @@ impl ffi::Player {
                     }
                     let status = if self.rust().entries.is_empty() {
                         PlaybackStatus::Empty
+                    } else if usize::try_from(self.rust().selected)
+                        .ok()
+                        .is_some_and(|index| index < self.rust().entries.len())
+                    {
+                        PlaybackStatus::Ready
                     } else {
                         PlaybackStatus::Select
                     };
