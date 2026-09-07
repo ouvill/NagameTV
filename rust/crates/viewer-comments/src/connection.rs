@@ -1,6 +1,6 @@
 //! One connection generation, driven by the caller's existing Tokio runtime.
 use crate::{Comment, Decoder, Event, MAX_MESSAGE_BYTES, MAX_THREAD_LIST_BYTES, ThreadId};
-use futures_util::{SinkExt, StreamExt};
+use futures_util::{FutureExt, SinkExt, StreamExt};
 use std::{
     sync::{
         Arc,
@@ -117,6 +117,25 @@ impl Drop for Connection {
 #[must_use = "Observe completion before starting a replacement connection"]
 pub struct Stopping(Option<JoinHandle<()>>);
 impl Stopping {
+    /// Poll the join result without blocking the GUI. Pending retains ownership;
+    /// the caller's existing poll loop retries, so no wake-up task is needed.
+    pub fn try_finish(&mut self) -> Option<Result<(), tokio::task::JoinError>> {
+        let Some(task) = self.0.as_mut() else {
+            return Some(Ok(()));
+        };
+        let mut context = std::task::Context::from_waker(std::task::Waker::noop());
+        match task.poll_unpin(&mut context) {
+            std::task::Poll::Pending => None,
+            std::task::Poll::Ready(result) => {
+                self.0 = None;
+                Some(match result {
+                    Err(error) if error.is_cancelled() => Ok(()),
+                    other => other,
+                })
+            }
+        }
+    }
+
     pub fn is_finished(&self) -> bool {
         self.0.as_ref().is_none_or(JoinHandle::is_finished)
     }

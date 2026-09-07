@@ -66,12 +66,14 @@ impl ffi::Player {
                 .and_then(|index| this.entries.get(index));
             this.comments.configure(this.comments_enabled, channel);
             let mut live = Vec::new();
-            if let Some(network) = &this.network {
-                this.comments.poll(network, |text| {
+            if let Some(network) = &this.network
+                && let Err(error) = this.comments.poll(network, |text| {
                     if this.playing && this.danmaku_enabled {
                         live.push(QString::from(text));
                     }
-                });
+                })
+            {
+                eprintln!("{error}");
             }
             let data = if this.comments_visible && this.comments.dirty {
                 this.comments.dirty = false;

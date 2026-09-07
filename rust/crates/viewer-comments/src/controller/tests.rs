@@ -26,7 +26,11 @@ fn rapid_changes_keep_only_last_target_and_disable_cancels_it() -> TestResult {
             let now = Instant::now();
             let mut controller = Controller::default();
             controller.configure(Some(endpoint(&a)?));
-            assert!(controller.poll(&Handle::current(), &client, now).is_empty());
+            assert!(
+                controller
+                    .poll(&Handle::current(), &client, now)
+                    .is_ok_and(|batch| batch.is_empty())
+            );
             let (mut old, _) = timeout(Duration::from_secs(2), a.accept()).await??;
             let mut request = [0; 4096];
             assert!(timeout(Duration::from_secs(2), old.read(&mut request)).await?? > 0);
@@ -35,11 +39,11 @@ fn rapid_changes_keep_only_last_target_and_disable_cancels_it() -> TestResult {
             assert!(matches!(controller.phase, Phase::Stopping { .. }));
             // On this current-thread runtime the aborted task cannot finish
             // until we yield. Poll must not start C during that interval.
-            controller.poll(&Handle::current(), &client, now);
+            assert!(controller.poll(&Handle::current(), &client, now).is_ok());
             assert!(matches!(controller.phase, Phase::Stopping { .. }));
             timeout(Duration::from_secs(2), async {
                 loop {
-                    controller.poll(&Handle::current(), &client, now);
+                    assert!(controller.poll(&Handle::current(), &client, now).is_ok());
                     if matches!(controller.phase, Phase::Running(_)) {
                         break;
                     }
@@ -61,7 +65,11 @@ fn rapid_changes_keep_only_last_target_and_disable_cancels_it() -> TestResult {
             controller.configure(None);
             timeout(Duration::from_secs(2), async {
                 while !matches!(controller.phase, Phase::Idle) {
-                    assert!(controller.poll(&Handle::current(), &client, now).is_empty());
+                    assert!(
+                        controller
+                            .poll(&Handle::current(), &client, now)
+                            .is_ok_and(|batch| batch.is_empty())
+                    );
                     tokio::task::yield_now().await;
                 }
             })
@@ -83,7 +91,7 @@ fn reconnect_waits_for_deadline_and_repeated_configuration_does_not_reset_it() -
             let now = Instant::now();
             let mut controller = Controller::default();
             controller.configure(Some(target.clone()));
-            controller.poll(&Handle::current(), &client, now);
+            assert!(controller.poll(&Handle::current(), &client, now).is_ok());
             let (mut http, _) = timeout(Duration::from_secs(2), listener.accept()).await??;
             let mut buffer = [0; 4096];
             assert!(http.read(&mut buffer).await? > 0);
@@ -94,7 +102,7 @@ fn reconnect_waits_for_deadline_and_repeated_configuration_does_not_reset_it() -
             drop(http);
             timeout(Duration::from_secs(2), async {
                 while !matches!(controller.phase, Phase::Waiting(_)) {
-                    controller.poll(&Handle::current(), &client, now);
+                    assert!(controller.poll(&Handle::current(), &client, now).is_ok());
                     tokio::task::yield_now().await;
                 }
             })
@@ -108,9 +116,9 @@ fn reconnect_waits_for_deadline_and_repeated_configuration_does_not_reset_it() -
                 &Handle::current(),
                 &client,
                 now + RETRY_DELAY - Duration::from_millis(1),
-            );
+            )?;
             assert!(matches!(controller.phase, Phase::Waiting(_)));
-            controller.poll(&Handle::current(), &client, now + RETRY_DELAY);
+            controller.poll(&Handle::current(), &client, now + RETRY_DELAY)?;
             let (_retry, _) = timeout(Duration::from_secs(2), listener.accept()).await??;
             assert!(matches!(controller.phase, Phase::Running(_)));
             controller.configure(None);
@@ -131,7 +139,7 @@ fn normal_close_drains_final_comments_in_bounded_batches() -> TestResult {
             let now = Instant::now();
             let mut controller = Controller::default();
             controller.configure(Some(endpoint(&listener)?));
-            controller.poll(&Handle::current(), &client, now);
+            assert!(controller.poll(&Handle::current(), &client, now).is_ok());
             let (mut http, _) = timeout(Duration::from_secs(2), listener.accept()).await??;
             let mut buffer = [0; 4096];
             assert!(http.read(&mut buffer).await? > 0);
@@ -169,7 +177,7 @@ fn normal_close_drains_final_comments_in_bounded_batches() -> TestResult {
             .await?;
             let mut all = Vec::new();
             for size in [64, 64, 2] {
-                let batch = controller.poll(&Handle::current(), &client, now);
+                let batch = controller.poll(&Handle::current(), &client, now)?;
                 assert_eq!(batch.len(), size);
                 all.extend(batch);
             }
@@ -182,7 +190,7 @@ fn normal_close_drains_final_comments_in_bounded_batches() -> TestResult {
             controller.configure(None);
             timeout(Duration::from_secs(2), async {
                 while !controller.is_stopped() {
-                    controller.poll(&Handle::current(), &client, now);
+                    assert!(controller.poll(&Handle::current(), &client, now).is_ok());
                     tokio::task::yield_now().await;
                 }
             })

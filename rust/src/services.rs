@@ -59,7 +59,7 @@ impl Network {
     pub fn poll_comments(
         &self,
         controller: &mut viewer_comments::controller::Controller,
-    ) -> Vec<viewer_comments::Comment> {
+    ) -> Result<Vec<viewer_comments::Comment>, viewer_comments::controller::Error> {
         controller.poll(
             self.runtime.handle(),
             &self.client,

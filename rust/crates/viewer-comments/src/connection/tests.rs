@@ -256,3 +256,44 @@ fn real_service_reception_and_stop() -> TestResult {
         Ok(())
     })
 }
+
+#[test]
+fn nonblocking_join_distinguishes_pending_cancellation_and_panic() -> TestResult {
+    runtime()?.block_on(async {
+        let task = tokio::spawn(std::future::pending::<()>());
+        task.abort();
+        let mut stopping = Stopping(Some(task));
+        // Cancellation cannot be processed on this runtime before yielding.
+        assert!(stopping.try_finish().is_none());
+        timeout(Duration::from_secs(2), async {
+            while !stopping.is_finished() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await?;
+        stopping
+            .try_finish()
+            .ok_or("cancelled task still pending")??;
+        assert!(stopping.0.is_none());
+        stopping
+            .try_finish()
+            .ok_or("consumed join became pending")??;
+
+        let task = tokio::spawn(async { panic!("injected comment worker failure") });
+        let mut stopping = Stopping(Some(task));
+        timeout(Duration::from_secs(2), async {
+            while !stopping.is_finished() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await?;
+        let result = stopping.try_finish().ok_or("panicked task still pending")?;
+        assert!(matches!(result, Err(error) if error.is_panic()));
+        assert!(stopping.0.is_none());
+        // A completed JoinHandle must never be polled again or report twice.
+        stopping
+            .try_finish()
+            .ok_or("consumed panic became pending")??;
+        Ok(())
+    })
+}

@@ -6,6 +6,12 @@ use crate::{
 use std::time::{Duration, Instant};
 use tokio::runtime::Handle;
 
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("Comment task failed to stop: {0}")]
+    Task(#[source] tokio::task::JoinError),
+}
+
 pub const MAX_POLL_COMMENTS: usize = 64;
 const RETRY_DELAY: Duration = Duration::from_secs(5);
 
@@ -86,12 +92,25 @@ impl Controller {
         runtime: &Handle,
         client: &reqwest::Client,
         now: Instant,
-    ) -> Vec<Comment> {
-        if let Phase::Stopping { task, retry_at } = &self.phase
-            && task.is_finished()
-        {
-            self.phase = retry_at.map_or(Phase::Idle, Phase::Waiting);
-        }
+    ) -> Result<Vec<Comment>, Error> {
+        self.phase = match std::mem::take(&mut self.phase) {
+            Phase::Stopping { mut task, retry_at } => match task.try_finish() {
+                None => Phase::Stopping { task, retry_at },
+                Some(Ok(())) => retry_at.map_or(Phase::Idle, Phase::Waiting),
+                Some(Err(error)) => {
+                    // The failed generation is fully joined. Report once and
+                    // preserve bounded retry instead of restarting in this poll.
+                    self.phase = if self.desired.is_some() {
+                        now.checked_add(RETRY_DELAY)
+                            .map_or(Phase::Idle, Phase::Waiting)
+                    } else {
+                        Phase::Idle
+                    };
+                    return Err(Error::Task(error));
+                }
+            },
+            phase => phase,
+        };
         if let Phase::Waiting(deadline) = self.phase
             && now >= deadline
         {
@@ -107,7 +126,7 @@ impl Controller {
             ));
         }
         let Phase::Running(connection) = &self.phase else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         // Observe terminal state first: if it arrives during draining, defer
         // teardown to the next poll so a concurrently queued last chat survives.
@@ -127,7 +146,7 @@ impl Controller {
             }
             self.status = Status::Retrying(state);
         }
-        comments
+        Ok(comments)
     }
 }
 

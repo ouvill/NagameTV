@@ -355,3 +355,29 @@ CARGO_TARGET_DIR=build/comments-protocol cargo test --locked \
 任意試験とnetwork有効・全ターゲットClippy、fmt・diff検査が成功。
 新着コメントの到来、Qt一覧／動画上の描画、選局での切り替え、再接続、長時間メモリーは
 今回の検証に含まない。機能本体の処理変更はなく、アプリ再ビルドは行っていない。
+
+
+## 停止タスクの結果回収（2026-09-07）
+
+ControllerがStopping.is_finishedだけで次の状態へ進む実装を修正した。
+従来も旧タスクの終了前に次を開始することはなかったが、終了したJoinHandleを捨てるため
+panicのJoinErrorを呼び出し元で受け取れなかった。
+[Tokio JoinHandle](https://docs.rs/tokio/latest/tokio/task/struct.JoinHandle.html)の
+終了確認と結果取得の違いに基づき、EPGイベント購読と同様のtry_finishを追加した。
+
+Pendingではハンドルを保持し、完了時に結果を一度だけ回収してハンドルを除く。
+明示的なキャンセルは成功、panicはsource付きcontroller::Error::Taskで返す。
+Network、CommentsをResultで経由してPlayerが診断出力する。購読が引き続き必要なら
+既存の5秒待ちを使い、異常終了を受け取ったpoll内で即時再起動しない。
+既存のGUI pollを使い、待機用スレッド・タイマー・キューは追加しない。
+これは異常終了の情報欠落の修正であり、メモリーリークの発見や改善の証明ではない。
+
+非同期キャンセル処理前のPending、キャンセル完了、panicの判別、回収後に再pollしても
+同じハンドルを再pollしないことを試験した。実況crateは17件成功・外部サービスの
+手動試験1件除外。既存の急速な接続先変更、無効化、HTTP待ち・idle WebSocketの解放、
+再接続期限、最終コメントの64件ずつの排出も含む。crateの全ターゲットClippyも成功。
+
+アプリ全ターゲットClippyとreleaseビルドも成功。専用Xvfb :99の実アプリで
+実況受信中→機能無効→再有効後の受信中への復帰を画像で確認した。
+証跡はbenchmark/virtual-ui/comment-join.logとcomment-join-*.png。
+実サービスでのpanic再現、新着コメント描画、長時間併用の検証を代替するものではない。

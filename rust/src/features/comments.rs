@@ -76,9 +76,14 @@ impl Comments {
         }));
     }
 
-    pub fn poll(&mut self, network: &Network, live: impl FnMut(&str)) {
-        let comments = network.poll_comments(&mut self.controller);
+    pub fn poll(
+        &mut self,
+        network: &Network,
+        live: impl FnMut(&str),
+    ) -> Result<(), viewer_comments::controller::Error> {
+        let comments = network.poll_comments(&mut self.controller)?;
         self.ingest(comments, live);
+        Ok(())
     }
 
     fn ingest(&mut self, comments: Vec<Comment>, mut live: impl FnMut(&str)) {
