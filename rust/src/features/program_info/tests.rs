@@ -561,3 +561,69 @@ fn watch_revalidates_opaque_ids_current_time_and_reordered_channels()
     }
     Ok(())
 }
+
+#[test]
+#[ignore = "manual real-server capture validation; requires MIRAKURUN_CAPTURE_DIR"]
+fn validates_captured_server_catalog_and_guide() -> Result<(), Box<dyn std::error::Error>> {
+    use std::{
+        fs::File,
+        path::PathBuf,
+        time::{SystemTime, UNIX_EPOCH},
+    };
+    let directory = PathBuf::from(
+        std::env::var_os("MIRAKURUN_CAPTURE_DIR").ok_or("MIRAKURUN_CAPTURE_DIR is required")?,
+    );
+    let read = |name: &str, limit: usize| -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+        let mut bytes = Vec::new();
+        File::open(directory.join(name))?
+            .take(limit as u64 + 1)
+            .read_to_end(&mut bytes)?;
+        if bytes.len() > limit {
+            return Err("capture exceeds application response limit".into());
+        }
+        Ok(bytes)
+    };
+    let channels = crate::channels::parse(&read("services.json", 1024 * 1024)?)?;
+    let bytes = read("programs.json", MAX_RESPONSE)?;
+    let snapshot = parse(&bytes)?;
+    let now = u64::try_from(SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis())?;
+    const DAY: u64 = 86_400_000;
+    const JST: u64 = 9 * 3_600_000;
+    let start = (now.checked_add(JST).ok_or("time overflow")? / DAY * DAY)
+        .checked_sub(JST)
+        .ok_or("time precedes supported calendar")?;
+    let window = guide::DayWindow::new(
+        start as f64,
+        start.checked_add(DAY).ok_or("day overflow")? as f64,
+    )?;
+    let json = snapshot.grid_view(&channels, window)?;
+    let columns: Vec<serde_json::Value> = serde_json::from_str(&json)?;
+    assert_eq!(columns.len(), channels.len());
+    let mut cells = 0;
+    for (index, column) in columns.iter().enumerate() {
+        assert_eq!(column["index"], index);
+        let programs = column["programs"]
+            .as_array()
+            .ok_or("missing program array")?;
+        for program in programs {
+            let key = program["watchKey"].as_str().ok_or("missing watch key")?;
+            let _: watch::Identity = serde_json::from_str(key)?;
+        }
+        cells += programs.len();
+    }
+    let current = channels
+        .iter()
+        .filter(|channel| snapshot.current(channel.broadcast, now).is_some())
+        .count();
+    eprintln!(
+        "CAPTURE channels={} programs={} raw_bytes={} program_string_capacity={} current_channels={} grid_cells={} grid_bytes={}",
+        channels.len(),
+        snapshot.len(),
+        bytes.len(),
+        snapshot.record_storage(),
+        current,
+        cells,
+        json.len()
+    );
+    Ok(())
+}

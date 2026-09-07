@@ -303,3 +303,34 @@ EPG関連17試験、Clippy全ターゲット、fmt・diff検査が成功。試�
 更新・キャンセル、現在番組等を対象とし、実画面の選局操作を自動実行したものではない。
 
 CMakeリリースビルドも成功。全機能併用時の実測は引き続き必要。
+
+
+## 実Mirakurun応答のCPU検証
+
+2026-09-07、設定済みサーバーの/api/servicesと/api/programsを読み取り、双方HTTP 200を
+確認した。局一覧14,953 bytes・69件、EPG 10,074,425 bytes・14,602件。
+取得時に局一覧1MiB／EPG32MiBの上限と10秒のソケットタイムアウトを設定した。
+データは一時ディレクトリー `/tmp/viewer-mirakurun-check-nog1ye6x` のみに保存し、Gitへ含めない。
+
+任意実行の `validates_captured_server_catalog_and_guide` 試験を追加した。
+アプリの局フィルター・EPGパーサー・当日のJST日付範囲の全局投影へ取り込み、
+列数／列indexと全セルの視聴キーのデシリアライズを確認する。fixtureの読み取りも
+アプリと同じバイト上限で制限する。ネットワークや表示装置を試験自身は使用しない。
+
+```sh
+MIRAKURUN_CAPTURE_DIR=/tmp/viewer-mirakurun-check-nog1ye6x \
+CARGO_TARGET_DIR=build/cargo cargo test --locked --manifest-path rust/Cargo.toml \
+  validates_captured_server_catalog_and_guide -- --ignored --nocapture
+```
+
+同じ応答から視聴対象54局・EPG14,602件を解析し、54局の現在番組、当日グリッド1,402件、
+出力JSON632,023 bytesを確認した。EPG容量内訳はレコード配列1,703,936 bytes、
+番組文字列1,652,998 bytes、音声情報494,226 bytes、合計3,851,160 bytes（約3.67MiB）。
+これは既存record_storageの容量集計であり、HTTP本文・allocator管理領域・Qt/QML・
+動画再生のメモリーを含むRSSではない。時刻を使うため当日件数は試験日時に依存する。
+
+実サーバーの応答スキーマとの互換性を確認する検証であり、Qt画面の反映、EPGイベント、
+再生・音声出力・長時間併用の検証を完了したものではない。
+
+実応答の任意試験、Clippy全ターゲット、fmt・diff検査が成功。本体の変更はなく、
+リリースの再ビルドは行っていない。通常試験のignoredは外部入力／測定用の3件となる。
