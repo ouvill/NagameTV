@@ -455,3 +455,36 @@ MIRAKURUN_AUTOPLAY=trueを指定し、再生入力なしで保存局3203246080�
 専用設定、EPG有効、字幕・実況無効、明示したfakesinkでのUI試験である。
 証跡はGit対象外benchmark/autoplay-compat/のplayer.log・playing.png・設定とstate。
 GPU・音声・メモリー性能の確認には使用しない。
+
+
+## 字幕・EPG・実況併用中の操作と503からの復旧（2026-09-07）
+
+専用Xvfb :99 / llvmpipeで最新製品処理のアプリPID 134299を起動した。
+字幕・EPG・実況受信・流れる実況ON、音声は明示fakesink。実GPUの観測プロセス
+78793/132581は維持し、入力は:99だけへ送った。UI試験でありメモリー比較には使わない。
+
+NHK総合1・京都3209641984の再生中にNext→3秒後Priorを送信。
+大津3203246080への要求中に京都へ戻り、京都のPLAYINGを確認した。
+初回に使用したxdotoolのPgDown/PgUpという名前は認識されず送信されなかったため、
+成功した操作に数えない。X11のNext/Priorへ直して実行した。
+
+停止ボタン後、画面の停止中表示と診断sampleでplaying=false、字幕セル0、
+字幕待機None、流れる実況0を確認。EPG13744件と実況履歴110件は保持されていた。
+中央の視聴ボタンから再開し、京都のPLAYINGを再確認した。
+
+再生中にGで番組表を開き、Nextで大津へ選局すると実MirakurunがHTTP 503を返した。
+ログの理由はTuner Resource Unavailable。アプリはエラー画面へ移り、字幕購読は
+0へ戻った。サーバー内部の原因は調査していないため、チューナー不足と断定しない。
+Escapeで番組表を閉じた画像resumed-selected.pngは、名前に反してエラー画面である。
+この試験で大津局の再生は確認できていない。
+
+Priorで京都へ戻すと再びPLAYINGとなり、recovered.pngでARIB字幕の半透明背景・
+縁取り文字と流れる実況を同時に確認した。直後のログでも字幕購読8、受信3、
+EPG13744件が確認できた。字幕の同期誤差やすべての放送形式を測定したものではない。
+
+閉じるボタンから終了コード0。17件の定期sample、診断破棄0。
+ReferenceError/TypeError/Binding loop/GStreamer-CRITICALはログになかった。
+証跡はGit対象外のbenchmark/all-feature-ui-transitions/にplayer.log、専用config/state、
+stopped.png、guide.png、resumed-selected.png、recovered.png、summary.json。
+製品コードは変更していない。各機能を個別に切り替える操作や全操作の組み合わせ、
+大津局の正常再生を含む網羅試験としては扱わない。
