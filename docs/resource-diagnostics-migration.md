@@ -470,3 +470,35 @@ ac1e34e0bf03af6f0b686ea5da9e3d04845696601e6e4c33c3863b7030a87a15）。
 証跡はGit対象外のbenchmark/gstreamer-critical/current/checkpoint-120m/に
 capture.jsonl、summary.json、ranges.jsonを保存した。2時間到達を理由に
 停止・再起動せず、このプロセスで遅延増加と対象criticalの観測を続ける。
+
+
+## 最新ビルドの字幕・EPG・実況併用観測を開始（2026-09-07）
+
+旧EPG単独プロセスPID 78793を維持したまま、PID 132581を別設定・別ログで起動した。
+起動前にX0ソケット・NVIDIAデバイスを検出し、:0のglxinfoでRTX 4070 Ti /
+595.84を確認。pactlでTCP接続先を確認し、無音のaudiotestsrc→pulsesinkで経路を検証した。
+CMakeビルド成功後、QT_QPA_PLATFORM=xcb、MIRAKURUN_AUDIO_SINK=pulsesink、
+音量0、AUTOPLAY=1、字幕・EPG・実況受信・流れる実況を有効にして起動した。
+NHK総合1・京都、配信用ID3209641984、放送serviceId41984。
+
+起動時HEAD fe6e1fda8e8fc9c22fa847880f93b37c8ddde84c。バイナリーSHA256は
+89b00ebe78a06b194ac99936af36d3630697d765ff5dae2c9151ad6b4ae97d1f。
+音声既定選択、xcb互換設定、診断無効化、番組詳細の更新追随までの修正を含む。
+診断取得スタック用の既存LD_PRELOADヘルパーも使用する。
+
+14〜84秒の8 sampleはすべて再生中・字幕/EPG/実況有効。字幕セル0〜25、
+字幕待機0〜1、実況履歴141→200件、流れる実況28〜44件、EPG13744件。
+EPG取得は2回完了、記録破棄0、対象critical・採取スタック0。
+84秒時点でRSS308.84MiB、glibc使用中37.33MiB、スレッド43、FD78。
+動画と流れる実況は自分のウィンドウだけを撮影して確認した。字幕の受信・セル更新は
+診断で確認したが、この時点の画像だけから字幕同期や描画品質を合格とはしない。
+
+証跡はGit対象外のbenchmark/gpu-all-features-20260907/にconditions.json、
+source-head.txt、binary-sha256.txt、pid、player.log、native-maps.txt、
+started.png、receiving.png、専用config/stateとobserve.pyを保存した。
+プロセスは継続中。これから長時間の推移と番組境界を観測する。
+
+2プロセスが同じGPU・音声経路を共有し、別局を再生している。個別プロセスの資源を
+分けて記録するが、性能比較の統制条件ではない。UI操作試験は引き続き:99を使い、
+この:0の試験では入力操作を送らない。番組表・実況履歴パネル等を開いたままの
+長時間検証や停止・再開・選局を含む試験も別途残っている。
