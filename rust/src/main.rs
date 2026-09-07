@@ -79,7 +79,7 @@ fn run() -> Result<(), StartupError> {
     if app.is_null() {
         return Err(StartupError::Application);
     }
-    playback::preload().map_err(StartupError::Playback)?;
+    let _preloaded = playback::preload().map_err(StartupError::Playback)?;
     // Reverse local drop order keeps diagnostics alive through engine destruction.
     let _diagnostics = diagnostics::Lifetime::new()?;
     let mut engine = QQmlApplicationEngine::new();

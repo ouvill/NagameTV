@@ -11,7 +11,7 @@ pub mod stats;
 
 use gstreamer::{self as gst, prelude::*};
 use std::cell::RefCell;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock, Weak};
 
 type Result<T> = std::result::Result<T, Error>;
 
@@ -94,17 +94,25 @@ fn stream_error(message: &gst::message::Error) -> Error {
     }
 }
 
-static PRELOADED: OnceLock<Mutex<Option<Playback>>> = OnceLock::new();
+static PRELOADED: OnceLock<Weak<Mutex<Option<Playback>>>> = OnceLock::new();
 
-pub fn preload() -> Result<()> {
+/// Own the unclaimed playback until QML takes it, including failed UI creation.
+/// Declare after QGuiApplication and before QQmlApplicationEngine so native
+/// playback destruction always precedes application destruction.
+#[must_use = "Keep the preload owner alive until the QML engine is destroyed"]
+pub struct Preloaded(Arc<Mutex<Option<Playback>>>);
+
+pub fn preload() -> Result<Preloaded> {
+    let preloaded = Preloaded(Arc::new(Mutex::new(Some(Playback::new()?))));
     PRELOADED
-        .set(Mutex::new(Some(Playback::new()?)))
+        .set(Arc::downgrade(&preloaded.0))
         .map_err(|_| Error::AlreadyInitialized)?;
-    Ok(())
+    Ok(preloaded)
 }
 
 pub fn take_preloaded() -> Option<Playback> {
-    PRELOADED.get()?.lock().ok()?.take()
+    let slot = PRELOADED.get()?.upgrade()?;
+    slot.lock().ok()?.take()
 }
 
 pub struct Playback {

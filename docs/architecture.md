@@ -144,3 +144,37 @@ RSS・glibc使用中量・スレッド数・FD数等を採取し、操作イベ�
 仮想画面でのUI操作試験と、実GPUでのメモリー・性能検証を分ける。
 短時間で増加が出ないことだけでは、長時間の増加原因を否定しない。
 HTTPの途中再開拒否だけは新規接続で1回復旧する（[詳細](live-stream-errors.md)）。
+
+
+## QML生成前の再生オブジェクト所有権（2026-09-07）
+
+Qt用の映像型を登録するためPlaybackをQMLロードより先に生成する。以前は
+静的OnceLockがMutex<Option<Playback>>を強く所有しており、QMLのPlayerが
+生成される前に失敗するとPlaybackのDropが実行されなかった。
+
+Preloadedを起動スコープの所有者とし、静的変数はWeakだけを保持する形に変更した。
+Playerが生成されればtakeでPlaybackの所有権を受け取り、受け取らなければ
+Preloadedの破棄でPlaybackも破棄される。PreloadedはQGuiApplicationより後、
+QQmlApplicationEngineより前に宣言し、どの失敗経路でもQtアプリより先に破棄する。
+所有者を保持する必要をmust_use属性でも示した。追加のunsafeやunwrapはない。
+
+[QQmlApplicationEngineの仕様](https://doc.qt.io/qt-6/qqmlapplicationengine.html)で
+ローカルURLの即時生成とエンジン破棄時のQMLオブジェクト破棄を確認した。
+実際の失敗試験は[Qt Controlsのスタイル指定](https://doc.qt.io/qt-6/qtquickcontrols-styles.html#run-time-style-selection)
+を利用し、専用Xvfb :99でQT_QUICK_CONTROLS_STYLE=StartupFailureProbeという
+存在しないスタイルを指定した。音声は明示fakesink。デバイス不足を代替する試験ではない。
+
+修正前は実行中PID 132581の/proc/exeから同じ旧バイナリーを別プロセスとして起動した。
+修正前後ともQMLエラーを報告し終了コード1。GST_REFCOUNTINGログでは、
+playbin3-0/qml6glsink0/deinterlace0/queue0の各finalizeが修正前0回、修正後1回だった。
+Playerの生成より前の失敗で、OSのプロセス終了に任せていた要素破棄が実行されることを確認した。
+これは通常再生中のメモリー増加の原因を特定した修正ではない。
+
+通常起動も専用:99で確認し、Playerへの受け渡し後にNHK京都のPLAYING、字幕受信、
+EPG取得、実況表示が動作し、閉じるボタンから終了コード0だった。最初の閉じる操作は
+非表示の操作部に届かなかったため、ポインター移動の間に待ちを置いて再表示して閉じた。
+Rust102件成功・3件ignored、全ターゲットClippy、書式検査、リリースビルド成功。
+
+証跡はGit対象外のbenchmark/startup-preload-owner/にbefore.log、failure.log、
+finalization-summary.json、success.logと専用stateを保存した。実GPUの
+長時間観測2プロセスは停止・再起動していない。Player生成後のQML失敗は別途未確認。
