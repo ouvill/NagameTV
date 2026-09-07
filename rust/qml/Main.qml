@@ -554,18 +554,17 @@ ApplicationWindow {
             }
         }
         Loader {
-            anchors {
-                top: parent.top
-                topMargin: 150
-                right: parent.right
-                margins: 8
-            }
-            width: Math.min(480, parent.width - 16)
-            active: !root.closing && root.showStats
+            x: 16
+            y: Math.min(overlayVisibility.controlsVisible ? 138 : 20, Math.max(16, root.height - height - 16))
+            width: Math.min(510, parent.width - 32)
+            active: !root.closing && root.showStats && !root.showGuide
             z: 4
             sourceComponent: Component {
                 VideoStats {
                     backend: player
+                    viewportSize: Qt.size(video.width, video.height)
+                    viewportDpr: video.Screen.devicePixelRatio
+                    onCloseRequested: root.showStats = false
                 }
             }
         }
