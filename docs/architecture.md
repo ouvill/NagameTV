@@ -81,6 +81,10 @@ HTTP失敗・サイズ超過はEPGの状態に表示し、再生を止めない�
 前回成功分を維持する。サーバー変更／無効化では空にする。
 
 同じJob→Stoppingの遷移を局一覧・実況勢い取得にも使用する。
+HTTP本文の上限付き取得、結果チャネル、Job／Stopping／Taskの所有権は
+`services/job.rs`にまとめる。`services.rs`はURL検証・エラー型・共通Networkの
+生成と各機能への接続を担当する。Jobの生成にはRuntime HandleとHTTP Clientを渡し、
+呼び出し元のNetworkやQt状態を保持しない。既存の`services::Job`等の公開経路は再公開で維持する。
 停止待ち中の再設定では既存Stoppingを保持し、最新の希望状態だけ更新する。
 TaskのDropはabortを要求するが、終了を待ったことにはしない。
 [Tokio JoinHandle仕様](https://docs.rs/tokio/1.53.1/tokio/task/struct.JoinHandle.html#method.is_finished)
