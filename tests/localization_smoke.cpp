@@ -50,7 +50,15 @@ int main(int argc, char **argv) {
   const auto dayBeforeSwitch = root->property("day");
   check(root->property("dateLabel").toString() == "Tue, Sep 8", "English date independent of system locale");
   check(translateBackend("Programs: %1").arg("13000") == "Programs: 13000", "English feature count");
+  const auto metricText = [](bool stopping) {
+    return translateBackend("Subtitles: subscriptions %1, pending %2, received %3 | EPG: tasks %4, programs %5, stopping %6")
+        .arg("8").arg("2").arg("18446744073709551615").arg("1").arg("14019")
+        .arg(translateBackend(stopping ? "Yes" : "No"));
+  };
+  check(metricText(false) == "Subtitles: subscriptions 8, pending 2, received 18446744073709551615 | EPG: tasks 1, programs 14019, stopping No", "English diagnostic template preserves all counters");
   check(applyUiLanguage("ja") == "ja", "Load Japanese catalog");
+  check(metricText(true) == QString::fromUtf8("字幕: 購読 8, 待機 2, 受信 18446744073709551615 | EPG: タスク 1, 番組 14019, 停止待ち はい"), "Japanese diagnostic template and stopping state");
+  check(metricText(false).endsWith(QString::fromUtf8("停止待ち いいえ")), "Japanese non-stopping state");
   check(translateBackend("Programs: %1").arg("13000") == QString::fromUtf8("13000 番組"), "Japanese feature count template reorders argument");
   check(translateBackend("Waiting to reconnect") == QString::fromUtf8("再接続待ち"), "Japanese retry status");
   check(root->property("failureLabel").toString() == translateBackend(root->property("failureSource").toString()), "Dynamic failure source is retranslated");
@@ -67,6 +75,7 @@ int main(int argc, char **argv) {
   check(root->property("emptyChannels").toString() == QString::fromUtf8("該当するチャンネルなし"), "Feature UI catalog context");
   check(QCoreApplication::translate("Backend", "Loading channels...") == QString::fromUtf8("チャンネルを取得中…"), "Japanese backend message");
   check(applyUiLanguage("en") == "en", "Switch back to English");
+  check(metricText(true).endsWith("stopping Yes"), "Existing counters return to English");
   check(root->property("heading").toString() == "Stats for nerds", "Retranslate existing QML to English");
   check(root->property("dateLabel").toString() == "Tue, Sep 8", "Date returns to English");
   check(root->property("stateLabel").toString() == "Paused", "Function translation returns to English without polling");

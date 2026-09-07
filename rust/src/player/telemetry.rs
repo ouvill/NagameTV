@@ -1,5 +1,5 @@
 //! Collect owned counters only; process measurement and file writes run off the GUI thread.
-use super::ffi;
+use super::{ffi, status::tr};
 use cxx_qt::CxxQtType;
 use cxx_qt_lib::QString;
 use std::{
@@ -102,7 +102,40 @@ impl ffi::Player {
     }
 }
 
+/// Last sampled counters only; language changes never query feature workers.
+#[derive(Default)]
+pub(super) struct FeatureMetrics {
+    subscriptions: usize,
+    pending: usize,
+    decoded: u64,
+    tasks: usize,
+    programs: usize,
+    stopping: bool,
+}
+
+impl FeatureMetrics {
+    fn display(&self) -> QString {
+        tr("Subtitles: subscriptions %1, pending %2, received %3 | EPG: tasks %4, programs %5, stopping %6")
+            .arg(&QString::from(self.subscriptions.to_string()))
+            .arg(&QString::from(self.pending.to_string()))
+            .arg(&QString::from(self.decoded.to_string()))
+            .arg(&QString::from(self.tasks.to_string()))
+            .arg(&QString::from(self.programs.to_string()))
+            .arg(&tr(if self.stopping { "Yes" } else { "No" }))
+    }
+}
+
 impl ffi::Player {
+    pub(super) fn refresh_metric_text(mut self: Pin<&mut Self>) {
+        let text = self
+            .rust()
+            .feature_metrics
+            .as_ref()
+            .map(FeatureMetrics::display)
+            .unwrap_or_default();
+        self.as_mut().set_diagnostics(text);
+    }
+
     pub(super) fn poll_feature_metrics(mut self: Pin<&mut Self>) {
         if Instant::now() >= self.rust().next_diagnostic {
             let (subscriptions, pending, decoded) = self
@@ -112,11 +145,19 @@ impl ffi::Player {
                 .map(|s| s.counters())
                 .unwrap_or_default();
             let (tasks, programs, stopping) = self.rust().epg.counters();
-            let text = format!(
-                "字幕: 購読 {subscriptions}, 待機 {pending}, 受信 {decoded} | EPG: タスク {tasks}, 番組 {programs}, 停止待ち {stopping}"
+            // Preserve the diagnostic log format independently of UI language.
+            eprintln!(
+                "METRICS 字幕: 購読 {subscriptions}, 待機 {pending}, 受信 {decoded} | EPG: タスク {tasks}, 番組 {programs}, 停止待ち {stopping}"
             );
-            eprintln!("METRICS {text}");
-            self.as_mut().set_diagnostics(QString::from(text));
+            self.as_mut().rust_mut().feature_metrics = Some(FeatureMetrics {
+                subscriptions,
+                pending,
+                decoded,
+                tasks,
+                programs,
+                stopping,
+            });
+            self.as_mut().refresh_metric_text();
             self.as_mut().rust_mut().next_diagnostic = Instant::now() + Duration::from_secs(10);
         }
     }

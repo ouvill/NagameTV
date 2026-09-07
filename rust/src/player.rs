@@ -241,6 +241,7 @@ pub struct PlayerRust {
     current_projection: crate::features::program_info::presentation::Projection,
     next_current_program: Instant,
     diagnostics: QString,
+    feature_metrics: Option<telemetry::FeatureMetrics>,
     volume_level: f64,
     audio_muted: bool,
     audio_output: playback::audio_output::Output,

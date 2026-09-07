@@ -129,6 +129,7 @@ impl Default for PlayerRust {
             current_projection: Default::default(),
             next_current_program: Instant::now(),
             diagnostics: QString::default(),
+            feature_metrics: None,
             volume_level,
             audio_muted: audio_output.muted(),
             audio_output,
