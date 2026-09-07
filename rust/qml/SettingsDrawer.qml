@@ -8,6 +8,15 @@ Drawer {
     required property var backend
     property bool statsVisible: false
     signal statsRequested(bool visible)
+    signal connectionAccepted
+    function connectToServer() {
+        if (root.backend.loading) return;
+        connectionError.visible = !root.backend.connect_server(server.text);
+        if (!connectionError.visible) {
+            root.close();
+            root.connectionAccepted();
+        }
+    }
     signal epgDisabled
     parent: Overlay.overlay
     property url collapseIcon: "qrc:/qt/qml/MinimalViewer/assets/icons/panel-right-close.svg"
@@ -154,8 +163,7 @@ Drawer {
                     color: "#1c1f1c"
                     border.color: server.activeFocus ? "#9caf9f" : "#30ffffff"
                 }
-                onAccepted: if (!root.backend.loading)
-                    root.backend.connect_server(text)
+                onAccepted: root.connectToServer()
             }
             Label {
                 Layout.fillWidth: true
@@ -167,7 +175,7 @@ Drawer {
                 id: connect
                 objectName: "connectServer"
                 Layout.fillWidth: true
-                text: root.backend.loading ? qsTranslate("Viewer", "Loading\u2026") : qsTranslate("Viewer", "Connect")
+                text: root.backend.loading ? qsTranslate("Viewer", "Loading\u2026") : qsTranslate("Main", "Save and connect")
                 enabled: !root.backend.loading
                 contentItem: Label {
                     text: connect.text
@@ -181,7 +189,17 @@ Drawer {
                     radius: 23
                     color: "#9caf9f"
                 }
-                onClicked: root.backend.connect_server(server.text)
+                onClicked: root.connectToServer()
+            }
+            Label {
+                id: connectionError
+                objectName: "connectionError"
+                visible: false
+                Layout.fillWidth: true
+                wrapMode: Text.Wrap
+                textFormat: Text.PlainText
+                text: root.backend.status
+                color: "#b6bab6"
             }
             CheckBox {
                 text: qsTranslate("Viewer", "Subtitles")

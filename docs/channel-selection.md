@@ -184,3 +184,23 @@ Rust全体93件成功・2ignored、Clippy全ターゲット成功。これらは
 HTTP取得寿命・CPU再生などの回帰試験であり、Qt経由の実サーバー切り替え操作は未検証。
 
 QML事前コンパイルを含むCMakeリリースビルド、fmt・diff検査も成功した。
+
+
+## 設定画面からの接続要求
+
+mainの「Save and connect」に合わせ、Qt公開connect_serverは要求受付のboolを返す。
+停止失敗、URL不正、Network不在でfalse、最新要求を登録したらtrueとする。
+HTTPの完了は引き続きpoll_channelsが処理するため、trueはサーバーへの到達成功を意味しない。
+設定保存の失敗は既存settings_errorへ保持し、通信要求の受付とは別に扱う。
+
+SettingsDrawerのボタンとEnter入力は同じ関数へ集約した。受付時はDrawerを閉じて
+connectionAcceptedを通知し、Mainがguide_open(false)と表示状態の解除を行う。
+これにより旧番組表の詳細Loaderも破棄される。拒否時はDrawerを残し、折り返し・
+プレーンテキストのエラー欄に既存statusを表示する。loading中の二重要求抑止を維持する。
+
+QML操作試験に受付／拒否の分岐を追加したが、実行には表示環境が必要なため未実行。
+音声出力の復旧確認待ちで実アプリの操作検証も残る。SettingsDrawerのqmllint、
+Clippy全ターゲット、既存翻訳切り替え／カタログ欠落試験は成功した。
+
+通信層の既存3試験（URL検証・旧要求排除・HTTP/解析/容量エラー）、fmt・diff検査、
+QML事前コンパイルを含むCMakeリリースビルドも成功。Qt操作試験の成功を示すものではない。

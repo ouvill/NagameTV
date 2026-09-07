@@ -22,7 +22,8 @@ TestCase {
         property string diagnostics: ""
         property string status: ""
         signal connectRequested(string url)
-        function connect_server(url) { connectRequested(url); }
+        property bool acceptConnection: false
+        function connect_server(url) { connectRequested(url); return acceptConnection; }
     }
     SettingsDrawer {
         id: drawer
@@ -33,6 +34,7 @@ TestCase {
     function init() {
         failOnWarning(/.*/);
         backend.loading = false;
+        backend.acceptConnection = false;
         connections.clear();
         drawer.open();
         tryCompare(drawer, "opened", true);
@@ -50,6 +52,15 @@ TestCase {
         keyClick(Qt.Key_Return);
         compare(connections.count, 1);
         compare(connect.enabled, false);
+    }
+    function test_accepted_connection_closes_and_rejection_stays_open() {
+        drawer.connectToServer();
+        compare(drawer.opened, true);
+        compare(findChild(drawer.contentItem, "connectionError").visible, true);
+        backend.acceptConnection = true;
+        drawer.connectToServer();
+        tryCompare(drawer, "visible", false);
+        compare(findChild(drawer.contentItem, "connectionError").visible, false);
     }
     function test_right_edge_and_escape_close() {
         compare(drawer.width, 420);

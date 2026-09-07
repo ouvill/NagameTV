@@ -311,6 +311,11 @@ ApplicationWindow {
                 root.showStats = visible;
             }
             onEpgDisabled: root.showGuide = false
+            onConnectionAccepted: {
+                player.guide_open(false);
+                root.showGuide = false;
+                overlayVisibility.reveal();
+            }
         }
         Rectangle {
             anchors {

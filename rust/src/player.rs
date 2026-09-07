@@ -126,7 +126,7 @@ pub mod ffi {
         #[qinvokable]
         unsafe fn observe_pointer(self: &Player, item: *mut QQuickItem);
         #[qinvokable]
-        fn connect_server(self: Pin<&mut Player>, server: QString);
+        fn connect_server(self: Pin<&mut Player>, server: QString) -> bool;
         #[qinvokable]
         fn select(self: Pin<&mut Player>, index: i32);
         #[qinvokable]
