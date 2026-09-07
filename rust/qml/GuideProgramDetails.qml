@@ -7,6 +7,7 @@ Popup {
     required property var program
     required property point cellPosition
     required property string channelLabel
+    // Backend translation source; retranslate even while the error remains visible.
     property string watchError: ""
     property double now: Date.now()
     readonly property bool live: !!program && typeof program.watchKey === "string"
@@ -86,7 +87,7 @@ Popup {
             objectName: "watchGuideError"
             visible: popup.watchError !== ""
             width: parent.width
-            text: popup.watchError; textFormat: Text.PlainText
+            text: popup.watchError ? qsTranslate("Backend", popup.watchError) : ""; textFormat: Text.PlainText
             wrapMode: Text.Wrap; color: "#ffb4ab"
         }
         Item { width: 1; height: 4 }

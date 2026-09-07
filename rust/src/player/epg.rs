@@ -63,7 +63,6 @@ impl ffi::Player {
                 self.record_diagnostic(Event::EpgFetchStarted);
             }
         }
-        self.as_mut().refresh_epg_status();
         let service = self
             .rust()
             .entries
@@ -76,11 +75,13 @@ impl ffi::Player {
                 || self.rust().guide_dirty)
         {
             let data = match self.rust().epg.grid_view(&self.rust().entries, window) {
-                Ok(data) => data,
+                Ok(data) => {
+                    self.as_mut().rust_mut().guide_error = None;
+                    data
+                }
                 Err(error) => {
                     eprintln!("Program guide presentation failed: {error}");
-                    self.as_mut()
-                        .set_epg_status(QString::from(format!("番組表の表示失敗: {error}")));
+                    self.as_mut().rust_mut().guide_error = Some(error);
                     "[]".into()
                 }
             };
@@ -90,5 +91,6 @@ impl ffi::Player {
             self.as_mut().rust_mut().guide_dirty = false;
             self.as_mut().set_epg_data(QString::from(data));
         }
+        self.refresh_epg_status();
     }
 }

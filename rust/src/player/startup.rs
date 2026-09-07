@@ -123,6 +123,7 @@ impl Default for PlayerRust {
             epg_data: QString::from("[]"),
             epg_events: Default::default(),
             epg_status: super::status::tr("Disabled"),
+            guide_error: None,
             current_program_data: QString::from("null"),
             program_progress: 0.0,
             current_projection: Default::default(),

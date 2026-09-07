@@ -379,6 +379,18 @@
       <translation>放送サービス情報がないため字幕を開始できません</translation>
     </message>
     <message>
+      <source>Could not display the program guide: %1</source>
+      <translation>番組表を表示できません: %1</translation>
+    </message>
+    <message>
+      <source>Program information has changed. Select the program again.</source>
+      <translation>番組情報が更新されています。番組表から選び直してください</translation>
+    </message>
+    <message>
+      <source>This program is not currently on air.</source>
+      <translation>この番組は現在放送されていません</translation>
+    </message>
+    <message>
       <source>Could not prepare subtitles for display. Stop playback and play again.</source>
       <translation>字幕の表示データを生成できません。停止してから再生し直してください</translation>
     </message>

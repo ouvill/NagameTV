@@ -13,6 +13,8 @@ impl ffi::Player {
             Guide::Closed
         };
         self.as_mut().rust_mut().guide_dirty = false;
+        self.as_mut().rust_mut().guide_error = None;
+        self.as_mut().refresh_epg_status();
         self.set_epg_data(QString::from("[]"));
     }
     pub fn guide_day(mut self: Pin<&mut Self>, start: f64, end: f64) {
@@ -31,6 +33,8 @@ impl ffi::Player {
         }
         self.as_mut().rust_mut().guide = Guide::Showing(window);
         self.as_mut().rust_mut().guide_dirty = true;
+        self.as_mut().rust_mut().guide_error = None;
+        self.as_mut().refresh_epg_status();
         self.set_epg_data(QString::from("[]"));
     }
     pub fn watch_program(mut self: Pin<&mut Self>, key: QString) -> QString {
@@ -56,7 +60,10 @@ impl ffi::Player {
                 self.select(index);
                 QString::default()
             }
-            Err(error) => QString::from(error.to_string()),
+            Err(error) => QString::from(match error {
+                Error::Unavailable => "Program information has changed. Select the program again.",
+                Error::NotLive => "This program is not currently on air.",
+            }),
         }
     }
     pub fn refresh_epg(mut self: Pin<&mut Self>) {

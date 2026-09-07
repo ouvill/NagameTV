@@ -31,6 +31,11 @@ impl ffi::Player {
     }
 
     pub(super) fn refresh_epg_status(mut self: Pin<&mut Self>) {
+        if let Some(error) = &self.rust().guide_error {
+            let text = with_detail("Could not display the program guide: %1", error);
+            self.set_epg_status(text);
+            return;
+        }
         let text = match self.rust().epg.status() {
             ProgramStatus::Disabled => tr("Disabled"),
             ProgramStatus::Waiting => tr("Waiting to fetch"),

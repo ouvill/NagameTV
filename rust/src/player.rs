@@ -233,6 +233,7 @@ pub struct PlayerRust {
     epg_data: QString,
     epg_events: viewer_epg_events::controller::Controller,
     epg_status: QString,
+    guide_error: Option<serde_json::Error>,
     current_program_data: QString,
     program_progress: f64,
     current_projection: crate::features::program_info::presentation::Projection,
