@@ -23,6 +23,21 @@ impl ffi::Player {
             return false;
         }
 
+        // A saved startup URL alone is not an established session. Once requests
+        // are scheduled, reconnecting to that same URL only refreshes the catalog.
+        if self.rust().channel_refresh.enabled() && self.server().to_string() == server {
+            if !self.rust().request.is_busy() {
+                self.as_mut().refresh_channels(true);
+                if self.rust().epg_enabled {
+                    self.as_mut().refresh_epg();
+                }
+                self.as_mut().set_loading(true);
+                self.as_mut().update_status(PlaybackStatus::Loading);
+            }
+            self.save_settings();
+            return true;
+        }
+
         self.as_mut().rust_mut().epg_events.configure(None);
         self.as_mut().rust_mut().catalog_selection = channels::SelectionPolicy::Initial;
         self.as_mut().rust_mut().channel_refresh = channel_refresh::Refresh::Disabled;
