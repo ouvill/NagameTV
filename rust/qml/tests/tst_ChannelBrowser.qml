@@ -104,6 +104,198 @@ TestCase {
         keyClick(Qt.Key_Return);
         compare(selection.count, 2);
     }
+    function verifyCentered(list) {
+        tryVerify(function() {
+            const card = list.currentItem ? findChild(list.currentItem, "browserChannelCard") : null;
+            return card !== null && Math.abs(card.width - list.candidateWidth) < 1
+                && Math.abs(card.mapToItem(list, card.width / 2, 0).x - list.width / 2) < 2;
+        }, 5000, "candidate index " + list.currentIndex);
+    }
+    function test_reopen_restores_playing_band_and_channel() {
+        const list = findChild(browser, "browserList");
+        browser.band = "GR";
+        browser.openBrowser();
+        compare(browser.band, "BS");
+        compare(list.currentIndex, 1);
+        verifyCentered(list);
+        browser.selected = 0;
+        browser.openBrowser();
+        compare(browser.band, "GR");
+        compare(list.currentIndex, 0);
+        verifyCentered(list);
+        compare(selection.count, 0);
+    }
+    function test_open_starts_on_playing_channel_far_into_catalog() {
+        const rows = [];
+        for (let i = 0; i < 100; ++i)
+            rows.push({ index: i, label: "Channel " + i, band: i < 20 ? "GR" : "BS", logo: "" });
+        const picker = createTemporaryObject(component, testCase, { rows: rows, selected: 87 });
+        verify(picker !== null);
+        verify(waitForRendering(picker));
+        const list = findChild(picker, "browserList");
+        compare(picker.band, "BS");
+        tryCompare(list, "currentIndex", 67);
+        verifyCentered(list);
+        compare(list.currentItem.modelData.index, 87);
+        picker.band = "GR";
+        picker.openBrowser();
+        tryCompare(list, "currentIndex", 67);
+        verifyCentered(list);
+        compare(list.currentItem.modelData.index, 87);
+    }
+    function test_open_terrestrial_and_visibility_update_keep_playing_channel() {
+        const rows = [];
+        for (let i = 0; i < 10; ++i)
+            rows.push({ index: i, label: i === 0 ? "NHK総合" : "Channel " + i, band: "GR", logo: "" });
+        const picker = createTemporaryObject(component, testCase, { rows: rows, selected: 7 });
+        verify(picker !== null);
+        verify(waitForRendering(picker));
+        const list = findChild(picker, "browserList");
+        tryCompare(list, "currentIndex", 7);
+        picker.visibilityJson = "[0, 2, 4, 6, 7, 8]";
+        wait(250);
+        compare(list.currentItem.modelData.index, 7);
+        verifyCentered(list);
+    }
+    function test_open_and_reopen_have_no_horizontal_transition() {
+        const list = findChild(browser, "browserList");
+        for (let frame = 0; frame < 16; ++frame) {
+            wait(16);
+            compare(list.centerOffset, 0);
+            const card = findChild(list.currentItem, "browserChannelCard");
+            compare(card.width, list.candidateWidth);
+            verify(Math.abs(card.mapToItem(list, card.width / 2, 0).x - list.width / 2) < 2);
+        }
+        browser.focusBrowser();
+        keyClick(Qt.Key_Left);
+        wait(60);
+        browser.openBrowser();
+        for (let frame = 0; frame < 16; ++frame) {
+            wait(16);
+            compare(list.currentItem.modelData.index, browser.selected);
+            compare(list.centerOffset, 0);
+            const card = findChild(list.currentItem, "browserChannelCard");
+            compare(card.width, list.candidateWidth);
+            verify(Math.abs(card.mapToItem(list, card.width / 2, 0).x - list.width / 2) < 2);
+        }
+    }
+    function test_width_animates_and_reverses_without_losing_center() {
+        const list = findChild(browser, "browserList");
+        verifyCentered(list);
+        wait(200); // Finish opening before measuring a new keyboard transition.
+        const previous = findChild(list.currentItem, "browserChannelCard");
+        browser.focusBrowser();
+        keyClick(Qt.Key_Left);
+        const candidate = findChild(list.currentItem, "browserChannelCard");
+        wait(60);
+        verify(candidate.width > 270 && candidate.width < 356);
+        verify(previous.width > 270 && previous.width < 356);
+        const center = candidate.mapToItem(list, candidate.width / 2, 0).x;
+        verify(center < list.width / 2 - 2, "scroll should still be moving toward the center: " + center + " offset " + list.centerOffset);
+        keyClick(Qt.Key_Right);
+        verifyCentered(list);
+        tryCompare(candidate, "width", 270);
+        compare(findChild(list.currentItem, "browserChannelCard"), previous);
+        compare(selection.count, 0);
+    }
+    function test_gap_stays_fourteen_during_expansion_and_reversal() {
+        const list = findChild(browser, "browserList");
+        verifyCentered(list);
+        browser.focusBrowser();
+        keyClick(Qt.Key_Left);
+        for (let frame = 0; frame < 24; ++frame) {
+            if (frame === 5) keyClick(Qt.Key_Right);
+            wait(16);
+            const left = findChild(list.itemAtIndex(0), "browserChannelCard");
+            const right = findChild(list.itemAtIndex(1), "browserChannelCard");
+            verify(left !== null && right !== null);
+            const gap = right.mapToItem(list, 0, 0).x - left.mapToItem(list, left.width, 0).x;
+            verify(Math.abs(gap - 14) < 1, "gap during animation: " + gap);
+        }
+        verifyCentered(list);
+        compare(selection.count, 0);
+    }
+    function test_vertical_navigation_and_band_selection() {
+        const list = findChild(browser, "browserList");
+        browser.focusBrowser();
+        keyClick(Qt.Key_Up);
+        verify(findChild(browser, "band-BS").activeFocus);
+        verify(findChild(browser, "band-BS").visualFocus);
+        keyClick(Qt.Key_Left);
+        compare(browser.band, "GR");
+        verify(findChild(browser, "band-GR").activeFocus);
+        keyClick(Qt.Key_Left);
+        compare(browser.band, "GR");
+        keyClick(Qt.Key_Down);
+        verify(list.activeFocus);
+        compare(list.currentItem.modelData.index, 0);
+        keyClick(Qt.Key_Up);
+        keyClick(Qt.Key_Right);
+        compare(browser.band, "BS");
+        verify(findChild(browser, "band-BS").activeFocus);
+        keyClick(Qt.Key_Down);
+        verify(list.activeFocus);
+        keyClick(Qt.Key_Left);
+        compare(list.currentItem.modelData.index, 1);
+        keyClick(Qt.Key_Up);
+        keyClick(Qt.Key_Down);
+        compare(list.currentItem.modelData.index, 1);
+        compare(selection.count, 0);
+        keyClick(Qt.Key_Return);
+        compare(selection.signalArguments[0][0], 1);
+    }
+    function test_keyboard_candidate_expands_and_centers_including_endpoints() {
+        const rows = [];
+        for (let i = 0; i < 12; ++i)
+            rows.push({ index: i, label: "Channel " + i, band: "BS", logo: "" });
+        browser.rows = rows;
+        browser.openBrowser();
+        const list = findChild(browser, "browserList");
+        verifyCentered(list);
+        keyClick(Qt.Key_Right);
+        compare(list.currentIndex, 3);
+        verifyCentered(list);
+        const playingCard = list.itemAtIndex(2);
+        if (playingCard)
+            tryCompare(findChild(playingCard, "browserChannelCard"), "width", 270);
+        compare(browser.selected, 2);
+        compare(selection.count, 0);
+        for (let i = 0; i < 20; ++i) keyClick(Qt.Key_Right);
+        compare(list.currentIndex, 11);
+        verifyCentered(list);
+        for (let i = 0; i < 20; ++i) keyClick(Qt.Key_Left);
+        compare(list.currentIndex, 0);
+        verifyCentered(list);
+        browser.width = 360;
+        verifyCentered(list);
+        keyClick(Qt.Key_Return);
+        compare(selection.signalArguments[0][0], 0);
+    }
+    function test_playing_channel_remains_available_and_wheel_moves_candidate() {
+        browser.visibilityJson = "[1]";
+        browser.openBrowser();
+        const list = findChild(browser, "browserList");
+        compare(list.count, 2);
+        compare(list.currentItem.modelData.index, 2);
+        mouseWheel(list, list.width / 2, 60, 0, 120);
+        compare(list.currentIndex, 0);
+        verifyCentered(list);
+        compare(selection.count, 0);
+        browser.openBrowser();
+        compare(list.currentItem.modelData.index, 2);
+        verifyCentered(list);
+    }
+    function test_catalog_arriving_after_open_reveals_selected_band() {
+        browser.rows = [];
+        browser.selected = 7;
+        browser.openBrowser();
+        browser.rows = [{ index: 7, label: "CS", band: "CS", logo: "" }];
+        compare(browser.band, "CS");
+        const list = findChild(browser, "browserList");
+        tryCompare(list, "count", 1);
+        verifyCentered(list);
+        compare(list.currentItem.modelData.index, 7);
+    }
     function test_large_catalog_is_virtualized_and_replacement_clears() {
         const rows = [];
         for (let i = 0; i < 500; ++i)

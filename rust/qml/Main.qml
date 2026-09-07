@@ -541,7 +541,11 @@ ApplicationWindow {
             open: root.showChannels
             shuttingDown: root.closing
             z: 6
-            onLoaded: item.focusBrowser()
+            onLoaded: item.openBrowser()
+            onOpenChanged: {
+                if (open && item)
+                    item.openBrowser();
+            }
             sourceComponent: ChannelBrowser {
                 rows: root.channelRows
                 activityJson: player.activity_data

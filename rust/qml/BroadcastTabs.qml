@@ -8,6 +8,20 @@ Rectangle {
     required property string value
     property string uiLanguage: Qt.uiLanguage
     signal selected(string band)
+    property bool directionalNavigation: false
+    signal downRequested
+    function focusCurrent() {
+        const tab = tabs.itemAt(Math.max(0, selectedIndex));
+        if (tab)
+            tab.forceActiveFocus(Qt.TabFocusReason);
+    }
+    function step(offset) {
+        const index = Math.max(0, Math.min(options.length - 1, selectedIndex + offset));
+        if (options[index]) {
+            selected(options[index].value);
+            focusCurrent();
+        }
+    }
     readonly property var options: [
         {
             value: "GR",
@@ -59,6 +73,7 @@ Rectangle {
         width: parent.width - 6
         height: parent.height
         Repeater {
+            id: tabs
             model: root.options
             delegate: AbstractButton {
                 id: tab
@@ -68,6 +83,21 @@ Rectangle {
                 height: root.height
                 Accessible.name: modelData.label
                 onClicked: root.selected(modelData.value)
+                Keys.onLeftPressed: function(event) {
+                    event.accepted = root.directionalNavigation;
+                    if (event.accepted) root.step(-1);
+                }
+                Keys.onRightPressed: function(event) {
+                    event.accepted = root.directionalNavigation;
+                    if (event.accepted) root.step(1);
+                }
+                Keys.onDownPressed: function(event) {
+                    event.accepted = root.directionalNavigation;
+                    if (event.accepted) root.downRequested();
+                }
+                Keys.onUpPressed: function(event) {
+                    event.accepted = root.directionalNavigation;
+                }
                 contentItem: Item {
                     Label {
                         anchors.centerIn: parent

@@ -16,11 +16,26 @@ Pane {
     property real now: 0
     readonly property var programs: JSON.parse(programsJson)
     property string band: "GR"
-    readonly property var filteredRows: rows.filter(row => row.band === band && (!visibleIndices.size || visibleIndices.has(row.index)))
+    property bool navigationAnimated: false
+    readonly property var filteredRows: rows.filter(row => row.band === band && (row.index === selected || !visibleIndices.size || visibleIndices.has(row.index)))
     signal selectRequested(int index)
     signal closeRequested
     function focusBrowser() {
         list.forceActiveFocus();
+    }
+    function openBrowser() {
+        restoreSelection();
+        Qt.callLater(list.centerCurrent);
+        focusBrowser();
+    }
+    function restoreSelection() {
+        navigationAnimated = false;
+        if (!rows)
+            return;
+        const current = rows.find(row => row.index === selected) || rows[0];
+        if (current)
+            band = current.band;
+        resetCursor();
     }
     function resetCursor() {
         // Required inputs may arrive before the derived binding and child view
@@ -36,13 +51,9 @@ Pane {
             selectRequested(row.index);
     }
     onFilteredRowsChanged: resetCursor()
-    onSelectedChanged: resetCursor()
-    Component.onCompleted: {
-        const current = rows.find(row => row.index === selected) || rows[0];
-        if (current)
-            band = current.band;
-        resetCursor();
-    }
+    onSelectedChanged: restoreSelection()
+    onRowsChanged: restoreSelection()
+    Component.onCompleted: openBrowser()
     implicitHeight: 304
     leftPadding: 24
     rightPadding: 24
@@ -87,11 +98,15 @@ Pane {
                 height: 1
             }
             BroadcastTabs {
+                id: bands
                 objectName: "browserBand"
                 anchors.verticalCenter: parent.verticalCenter
                 rows: root.rows
                 value: root.band
+                directionalNavigation: true
+                onDownRequested: root.focusBrowser()
                 onSelected: function (band) {
+                    root.navigationAnimated = true;
                     root.band = band;
                 }
             }
@@ -108,71 +123,170 @@ Pane {
                 clip: true
                 cacheBuffer: 0
                 model: root.filteredRows
-                keyNavigationEnabled: true
+                // ListView resets currentIndex when a new filtered model is
+                // installed, after the source's change handlers have run.
+                onModelChanged: Qt.callLater(root.resetCursor)
+                readonly property real candidateWidth: Math.min(356, width)
+                preferredHighlightBegin: (width - candidateWidth) / 2
+                preferredHighlightEnd: (width + candidateWidth) / 2
+                // Keep keyboard selection independent of scrolling, with room
+                // to center even the first and last cards.
+                highlightRangeMode: ListView.NoHighlightRange
+                highlightFollowsCurrentItem: false
+                header: Item { width: list.preferredHighlightBegin; height: 1 }
+                footer: Item { width: list.preferredHighlightBegin; height: 1 }
+                property real centerOffset: 0
+                property bool followingCurrent: true
+                // Follow the live layout while easing the remaining distance
+                // to the center. Width animation never leaves a stale target.
+                function trackCenter() {
+                    if (!followingCurrent || !currentItem)
+                        return;
+                    forceLayout();
+                    if (!currentItem)
+                        return;
+                    contentX = currentItem.x + currentItem.width / 2 - width / 2 + centerOffset;
+                }
+                function animateCenter() {
+                    if (!root.navigationAnimated) {
+                        centerCurrent();
+                        return;
+                    }
+                    if (!currentItem)
+                        return;
+                    centerMotion.stop();
+                    followingCurrent = true;
+                    forceLayout();
+                    if (!currentItem)
+                        return;
+                    centerOffset = contentX - (currentItem.x + currentItem.width / 2 - width / 2);
+                    centerMotion.restart();
+                }
+                function centerCurrent() {
+                    centerMotion.stop();
+                    followingCurrent = true;
+                    centerOffset = 0;
+                    trackCenter();
+                }
+                onCurrentItemChanged: Qt.callLater(animateCenter)
+                onWidthChanged: Qt.callLater(centerCurrent)
+                onMovementStarted: {
+                    followingCurrent = false;
+                    centerMotion.stop();
+                }
+                NumberAnimation {
+                    id: centerMotion
+                    target: list
+                    property: "centerOffset"
+                    to: 0
+                    duration: 180
+                    easing.type: Easing.OutCubic
+                    onRunningChanged: if (!running) Qt.callLater(list.trackCenter)
+                }
+                FrameAnimation {
+                    running: centerMotion.running
+                    onTriggered: list.trackCenter()
+                }
+                keyNavigationEnabled: false
+                keyNavigationWraps: false
+                Keys.onLeftPressed: {
+                    root.navigationAnimated = true;
+                    list.decrementCurrentIndex();
+                }
+                Keys.onRightPressed: {
+                    root.navigationAnimated = true;
+                    list.incrementCurrentIndex();
+                }
+                Keys.onUpPressed: bands.focusCurrent()
+                Keys.onDownPressed: function(event) { event.accepted = true; }
                 Keys.onReturnPressed: root.selectCurrent()
                 Keys.onEnterPressed: root.selectCurrent()
                 ScrollBar.horizontal: ScrollBar {}
-                delegate: ItemDelegate {
-                    id: card
+                delegate: Item {
+                    id: slot
                     required property var modelData
                     required property int index
-                    width: highlighted ? 356 : 270
+                    width: card.width
+                    onWidthChanged: {
+                        if (!centerMotion.running)
+                            Qt.callLater(list.trackCenter);
+                    }
                     height: 164
-                    padding: 14
-                    highlighted: modelData.index === root.selected
-                    onClicked: root.selectRequested(modelData.index)
-                    background: Rectangle {
-                        radius: 16
-                        color: card.highlighted ? "#26302a" : "#1c1f1c"
-                        border.color: card.highlighted ? "#9caf9f" : "#30ffffff"
-                    }
-                    contentItem: Item {
-                        RowLayout {
-                            id: channelHeading
-                            width: parent.width
-                            height: 32
-                            spacing: 8
-                            ChannelLogo {
-                                logoUrl: card.modelData.logo || ""
-                                Layout.preferredWidth: 56
-                                Layout.preferredHeight: 32
-                            }
-                            Label {
-                                Layout.fillWidth: true
-                                text: card.modelData.label.replace(/^\d+\s+/, "")
-                                color: "#b6bab6"
-                                font.pixelSize: 12
-                                textFormat: Text.PlainText
-                                elide: Text.ElideRight
-                            }
-                            Label {
-                                readonly property string force: root.activity[card.modelData.index] ?? ""
-                                text: force.length ? qsTranslate("Main", "Activity ") + force : ""
-                                visible: text.length > 0
-                                color: "#9caf9f"; font.pixelSize: 11; font.bold: true
+                    ItemDelegate {
+                        id: card
+                        objectName: "browserChannelCard"
+                        readonly property var modelData: slot.modelData
+                        readonly property int index: slot.index
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        // Animate selection independently of viewport size so a
+                        // resize immediately clamps the card to the available width.
+                        property real expansion: highlighted ? 1 : 0
+                        Behavior on expansion {
+                            enabled: root.navigationAnimated
+                            NumberAnimation {
+                                duration: 180
+                                easing.type: Easing.OutCubic
                             }
                         }
-                        ChannelProgram {
-                            anchors {
-                                top: channelHeading.bottom
-                                topMargin: 9
-                                left: parent.left
-                                right: parent.right
-                                bottom: parent.bottom
-                                bottomMargin: -6
-                            }
-                            program: root.programs[card.modelData.index] || null
-                            now: root.now
-                            emphasized: card.highlighted
+                        width: Math.min(270, list.width)
+                            + (list.candidateWidth - Math.min(270, list.width)) * expansion
+                        height: 164
+                        padding: 14
+                        highlighted: slot.ListView.isCurrentItem
+                        onClicked: root.selectRequested(modelData.index)
+                        background: Rectangle {
+                            radius: 16
+                            color: card.highlighted ? "#26302a" : "#1c1f1c"
+                            border.color: card.highlighted ? "#9caf9f" : "#30ffffff"
                         }
-                    }
-                    Rectangle {
-                        anchors.fill: parent
-                        color: "transparent"
-                        border.width: 2
-                        radius: 16
-                        border.color: "#9caf9f"
-                        visible: list.activeFocus && list.currentIndex === card.index
+                        contentItem: Item {
+                            RowLayout {
+                                id: channelHeading
+                                width: parent.width
+                                height: 32
+                                spacing: 8
+                                ChannelLogo {
+                                    logoUrl: card.modelData.logo || ""
+                                    Layout.preferredWidth: 56
+                                    Layout.preferredHeight: 32
+                                }
+                                Label {
+                                    Layout.fillWidth: true
+                                    text: card.modelData.label.replace(/^\d+\s+/, "")
+                                    color: "#b6bab6"
+                                    font.pixelSize: 12
+                                    textFormat: Text.PlainText
+                                    elide: Text.ElideRight
+                                }
+                                Label {
+                                    readonly property string force: root.activity[card.modelData.index] ?? ""
+                                    text: force.length ? qsTranslate("Main", "Activity ") + force : ""
+                                    visible: text.length > 0
+                                    color: "#9caf9f"; font.pixelSize: 11; font.bold: true
+                                }
+                            }
+                            ChannelProgram {
+                                anchors {
+                                    top: channelHeading.bottom
+                                    topMargin: 9
+                                    left: parent.left
+                                    right: parent.right
+                                    bottom: parent.bottom
+                                    bottomMargin: -6
+                                }
+                                program: root.programs[card.modelData.index] || null
+                                now: root.now
+                                emphasized: card.highlighted
+                            }
+                        }
+                        Rectangle {
+                            anchors.fill: parent
+                            color: "transparent"
+                            border.width: 2
+                            radius: 16
+                            border.color: "#9caf9f"
+                            visible: list.activeFocus && list.currentIndex === card.index
+                        }
                     }
                 }
                 Label {
@@ -182,11 +296,19 @@ Pane {
                     color: "#cccccc"
                 }
             }
-            ChannelWheelArea {
+            MouseArea {
                 anchors.fill: parent
-                view: list
-                horizontal: true
-                step: 112
+                acceptedButtons: Qt.NoButton
+                onWheel: function(event) {
+                    const delta = event.angleDelta.y || event.angleDelta.x;
+                    if (!delta || !list.count)
+                        return;
+                    list.forceActiveFocus();
+                    root.navigationAnimated = true;
+                    if (delta < 0) list.incrementCurrentIndex();
+                    else list.decrementCurrentIndex();
+                    event.accepted = true;
+                }
             }
         }
     }
