@@ -57,6 +57,29 @@ TestCase {
         tryCompare(loader, "item", null)
         compare(guide.selectedProgram, null)
     }
+    function test_rescheduled_slot_closes_old_details_data() {
+        return [
+            {tag:"start revised", startDelta:60000, duration:3600000},
+            {tag:"duration revised", startDelta:0, duration:1800000}
+        ]
+    }
+    function test_rescheduled_slot_closes_old_details(data) {
+        guide.dayOffset = 1
+        const start = guide.days[1].start
+        guide.rows = [{index:0, label:"Channel 0", band:"GR", logo:""}]
+        const identity = {endpoint:1, service:{network_id:4, service_id:42}, program:1, start:start, duration:3600000}
+        const original = {watchKey:JSON.stringify(identity), name:"Same event", description:"Original", startAt:start, duration:3600000}
+        guide.programsJson = JSON.stringify([{index:0, programs:[original]}])
+        verify(waitForRendering(guide))
+        mouseClick(findChild(guide, "guideCell"), 20, 30)
+        const loader = findChild(guide, "scheduledDetailsLoader")
+        tryCompare(loader.item, "opened", true)
+        const revisedIdentity = Object.assign({}, identity, {start:start+data.startDelta, duration:data.duration})
+        const revised = Object.assign({}, original, {watchKey:JSON.stringify(revisedIdentity), startAt:revisedIdentity.start, duration:data.duration})
+        guide.programsJson = JSON.stringify([{index:0, programs:[revised]}])
+        tryCompare(loader, "item", null)
+        compare(guide.selectedProgram, null)
+    }
     function test_detail_position_resize_and_animated_dismissal() {
         testCase.Window.window.width = 1440; testCase.Window.window.height = 900
         testCase.width = 1440; testCase.height = 900

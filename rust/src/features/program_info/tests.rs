@@ -549,6 +549,20 @@ fn watch_revalidates_opaque_ids_current_time_and_reordered_channels()
         Err(watch::Error::Unavailable)
     ));
     channels[reordered].id = u64::MAX;
+    // A broadcaster may revise the slot while retaining the event ID. The old
+    // selection must not authorize a different start or duration, even if live.
+    for (start, duration) in [(110, 100), (100, 80)] {
+        feature.snapshot = parse(
+            format!(
+                r#"[{{"id":18446744073709551615,"networkId":4,"serviceId":42,"startAt":{start},"duration":{duration}}}]"#
+            )
+            .as_bytes(),
+        )?;
+        assert!(matches!(
+            feature.watch_channel(key, &channels, 150),
+            Err(watch::Error::NotLive)
+        ));
+    }
     feature.snapshot = parse(
         br#"[
         {"id":2,"networkId":4,"serviceId":42,"startAt":100,"duration":100}

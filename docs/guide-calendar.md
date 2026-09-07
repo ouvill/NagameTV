@@ -468,3 +468,14 @@ GuideTimelineの解析済みcolumnsが更新されたとき、選択中のwatchK
 既存の画面外列破棄・日付変更・視聴要求の試験を含む。記録はGit対象外の
 benchmark/guide-detail-refresh/にbefore.txt、after.txt、final.txtとして保存した。
 実Mirakurun通知で開いた詳細が変わる瞬間の確認やGPU性能測定ではない。
+
+
+同じ番組IDの放送枠変更も回帰試験へ追加した。開始時刻だけ変更する場合と
+長さだけ変更する場合を分け、変更前の詳細が閉じることをQMLで確認した。
+Rust側ではu64最大値の番組IDを保持したまま開始時刻／長さを変更し、
+現在時刻が新旧両方の枠内でも旧キーによる視聴要求がNotLiveになることを確認した。
+これにより、単に時刻が枠外だったため拒否された結果とは区別する。
+
+Rust全102件成功・外部データを必要とする3件はignored、QML全89件成功。
+QML証跡はbenchmark/guide-detail-refresh/slot-revision.txt。今回は試験追加だけで
+製品処理の変更はない。実サーバーによる放送枠変更そのものの試験ではない。
