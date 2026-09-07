@@ -381,3 +381,19 @@ Network、CommentsをResultで経由してPlayerが診断出力する。購読�
 実況受信中→機能無効→再有効後の受信中への復帰を画像で確認した。
 証跡はbenchmark/virtual-ui/comment-join.logとcomment-join-*.png。
 実サービスでのpanic再現、新着コメント描画、長時間併用の検証を代替するものではない。
+
+## Qt描画オブジェクトの寿命試験（2026-09-07）
+
+DanmakuOverlayを直接生成するQMLテストを追加した。専用Xvfb :99 / llvmpipeで、
+1,000件のreceive要求でもliveEntriesと実際の子Itemが64件までであることを確認。
+clearComments直後は所有配列・レーン参照が空になり、Qtの遅延destroy後には子Itemも0件になる。
+同じスクリプト内でクリア直後に1件追加しても、その新しい子Itemが旧世代の破棄に巻き込まれない。
+二重クリア、非表示時の解放、非表示中の受信を無視すること、再表示後の受信も確認した。
+HTML風の入力はPlainTextのまま。実際のNumberAnimation完了後にも所有配列・レーン参照・
+子Itemが空になることを確認した。速度は設定範囲内の2、フォントサイズ21。
+
+新規部品試験は5件（初期化・終了を含む）、全QML試験は84件成功。製品コードの変更なし。
+試験ファイルはrust/qml/tests/tst_DanmakuOverlay.qml、結果はGit対象外の
+benchmark/virtual-ui/danmaku-lifetime-tests.txt・danmaku-all-tests.txt。
+オブジェクト所有と寿命の試験であり、Qt内部キャッシュ・プロセスRSS・GPU資源の
+長時間安定性、実サービスの再接続を証明するものではない。
