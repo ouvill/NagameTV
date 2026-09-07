@@ -130,3 +130,16 @@ CPU試験ではSessionが生存中に別Sessionで保存内容を読めること
 言語切り替えの移植状況とQtの検証範囲は [localization-migration.md](localization-migration.md)。
 
 EPG変更通知の解析・集約と購読の残作業は [epg-event-stream.md](epg-event-stream.md)。
+
+
+## 字幕ネイティブ依存のビルドエラー
+
+libaribcaption-sysのbuild.rsをResultを返す形へ変更した。Cargo環境変数の取得、ソースの
+canonicalize、bindgenのResult、生成ファイルの書き込みからunwrap/expectを除去し、
+失敗の対象パスと元の原因をエラーに含める。必須資源の不足時にビルドを継続しない。
+cmake・cc・bindgen内部で発生するpanicまでResultへ変換したものではない。
+
+コンパイル済みbuild-scriptを隔離した一時パスで実行し、CARGO_MANIFEST_DIR欠落、
+OUT_DIR欠落、存在しないARIBCAPTION_SOURCE_DIRの3条件で終了コード1と原因付きエラーを
+確認した。パニック出力なし。通常ビルドでは字幕デコードの2試験が成功した。
+この変更はビルド時のエラー処理であり、再生時のメモリー改善を示すものではない。
