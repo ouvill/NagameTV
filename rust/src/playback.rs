@@ -3,6 +3,7 @@ mod audio_components;
 mod audio_default;
 pub mod audio_output;
 mod audio_routing;
+mod audio_sink;
 pub mod audio_streams;
 pub mod deinterlace;
 pub mod failure;
@@ -24,6 +25,8 @@ pub enum Error {
     },
     #[error("{0}")]
     Deinterlace(#[from] deinterlace::Error),
+    #[error("{0}")]
+    AudioSink(#[from] audio_sink::Error),
     #[error("GStreamer initialization failed: {0}")]
     Initialization(#[from] gst::glib::Error),
     #[error("GStreamer operation failed: {0}")]
@@ -176,9 +179,7 @@ impl Playback {
             gst::GhostPad::with_target(&input.static_pad("sink").ok_or(Error::MissingSinkPad)?)?;
         pad.set_active(true)?;
         output.add_pad(&pad)?;
-        let audio = gst::ElementFactory::make("pulsesink")
-            .property("enable-last-sample", false)
-            .build()?;
+        let audio = audio_sink::Output::from_environment()?.build()?;
         let routing = audio_routing::Routing::default();
         let audio_filter = routing.filter()?;
         let playbin = gst::ElementFactory::make("playbin3").build()?;

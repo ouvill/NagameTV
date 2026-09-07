@@ -36,6 +36,12 @@ MIRAKURUN_SERVER=http://192.168.3.3:40772 QT_QPA_PLATFORM=xcb ./build/mirakurun-
 チャンネルは放送種別・リモコン番号順に表示し、地デジ／BS／CS／SKYなどで絞り込めます。
 種別を変えるだけでは再生局は変わりません。
 `MIRAKURUN_AUTOPLAY=1` で取得後に自動再生し、`MIRAKURUN_SERVICE_ID` で選択局を上書きできます。
+
+音声出力の既定はPulseAudioです。main互換の検証用指定
+`MIRAKURUN_AUDIO_SINK=fakesink` は、クロック同期を保って音声データを破棄します。
+明示的に指定した場合のみ有効で、音声デバイスの障害時に自動で切り替わることはありません。
+`pulsesink` の明示指定も可能です。それ以外の値は起動エラーになります。
+音声を捨てる指定での試験は、実際の音声出力の検証には使えません。
 PgUp/PgDownで選局、Gで番組表、F11で全画面を切り替えます。
 Cまたは「チャンネル」でロゴ付きのチャンネル選択画面を開きます。
 矢印キーで移動しEnterで選局できます。[仕様と検証](docs/channel-browser.md)。

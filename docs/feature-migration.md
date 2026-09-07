@@ -48,6 +48,26 @@ QML全86件成功、リリースビルド成功。証跡はgit管理外の
 
 ## 設定保存の設計
 
+### 検証用音声出力の明示指定（2026-09-07）
+
+mainの`MIRAKURUN_AUDIO_SINK=fakesink`を移植した。`playback/audio_sink.rs`に
+通常のPulse出力とTestDiscardをenumで分離し、未指定の通常出力は従来どおりpulsesink。
+fakesinkは明示指定だけで有効となり、起動ログにも音声を破棄する検証モードと記録する。
+不正値・非Unicodeは型付きエラーで返す。mainが不正値を無視する挙動は引き継がない。
+mainのPULSE_SERVER未指定時の自動出力選択も現ブランチでは実装せず、Pulse固定である。
+
+[GStreamer fakesink仕様](https://gstreamer.freedesktop.org/documentation/coreelements/fakesink.html)
+を参照し、main同様にsync=true、enable-last-sample=falseとする。通常出力が使えない
+場合の自動代替ではない。生成する音声出力は常に一つで、既存の音声routingを共有する。
+
+出力選択・不正値・ネイティブ生成プロパティのテスト、全ターゲットClippy、リリースビルド成功。
+検出・検証済みの専用Xvfb :99 / llvmpipeで、明示したfakesinkと--features=noneで
+実放送のPLAYINGと映像、停止画面、閉じるボタンからの終了コード0を確認した。
+不正値の製品起動は説明付きの終了コード1。証跡はgit管理外の
+`benchmark/audio-sink-selection/`のtests.txt、player.log、playing.png、stopped.png、invalid.log。
+音声出力の実測やGPU性能の合格判定には使わない。GPU再現待ちPID 78793は既存バイナリー・
+Pulse出力のまま継続しており、この短い仮想画面試験とビルドは同時実行されている。
+
 `settings/model.rs` はPreferencesと有限・範囲内のVolume型、選択局の照合、環境上書きの
 規則を持つ。QtやファイルIOに依存しない。`settings/mod.rs` が64KiB上限の読み込みと
 同一ディレクトリーの一時ファイルからの置換を担当する。
