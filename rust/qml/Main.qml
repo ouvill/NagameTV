@@ -75,7 +75,8 @@ ApplicationWindow {
         id: overlayVisibility
         enabled: !root.closing
         playing: player.playing
-        pinned: root.showProgram || root.showChannels || root.showGuide || windowActions.popupOpen || windowActions.editingText || volumeSlider.pressed
+        // Like main, the persistent sidebar does not pin the video controls.
+        pinned: root.showChannels || root.showGuide || windowActions.popupOpen || windowActions.editingText || volumeSlider.pressed
     }
     AudioSettings {
         id: audioSettings
