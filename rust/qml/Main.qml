@@ -90,6 +90,25 @@ ApplicationWindow {
         }
         onClosed: overlayVisibility.reveal()
     }
+    PlaybackSettings {
+        id: playbackSettings
+        videoWidth: video.width
+        windowHeight: root.height
+        commentsEnabled: player.comments_enabled
+        danmakuEnabled: player.danmaku_enabled
+        textSize: player.comment_font_size
+        textOpacity: player.comment_opacity
+        speed: player.comment_speed
+        statsVisible: root.showStats
+        onDanmakuRequested: function(enabled, size, opacity, speed) {
+            player.configure_danmaku(enabled, size, opacity, speed);
+        }
+        onStatsRequested: function(visible) { root.showStats = visible; }
+        onClosed: {
+            if (!root.closing) player.save_settings();
+            overlayVisibility.reveal();
+        }
+    }
     WindowActions {
         id: windowActions
         targetWindow: root
@@ -444,7 +463,7 @@ ApplicationWindow {
                     IconAction {
                         iconSource: "qrc:/qt/qml/MinimalViewer/assets/icons/settings-2.svg"
                         tip: qsTranslate("Main", "Playback settings")
-                        onClicked: settings.open()
+                        onClicked: { playbackSettings.open(); overlayVisibility.reveal(); }
                     }
                     IconAction {
                         iconSource: "qrc:/qt/qml/MinimalViewer/assets/icons/maximize.svg"

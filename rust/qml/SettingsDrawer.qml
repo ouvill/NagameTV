@@ -228,45 +228,14 @@ Drawer {
                 enabled: root.backend.comments_enabled === true
                 onClicked: root.backend.configure_danmaku(checked, root.backend.comment_font_size, root.backend.comment_opacity, root.backend.comment_speed)
             }
-            ColumnLayout {
+            DanmakuAdjustments {
                 Layout.fillWidth: true
                 enabled: root.backend.comments_enabled === true
-                spacing: 12
-                RowLayout {
-                    Layout.fillWidth: true
-                    Label { text: qsTranslate("Main", "Text size"); color: "#b6bab6"; font.pixelSize: 11 }
-                    Item { Layout.fillWidth: true }
-                    Label { text: Math.round(root.backend.comment_font_size || 21) + " px"; color: "#f4f5f3"; font.pixelSize: 11 }
-                }
-                ThemedSlider {
-                    Layout.fillWidth: true
-                    from: 14; to: 36; stepSize: 1
-                    value: root.backend.comment_font_size || 21
-                    onMoved: root.backend.configure_danmaku(root.backend.danmaku_enabled, value, root.backend.comment_opacity, root.backend.comment_speed)
-                }
-                RowLayout {
-                    Layout.fillWidth: true
-                    Label { text: qsTranslate("Viewer", "Opacity"); color: "#b6bab6"; font.pixelSize: 11 }
-                    Item { Layout.fillWidth: true }
-                    Label { text: Math.round((root.backend.comment_opacity || 1) * 100) + "%"; color: "#f4f5f3"; font.pixelSize: 11 }
-                }
-                ThemedSlider {
-                    Layout.fillWidth: true
-                    from: 0.2; to: 1; stepSize: 0.05
-                    value: root.backend.comment_opacity || 1
-                    onMoved: root.backend.configure_danmaku(root.backend.danmaku_enabled, root.backend.comment_font_size, value, root.backend.comment_speed)
-                }
-                RowLayout {
-                    Layout.fillWidth: true
-                    Label { text: qsTranslate("Main", "Speed"); color: "#b6bab6"; font.pixelSize: 11 }
-                    Item { Layout.fillWidth: true }
-                    Label { text: (root.backend.comment_speed || 1).toFixed(1) + "×"; color: "#f4f5f3"; font.pixelSize: 11 }
-                }
-                ThemedSlider {
-                    Layout.fillWidth: true
-                    from: 0.5; to: 2; stepSize: 0.1
-                    value: root.backend.comment_speed || 1
-                    onMoved: root.backend.configure_danmaku(root.backend.danmaku_enabled, root.backend.comment_font_size, root.backend.comment_opacity, value)
+                textSize: root.backend.comment_font_size
+                textOpacity: root.backend.comment_opacity
+                speed: root.backend.comment_speed
+                onAdjusted: function(size, opacity, speed) {
+                    root.backend.configure_danmaku(root.backend.danmaku_enabled, size, opacity, speed);
                 }
             }
             CheckBox {

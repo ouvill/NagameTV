@@ -9,6 +9,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         QmlModule::new("MinimalViewer")
             .qml_file("qml/Main.qml")
             .qml_file("qml/AudioSettings.qml")
+            .qml_file("qml/PlaybackSettings.qml")
+            .qml_file("qml/DanmakuAdjustments.qml")
             .qml_file("qml/StoppedPlayback.qml")
             .qml_file("qml/TextAction.qml")
             .qml_file("qml/PlaybackErrorDetails.qml")
