@@ -321,3 +321,27 @@ RSSとglibc使用中量は異なる指標であり、両者の差をリーク量
 証跡はgit管理外の`benchmark/recovery-long-diagnostics/`の`analyze.py`、
 `capture.jsonl`、`result.txt`、`player.log`、`binary-sha256.txt`。
 短時間の安定は長時間の安定を保証しないことが今回確認された。
+
+## 検査エラーのスタック採取準備（2026-09-07）
+
+PID 5683へのgdb接続は`ptrace: Inappropriate ioctl for device`で拒否され、
+スタックは取得できなかった。環境のptrace設定は変更せず、プロセスがSlで生存することを
+確認した。接続結果は`benchmark/gstreamer-critical/stack.txt`。
+
+代替として、別プロセス起動時だけ読み込むcapture.soを用意した。GLibの
+g_return_if_fail_warningを中継し、GStreamerのgst_object_get_name検査エラーの
+初回にだけ最大32フレームのスタックを標準エラーへ記録する。元の警告関数も呼ぶ。
+二回の意図的なNULL呼び出しを行う独立probeで、スタック一回、警告二回、終了コード0を
+確認した。capture.c/probe.cは-Wall -Wextra -Werrorでコンパイル済み。
+これは採取経路の試験であり、実アプリのエラー原因を特定した結果ではない。
+
+現行製品バイナリー（コード1c64d53、起動時HEAD ce61d9b）をこの補助ライブラリー付きで
+別途起動した。PID 78793、service 3272302072、EPG有効、字幕・実況無効、音量0。
+NVIDIAのデバイス・:0のOpenGLとPulseAudioの無音出力を検出・検証し、GPU側の表示で
+PLAYINGを確認。仮想画面のUI試験とは別の再現調査である。通常画面への入力は送らず、
+既存PID 5683も停止していない。設定・stateは`benchmark/gstreamer-critical/current/`へ
+隔離し、実行バイナリーのSHA-256も保存した。
+
+新プロセスは本記録時点で動作中。長時間再現とスタックはまだ得られておらず、安定性の
+結論は出さない。補助ライブラリーによる採取時の影響もあるため、原因修正後の性能判定は
+採取なしのプロセスで行う。C補助コード・probe.log・起動ログは同benchmark内に保存した。
