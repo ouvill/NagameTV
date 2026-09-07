@@ -49,26 +49,32 @@ impl TransportParser {
     pub fn push(&mut self, data: &[u8]) -> Vec<SubtitleCue> {
         self.bytes.extend_from_slice(data);
         let mut texts = Vec::new();
-        loop {
-            let Some(sync) = self.bytes.iter().position(|byte| *byte == 0x47) else {
-                self.bytes.clear();
+        let mut consumed = 0;
+        while consumed < self.bytes.len() {
+            let Some(sync) = self.bytes[consumed..].iter().position(|byte| *byte == 0x47) else {
+                consumed = self.bytes.len();
                 break;
             };
-            if sync > 0 {
-                self.bytes.drain(..sync);
-            }
-            if self.bytes.len() < 188 {
+            consumed += sync;
+            if self.bytes.len() - consumed < 188 {
                 break;
             }
-            if self.bytes.get(188).is_some_and(|byte| *byte != 0x47) {
-                self.bytes.remove(0);
+            if self
+                .bytes
+                .get(consumed + 188)
+                .is_some_and(|byte| *byte != 0x47)
+            {
+                consumed += 1;
                 continue;
             }
             let mut packet = [0; 188];
-            packet.copy_from_slice(&self.bytes[..188]);
-            self.bytes.drain(..188);
+            packet.copy_from_slice(&self.bytes[consumed..consumed + 188]);
+            consumed += 188;
             self.handle_packet(&packet, &mut texts);
         }
+        // Retain only the incomplete tail. Moving it once avoids shifting all
+        // remaining input after every 188-byte packet in a large source buffer.
+        self.bytes.drain(..consumed);
         texts
     }
 
@@ -397,6 +403,33 @@ mod tests {
                 .pending_bytes(0x120)
                 .is_some()
         );
+    }
+
+    #[test]
+    fn framing_preserves_tables_across_chunk_sizes_and_garbage_prefix() {
+        let pat = [0, 0, 0xb0, 13, 0, 1, 0xc1, 0, 0, 0, 1, 0xe1, 0, 0, 0, 0, 0];
+        let packet = ts_packet(0, true, &pat);
+        let mut input = vec![0x11, 0x47, 0x22, 0x33];
+        for _ in 0..256 {
+            input.extend_from_slice(&packet);
+        }
+        // End mid-packet, then supply its remainder in a later call.
+        input.extend_from_slice(&packet[..73]);
+        for chunk_size in [1, 17, 187, 188, 189, 16384, input.len()] {
+            let mut parser = TransportParser::new(false);
+            for chunk in input.chunks(chunk_size) {
+                assert!(parser.push(chunk).is_empty());
+                assert!(parser.bytes.len() < 188);
+            }
+            assert_eq!(
+                parser.pmt_pids,
+                std::collections::HashSet::from([0x100]),
+                "chunk size {chunk_size}"
+            );
+            assert_eq!(parser.bytes, packet[..73]);
+            assert!(parser.push(&packet[73..]).is_empty());
+            assert!(parser.bytes.is_empty());
+        }
     }
 
     #[test]
