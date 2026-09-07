@@ -157,7 +157,10 @@ impl ffi::Player {
         self.as_mut().browser_open(false);
         self.as_mut().rust_mut().epg.configure(None);
         self.as_mut().guide_open(false);
-        let _ = self.as_mut().end_stream();
+        if let Err(error) = self.as_mut().end_stream() {
+            // Continue to final NULL shutdown even if the initial READY stop failed.
+            eprintln!("Stream stop during shutdown failed: {error}");
+        }
         self.as_mut().rust_mut().request.cancel();
         if let Some(playback) = self.as_mut().rust_mut().playback.as_mut() {
             playback.shutdown();

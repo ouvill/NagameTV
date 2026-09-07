@@ -1,5 +1,23 @@
 # mainへの置き換えに向けた開発方針
 
+## 終了時の失敗の記録（2026-09-07）
+
+Player::shutdownの最初のREADY停止とPlayback::shutdownのsink NULL遷移で、
+返されたエラーを破棄していた箇所を標準エラーへの記録に変更した。
+どちらも失敗後の残りの解放処理を続ける。状態遷移順、字幕解放条件、最終NULL、
+widget解除、設定保存の順序は変更しない。新しい保持データや再試行は追加しない。
+終了中の失敗を後から調べられるようにする変更であり、失敗そのものを修復するものではない。
+
+fmt・Clippy全ターゲット（警告なし）・CMakeリリースビルド成功。
+Xvfb :99 / llvmpipeで実放送のPLAYING、停止画面、再開後PLAYINGを確認し、
+閉じるボタンから終了コード0。字幕・EPG・実況は保存設定で有効。
+証跡はbenchmark/virtual-ui/shutdown-reporting.logと対応するstopped/resumed画像。
+正常終了経路の確認であり、READY/NULL失敗の注入やGPU・長時間資源測定は未実施。
+
+対応表では同一URLでの障害復旧、EPG通知の集約とQt更新、503案内の検証結果を更新した。
+また503-guidance/state/mirakurun-viewer/playback-error.log（363 bytes）を読み、
+注入した理由とHTTP: Some(503)の永続化も確認した。ログフォルダーを開く操作は未検証。
+
 ## UI再現の要件（2026-09-07追記）
 
 ユーザーの指摘により、機能だけを実験用UIへ追加する進め方を修正する。

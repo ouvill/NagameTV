@@ -318,7 +318,9 @@ impl Playback {
         if let Err(error) = self.playbin.set_state(gst::State::Null) {
             eprintln!("Playback shutdown failed: {error}");
         }
-        let _ = self.sink.set_state(gst::State::Null);
+        if let Err(error) = self.sink.set_state(gst::State::Null) {
+            eprintln!("Video sink shutdown failed: {error}");
+        }
         self.sink
             .set_property("widget", std::ptr::null_mut::<std::ffi::c_void>());
         self.attached = false;
