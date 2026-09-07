@@ -401,3 +401,22 @@ releaseビルド成功後、専用Xvfb画面で「ライブテレビ」の見出
 確認した。ホイール操作後もバッジ中央と線が揃って移動した。
 画像はbenchmark/ui-comparison/stopped-heading-fixed.png、guide-clock-fixed.png、
 guide-clock-scrolled.png。ログはbenchmark/virtual-ui/guide-clock.log。
+
+
+## 番組表下部の案内欄
+
+mainのguideFooterをProgramGuideのColumnLayoutへ移植した。高さ60px、左余白24px、
+背景#0b0c0b、枠#18ffffff、補助文字12pxと既存カタログの案内文を使用する。
+番組表本体はfooterを除いた高さを使うため、最下部の番組を案内欄の背後へ隠さない。
+空データでは既存の取得状態を同じ領域へ表示し、二つのラベルを重ねない。
+この変更は表示の移植であり、矢印・Enterキーによる操作を追加・検証したものではない。
+案内文と実際の入力動作の整合は引き続き確認対象とする。
+
+QML全体74件成功・警告なし。詳細の位置制限、視聴要求、日付選択、スクロールと時刻表示を
+含む既存の試験を、footerを含む配置で実行した。描画部品の追加だけでRust・通信・
+タイマー・EPG保持形式に変更はない。
+
+releaseビルド後の実アプリでも1440×900の案内欄を確認し、900×560へ縮小して
+放送中の詳細を開いた。詳細カードと視聴ボタンはfooterへ重ならず表示された。
+画像はbenchmark/ui-comparison/guide-footer-wide.png、guide-footer-small-detail.png、
+ログはbenchmark/virtual-ui/guide-footer.log。

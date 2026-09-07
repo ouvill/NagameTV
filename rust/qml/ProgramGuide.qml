@@ -86,12 +86,22 @@ Rectangle {
                 root.selectedProgram = program
             }
         }
-    }
-
-    Label {
-        anchors.bottom: parent.bottom; anchors.left: parent.left; anchors.margins: 18
-        visible: root.programsJson === "[]"
-        text: root.status; color: "#b6bab6"; textFormat: Text.PlainText
+        Rectangle {
+            objectName: "guideFooter"
+            Layout.fillWidth: true
+            Layout.minimumHeight: 60; Layout.maximumHeight: 60
+            color: "#0b0c0b"; border.color: "#18ffffff"
+            Label {
+                anchors.left: parent.left; anchors.leftMargin: 24
+                anchors.right: parent.right; anchors.rightMargin: 24
+                anchors.verticalCenter: parent.verticalCenter
+                text: root.programsJson === "[]" ? root.status
+                    : qsTranslate("Main", "←→ Channels   ↑↓ Time   Enter Details")
+                textFormat: Text.PlainText
+                color: "#b6bab6"; font.pixelSize: 12
+                wrapMode: Text.Wrap; maximumLineCount: 2; elide: Text.ElideRight
+            }
+        }
     }
     // Block the grid behind the card, keeping main's toolbar usable.
     MouseArea {
