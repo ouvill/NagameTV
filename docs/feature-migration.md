@@ -340,3 +340,30 @@ window-operations-final.png。コード変更なし。Openbox上の操作確認�
 ウィンドウマネージャー側の操作が残った可能性があるが原因は未特定。
 マウスボタン解放・Escape・検証用の位置再設定後、閉じるボタンで終了コード0を確認した。
 各操作直後の寸法結果は上記のとおりだが、連続操作の入力同期にはこの未解決事項が残る。
+
+
+## リサイズ解放後の意図しない移動の修正（2026-09-07）
+
+上記の連続操作の不安定さを、XQueryPointerのボタンマスクとウィンドウ位置を記録して再現。
+上端リサイズ後はmask=0にもかかわらず、ポインター移動だけでy=85から380へ移動した。
+押下・移動・解放の間に待ちを設けても再現し、自動操作の待ち時間だけでは解消しなかった。
+
+WindowDragAreaの受動的なDragHandlerを除き、同MouseAreaが受け付けた押下位置と
+pressed・mouse.buttonsを使ってタイトル移動を開始する構成に変更した。
+プラットフォームのstartDragDistanceを超えたときだけstartSystemMoveへ渡し、
+同じ押下からの重複開始を防ぐ。解放・キャンセル時に開始フラグを戻す。
+ダブルクリック最大化と全画面中の移動禁止は維持する。Mainと番組表が同じ部品を使う。
+参照: [Qt MouseArea](https://doc.qt.io/qt-6/qml-qtquick-mousearea.html)、
+[QStyleHints::startDragDistance](https://doc.qt.io/qt-6/qstylehints.html#startDragDistance-prop)。
+タイトル領域をリサイズ領域から外すだけの試験では同じ不具合が残ったため、
+最終変更は配置の調整ではなく、移動を開始できる入力の限定とした。
+
+QML全77件とCMakeリリースビルド成功。新規アプリでタイトル・上下左右・右下角の
+6種類のドラッグ、途中の最大化／復元を実行し、各解放後mask=0とポインターだけの移動で
+位置・寸法が変わらないことを確認。番組表の上端リサイズとタイトル移動でも同じ確認が成功。
+最後の閉じるボタンは追加の操作解除なしに終了コード0。この環境の再現条件では解消した。
+通常デスクトップ／Wayland・タッチ入力は未検証。
+
+証跡はbenchmark/virtual-ui/check-drag-sync.py、修正前window-drag-sync.jsonl、
+修正後window-mousearea.jsonl・window-guide-mousearea.jsonl・window-mousearea.log・
+window-mousearea-qml-tests.txt。途中の失敗記録も別名で保持している。

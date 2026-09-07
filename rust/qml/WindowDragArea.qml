@@ -5,23 +5,32 @@ MouseArea {
     required property Window targetWindow
     signal activity
     acceptedButtons: Qt.LeftButton
+    property point pressPosition: Qt.point(0, 0)
+    property bool moveStarted: false
+    onPressed: function(mouse) {
+        pressPosition = Qt.point(mouse.x, mouse.y);
+        moveStarted = false;
+    }
+    onReleased: moveStarted = false
+    onCanceled: moveStarted = false
     onDoubleClicked: {
         if (area.targetWindow.visibility !== Window.FullScreen)
             area.targetWindow.visibility === Window.Maximized ? area.targetWindow.showNormal() : area.targetWindow.showMaximized();
     }
-    // A press can still be a click or the first half of a double click.
-    // Hand off only after the platform drag threshold has been crossed.
-    // Let the compositor restore/place the window in its own coordinates.
-    DragHandler {
-        target: null
-        acceptedButtons: Qt.LeftButton
-        enabled: area.targetWindow.visibility === Window.Windowed || area.targetWindow.visibility === Window.Maximized
-        onActiveChanged: {
-            if (active) {
-                area.activity();
-                if (!area.targetWindow.startSystemMove())
-                    console.warn("Could not start the system window move");
-            }
-        }
+    // Only a press accepted by this MouseArea may initiate a move. A passive
+    // DragHandler can also observe a resize press and initiate a second native
+    // operation after the window manager releases its resize grab.
+    onPositionChanged: function(mouse) {
+        if (!pressed || !(mouse.buttons & Qt.LeftButton) || moveStarted)
+            return;
+        if (targetWindow.visibility !== Window.Windowed && targetWindow.visibility !== Window.Maximized)
+            return;
+        const distance = Qt.styleHints.startDragDistance;
+        if (Math.abs(mouse.x - pressPosition.x) < distance && Math.abs(mouse.y - pressPosition.y) < distance)
+            return;
+        moveStarted = true;
+        area.activity();
+        if (!targetWindow.startSystemMove())
+            console.warn("Could not start the system window move");
     }
 }
