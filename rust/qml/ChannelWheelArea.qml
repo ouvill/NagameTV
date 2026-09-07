@@ -21,7 +21,10 @@ MouseArea {
         const position = horizontal ? view.contentX : view.contentY;
         const contentSize = horizontal ? view.contentWidth : view.contentHeight;
         const viewportSize = horizontal ? view.width : view.height;
-        const next = Math.max(0, Math.min(contentSize - viewportSize,
+        // Variable-size ListView delegates can shift the content origin.
+        const origin = horizontal ? view.originX : view.originY;
+        const end = origin + Math.max(0, contentSize - viewportSize);
+        const next = Math.max(origin, Math.min(end,
             position + (delta < 0 ? step : -step)));
         if (horizontal) view.contentX = next;
         else view.contentY = next;
