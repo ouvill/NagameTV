@@ -103,8 +103,8 @@ Item {
                         height: 32
                         verticalAlignment: Text.AlignVCenter
                         text: card.modelData.label.replace(/^\d+\s+/, "")
-                        color: "#b6bab6"
-                        font.pixelSize: 12
+                        color: "#f4f5f3"
+                        font.bold: true
                         elide: Text.ElideRight
                         textFormat: Text.PlainText
                     }
