@@ -54,7 +54,8 @@ mainの`MIRAKURUN_AUDIO_SINK=fakesink`を移植した。`playback/audio_sink.rs`
 通常のPulse出力とTestDiscardをenumで分離し、未指定の通常出力は従来どおりpulsesink。
 fakesinkは明示指定だけで有効となり、起動ログにも音声を破棄する検証モードと記録する。
 不正値・非Unicodeは型付きエラーで返す。mainが不正値を無視する挙動は引き継がない。
-mainのPULSE_SERVER未指定時の自動出力選択も現ブランチでは実装せず、Pulse固定である。
+この時点ではPulse固定だったが、後続の修正でPULSE_SERVER未指定時の自動選択も移植した。
+現在の選択規則と検証範囲は[音声出力の選択](audio-output.md#音声出力の選択)を参照。
 
 [GStreamer fakesink仕様](https://gstreamer.freedesktop.org/documentation/coreelements/fakesink.html)
 を参照し、main同様にsync=true、enable-last-sample=falseとする。通常出力が使えない

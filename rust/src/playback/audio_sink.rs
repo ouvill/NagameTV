@@ -1,8 +1,9 @@
-//! Explicit audio output selection. A missing device never selects test output.
+//! Main-compatible audio selection with an explicit, separate test override.
 use gstreamer::{self as gst, prelude::*};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Output {
+    Automatic,
     Pulse,
     TestDiscard,
 }
@@ -17,23 +18,29 @@ pub enum Error {
 
 impl Output {
     pub fn from_environment() -> Result<Self, Error> {
+        let pulse_server_present = std::env::var_os("PULSE_SERVER").is_some();
         match std::env::var("MIRAKURUN_AUDIO_SINK") {
-            Ok(value) => Self::parse(Some(&value)),
-            Err(std::env::VarError::NotPresent) => Self::parse(None),
+            Ok(value) => Self::parse(Some(&value), pulse_server_present),
+            Err(std::env::VarError::NotPresent) => Self::parse(None, pulse_server_present),
             Err(std::env::VarError::NotUnicode(_)) => Err(Error::NonUnicode),
         }
     }
 
-    fn parse(value: Option<&str>) -> Result<Self, Error> {
+    fn parse(value: Option<&str>, pulse_server_present: bool) -> Result<Self, Error> {
         match value {
-            None | Some("pulsesink") => Ok(Self::Pulse),
+            None if pulse_server_present => Ok(Self::Pulse),
+            None => Ok(Self::Automatic),
+            Some("pulsesink") => Ok(Self::Pulse),
             Some("fakesink") => Ok(Self::TestDiscard),
             Some(value) => Err(Error::Invalid(value.to_owned())),
         }
     }
 
-    pub fn build(self) -> Result<gst::Element, gst::glib::BoolError> {
+    pub fn build(self) -> Result<Option<gst::Element>, gst::glib::BoolError> {
         let factory = match self {
+            // Like main, leave audio-sink unset so playbin selects the platform
+            // output. An explicit Pulse endpoint avoids probing other backends.
+            Self::Automatic => return Ok(None),
             Self::Pulse => "pulsesink",
             Self::TestDiscard => "fakesink",
         };
@@ -45,7 +52,7 @@ impl Output {
             sink.set_property("sync", true);
             eprintln!("Audio output: explicit fakesink test mode (audio discarded)");
         }
-        Ok(sink)
+        Ok(Some(sink))
     }
 }
 
@@ -55,11 +62,16 @@ mod tests {
     #[test]
     fn test_output_requires_explicit_selection_and_preserves_clock_pacing()
     -> Result<(), Box<dyn std::error::Error>> {
-        assert_eq!(Output::parse(None)?, Output::Pulse);
-        assert_eq!(Output::parse(Some("pulsesink"))?, Output::Pulse);
-        assert_eq!(Output::parse(Some("fakesink"))?, Output::TestDiscard);
+        assert_eq!(Output::parse(None, true)?, Output::Pulse);
+        assert_eq!(Output::parse(None, false)?, Output::Automatic);
+        assert!(Output::Automatic.build()?.is_none());
+        assert_eq!(Output::parse(Some("pulsesink"), false)?, Output::Pulse);
+        assert_eq!(Output::parse(Some("fakesink"), true)?, Output::TestDiscard);
         for value in ["", "auto", "fake", "FAKESINK"] {
-            assert!(matches!(Output::parse(Some(value)), Err(Error::Invalid(_))));
+            assert!(matches!(
+                Output::parse(Some(value), false),
+                Err(Error::Invalid(_))
+            ));
         }
         gst::init()?;
         // Construction only; no pipeline state change or output device access.
@@ -67,7 +79,7 @@ mod tests {
             (Output::Pulse, "pulsesink"),
             (Output::TestDiscard, "fakesink"),
         ] {
-            let sink = output.build()?;
+            let sink = output.build()?.ok_or("missing explicit sink")?;
             assert_eq!(
                 sink.factory().ok_or("missing sink factory")?.name(),
                 expected

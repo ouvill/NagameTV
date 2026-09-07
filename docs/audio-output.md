@@ -1,5 +1,30 @@
 # 音量とミュート
 
+## 音声出力の選択
+
+mainのrust/src/playback.rsと照合し、出力未指定時のPulse固定を修正した。
+MIRAKURUN_AUDIO_SINK未指定かつPULSE_SERVERが存在する場合はPulse、
+どちらも存在しない場合はAutomaticを選ぶ。PULSE_SERVERはmain同様に存在を判定し、
+空文字や非Unicodeでも指定ありとする。明示的なpulsesink/fakesink指定は優先する。
+不正値・非UnicodeのMIRAKURUN_AUDIO_SINKは引き続き型付きエラーとなる。
+
+Automaticは要素を追加せず、Result<Option<Element>>のNoneとして表現し、
+playbin3のaudio-sinkを未設定に保つ。
+[GStreamerの公式仕様](https://gstreamer.freedesktop.org/documentation/playback/playbin.html#advanced-usage-specifying-the-audio-and-video-sink)
+に従って標準の出力検出へ委ねる。PulseとTestDiscardは従来の要素・設定を保持し、
+新しいスレッドや購読、再試行機構は追加しない。
+
+選択規則と明示出力の要素・sync・enable-last-sample設定をデバイス非使用のテストで確認。
+Automaticは要素を生成しないことを確認した。これは自動検出で選ばれる実デバイスの
+検証ではない。実音声試験では利用可能な音声経路を事前に検出・検証し、
+利用できない場合は停止する。仮想ディスプレイのUI試験では引き続きfakesinkを
+明示し、実音声の成功判定には使わない。
+
+2026-09-07: 対象テスト1件、全ターゲットClippy（警告をエラー扱い）、
+書式検査、CMakeリリースビルド成功。自動選択による実音声出力は未検証。
+
+## 音量状態
+
 mainのQML（audioMutedボタン、音量スライダーのonMoved）とviewer-coreの出力状態を参照した。
 音量を保持して消音し、解除するとその音量へ戻す。ユーザーがスライダーを動かすと解除する。
 ミュートはmainと同じセッション内の状態で、設定ファイルには音量だけを保存する。

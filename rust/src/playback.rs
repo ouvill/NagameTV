@@ -186,7 +186,9 @@ impl Playback {
         playbin.set_property("audio-filter", &audio_filter);
         playbin.set_property_from_str("flags", "video+audio+soft-volume+buffering+native-video");
         playbin.set_property("video-sink", &output);
-        playbin.set_property("audio-sink", &audio);
+        if let Some(audio) = audio {
+            playbin.set_property("audio-sink", &audio);
+        }
         playbin.set_property("volume", 0.5_f64);
         playbin.connect("source-setup", false, |values| {
             if let Some(source) = values.get(1).and_then(|v| v.get::<gst::Element>().ok())
