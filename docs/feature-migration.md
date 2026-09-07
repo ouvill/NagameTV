@@ -166,3 +166,8 @@ SETTINGS_BENCH_DIR内に一時ディレクトリーを作り、通常設定は�
 ```sh
 SETTINGS_BENCH_DIR=/home/workshop/qt-gstreamer-features CARGO_TARGET_DIR=build/cargo cargo test --release --locked --manifest-path rust/Cargo.toml measure_explicit_save_latency -- --ignored --nocapture
 ```
+
+
+現在のCPU全体回帰は93成功・2任意試験除外。並列実行で見つかった音声試験のflush修正と、
+未解明の字幕試験終了待ちの記録はaudio-selection.md末尾を参照。
+全テスト成功の再試行だけを根拠に、初回の終了待ちや実機検証を完了扱いしない。

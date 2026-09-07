@@ -262,3 +262,24 @@ benchmark/viewing-design/audio-default.log。これは単一音声の通常放�
 二重音声のMain出力や副音声との切り替え成功を示すものではない。
 
 音声選択の4種類の失敗案内をQt境界で翻訳原文に対応付け、AudioSettingsで再翻訳する経路を追加した。既存の選択・確定・コレクション解放のCPU試験3件が成功。実放送・実画面検証は残る。詳細はlocalization-migration.md参照。
+
+
+## 並列CPU回帰試験でのflush修正
+
+2026-09-07、アプリのRustテスト95件をまとめて実行した際、二重音声フィルターの試験が
+Timeoutとなった。単独では成功し、並列再試行で同じTimeoutを再現した。
+試験はappsrcのpadから直接FlushStart/FlushStopを送っていた。
+[GStreamerのappsrc実装](https://raw.githubusercontent.com/GStreamer/gstreamer/main/subprojects/gst-plugins-base/gst-libs/gst/app/gstappsrc.c)
+ではsend_eventがFlushStop時に内部キューを処理して親へ渡すため、試験をsource.send_eventへ
+変更した。送信元を迂回したflushと送信タスクの競合が原因候補であり、本体の音声ルーティングを
+変更したものではない。CAPS/STREAM_STARTを再送せず、flushで手動選択を解除する契約は維持する。
+
+修正後、全テストバイナリーを並列・nocaptureで20回、通常キャプチャで20回実行し、
+各回93成功・2ignoredで終了した。外部TS試験と任意の設定保存測定はignored。
+実際のGPU/音声出力を使わず、生成PCM・映像と同梱TSをCPUの検査用sinkで検証する構成。
+各回は12秒の外側の監視期限を設け、修正後は期限超過なし。Clippy・fmt・diff検査も成功。
+
+最初の全体実行では字幕のmaps_real_demuxed_pes_to_the_video_segmentも60秒以上終了せず、
+テストプロセスを明示終了した。gdb attachは環境側で拒否され、スタックは取得できなかった。
+その字幕試験は単独と上記40回では再現せず、原因は未確定のまま残す。
+音声試験の修正によって字幕の終了待ちまで直ったとは判断しない。

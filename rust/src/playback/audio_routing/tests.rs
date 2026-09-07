@@ -130,8 +130,10 @@ fn native_transform_routes_shared_buffers_without_changing_timing_or_input() -> 
     let pad = source
         .static_pad("src")
         .ok_or("appsrc source pad missing")?;
-    assert!(pad.push_event(gst::event::FlushStart::new()));
-    assert!(pad.push_event(gst::event::FlushStop::new(false)));
+    // Flush through appsrc so its queue and source task participate as well.
+    // Pushing directly from the pad can leave the source task stopped on FLUSHING.
+    assert!(source.send_event(gst::event::FlushStart::new()));
+    assert!(source.send_event(gst::event::FlushStop::new(false)));
     let segment = gst::FormattedSegment::<gst::ClockTime>::new();
     assert!(pad.push_event(gst::event::Segment::new(&segment)));
     // No new CAPS or STREAM_START: flushing a stream is not a format change.
