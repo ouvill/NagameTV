@@ -505,8 +505,17 @@ mod tests {
     }
 
     #[test]
-    fn maps_real_demuxed_pes_to_the_video_segment() {
-        gst::init().unwrap();
+    fn maps_real_demuxed_pes_to_the_video_segment() -> Result<(), Box<dyn std::error::Error>> {
+        // Direct stderr bypasses libtest capture if cleanup itself blocks. Opt-in
+        // tracing keeps ordinary test output quiet while preserving the last stage.
+        let trace = |stage: &str| -> std::io::Result<()> {
+            if std::env::var_os("SUBTITLE_TEST_TRACE").is_some() {
+                use std::io::Write;
+                writeln!(std::io::stderr(), "SUBTITLE_CLOCK_TEST {stage}")?;
+            }
+            Ok(())
+        };
+        gst::init()?;
         // Only demux to memory: this test needs no decoder, display, GPU or sound device.
         let data = include_bytes!("../../../../tests/fixtures/subtitle-clock.ts");
         let raw_pts: Vec<i64> = data
@@ -533,7 +542,7 @@ mod tests {
         assert!(raw_pts.len() >= 40);
         let pipeline = PipelineGuard(gst::Pipeline::new());
         let clock = SubtitleClock::default();
-        clock.attach(pipeline.0.upcast_ref());
+        let subscriptions = clock.attach(pipeline.0.upcast_ref());
         let source = gst::ElementFactory::make("filesrc")
             .property(
                 "location",
@@ -542,62 +551,76 @@ mod tests {
                     "/../tests/fixtures/subtitle-clock.ts"
                 ),
             )
-            .build()
-            .unwrap();
-        let demux = gst::ElementFactory::make("tsdemux").build().unwrap();
+            .build()?;
+        let demux = gst::ElementFactory::make("tsdemux").build()?;
         let sink = gst::ElementFactory::make("appsink")
             .property("sync", false)
             .property("async", false)
             .property("max-buffers", 1_u32)
-            .build()
-            .unwrap();
-        pipeline.0.add_many([&source, &demux, &sink]).unwrap();
-        source.link(&demux).unwrap();
-        let sink_pad = sink.static_pad("sink").unwrap();
+            .build()?;
+        pipeline.0.add_many([&source, &demux, &sink])?;
+        source.link(&demux)?;
+        let sink_pad = sink.static_pad("sink").ok_or("appsink pad missing")?;
+        let (link_tx, link_rx) = std::sync::mpsc::sync_channel(1);
         demux.connect_pad_added(move |_, pad| {
             if pad.name().starts_with("video_") {
-                pad.link(&sink_pad).unwrap();
+                let _ = link_tx.try_send(pad.link(&sink_pad));
             }
         });
-        pipeline.0.set_state(gst::State::Playing).unwrap();
+        trace("starting")?;
+        pipeline.0.set_state(gst::State::Playing)?;
+        link_rx.recv_timeout(std::time::Duration::from_secs(5))??;
+        trace("pulling samples")?;
         let mut samples = 0;
         while let Some(sample) =
             sink.emit_by_name::<Option<gst::Sample>>("try-pull-sample", &[&5_000_000_000_u64])
         {
-            let Some(pts) = sample.buffer().unwrap().pts() else {
+            let Some(pts) = sample.buffer().ok_or("sample buffer missing")?.pts() else {
                 continue;
             };
             let stream_time = sample
                 .segment()
-                .unwrap()
+                .ok_or("sample segment missing")?
                 .downcast_ref::<gst::ClockTime>()
-                .unwrap()
+                .ok_or("sample segment is not time-based")?
                 .to_stream_time(pts)
-                .unwrap();
+                .ok_or("PTS is outside sample segment")?;
             clock.push(vec![SubtitleCue {
                 text: "test".into(),
                 clear_screen: false,
-                ..SubtitleCue::clear(raw_pts[samples])
+                ..SubtitleCue::clear(*raw_pts.get(samples).ok_or("unexpected extra sample")?)
             }]);
             assert!(
                 matches!(
-                    clock
-                        .poll(stream_time.checked_sub(gst::ClockTime::NSECOND))
-                        .unwrap(),
+                    clock.poll(stream_time.checked_sub(gst::ClockTime::NSECOND))?,
                     SubtitleUpdate::Unchanged
                 ),
                 "sample {samples} appeared early"
             );
             assert!(
-                matches!(
-                    clock.poll(Some(stream_time)).unwrap(),
-                    SubtitleUpdate::Show(_)
-                ),
+                matches!(clock.poll(Some(stream_time))?, SubtitleUpdate::Show(_)),
                 "sample {samples} was not aligned with its video PTS"
             );
             samples += 1;
         }
+        trace("samples complete")?;
         assert!(sink.property::<bool>("eos"), "demux did not reach EOS");
         assert_eq!(samples, raw_pts.len());
+        // Match Session teardown: join streaming tasks before detaching callbacks.
+        trace("stopping to READY")?;
+        pipeline.0.set_state(gst::State::Ready)?;
+        trace("detaching callbacks")?;
+        subscriptions.close();
+        pipeline
+            .0
+            .bus()
+            .ok_or("pipeline bus missing")?
+            .unset_sync_handler();
+        clock.set_enabled(false);
+        assert_eq!(subscriptions.count(), 0);
+        trace("stopping to NULL")?;
+        pipeline.0.set_state(gst::State::Null)?;
+        trace("complete")?;
+        Ok(())
     }
 }

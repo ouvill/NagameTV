@@ -171,3 +171,5 @@ SETTINGS_BENCH_DIR=/home/workshop/qt-gstreamer-features CARGO_TARGET_DIR=build/c
 現在のCPU全体回帰は93成功・2任意試験除外。並列実行で見つかった音声試験のflush修正と、
 未解明の字幕試験終了待ちの記録はaudio-selection.md末尾を参照。
 全テスト成功の再試行だけを根拠に、初回の終了待ちや実機検証を完了扱いしない。
+
+字幕のCPU試験には停止段階の任意stderr記録と実装側に合わせた明示的な解除を追加した。全体20回で再現なしだが、元の終了待ちの原因は未確定。調査コマンドと検証範囲はaudio-selection.md末尾に記載。

@@ -283,3 +283,25 @@ Timeoutとなった。単独では成功し、並列再試行で同じTimeoutを
 テストプロセスを明示終了した。gdb attachは環境側で拒否され、スタックは取得できなかった。
 その字幕試験は単独と上記40回では再現せず、原因は未確定のまま残す。
 音声試験の修正によって字幕の終了待ちまで直ったとは判断しない。
+
+
+字幕の終了待ちを追跡するため、同試験の終了処理を実装側の契約に合わせて
+READY → callbacks解除 → bus同期handler解除 → clock無効化 → NULLと明示した。
+動的padのリンク失敗はコールバック内のpanicではなく、上限1件の通知を通して
+試験側のResultへ返す。試験の初期化・サンプル検査にもResultを使う。
+本体の再生・字幕処理は変更していない。この変更を原因修正とは扱わない。
+
+`SUBTITLE_TEST_TRACE=1`を指定すると、開始からNULL停止完了までの7段階を
+libtestのキャプチャを迂回してstderrへ出す。stdoutと混ぜると並列テストの
+進捗文字列が行内へ入るため、調査時には別ファイルへ保存する。
+
+```sh
+SUBTITLE_TEST_TRACE=1 CARGO_TARGET_DIR=build/cargo cargo test --locked \
+  --manifest-path rust/Cargo.toml > /tmp/viewer-tests.log 2> /tmp/viewer-tests.stderr
+```
+
+変更後、全テストバイナリーを通常の並列設定で20回実行し、毎回93成功・2ignored、
+7段階すべての記録を確認した。各回の外側の監視期限15秒を超えた実行はなかった。
+記録は `/tmp/viewer-subtitle-trace-{0..19}.log` と同名の `.stderr`（一時ファイル）。
+Clippy全ターゲット・fmtも成功。今回も元の終了待ちは再現せず、原因は未確定。
+実放送の字幕・二か国語・GPU/音声出力の検証を代替する結果ではない。
