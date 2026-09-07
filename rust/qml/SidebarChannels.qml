@@ -79,7 +79,7 @@ Item {
             readonly property var program: root.programs[modelData.index] || null
             readonly property real progress: program && program.duration > 0 ? Math.max(0, Math.min(1, (root.now - program.startAt) / program.duration)) : 0
             width: ListView.view.width
-            height: 132
+            height: 150
             padding: 14
             highlighted: modelData.index === root.selected
             onClicked: root.selectRequested(modelData.index)
@@ -132,6 +132,7 @@ Item {
                     textFormat: Text.PlainText
                 }
                 Label {
+                    id: programTime
                     anchors {
                         left: parent.left
                         right: parent.right
@@ -141,6 +142,24 @@ Item {
                     text: card.program ? Qt.formatDateTime(new Date(card.program.startAt), "hh:mm") + " – " + Qt.formatDateTime(new Date(card.program.startAt + card.program.duration), "hh:mm") : ""
                     color: "#b6bab6"
                     font.pixelSize: 11
+                }
+                Label {
+                    objectName: "sidebarNextProgram"
+                    readonly property var nextProgram: card.program ? card.program.next : null
+                    anchors {
+                        left: parent.left
+                        right: parent.right
+                        top: programTime.bottom
+                        topMargin: 5
+                    }
+                    visible: !!nextProgram
+                    text: nextProgram ? qsTranslate("Viewer", "Next %1 %2")
+                        .arg(Qt.formatDateTime(new Date(nextProgram.startAt), "hh:mm"))
+                        .arg(nextProgram.name || qsTranslate("Viewer", "Program title unavailable")) : ""
+                    color: "#b6bab6"
+                    font.pixelSize: 11
+                    textFormat: Text.PlainText
+                    elide: Text.ElideRight
                 }
                 Rectangle {
                     anchors {

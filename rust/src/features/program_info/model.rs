@@ -84,6 +84,11 @@ impl Snapshot {
             .checked_sub(1)?;
         schedule.get(index).filter(|p| p.contains(now))
     }
+    pub fn next(&self, service: Option<BroadcastService>, now: u64) -> Option<&Program> {
+        let schedule = self.schedule(service);
+        let index = schedule.partition_point(|p| p.start_at <= now);
+        schedule[index..].iter().find(|p| p.duration > 0)
+    }
     #[cfg(test)]
     pub fn view(
         &self,

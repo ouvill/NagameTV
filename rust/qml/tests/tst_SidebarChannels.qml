@@ -42,4 +42,22 @@ TestCase {
         compare(list.count, 0);
         compare(list.currentIndex, -1);
     }
+    function test_next_program_row() {
+        failOnWarning(/.*/);
+        view.band = "GR";
+        view.rows = [{index: 0, label: "Channel", band: "GR", logo: ""}];
+        view.programsJson = JSON.stringify([{name: "Current", startAt: 100, duration: 100,
+            next: {name: "Next show", startAt: 200, duration: 100}}]);
+        verify(waitForRendering(view));
+        const next = findChild(view, "sidebarNextProgram");
+        verify(next !== null);
+        verify(next.visible);
+        verify(next.text.endsWith("Next show"));
+        compare(next.textFormat, Text.PlainText);
+        verify(next.y + next.height <= next.parent.height);
+        view.programsJson = "[]";
+        tryCompare(next, "visible", false);
+        view.rows = [];
+    }
+
 }

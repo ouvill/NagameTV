@@ -670,6 +670,10 @@
       <translation>チャンネル選択を閉じる</translation>
     </message>
     <message>
+      <source>Next %1 %2</source>
+      <translation>次 %1 %2</translation>
+    </message>
+    <message>
       <source>No current program information</source>
       <translation>現在の番組情報がありません</translation>
     </message>

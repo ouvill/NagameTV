@@ -6,7 +6,7 @@ ColumnLayout {
     id: root
     required property var program
     property bool emphasized: false
-    spacing: 9
+    spacing: 5
     required property real now
     readonly property real progress: program && program.duration > 0 ? Math.max(0, Math.min(1, (now - program.startAt) / program.duration)) : 0
     Label {
@@ -26,6 +26,19 @@ ColumnLayout {
         text: root.program ? Qt.formatDateTime(new Date(root.program.startAt), "hh:mm") + " – " + Qt.formatDateTime(new Date(root.program.startAt + root.program.duration), "hh:mm") : ""
         color: "#b6bab6"
         font.pixelSize: 11
+    }
+    Label {
+        objectName: "cardNextProgram"
+        readonly property var nextProgram: root.program ? root.program.next : null
+        Layout.fillWidth: true
+        visible: !!nextProgram
+        text: nextProgram ? qsTranslate("Viewer", "Next %1 %2")
+            .arg(Qt.formatDateTime(new Date(nextProgram.startAt), "hh:mm"))
+            .arg(nextProgram.name || qsTranslate("Viewer", "Program title unavailable")) : ""
+        color: "#b6bab6"
+        font.pixelSize: 11
+        textFormat: Text.PlainText
+        elide: Text.ElideRight
     }
     Item {
         Layout.fillHeight: true
