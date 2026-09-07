@@ -187,14 +187,16 @@ impl NativeCaption {
                     for ch in unsafe {
                         slice::from_raw_parts_mut(region.chars, region.char_count as usize)
                     } {
-                        let bytes: Vec<u8> = ch
-                            .u8str
+                        // The native ABI stores UTF-8 in char[8]. Convert on the
+                        // stack, preserving bytes even where C char is signed.
+                        // Only the returned owned String needs a heap allocation.
+                        let bytes = ch.u8str.map(|byte| byte as u8);
+                        let length = bytes
                             .iter()
-                            .map(|b| *b as u8)
-                            .take_while(|b| *b != 0)
-                            .collect();
+                            .position(|byte| *byte == 0)
+                            .unwrap_or(bytes.len());
                         characters.push(Character {
-                            text: String::from_utf8_lossy(&bytes).into_owned(),
+                            text: String::from_utf8_lossy(&bytes[..length]).into_owned(),
                             x: ch.x,
                             y: ch.y,
                             // SAFETY: Valid uniquely borrowed native character.

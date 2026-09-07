@@ -22,6 +22,8 @@ fn decodes_upstream_sample_and_owns_result_after_decoder_drop() {
     assert_eq!((caption.plane_width, caption.plane_height), (960, 540));
     let characters: Vec<_> = caption.regions.iter().flat_map(|r| &r.characters).collect();
     assert_eq!(characters.len(), 2);
+    assert_eq!(characters[0].text, "♬");
+    assert_eq!(characters[1].text, "〜");
     assert_eq!((characters[0].x, characters[0].y), (170, 449));
     assert_eq!((characters[1].x, characters[1].y), (210, 449));
     assert_eq!(characters[0].background.alpha, 128);

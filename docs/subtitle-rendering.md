@@ -242,3 +242,21 @@ MIRAKURUN_SUBTITLE_TS_FIXTURE=/home/workshop/qt-gstreamer-features/benchmark/liv
 結果ログは同ディレクトリーのresult.log。本変更は検証用テストのみであり、
 直前にビルドした実アプリのコードには変更を加えない。
 全ターゲットClippyとfmt・diff検査も成功。
+
+
+## ネイティブ文字変換の一時確保を削減
+
+同梱libaribcaptionのcaption.hでu8strがchar[8]であることを確認し、Rustへの変換時に
+毎文字作っていたVec<u8>を固定長配列へ置き換えた。符号付きC charもu8への変換で
+元のバイトを保持し、最初のNULまでを既存のUTF-8 lossy変換へ渡す。NULがなければ
+配列全体を使う。追加のunsafeや共有キャッシュはない。
+返却するCharacter.textの所有文字列は引き続き必要だが、その前の一時ヒープバッファーを除去した。
+RSSやCPU時間の改善量は計測していないため、この変更だけで安定性改善とは判断しない。
+
+アプリのlockfileを用いたlibaribcaptionの試験4件と全ターゲットClippyが成功。
+既存の実データ試験へ2文字の文字列一致を追加し、復号・flush反復後にDecoderを破棄しても
+文字列・位置・色を使用できることを確認した。
+
+既存の関西テレビの保存TS（39,436,288バイト、serviceId=2080）も逐次復号し、
+字幕2画面・配置を持つ画面1件・時刻付き2件を確認した。
+今回はファイルからの復号確認で、再生中のPTS同期・画面描画や長時間のメモリー測定は含まない。
