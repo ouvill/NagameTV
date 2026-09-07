@@ -11,6 +11,12 @@ Rectangle {
     required property string channel
     property url iconDirectory: "qrc:/qt/qml/MinimalViewer/assets/icons/"
     property var rows: []
+    // null means the first projection has not arrived; [] is an empty catalog.
+    property string visibilityJson: "null"
+    readonly property var visibleIndices: JSON.parse(visibilityJson)
+    readonly property var visibleSet: visibleIndices === null ? null : new Set(visibleIndices)
+    readonly property var visibleRows: rows.filter(row => row.band === band && (visibleSet === null || visibleSet.has(row.index)))
+    onVisibilityJsonChanged: selectedProgram = null
     property string band: rows.length ? rows[0].band : "GR"
     property Window targetWindow: null
     signal settingsRequested()
@@ -69,7 +75,7 @@ Rectangle {
         GuideTimeline {
             id: timeline
             Layout.fillWidth: true; Layout.fillHeight: true
-            rows: root.rows.filter(row => row.band === root.band)
+            rows: root.visibleRows
             programsJson: root.programsJson
             dayStart: root.selectedWindow.start
             dayEnd: root.selectedWindow.end

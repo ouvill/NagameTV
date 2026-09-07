@@ -26,6 +26,11 @@ fn navigation_uses_current_snapshot_without_a_browser_and_tracks_program_boundar
         ]"#)?,
         ..ProgramInfo::default()
     };
+    assert_eq!(feature.visible_channels(&channels, Some(199)), vec![0, 2]);
+    assert_eq!(
+        feature.visible_channels(&channels, Some(200)),
+        vec![0, 1, 2]
+    );
     assert_eq!(
         feature.adjacent_channel(&channels, Some(0), Next, Some(199)),
         Some(2)

@@ -29,6 +29,7 @@ impl ffi::Player {
             return;
         }
         self.as_mut().poll_channel_programs(now_ms);
+        self.as_mut().poll_guide_visibility(now_ms);
         let update = {
             let mut this = self.as_mut().rust_mut();
             let this = &mut *this;

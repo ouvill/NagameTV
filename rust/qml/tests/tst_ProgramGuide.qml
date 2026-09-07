@@ -59,6 +59,29 @@ TestCase {
         tryCompare(loader, "item", null)
         compare(guide.selectedProgram, null)
     }
+    function test_visible_channel_indices_preserve_catalog_identity_and_clear_details() {
+        guide.rows = [
+            {index: 0, band: "GR", label: "Primary"},
+            {index: 1, band: "GR", label: "Simulcast"},
+            {index: 2, band: "GR", label: "Independent"},
+            {index: 3, band: "BS", label: "Satellite"}
+        ]
+        guide.band = "GR"
+        compare(guide.visibleRows.length, 3)
+        guide.visibilityJson = "[0,2,3]"
+        const timeline = findChild(guide, "guideTimeline").parent
+        compare(timeline.rows.length, 2)
+        compare(timeline.rows[1].index, 2)
+        guide.selectedProgram = {name:"Old details", startAt:0, duration:1}
+        guide.visibilityJson = "[0,1,2,3]"
+        compare(guide.selectedProgram, null)
+        compare(timeline.rows.length, 3)
+        guide.band = "BS"
+        compare(timeline.rows.length, 1)
+        compare(timeline.rows[0].index, 3)
+        guide.visibilityJson = "[]"
+        compare(timeline.rows.length, 0)
+    }
     function test_seven_calendar_days_and_selection() {
         compare(guide.days.length, 7)
         verify(guide.requests.length > 0)

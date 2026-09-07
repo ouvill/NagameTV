@@ -195,6 +195,16 @@ impl ProgramInfo {
     ) -> Result<String, serde_json::Error> {
         self.snapshot.grid_view(channels, window)
     }
+    /// Share the same simulcast policy with navigation and both channel views.
+    pub fn visible_channels(
+        &self,
+        channels: &[crate::channels::Channel],
+        now: Option<u64>,
+    ) -> Vec<usize> {
+        visibility::indices(channels, |channel| {
+            now.and_then(|time| self.snapshot.current(channel.broadcast, time))
+        })
+    }
     /// Compute navigation on demand; do not retain browser widgets or a second EPG.
     pub fn adjacent_channel(
         &self,
@@ -203,9 +213,7 @@ impl ProgramInfo {
         step: crate::channels::Step,
         now: Option<u64>,
     ) -> Option<usize> {
-        let visible = visibility::indices(channels, |channel| {
-            now.and_then(|time| self.snapshot.current(channel.broadcast, time))
-        });
+        let visible = self.visible_channels(channels, now);
         visibility::adjacent(&visible, selected, step)
     }
 

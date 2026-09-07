@@ -93,6 +93,7 @@ impl Default for PlayerRust {
             channel_data: QString::from("[]"),
             channel_program_data: QString::from("[]"),
             channel_visibility_data: QString::from("[]"),
+            guide_visibility_data: QString::from("null"),
             channel_program_now: 0.0,
             browser_projection: None,
             selected: -1,

@@ -12,10 +12,25 @@ impl ffi::Player {
         } else {
             Guide::Closed
         };
+        self.as_mut()
+            .set_guide_visibility_data(QString::from("null"));
+        self.as_mut().rust_mut().next_current_program = std::time::Instant::now();
         self.as_mut().rust_mut().guide_dirty = false;
         self.as_mut().rust_mut().guide_error = None;
         self.as_mut().refresh_epg_status();
         self.set_epg_data(QString::from("[]"));
+    }
+    pub(super) fn poll_guide_visibility(self: Pin<&mut Self>, now: Option<u64>) {
+        if matches!(self.rust().guide, Guide::Closed) {
+            return;
+        }
+        // Only channel indices cross Qt. Reuse the EPG; no card summaries or
+        // full schedule serialization is needed when the current broadcast changes.
+        let indices = self.rust().epg.visible_channels(&self.rust().entries, now);
+        match serde_json::to_string(&indices) {
+            Ok(json) => self.set_guide_visibility_data(QString::from(json)),
+            Err(error) => eprintln!("Guide channel visibility failed: {error}"),
+        }
     }
     pub fn guide_day(mut self: Pin<&mut Self>, start: f64, end: f64) {
         if matches!(self.rust().guide, Guide::Closed) {

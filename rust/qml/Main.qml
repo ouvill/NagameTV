@@ -508,6 +508,7 @@ ApplicationWindow {
                     targetWindow: root
                     onSettingsRequested: settings.open()
                     rows: root.channelRows
+                    visibilityJson: player.guide_visibility_data
                     programsJson: player.epg_data
                     status: player.epg_status
                     channel: player.selected >= 0 && player.selected < root.channelRows.length ? root.channelRows[player.selected].label : ""
