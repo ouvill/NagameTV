@@ -1,6 +1,6 @@
 //! EPG acquisition lives independently of playback and of the guide's visibility.
 use crate::channels::BroadcastService;
-use crate::services::{FetchError, Job, Network, NetworkError};
+use crate::services::{FetchError, Job, Network, NetworkError, Stopping};
 pub mod browser;
 mod genre;
 mod grid;
@@ -43,7 +43,7 @@ enum Acquisition {
         outcome: Outcome,
     },
     Fetching(Request),
-    Cancelling(Request),
+    Cancelling(Stopping),
 }
 impl Default for Acquisition {
     fn default() -> Self {
@@ -97,10 +97,8 @@ impl ProgramInfo {
         self.text_capacity_bytes = 0;
         self.revision += 1;
         self.acquisition = match std::mem::take(&mut self.acquisition) {
-            Acquisition::Fetching(job) | Acquisition::Cancelling(job) => {
-                job.cancel();
-                Acquisition::Cancelling(job)
-            }
+            Acquisition::Fetching(job) => Acquisition::Cancelling(job.cancel()),
+            Acquisition::Cancelling(job) => Acquisition::Cancelling(job),
             Acquisition::Idle { .. } => Acquisition::default(),
         };
     }

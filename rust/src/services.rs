@@ -124,22 +124,29 @@ impl Network {
             .await;
             let _ = tx.try_send(result);
         });
-        Job { task, rx }
+        Job {
+            task: Task(task),
+            rx,
+        }
     }
 }
 
 pub type Request = Job<Vec<channels::Channel>, channels::Error>;
 
 pub struct Job<T, E> {
-    task: tokio::task::JoinHandle<()>,
+    task: Task,
     rx: mpsc::Receiver<Result<T, FetchError<E>>>,
 }
 impl<T, E> Job<T, E> {
-    pub fn cancel(&self) {
-        self.task.abort();
+    /// Consume the result receiver before waiting for worker cancellation.
+    pub fn cancel(self) -> Stopping {
+        self.task.0.abort();
+        // Discard a queued result immediately; future sends fail after this point.
+        drop(self.rx);
+        Stopping(self.task)
     }
     pub fn is_finished(&self) -> bool {
-        self.task.is_finished()
+        self.task.0.is_finished()
     }
     pub fn poll(&self) -> Option<Result<T, FetchError<E>>> {
         match self.rx.try_recv() {
@@ -149,9 +156,21 @@ impl<T, E> Job<T, E> {
         }
     }
 }
-impl<T, E> Drop for Job<T, E> {
+/// A cancelled request has no result API. Retain this until is_finished before
+/// starting its replacement: abort requests cancellation but does not await it.
+pub struct Stopping(Task);
+impl Stopping {
+    pub fn is_finished(&self) -> bool {
+        self.0.0.is_finished()
+    }
+}
+
+// Own the task independently of the result channel so cancellation can discard
+// a completed response while preserving the worker's completion handle.
+struct Task(tokio::task::JoinHandle<()>);
+impl Drop for Task {
     fn drop(&mut self) {
-        self.task.abort();
+        self.0.abort();
     }
 }
 
@@ -256,7 +275,10 @@ mod tests {
         let (tx, rx) = mpsc::sync_channel(1);
         let task = runtime.spawn(std::future::pending());
         let handle = task.abort_handle();
-        let request = Request { task, rx };
+        let request = Request {
+            task: Task(task),
+            rx,
+        };
         drop(request);
         assert!(
             tx.try_send(Err(NetworkError::WorkerStopped.into()))
@@ -264,6 +286,38 @@ mod tests {
         );
         runtime.block_on(tokio::task::yield_now());
         assert!(handle.is_finished());
+        Ok(())
+    }
+
+    #[test]
+    fn cancellation_releases_queued_result_before_worker_finishes()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let runtime = tokio::runtime::Builder::new_current_thread().build()?;
+        let (tx, rx) = mpsc::sync_channel(1);
+        let value = std::sync::Arc::new([0_u8; 1024]);
+        let weak = std::sync::Arc::downgrade(&value);
+        tx.try_send(Ok::<_, FetchError<channels::Error>>(value))?;
+        let task = runtime.spawn(std::future::pending());
+        let request = Job {
+            task: Task(task),
+            rx,
+        };
+        assert!(weak.upgrade().is_some());
+        let stopping = request.cancel();
+        assert!(
+            weak.upgrade().is_none(),
+            "queued response is released at cancellation"
+        );
+        assert!(
+            !stopping.is_finished(),
+            "abort is not synchronous completion"
+        );
+        assert!(
+            tx.try_send(Err(NetworkError::WorkerStopped.into()))
+                .is_err()
+        );
+        runtime.block_on(tokio::task::yield_now());
+        assert!(stopping.is_finished());
         Ok(())
     }
 }

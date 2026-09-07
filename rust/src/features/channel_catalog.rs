@@ -1,7 +1,7 @@
 //! Own one catalog acquisition until its task has released the previous generation.
 use crate::{
     channels,
-    services::{FetchError, Network, NetworkError, Request},
+    services::{FetchError, Network, NetworkError, Request, Stopping},
 };
 
 #[derive(Default)]
@@ -9,7 +9,7 @@ enum Phase {
     #[default]
     Idle,
     Fetching(Request),
-    Cancelling(Request),
+    Cancelling(Stopping),
 }
 #[derive(Default)]
 pub struct Acquisition {
@@ -24,10 +24,7 @@ impl Acquisition {
     pub fn cancel(&mut self) {
         self.pending = None;
         self.phase = match std::mem::take(&mut self.phase) {
-            Phase::Fetching(job) => {
-                job.cancel();
-                Phase::Cancelling(job)
-            }
+            Phase::Fetching(job) => Phase::Cancelling(job.cancel()),
             phase => phase,
         };
     }

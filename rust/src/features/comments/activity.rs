@@ -1,7 +1,7 @@
 //! One optional activity request, independent of commentary reception and video playback.
 use crate::{
     channels::Channel,
-    services::{Job, Network, NetworkError},
+    services::{Job, Network, NetworkError, Stopping},
 };
 use std::time::{Duration, Instant};
 use viewer_comments::activity::{Error, MAX_RESPONSE_BYTES, Snapshot};
@@ -14,7 +14,7 @@ enum Acquisition {
     #[default]
     Idle,
     Fetching(Request),
-    Cancelling(Request),
+    Cancelling(Stopping),
 }
 #[derive(Default)]
 pub struct Activity {
@@ -34,10 +34,8 @@ impl Activity {
         self.dirty = true;
         self.next = None;
         self.acquisition = match std::mem::take(&mut self.acquisition) {
-            Acquisition::Fetching(job) | Acquisition::Cancelling(job) => {
-                job.cancel();
-                Acquisition::Cancelling(job)
-            }
+            Acquisition::Fetching(job) => Acquisition::Cancelling(job.cancel()),
+            Acquisition::Cancelling(job) => Acquisition::Cancelling(job),
             Acquisition::Idle => Acquisition::Idle,
         };
     }
@@ -147,7 +145,8 @@ mod tests {
     fn wait(activity: &Activity) -> TestResult {
         let deadline = Instant::now() + Duration::from_secs(3);
         while match &activity.acquisition {
-            Acquisition::Fetching(job) | Acquisition::Cancelling(job) => !job.is_finished(),
+            Acquisition::Fetching(job) => !job.is_finished(),
+            Acquisition::Cancelling(job) => !job.is_finished(),
             Acquisition::Idle => false,
         } {
             if Instant::now() >= deadline {
