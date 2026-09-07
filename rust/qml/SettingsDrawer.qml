@@ -328,6 +328,12 @@ Drawer {
                 color: "white"
                 elide: Text.ElideRight
             }
+            Label {
+                text: "F11  " + qsTranslate("Main", "Fullscreen")
+                color: "#929497"
+                Layout.fillWidth: true
+                wrapMode: Text.Wrap
+            }
         }
     }
 }
