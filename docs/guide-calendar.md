@@ -266,3 +266,21 @@ EPG関連12試験、QML静的検査、QtCore/QML翻訳・カタログ欠落試�
 全ターゲットClippyが成功。追加した案内の実画面表示とエラー保持の実GUI試験は未実施。
 
 fmt・diff検査とCMakeリリースビルドも成功。
+
+
+## 番組表JSONの中間配列を除去
+
+Snapshot::grid_viewで全列のVecと各列のVec<Cell>を収集してからJSON化していた処理を、
+grid.rsの借用ビュー（Grid / Column / Programs / Cell）へ分離した。
+[Serde Serializer::collect_seq](https://docs.rs/serde/latest/serde/ser/trait.Serializer.html#method.collect_seq)
+でイテレーターを直接シリアライズする。番組レコードの複製も全セル分の中間Vecも作らず、
+一つのSnapshotと選択日の条件を借用して処理する。
+
+列順・番組順、日付境界の重なり判定、空列、ジャンル、watchKeyの形式は維持する。
+最終JSONのString、各watchKeyの一時String、Qt側のJSON解析・表示メモリーは残る。
+この変更だけでRSSや長時間再生のメモリー上限が保証されるわけではない。
+
+既存の日付境界・サービス識別・u64最大IDの試験に加え、251番組を一列へ渡す試験で
+全件の順序と各watchKeyの番組／サービス配信用IDが保たれることを検証する。
+
+EPG関連12試験、全ターゲットClippy、fmt・diff検査、CMakeリリースビルドが成功。実GUIでのRSS差は未測定。

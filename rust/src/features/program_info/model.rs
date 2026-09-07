@@ -54,7 +54,7 @@ impl Snapshot {
     pub fn len(&self) -> usize {
         self.0.len()
     }
-    fn schedule(&self, service: Option<BroadcastService>) -> &[Program] {
+    pub(super) fn schedule(&self, service: Option<BroadcastService>) -> &[Program] {
         let Some(service) = service else {
             return &[];
         };
@@ -89,39 +89,7 @@ impl Snapshot {
         channels: &[crate::channels::Channel],
         window: super::guide::DayWindow,
     ) -> Result<String, serde_json::Error> {
-        #[derive(Serialize)]
-        struct Cell<'a> {
-            #[serde(flatten)]
-            program: &'a Program,
-            #[serde(
-                rename = "watchKey",
-                serialize_with = "super::watch::Identity::serialize_key"
-            )]
-            identity: super::watch::Identity,
-        }
-        #[derive(Serialize)]
-        struct Column<'a> {
-            index: usize,
-            programs: Vec<Cell<'a>>,
-        }
-        // Borrow records from the one snapshot; only the selected calendar day crosses Qt.
-        let columns: Vec<_> = channels
-            .iter()
-            .enumerate()
-            .map(|(index, channel)| Column {
-                index,
-                programs: self
-                    .schedule(channel.broadcast)
-                    .iter()
-                    .filter(|p| window.overlaps(p.start_at, p.duration))
-                    .map(|program| Cell {
-                        program,
-                        identity: super::watch::Identity::new(channel.id, program),
-                    })
-                    .collect(),
-            })
-            .collect();
-        serde_json::to_string(&columns)
+        super::grid::json(self, channels, window)
     }
     pub fn record_storage(&self) -> usize {
         let record_bytes = self.0.capacity() * std::mem::size_of::<Program>();

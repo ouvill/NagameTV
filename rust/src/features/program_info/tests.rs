@@ -374,6 +374,22 @@ fn guide_day_includes_crossing_programs_and_does_not_truncate_at_200()
     )?;
     assert_eq!(view.len(), 251);
     assert_eq!(view[0]["id"], 999);
+    let channels =
+        crate::channels::parse(br#"[{"id":42,"name":"A","type":1,"networkId":3,"serviceId":20}]"#)?;
+    let grid: serde_json::Value = serde_json::from_str(
+        &snapshot.grid_view(&channels, guide::DayWindow::new(10000.0, 260000.0)?)?,
+    )?;
+    let cells = grid[0]["programs"]
+        .as_array()
+        .ok_or("grid programs missing")?;
+    assert_eq!(cells.len(), 251);
+    for (cell, program) in cells.iter().zip(&view) {
+        assert_eq!(cell["id"], program["id"]);
+        let key: serde_json::Value =
+            serde_json::from_str(cell["watchKey"].as_str().ok_or("watch key missing")?)?;
+        assert_eq!(key["endpoint"], 42);
+        assert_eq!(key["program"], program["id"]);
+    }
     let next: Vec<serde_json::Value> = serde_json::from_str(
         &snapshot.view(key(3, 20), guide::DayWindow::new(260000.0, 261000.0)?)?,
     )?;
