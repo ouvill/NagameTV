@@ -45,6 +45,7 @@ inline constexpr const char *backendTranslationSources[] = {
     QT_TRANSLATE_NOOP("Backend", "Select a channel"),
     QT_TRANSLATE_NOOP("Backend", "Enter a server URL starting with http:// or https://"),
     QT_TRANSLATE_NOOP("Backend", "No available channels were found"),
+    QT_TRANSLATE_NOOP("Backend", "Could not open the log folder."),
     QT_TRANSLATE_NOOP("Backend", "Comments are unavailable for this channel"),
     QT_TRANSLATE_NOOP("Backend", "Connecting to comments…"),
     QT_TRANSLATE_NOOP("Backend", "Receiving comments"),

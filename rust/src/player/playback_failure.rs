@@ -19,7 +19,8 @@ impl Player {
                     if super::ffi::open_playback_log_directory(&path) {
                         Ok(())
                     } else {
-                        Err("ログフォルダーを開けませんでした".to_owned())
+                        // A translation source for the QML boundary, like playback_message.
+                        Err("Could not open the log folder.".to_owned())
                     }
                 }),
             Err(error) => Err(error.to_string()),

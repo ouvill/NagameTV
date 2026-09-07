@@ -301,7 +301,7 @@ Drawer {
                 }
             }
             Label {
-                text: root.backend.log_error || ""
+                text: root.backend.log_error ? qsTranslate("Backend", root.backend.log_error) : ""
                 visible: text.length > 0
                 textFormat: Text.PlainText
                 color: "#b6bab6"

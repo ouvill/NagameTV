@@ -30,3 +30,22 @@ CPUテスト2件で最新内容への置換、UTF-8とサイズ上限、空・�
 
 全ターゲットClippy、fmt、SettingsDrawerのqmllint、CMakeリリースビルドも成功。
 音声接続問題の解消確認がないため、この変更で実アプリは起動していない。
+
+## ログフォルダー起動失敗のUI確認（2026-09-07）
+
+専用Xvfb :99 / llvmpipeで設定画面の「Open log folder」を操作した。
+このコンテナーにはxdg-open・一般的なファイルマネージャーがなく、Qtは
+Unable to detect a launcherを記録し、設定画面にも開けなかった旨が表示された。
+成功時の外部アプリ表示は未検証であり、この結果を成功経路の確認とはしない。
+
+英語UIでもこの案内が日本語固定だったため、Rustは英語の翻訳ソースを返し、
+QML表示境界でqsTranslateへ通す構成へ変更した。保存エラー等の診断文は対応する
+翻訳がなければ元の文字列を表示する。追加の通信・保持データはない。
+修正版の実アプリで英語の失敗表示を確認し、そのエラーを保持したまま日本語へ変更すると
+日本語の案内へ更新された。アプリは終了コード0。
+
+191項目の翻訳テスト・カタログ欠落テスト、QML全84件、fmt・diff検査、
+CMakeリリースビルド成功。証跡はbenchmark/virtual-ui/log-folder*.logと
+log-folder-failed.png・log-folder-en.png・log-folder-ja.png。
+実アプリからの再生エラー保存は別途503-guidanceの363-byteログで確認済み
+（feature-migration.md参照）。本節はデスクトップ連携の失敗経路の検証。

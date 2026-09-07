@@ -315,6 +315,10 @@
   <context>
     <name>Backend</name>
     <message>
+      <source>Could not open the log folder.</source>
+      <translation>ログフォルダーを開けませんでした。</translation>
+    </message>
+    <message>
       <source>Subtitles: subscriptions %1, pending %2, received %3 | EPG: tasks %4, programs %5, stopping %6</source>
       <translation>字幕: 購読 %1, 待機 %2, 受信 %3 | EPG: タスク %4, 番組 %5, 停止待ち %6</translation>
     </message>
