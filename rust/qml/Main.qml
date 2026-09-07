@@ -12,7 +12,8 @@ ApplicationWindow {
     height: 900
     minimumWidth: 900
     minimumHeight: 560
-    title: "Mirakurun Viewer — Feature Lab"
+    title: programIdentity.item && programIdentity.item.program && programIdentity.item.program.name
+        ? programIdentity.item.program.name : qsTranslate("Main", "Mirakurun Viewer")
     color: "#0b0c0b"
     font.family: "Noto Sans CJK JP"
     property bool closing: false
