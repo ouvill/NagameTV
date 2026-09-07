@@ -133,7 +133,7 @@ Popup {
         Label {
             Layout.fillWidth: true
             visible: popup.tracks.length === 1
-            text: qsTranslate("Viewer", "This broadcast has only one audio track.")
+            text: qsTranslate("Main", "This broadcast has one audio option.")
             color: "#b6bab6"
             wrapMode: Text.Wrap
             font.pixelSize: 11

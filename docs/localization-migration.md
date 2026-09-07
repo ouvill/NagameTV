@@ -225,3 +225,14 @@ AudioSettingsのqmllintが成功。CPU試験のsinkはイベントを受ける�
 GUIでの失敗状態の再翻訳と、実放送の二か国語音声の確認は未実施。
 
 全ターゲットClippy（警告をエラー扱い）とCMakeリリースビルドも成功。
+
+
+統計パネルのstate値をmain同様qsTranslate("Backend", state)へ渡し、既存の
+Null／Ready／Paused／Playingの翻訳を使う。Rustの統計JSONには機械的な状態名を保ち、
+表示境界だけで翻訳する。音声選択肢が1件の場合の案内もmainの
+「This broadcast has one audio option.」と既存翻訳へ接続した。
+
+2部品のqmllintと、187項目の既存翻訳切り替え／カタログ欠落試験は成功。
+今回の統計・音声ポップアップそのものを実画面で開いた試験ではないため、
+表示中の言語変更と英語レイアウトは引き続き確認が必要。
+CMakeのQML事前コンパイルを含むリリースビルドとdiff検査も成功。

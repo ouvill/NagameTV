@@ -22,7 +22,7 @@ Rectangle {
     function metric(key) {
         const s = panel.snapshot
         switch (key) {
-        case "state": return s.state || "—"
+        case "state": return s.state ? qsTranslate("Backend", s.state) : "—"
         case "input": return panel.video(s.input)
         case "scan": return (s.input?.interlace || "—") + " / " + (s.input?.pixel_aspect_ratio || "—")
         case "viewport": return Math.round(panel.viewportSize.width) + " × " + Math.round(panel.viewportSize.height) + " / " + panel.viewportDpr
