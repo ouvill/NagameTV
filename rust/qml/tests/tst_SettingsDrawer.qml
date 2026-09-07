@@ -21,6 +21,31 @@ TestCase {
         property string settings_error: ""
         property string diagnostics: ""
         property string status: ""
+        property string language: "en"
+        property string subtitle_status: ""
+        property bool comments_enabled: false
+        property bool comments_allowed: true
+        property bool danmaku_enabled: false
+        property real comment_font_size: 21
+        property real comment_opacity: 1
+        property real comment_speed: 1
+        property string comment_status: ""
+        property string log_error: ""
+        function request_language(value) { language = value; return true; }
+        function configure_features(subtitles, epg) {
+            subtitles_enabled = subtitles;
+            epg_enabled = epg;
+        }
+        function display_subtitles(value) { subtitle_display = value; }
+        function enable_comments(value) { comments_enabled = value; }
+        function configure_danmaku(value, size, opacity, speed) {
+            danmaku_enabled = value;
+            comment_font_size = size;
+            comment_opacity = opacity;
+            comment_speed = speed;
+            return true;
+        }
+        function open_log_folder() { return true; }
         signal connectRequested(string url)
         property bool acceptConnection: false
         function connect_server(url) { connectRequested(url); return acceptConnection; }
@@ -31,11 +56,13 @@ TestCase {
         collapseIcon: Qt.resolvedUrl("../../../assets/icons/panel-right-close.svg")
     }
     SignalSpy { id: connections; target: backend; signalName: "connectRequested" }
+    SignalSpy { id: accepted; target: drawer; signalName: "connectionAccepted" }
     function init() {
         failOnWarning(/.*/);
         backend.loading = false;
         backend.acceptConnection = false;
         connections.clear();
+        accepted.clear();
         drawer.open();
         tryCompare(drawer, "opened", true);
     }
@@ -56,10 +83,12 @@ TestCase {
     function test_accepted_connection_closes_and_rejection_stays_open() {
         drawer.connectToServer();
         compare(drawer.opened, true);
+        compare(accepted.count, 0);
         compare(findChild(drawer.contentItem, "connectionError").visible, true);
         backend.acceptConnection = true;
         drawer.connectToServer();
         tryCompare(drawer, "visible", false);
+        compare(accepted.count, 1);
         compare(findChild(drawer.contentItem, "connectionError").visible, false);
     }
     function test_right_edge_and_escape_close() {
