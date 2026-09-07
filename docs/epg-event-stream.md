@@ -114,3 +114,28 @@ Qt側は完了を先に、次の開始を後に記録する。固定サイズの
 こと、通常完了と解析失敗も型で区別されることの検証を追加した。
 
 EPG関連12試験と強化した遷移試験、全ターゲットClippy、fmt・diff検査、CMakeリリースビルドが成功。実サーバーでの診断ログ照合は未検証。
+
+
+## 実サーバーへの短時間購読
+
+2026-09-07、設定済みMirakurunの `/api/events/stream?resource=program` はHTTP 200、
+Content-Type application/json; charset=utf-8、chunkedで応答した。
+独立した15秒の読み取り観測では開始配列の2 bytesのみで、更新イベントは届かなかった。
+観測用クライアントを閉じてから、本体と同じconnection::Client／Subscriptionを使う
+任意試験を30秒実行した。Receivingを確認し、100msごとの状態観測でRetrying／WorkerStoppedを
+検出せず、refresh通知は0件、stop().wait()は5秒の期限内に完了した。
+
+```sh
+MIRAKURUN_EVENT_URL='http://your-server:40772/api/events/stream?resource=program' \
+CARGO_TARGET_DIR=build/epg-events cargo test --locked \
+  --manifest-path rust/crates/viewer-epg-events/Cargo.toml --features network \
+  real_server_subscription_stays_open_and_stops -- --ignored --nocapture
+```
+
+通常試験ではこの外部サーバー依存試験をignoredとする。試験中に異常を観測した場合も、
+キャンセルの終了待ちをしてから失敗を返す。ネットワークのみを使用し、表示・GPU・音声を
+使用しない。サーバーの番組情報や設定を書き換えてイベントを発生させることはしていない。
+
+任意試験と同crateのnetwork有効・全ターゲットClippy、fmt・diff検査が成功。
+今回確認できたのは静かな実接続の維持と停止まで。実更新イベントの内容、集約後のEPG再取得、
+Qt画面への反映、長時間の資源推移は未検証。アプリ本体を変更しておらず再ビルドは不要。

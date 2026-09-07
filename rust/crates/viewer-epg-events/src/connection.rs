@@ -223,6 +223,44 @@ mod tests {
         time::timeout,
     };
     type TestResult = Result<(), Box<dyn std::error::Error>>;
+    #[tokio::test]
+    #[ignore = "manual real-server subscription; requires MIRAKURUN_EVENT_URL"]
+    async fn real_server_subscription_stays_open_and_stops() -> TestResult {
+        let url = std::env::var("MIRAKURUN_EVENT_URL")?;
+        let client = Client::new()?;
+        let subscription = Subscription::start(&Handle::current(), &client, url);
+        let deadline = Instant::now() + Duration::from_secs(30);
+        let mut receiving = false;
+        let mut refreshes = 0;
+        let mut failure = None;
+        while Instant::now() < deadline {
+            match subscription.state() {
+                State::Receiving => receiving = true,
+                State::Connecting => {}
+                State::Retrying(error) => {
+                    failure = Some(error.to_string());
+                    break;
+                }
+                State::WorkerStopped => {
+                    failure = Some("subscription worker stopped".into());
+                    break;
+                }
+            }
+            refreshes += usize::from(subscription.take_refresh());
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        // Always await cancellation before evaluating the observation result.
+        timeout(Duration::from_secs(5), subscription.stop().wait()).await??;
+        if let Some(failure) = failure {
+            return Err(failure.into());
+        }
+        assert!(receiving, "server never supplied response headers");
+        eprintln!(
+            "REAL_EPG_SUBSCRIPTION receiving=true refresh_notifications={refreshes} stopped=true"
+        );
+        Ok(())
+    }
+
     const TEST_TIMING: Timing = Timing {
         headers: Duration::from_millis(200),
         retry: Duration::from_millis(20),
