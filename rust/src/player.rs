@@ -253,7 +253,7 @@ pub struct PlayerRust {
     guide_revision: u64,
     guide_service: Option<crate::channels::BroadcastService>,
     next_diagnostic: Instant,
-    request: Option<services::Request>,
+    request: crate::features::channel_catalog::Acquisition,
     channel_refresh: channel_refresh::Refresh,
     network: Option<services::Network>,
     playback: Option<playback::Playback>,
@@ -490,7 +490,7 @@ impl ffi::Player {
         self.as_mut().rust_mut().activity.configure(false);
         self.as_mut().set_activity_data(QString::from("[]"));
         self.as_mut().clear_playback_failure();
-        self.as_mut().rust_mut().request = None;
+        self.as_mut().rust_mut().request.cancel();
         self.as_mut().set_loading(false);
         self.as_mut().rust_mut().epg.configure(None);
         self.as_mut().set_epg_data(QString::from("[]"));
@@ -509,17 +509,17 @@ impl ffi::Player {
                 return;
             }
         };
-        let Some(network) = &self.rust().network else {
+        if self.rust().network.is_none() {
             self.update_status(PlaybackStatus::NetworkUnavailable);
             return;
-        };
-        let request = network.fetch(&server);
+        }
+
         self.as_mut()
             .rust_mut()
             .preferences
             .preferences_mut()
             .apply_overrides(Some(server.clone()), None);
-        self.as_mut().rust_mut().request = Some(request);
+        self.as_mut().rust_mut().request.request(server.clone());
         self.as_mut()
             .rust_mut()
             .channel_refresh
@@ -623,13 +623,14 @@ impl ffi::Player {
     }
     pub fn poll(mut self: Pin<&mut Self>) {
         self.as_mut().refresh_channels_if_due();
-        let fetched = self
-            .rust()
-            .request
-            .as_ref()
-            .and_then(services::Request::poll);
+        let fetched = {
+            let mut this = self.as_mut().rust_mut();
+            let this = &mut *this;
+            this.network
+                .as_ref()
+                .and_then(|network| this.request.poll(network))
+        };
         if let Some(result) = fetched {
-            self.as_mut().rust_mut().request = None;
             self.as_mut().set_loading(false);
             match result {
                 Ok(entries) => {
@@ -738,7 +739,7 @@ impl ffi::Player {
         self.as_mut().rust_mut().epg.configure(None);
         self.as_mut().guide_open(false);
         let _ = self.as_mut().end_stream();
-        self.as_mut().rust_mut().request = None;
+        self.as_mut().rust_mut().request.cancel();
         if let Some(playback) = self.as_mut().rust_mut().playback.as_mut() {
             playback.shutdown();
         }

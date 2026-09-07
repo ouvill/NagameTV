@@ -70,7 +70,7 @@ impl super::ffi::Player {
         if !self
             .rust()
             .channel_refresh
-            .due(now, self.rust().request.is_some())
+            .due(now, self.rust().request.is_busy())
         {
             return;
         }
@@ -83,7 +83,7 @@ impl super::ffi::Player {
         if self
             .rust()
             .channel_refresh
-            .requested_by_user(now, self.rust().request.is_some(), force)
+            .requested_by_user(now, self.rust().request.is_busy(), force)
         {
             self.request_channel_refresh(now);
         }
@@ -91,11 +91,11 @@ impl super::ffi::Player {
 
     fn request_channel_refresh(mut self: std::pin::Pin<&mut Self>, now: std::time::Instant) {
         use cxx_qt::CxxQtType;
-        let Some(network) = &self.rust().network else {
+        if self.rust().network.is_none() {
             return;
-        };
-        let request = network.fetch(&self.rust().server.to_string());
-        self.as_mut().rust_mut().request = Some(request);
+        }
+        let server = self.rust().server.to_string();
+        self.as_mut().rust_mut().request.request(server);
         self.as_mut().rust_mut().channel_refresh.requested(now);
     }
 

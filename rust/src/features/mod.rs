@@ -1,3 +1,4 @@
+pub mod channel_catalog;
 pub mod comments;
 pub mod program_info;
 mod subscriptions;

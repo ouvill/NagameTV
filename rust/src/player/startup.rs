@@ -143,7 +143,7 @@ impl Default for PlayerRust {
             guide_revision: 0,
             guide_service: None,
             next_diagnostic: Instant::now(),
-            request: None,
+            request: Default::default(),
             channel_refresh: Default::default(),
             network: network.ok(),
             playback,
