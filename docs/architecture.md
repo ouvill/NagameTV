@@ -1,30 +1,43 @@
 # 再生コアと任意機能の境界
 
-このブランチは `minimal/qt-gstreamer` の `9fa758d` を比較基準に、字幕・EPGの寿命を
-検証する実装。通常版 main の全面移植ではない。Rustの静的なモジュールで構成する。
-mainへの置き換えに向けた方針は [main-replacement.md](main-replacement.md) を参照。
+このブランチは `minimal/qt-gstreamer` の `9fa758d` を出発点に、mainの機能とUIを
+移植している。Rustの静的なモジュールで構成し、機能ごとの有効化・終了と資源所有を分離する。
+全面置き換えは未完了。方針は [main-replacement.md](main-replacement.md)、
+機能ごとの検証状況は [feature-migration.md](feature-migration.md) を参照。
+以下の所有関係は2026-09-07、製品コード568a853に照合したもの。
 
 ## 所有関係
 
 ```text
-Player（Qtへの投影と開始・停止順序）
- ├ Playback                 映像・音声、選局、再生位置
- ├ ServiceDirectory         /api/services、基本選局一覧
- ├ Option<SubtitleSession>  1回の再生に対応する購読、解析、同期時計
- └ ProgramInfo              /api/programsの通信、更新期限、現行スナップショット
-Network                     共通のTokioランタイムとHTTPクライアント
-QML Loader                  字幕表示と番組表表示、それぞれの寿命
+main::run
+ ├ QGuiApplication
+ ├ diagnostics::Lifetime    記録ワーカーをQML engineの破棄後まで保持
+ └ QQmlApplicationEngine
+    └ PlayerRust（Qtへの投影と開始・停止順序）
+       ├ Playback           映像・音声、音声カタログ・PMT・主副出力
+       ├ Acquisition        /api/servicesの取得・取消し待ち
+       ├ Option<Session>    字幕の購読・解析・同期時計
+       ├ ProgramInfo        /api/programsの取得・現行スナップショット
+       ├ EPG Controller     番組変更通知の購読・停止待ち
+       ├ Comments/Activity  実況接続・履歴と勢い取得
+       ├ settings::Session  現在の設定・保存済みスナップショット
+       ├ Network            Tokioランタイムと有限JSON用HTTPクライアント
+       └ diagnostics::Client 記録所有者への弱い参照
+QML Loader                  字幕・番組表・流れる実況・統計表示の寿命
 ```
 
-Playbackから字幕・EPGの型やAPIを参照しない。再生側の変更は、購読用elementと
-表示時刻照会の公開のみ。READYによる停止・選局と映像パイプラインは最小版と同じ。
-現段階では字幕が唯一のTS解析利用者なので、フレーミング・PAT/PMT・PESも字幕側に置く。
-将来音声切り替えに必要になった時点で、共通のTS購読に分離する。今は使わない共通基盤を作らない。
+Playbackは字幕デコーダーやEPGスナップショットを所有しない。再生制御の調整は
+player/stream.rs、EPGの通知消費と投影はplayer/epg.rs、設定保存はplayer/preferences.rsに置く。
+音声選択はplayback/audio_streams、PMT照合はaudio_components、主副の変換はaudio_routing。
+PMTメッセージは通常のGStreamer bus pollで処理し、字幕の有効化には依存しない。
+字幕用のTSフレーミング・PAT/PMT・PES解析は引き続き字幕モジュールにある。
+READYで停止してplaybinを再利用する方針を保持するが、パイプライン全体が最小版と同一ではない。
 
 ## 起動と完全無効化
 
 機能の許可リストはQt/GStreamerの初期化前に確定。通常起動は保存設定を復元し、UIで変更可能。
-`--features=none|subtitles|epg|subtitles,epg` は厳密な許可リストで、その実行だけに適用。
+`--features=none` または `subtitles,epg,comments` の任意の重複しない組み合わせは
+厳密な許可リストで、その実行だけに適用。
 未許可の機能はUIからも起動できない。この明示的な検証モードでは保存設定を読み書きしない。
 通常起動の設定互換性と保存タイミングは [feature-migration.md](feature-migration.md) を参照。
 
@@ -36,6 +49,12 @@ Playbackから字幕・EPGの型やAPIを参照しない。再生側の変更は
 EPG OFFは番組通信・更新予約・スナップショット・投影データ・表示Loaderが不在。
 停止処理中は通信Jobを保持し、Tokioの完了を確認してから破棄する。共有HTTPプールは残る。
 番組表を閉じるだけの場合は投影とLoaderを破棄し、5分ごとの取得は継続する。
+
+実況OFFは接続の停止要求と履歴・投影の破棄を行い、勢い取得も取り消す。
+接続の世代管理はviewer-commentsのControllerが担当する。流れる実況は
+comments_enabled・danmaku_enabled・playingが揃う間だけLoaderで生成する。
+表示だけOFFの場合と機能そのもののOFFを区別する。履歴は200件、流れる項目は64件まで。
+詳細な受信上限・再接続・終了契約は [comments-migration.md](comments-migration.md) を参照。
 
 ## 字幕の停止順序
 
@@ -70,8 +89,9 @@ TaskのDropはabortを要求するが、終了を待ったことにはしない�
 再設定・無効化後の旧結果拒否の既存試験が成功。同期JSON解析中のabortは解析終了まで
 待つ可能性があり、取消し要求だけで即時終了するという保証はしない。
 
-HTTP応答上限32MiB、番組数50,000件、同時通信1件、現行スナップショット1世代。
-更新中だけ受信バッファーと新候補が共存する。番組表の投影は選択局の指定日（7日分から選択）。
+番組JSONのHTTP応答上限32MiB、番組数50,000件、番組取得は同時1件、現行スナップショット1世代。
+変更通知の購読はこれとは別接続で、60秒に集約した再取得要求を渡す。
+更新中だけ受信バッファーと新候補が共存する。番組表は指定日（7日分から選択）の全局を投影する。
 閉じている間は番組表のJSON投影を作らない。現在番組は1秒間隔で選び、本文は変更時だけ投影する。
 EPGとの照合はチャンネルのnetworkId・serviceIdの明示メタデータを使い、配信用IDから推測しない。
 
@@ -105,13 +125,18 @@ allocator設定の小さなエラーAPIは引き続き固定文字列で返す�
 
 ## 診断と検証の限界
 
-10秒ごとにRSS、字幕購読数／待機数、EPG Job数／番組数／停止待ちを画面・標準エラーへ出す。
+機能カウンターを10秒ごとに画面・標準エラーへ出す。資源診断の有効時は別ワーカーが
+RSS・glibc使用中量・スレッド数・FD数等を採取し、操作イベントと定期sampleをJSONLへ記録する。
+キュー・ファイルサイズ・保持ファイル数に上限がある。記録所有者はPlayerではなくアプリ寿命に
+合わせ、QML engine終了時のGC集計を受け取ってから終了する。
+詳細は [resource-diagnostics-migration.md](resource-diagnostics-migration.md) を参照。
 購読数にはtsdemux統計の解除責任とbus handlerも含む。RSSを機能別に配賦するものではない。
 無効化で確認するのは機能の所有物がゼロになること。Qt・ドライバー・アロケーターの
 共有キャッシュまでOSへ返るとは限らないため、メモリー比較は新規プロセスごとに行う。
 
-字幕デコード・同期処理は通常版由来だが、表示は標準Textによる簡略版。通常版の
-独自フォント・文字輪郭Shapeの実装は含まない。EPGも時間軸グリッドではなく選択局の一覧。
-この版で増加が出ない場合も、通常版の描画・保持方法まで無罪とは判断しない。
-実況、主副音声補助、ロゴ、保存設定、汎用の自動再接続はまだ追加しない。
+字幕には同梱ARIBフォント・輪郭描画、EPGには全局時間軸グリッドを移植済み。
+実況、主副音声補助、ロゴ、保存設定も実装されている。ただし機能の存在は、
+全画面の忠実性・実放送の音声・長時間併用の検証完了を意味しない。
+仮想画面でのUI操作試験と、実GPUでのメモリー・性能検証を分ける。
+短時間で増加が出ないことだけでは、長時間の増加原因を否定しない。
 HTTPの途中再開拒否だけは新規接続で1回復旧する（[詳細](live-stream-errors.md)）。
