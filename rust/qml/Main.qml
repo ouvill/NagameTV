@@ -562,7 +562,10 @@ ApplicationWindow {
         }
         Loader {
             x: 16
-            y: Math.min(overlayVisibility.controlsVisible ? 138 : 20, Math.max(16, root.height - height - 16))
+            // Reserve the playback controls' measured space at small window sizes.
+            // Loader.height follows VideoStats' content height, including wrapping.
+            y: Math.min(overlayVisibility.controlsVisible ? 138 : 20,
+                        Math.max(16, (overlayVisibility.controlsVisible ? bottomPanel.y : surface.height) - height - 16))
             width: Math.min(510, parent.width - 32)
             active: !root.closing && root.showStats && !root.showGuide
             z: 4
