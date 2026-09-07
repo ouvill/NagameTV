@@ -215,3 +215,31 @@ QML全103件とCMakeリリースビルド成功。画像比較fixtureは初期�
 画像一致自体はQtTestの合格条件にはせず、ImageMagickの差分と実画像で別途照合した。
 証跡はbenchmark/browser-design/の*-main.png、*-candidate.png、comparison.json、
 comparison-after.json、region-comparison.json、conditions.json、reference-source.qml。
+
+## ヘッダー差の解消と画像一致の回帰条件（2026-09-07）
+
+残っていた差は、ヘッダーをmainのRowからRowLayoutへ置き換えた配置と、
+閉じる矢印をSVGからShapeへ描き直した箇所、放送種別の文字の中央配置方式だった。
+ヘッダーをRowへ戻し、閉じるボタンは既存IconActionとmainと同じSVGへ統一した。
+専用のShape描画と重複した背景・ツールチップ定義を削除した。
+放送種別の文字もmainと同じLabelのanchors.centerInにそろえた。
+ボタンのキーボード入力・フォーカス枠・アクセシブル名は維持する。
+
+検証済みXvfb :99で、英語、幅1440／900、選択index 0／1の4条件を再撮影し、
+ImageMagick AEの差分がすべて0になった。
+比較fixtureにも[QtTest grabImageのequals](https://doc.qt.io/qt-6/qml-qttest-testcase.html#grabImage-method)
+による画像一致検査を加え、画像保存だけで成功扱いにしないようにした。
+4条件と初期化・終了の6件成功。これは固定データの下部チャンネル一覧の比較で、
+アプリ全画面・他言語・ホバー中・別DPRの一致を保証するものではない。
+
+最初の全QML実行は画像比較の別ウィンドウを同じ表示先で起動した時期と重なり、
+音量ドラッグ中の保存試験が失敗した。表示先を共有する試験の同時実行は避ける。
+閉じるボタン試験も、マウスで得た既存フォーカスから一度外してからキーボードの
+フォーカスを与えるようにし、クリック・Space・フォーカス枠を確認した。
+証跡はbenchmark/browser-design/header-before/、header-comparison-final.json、
+/tmp/header-exact-comparison.txt、/tmp/header-all-isolated.txt。
+直列実行でQML全104件成功、最終CMakeリリースビルドも成功した。
+さらにBS選択（index 3）を幅1440／900で追加し、計6条件すべて画像一致を確認。
+追加後の比較fixtureは初期化・終了込み8件成功。BSの画像は*-bs-main.pngと
+*-bs-candidate.png、結果は/tmp/header-bs-comparison.txt。
+固定データによるUI試験なので、BSの実受信可否や契約状況を検証したものではない。

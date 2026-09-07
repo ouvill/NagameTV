@@ -68,12 +68,13 @@ Rectangle {
                 height: root.height
                 Accessible.name: modelData.label
                 onClicked: root.selected(modelData.value)
-                contentItem: Label {
-                    text: tab.modelData.label
-                    horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
-                    color: root.value === tab.modelData.value ? "#f4f5f3" : "#d5d8d5"
-                    font.bold: root.value === tab.modelData.value
+                contentItem: Item {
+                    Label {
+                        anchors.centerIn: parent
+                        text: tab.modelData.label
+                        color: root.value === tab.modelData.value ? "#f4f5f3" : "#d5d8d5"
+                        font.bold: root.value === tab.modelData.value
+                    }
                 }
                 background: Rectangle {
                     color: "transparent"

@@ -12,6 +12,7 @@ TestCase {
     Component {
         id: component
         Viewer.ChannelBrowser {
+            iconDirectory: Qt.resolvedUrl("../../../assets/icons/")
             width: 780
             height: 304
             rows: [
@@ -55,6 +56,7 @@ TestCase {
         signalName: "selectRequested"
     }
     property var browser
+    SignalSpy { id: closed; signalName: "closeRequested" }
     function initTestCase() {
         failOnWarning(/.*/);
     }
@@ -65,6 +67,19 @@ TestCase {
         verify(waitForRendering(browser));
         selection.target = browser;
         selection.clear();
+        closed.target = browser;
+        closed.clear();
+    }
+    function test_close_button_supports_pointer_and_keyboard() {
+        const button = findChild(browser, "browserCloseButton");
+        verify(button !== null);
+        mouseClick(button);
+        compare(closed.count, 1);
+        testCase.forceActiveFocus();
+        button.forceActiveFocus(Qt.TabFocusReason);
+        verify(button.visualFocus);
+        keyClick(Qt.Key_Space);
+        compare(closed.count, 2);
     }
     function test_filter_and_keyboard_preserve_backend_indices() {
         const list = findChild(browser, "browserList");

@@ -12,7 +12,8 @@ source = reference_path.read_text()
     'reference_sha256': hashlib.sha256(source.encode()).hexdigest(),
     'language': 'en',
     'widths': [1440, 900],
-    'selected_indices': [0, 1],
+    'selected_indices': [0, 1, 3],
+    'bands': ['GR', 'BS'],
     'scope': 'Extracted main channel picker with fixed data; not the full application',
 }, indent=2) + '\n')
 def block(marker):
@@ -72,6 +73,7 @@ TestCase {
  Rectangle { id: backdrop; anchors.fill: parent; color: "#39444c"
   Reference { id: reference; anchors.fill: parent }
   Viewer.ChannelBrowser {
+   iconDirectory: Qt.resolvedUrl("../../assets/icons/")
    id: candidate; anchors.fill: parent; visible: false
    rows: [ {index:0,label:"01   総合テレビ",band:"GR",logo:""}, {index:1,label:"02   教育テレビ",band:"GR",logo:""}, {index:2,label:"03   地域テレビ",band:"GR",logo:""}, {index:3,label:"101   BSテレビ",band:"BS",logo:""} ]
    selected: 0
@@ -84,13 +86,17 @@ TestCase {
   return [{tag:"wide-first", width:1440, selected:0},
           {tag:"wide-second", width:1440, selected:1},
           {tag:"minimum-first", width:900, selected:0},
-          {tag:"minimum-second", width:900, selected:1}];
+          {tag:"minimum-second", width:900, selected:1},
+          {tag:"wide-bs", width:1440, selected:3, band:"BS"},
+          {tag:"minimum-bs", width:900, selected:3, band:"BS"}];
  }
  function test_capture_same_fixture(data) {
   failOnWarning(/.*/);
   testCase.width = data.width;
   reference.player.channelName = reference.player.services[data.selected];
+  reference.channelPickerType = data.band || "GR";
   candidate.selected = data.selected;
+  candidate.band = data.band || "GR";
   candidate.visible = false;
   reference.visible = true;
   wait(350);
@@ -103,6 +109,7 @@ TestCase {
   const candidateImage = grabImage(backdrop);
   verify(candidateImage.red(20, 20) < 100, "Candidate must be rendered, not a blank capture");
   candidateImage.save(OUTPUT + "/" + data.tag + "-candidate.png");
+  verify(candidateImage.equals(mainImage), "Channel picker differs from main: " + data.tag);
  }
 }
 '''.replace('OUTPUT', json.dumps(str(base)))

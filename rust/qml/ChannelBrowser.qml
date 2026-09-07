@@ -7,6 +7,7 @@ Pane {
     id: root
     required property var rows
     required property int selected
+    property url iconDirectory: "qrc:/qt/qml/MinimalViewer/assets/icons/"
     property string visibilityJson: "[]"
     readonly property var visibleIndices: new Set(JSON.parse(visibilityJson))
     property string activityJson: "[]"
@@ -66,10 +67,12 @@ Pane {
     }
     contentItem: ColumnLayout {
         spacing: 14
-        RowLayout {
+        Row {
             Layout.fillWidth: true
             spacing: 14
             BrowserCollapseButton {
+                objectName: "browserCloseButton"
+                iconDirectory: root.iconDirectory
                 onClicked: root.closeRequested()
             }
             Label {
@@ -77,20 +80,20 @@ Pane {
                 color: "#f4f5f3"
                 font.pixelSize: 22
                 font.bold: true
+                anchors.verticalCenter: parent.verticalCenter
             }
             Item {
-                Layout.preferredWidth: 24
+                width: 24
+                height: 1
             }
             BroadcastTabs {
                 objectName: "browserBand"
+                anchors.verticalCenter: parent.verticalCenter
                 rows: root.rows
                 value: root.band
                 onSelected: function (band) {
                     root.band = band;
                 }
-            }
-            Item {
-                Layout.fillWidth: true
             }
         }
         Item {
