@@ -425,28 +425,14 @@ ApplicationWindow {
                         implicitHeight: 28
                         onClicked: audioSettings.open()
                     }
-                    ThemedSlider {
+                    VolumeSlider {
                         id: volumeSlider
-                        from: 0
-                        to: 1
                         value: player.volume_level
                         subdued: player.audio_muted
-                        Accessible.name: qsTranslate("Main", "Volume")
+                        closing: root.closing
                         Layout.preferredWidth: 132
-                        onMoved: {
-                            player.volume(value)
-                            if (!pressed) volumeSave.restart()
-                        }
-                        onPressedChanged: {
-                            volumeSave.stop()
-                            if (!pressed && !root.closing) player.save_settings()
-                        }
-                        Timer {
-                            id: volumeSave
-                            interval: 400
-                            // Wheel changes do not necessarily change pressed.
-                            onTriggered: if (!root.closing) player.save_settings()
-                        }
+                        onVolumeRequested: function (fraction) { player.volume(fraction) }
+                        onSaveRequested: player.save_settings()
                     }
                     Item {
                         Layout.fillWidth: true

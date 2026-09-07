@@ -36,6 +36,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .qml_file("qml/SidePanel.qml")
             .qml_file("qml/IconAction.qml")
             .qml_file("qml/ThemedSlider.qml")
+            .qml_file("qml/VolumeSlider.qml")
             .qml_file("qml/SettingsDrawer.qml")
             .qml_file("qml/ProgramDetails.qml")
             .qml_file("qml/VideoStats.qml")

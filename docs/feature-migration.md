@@ -49,6 +49,29 @@ QML全86件成功、リリースビルド成功。証跡はgit管理外の
 
 ## 設定保存の設計
 
+### 音量入力と保存の分離・キー操作の修正（2026-09-07）
+
+Main.qml内の音量スライダーをVolumeSlider.qmlへ分離した。
+描画は既存ThemedSliderを継承し、音量・ミュート状態は引き続きRustから受け取る。
+部品は音量変更要求と保存要求だけを通知し、設定データやIOは所有しない。
+
+[Qt Sliderの仕様](https://doc.qt.io/qt-6/qml-qtquick-controls-slider.html#pressed-prop)
+ではpressedはマウス・タッチだけでなくキーでも変化する。
+従来のonPressedChangedでは、400msの保存タイマーを設けていても矢印キーを離すたびに
+保存していた。実際のkeyClick 2回による試験で、待ち合わせ中に保存要求2回を確認した。
+キー入力をコントロールの既定処理前に区別し、最後のキー解放から400ms後の1回にまとめた。
+マウス操作は従来どおり解放時に保存し、外部value更新では操作・保存要求を出さない。
+アプリ終了時は保留中のUI保存を抑止し、既存のRust終了時保存に任せる。
+
+Xvfb :99を検出しxdpyinfo・glxinfoで検証した上で、QtTestの実キー・マウス入力で
+即時音量通知、連続キーの保存集約、ドラッグ中の保存なし・解放後1回、外部更新、
+終了中の遅延保存抑止を確認。QML全99件とCMakeリリースビルド成功。
+GPU・音声出力・メモリー測定ではない。
+元の色・寸法・value bindingとRust呼出先を維持し、新しい常駐ワーカーは追加していない。
+証跡は/tmp/volume-slider-tests.txt（変更前）、/tmp/volume-slider-tests-after.txt、
+/tmp/volume-refactor-all.txt。変更前のドラッグ試験はテストItemのvisible設定漏れも
+含むため、その失敗を製品のドラッグ不具合とは解釈しない。
+
 ### 検証用音声出力の明示指定（2026-09-07）
 
 mainの`MIRAKURUN_AUDIO_SINK=fakesink`を移植した。`playback/audio_sink.rs`に
