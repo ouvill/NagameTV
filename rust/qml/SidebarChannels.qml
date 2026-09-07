@@ -162,4 +162,10 @@ Item {
             }
         }
     }
+    ChannelWheelArea {
+        anchors.fill: list
+        view: list
+        step: 144
+    }
+
 }

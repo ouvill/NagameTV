@@ -42,6 +42,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .qml_file("qml/ChannelSelector.qml")
             .qml_file("qml/ChannelLogo.qml")
             .qml_file("qml/ChannelBrowser.qml")
+            .qml_file("qml/ChannelWheelArea.qml")
             .qml_file("qml/AnimatedPanel.qml")
             .qml_file("qml/BroadcastTabs.qml")
             .qml_file("qml/BrowserCollapseButton.qml")

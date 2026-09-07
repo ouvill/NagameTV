@@ -93,88 +93,97 @@ Pane {
                 Layout.fillWidth: true
             }
         }
-        ListView {
-            id: list
-            objectName: "browserList"
+        Item {
             Layout.fillWidth: true
             Layout.preferredHeight: 190
-            orientation: ListView.Horizontal
-            spacing: 14
-            clip: true
-            cacheBuffer: 0
-            model: root.filteredRows
-            keyNavigationEnabled: true
-            Keys.onReturnPressed: root.selectCurrent()
-            Keys.onEnterPressed: root.selectCurrent()
-            ScrollBar.horizontal: ScrollBar {}
-            delegate: ItemDelegate {
-                id: card
-                required property var modelData
-                required property int index
-                width: highlighted ? 356 : 270
-                height: 164
-                padding: 14
-                highlighted: modelData.index === root.selected
-                onClicked: root.selectRequested(modelData.index)
-                background: Rectangle {
-                    radius: 16
-                    color: card.highlighted ? "#26302a" : "#1c1f1c"
-                    border.color: card.highlighted ? "#9caf9f" : "#30ffffff"
-                }
-                contentItem: Item {
-                    RowLayout {
-                        id: channelHeading
-                        width: parent.width
-                        height: 32
-                        spacing: 8
-                        ChannelLogo {
-                            logoUrl: card.modelData.logo || ""
-                            Layout.preferredWidth: 56
-                            Layout.preferredHeight: 32
+            ListView {
+                id: list
+                objectName: "browserList"
+                anchors.fill: parent
+                orientation: ListView.Horizontal
+                spacing: 14
+                clip: true
+                cacheBuffer: 0
+                model: root.filteredRows
+                keyNavigationEnabled: true
+                Keys.onReturnPressed: root.selectCurrent()
+                Keys.onEnterPressed: root.selectCurrent()
+                ScrollBar.horizontal: ScrollBar {}
+                delegate: ItemDelegate {
+                    id: card
+                    required property var modelData
+                    required property int index
+                    width: highlighted ? 356 : 270
+                    height: 164
+                    padding: 14
+                    highlighted: modelData.index === root.selected
+                    onClicked: root.selectRequested(modelData.index)
+                    background: Rectangle {
+                        radius: 16
+                        color: card.highlighted ? "#26302a" : "#1c1f1c"
+                        border.color: card.highlighted ? "#9caf9f" : "#30ffffff"
+                    }
+                    contentItem: Item {
+                        RowLayout {
+                            id: channelHeading
+                            width: parent.width
+                            height: 32
+                            spacing: 8
+                            ChannelLogo {
+                                logoUrl: card.modelData.logo || ""
+                                Layout.preferredWidth: 56
+                                Layout.preferredHeight: 32
+                            }
+                            Label {
+                                Layout.fillWidth: true
+                                text: card.modelData.label.replace(/^\d+\s+/, "")
+                                color: "#b6bab6"
+                                font.pixelSize: 12
+                                textFormat: Text.PlainText
+                                elide: Text.ElideRight
+                            }
+                            Label {
+                                readonly property string force: root.activity[card.modelData.index] ?? ""
+                                text: force.length ? qsTranslate("Main", "Activity ") + force : ""
+                                visible: text.length > 0
+                                color: "#9caf9f"; font.pixelSize: 11; font.bold: true
+                            }
                         }
-                        Label {
-                            Layout.fillWidth: true
-                            text: card.modelData.label.replace(/^\d+\s+/, "")
-                            color: "#b6bab6"
-                            font.pixelSize: 12
-                            textFormat: Text.PlainText
-                            elide: Text.ElideRight
-                        }
-                        Label {
-                            readonly property string force: root.activity[card.modelData.index] ?? ""
-                            text: force.length ? qsTranslate("Main", "Activity ") + force : ""
-                            visible: text.length > 0
-                            color: "#9caf9f"; font.pixelSize: 11; font.bold: true
+                        ChannelProgram {
+                            anchors {
+                                top: channelHeading.bottom
+                                topMargin: 9
+                                left: parent.left
+                                right: parent.right
+                                bottom: parent.bottom
+                                bottomMargin: -6
+                            }
+                            program: root.programs[card.modelData.index] || null
+                            now: root.now
+                            emphasized: card.highlighted
                         }
                     }
-                    ChannelProgram {
-                        anchors {
-                            top: channelHeading.bottom
-                            topMargin: 9
-                            left: parent.left
-                            right: parent.right
-                            bottom: parent.bottom
-                            bottomMargin: -6
-                        }
-                        program: root.programs[card.modelData.index] || null
-                        now: root.now
-                        emphasized: card.highlighted
+                    Rectangle {
+                        anchors.fill: parent
+                        color: "transparent"
+                        border.width: 2
+                        radius: 16
+                        border.color: "#9caf9f"
+                        visible: list.activeFocus && list.currentIndex === card.index
                     }
                 }
-                Rectangle {
-                    anchors.fill: parent
-                    color: "transparent"
-                    border.width: 2
-                    radius: 16
-                    border.color: "#9caf9f"
-                    visible: list.activeFocus && list.currentIndex === card.index
+                Label {
+                    anchors.centerIn: parent
+                    visible: list.count === 0
+                    text: qsTranslate("Viewer", "No matching channels")
+                    color: "#cccccc"
                 }
             }
-            Label {
-                anchors.centerIn: parent
-                visible: list.count === 0
-                text: qsTranslate("Viewer", "No matching channels")
-                color: "#cccccc"
+            ChannelWheelArea {
+                anchors.fill: parent
+                view: list
+                horizontal: true
+                step: 112
             }
         }
     }

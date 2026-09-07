@@ -132,3 +132,21 @@ UIスレッドで停止完了をブロックして待たず、新しいRuntime�
 実Mirakurunでの高速接続先変更とRSS測定は未検証。
 
 追加試験、全ターゲットClippy（警告をエラー扱い）、fmt・diff検査、CMakeリリースビルドが成功。
+
+
+## マウスホイールの操作互換
+
+mainのscrollOneStepをChannelWheelAreaへ分離して移植した。下部の局一覧は一イベント112pxの
+横移動、右側の一覧は144pxの縦移動。慣性移動を止め、一覧の端へクランプする。
+angleDeltaのyを優先し、なければxを使う。ゼロ差分は処理済みにしない。
+ListViewの表示領域に重ねる固定のMouseArea一つを使い、カードごとにハンドラーを増やさない。
+
+[Qt MouseAreaの公式仕様](https://doc.qt.io/qt-6/qml-qtquick-mousearea.html#scrollGestureEnabled-prop)
+に従い、scrollGestureEnabled=falseでタッチパッドのスクロールジェスチャーを下へ渡す。
+押下・クリックも拒否して既存の選局操作へ渡す。下部一覧はレイアウト管理するItem内へ
+ListViewと操作領域を並べ、スクロール内容と一緒に操作領域が動かないようにする。
+
+3部品のqmllintとfmt・diff検査が成功。実マウス・タッチパッドでの入力伝播と
+スクロールバー操作は未検証。既存の画面外カード解放とcacheBuffer=0は維持する。
+
+QML事前コンパイルを含むCMakeリリースビルドも成功。
