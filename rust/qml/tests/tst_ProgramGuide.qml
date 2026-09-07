@@ -32,6 +32,55 @@ TestCase {
         guide = createTemporaryObject(component, testCase)
         verify(guide !== null)
     }
+    function test_keyboard_keeps_future_time_across_empty_channel() {
+        guide.dayOffset = 1
+        const start = guide.days[1].start
+        guide.rows = [0,1,2].map(index => ({index:index, label:"Channel " + index, band:"GR"}))
+        guide.programsJson = JSON.stringify([0,1,2].map(index => ({index:index, programs:index === 1 ? [] : [
+            {watchKey:"early-"+index, name:"Early", startAt:start, duration:3600000},
+            {watchKey:"late-"+index, name:"Late", startAt:start+3600000, duration:3600000}
+        ]})))
+        verify(waitForRendering(guide))
+        keyClick(Qt.Key_Down)
+        keyClick(Qt.Key_Right)
+        keyClick(Qt.Key_Return)
+        const loader = findChild(guide,"scheduledDetailsLoader")
+        compare(loader.item, null)
+        keyClick(Qt.Key_Right)
+        keyClick(Qt.Key_Return)
+        tryCompare(loader.item, "opened", true)
+        compare(guide.selectedProgram.watchKey, "late-2")
+    }
+    function test_keyboard_refresh_replaces_program_at_retained_time() {
+        guide.dayOffset = 2
+        const start = guide.days[2].start
+        guide.rows = [{index:0, label:"Channel", band:"GR"}]
+        const early = {watchKey:"early", name:"Early", startAt:start, duration:3600000}
+        guide.programsJson = JSON.stringify([{index:0, programs:[early,
+            {watchKey:"old", name:"Old", startAt:start+3600000, duration:3600000}
+        ]}])
+        verify(waitForRendering(guide))
+        keyClick(Qt.Key_Down)
+        guide.programsJson = JSON.stringify([{index:0, programs:[early,
+            {watchKey:"replacement", name:"Replacement", startAt:start+3600000, duration:1800000}
+        ]}])
+        keyClick(Qt.Key_Return)
+        const loader = findChild(guide,"scheduledDetailsLoader")
+        tryCompare(loader.item, "opened", true)
+        compare(guide.selectedProgram.watchKey, "replacement")
+        keyClick(Qt.Key_Escape)
+        tryCompare(loader, "item", null)
+        // Selecting a different day must discard the previous day's time anchor.
+        guide.dayOffset = 1
+        const next = guide.days[1].start
+        guide.programsJson = JSON.stringify([{index:0, programs:[
+            {watchKey:"first", name:"First", startAt:next, duration:3600000},
+            {watchKey:"second", name:"Second", startAt:next+3600000, duration:3600000}
+        ]}])
+        keyClick(Qt.Key_Return)
+        tryCompare(loader.item, "opened", true)
+        compare(guide.selectedProgram.watchKey, "first")
+    }
     function test_keyboard_channel_change_preserves_time_inside_long_program() {
         guide.dayOffset = 1
         const start = guide.days[1].start

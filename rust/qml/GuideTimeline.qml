@@ -23,7 +23,9 @@ Item {
     // the EPG snapshot can be replaced while keyboard navigation is active.
     property int cursorColumn: 0
     property string cursorKey: ""
-    property double cursorTime: dayStart
+    // null means navigation has not started. An empty channel or a replaced
+    // program can have no cursorProgram while still retaining a chosen time.
+    property var cursorTime: null
     readonly property var cursorProgram: cursorColumn < rows.length && cursorKey.length
         ? schedule(rows[cursorColumn].index).find(program => program.watchKey === cursorKey) || null : null
     function chooseProgram(time) {
@@ -53,7 +55,7 @@ Item {
     }
     function navigate(key) {
         if (!rows.length) return
-        if (!cursorProgram) chooseProgram(today ? now : dayStart)
+        if (!cursorProgram) chooseProgram(cursorTime === null ? (today ? now : dayStart) : cursorTime)
         if (key === Qt.Key_Left || key === Qt.Key_Right) {
             const time = cursorTime
             cursorColumn = Math.max(0, Math.min(rows.length - 1, cursorColumn + (key === Qt.Key_Left ? -1 : 1)))
@@ -105,10 +107,11 @@ Item {
         view.contentY = now >= dayStart && now < dayEnd
             ? Math.max(0, Math.min(view.contentHeight - view.height, 88 + (now - dayStart) / 60000 * pixelsPerMinute - view.height * 0.34)) : 0
     }
-    onDayStartChanged: { cursorKey = ""; Qt.callLater(resetPosition) }
+    onDayStartChanged: { cursorKey = ""; cursorTime = null; Qt.callLater(resetPosition) }
     onRowsChanged: {
         cursorColumn = 0
         cursorKey = ""
+        cursorTime = null
         horizontalScroll.stop()
         view.cancelFlick()
         view.contentX = 0
