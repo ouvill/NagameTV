@@ -88,7 +88,13 @@ fn updates_replace_failure_retains_refresh_waits_and_disable_clears()
     }
     assert_eq!(count.load(Ordering::SeqCst), 0);
     feature.configure(Some(address));
-    feature.poll(&network);
+    assert_eq!(
+        feature.poll(&network),
+        Update {
+            completed: None,
+            started: true
+        }
+    );
     assert!(matches!(feature.status(), Status::Fetching));
     // Updates during acquisition must coalesce into exactly one follow-up request.
     for _ in 0..100 {
@@ -97,7 +103,11 @@ fn updates_replace_failure_retains_refresh_waits_and_disable_clears()
     for revision in [2, 3] {
         let deadline = Instant::now() + Duration::from_secs(3);
         while feature.revision < revision && Instant::now() < deadline {
-            feature.poll(&network);
+            let update = feature.poll(&network);
+            if feature.revision == revision {
+                assert_eq!(update.completed, Some(Completion::Succeeded));
+                assert_eq!(update.started, revision == 2);
+            }
             thread::sleep(Duration::from_millis(2));
         }
         assert_eq!(feature.revision, revision);
@@ -118,7 +128,16 @@ fn updates_replace_failure_retains_refresh_waits_and_disable_clears()
     let deadline = Instant::now() + Duration::from_secs(3);
     while !matches!(feature.status(), Status::Failed(_)) {
         assert!(Instant::now() < deadline);
-        feature.poll(&network);
+        let update = feature.poll(&network);
+        if matches!(feature.status(), Status::Failed(_)) {
+            assert_eq!(
+                update,
+                Update {
+                    completed: Some(Completion::Failed),
+                    started: false
+                }
+            );
+        }
         thread::sleep(Duration::from_millis(1));
     }
     assert!(matches!(

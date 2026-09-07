@@ -94,3 +94,23 @@ Controllerの追加テストは、実行をyieldする前の連続した接続�
 単独crateとアプリの全ターゲットClippy（`-D warnings`）、rustfmt、差分の空白検査が成功。
 `cmake --build build`によるリリースビルドと実行ファイルの配置も成功。
 これらはCPUとローカルHTTPの試験であり、実再生のメモリー安定性を証明するものではない。
+
+
+## Qt接続の責務分離
+
+Player本体のEPG購読設定・通知の消費・番組取得・表示更新をplayer/epg.rsへ移動し、
+10秒ごとの機能カウンター表示は既存player/telemetry.rsへ移動した。
+poll_featuresは通知消費→実況→EPG取得と投影→カウンターの呼び出し順だけを表す。
+EPGスナップショット、購読Controller、Runtimeの所有者は変えず、コピーや別タスクを増やさない。
+番組表の日時選択と現在番組の投影は既存guide/program_infoモジュールを呼び出す。
+
+分離時に、診断イベントをFetching状態の前後比較から推測すると、同じpoll内の取得完了と
+追加取得開始が両方消える問題を確認した。ProgramInfo::pollはUpdateを返し、
+completed: Option<Completion>とstarted: boolで両方を表す。CompletionはSucceeded/Failed。
+Qt側は完了を先に、次の開始を後に記録する。固定サイズの結果で、通知キューを追加しない。
+キャンセルした世代は成功・失敗として扱わない。
+
+既存のローカルHTTP試験に、取得中の100通知による追加取得が「成功＋開始」を同時に返す
+こと、通常完了と解析失敗も型で区別されることの検証を追加した。
+
+EPG関連12試験と強化した遷移試験、全ターゲットClippy、fmt・diff検査、CMakeリリースビルドが成功。実サーバーでの診断ログ照合は未検証。

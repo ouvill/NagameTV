@@ -62,6 +62,18 @@ pub enum Status<'a> {
     Failed(&'a RequestError),
 }
 
+/// Transitions during one poll, including completion followed by immediate reacquisition.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Completion {
+    Succeeded,
+    Failed,
+}
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct Update {
+    pub completed: Option<Completion>,
+    pub started: bool,
+}
+
 #[derive(Default)]
 pub struct ProgramInfo {
     desired: Option<String>,
@@ -94,10 +106,11 @@ impl ProgramInfo {
     pub fn refresh(&mut self) {
         self.refresh_pending = true;
     }
-    pub fn poll(&mut self, network: &Network) {
-        self.poll_at(network, Instant::now());
+    pub fn poll(&mut self, network: &Network) -> Update {
+        self.poll_at(network, Instant::now())
     }
-    fn poll_at(&mut self, network: &Network, now: Instant) {
+    fn poll_at(&mut self, network: &Network, now: Instant) -> Update {
+        let mut update = Update::default();
         self.acquisition = match std::mem::take(&mut self.acquisition) {
             Acquisition::Cancelling(job) if job.is_finished() => Acquisition::default(),
             Acquisition::Fetching(job) if job.is_finished() => {
@@ -106,12 +119,16 @@ impl ProgramInfo {
                     .unwrap_or_else(|| Err(NetworkError::WorkerStopped.into()))
                 {
                     Ok(programs) => {
+                        update.completed = Some(Completion::Succeeded);
                         self.text_capacity_bytes = programs.record_storage();
                         self.snapshot = programs;
                         self.revision += 1;
                         Outcome::Ready
                     }
-                    Err(error) => Outcome::Failed(error),
+                    Err(error) => {
+                        update.completed = Some(Completion::Failed);
+                        Outcome::Failed(error)
+                    }
                 };
                 Acquisition::Idle {
                     next: Some(now + REFRESH),
@@ -124,12 +141,14 @@ impl ProgramInfo {
             && matches!(&self.acquisition, Acquisition::Idle { next, .. } if self.refresh_pending || next.is_none_or(|deadline| now >= deadline))
         {
             self.refresh_pending = false;
+            update.started = true;
             self.acquisition = Acquisition::Fetching(network.fetch_json(
                 format!("{server}/api/programs"),
                 MAX_RESPONSE,
                 parse,
             ));
         }
+        update
     }
     pub fn status(&self) -> Status<'_> {
         match &self.acquisition {

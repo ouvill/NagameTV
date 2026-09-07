@@ -2,7 +2,10 @@
 use super::ffi;
 use cxx_qt::CxxQtType;
 use cxx_qt_lib::QString;
-use std::pin::Pin;
+use std::{
+    pin::Pin,
+    time::{Duration, Instant},
+};
 use viewer_diagnostics::{Snapshot, recorder::Event};
 #[derive(Default, PartialEq, Eq)]
 struct Options {
@@ -95,6 +98,26 @@ impl ffi::Player {
         {
             eprintln!("{error}");
             self.set_log_error(QString::from(error.to_string()));
+        }
+    }
+}
+
+impl ffi::Player {
+    pub(super) fn poll_feature_metrics(mut self: Pin<&mut Self>) {
+        if Instant::now() >= self.rust().next_diagnostic {
+            let (subscriptions, pending, decoded) = self
+                .rust()
+                .subtitle_session
+                .as_ref()
+                .map(|s| s.counters())
+                .unwrap_or_default();
+            let (tasks, programs, stopping) = self.rust().epg.counters();
+            let text = format!(
+                "字幕: 購読 {subscriptions}, 待機 {pending}, 受信 {decoded} | EPG: タスク {tasks}, 番組 {programs}, 停止待ち {stopping}"
+            );
+            eprintln!("METRICS {text}");
+            self.as_mut().set_diagnostics(QString::from(text));
+            self.as_mut().rust_mut().next_diagnostic = Instant::now() + Duration::from_secs(10);
         }
     }
 }

@@ -4,6 +4,7 @@ mod channel_programs;
 mod channel_refresh;
 mod channels;
 mod comments;
+mod epg;
 mod guide;
 mod language;
 mod lifecycle;
@@ -178,16 +179,13 @@ pub mod ffi {
 }
 
 use crate::{
-    features::{
-        program_info::{ProgramInfo, Status as ProgramStatus},
-        subtitles,
-    },
+    features::{program_info::ProgramInfo, subtitles},
     playback, services, settings,
 };
 use cxx_qt::CxxQtType;
 use cxx_qt_lib::QString;
 use std::pin::Pin;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 pub struct PlayerRust {
     language: QString,
@@ -433,23 +431,6 @@ impl ffi::Player {
             .update_subtitle_status(subtitle_status::Status::Stopped);
         Ok(())
     }
-    fn configure_epg_events(mut self: Pin<&mut Self>) {
-        let endpoint = (self.rust().epg_enabled && self.rust().channel_refresh.enabled())
-            .then(|| format!("{}/api/events/stream?resource=program", self.server()));
-        self.as_mut().rust_mut().epg_events.configure(endpoint);
-    }
-    fn configure_epg(mut self: Pin<&mut Self>) {
-        self.as_mut().configure_epg_events();
-        let server = if self.rust().epg_enabled && !self.rust().entries.is_empty() {
-            Some(self.server().to_string())
-        } else {
-            None
-        };
-        self.as_mut().rust_mut().epg.configure(server);
-        if !self.rust().epg_enabled {
-            self.as_mut().guide_open(false);
-        }
-    }
     pub fn configure_features(mut self: Pin<&mut Self>, subtitles: bool, epg: bool) {
         let subtitles = subtitles && self.rust().subtitles_allowed;
         let epg = epg && self.rust().epg_allowed;
@@ -508,91 +489,11 @@ impl ffi::Player {
         }
     }
     fn poll_features(mut self: Pin<&mut Self>) {
-        let events = {
-            let mut this = self.as_mut().rust_mut();
-            let this = &mut *this;
-            this.network
-                .as_ref()
-                .map(|network| network.poll_epg_events(&mut this.epg_events))
-        };
-        match events {
-            Some(Ok(update)) => {
-                if let Some(error) = update.failure {
-                    eprintln!("EPG event stream: {error}");
-                }
-                if update.refresh {
-                    self.as_mut().rust_mut().epg.refresh();
-                    self.as_mut().refresh_channels(true);
-                }
-            }
-            Some(Err(error)) => eprintln!("EPG event subscription: {error}"),
-            None => {}
-        }
+        // Consume notifications before acquisition so a pending change can start now.
+        self.as_mut().poll_epg_events();
         self.as_mut().poll_comments();
-        let epg_event = {
-            use viewer_diagnostics::recorder::Event;
-            let mut this = self.as_mut().rust_mut();
-            let this = &mut *this;
-            let was_fetching = matches!(this.epg.status(), ProgramStatus::Fetching);
-            let revision = this.epg.revision;
-            if let Some(network) = &this.network {
-                this.epg.poll(network);
-            }
-            let fetching = matches!(this.epg.status(), ProgramStatus::Fetching);
-            match (was_fetching, fetching) {
-                (false, true) => Some(Event::EpgFetchStarted),
-                (true, false) if this.epg.revision != revision => Some(Event::EpgFetchFinished),
-                (true, false) if matches!(this.epg.status(), ProgramStatus::Failed(_)) => {
-                    Some(Event::EpgFetchFailed)
-                }
-                _ => None,
-            }
-        };
-        if let Some(event) = epg_event {
-            self.record_diagnostic(event);
-        }
-        self.as_mut().refresh_epg_status();
-        let service = self
-            .rust()
-            .entries
-            .get(self.rust().selected as usize)
-            .and_then(|s| s.broadcast);
-        self.as_mut().poll_current_program(service);
-        if let crate::features::program_info::guide::Guide::Showing(window) = self.rust().guide
-            && (self.rust().guide_revision != self.rust().epg.revision
-                || self.rust().guide_service != service
-                || self.rust().guide_dirty)
-        {
-            let data = match self.rust().epg.grid_view(&self.rust().entries, window) {
-                Ok(data) => data,
-                Err(error) => {
-                    eprintln!("Program guide presentation failed: {error}");
-                    self.as_mut()
-                        .set_epg_status(QString::from(format!("番組表の表示失敗: {error}")));
-                    "[]".into()
-                }
-            };
-            let revision = self.rust().epg.revision;
-            self.as_mut().rust_mut().guide_revision = revision;
-            self.as_mut().rust_mut().guide_service = service;
-            self.as_mut().rust_mut().guide_dirty = false;
-            self.as_mut().set_epg_data(QString::from(data));
-        }
-        if Instant::now() >= self.rust().next_diagnostic {
-            let (subscriptions, pending, decoded) = self
-                .rust()
-                .subtitle_session
-                .as_ref()
-                .map(|s| s.counters())
-                .unwrap_or_default();
-            let (tasks, programs, stopping) = self.rust().epg.counters();
-            let text = format!(
-                "字幕: 購読 {subscriptions}, 待機 {pending}, 受信 {decoded} | EPG: タスク {tasks}, 番組 {programs}, 停止待ち {stopping}"
-            );
-            eprintln!("METRICS {text}");
-            self.as_mut().set_diagnostics(QString::from(text));
-            self.as_mut().rust_mut().next_diagnostic = Instant::now() + Duration::from_secs(10);
-        }
+        self.as_mut().poll_epg();
+        self.poll_feature_metrics();
     }
     /// QML supplies a live GUI-thread item and calls shutdown before destroying it.
     pub unsafe fn attach(mut self: Pin<&mut Self>, item: *mut ffi::QQuickItem) -> bool {
