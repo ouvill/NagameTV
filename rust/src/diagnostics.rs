@@ -75,9 +75,14 @@ impl Client {
     }
 }
 
-pub fn start(directory: PathBuf, isolated: bool) -> Result<Option<Client>, Error> {
+/// Shared by Qt hook installation and recorder startup so disabled means neither.
+pub fn requested(isolated: bool) -> bool {
     let setting = std::env::var("MIRAKURUN_DIAGNOSTICS");
-    if !enabled(setting.as_deref().ok(), isolated) {
+    enabled(setting.as_deref().ok(), isolated)
+}
+
+pub fn start(directory: PathBuf, isolated: bool) -> Result<Option<Client>, Error> {
+    if !requested(isolated) {
         return Ok(None);
     }
     let owner = APPLICATION

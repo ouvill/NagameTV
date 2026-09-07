@@ -411,3 +411,31 @@ EPG取得開始32件・完了32件、診断破棄0、対象critical・採取ス�
 証跡はbenchmark/gstreamer-critical/current/checkpoint-60m/のcapture.jsonlとsummary.json。
 この比較時の生存確認はps、66.33分の最新sampleは再生中・RSS329.06MiB・
 glibc使用中61.10MiB・EPG38件完了・対象critical0だった。
+
+
+## 診断無効時のQtハンドラー登録（2026-09-07）
+
+mainはMIRAKURUN_DIAGNOSTICS=0ならQt GCハンドラーを登録しないが、後継版は
+記録ワーカーだけ停止してハンドラーを常に登録していた。fdd7c01を専用Xvfb :99で
+DIAGNOSTICS=0、GC_LOG=1として起動・正常終了させると、GCログが67行出た。
+音声は明示fakesink、全追加機能無効、再生停止中。ユーザーの画面には操作していない。
+
+diagnostics::requestedへ環境変数と実験起動モードの判定をまとめ、
+Qtハンドラー登録とRecorder開始の両方から利用する。明示0では登録しない。
+機能固定の実験起動でも、診断を明示1にしない限り登録しない。
+有効時のアプリ所有者・終了時GC保存・終了待ちの構造は維持する。
+
+[Qtのログカテゴリ仕様](https://doc.qt.io/qt-6/qloggingcategory.html#configuring-categories)
+を確認した。無効時はアプリからGC debugカテゴリを有効化しないが、利用者が
+QT_LOGGING_RULESなどで有効化したQt自身のログを強制的に消す処理ではない。
+不要なコールバック・文字列変換とアプリによるログ有効化を避ける修正であり、
+長時間メモリー増加の原因を特定したという意味ではない。
+
+修正後も同じ仮想画面・停止状態でDIAGNOSTICS=0、GC_LOG=1として起動・終了した。
+標準エラーのGCログ0行、usageファイル0個。対照としてDIAGNOSTICS=1で起動すると
+GCログ67行、保存GCレコード67件、usageファイル1個だった。終了時の最終集計も保存。
+修正前・修正後OFF・修正後ONの3プロセスはいずれも終了コード0。
+証跡はGit対象外のbenchmark/diagnostics-disabled/にbefore/after/enabled.log、
+専用stateディレクトリー、assertで条件を確認したsummary.jsonを保存した。
+既存の判定・終了所有権テスト2件、全ターゲットClippy、書式検査、
+CMakeリリースビルド成功。実GPUの長時間再生プロセスは再起動していない。

@@ -69,7 +69,9 @@ fn run() -> Result<(), StartupError> {
     features::PLAN
         .set(plan)
         .map_err(|_| StartupError::PlanAlreadyInitialized)?;
-    player::ffi::install_qt_gc_logging(diagnostics::record_qt_gc);
+    if diagnostics::requested(plan.locked) {
+        player::ffi::install_qt_gc_logging(diagnostics::record_qt_gc);
+    }
     cxx_qt::init_qml_module!("MinimalViewer");
     player::ffi::configure_qt_quick_open_gl();
     let mut app = QGuiApplication::new();
