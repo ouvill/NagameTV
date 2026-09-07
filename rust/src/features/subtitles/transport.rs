@@ -434,22 +434,37 @@ mod tests {
 
     #[test]
     #[ignore = "requires an MPEG-TS fixture supplied through MIRAKURUN_SUBTITLE_TS_FIXTURE"]
-    fn discovers_caption_stream_in_fixture() {
-        let path = std::env::var("MIRAKURUN_SUBTITLE_TS_FIXTURE").unwrap();
-        let data = std::fs::read(path).unwrap();
+    fn discovers_caption_stream_in_fixture() -> Result<(), Box<dyn std::error::Error>> {
+        use std::io::Read;
+        let path = std::env::var("MIRAKURUN_SUBTITLE_TS_FIXTURE")?;
+        let mut input = std::fs::File::open(path)?;
         let mut extractor = TransportParser::new(true);
-        let mut texts = Vec::new();
-        for chunk in data.chunks(16 * 1024) {
-            texts.extend(extractor.push(chunk));
+        if let Some(service) = std::env::var_os("MIRAKURUN_SUBTITLE_SERVICE_ID") {
+            extractor.select_service(service.to_str().ok_or("service ID is not UTF-8")?.parse()?);
+        }
+        let mut buffer = [0; 16 * 1024];
+        let mut screens = 0;
+        let mut positioned = 0;
+        let mut timestamped = 0;
+        loop {
+            let count = input.read(&mut buffer)?;
+            if count == 0 {
+                break;
+            }
+            for cue in extractor.push(&buffer[..count]) {
+                screens += 1;
+                positioned += usize::from(!cue.cells.is_empty());
+                timestamped += usize::from(cue.pts_ms.is_some());
+            }
         }
         assert!(
             !extractor.subtitle_pids.is_empty(),
             "no ARIB caption stream was discovered"
         );
-        assert!(
-            texts.iter().any(|cue| !cue.cells.is_empty()),
-            "caption had no positioned cells"
+        assert!(positioned > 0, "caption had no positioned cells");
+        eprintln!(
+            "decoded {screens} subtitle screens; positioned={positioned}, timestamped={timestamped}"
         );
-        eprintln!("decoded {} subtitle screens", texts.len());
+        Ok(())
     }
 }

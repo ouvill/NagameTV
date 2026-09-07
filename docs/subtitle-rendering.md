@@ -218,3 +218,27 @@ handle_packetへ渡す固定長コピーは維持する。新しい待機キュ�
 変更後のRust全体試験は95成功・3任意試験除外。全ターゲットClippyも警告なし。
 起動中のアプリには入力を送らず、今回の変更での実放送再生はまだ行っていない。
 CMake releaseビルドも成功した。
+
+## 現行TSパーサーの実放送データ検証（2026-09-07）
+
+Mirakurunの関西テレビ（HTTPサービスID 3272402080）から20.04秒、
+39,436,288 bytesのTSを取得した。起動中アプリには操作を送らず、別の短いHTTP取得を
+使用した。記録はgit管理外の`benchmark/live-subtitle-check/capture.ts`に保持する。
+
+任意試験discovers_caption_stream_in_fixtureで放送serviceId=2080を明示して解析し、
+ARIB字幕PIDの発見、字幕画面2件、配置済みセルを持つ画面1件、PTS付き画面2件を確認した。
+試験は成功、解析試験自体の経過は0.13秒。この一回の数値を実再生のCPU改善率に換算しない。
+映像との同期・Qt描画はこのCPU試験の範囲外。全放送・全字幕形式の互換性も証明しない。
+
+検証用テストはResultで環境変数・ファイルIO・serviceId解析の失敗を返し、
+固定16KiBの入力配列で逐次処理する。全TSと全字幕画面をVecへ蓄積せず、
+画面・配置・PTSの件数だけを残す。serviceId未指定時の従来の探索も維持する。
+指定パスはCargoのテスト実行ディレクトリーに依存しない絶対パスを使用する。
+
+```sh
+MIRAKURUN_SUBTITLE_TS_FIXTURE=/home/workshop/qt-gstreamer-features/benchmark/live-subtitle-check/capture.ts MIRAKURUN_SUBTITLE_SERVICE_ID=2080 CARGO_TARGET_DIR=build/cargo cargo test --locked --manifest-path rust/Cargo.toml discovers_caption_stream_in_fixture -- --ignored --nocapture
+```
+
+結果ログは同ディレクトリーのresult.log。本変更は検証用テストのみであり、
+直前にビルドした実アプリのコードには変更を加えない。
+全ターゲットClippyとfmt・diff検査も成功。
