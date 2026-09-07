@@ -139,3 +139,27 @@ CARGO_TARGET_DIR=build/epg-events cargo test --locked \
 任意試験と同crateのnetwork有効・全ターゲットClippy、fmt・diff検査が成功。
 今回確認できたのは静かな実接続の維持と停止まで。実更新イベントの内容、集約後のEPG再取得、
 Qt画面への反映、長時間の資源推移は未検証。アプリ本体を変更しておらず再ビルドは不要。
+
+## イベント集約からQt画面までの統合試験（2026-09-07）
+
+85c85ccのアプリを専用Xvfb :99 / llvmpipeで起動し、実際の60秒ゲートを変更せず検証した。
+専用設定でEPGのみ有効、再生停止中。検証用HTTPサーバーは1局・1番組とopen-array形式の
+イベント接続を提供する。実Mirakurunへの書き込みや実放送データの変更はしていない。
+
+初回取得した「EPG A」を番組表で表示した後、サーバー側の番組名を「EPG B」へ変更し、
+program/update通知を1万件送った。イベント接続はその後も改行を送り、切断しない。
+最初のprograms取得から60.004秒後に追加取得が1回だけ発生し、servicesも1回再取得。
+番組表を閉じずにカードがEPG Bへ更新され、ウィンドウタイトルもEPG Bになった。
+初回取得から125秒まで観測し、programs要求は合計2回、イベント接続は1本のまま。
+次の1分間に再取得はなく、5分の定期取得や切断後の再同期との混同もない。
+
+診断ログもepg_fetch_started→epg_fetch_finishedが2組。初回はelapsed 234→284ms、
+更新時は60237→60287msで、更新時のguide_open=true・loading true→falseと一致した。
+保持番組数は1件、診断記録の欠落数は0。これはイベントの相関確認で、性能測定ではない。
+QML例外・イベント接続エラーなし。アプリは終了コード0、サーバー側でもイベント接続の
+切断を観測してから検証サーバーを終了した。
+
+証跡はGit対象外の `benchmark/epg-event-ui/`：server.py・server.log・player.log、
+before.png・after.png、diagnostic-events.jsonと元の診断JSONL。
+イベント受信→集約→再取得→Qt反映は検証用データで確認済みとなる。
+実Mirakurunが発する更新通知、実再生との同時実行、長時間の資源推移は引き続き未検証。
