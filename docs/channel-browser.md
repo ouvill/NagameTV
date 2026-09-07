@@ -186,3 +186,32 @@ Clippy全ターゲット警告なし、releaseビルド成功。DISPLAY・NVIDIA
 確認後、実サーバーのサービス一覧HTTP 200、実アプリのEPG取得と正常終了を確認した。
 起動時のQMLエラーは検出されなかった。証跡はGit対象外の
 benchmark/viewing-design/navigation-startup.logとnavigation-startup.png。
+
+## 英語表示のタブ幅と固定データでの画像比較（2026-09-07）
+
+mainのBroadcastTabsは英語時96px、日本語時76pxを1区画の基準幅にする。
+後継は常に76pxだったため、英語の放送種別タブと選択背景がmainより狭かった。
+共有BroadcastTabsをQt.uiLanguageへ連動させ、背景・各ボタン・選択表示が実際の幅を
+等分するよう修正した。既存の翻訳ヘルパーは有効言語をQQmlEngine::setUiLanguageへ
+設定しており、下部／右側の一覧へ別の言語状態を複製する必要はない。
+
+比較スクリプトは従来main側だけ見出し等を日本語へ置換していた。
+この条件差を除去し、両方を英語の原文表示に統一した。
+幅1440／900、選択index 0／1の4条件を、同一の局名・番組・時刻で撮影する。
+mainから抽出したチャンネル選択部品が参照であり、main本体全画面の比較ではない。
+参照ソース全文とSHA256・条件をbenchmark/browser-design/へ保存するようにした。
+
+Xvfb :99をxdpyinfoとglxinfoで検出・検証して実行。
+英語タブ幅修正前は各条件3729ピクセル、修正後は1353ピクセルに差があった。
+修正後の差はすべてy=21〜60のヘッダー領域で、カード領域の差は4条件とも0。
+残ったヘッダー差の原因は未確定で、画面全体の完全一致とはしない。
+ロゴ画像・実況勢い・BSへの切り替え・日本語の翻訳済み画像は今回の比較対象外。
+
+QtTestの実入力で、ja→en→jaの幅変更と英語時の右端ボタン選局通知を確認した。
+幅を明示的に狭めた場合も全ボタンが背景内に収まり、末尾をクリックできることを確認。
+最初の幅変更試験はRowのレイアウト確定前の座標を読んで失敗したため、
+waitForRendering後の実配置を検査するようにした。製品の配置不具合とは扱わない。
+QML全103件とCMakeリリースビルド成功。画像比較fixtureは初期化・終了込み6件成功。
+画像一致自体はQtTestの合格条件にはせず、ImageMagickの差分と実画像で別途照合した。
+証跡はbenchmark/browser-design/の*-main.png、*-candidate.png、comparison.json、
+comparison-after.json、region-comparison.json、conditions.json、reference-source.qml。

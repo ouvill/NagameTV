@@ -1,10 +1,20 @@
 from pathlib import Path
 import json
+import hashlib
 import sys
 base = Path('benchmark/browser-design').resolve()
 base.mkdir(parents=True, exist_ok=True)
 reference_path = Path(sys.argv[1] if len(sys.argv) > 1 else '/project/qml/Main.qml').resolve()
 source = reference_path.read_text()
+(base / 'reference-source.qml').write_text(source)
+(base / 'conditions.json').write_text(json.dumps({
+    'reference': str(reference_path),
+    'reference_sha256': hashlib.sha256(source.encode()).hexdigest(),
+    'language': 'en',
+    'widths': [1440, 900],
+    'selected_indices': [0, 1],
+    'scope': 'Extracted main channel picker with fixed data; not the full application',
+}, indent=2) + '\n')
 def block(marker):
     start = source.index(marker)
     opening = source.index('{', start)
@@ -29,7 +39,7 @@ Control {
  readonly property color accent: "#9caf9f"
  readonly property color raised: "#1c1f1c"
  property QtObject player: QtObject {
-  property string uiLanguage: "ja"
+  property string uiLanguage: "en"
   property var services: ["01   総合テレビ", "02   教育テレビ", "03   地域テレビ", "101   BSテレビ"]
   property var channelTypes: ["GR", "GR", "GR", "BS"]
   property var channelLogoUrls: ["", "", "", ""]
@@ -38,13 +48,14 @@ Control {
   function selectChannel(index) {}
  }
  function uiIcon(name) { return "file:///project/assets/icons/" + name + ".svg" }
- function availableChannelTypes() { return [["GR", "地デジ"], ["BS", "BS"]] }
+ function availableChannelTypes() { return [["GR", "Terrestrial"], ["BS", "BS"]] }
  function jikkyoForce(index) { return "" }
  function programTime(index) { return "20:00 – 20:54" }
  function programProgressAt(index) { return 0.5 }
  function scrollOneStep() {}
 '''+ '\n'.join(parts) +'\n}'
-reference = reference.replace('qsTr("Channels")','"チャンネル"').replace('qsTr("Channel logo")','"局ロゴ"')
+# Both views use the untranslated English source strings. Translating only the
+# reference gives different label widths and invalidates the layout comparison.
 reference = reference.replace('file:///project/assets/icons/', (reference_path.parent.parent / 'assets/icons').as_uri() + '/')
 (base / 'Reference.qml').write_text(reference)
 fixture = '''import QtQuick
@@ -54,6 +65,7 @@ import "../../rust/qml" as Viewer
 TestCase {
  id: testCase
  name: "BrowserDesign"
+ function initTestCase() { Qt.uiLanguage = "en"; }
  when: windowShown
  visible: true
  width: 1440; height: 304
@@ -68,18 +80,29 @@ TestCase {
    programsJson: JSON.stringify(["街の風景と暮らしを訪ねて", "科学の時間", "ニュース", "映画"].map(name => ({name: name, startAt: start, duration: 54*60000})))
   }
  }
- function test_capture_same_fixture() {
+ function test_capture_same_fixture_data() {
+  return [{tag:"wide-first", width:1440, selected:0},
+          {tag:"wide-second", width:1440, selected:1},
+          {tag:"minimum-first", width:900, selected:0},
+          {tag:"minimum-second", width:900, selected:1}];
+ }
+ function test_capture_same_fixture(data) {
   failOnWarning(/.*/);
+  testCase.width = data.width;
+  reference.player.channelName = reference.player.services[data.selected];
+  candidate.selected = data.selected;
+  candidate.visible = false;
+  reference.visible = true;
   wait(350);
   const mainImage = grabImage(backdrop);
   verify(mainImage.red(20, 20) < 100, "Reference must be rendered, not a blank capture");
-  mainImage.save(OUTPUT + "/main.png");
+  mainImage.save(OUTPUT + "/" + data.tag + "-main.png");
   reference.visible = false;
   candidate.visible = true;
   wait(350);
   const candidateImage = grabImage(backdrop);
   verify(candidateImage.red(20, 20) < 100, "Candidate must be rendered, not a blank capture");
-  candidateImage.save(OUTPUT + "/candidate.png");
+  candidateImage.save(OUTPUT + "/" + data.tag + "-candidate.png");
  }
 }
 '''.replace('OUTPUT', json.dumps(str(base)))
