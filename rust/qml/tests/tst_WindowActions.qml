@@ -24,6 +24,7 @@ Item {
                     property alias actions: actions
                     property alias editor: editor
                     property alias popup: popup
+                    property alias drawer: drawer
                     property int guideRequests: 0
                     property int channelRequests: 0
                     property int steps: 0
@@ -39,6 +40,7 @@ Item {
                         }
                         onEscapeRequested: parent.escapes++
                     }
+                    Drawer { id: drawer; width: 200; height: 300; focus: true }
                     TextField {
                         id: editor
                         width: 300
@@ -70,6 +72,23 @@ Item {
             }
             function cleanup() {
                 host.visibility = originalVisibility;
+            }
+            function test_closed_drawer_does_not_disable_navigation() {
+                compare(view.drawer.visible, false);
+                compare(view.actions.popupOpen, false);
+                keyClick(Qt.Key_C);
+                compare(view.channelRequests, 1);
+                view.drawer.open();
+                tryCompare(view.drawer, "opened", true);
+                compare(view.actions.popupOpen, true);
+                keyClick(Qt.Key_C);
+                compare(view.channelRequests, 1);
+                keyClick(Qt.Key_Escape);
+                tryCompare(view.drawer, "visible", false);
+                compare(view.actions.popupOpen, false);
+                view.forceActiveFocus();
+                keyClick(Qt.Key_C);
+                compare(view.channelRequests, 2);
             }
             function test_shortcuts_and_editable_text() {
                 keyClick(Qt.Key_C);

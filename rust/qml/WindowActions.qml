@@ -7,7 +7,10 @@ Item {
     property bool guideEnabled: false
     property int restoreVisibility: Window.Windowed
     readonly property bool fullscreen: targetWindow !== null && targetWindow.visibility === Window.FullScreen
-    readonly property bool popupOpen: Overlay.overlay ? Overlay.overlay.visible : false
+    // A closed Drawer keeps Overlay itself visible for edge-drag handling.
+    // Only displayed overlay children should suspend navigation/inactivity.
+    readonly property bool popupOpen: Overlay.overlay
+        ? Overlay.overlay.children.some(item => item.visible) : false
     readonly property bool editingText: targetWindow !== null && (targetWindow.activeFocusItem instanceof TextInput || targetWindow.activeFocusItem instanceof TextEdit)
     readonly property bool navigationEnabled: enabled && !editingText && !popupOpen
     signal channelsToggleRequested

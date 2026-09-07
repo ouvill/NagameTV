@@ -85,3 +85,30 @@ CMakeビルド、qmllint成功。Qt試験49件成功（初期化・終了を含�
 PgUp/PgDownはRustのstep_channelを呼び、一覧と同じ同時放送除外規則で巡回する。
 一覧が閉じていても操作時のEPGを参照する。番組境界・非表示局からの移動・循環の
 検証は [channel-browser.md](channel-browser.md) に記録する。
+
+## 閉じたDrawerによるショートカット抑止の修正（2026-09-07）
+
+ユーザー承認のXvfb :99 / llvmpipeとOpenboxで実アプリを操作した。
+設定・診断ファイルはbenchmark/virtual-ui内へ分離し、通常画面:0には入力しない。
+ここでの成功はUI検証であり、NVIDIAの描画・メモリー・性能検証ではない。
+
+設定Drawerが閉じていてもWindowActions.popupOpenがtrueとなり、C/G/PgUp/PgDown/
+Escapeと操作部の自動非表示が抑止されることを実アプリ内の一時ログで確認した。
+Qt 6.10.2のQQuickOverlayPrivate::addPopupはDrawerの登録だけでもoverlayをvisibleに
+するため、Overlay.visibleをポップアップ表示中の条件に使うことが誤りだった。
+参考: [Qtの該当実装](https://github.com/qt/qtdeclarative/blob/v6.10.2/src/quicktemplates/qquickoverlay.cpp)、
+[Popupの表示方式](https://doc.qt.io/qt-6/qml-qtquick-controls-popup.html#popup-type)。
+
+Overlayの公開childrenリスト内にvisibleな項目があるかをバインディングで判定する。
+閉じたDrawerの登録だけでは抑止せず、実際のポップアップ表示・終了アニメーション中は
+抑止を維持する。監視用Timerやイベントフィルターは追加しない。一時ログは除去済み。
+
+閉じたDrawerをWindowActionsの試験へ追加すると修正前は3件失敗した。
+修正後は同じ試験6件成功、QML全体72件成功・警告なし。releaseビルドも成功。
+実アプリでもCで局一覧、Escapeで閉じる、Gで番組表、Escapeで通常画面へ戻ることを
+画像で確認した。新しいウィンドウタイトルの番組名も_NET_WM_NAMEで確認した。
+証跡はgit管理外benchmark/virtual-uiのchannels.png・guide.png・closed.pngと各ログ。
+
+F11の外部キー送信はこの実行でも状態変化を確認できていないため、別途調査する。
+Qtの部品試験内での全画面往復は成功しているが、実アプリへの外部送信とは分けて扱う。
+自動非表示も、この回の実アプリは停止中なので実再生での確認が残る。
