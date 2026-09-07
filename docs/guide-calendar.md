@@ -442,3 +442,29 @@ mainのQML/Rust側には番組表用の矢印・Enter処理が見つからず、
 
 証跡はbenchmark/ui-comparison/main/keys-*.png、keys-result.txt、guide-keys.logと、
 benchmark/ui-comparison/experiment-keys/の各画像・result.txt、benchmark/virtual-ui/guide-keys.log。
+
+
+## 詳細表示中のEPG再取得（2026-09-07）
+
+mainの詳細は現在のguideTitles/guideDescriptionsを参照するが、後継版は選択時の
+JavaScriptオブジェクトを保持していた。番組表のJSONだけ更新するとセルは新しくなる一方、
+開いた詳細は古い番組名・説明を表示し続け、選択枠の参照も一致しなくなる。
+Qtの実コンポーネントをクリックする回帰試験を追加し、修正前は期待値Afterに対して
+実際の表示がBeforeのままで失敗することを確認した。
+
+GuideTimelineの解析済みcolumnsが更新されたとき、選択中のwatchKeyを新しい投影で
+照合し、そのオブジェクトへ選択を更新する。同じ番組が並び替えられても追随し、
+キーが存在しなければ詳細を閉じる。Rustが生成するキーには接続先・局・番組ID・
+開始時刻・長さが含まれるため、別の放送枠へ無条件で選択を引き継がない。
+[Qtのvar変更通知仕様](https://doc.qt.io/qt-6/qml-var.html#change-notification-semantics)
+に沿い、既存オブジェクトのプロパティ変更ではなく選択プロパティ自体を差し替える。
+
+追加のJSON.parse、全件の中間配列、索引キャッシュ、タイマーは作らない。
+詳細を開いている更新時だけ既存投影を走査し、見つかった時点で終了する。
+画面外の列が破棄されても詳細を保持する既存の動作は維持する。
+
+専用Xvfb :99でQML全87件成功。試験データの更新範囲を番組名・説明に絞った後も、
+番組表14件が成功した。更新と並び替え後の表示追随、選択キー保持、削除後の閉鎖、
+既存の画面外列破棄・日付変更・視聴要求の試験を含む。記録はGit対象外の
+benchmark/guide-detail-refresh/にbefore.txt、after.txt、final.txtとして保存した。
+実Mirakurun通知で開いた詳細が変わる瞬間の確認やGPU性能測定ではない。

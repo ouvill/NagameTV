@@ -32,6 +32,31 @@ TestCase {
         guide = createTemporaryObject(component, testCase)
         verify(guide !== null)
     }
+    function test_open_details_follow_identity_across_epg_refresh() {
+        guide.dayOffset = 1
+        const start = guide.days[1].start
+        guide.rows = [{index:0, label:"Channel 0", band:"GR", logo:""}]
+        const original = {watchKey:"selected", name:"Before", description:"Old description", startAt:start, duration:3600000}
+        const other = {watchKey:"other", name:"Other", description:"Other description", startAt:start+3600000, duration:3600000}
+        guide.programsJson = JSON.stringify([{index:0, programs:[original, other]}])
+        verify(waitForRendering(guide))
+        const cell = findChild(guide, "guideCell")
+        verify(cell !== null)
+        mouseClick(cell, 20, 30)
+        const loader = findChild(guide, "scheduledDetailsLoader")
+        tryCompare(loader.item, "opened", true)
+        compare(findChild(loader.item, "programTitle").text, "Before")
+        const updated = Object.assign({}, original, {name:"After", description:"New description"})
+        guide.programsJson = JSON.stringify([{index:0, programs:[other, updated]}])
+        tryCompare(findChild(loader.item, "programTitle"), "text", "After")
+        compare(findChild(loader.item, "programDescription").text, "New description")
+        compare(guide.selectedProgram.duration, 3600000)
+        compare(guide.selectedProgram.watchKey, "selected")
+        // Removing the selected identity must not display its former row's replacement.
+        guide.programsJson = JSON.stringify([{index:0, programs:[other]}])
+        tryCompare(loader, "item", null)
+        compare(guide.selectedProgram, null)
+    }
     function test_detail_position_resize_and_animated_dismissal() {
         testCase.Window.window.width = 1440; testCase.Window.window.height = 900
         testCase.width = 1440; testCase.height = 900

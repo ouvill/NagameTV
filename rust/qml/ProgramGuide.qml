@@ -55,6 +55,22 @@ Rectangle {
         selectedProgram = null
         dayRequested(selectedWindow.start, selectedWindow.end)
     }
+    function refreshSelection(columns) {
+        if (!selectedProgram) return
+        const key = selectedProgram.watchKey
+        // Reuse the timeline's parsed snapshot. Do not retain a stale object or
+        // use its old row index: updates can reorder or remove programs.
+        if (typeof key === "string") {
+            for (const column of columns) {
+                const current = column.programs.find(program => program.watchKey === key)
+                if (current) {
+                    selectedProgram = current
+                    return
+                }
+            }
+        }
+        selectedProgram = null
+    }
     onSelectedWindowChanged: requestDay()
     Component.onCompleted: requestDay()
     onChannelChanged: selectedProgram = null
@@ -80,6 +96,7 @@ Rectangle {
             dayStart: root.selectedWindow.start
             dayEnd: root.selectedWindow.end
             selectedProgram: root.selectedProgram
+            onColumnsChanged: root.refreshSelection(columns)
             onSelected: function(program, cellPosition, channelLabel) {
                 root.selectedPosition = cellPosition
                 root.selectedChannel = channelLabel
