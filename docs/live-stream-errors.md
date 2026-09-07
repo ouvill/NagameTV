@@ -68,3 +68,21 @@ GPU性能・RSS・長時間資源測定も対象外。
 
 証跡はGit対象外の `benchmark/same-server-outage/` に保存。
 `proxy.py`、`proxy.log`、`player.log`、障害前後・再接続・再生復帰・番組表のPNGを含む。
+
+## 503の案内を原因の確度に合わせる（2026-09-07）
+
+上の試験で一般的な中継障害にもチューナー不足を断定する案内が出た。
+mainの同じ分類を引き継いだ問題だったため、Hint::NoTunerをServiceUnavailableへ変更し、
+日英の案内をサーバー・チューナーの使用中または利用不能の可能性として表現する。
+再試行とサーバー確認を案内し、元のHTTPコード・ネイティブエラー詳細は保持する。
+
+[MirakurunのresponseStreamErrorHandler](https://github.com/Chinachu/Mirakurun/blob/master/src/Mirakurun/api.ts)
+はチューナー不足を503に変換する。一方、[RFC 9110 §15.6.4](https://www.rfc-editor.org/rfc/rfc9110.html#section-15.6.4)
+の503は過負荷やメンテナンスでも使用され、コードだけでチューナー不足とは確定できない。
+応答本文を追加取得したりネイティブの翻訳済み文字列を解析したりせず、既存の型付き
+HTTPステータス分類とUI境界での翻訳を維持する。通信・再試行・保持資源に変更はない。
+
+エラー分類の既存2テストで503・その他のHTTPコード、cleanup後の元エラー保持、
+非HTTP資源エラーの誤分類防止が成功。翻訳190項目とカタログ欠落テストも成功。
+fmt、Clippy全ターゲット（警告なし）、CMakeリリースビルドが成功。
+変更後の文言での実画面再確認は未実施。

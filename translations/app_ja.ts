@@ -463,8 +463,8 @@
       <translation>音声を切り替えられませんでした。もう一度選択してください。</translation>
     </message>
     <message>
-      <source>No tuner is available. Tuners may be in use or unavailable. Wait a moment and try again, or choose another channel.</source>
-      <translation>利用できるチューナーがありません。ほかの視聴・録画で使用中か、チューナーが利用できない状態です。少し待って再試行するか、別のチャンネルを選んでください。</translation>
+      <source>The stream is temporarily unavailable. The server or tuners may be busy or unavailable. Wait a moment and try again, or check the server.</source>
+      <translation>現在ストリームを利用できません。サーバーやチューナーが使用中、または利用できない可能性があります。少し待って再試行するか、サーバーの状態を確認してください。</translation>
     </message>
     <message>
       <source>This channel was not found on Mirakurun. Refresh the channel list and choose a channel again.</source>

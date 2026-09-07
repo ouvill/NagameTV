@@ -60,7 +60,7 @@ inline constexpr const char *backendTranslationSources[] = {
     QT_TRANSLATE_NOOP("Backend", "Loading channels..."),
     QT_TRANSLATE_NOOP("Backend", "Network runtime is unavailable"),
     QT_TRANSLATE_NOOP("Backend", "Could not load UI translation"),
-    QT_TRANSLATE_NOOP("Backend", "No tuner is available. Tuners may be in use or unavailable. Wait a moment and try again, or choose another channel."),
+    QT_TRANSLATE_NOOP("Backend", "The stream is temporarily unavailable. The server or tuners may be busy or unavailable. Wait a moment and try again, or check the server."),
     QT_TRANSLATE_NOOP("Backend", "This channel was not found on Mirakurun. Refresh the channel list and choose a channel again."),
     QT_TRANSLATE_NOOP("Backend", "Mirakurun denied access to the stream. Check the server's access settings."),
     QT_TRANSLATE_NOOP("Backend", "The server did not respond in time. Check the connection and try again."),

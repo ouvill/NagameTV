@@ -4,7 +4,7 @@ use gstreamer as gst;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Hint {
-    NoTuner,
+    ServiceUnavailable,
     MissingChannel,
     AccessDenied,
     Timeout,
@@ -18,8 +18,8 @@ pub enum Hint {
 impl Hint {
     pub fn source(self) -> &'static str {
         match self {
-            Self::NoTuner => {
-                "No tuner is available. Tuners may be in use or unavailable. Wait a moment and try again, or choose another channel."
+            Self::ServiceUnavailable => {
+                "The stream is temporarily unavailable. The server or tuners may be busy or unavailable. Wait a moment and try again, or check the server."
             }
             Self::MissingChannel => {
                 "This channel was not found on Mirakurun. Refresh the channel list and choose a channel again."
@@ -51,10 +51,12 @@ impl Error {
             // Cleanup must not hide the reason the original stream failed.
             Self::Cleanup { primary, .. } => primary.hint(),
             Self::EndOfStream => Hint::Ended,
+            // HTTP 503 can originate at a proxy or an overloaded server too;
+            // the status alone does not establish Mirakurun tuner exhaustion.
             Self::Stream {
                 http_status: Some(503),
                 ..
-            } => Hint::NoTuner,
+            } => Hint::ServiceUnavailable,
             Self::Stream {
                 http_status: Some(404),
                 ..
@@ -94,7 +96,7 @@ mod tests {
     fn structured_http_status_survives_native_message_and_cleanup() -> TestResult {
         gst::init()?;
         for (code, expected) in [
-            (503, Hint::NoTuner),
+            (503, Hint::ServiceUnavailable),
             (404, Hint::MissingChannel),
             (401, Hint::AccessDenied),
             (403, Hint::AccessDenied),
