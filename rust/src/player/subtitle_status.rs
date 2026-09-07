@@ -10,6 +10,7 @@ pub(super) enum Status {
     Stopped,
     Parsing,
     Failed(Error),
+    PresentationFailed(serde_json::Error),
 }
 
 impl Status {
@@ -17,6 +18,9 @@ impl Status {
         match self {
             Self::Stopped => "Stopped",
             Self::Parsing => "Parsing subtitles",
+            Self::PresentationFailed(_) => {
+                "Could not prepare subtitles for display. Stop playback and play again."
+            }
             Self::Failed(error) => match error {
                 Error::PlaybackUnavailable => "Playback is unavailable for subtitles",
                 Error::MissingBin => "The playback bin is unavailable for subtitles",
@@ -38,6 +42,11 @@ impl Status {
 
 impl ffi::Player {
     pub(super) fn update_subtitle_status(mut self: Pin<&mut Self>, status: Status) {
+        match &status {
+            Status::Failed(error) => eprintln!("Subtitle processing failed: {error}"),
+            Status::PresentationFailed(error) => eprintln!("Subtitle presentation failed: {error}"),
+            _ => {}
+        }
         self.as_mut().rust_mut().subtitle_phase = status;
         self.refresh_subtitle_status();
     }

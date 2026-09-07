@@ -379,6 +379,10 @@
       <translation>放送サービス情報がないため字幕を開始できません</translation>
     </message>
     <message>
+      <source>Could not prepare subtitles for display. Stop playback and play again.</source>
+      <translation>字幕の表示データを生成できません。停止してから再生し直してください</translation>
+    </message>
+    <message>
       <source>Could not initialize the subtitle decoder</source>
       <translation>字幕デコーダーを初期化できません</translation>
     </message>

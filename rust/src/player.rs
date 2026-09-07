@@ -454,40 +454,6 @@ impl ffi::Player {
             self.as_mut().play();
         }
     }
-    pub fn display_subtitles(mut self: Pin<&mut Self>, display: bool) {
-        self.as_mut().set_subtitle_display(display);
-        self.as_mut().rust_mut().subtitle_cells = 0;
-        self.set_subtitle_data(QString::default());
-    }
-    pub fn poll_subtitles(mut self: Pin<&mut Self>) {
-        let update = self.rust().subtitle_session.as_ref().map(|session| {
-            session.poll(
-                self.rust()
-                    .playback
-                    .as_ref()
-                    .and_then(playback::Playback::position),
-            )
-        });
-        match update {
-            Some(Ok(subtitles::SubtitleUpdate::Show(cue))) if self.rust().subtitle_display => {
-                self.as_mut().rust_mut().subtitle_cells = cue.cells.len();
-                self.set_subtitle_data(QString::from(
-                    serde_json::to_string(&cue).unwrap_or_default(),
-                ));
-            }
-            Some(Ok(subtitles::SubtitleUpdate::Clear)) => {
-                self.as_mut().rust_mut().subtitle_cells = 0;
-                self.set_subtitle_data(QString::default())
-            }
-            Some(Err(error)) => {
-                self.as_mut().set_subtitles_active(false);
-                self.as_mut().rust_mut().subtitle_cells = 0;
-                self.as_mut().set_subtitle_data(QString::default());
-                self.update_subtitle_status(subtitle_status::Status::Failed(error));
-            }
-            _ => {}
-        }
-    }
     fn poll_features(mut self: Pin<&mut Self>) {
         // Consume notifications before acquisition so a pending change can start now.
         self.as_mut().poll_epg_events();
