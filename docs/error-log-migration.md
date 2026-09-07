@@ -49,3 +49,24 @@ CMakeリリースビルド成功。証跡はbenchmark/virtual-ui/log-folder*.log
 log-folder-failed.png・log-folder-en.png・log-folder-ja.png。
 実アプリからの再生エラー保存は別途503-guidanceの363-byteログで確認済み
 （feature-migration.md参照）。本節はデスクトップ連携の失敗経路の検証。
+
+## エラー詳細のクリップボード連携（2026-09-07）
+
+mainの`qml/Main.qml`も読み取り専用・マウス選択可能なTextAreaを用いることを照合。
+製品コードc910bbbを専用Xvfb :99 / llvmpipeで起動し、ローカル中継で配信要求に503を
+返した。自動再生による失敗から詳細を開き、本文をクリックしてCtrl+A、Ctrl+Cを操作。
+同じ表示サーバー上の別Qtプロセスで`QClipboard::Clipboard`を読み出し、362バイトが
+保存されたplayback-error.logの本文（末尾のファイル用改行を除く）と完全一致した。
+[QtのX11クリップボード仕様](https://doc.qt.io/qt-6/qclipboard.html#notes-for-x11-users)
+にあるマウス選択用Selectionとは別のClipboardを検証した。
+
+選択状態で文字キーを入力してから再度全選択・コピーしても同じ本文であり、
+読み取り専用を確認。詳細を開いたまま1440×900から900×560へ縮小し、本文と
+閉じるボタンの表示も確認した。Escapeで詳細を閉じ、専用アプリは終了コード0。
+ローカル中継プロセスも検証終了後に停止した。通常表示サーバー:0は操作していない。
+
+証跡はgit管理外の`benchmark/clipboard-ui/`内の`player.log`、`proxy.log`、
+`copied.txt`、`copied-after-input.txt`、`selected.png`、`details-small.png`、
+`read-clipboard.cpp`と`state/mirakurun-viewer/playback-error.log`。
+製品コードの変更なし。X11でアプリ稼働中のコピーの確認であり、アプリ終了後の
+クリップボード保持やWayland環境での連携は確認していない。
