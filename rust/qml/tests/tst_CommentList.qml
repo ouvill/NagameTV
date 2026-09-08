@@ -31,6 +31,21 @@ TestCase {
         return list;
     }
     function init() { failOnWarning(/.*/); }
+    function test_initial_history_before_viewport_is_sized() {
+        const list = createTemporaryObject(fixture, testCase, {
+            width: 0, height: 0, commentsJson: comments(0, 200)
+        });
+        verify(list !== null);
+        wait(50);
+        list.width = 360;
+        list.height = 280;
+        verify(waitForRendering(list));
+        tryCompare(list, "followPending", false);
+        tryCompare(list, "atYEnd", true);
+        const last = list.itemAtIndex(list.count - 1);
+        verify(last !== null);
+        verify(last.y < list.contentY + list.height);
+    }
     function test_follow_only_at_bottom() {
         const list = view();
         list.commentsJson = comments(0, 40);

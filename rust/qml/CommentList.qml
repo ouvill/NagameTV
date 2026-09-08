@@ -21,6 +21,15 @@ ListView {
         followPending = false;
         ++updateRevision;
     }
+    function finishFollow() {
+        if (!ready || !followPending || width <= 0 || height <= 0)
+            return;
+        forceLayout();
+        positionViewAtEnd();
+        followPending = false;
+    }
+    onWidthChanged: if (followPending) Qt.callLater(finishFollow)
+    onHeightChanged: if (followPending) Qt.callLater(finishFollow)
     onMovementStarted: cancelFollow()
     Component.onCompleted: {
         ready = true;
@@ -53,11 +62,10 @@ ListView {
             positionViewAtEnd();
             // Wrapped delegates finish layout after the model mutation.
             Qt.callLater(function() {
-                if (root.updateRevision === revision && root.followPending) {
-                    root.forceLayout();
-                    root.positionViewAtEnd();
-                    root.followPending = false;
-                }
+                // A Loader can populate the history before assigning our size.
+                // Keep following pending until a usable viewport is laid out.
+                if (root.updateRevision === revision)
+                    root.finishFollow();
             });
         } else if (removed > 0) {
             // The 200-row history can evict rows above the viewport. Restore the
