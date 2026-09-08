@@ -4,10 +4,10 @@ import QtQuick.Controls
 
 ListView {
     id: root
-    required property string commentsJson
+    property var commentModel: null
     required property string status
     clip: true
-    model: ListModel { id: rows }
+    model: commentModel
     boundsBehavior: Flickable.StopAtBounds
     ScrollBar.vertical: ScrollBar {
         objectName: "commentScrollBar"
@@ -21,7 +21,9 @@ ListView {
         followPending = false;
         ++updateRevision;
     }
-    function finishFollow() {
+    function finishFollow(revision) {
+        if (revision !== undefined && revision !== updateRevision)
+            return;
         if (!ready || !followPending || width <= 0 || height <= 0)
             return;
         forceLayout();
@@ -31,58 +33,59 @@ ListView {
     onWidthChanged: if (followPending) Qt.callLater(finishFollow)
     onHeightChanged: if (followPending) Qt.callLater(finishFollow)
     onMovementStarted: cancelFollow()
+    property string anchorId: ""
+    property string firstId: ""
+    property real anchorOffset: 0
     Component.onCompleted: {
         ready = true;
-        updateComments();
+        resetFollow();
     }
-    onCommentsJsonChanged: if (ready) updateComments()
-
-    function updateComments() {
-        const incoming = JSON.parse(commentsJson);
-        const follow = rows.count === 0 || atYEnd || followPending;
-        const revision = ++updateRevision;
-        followPending = follow;
+    onModelChanged: if (ready) resetFollow()
+    Connections {
+        target: root.commentModel
+        function onAbout_to_update() { root.prepareUpdate(); }
+        function onUpdated() { root.finishUpdate(); }
+    }
+    function resetFollow() {
+        ++updateRevision;
+        followPending = true;
+        if (width > 0 && height > 0) {
+            forceLayout();
+            positionViewAtEnd();
+        }
+        Qt.callLater(finishFollow, updateRevision);
+    }
+    function prepareUpdate() {
+        if (!ready)
+            return;
+        followPending = count === 0 || atYEnd || followPending;
+        ++updateRevision;
         const topIndex = indexAt(1, contentY + 1);
         const topItem = topIndex >= 0 ? itemAtIndex(topIndex) : null;
-        const anchorId = topItem ? rows.get(topIndex).commentId : "";
-        const offset = topItem ? contentY - topItem.y : 0;
-
-        // Retain existing rows and their delegates, including duplicate comment text.
-        let removed = 0;
-        while (removed < rows.count && (incoming.length === 0 || rows.get(removed).commentId !== incoming[0].id))
-            ++removed;
-        if (removed > 0)
-            rows.remove(0, removed);
-        for (let i = rows.count; i < incoming.length; ++i) {
-            const comment = incoming[i];
-            rows.append({commentId: comment.id, time: comment.time, text: comment.text, source: comment.source});
-        }
+        anchorId = topItem ? commentModel.id_at(topIndex) : "";
+        anchorOffset = topItem ? contentY - topItem.y : 0;
+        firstId = commentModel.id_at(0);
+    }
+    function finishUpdate() {
+        if (!ready)
+            return;
         forceLayout();
-        if (follow) {
+        if (followPending) {
             positionViewAtEnd();
             // Wrapped delegates finish layout after the model mutation.
-            Qt.callLater(function() {
-                // A Loader can populate the history before assigning our size.
-                // Keep following pending until a usable viewport is laid out.
-                if (root.updateRevision === revision)
-                    root.finishFollow();
-            });
-        } else if (removed > 0) {
-            // The 200-row history can evict rows above the viewport. Restore the
+            // Pass the QML method directly so destruction cancels the callback.
+            // Keep following pending if the Loader has not assigned our size yet.
+            Qt.callLater(finishFollow, updateRevision);
+        } else if (firstId !== commentModel.id_at(0)) {
+            // The bounded history can evict rows above the viewport. Restore the
             // same visible comment and pixel offset, or the oldest retained row.
-            let anchor = -1;
-            for (let i = 0; i < rows.count; ++i) {
-                if (rows.get(i).commentId === anchorId) {
-                    anchor = i;
-                    break;
-                }
-            }
+            const anchor = commentModel.row_for_id(anchorId);
             if (anchor >= 0) {
                 positionViewAtIndex(anchor, ListView.Beginning);
                 forceLayout();
                 const item = itemAtIndex(anchor);
                 if (item)
-                    contentY = item.y + offset;
+                    contentY = item.y + anchorOffset;
             } else {
                 positionViewAtBeginning();
             }

@@ -80,6 +80,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     ])
     .file("src/player.rs")
     .file("src/danmaku.rs")
+    .file("src/comment_model.rs")
     .include_dir("src")
     .qt_module("Quick");
     if std::env::var_os("CARGO_FEATURE_QML_TESTS").is_some() {

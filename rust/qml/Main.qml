@@ -594,7 +594,7 @@ ApplicationWindow {
                 player.configure_danmaku(enabled, player.comment_font_size, player.comment_opacity, player.comment_speed);
                 player.save_settings();
             }
-            commentsJson: player.comment_data
+            commentModel: player.comment_model
             commentStatus: player.comment_status
             commentProgramTitle: player.comment_program_title
             page: root.sidebarPage

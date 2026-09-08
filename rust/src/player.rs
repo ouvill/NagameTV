@@ -24,6 +24,8 @@ mod telemetry;
 #[cxx_qt::bridge]
 pub mod ffi {
     unsafe extern "C++" {
+        include!("mirakurun-viewer/src/comment_model.cxxqt.h");
+        type CommentModel = crate::comment_model::ffi::CommentModel;
         include!("cxx-qt-lib/qstring.h");
         type QString = cxx_qt_lib::QString;
         include!("cxx-qt-lib/qfont.h");
@@ -92,7 +94,7 @@ pub mod ffi {
         #[qproperty(f64, comment_speed, READ, NOTIFY)]
         #[qproperty(bool, comments_allowed, READ, NOTIFY)]
         #[qproperty(QString, comment_program_title, READ, NOTIFY)]
-        #[qproperty(QString, comment_data, READ, NOTIFY)]
+        #[qproperty(*mut CommentModel, comment_model, READ = comment_model, CONSTANT)]
         #[qproperty(QString, activity_data, READ, NOTIFY)]
         #[qproperty(QString, comment_status, READ, NOTIFY)]
         #[qproperty(bool, subtitles_allowed, READ, NOTIFY)]
@@ -173,6 +175,7 @@ pub mod ffi {
         ) -> bool;
         #[qinvokable]
         fn comments_open(self: Pin<&mut Player>, opened: bool);
+        fn comment_model(self: &Player) -> *mut CommentModel;
         #[qinvokable]
         fn refresh_channels(self: Pin<&mut Player>, force: bool);
         #[qinvokable]
@@ -228,11 +231,10 @@ pub struct PlayerRust {
     comment_opacity: f64,
     comment_speed: f64,
     comment_program_title: QString,
-    comment_data: QString,
+    comment_model: cxx::UniquePtr<crate::comment_model::ffi::CommentModel>,
     activity_data: QString,
     activity: crate::features::comments::activity::Activity,
     comment_status: QString,
-    comments_visible: bool,
     comments: crate::features::comments::Comments,
     subtitles_allowed: bool,
     epg_allowed: bool,
@@ -300,12 +302,6 @@ impl ffi::Player {
         set_activity_data,
         activity_data,
         activity_data_changed,
-        QString
-    );
-    property_setter!(
-        set_comment_data,
-        comment_data,
-        comment_data_changed,
         QString
     );
     property_setter!(

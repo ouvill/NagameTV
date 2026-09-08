@@ -1,5 +1,6 @@
 mod audio;
 mod channels;
+mod comment_model;
 mod danmaku;
 #[cfg(feature = "qml_tests")]
 mod danmaku_ui_tests;

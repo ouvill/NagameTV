@@ -1,6 +1,7 @@
 import QtQuick
 import QtTest
 import QtQuick.Controls
+import MinimalViewer 1.0
 import ".."
 
 Item {
@@ -17,12 +18,14 @@ Item {
             height: 480
             visible: true
             property string programData: "null"
+            CommentModel { id: comments }
             SidePanel {
                 id: panel
                 width: 360
                 sourceComponent: ProgramSidebar {
                     targetWindow: host
                     programJson: testCase.programData
+                    commentModel: comments
                     iconDirectory: Qt.resolvedUrl("../../../assets/icons/")
                 }
             }
@@ -55,6 +58,7 @@ Item {
                 compare(title.text, "Other station");
                 view.commentProgramTitle = "";
                 compare(title.text, "Program title unavailable");
+                comments.append_test("Pending follow before page destruction", 0, false);
                 view.page = ProgramSidebar.Program;
                 compare(findChild(view, "programDescription").textFormat, Text.PlainText);
                 compare(findChild(view, "programDescription").text, "<b>plain</b>");

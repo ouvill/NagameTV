@@ -13,7 +13,7 @@ Rectangle {
     property bool danmakuEnabled: false
     property bool commentsEnabled: false
     signal danmakuRequested(bool enabled)
-    property string commentsJson: "[]"
+    property var commentModel: null
     property string commentProgramTitle: ""
     property string commentStatus: ""
     property int page: ProgramSidebar.Program
@@ -239,7 +239,7 @@ Rectangle {
             active: root.page === ProgramSidebar.Comments
             visible: active
             sourceComponent: CommentList {
-                commentsJson: root.commentsJson
+                commentModel: root.commentModel
                 status: root.commentStatus
             }
         }

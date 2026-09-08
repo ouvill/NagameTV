@@ -67,7 +67,7 @@ impl ffi::Player {
             return;
         };
         let (tasks, programs, stopping) = this.epg.counters();
-        let (history, text_bytes) = this.comments.storage();
+        let (history, text_bytes) = this.comment_model.storage();
         // Only queried while diagnostics are enabled; no frame probes or history.
         let video = this
             .playback

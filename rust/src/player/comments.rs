@@ -46,47 +46,44 @@ impl ffi::Player {
         self.save_settings();
     }
 
+    pub fn comment_model(&self) -> *mut crate::comment_model::ffi::CommentModel {
+        // C++ owns the object through UniquePtr for the complete Player lifetime.
+        self.rust().comment_model.as_ref().expect("comment model") as *const _ as *mut _
+    }
+
     pub fn comments_open(mut self: Pin<&mut Self>, opened: bool) {
-        self.as_mut().rust_mut().comments_visible = opened;
-        self.as_mut().rust_mut().comments.dirty = true;
         if opened {
-            self.poll_comments();
-        } else {
-            self.set_comment_data(QString::from("[]"));
+            self.as_mut().poll_comments();
         }
     }
 
     pub(super) fn poll_comments(mut self: Pin<&mut Self>) {
         self.as_mut().poll_activity();
-        let (data, live) = {
+        let (reset, comments, show_live) = {
             let mut this = self.as_mut().rust_mut();
             let this = &mut *this;
             let channel = usize::try_from(this.selected)
                 .ok()
                 .and_then(|index| this.entries.get(index));
-            this.comments.configure(this.comments_enabled, channel);
-            let mut live = Vec::new();
-            if let Some(network) = &this.network
-                && let Err(error) = this.comments.poll(network, |comment| {
-                    if this.playing && this.danmaku_enabled {
-                        live.push((
-                            QString::from(comment.text.as_ref()),
-                            QString::from(comment.style.position.as_str()),
-                            comment.style.color,
-                        ));
+            let reset = this.comments.configure(this.comments_enabled, channel);
+            let comments = match &this.network {
+                Some(network) => match this.comments.poll(network) {
+                    Ok(comments) => comments,
+                    Err(error) => {
+                        tracing::error!("{error}");
+                        Vec::new()
                     }
-                })
-            {
-                tracing::error!("{error}");
-            }
-            let data = if this.comments_visible && this.comments.dirty {
-                this.comments.dirty = false;
-                Some(this.comments.json())
-            } else {
-                None
+                },
+                None => Vec::new(),
             };
-            (data, live)
+            (reset, comments, this.playing && this.danmaku_enabled)
         };
+        // Build only newly received live signals, before moving history into its model.
+        let live = project_live_comments(&comments, show_live);
+        if reset {
+            self.as_mut().clear_comment_history();
+        }
+        self.as_mut().history_model().append(comments);
         let title = {
             let this = self.rust();
             let channel = usize::try_from(this.selected)
@@ -96,17 +93,22 @@ impl ffi::Player {
         };
         self.as_mut().set_comment_program_title(title);
         self.as_mut().refresh_comment_status();
-        match data {
-            Some(Ok(json)) => self.as_mut().set_comment_data(QString::from(json)),
-            Some(Err(error)) => self
-                .as_mut()
-                .set_comment_status(QString::from(error.to_string())),
-            None => {}
-        }
         for (text, position, color) in live {
             self.as_mut().comment_received(text, position, color);
         }
     }
+    fn history_model(self: Pin<&mut Self>) -> Pin<&mut crate::comment_model::ffi::CommentModel> {
+        let model = self.comment_model();
+        // UniquePtr keeps the model at a stable address for the Player lifetime.
+        // End the PlayerRust borrow before emitting synchronous model signals,
+        // whose QML handlers may read Player properties again.
+        unsafe { Pin::new_unchecked(&mut *model) }
+    }
+
+    pub(super) fn clear_comment_history(self: Pin<&mut Self>) {
+        self.history_model().clear();
+    }
+
     fn poll_activity(mut self: Pin<&mut Self>) {
         let data = {
             let mut this = self.as_mut().rust_mut();
@@ -131,5 +133,51 @@ impl ffi::Player {
             }
             None => {}
         }
+    }
+}
+
+fn project_live_comments(
+    comments: &[viewer_comments::Comment],
+    enabled: bool,
+) -> Vec<(QString, QString, u32)> {
+    comments
+        .iter()
+        .filter(|c| enabled && c.phase == viewer_comments::Phase::Live)
+        .map(|c| {
+            (
+                QString::from(c.text.as_ref()),
+                QString::from(c.style.position.as_str()),
+                c.style.color,
+            )
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn only_live_comments_are_sent_to_enabled_danmaku() {
+        use viewer_comments::{Comment, Origin, Phase, Position, Style};
+        let comments: Vec<_> = [Phase::History, Phase::Live]
+            .into_iter()
+            .map(|phase| Comment {
+                text: "same text".into(),
+                unix_seconds: 0,
+                origin: Origin::Nx,
+                phase,
+                style: Style {
+                    position: Position::Top,
+                    color: 0xff0000,
+                },
+            })
+            .collect();
+        let live = project_live_comments(&comments, true);
+        assert_eq!(live.len(), 1);
+        assert_eq!(
+            live[0],
+            (QString::from("same text"), QString::from("top"), 0xff0000)
+        );
+        assert!(project_live_comments(&comments, false).is_empty());
     }
 }
