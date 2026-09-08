@@ -19,7 +19,7 @@ Label {
     font.bold: cell.bold
     font.italic: cell.italic
     font.underline: cell.underline
-    renderType: Text.NativeRendering
+    renderType: Text.QtRendering
     // Match main's Label layout and baseline. Normalizing to the glyph's ink
     // bounds would move small kana, punctuation, bars and descenders vertically.
     Loader {
