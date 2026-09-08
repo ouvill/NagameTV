@@ -15,7 +15,7 @@ TestCase {
     Component { id: timelineComponent; Viewer.DanmakuTimeline {} }
     property var overlay
     property var timeline
-    function entries() { return Object.values(overlay.visuals); }
+    function entries() { return Array.from(overlay.visuals.values()); }
     function initTestCase() { failOnWarning(/.*/); }
     function init() {
         overlay = createTemporaryObject(overlayComponent, this);

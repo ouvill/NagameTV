@@ -14,7 +14,7 @@ TestCase {
         Viewer.DanmakuOverlay { width: 640; height: 480; fontSize: 21; textOpacity: 1; speed: 2 }
     }
     property var overlay
-    function entries() { return Object.values(overlay.visuals); }
+    function entries() { return Array.from(overlay.visuals.values()); }
     function initTestCase() { failOnWarning(/.*/); }
     function init() {
         overlay = createTemporaryObject(component, this);

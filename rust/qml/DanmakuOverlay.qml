@@ -18,7 +18,8 @@ Item {
     readonly property int activeCount: backend.active_count
     readonly property int laneCount: backend.lane_count
     // Visual handles only. Comment data, lanes, clocks and lifetime live in Rust.
-    property var visuals: ({})
+    // A Map keeps storage tied to live entries, not the highest numeric token.
+    property var visuals: new Map()
     readonly property int visualCount: flowRows.children.length + topRows.children.length + bottomRows.children.length
     clip: true
 
@@ -32,17 +33,16 @@ Item {
     }
     function clearComments() { backend.clear(); }
     function removeVisual(token: real) {
-        const item = visuals[token];
+        const item = visuals.get(token);
         if (item) {
-            delete visuals[token];
+            visuals.delete(token);
             item.destroy();
         }
     }
     function clearVisuals() {
         const old = visuals;
-        visuals = ({});
-        for (const token in old)
-            old[token].destroy();
+        visuals = new Map();
+        old.forEach(item => item.destroy());
     }
     onWidthChanged: configure()
     onHeightChanged: configure()
@@ -77,7 +77,7 @@ Item {
                 "y": y, "destination": to_x, "duration": duration
             });
             if (item)
-                layer.visuals[token] = item;
+                layer.visuals.set(token, item);
         }
         onRemoved: function(token) { layer.removeVisual(token); }
         onCleared: layer.clearVisuals()
