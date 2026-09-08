@@ -103,6 +103,12 @@ impl SubtitleClock {
         }
     }
 
+    pub fn clear_captions(&self) {
+        if let Ok(mut state) = self.state() {
+            state.timeline.clear_captions();
+        }
+    }
+
     pub fn poll(&self, position: Option<gst::ClockTime>) -> Result<SubtitleUpdate, Error> {
         Ok(self
             .state()?

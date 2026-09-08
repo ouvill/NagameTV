@@ -50,8 +50,11 @@ impl Ingest {
         for buffer in buffers {
             if let Ok(bytes) = buffer.map_readable() {
                 // Bound temporary assembly even for large upstream buffers.
-                for chunk in bytes.as_slice().chunks(188) {
+                for chunk in bytes.as_slice().chunks(super::wire::TS_PACKET_SIZE) {
                     let cues = parser.push(chunk);
+                    if parser.take_caption_reset() {
+                        self.clock.clear_captions();
+                    }
                     self.decoded.fetch_add(cues.len() as u64, Ordering::Relaxed);
                     self.clock.push(cues);
                 }

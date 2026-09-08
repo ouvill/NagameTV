@@ -50,6 +50,13 @@ impl Timeline {
         };
     }
 
+    /// Caption ES changes do not change the video's PTS mapping.
+    pub fn clear_captions(&mut self) {
+        let anchor = self.anchor;
+        self.reset();
+        self.anchor = anchor;
+    }
+
     pub fn anchor(&mut self, anchor: Anchor) {
         if self.anchor.is_some_and(|old| {
             (old.map_ticks(i128::from(anchor.pts)) - i128::from(anchor.stream_ns)).abs()
@@ -140,6 +147,25 @@ mod tests {
     // In tests, unwrap/expect assert successful setup or an expected result.
     // Failures intentionally fail the test; they are not assumed impossible IO.
     use super::*;
+
+    #[test]
+    fn clearing_caption_stream_preserves_video_clock_mapping() {
+        let mut timeline = Timeline::default();
+        timeline.anchor(Anchor {
+            pts: 90_000,
+            stream_ns: 2_000_000_000,
+        });
+        timeline.push(caption(3000, None));
+        timeline.clear_captions();
+        assert_eq!(timeline.pending_count(), 0);
+        assert_eq!(timeline.map_ticks(90_000), Some(2_000_000_000));
+        assert!(matches!(timeline.poll(None), SubtitleUpdate::Clear));
+        timeline.push(caption(1000, None));
+        assert!(matches!(
+            timeline.poll(Some(2_000_000_000)),
+            SubtitleUpdate::Show(_)
+        ));
+    }
 
     fn caption(pts_ms: i64, duration_ms: Option<u64>) -> SubtitleCue {
         SubtitleCue {

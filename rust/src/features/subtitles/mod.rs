@@ -9,7 +9,11 @@ pub(crate) use timing::SubtitleUpdate;
 mod pes;
 pub use model::SubtitleCue;
 pub(crate) use pes::CaptionDecoder;
+mod selection;
+#[cfg(test)]
+mod stream_selection_tests;
 mod transport;
+mod wire;
 
 use crate::channels::BroadcastService;
 use crate::features::subscriptions::Subscriptions;
