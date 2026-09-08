@@ -14,6 +14,8 @@ mod playback;
 mod player;
 mod services;
 mod settings;
+#[cfg(feature = "video_item_tests")]
+mod video_item_tests;
 
 use cxx_qt_lib::{QGuiApplication, QQmlApplicationEngine, QUrl};
 use std::sync::{
@@ -44,6 +46,11 @@ enum StartupError {
 }
 
 fn main() -> std::process::ExitCode {
+    // GUI integration checks must run on the process main thread, not libtest.
+    #[cfg(feature = "video_item_tests")]
+    if std::env::args().nth(1).as_deref() == Some("--video-item-tests") {
+        return std::process::ExitCode::from(video_item_tests::run() as u8);
+    }
     // Qt must run on the process main thread, not a libtest worker.
     #[cfg(feature = "qml_tests")]
     if std::env::args().nth(1).as_deref() == Some("--qml-tests") {

@@ -12,9 +12,6 @@ inline void configureQtQuickOpenGl() {
     QCoreApplication::setApplicationName(QStringLiteral("mirakurun-viewer"));
     QQuickWindow::setGraphicsApi(QSGRendererInterface::OpenGL);
 }
-inline std::uintptr_t qQuickItemAddress(QQuickItem *item) {
-    return reinterpret_cast<std::uintptr_t>(item);
-}
 inline QString playbackLogDirectory() {
 #if QT_VERSION >= QT_VERSION_CHECK(6, 7, 0)
   return QStandardPaths::writableLocation(QStandardPaths::StateLocation);

@@ -8,6 +8,8 @@ pub mod audio_streams;
 pub mod deinterlace;
 pub mod failure;
 pub mod stats;
+#[cfg(feature = "video_item_tests")]
+pub(crate) mod video_item_checks;
 pub mod warnings;
 
 use gstreamer::{self as gst, prelude::*};
@@ -42,6 +44,12 @@ pub enum Error {
     MissingSinkPad,
     #[error("Missing Qt video item")]
     MissingVideoItem,
+    #[error("Video output requires a GStreamer video item on the GUI thread")]
+    InvalidVideoItem,
+    #[error("Video output is already attached")]
+    OutputAlreadyAttached,
+    #[error("Video output has been shut down")]
+    OutputShutDown,
     #[error("Video output is not ready")]
     OutputNotReady,
     #[error("Missing GStreamer bus")]
@@ -116,13 +124,21 @@ pub fn take_preloaded() -> Option<Playback> {
     slot.lock().ok()?.take()
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum VideoOutputState {
+    Unattached,
+    Attached,
+    Closing,
+    Closed,
+}
+
 pub struct Playback {
     playbin: gst::Element,
     sink: gst::Element,
     processor: gst::Element,
     queue: gst::Element,
     mode: deinterlace::Mode,
-    attached: bool,
+    video_output: VideoOutputState,
     audio_streams: RefCell<audio_streams::Streams>,
     routing: audio_routing::Routing,
     audio_intent: RefCell<Option<audio_choices::Intent>>,
@@ -221,7 +237,7 @@ impl Playback {
             processor: deinterlace,
             queue,
             mode,
-            attached: false,
+            video_output: VideoOutputState::Unattached,
             audio_streams: RefCell::default(),
             routing,
             audio_intent: RefCell::default(),
@@ -231,14 +247,37 @@ impl Playback {
         })
     }
 
-    /// The GUI owns the live QQuickItem until shutdown has stopped the sink.
-    pub unsafe fn attach(&mut self, item: usize) -> Result<()> {
-        if item == 0 {
+    /// Validate and attach a QML video item to qml6glsink.
+    ///
+    /// # Safety
+    /// Call on the GUI thread with null or a live GUI-thread QQuickItem. Keep it
+    /// alive through this call and, on success, until shutdown stops the sink.
+    /// Qt meta-objects must identify their real native classes, and the video
+    /// type must belong to the installed GStreamer plugin. No ownership transfers.
+    pub unsafe fn attach(&mut self, item: *mut crate::player::ffi::QQuickItem) -> Result<()> {
+        // qml6glsink's widget setter shares its interface pointer with the
+        // streaming thread without locking. Never replace an active binding.
+        match self.video_output {
+            VideoOutputState::Attached => return Err(Error::OutputAlreadyAttached),
+            VideoOutputState::Closing | VideoOutputState::Closed => {
+                return Err(Error::OutputShutDown);
+            }
+            VideoOutputState::Unattached => {}
+        }
+        if item.is_null() {
             return Err(Error::MissingVideoItem);
         }
+        // SAFETY: The caller guarantees a live item. The helper checks thread
+        // affinity and meta-casts to the exact base type required by qml6glsink.
+        let widget = unsafe { crate::player::ffi::qml6_video_item_pointer(item) };
+        if widget.is_null() {
+            return Err(Error::InvalidVideoItem);
+        }
+        // The checked pointer is used immediately, on the same GUI thread,
+        // without processing events or retaining a Rust pointer to the item.
         self.sink
-            .set_property("widget", item as *mut std::ffi::c_void);
-        self.attached = true;
+            .set_property("widget", widget.cast::<std::ffi::c_void>());
+        self.video_output = VideoOutputState::Attached;
         Ok(())
     }
 
@@ -249,7 +288,7 @@ impl Playback {
         service: u64,
         broadcast: Option<crate::channels::BroadcastService>,
     ) -> Result<bool> {
-        if !self.attached {
+        if self.video_output != VideoOutputState::Attached {
             return Err(Error::OutputNotReady);
         }
         let uri = format!("{server}/api/services/{service}/stream");
@@ -273,7 +312,11 @@ impl Playback {
     }
 
     pub fn stop(&self) -> Result<()> {
-        stop_stream(&self.playbin)?;
+        match self.video_output {
+            VideoOutputState::Closing => return Err(Error::OutputShutDown),
+            VideoOutputState::Closed => {}
+            _ => stop_stream(&self.playbin)?,
+        }
         *self.requested_uri.borrow_mut() = None;
         *self.audio_streams.borrow_mut() = audio_streams::Streams::default();
         self.routing.reset();
@@ -336,25 +379,56 @@ impl Playback {
         Ok(playing)
     }
 
-    pub fn shutdown(&mut self) {
-        if let Err(error) = self.stop() {
-            tracing::error!("Stop failed: {error}");
+    pub fn shutdown(&mut self) -> Result<()> {
+        self.shutdown_with(|element| {
+            element.set_state(gst::State::Null)?;
+            let (result, current, pending) = element.state(gst::ClockTime::ZERO);
+            result?;
+            if current != gst::State::Null || pending != gst::State::VoidPending {
+                return Err(gst::StateChangeError);
+            }
+            Ok(())
+        })
+    }
+
+    // Kept separate so integration checks can inject failed native transitions
+    // without depending on a broken driver or device. Production always uses
+    // GStreamer's synchronous downward transition to NULL.
+    fn shutdown_with(
+        &mut self,
+        mut stop: impl FnMut(&gst::Element) -> std::result::Result<(), gst::StateChangeError>,
+    ) -> Result<()> {
+        if self.video_output == VideoOutputState::Closed {
+            return Ok(());
         }
-        if let Err(error) = self.playbin.set_state(gst::State::Null) {
-            tracing::error!("Playback shutdown failed: {error}");
-        }
-        if let Err(error) = self.sink.set_state(gst::State::Null) {
-            tracing::error!("Video sink shutdown failed: {error}");
-        }
+        self.video_output = VideoOutputState::Closing;
+        // Stop upstream streaming before touching the sink's widget. A failed
+        // bin transition may have stopped only some children; preserve the
+        // binding and allow the caller to retry instead of assuming completion.
+        stop(&self.playbin)?;
+        // The sink can have entered READY independently of playbin in play().
+        stop(&self.sink)?;
         self.sink
             .set_property("widget", std::ptr::null_mut::<std::ffi::c_void>());
-        self.attached = false;
+        self.video_output = VideoOutputState::Closed;
+        *self.requested_uri.borrow_mut() = None;
+        Ok(())
+    }
+
+    pub(crate) fn shutdown_before_drop(&mut self) {
+        if let Err(error) = self.shutdown() {
+            tracing::error!("Cannot safely destroy native playback after shutdown failed: {error}");
+            // A destructor cannot veto QML destruction or return an error.
+            // Do not unwind over CXX or release a potentially live native graph.
+            // Normal window closing returns the error and keeps the item alive.
+            std::process::abort();
+        }
     }
 }
 
 impl Drop for Playback {
     fn drop(&mut self) {
-        self.shutdown();
+        self.shutdown_before_drop();
     }
 }
 

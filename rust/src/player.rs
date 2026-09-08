@@ -60,8 +60,9 @@ pub mod ffi {
         unsafe fn install_pointer_activity(item: *mut QQuickItem);
         #[cxx_name = "configureQtQuickOpenGl"]
         fn configure_qt_quick_open_gl();
-        #[cxx_name = "qQuickItemAddress"]
-        unsafe fn q_quick_item_address(item: *mut QQuickItem) -> usize;
+        include!("video_item.h");
+        #[cxx_name = "qml6VideoItemPointer"]
+        unsafe fn qml6_video_item_pointer(item: *mut QQuickItem) -> *mut u8;
     }
     unsafe extern "RustQt" {
         #[qobject]
@@ -148,7 +149,7 @@ pub mod ffi {
         #[qinvokable]
         fn poll(self: Pin<&mut Player>);
         #[qinvokable]
-        fn shutdown(self: Pin<&mut Player>);
+        fn shutdown(self: Pin<&mut Player>) -> bool;
         #[qinvokable]
         fn record_ui_state(self: Pin<&mut Player>, guide: bool, channels: bool, live_comments: i32);
         #[qinvokable]
@@ -458,16 +459,23 @@ impl ffi::Player {
         self.as_mut().poll_epg();
         self.poll_feature_metrics();
     }
-    /// QML supplies a live GUI-thread item and calls shutdown before destroying it.
+    /// Attach the video output; null and incompatible items are rejected.
+    ///
+    /// # Safety
+    /// Call on the GUI thread with null or a live QQuickItem owned by that thread.
+    /// The item must not be destroyed during this call. On success, its QML owner
+    /// must obtain a successful shutdown before destroying it. Native types must use truthful Qt
+    /// meta-objects; the GStreamer QML module must come from the installed plugin.
     pub unsafe fn attach(mut self: Pin<&mut Self>, item: *mut ffi::QQuickItem) -> bool {
-        let address = unsafe { ffi::q_quick_item_address(item) };
         let result = self
             .as_mut()
             .rust_mut()
             .playback
             .as_mut()
             .ok_or(playback::Error::Unavailable)
-            .and_then(|p| unsafe { p.attach(address) });
+            // SAFETY: The QML caller supplies the lifetime/thread guarantees
+            // above. Playback checks the concrete type before passing it to Gst.
+            .and_then(|p| unsafe { p.attach(item) });
         if let Err(error) = result {
             self.playback_failed(error);
             return false;
@@ -486,7 +494,7 @@ impl Drop for PlayerRust {
         self.epg_events.configure(None);
         // Qt normally calls shutdown; also cover a failed QML construction.
         if let Some(playback) = self.playback.as_mut() {
-            playback.shutdown();
+            playback.shutdown_before_drop();
         }
         self.subtitle_session = None;
         self.epg.configure(None);

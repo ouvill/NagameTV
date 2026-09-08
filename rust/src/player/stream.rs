@@ -147,7 +147,14 @@ impl ffi::Player {
             _ => {}
         }
     }
-    pub fn shutdown(mut self: Pin<&mut Self>) {
+    pub fn shutdown(mut self: Pin<&mut Self>) -> bool {
+        if let Some(playback) = self.as_mut().rust_mut().playback.as_mut()
+            && let Err(error) = playback.shutdown()
+        {
+            tracing::error!("Playback shutdown failed; keeping the window alive: {error}");
+            self.playback_failed(error);
+            return false;
+        }
         self.as_mut().rust_mut().epg_events.configure(None);
         self.as_mut().rust_mut().channel_refresh = channel_refresh::Refresh::Disabled;
         // Stop UI samples; the application owner retains GC logging through engine teardown.
@@ -159,13 +166,10 @@ impl ffi::Player {
         self.as_mut().rust_mut().epg.configure(None);
         self.as_mut().guide_open(false);
         if let Err(error) = self.as_mut().end_stream() {
-            // Continue to final NULL shutdown even if the initial READY stop failed.
-            tracing::error!("Stream stop during shutdown failed: {error}");
+            tracing::error!("Stream cleanup after shutdown failed: {error}");
         }
         self.as_mut().rust_mut().request.cancel();
-        if let Some(playback) = self.as_mut().rust_mut().playback.as_mut() {
-            playback.shutdown();
-        }
         self.save_settings();
+        true
     }
 }

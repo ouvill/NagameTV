@@ -140,9 +140,12 @@ ApplicationWindow {
         running: !root.closing && player.subtitles_active
         onTriggered: player.poll_subtitles()
     }
-    onClosing: {
+    onClosing: function(close) {
         root.closing = true;
-        player.shutdown();
+        if (!player.shutdown()) {
+            close.accepted = false;
+            root.closing = false;
+        }
     }
     Component.onCompleted: {
         root.usageReady = true;

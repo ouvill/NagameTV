@@ -87,6 +87,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .qt_module("QuickTest")
             .file("src/danmaku_ui_tests.rs");
     }
+    if std::env::var_os("CARGO_FEATURE_VIDEO_ITEM_TESTS").is_some() {
+        builder = builder.file("src/video_item_tests.rs");
+    }
     builder.build();
     Ok(())
 }
