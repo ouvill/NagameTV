@@ -81,6 +81,7 @@ pub mod ffi {
         #[qproperty(f64, channel_program_now, READ, NOTIFY)]
         #[qproperty(i32, selected, READ, NOTIFY)]
         #[qproperty(bool, loading, READ, NOTIFY)]
+        #[qproperty(bool, connecting, READ, NOTIFY)]
         #[qproperty(bool, playing, READ, NOTIFY)]
         #[qproperty(bool, subtitles_enabled, READ, NOTIFY)]
         #[qproperty(bool, epg_enabled, READ, NOTIFY)]
@@ -216,6 +217,7 @@ pub struct PlayerRust {
     selected: i32,
     catalog_selection: channels::SelectionPolicy,
     loading: bool,
+    connecting: bool,
     playing: bool,
     subtitles_enabled: bool,
     epg_enabled: bool,
@@ -368,6 +370,7 @@ impl ffi::Player {
     );
     property_setter!(set_selected, selected, selected_changed, i32);
     property_setter!(set_loading, loading, loading_changed, bool);
+    property_setter!(set_connecting, connecting, connecting_changed, bool);
     property_setter!(set_playing, playing, playing_changed, bool);
     property_setter!(
         set_subtitles_enabled,

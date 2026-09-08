@@ -102,6 +102,7 @@ impl Default for PlayerRust {
             selected: -1,
             catalog_selection: Default::default(),
             loading: false,
+            connecting: false,
             playing: false,
             subtitles_enabled: plan.subtitles,
             epg_enabled: plan.epg,

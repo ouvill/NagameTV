@@ -12,6 +12,7 @@ impl ffi::Player {
     /// READY joins streaming callbacks before dropping their subscriptions/state.
     pub(super) fn end_stream(mut self: Pin<&mut Self>) -> Result<(), playback::Error> {
         // Reveal controls even if the native stop itself fails.
+        self.as_mut().set_connecting(false);
         self.as_mut().set_playing(false);
         if let Some(playback) = &self.rust().playback {
             playback.stop()?;
@@ -76,6 +77,7 @@ impl ffi::Player {
                     .preferences_mut()
                     .service_id = id.to_string();
                 self.as_mut().rust_mut().active_service = Some(id);
+                self.as_mut().set_connecting(true);
                 self.as_mut()
                     .update_status(PlaybackStatus::Connecting(name));
             }
@@ -114,6 +116,7 @@ impl ffi::Player {
             Some(Ok(true)) => {
                 self.as_mut().clear_playback_failure();
                 self.as_mut().set_playing(true);
+                self.as_mut().set_connecting(false);
                 if let Some(entry) = self.rust().entries.get(*self.selected() as usize) {
                     let status = PlaybackStatus::Playing(entry.name.clone());
                     tracing::info!("Pipeline PLAYING service {}", entry.id);

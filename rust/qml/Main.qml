@@ -190,7 +190,7 @@ ApplicationWindow {
                 playbackMessage: player.playback_message
                 canPlay: player.selected >= 0
                 hasChannels: root.channelRows.length > 0
-                loading: player.loading
+                loading: player.loading || player.connecting
                 onPlayRequested: player.play()
                 onChannelsRequested: {
                     if (player.playback_error.length) player.refresh_channels(true)

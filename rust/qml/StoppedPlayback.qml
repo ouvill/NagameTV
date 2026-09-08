@@ -37,14 +37,26 @@ Rectangle {
             text: root.playbackError.length ? (root.playbackMessage.length ? qsTranslate("Backend", root.playbackMessage) : qsTranslate("Viewer", "Could not play the video. Retry or check the channel and connection settings.")) : root.status
             color: "#b6bab6"
         }
+        BusyIndicator {
+            objectName: "stoppedLoading"
+            anchors.horizontalCenter: parent.horizontalCenter
+            implicitWidth: 44
+            implicitHeight: 44
+            visible: root.loading
+            running: visible
+            palette.dark: "#9caf9f"
+            palette.text: "#9caf9f"
+            Accessible.name: qsTranslate("Viewer", "Loading\u2026")
+        }
         Button {
             id: action
             objectName: "stoppedAction"
             anchors.horizontalCenter: parent.horizontalCenter
             implicitWidth: 180
             implicitHeight: 44
+            visible: !root.loading
             enabled: !root.loading
-            text: root.loading ? qsTranslate("Viewer", "Loading\u2026") : root.canPlay ? (root.playbackError.length ? qsTranslate("Main", "Retry") : qsTranslate("Main", "Watch")) : root.hasChannels ? qsTranslate("Viewer", "Choose a channel") : qsTranslate("Main", "Connection settings")
+            text: root.canPlay ? (root.playbackError.length ? qsTranslate("Main", "Retry") : qsTranslate("Main", "Watch")) : root.hasChannels ? qsTranslate("Viewer", "Choose a channel") : qsTranslate("Main", "Connection settings")
             contentItem: Label {
                 text: action.text
                 color: "#191a1b"
