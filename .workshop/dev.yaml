@@ -29,4 +29,6 @@ actions:
     cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
     cmake --build build
   test: cargo test --manifest-path rust/Cargo.toml "$@"
-  run: QT_QPA_PLATFORM=xcb ./build/mirakurun-viewer "$@"
+  run: bash scripts/run-viewer.sh "$@"
+  profile-memory: bash scripts/profile-memory.sh "$@"
+  analyze-memory: python3 scripts/analyze-memory.py "$@"

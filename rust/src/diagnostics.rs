@@ -50,9 +50,12 @@ impl Drop for Lifetime {
     }
 }
 
-pub struct Client(Weak<Mutex<Option<Recorder>>>);
+pub struct Client(Weak<Mutex<Option<Recorder>>>, bool);
 impl Client {
     pub fn record(&self, event: Event, snapshot: Snapshot) -> Result<Enqueue, Error> {
+        if !self.1 {
+            return Ok(Enqueue::Stopped);
+        }
         let owner = self.0.upgrade().ok_or(Error::NoOwner)?;
         let guard = owner.lock().map_err(|_| Error::Poisoned)?;
         Ok(guard.as_ref().map_or(Enqueue::Stopped, |recorder| {
@@ -79,6 +82,7 @@ impl Client {
 pub fn requested(isolated: bool) -> bool {
     let setting = std::env::var("MIRAKURUN_DIAGNOSTICS");
     enabled(setting.as_deref().ok(), isolated)
+        || std::env::var("MIRAKURUN_GC_LOG").as_deref() == Ok("1")
 }
 
 pub fn start(directory: PathBuf, isolated: bool) -> Result<Option<Client>, Error> {
@@ -93,12 +97,20 @@ pub fn start(directory: PathBuf, isolated: bool) -> Result<Option<Client>, Error
     if guard.is_some() {
         return Err(Error::AlreadyInitialized);
     }
-    let recorder = Recorder::start_directory(directory.join("usage"), env!("CARGO_PKG_VERSION"))?;
+    let samples = enabled(
+        std::env::var("MIRAKURUN_DIAGNOSTICS").as_deref().ok(),
+        isolated,
+    );
+    let recorder = Recorder::start_directory_with_history(
+        directory.join("usage"),
+        env!("CARGO_PKG_VERSION"),
+        samples,
+    )?;
     GC_SINK
         .set(recorder.gc_sink())
         .map_err(|_| Error::AlreadyInitialized)?;
     *guard = Some(recorder);
-    Ok(Some(Client(Arc::downgrade(&owner))))
+    Ok(Some(Client(Arc::downgrade(&owner), samples)))
 }
 pub fn record_qt_gc(category: &str, message: &str) {
     if let (Some(sink), Some(category)) = (GC_SINK.get(), GcCategory::parse(category)) {
@@ -113,6 +125,31 @@ fn enabled(setting: Option<&str>, isolated: bool) -> bool {
 mod tests {
     use super::*;
     #[test]
+    fn gc_only_client_does_not_enqueue_measurements() -> Result<(), Box<dyn std::error::Error>> {
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("gc.jsonl");
+        let recorder = Recorder::start(path.clone(), "gc-only")?;
+        let gc = recorder.gc_sink();
+        let owner = Lifetime(Arc::new(Mutex::new(Some(recorder))));
+        let client = Client(Arc::downgrade(&owner.0), false);
+        assert_eq!(
+            client.record(Event::Sample, Snapshot::default())?,
+            Enqueue::Stopped
+        );
+        assert_eq!(
+            gc.record(GcCategory::Statistics, "fixture"),
+            Enqueue::Accepted
+        );
+        drop(owner);
+        let text = std::fs::read_to_string(path)?;
+        assert_eq!(text.lines().count(), 1);
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(text.trim())?["kind"],
+            "qt_gc"
+        );
+        Ok(())
+    }
+    #[test]
     fn dropping_player_client_keeps_gc_alive_until_application_owner_exits()
     -> Result<(), Box<dyn std::error::Error>> {
         let dir = tempfile::tempdir()?;
@@ -121,7 +158,7 @@ mod tests {
         let callback = recorder.gc_sink();
         // Private owner construction avoids process-global registration in parallel tests.
         let owner = Lifetime(Arc::new(Mutex::new(Some(recorder))));
-        let client = Client(Arc::downgrade(&owner.0));
+        let client = Client(Arc::downgrade(&owner.0), true);
         assert_eq!(
             client.record(Event::Sample, Snapshot::default())?,
             Enqueue::Accepted
@@ -131,7 +168,7 @@ mod tests {
             callback.record(GcCategory::Statistics, "engine destruction"),
             Enqueue::Accepted
         );
-        let late_client = Client(Arc::downgrade(&owner.0));
+        let late_client = Client(Arc::downgrade(&owner.0), true);
         drop(owner);
         assert_eq!(
             callback.record(GcCategory::Statistics, "late"),

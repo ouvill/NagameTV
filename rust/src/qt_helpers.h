@@ -44,14 +44,18 @@ inline bool openPlaybackLogDirectory(const QString &path) {
 #include <optional>
 #include <cstring>
 
+inline bool qtGcEnabled = false;
 inline std::optional<rust::Fn<void(rust::Str, rust::Str)>> qtGcCallback;
 inline std::optional<rust::Fn<void(std::uint8_t, rust::Str, rust::Str)>> qtLogCallback;
 
 inline void viewerQtMessageHandler(QtMsgType type, const QMessageLogContext &context,
                                    const QString &message) {
-  if (context.category && qtGcCallback &&
+  const bool isGc = context.category &&
       (std::strcmp(context.category, "qt.qml.gc.statistics") == 0 ||
-       std::strcmp(context.category, "qt.qml.gc.allocatorStats") == 0)) {
+       std::strcmp(context.category, "qt.qml.gc.allocatorStats") == 0);
+  // An explicit application switch wins even over QT_LOGGING_RULES.
+  if (isGc && !qtGcEnabled && type != QtFatalMsg) return;
+  if (isGc && qtGcEnabled && qtGcCallback) {
     const auto text = message.left(8192).toUtf8();
     (*qtGcCallback)(rust::Str(context.category), rust::Str(text.constData(), text.size()));
   }
@@ -73,6 +77,7 @@ inline void viewerQtMessageHandler(QtMsgType type, const QMessageLogContext &con
 
 inline void installQtLogging(rust::Fn<void(std::uint8_t, rust::Str, rust::Str)> callback) {
   qtLogCallback = callback;
+  qtGcEnabled = qEnvironmentVariable("MIRAKURUN_GC_LOG") == QStringLiteral("1");
   qInstallMessageHandler(viewerQtMessageHandler);
 }
 

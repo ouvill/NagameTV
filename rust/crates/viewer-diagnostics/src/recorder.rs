@@ -144,12 +144,39 @@ pub struct Recorder {
 impl Recorder {
     /// One recorder per process/directory, matching main's usage-<pid>.jsonl naming.
     pub fn start_directory(directory: PathBuf, version: &'static str) -> Result<Self, Error> {
+        Self::start_directory_with_history(directory, version, true)
+    }
+
+    pub fn start_directory_with_history(
+        directory: PathBuf,
+        version: &'static str,
+        history_enabled: bool,
+    ) -> Result<Self, Error> {
         std::fs::create_dir_all(&directory).map_err(storage::Error::Io)?;
         crate::retention::prune(&directory).map_err(storage::Error::Io)?;
-        Self::start(
-            directory.join(format!("usage-{}.jsonl", std::process::id())),
-            version,
-        )
+        if !history_enabled {
+            return Self::start(
+                directory.join(format!("usage-{}.jsonl", std::process::id())),
+                version,
+            );
+        }
+        // Keep sparse samples separately: a burst of GC diagnostics must not
+        // erase the history needed to investigate a long viewing session.
+        let history = directory.join("history");
+        std::fs::create_dir_all(&history).map_err(storage::Error::Io)?;
+        crate::retention::prune(&history).map_err(storage::Error::Io)?;
+        let name = format!("usage-{}.jsonl", std::process::id());
+        let mut detail = storage::RotatingWriter::new(directory.join(&name))?;
+        let mut history = storage::RotatingWriter::new(history.join(&name))?;
+        let mut last_sample = None;
+        Self::spawn(version, move |value| {
+            detail.write(value)?;
+            if history_due(value, last_sample) {
+                history.write(value)?;
+                last_sample = value["record"]["elapsed_ms"].as_u64();
+            }
+            Ok(())
+        })
     }
 
     /// Opens the output at startup; all measurement and record writes run on the worker.
@@ -238,6 +265,13 @@ impl Recorder {
     }
 }
 
+fn history_due(value: &serde_json::Value, last_sample: Option<u64>) -> bool {
+    let Some(elapsed) = value["record"]["elapsed_ms"].as_u64() else {
+        return false;
+    };
+    last_sample.is_none_or(|last| elapsed.saturating_sub(last) >= 60_000)
+}
+
 #[must_use = "join the worker at shutdown or poll is_finished before joining"]
 pub struct Stopping {
     task: Option<JoinHandle<Result<(), Error>>>,
@@ -280,6 +314,54 @@ fn unix_ms() -> u128 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn gc_only_directory_does_not_create_history() -> Result<(), Box<dyn std::error::Error>> {
+        let dir = tempfile::tempdir()?;
+        let recorder =
+            Recorder::start_directory_with_history(dir.path().to_owned(), "gc-only", false)?;
+        recorder.gc_sink().record(GcCategory::Statistics, "fixture");
+        recorder.stop().join()?;
+        assert!(!dir.path().join("history").exists());
+        assert_eq!(std::fs::read_dir(dir.path())?.count(), 1);
+        Ok(())
+    }
+    #[test]
+    fn sparse_history_ignores_gc_and_keeps_one_sample_per_minute() {
+        let sample = |elapsed| serde_json::json!({"record": {"elapsed_ms": elapsed}});
+        assert!(history_due(&sample(0), None));
+        assert!(!history_due(&serde_json::json!({"kind": "qt_gc"}), None));
+        assert!(!history_due(&sample(59_999), Some(0)));
+        assert!(history_due(&sample(60_000), Some(0)));
+        assert!(!history_due(&sample(60_001), Some(60_000)));
+        assert!(!history_due(&sample(0), Some(60_000)));
+    }
+
+    #[test]
+    fn directory_recording_preserves_history_apart_from_gc()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let dir = tempfile::tempdir()?;
+        let recorder = Recorder::start_directory(dir.path().to_owned(), "test")?;
+        recorder.record(Event::Sample, Snapshot::default());
+        recorder
+            .gc_sink()
+            .record(GcCategory::Statistics, "gc fixture");
+        recorder.record(Event::Sample, Snapshot::default());
+        recorder.stop().join()?;
+        let name = format!("usage-{}.jsonl", std::process::id());
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join(&name))?
+                .lines()
+                .count(),
+            3
+        );
+        let history = std::fs::read_to_string(dir.path().join("history").join(name))?;
+        assert_eq!(history.lines().count(), 1);
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(history.trim())?["record"]["event"],
+            "sample"
+        );
+        Ok(())
+    }
     #[test]
     fn slow_writer_bounds_admission_and_stop_drains_the_accepted_queue()
     -> Result<(), Box<dyn std::error::Error>> {
