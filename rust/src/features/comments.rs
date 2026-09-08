@@ -1,9 +1,7 @@
 //! Playback-independent commentary selection and bounded history.
 pub mod activity;
-use crate::{
-    channels::{Band, Channel},
-    services::Network,
-};
+mod mapping;
+use crate::{channels::Channel, services::Network};
 use std::collections::VecDeque;
 use viewer_comments::{
     Comment,
@@ -29,33 +27,13 @@ pub struct Comments {
     controller: Controller,
     target: Option<(u64, u16)>,
     history: VecDeque<Comment>,
+    received: u64,
     pub dirty: bool,
 }
 
 fn jikkyo(channel: &Channel) -> Option<u16> {
-    match channel.band {
-        Band::Terrestrial => [
-            ("ＮＨＫ総合", 1),
-            ("Ｅテレ", 2),
-            ("読売テレビ", 4),
-            ("ＡＢＣテレビ", 5),
-            ("ＭＢＳ", 6),
-            ("関西テレビ", 8),
-            ("ＫＢＳ京都", 14),
-        ]
-        .into_iter()
-        .find(|(name, _)| channel.name.contains(name))
-        .map(|(_, id)| id),
-        // main maps every non-terrestrial service by its broadcast service ID.
-        // Unknown transport bands still require explicit metadata, never an HTTP-ID guess.
-        Band::Bs | Band::Cs | Band::Sky | Band::Other => channel.broadcast.map(|service| {
-            if service.service_id == 102 {
-                101
-            } else {
-                service.service_id
-            }
-        }),
-    }
+    let service = channel.broadcast?;
+    mapping::resolve(service.network_id, service.service_id)
 }
 
 impl Comments {
@@ -100,6 +78,7 @@ impl Comments {
             if self.history.len() == HISTORY_LIMIT {
                 self.history.pop_front();
             }
+            self.received += 1;
             self.history.push_back(comment);
             self.dirty = true;
         }
@@ -134,23 +113,25 @@ impl Comments {
     pub fn json(&self) -> Result<String, serde_json::Error> {
         #[derive(serde::Serialize)]
         struct Row<'a> {
+            id: String,
             time: String,
             text: &'a str,
             source: viewer_comments::Origin,
         }
-        struct Rows<'a>(&'a VecDeque<Comment>);
+        struct Rows<'a>(&'a VecDeque<Comment>, u64);
         impl serde::Serialize for Rows<'_> {
             fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
                 // Stream borrowed history in arrival order. Each formatted time
                 // lives for one row; no second array of all visible rows is retained.
-                serializer.collect_seq(self.0.iter().map(|comment| Row {
+                serializer.collect_seq(self.0.iter().enumerate().map(|(index, comment)| Row {
+                    id: (self.1 - self.0.len() as u64 + index as u64).to_string(),
                     time: comment.japan_time(),
                     text: &comment.text,
                     source: comment.origin,
                 }))
             }
         }
-        serde_json::to_string(&Rows(&self.history))
+        serde_json::to_string(&Rows(&self.history, self.received))
     }
 }
 
@@ -181,11 +162,8 @@ mod tests {
             Some(101)
         );
         assert_eq!(jikkyo(&channel(400101, "BS", "NHK", None)?), None);
-        assert_eq!(
-            jikkyo(&channel(1, "GR", "ＮＨＫ総合１", Some(999))?),
-            Some(1)
-        );
-        assert_eq!(jikkyo(&channel(1, "GR", "未対応", Some(101))?), None);
+        assert_eq!(jikkyo(&channel(1, "GR", "ＮＨＫ総合１", Some(999))?), None);
+        assert_eq!(jikkyo(&channel(1, "GR", "未対応", Some(101))?), Some(101));
         assert_eq!(
             jikkyo(&channel(1, "OTHER", "ＮＨＫ総合", Some(101))?),
             Some(101)
@@ -278,6 +256,7 @@ mod tests {
                 format!("09:{:02}:{:02}", second / 60, second % 60)
             );
             assert_eq!(row["source"], "NX");
+            assert_eq!(row["id"], second.to_string());
         }
         comments.dirty = false;
         comments.configure(true, Some(&first));

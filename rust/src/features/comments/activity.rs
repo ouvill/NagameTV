@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 use viewer_comments::activity::{Error, MAX_RESPONSE_BYTES, Snapshot};
 
 const ENDPOINT: &str = "https://nx-jikkyo.tsukumijima.net/api/v1/channels";
-const REFRESH: Duration = Duration::from_secs(300);
+const REFRESH: Duration = Duration::from_secs(60);
 type Request = Job<Snapshot, Error>;
 #[derive(Default)]
 enum Acquisition {
@@ -73,6 +73,12 @@ impl Activity {
                 Snapshot::parse,
             ));
         }
+    }
+    pub fn program_title(&self, channel: Option<&Channel>) -> &str {
+        channel
+            .and_then(super::jikkyo)
+            .and_then(|id| self.snapshot.program_title(id))
+            .unwrap_or("")
     }
     pub fn json(&self, channels: &[Channel]) -> Result<String, serde_json::Error> {
         // Strings preserve all u64 values through QML's IEEE-754 JavaScript numbers.
@@ -153,6 +159,71 @@ mod tests {
                 return Err("activity worker deadline exceeded".into());
             }
             thread::sleep(Duration::from_millis(2));
+        }
+        Ok(())
+    }
+    #[test]
+    fn selected_program_changes_and_disable_clears_it() -> TestResult {
+        let mut activity = Activity {
+            enabled: true,
+            snapshot: Snapshot::parse(
+                br#"[
+                {"id":"jk4","threads":[],"program_present":{"title":"News"}},
+                {"id":"jk6","threads":[],"program_present":{"title":"Drama"}}
+            ]"#,
+            )?,
+            ..Activity::default()
+        };
+        let channels = crate::channels::parse(
+            br#"[
+            {"id":1,"type":1,"name":"A","networkId":30848,"serviceId":2088},
+            {"id":2,"type":1,"name":"B","networkId":30848,"serviceId":2064},
+            {"id":3,"type":1,"name":"C","networkId":30848,"serviceId":999}
+        ]"#,
+        )?;
+        for channel in &channels {
+            assert_eq!(
+                activity.program_title(Some(channel)),
+                match channel.id {
+                    1 => "News",
+                    2 => "Drama",
+                    _ => "",
+                }
+            );
+        }
+        assert_eq!(activity.program_title(None), "");
+        activity.configure(false);
+        for channel in &channels {
+            assert_eq!(activity.program_title(Some(channel)), "");
+        }
+        Ok(())
+    }
+    #[test]
+    fn regional_mapping_is_shared_with_reception() -> TestResult {
+        let activity = Activity {
+            snapshot: Snapshot::parse(
+                br#"[{"id":"jk4","threads":[{"status":"ACTIVE","jikkyo_force":42}]}]"#,
+            )?,
+            ..Activity::default()
+        };
+        let channels = crate::channels::parse(br#"[
+            {"id":1,"type":1,"name":"Tokyo","channel":{"type":"GR"},"networkId":30848,"serviceId":1040},
+            {"id":2,"type":1,"name":"Osaka","channel":{"type":"GR"},"networkId":30848,"serviceId":2088},
+            {"id":3,"type":1,"name":"Sub","channel":{"type":"NW1"},"networkId":30848,"serviceId":2089},
+            {"id":4,"type":1,"name":"Unknown","channel":{"type":"GR"},"networkId":30848,"serviceId":999}
+        ]"#)?;
+        for channel in &channels {
+            assert_eq!(
+                super::super::jikkyo(channel),
+                if channel.id == 4 { None } else { Some(4) }
+            );
+        }
+        let values: Vec<Option<String>> = serde_json::from_str(&activity.json(&channels)?)?;
+        for (channel, value) in channels.iter().zip(values) {
+            assert_eq!(
+                value.as_deref(),
+                if channel.id == 4 { None } else { Some("42") }
+            );
         }
         Ok(())
     }

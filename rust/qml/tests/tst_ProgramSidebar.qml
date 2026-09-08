@@ -44,6 +44,18 @@ Item {
                 tryVerify(() => panel.item !== null);
                 tryCompare(panel, "x", 280);
                 const view = panel.item;
+                view.page = ProgramSidebar.Comments;
+                const title = findChild(view, "commentProgramTitle");
+                verify(title.visible);
+                compare(title.text, "Program title unavailable");
+                view.commentProgramTitle = "<b>NX program</b>";
+                compare(title.text, "<b>NX program</b>");
+                compare(title.textFormat, Text.PlainText);
+                view.commentProgramTitle = "Other station";
+                compare(title.text, "Other station");
+                view.commentProgramTitle = "";
+                compare(title.text, "Program title unavailable");
+                view.page = ProgramSidebar.Program;
                 compare(findChild(view, "programDescription").textFormat, Text.PlainText);
                 compare(findChild(view, "programDescription").text, "<b>plain</b>");
                 testCase.programData = JSON.stringify({

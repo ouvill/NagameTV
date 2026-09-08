@@ -596,6 +596,7 @@ ApplicationWindow {
             }
             commentsJson: player.comment_data
             commentStatus: player.comment_status
+            commentProgramTitle: player.comment_program_title
             page: root.sidebarPage
             channelRows: root.channelRows
             selectedChannel: player.selected

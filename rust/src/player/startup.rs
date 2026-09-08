@@ -111,6 +111,7 @@ impl Default for PlayerRust {
             comment_font_size: preferences.preferences().comment_font_size.into(),
             comment_opacity: preferences.preferences().comment_opacity.into(),
             comment_speed: preferences.preferences().comment_speed.into(),
+            comment_program_title: QString::default(),
             comment_data: QString::from("[]"),
             activity_data: QString::from("[]"),
             activity: Default::default(),

@@ -90,6 +90,7 @@ pub mod ffi {
         #[qproperty(f64, comment_opacity, READ, NOTIFY)]
         #[qproperty(f64, comment_speed, READ, NOTIFY)]
         #[qproperty(bool, comments_allowed, READ, NOTIFY)]
+        #[qproperty(QString, comment_program_title, READ, NOTIFY)]
         #[qproperty(QString, comment_data, READ, NOTIFY)]
         #[qproperty(QString, activity_data, READ, NOTIFY)]
         #[qproperty(QString, comment_status, READ, NOTIFY)]
@@ -224,6 +225,7 @@ pub struct PlayerRust {
     comment_font_size: f64,
     comment_opacity: f64,
     comment_speed: f64,
+    comment_program_title: QString,
     comment_data: QString,
     activity_data: QString,
     activity: crate::features::comments::activity::Activity,
@@ -280,6 +282,12 @@ macro_rules! property_setter {
 }
 
 impl ffi::Player {
+    property_setter!(
+        set_comment_program_title,
+        comment_program_title,
+        comment_program_title_changed,
+        QString
+    );
     property_setter!(
         set_comments_enabled,
         comments_enabled,

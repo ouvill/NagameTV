@@ -14,6 +14,7 @@ Rectangle {
     property bool commentsEnabled: false
     signal danmakuRequested(bool enabled)
     property string commentsJson: "[]"
+    property string commentProgramTitle: ""
     property string commentStatus: ""
     property int page: ProgramSidebar.Program
     property var channelRows: []
@@ -206,6 +207,30 @@ Rectangle {
                 onSelectRequested: function (index) {
                     root.selectRequested(index);
                 }
+            }
+        }
+        ColumnLayout {
+            visible: root.page === ProgramSidebar.Comments
+            Layout.fillWidth: true
+            spacing: 5
+            Label {
+                text: qsTranslate("Viewer", "NX-Jikkyo program")
+                color: "#929497"
+                font.pixelSize: 12
+            }
+            Label {
+                objectName: "commentProgramTitle"
+                Layout.fillWidth: true
+                text: root.commentProgramTitle || qsTranslate("Viewer", "Program title unavailable")
+                textFormat: Text.PlainText
+                wrapMode: Text.Wrap
+                maximumLineCount: 3
+                elide: Text.ElideRight
+                color: "#e5e5e4"
+                font.pixelSize: 14
+                ToolTip.visible: titleHover.hovered && root.commentProgramTitle.length > 0
+                ToolTip.text: root.commentProgramTitle
+                HoverHandler { id: titleHover }
             }
         }
         Loader {

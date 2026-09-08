@@ -44,6 +44,7 @@ impl ffi::Player {
         self.as_mut().rust_mut().comments.configure(false, None);
         self.as_mut().rust_mut().activity.configure(false);
         self.as_mut().set_activity_data(QString::from("[]"));
+        self.as_mut().set_comment_program_title(QString::default());
         self.as_mut().clear_playback_failure();
         self.as_mut().rust_mut().request.cancel();
         self.as_mut().set_loading(false);

@@ -87,6 +87,14 @@ impl ffi::Player {
             };
             (data, live)
         };
+        let title = {
+            let this = self.rust();
+            let channel = usize::try_from(this.selected)
+                .ok()
+                .and_then(|index| this.entries.get(index));
+            QString::from(this.activity.program_title(channel))
+        };
+        self.as_mut().set_comment_program_title(title);
         self.as_mut().refresh_comment_status();
         match data {
             Some(Ok(json)) => self.as_mut().set_comment_data(QString::from(json)),

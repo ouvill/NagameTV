@@ -586,6 +586,10 @@
   <context>
     <name>Viewer</name>
     <message>
+      <source>NX-Jikkyo program</source>
+      <translation>NX-Jikkyo側の番組</translation>
+    </message>
+    <message>
       <source>Play</source>
       <translation>再生</translation>
     </message>

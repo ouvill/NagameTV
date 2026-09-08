@@ -17,10 +17,13 @@ pub enum Error {
 }
 
 #[derive(Debug, Default, PartialEq, Eq)]
-pub struct Snapshot(BTreeMap<u16, u64>);
+pub struct Snapshot(BTreeMap<u16, u64>, BTreeMap<u16, Box<str>>);
 impl Snapshot {
     pub fn get(&self, channel: u16) -> Option<u64> {
         self.0.get(&channel).copied()
+    }
+    pub fn program_title(&self, channel: u16) -> Option<&str> {
+        self.1.get(&channel).map(AsRef::as_ref)
     }
     pub fn parse(bytes: &[u8]) -> Result<Self, Error> {
         if bytes.len() > MAX_RESPONSE_BYTES {
@@ -30,7 +33,7 @@ impl Snapshot {
     }
 }
 
-// Deserialize one thread at a time; descriptions and program data are skipped by serde.
+// Deserialize one thread at a time; descriptions and unused program fields are skipped by serde.
 // Option<Option<u64>> distinguishes no active thread from an active thread with null force.
 #[derive(Default)]
 struct ActiveForce(Option<Option<u64>>);
@@ -75,6 +78,11 @@ impl<'de> Deserialize<'de> for Snapshot {
                     #[serde(borrow)]
                     id: Cow<'a, str>,
                     threads: ActiveForce,
+                    program_present: Option<Program>,
+                }
+                #[derive(Deserialize)]
+                struct Program {
+                    title: String,
                 }
                 let mut snapshot = Snapshot::default();
                 let mut count = 0;
@@ -96,6 +104,12 @@ impl<'de> Deserialize<'de> for Snapshot {
                     if !code.bytes().all(|byte| byte.is_ascii_digit()) {
                         continue;
                     }
+                    if let Some(program) = channel.program_present {
+                        let title: String = program.title.trim().chars().take(512).collect();
+                        if !title.is_empty() {
+                            snapshot.1.insert(id, title.into_boxed_str());
+                        }
+                    }
                     if let Some(force) = channel.threads.0.flatten() {
                         snapshot.0.insert(id, force);
                     }
@@ -110,6 +124,23 @@ impl<'de> Deserialize<'de> for Snapshot {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn titles_are_optional_bounded_and_independent_of_force() -> Result<(), Error> {
+        let snapshot = Snapshot::parse(br#"[
+            {"id":"jk1","threads":[],"program_present":{"title":"  <b>News</b>  "}},
+            {"id":"jk2","threads":[],"program_present":null},
+            {"id":"jk4","threads":[]},
+            {"id":"jk5","threads":[],"program_present":{"title":" "}}
+        ]"#)?;
+        assert_eq!(snapshot.program_title(1), Some("<b>News</b>"));
+        assert_eq!(snapshot.get(1), None);
+        for id in [2, 4, 5] { assert_eq!(snapshot.program_title(id), None); }
+        let bytes = serde_json::to_vec(&serde_json::json!([{
+            "id":"jk1", "threads":[], "program_present":{"title":"あ".repeat(600)}
+        }]))?;
+        assert_eq!(Snapshot::parse(&bytes)?.program_title(1).map(|s| s.chars().count()), Some(512));
+        Ok(())
+    }
     #[test]
     fn first_active_thread_preserves_zero_null_and_large_values() -> Result<(), Error> {
         let snapshot = Snapshot::parse(br#"[
