@@ -1,8 +1,10 @@
 import QtQuick
 import QtTest
+import MinimalViewer
 import "../../rust/qml" as Viewer
 
 TestCase {
+    TestOutlineProvider { id: subtitleOutlines }
     id: testCase
     name: "SubtitleRendering"
     when: windowShown

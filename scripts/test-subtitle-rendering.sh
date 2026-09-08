@@ -27,10 +27,5 @@ if [[ $test_mode == gpu ]] && [[ $renderer_info == *llvmpipe* || $renderer_info 
     echo "Only a software OpenGL renderer is available; GPU validation failed." >&2
     exit 1
 fi
-test_dir=$(mktemp -d)
-trap 'rm -rf "$test_dir"' EXIT
-qt_libexec=$(pkg-config --variable=libexecdir Qt6Core)
-"$qt_libexec/moc" tests/subtitle_rendering.cpp -o "$test_dir/subtitle_rendering.moc"
-${CXX:-c++} -std=c++17 -fPIC -Irust/src -I"$test_dir" tests/subtitle_rendering.cpp \
-    $(pkg-config --cflags --libs Qt6QuickTest Qt6Qml Qt6Gui) -o "$test_dir/subtitle-rendering-test"
-QT_QPA_PLATFORM=xcb QSG_RHI_BACKEND=opengl "$test_dir/subtitle-rendering-test" -input tests/subtitles "$@"
+QT_QPA_PLATFORM=xcb QSG_RHI_BACKEND=opengl \
+    bash scripts/run-native-tests.sh subtitle-rendering -input tests/subtitles "$@"

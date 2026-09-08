@@ -21,9 +21,11 @@ CARGO_TARGET_DIR=build/cargo cargo test --manifest-path rust/Cargo.toml --releas
 ```
 
 ネイティブARIB字幕デコーダーは固定コミットのlibaribcaptionからビルドする。
-Rustの自動テストは表示・GPU・音声機器を使わない。GStreamerの実TS demuxはメモリー上で検証する。
+通常の `cargo test` は表示・GPU・音声機器を使わない。GStreamerの実TS demuxはメモリー上で検証する。
 音声切り替えのCPU結合試験にはtestsrcbin（GStreamer Bad Plug-insのdebugutilsbad）が必要。
 生成音声の出力サンプルと映像の継続を試験用sinkで測定する。Qtの画面試験は実際の表示環境を使う。
+Qt結合テストもRustで実装し、メインスレッドで実行する。翻訳・字幕・ポインターの
+実行コマンドと必要な環境は [Qtテスト](docs/qt-tests.md) を参照。
 
 ## ログ
 

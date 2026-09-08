@@ -1,6 +1,20 @@
 #pragma once
 #include <QtCore/QString>
 #include <QtQuickTest/quicktest.h>
+#include "rust/cxx.h"
+#include <vector>
+
+// Qt Quick Test requires mutable argv storage for the duration of the call.
+inline int run_qml_test_args(rust::Slice<const rust::String> arguments) {
+    std::vector<QByteArray> storage;
+    storage.reserve(arguments.size());
+    for (const auto &argument : arguments)
+        storage.emplace_back(argument.data(), argument.size());
+    std::vector<char *> argv;
+    for (auto &argument : storage) argv.push_back(argument.data());
+    argv.push_back(nullptr);
+    return quick_test_main(static_cast<int>(storage.size()), argv.data(), "viewer", nullptr);
+}
 
 // The module is registered by Rust before creating the real Qt Quick test app.
 inline int run_qml_tests(const QString &path) {

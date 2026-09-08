@@ -93,4 +93,5 @@ does not run. It requires no handwritten C++ test class or QtTest dependency.
 Prefer Rust for application logic and test assertions, cxx-qt for QObject glue,
 and QML for UI fixtures. Keep handwritten C++ limited to Qt APIs that cannot be
 expressed through the existing bindings; moving unsafe operations into C++ is
-not by itself a safety improvement.
+not by itself a safety improvement. The localization, pointer event and subtitle
+tests also use Rust runners; see [Qt integration tests](qt-tests.md).

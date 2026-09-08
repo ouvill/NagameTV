@@ -18,10 +18,5 @@ if [[ $renderer_info == *llvmpipe* || $renderer_info == *softpipe* || $renderer_
     echo "Only a software OpenGL renderer is available; GPU validation failed." >&2
     exit 1
 fi
-test_dir=$(mktemp -d)
-trap 'rm -rf "$test_dir"' EXIT
-qt_libexec=$(pkg-config --variable=libexecdir Qt6Core)
-"$qt_libexec/moc" tests/pointer_activity.cpp -o "$test_dir/pointer_activity.moc"
-${CXX:-c++} -std=c++17 -fPIC -Irust/src -I"$test_dir" tests/pointer_activity.cpp \
-    $(pkg-config --cflags --libs Qt6Test Qt6Quick) -o "$test_dir/pointer-activity-test"
-QT_QPA_PLATFORM=xcb QSG_RHI_BACKEND=opengl "$test_dir/pointer-activity-test" "$@"
+QT_QPA_PLATFORM=xcb QSG_RHI_BACKEND=opengl \
+    bash scripts/run-native-tests.sh pointer-activity "$@"

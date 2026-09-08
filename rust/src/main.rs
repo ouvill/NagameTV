@@ -8,6 +8,8 @@ mod error_log;
 mod features;
 mod logging;
 mod memory;
+#[cfg(feature = "native_tests")]
+mod native_tests;
 #[cfg(target_os = "linux")]
 mod platform;
 mod playback;
@@ -46,6 +48,10 @@ enum StartupError {
 }
 
 fn main() -> std::process::ExitCode {
+    #[cfg(feature = "native_tests")]
+    if std::env::args().nth(1).as_deref() == Some("--native-tests") {
+        return std::process::ExitCode::from(native_tests::run().clamp(0, 255) as u8);
+    }
     // GUI integration checks must run on the process main thread, not libtest.
     #[cfg(feature = "video_item_tests")]
     if std::env::args().nth(1).as_deref() == Some("--video-item-tests") {

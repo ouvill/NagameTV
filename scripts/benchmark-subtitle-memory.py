@@ -10,7 +10,7 @@ import json
 import os
 from pathlib import Path
 import selectors
-import shlex
+import shutil
 import subprocess
 import time
 
@@ -34,24 +34,20 @@ def validate_graphics() -> str:
 
 
 def build_helper(repo: Path, output: Path) -> Path:
-    source = repo / "tests/subtitle_rendering.cpp"
-    libexec = subprocess.check_output(
-        ["pkg-config", "--variable=libexecdir", "Qt6Core"], text=True
-    ).strip()
-    subprocess.run(
-        [str(Path(libexec) / "moc"), str(source), "-o", str(output / "subtitle_rendering.moc")],
-        check=True,
+    result = subprocess.run(
+        ["cargo", "build", "--manifest-path", str(repo / "rust/Cargo.toml"),
+         "--locked", "--features", "native_tests", "--message-format=json-render-diagnostics"],
+        stdout=subprocess.PIPE, text=True, check=True,
     )
-    flags = shlex.split(subprocess.check_output(
-        ["pkg-config", "--cflags", "--libs", "Qt6QuickTest", "Qt6Qml", "Qt6Gui"], text=True
-    ))
-    binary = output / "subtitle-rendering-test"
-    subprocess.run(
-        shlex.split(os.environ.get("CXX", "c++"))
-        + ["-std=c++17", "-fPIC", "-I" + str(repo / "rust/src"), "-I" + str(output), str(source)]
-        + flags + ["-o", str(binary)], check=True,
-    )
-    return binary
+    for line in result.stdout.splitlines():
+        message = json.loads(line)
+        if (message.get("reason") == "compiler-artifact"
+                and message.get("target", {}).get("name") == "mirakurun-viewer"
+                and message.get("executable")):
+            binary = output / "subtitle-rendering-test"
+            shutil.copy2(message["executable"], binary)
+            return binary
+    raise RuntimeError("Cargo did not produce the native-test runner")
 
 
 def sample_process(pid: int, phase: str, elapsed: float, output: Path) -> dict:
@@ -72,6 +68,7 @@ def measure(repo: Path, output: Path, binary: Path, stroke: bool) -> None:
     env["VIEWER_SUBTITLE_BENCHMARK_STROKE"] = "1" if stroke else "0"
     (output / "conditions.json").write_text(json.dumps({
         "display": env["DISPLAY"], "stroke": stroke,
+        "test_runner": "Rust native_tests (Cargo dev profile)",
         "mmap_threshold_bytes": 131072, "renderer": "opengl",
     }, indent=2) + "\n")
     # An inherited glibc tunable takes precedence over the legacy environment
@@ -81,7 +78,7 @@ def measure(repo: Path, output: Path, binary: Path, stroke: bool) -> None:
     env["GLIBC_TUNABLES"] = ":".join(tunables + ["glibc.malloc.mmap_threshold=131072"])
     expected = ["loaded"] + [f"{phase}{round_number}" for round_number in range(1, 6)
                              for phase in ("round", "clear")]
-    command = [str(binary), "-input", str(repo / "tests/subtitle-memory/tst_SubtitleMemory.qml"),
+    command = [str(binary), "--native-tests", "subtitle-rendering", "-input", str(repo / "tests/subtitle-memory/tst_SubtitleMemory.qml"),
                "-o", "-,txt"]
     process = subprocess.Popen(command, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     (output / "pid").write_text(str(process.pid))
@@ -142,7 +139,12 @@ def main() -> None:
     # HEAD alone does not describe an uncommitted rendering experiment. Preserve
     # the actual components and harness alongside its measurements.
     for relative in ("rust/qml/SubtitleGlyph.qml", "rust/qml/SubtitleOverlay.qml",
-                     "rust/src/subtitle_outline.h", "tests/subtitle_rendering.cpp",
+                     "rust/src/subtitle_outline.h", "rust/src/native_test_bridge.rs",
+                     "rust/src/native_tests/mod.rs", "rust/src/native_tests/qt_test_api.h",
+                     "rust/src/native_tests/localization.rs", "rust/src/native_tests/outline.rs",
+                     "rust/src/native_tests/pointer.rs", "tests/localization.qml",
+                     "rust/src/main.rs", "rust/src/danmaku_ui_tests.rs",
+                     "rust/src/danmaku_test.h", "rust/Cargo.toml", "rust/Cargo.lock", "rust/build.rs",
                      "tests/subtitle-memory/tst_SubtitleMemory.qml",
                      "scripts/benchmark-subtitle-memory.py"):
         destination = output / "sources" / relative
