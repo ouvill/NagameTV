@@ -42,9 +42,9 @@ fn captured_program_events_request_one_refresh() -> Result<(), Box<dyn std::erro
             assert_eq!(changed_chunks, expected);
         }
         assert!(changed_chunks > 0);
-        assert!(!gate.take_due(now + Duration::from_secs(59)));
-        assert!(gate.take_due(now + Duration::from_secs(60)));
-        assert!(!gate.take_due(now + Duration::from_secs(120)));
+        assert!(!gate.take_due(now + Duration::from_secs(4)));
+        assert!(gate.take_due(now + Duration::from_secs(5)));
+        assert!(!gate.take_due(now + Duration::from_secs(10)));
     }
     eprintln!("CAPTURED_EPG events={expected} chunk_sizes=1,7,4096 refreshes_per_replay=1");
     Ok(())

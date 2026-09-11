@@ -53,7 +53,7 @@ const TIMING: Timing = Timing {
     headers: Duration::from_secs(10),
     retry: Duration::from_secs(5),
     tick: Duration::from_secs(1),
-    refresh: Duration::from_secs(60),
+    refresh: crate::gate::INTERVAL,
 };
 
 pub struct Subscription {
@@ -229,7 +229,7 @@ mod tests {
         let url = std::env::var("MIRAKURUN_EVENT_URL")?;
         let client = Client::new()?;
         let subscription = Subscription::start(&Handle::current(), &client, url);
-        // Observe beyond the production 60-second refresh gate. A quiet server
+        // Observe beyond the production refresh gate. A quiet server
         // may still produce zero refreshes; report the count rather than inventing events.
         let deadline = Instant::now() + Duration::from_secs(90);
         let mut receiving = false;

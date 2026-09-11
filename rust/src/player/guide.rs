@@ -7,6 +7,10 @@ use std::pin::Pin;
 
 impl ffi::Player {
     pub fn guide_open(mut self: Pin<&mut Self>, open: bool) {
+        if open && self.rust().epg_enabled {
+            self.as_mut().refresh_channels(true);
+            self.as_mut().refresh_epg();
+        }
         self.as_mut().rust_mut().guide = if open && self.rust().epg_enabled {
             Guide::AwaitingDay
         } else {

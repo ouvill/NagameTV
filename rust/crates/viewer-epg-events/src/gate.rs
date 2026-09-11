@@ -1,6 +1,6 @@
-//! Collapse any number of changes to one refresh per minute, including quiet tails.
+//! Collapse changes to at most one refresh every five seconds, including quiet tails.
 use std::time::{Duration, Instant};
-const INTERVAL: Duration = Duration::from_secs(60);
+pub(crate) const INTERVAL: Duration = Duration::from_secs(5);
 
 pub struct RefreshGate {
     dirty: bool,
@@ -52,5 +52,21 @@ mod tests {
         gate.changed();
         assert!(!gate.take_due(now + INTERVAL * 2));
         assert!(gate.take_due(now + INTERVAL * 3));
+    }
+
+    #[test]
+    fn continuing_changes_do_not_postpone_refresh_and_last_change_is_flushed() {
+        let now = Instant::now();
+        let mut gate = RefreshGate::new(now);
+        for second in 0..=12 {
+            gate.changed();
+            assert_eq!(
+                gate.take_due(now + Duration::from_secs(second)),
+                second == 5 || second == 10
+            );
+        }
+        assert!(!gate.take_due(now + Duration::from_secs(14)));
+        assert!(gate.take_due(now + Duration::from_secs(15)));
+        assert!(!gate.take_due(now + Duration::from_secs(20)));
     }
 }
