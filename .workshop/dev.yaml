@@ -4,6 +4,8 @@ sdks:
   - name: flutter
   - name: codex
   - name: rust
+  - name: docker-ce
+    channel: latest/stable
   - name: project-codex-latest
   - name: project-mirakurun-viewer
   - name: project-gui
