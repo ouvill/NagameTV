@@ -163,6 +163,8 @@ impl ffi::Player {
         // Stop UI samples; the application owner retains GC logging through engine teardown.
         self.as_mut().rust_mut().diagnostic_recorder.take();
         self.as_mut().rust_mut().comments.configure(false, None);
+        self.as_mut().set_comment_draft(QString::default());
+        self.as_mut().refresh_comment_posting();
         self.as_mut().clear_comment_history();
         self.as_mut().rust_mut().activity.configure(false);
         self.as_mut().set_activity_data(QString::from("[]"));

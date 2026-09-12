@@ -30,6 +30,8 @@ TestCase {
         property real comment_opacity: 1
         property real comment_speed: 1
         property string comment_status: ""
+        property bool comment_send_on_enter: false
+        function configure_comment_send_on_enter(value) { comment_send_on_enter = value; }
         property string log_error: ""
         function request_language(value) { language = value; return true; }
         function configure_features(subtitles, epg) {
@@ -69,6 +71,17 @@ TestCase {
         tryCompare(drawer, "opened", true);
     }
     function cleanup() { drawer.close(); tryCompare(drawer, "visible", false); }
+    function test_comment_send_shortcut_tracks_setting_and_can_be_toggled() {
+        const choice = findChild(drawer.contentItem, "commentSendOnEnter");
+        backend.comment_send_on_enter = false;
+        compare(choice.checked, false);
+        choice.forceActiveFocus();
+        keyClick(Qt.Key_Space);
+        compare(backend.comment_send_on_enter, true);
+        compare(choice.checked, true);
+        keyClick(Qt.Key_Space);
+        compare(backend.comment_send_on_enter, false);
+    }
     function test_connection_uses_edited_url_without_duplicate_loading_request() {
         const field = findChild(drawer.contentItem, "serverField");
         const connect = findChild(drawer.contentItem, "connectServer");

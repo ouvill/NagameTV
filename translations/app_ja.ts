@@ -582,6 +582,30 @@
       <source>Could not load UI translation</source>
       <translation>翻訳ファイルを読み込めませんでした</translation>
     </message>
+    <message>
+      <source>Sending comment…</source>
+      <translation>コメントを送信中…</translation>
+    </message>
+    <message>
+      <source>Comment sent to NX-Jikkyo</source>
+      <translation>NX-Jikkyoに送信しました</translation>
+    </message>
+    <message>
+      <source>Enter a comment before sending.</source>
+      <translation>コメントを入力してください。</translation>
+    </message>
+    <message>
+      <source>The comment is too long.</source>
+      <translation>コメントが長すぎます。</translation>
+    </message>
+    <message>
+      <source>Could not post comment: %1</source>
+      <translation>コメントを投稿できませんでした: %1</translation>
+    </message>
+    <message>
+      <source>Delivery could not be confirmed. Check the comments before sending again.</source>
+      <translation>送信結果を確認できませんでした。再送する前にコメントを確認してください。</translation>
+    </message>
   </context>
   <context>
     <name>Viewer</name>
@@ -780,6 +804,22 @@
     <message>
       <source>Could not play the video. Retry or check the channel and connection settings.</source>
       <translation>映像を再生できませんでした。再試行するか、チャンネルや接続設定を確認してください。</translation>
+    </message>
+    <message>
+      <source>Enter to send</source>
+      <translation>Enterで送信</translation>
+    </message>
+    <message>
+      <source>Ctrl+Enter to send</source>
+      <translation>Ctrl+Enterで送信</translation>
+    </message>
+    <message>
+      <source>Send comments with Enter</source>
+      <translation>Enterでコメントを送信する</translation>
+    </message>
+    <message>
+      <source>Default: Ctrl+Enter. Enable to also send with Enter.</source>
+      <translation>標準はCtrl+Enterで送信。有効にするとEnterでも送信できます。</translation>
     </message>
   </context>
 </TS>

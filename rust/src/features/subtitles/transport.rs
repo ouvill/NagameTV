@@ -195,10 +195,7 @@ impl TransportParser {
     }
 
     fn parse_complete_psi_sections(&mut self, pid: Pid) {
-        loop {
-            let Some(data) = self.psi.get(&pid) else {
-                break;
-            };
+        while let Some(data) = self.psi.get(&pid) {
             if data.is_empty() || data.first() == Some(&STUFFING_BYTE) {
                 self.psi.remove(&pid);
                 break;

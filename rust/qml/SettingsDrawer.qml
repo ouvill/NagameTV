@@ -247,6 +247,20 @@ Drawer {
                 enabled: root.backend.comments_enabled === true
                 onClicked: root.backend.configure_danmaku(checked, root.backend.comment_font_size, root.backend.comment_opacity, root.backend.comment_speed)
             }
+            CheckBox {
+                objectName: "commentSendOnEnter"
+                text: qsTranslate("Viewer", "Send comments with Enter")
+                palette.windowText: "#f4f5f3"
+                checked: root.backend.comment_send_on_enter === true
+                onClicked: root.backend.configure_comment_send_on_enter(checked)
+            }
+            Label {
+                Layout.fillWidth: true
+                wrapMode: Text.Wrap
+                text: qsTranslate("Viewer", "Default: Ctrl+Enter. Enable to also send with Enter.")
+                color: "#b6bab6"
+                font.pixelSize: 12
+            }
             DanmakuAdjustments {
                 Layout.fillWidth: true
                 enabled: root.backend.comments_enabled === true

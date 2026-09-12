@@ -61,8 +61,7 @@ fn qml_color(color: Color) -> String {
 }
 
 #[cfg(test)]
-#[path = "../../../crates/libaribcaption/tests/fixtures/sample.rs"]
-mod fixture;
+use super::fixture;
 
 #[cfg(test)]
 mod tests {

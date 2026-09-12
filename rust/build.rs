@@ -29,6 +29,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .qml_file("qml/CurrentProgram.qml")
             .qml_file("qml/ProgramSidebar.qml")
             .qml_file("qml/CommentList.qml")
+            .qml_file("qml/CommentComposer.qml")
             .qml_file("qml/DanmakuOverlay.qml")
             .qml_file("qml/DanmakuTimeline.qml")
             .qml_file("qml/ToggleSwitch.qml")

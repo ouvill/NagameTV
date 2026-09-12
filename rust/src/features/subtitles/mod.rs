@@ -1,4 +1,7 @@
 mod decoder;
+#[cfg(test)]
+#[path = "../../../crates/libaribcaption/tests/fixtures/sample.rs"]
+mod fixture;
 mod gst_clock;
 mod ingest;
 mod model;

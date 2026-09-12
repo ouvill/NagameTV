@@ -90,6 +90,28 @@ TestCase {
         verify(!overlay.receive("x", "invalid", 0xffffff));
         verify(!overlay.receive("x", "right", 0x1000000));
     }
+    function test_only_own_comment_gets_a_thin_frame_and_keeps_its_lifetime() {
+        overlay.receive("same text", "right", 0xffffff);
+        overlay.receive("same text", "right", 0xffffff, true);
+        const other = entries()[0];
+        const own = entries()[1];
+        verify(!other.own);
+        verify(!other.background.visible);
+        verify(own.own);
+        verify(own.background.visible);
+        compare(own.background.border.width, 1);
+        compare(own.background.border.color.toString(), "#ffe066");
+        compare(own.width, other.width + 6);
+        compare(own.duration, other.duration);
+        wait(80);
+        verify(own.x < overlay.width);
+        compare(own.background.width, own.width);
+        overlay.clearComments();
+        tryVerify(() => overlay.visualCount === 0);
+        overlay.receive("same text", "right", 0xffffff);
+        verify(!entries()[0].own);
+        verify(!entries()[0].background.visible);
+    }
     function test_pause_resume_and_core_expiration() {
         overlay.receive("test", "right", 0xffffff);
         wait(80);

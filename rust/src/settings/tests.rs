@@ -244,3 +244,25 @@ fn measure_explicit_save_latency() -> Result<(), Box<dyn std::error::Error>> {
     }
     Ok(())
 }
+
+#[test]
+fn comment_send_shortcut_defaults_and_persists_without_saving_drafts()
+-> Result<(), Box<dyn std::error::Error>> {
+    let directory = tempfile::tempdir()?;
+    let path = directory.path().join("settings.toml");
+    fs::write(&path, "comments_enabled = true\n")?;
+    let mut session = Session::open(path.clone())?;
+    assert!(!session.preferences().comment_send_on_enter);
+    for enabled in [true, false] {
+        session.preferences_mut().comment_send_on_enter = enabled;
+        assert_eq!(session.flush()?, SaveStatus::Saved);
+        assert_eq!(
+            Session::open(path.clone())?
+                .preferences()
+                .comment_send_on_enter,
+            enabled
+        );
+    }
+    assert!(!fs::read_to_string(path)?.contains("draft"));
+    Ok(())
+}

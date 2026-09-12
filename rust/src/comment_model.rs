@@ -232,6 +232,7 @@ impl ffi::CommentModel {
     #[cfg(feature = "qml_tests")]
     pub fn append_test(self: Pin<&mut Self>, text: QString, unix_seconds: u64, source_nico: bool) {
         self.append(vec![Comment {
+            identity: None,
             text: text.to_string().into_boxed_str(),
             unix_seconds,
             origin: if source_nico {
@@ -258,6 +259,7 @@ impl ffi::CommentModel {
         self.append(
             (0..count.clamp(0, 10_000))
                 .map(|i| Comment {
+                    identity: None,
                     text: format!("comment {i}").into_boxed_str(),
                     unix_seconds: i as u64,
                     origin: Origin::Nx,
@@ -275,6 +277,7 @@ mod tests {
     fn batch(start: usize, end: usize) -> Vec<Comment> {
         (start..end)
             .map(|i| Comment {
+                identity: None,
                 text: format!("<b>{i}</b>\n日本語").into_boxed_str(),
                 unix_seconds: i as u64,
                 origin: if i % 2 == 0 {

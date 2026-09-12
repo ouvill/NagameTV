@@ -1,5 +1,8 @@
-#pragma once
+#ifndef VIEWER_DANMAKU_TEST_H
+#define VIEWER_DANMAKU_TEST_H
 #include <QtCore/QString>
+#include <QtGui/QGuiApplication>
+#include <QtGui/QInputMethodEvent>
 #include <QtQuickTest/quicktest.h>
 #include "rust/cxx.h"
 #include <vector>
@@ -24,3 +27,14 @@ inline int run_qml_tests(const QString &path) {
     char *argv[] = {executable, input, directory.data(), nullptr};
     return quick_test_main(3, argv, "viewer", nullptr);
 }
+
+// Event delivery only; test cases and assertions remain in QML.
+inline bool sendTestInputMethod(const QString &preedit, const QString &commit) {
+    auto *target = QGuiApplication::focusObject();
+    if (!target) return false;
+    QInputMethodEvent event(preedit, {});
+    event.setCommitString(commit);
+    return QCoreApplication::sendEvent(target, &event);
+}
+
+#endif

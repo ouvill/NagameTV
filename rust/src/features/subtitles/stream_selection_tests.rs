@@ -1,7 +1,6 @@
 //! End-to-end alternative-caption regression through TS, PES and libaribcaption.
+use super::fixture;
 use super::transport::TransportParser;
-#[path = "../../../crates/libaribcaption/tests/fixtures/sample.rs"]
-mod fixture;
 
 #[test]
 fn synthetic_tables_preserve_caption_alternatives() {

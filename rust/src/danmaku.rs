@@ -46,6 +46,7 @@ pub mod ffi {
             text: QString,
             position: QString,
             color: u32,
+            own: bool,
         ) -> bool;
         #[qinvokable]
         fn measured(self: Pin<&mut DanmakuController>, token: u32, width: f64);
@@ -66,7 +67,12 @@ pub mod ffi {
         #[qinvokable]
         fn seek(self: Pin<&mut DanmakuController>, seconds: f64) -> bool;
         #[qsignal]
-        fn measure_requested(self: Pin<&mut DanmakuController>, token: u32, text: QString);
+        fn measure_requested(
+            self: Pin<&mut DanmakuController>,
+            token: u32,
+            text: QString,
+            own: bool,
+        );
         #[qsignal]
         fn spawned(
             self: Pin<&mut DanmakuController>,
@@ -79,6 +85,7 @@ pub mod ffi {
             to_x: f64,
             y: f64,
             duration: i32,
+            own: bool,
         );
         #[qsignal]
         fn removed(self: Pin<&mut DanmakuController>, token: u32);
@@ -196,21 +203,33 @@ impl ffi::DanmakuController {
         self.publish();
         changed.is_some()
     }
-    pub fn receive(mut self: Pin<&mut Self>, text: QString, position: QString, color: u32) -> bool {
+    pub fn receive(
+        mut self: Pin<&mut Self>,
+        text: QString,
+        position: QString,
+        color: u32,
+        own: bool,
+    ) -> bool {
         self.as_mut().tick();
         let Some(position) = danmaku_core::position(&position.to_string()) else {
             return false;
         };
-        let Some(comment) = danmaku_core::Comment::new(&text.to_string(), position, color) else {
+        let Some(mut comment) = danmaku_core::Comment::new(&text.to_string(), position, color)
+        else {
             return false;
         };
+        comment.own = own;
         self.request(comment)
     }
     fn request(mut self: Pin<&mut Self>, comment: danmaku_core::Comment) -> bool {
+        let own = comment.own;
         let request = self.as_mut().rust_mut().engine.prepare(comment);
         if let Some(request) = request {
-            self.as_mut()
-                .measure_requested(request.id.value(), QString::from(request.text.as_ref()));
+            self.as_mut().measure_requested(
+                request.id.value(),
+                QString::from(request.text.as_ref()),
+                own,
+            );
             true
         } else {
             false
@@ -234,6 +253,7 @@ impl ffi::DanmakuController {
                 spawn.to_x,
                 spawn.y,
                 spawn.lifetime.as_millis() as i32,
+                spawn.comment.own,
             );
         }
         self.publish();

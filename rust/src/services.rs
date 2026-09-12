@@ -70,6 +70,14 @@ impl Network {
         )
     }
 
+    pub fn post_comment(
+        &self,
+        controller: &mut viewer_comments::posting::Controller,
+        text: &str,
+    ) -> bool {
+        controller.submit(self.runtime.handle(), text, std::time::Instant::now())
+    }
+
     pub fn new() -> Result<Self, NetworkError> {
         Ok(Self {
             runtime: tokio::runtime::Builder::new_multi_thread()

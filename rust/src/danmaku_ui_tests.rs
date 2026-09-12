@@ -1,13 +1,30 @@
 // Built only by the qml_tests development feature; tests use the real Rust types.
-#[cxx::bridge]
+#[cxx_qt::bridge]
 mod ffi {
     unsafe extern "C++" {
         include!("cxx-qt-lib/qstring.h");
         type QString = cxx_qt_lib::QString;
-        include!("danmaku_test.h");
+        include!("mirakurun-viewer/src/danmaku_test.h");
         fn run_qml_tests(path: &QString) -> i32;
+        #[rust_name = "send_input_method"]
+        fn sendTestInputMethod(preedit: &QString, commit: &QString) -> bool;
         #[cfg(feature = "native_tests")]
         fn run_qml_test_args(arguments: &[String]) -> i32;
+    }
+    unsafe extern "RustQt" {
+        #[qobject]
+        #[qml_element]
+        type TestInputMethod = super::InputMethod;
+        #[qinvokable]
+        fn compose(self: &TestInputMethod, preedit: &QString, commit: &QString) -> bool;
+    }
+}
+
+#[derive(Default)]
+pub struct InputMethod;
+impl ffi::TestInputMethod {
+    pub fn compose(&self, preedit: &cxx_qt_lib::QString, commit: &cxx_qt_lib::QString) -> bool {
+        ffi::send_input_method(preedit, commit)
     }
 }
 

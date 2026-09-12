@@ -28,8 +28,8 @@ Item {
     function configure() {
         backend.configure(width, height, metrics.height, fontSize, titleOverlapsVideo, titleBottomInVideo, controlsOverlapVideo, controlsTopInVideo, fullScreen, speed);
     }
-    function receive(text: string, position: string, color: int): bool {
-        return visible && backend.receive(text, position, color);
+    function receive(text, position, color, own = false): bool {
+        return visible && backend.receive(text, position, color, own);
     }
     function clearComments() { backend.clear(); }
     function removeVisual(token: real) {
@@ -66,15 +66,15 @@ Item {
     }
     DanmakuController {
         id: backend
-        onMeasure_requested: function(token, text) {
+        onMeasure_requested: function(token, text, own) {
             measure.text = text;
-            backend.measured(token, Math.ceil(measure.advanceWidth) + 2);
+            backend.measured(token, Math.ceil(measure.advanceWidth) + 2 + (own ? 6 : 0));
         }
-        onSpawned: function(token, kind, text, color, width, from_x, to_x, y, duration) {
+        onSpawned: function(token, kind, text, color, width, from_x, to_x, y, duration, own) {
             const parentItem = [flowRows, topRows, bottomRows][kind];
             const item = label.createObject(parentItem, {
                 "text": text, "color": color, "width": width, "x": from_x,
-                "y": y, "destination": to_x, "duration": duration
+                "y": y, "destination": to_x, "duration": duration, "own": own
             });
             if (item)
                 layer.visuals.set(token, item);
@@ -114,12 +114,23 @@ Item {
             id: entry
             required property real destination
             required property int duration
+            required property bool own
             textFormat: Text.PlainText
             wrapMode: Text.NoWrap
             opacity: layer.textOpacity
             font: metrics.font
             style: Text.Outline
             styleColor: "#d0000000"
+            leftPadding: own ? 3 : 0
+            rightPadding: own ? 3 : 0
+            topPadding: own ? 1 : 0
+            bottomPadding: own ? 1 : 0
+            background: Rectangle {
+                visible: entry.own
+                color: "transparent"
+                border.color: "#ffe066"
+                border.width: 1
+            }
             Component.onCompleted: motion.start()
             NumberAnimation {
                 id: motion

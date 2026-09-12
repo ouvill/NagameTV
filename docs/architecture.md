@@ -50,11 +50,13 @@ EPG OFFは番組通信・更新予約・スナップショット・投影デー�
 停止処理中は通信Jobを保持し、Tokioの完了を確認してから破棄する。共有HTTPプールは残る。
 番組表を閉じるだけの場合は投影とLoaderを破棄し、5分ごとの取得は継続する。
 
-実況OFFは接続の停止要求と履歴・投影の破棄を行い、勢い取得も取り消す。
+実況OFFは受信・投稿接続の停止要求と履歴・下書き・投影の破棄を行い、勢い取得も取り消す。
 接続の世代管理はviewer-commentsのControllerが担当する。流れる実況は
 comments_enabled・danmaku_enabled・playingが揃う間だけLoaderで生成する。
 表示だけOFFの場合と機能そのもののOFFを区別する。履歴は200件、流れる項目は64件まで。
 詳細な受信上限・再接続・終了契約は [comments-migration.md](comments-migration.md) を参照。
+投稿は操作ごとに既存runtimeで最大1つの短いWebSocketセッションを開始し、
+結果を確認して終了する。自動再送や投稿待ちキューは持たない。[投稿の契約](comment-posting.md)。
 
 ## 字幕の停止順序
 

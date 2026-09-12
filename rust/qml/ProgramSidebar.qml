@@ -243,30 +243,6 @@ Rectangle {
                 status: root.commentStatus
             }
         }
-        // main has a presentation-only composer: no text input or posting transport.
-        // Keep its design without introducing draft state or a network action.
-        Rectangle {
-            visible: root.page === ProgramSidebar.Comments
-            Layout.fillWidth: true
-            Layout.preferredHeight: 58
-            radius: 20
-            color: "#1c1f1c"
-            border.color: "#606163"
-            Label {
-                anchors.left: parent.left
-                anchors.leftMargin: 18
-                anchors.verticalCenter: parent.verticalCenter
-                text: qsTranslate("Main", "Enter a comment…")
-                color: "#9fa0a2"
-            }
-            IconAction {
-                anchors.right: parent.right
-                anchors.rightMargin: 8
-                anchors.verticalCenter: parent.verticalCenter
-                iconSource: root.iconDirectory + "send.svg"
-                tip: qsTranslate("Main", "Send")
-            }
-        }
         Rectangle {
             Layout.fillWidth: true
             Layout.preferredHeight: 1

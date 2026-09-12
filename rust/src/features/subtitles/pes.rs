@@ -242,8 +242,7 @@ pub(super) fn pes_pts_ms(pes: &[u8]) -> i64 {
 }
 
 #[cfg(test)]
-#[path = "../../../crates/libaribcaption/tests/fixtures/sample.rs"]
-mod fixture;
+use super::fixture;
 
 #[cfg(test)]
 mod tests {

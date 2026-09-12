@@ -16,6 +16,7 @@ impl Color {
 }
 #[derive(Clone, Debug, PartialEq)]
 pub struct Comment {
+    pub own: bool,
     pub text: Box<str>,
     pub position: Position,
     pub color: Color,
@@ -30,6 +31,7 @@ impl Comment {
             .replace(['\r', '\n', '\u{2028}', '\u{2029}'], " ")
             .into_boxed_str();
         Some(Self {
+            own: false,
             text,
             position,
             color,

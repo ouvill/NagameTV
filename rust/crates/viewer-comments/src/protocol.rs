@@ -157,11 +157,31 @@ impl Style {
 
 #[derive(Debug, PartialEq, Eq, Serialize)]
 pub struct Comment {
+    #[serde(skip)]
+    pub identity: Option<CommentIdentity>,
     pub text: Box<str>,
     pub origin: Origin,
     pub phase: Phase,
     pub unix_seconds: u64,
     pub style: Style,
+}
+
+/// Wire identity used to recognize an echo of this app's explicit post.
+/// It is never projected into the UI's serialized comment history.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CommentIdentity {
+    pub thread_id: u64,
+    pub user_id: Box<str>,
+    pub vpos: u64,
+}
+
+// Identity is optional decoration. An unsupported representation must not
+// discard an otherwise displayable comment (for example, a negative vpos).
+pub(crate) fn optional_id<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<u64>, D::Error> {
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(value.as_u64().or_else(|| value.as_str()?.parse().ok()))
 }
 
 impl Comment {
@@ -204,6 +224,10 @@ struct Ping<'a> {
 }
 #[derive(Deserialize)]
 struct Chat<'a> {
+    #[serde(default, deserialize_with = "optional_id")]
+    thread: Option<u64>,
+    #[serde(default, deserialize_with = "optional_id")]
+    vpos: Option<u64>,
     #[serde(borrow)]
     content: Cow<'a, str>,
     #[serde(default, borrow)]
@@ -242,6 +266,13 @@ impl Decoder {
             Origin::Nx
         };
         Ok(Event::Comment(Comment {
+            identity: chat.thread.zip(chat.vpos).and_then(|(thread_id, vpos)| {
+                (!chat.user_id.is_empty() && chat.user_id.len() <= 256).then(|| CommentIdentity {
+                    thread_id,
+                    vpos,
+                    user_id: chat.user_id.into_owned().into_boxed_str(),
+                })
+            }),
             text: chat.content.into_owned().into_boxed_str(),
             origin,
             phase: self.phase,

@@ -79,9 +79,14 @@ impl ffi::Player {
             (reset, comments, this.playing && this.danmaku_enabled)
         };
         // Build only newly received live signals, before moving history into its model.
-        let live = project_live_comments(&comments, show_live);
+        let live = project_live_comments(
+            &comments,
+            show_live,
+            &mut self.as_mut().rust_mut().comments.posting,
+        );
         if reset {
             self.as_mut().clear_comment_history();
+            self.as_mut().set_comment_draft(QString::default());
         }
         self.as_mut().history_model().append(comments);
         let title = {
@@ -93,8 +98,9 @@ impl ffi::Player {
         };
         self.as_mut().set_comment_program_title(title);
         self.as_mut().refresh_comment_status();
-        for (text, position, color) in live {
-            self.as_mut().comment_received(text, position, color);
+        self.as_mut().poll_comment_posting();
+        for (text, position, color, own) in live {
+            self.as_mut().comment_received(text, position, color, own);
         }
     }
     fn history_model(self: Pin<&mut Self>) -> Pin<&mut crate::comment_model::ffi::CommentModel> {
@@ -139,7 +145,8 @@ impl ffi::Player {
 fn project_live_comments(
     comments: &[viewer_comments::Comment],
     enabled: bool,
-) -> Vec<(QString, QString, u32)> {
+    posting: &mut viewer_comments::posting::Controller,
+) -> Vec<(QString, QString, u32, bool)> {
     comments
         .iter()
         .filter(|c| enabled && c.phase == viewer_comments::Phase::Live)
@@ -148,6 +155,7 @@ fn project_live_comments(
                 QString::from(c.text.as_ref()),
                 QString::from(c.style.position.as_str()),
                 c.style.color,
+                posting.is_own_comment(c, std::time::Instant::now()),
             )
         })
         .collect()
@@ -162,6 +170,7 @@ mod tests {
         let comments: Vec<_> = [Phase::History, Phase::Live]
             .into_iter()
             .map(|phase| Comment {
+                identity: None,
                 text: "same text".into(),
                 unix_seconds: 0,
                 origin: Origin::Nx,
@@ -172,12 +181,18 @@ mod tests {
                 },
             })
             .collect();
-        let live = project_live_comments(&comments, true);
+        let mut posting = viewer_comments::posting::Controller::default();
+        let live = project_live_comments(&comments, true, &mut posting);
         assert_eq!(live.len(), 1);
         assert_eq!(
             live[0],
-            (QString::from("same text"), QString::from("top"), 0xff0000)
+            (
+                QString::from("same text"),
+                QString::from("top"),
+                0xff0000,
+                false
+            )
         );
-        assert!(project_live_comments(&comments, false).is_empty());
+        assert!(project_live_comments(&comments, false, &mut posting).is_empty());
     }
 }

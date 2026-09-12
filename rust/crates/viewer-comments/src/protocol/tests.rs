@@ -1,6 +1,33 @@
 use super::*;
 
 #[test]
+fn echo_identity_is_optional_and_excluded_from_history_json() -> Result<(), Error> {
+    for (thread, vpos, valid) in [
+        (serde_json::json!("123"), serde_json::json!(100), true),
+        (serde_json::json!(123), serde_json::json!("100"), true),
+        (serde_json::json!("123"), serde_json::json!(-1), false),
+        (
+            serde_json::json!({"unknown": true}),
+            serde_json::json!(100),
+            false,
+        ),
+        (serde_json::Value::Null, serde_json::Value::Null, false),
+    ] {
+        let packet = serde_json::to_vec(&serde_json::json!({"chat": {
+            "content":"displayable", "thread":thread, "vpos":vpos, "user_id":"client"
+        }}))?;
+        let Event::Comment(comment) = Decoder::default().decode(&packet)? else {
+            panic!("identity metadata must not discard a comment");
+        };
+        assert_eq!(comment.identity.is_some(), valid);
+        let history = serde_json::to_value(&comment)?;
+        assert!(history.get("identity").is_none());
+        assert!(history.get("user_id").is_none());
+    }
+    Ok(())
+}
+
+#[test]
 fn history_boundary_and_reconnection_preserve_comment_classification() -> Result<(), Error> {
     let mut decoder = Decoder::default();
     let bytes = br#"{"chat":{"content":"first","user_id":"nicolive:42","date":0}}"#;

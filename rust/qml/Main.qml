@@ -37,6 +37,12 @@ ApplicationWindow {
     property bool showChannels: false
     property bool showStats: false
     property bool showProgram: false
+    property bool showCommentComposer: false
+    function closeCommentComposer() {
+        root.showCommentComposer = false;
+        surface.forceActiveFocus();
+        overlayVisibility.reveal();
+    }
     property int sidebarPage: ProgramSidebar.Program
     readonly property bool summariesVisible: !closing && (channelPanel.active || (sidebar.active && sidebarPage === ProgramSidebar.Channels))
     readonly property bool commentaryVisible: !closing && sidebar.active && sidebarPage === ProgramSidebar.Comments
@@ -65,6 +71,8 @@ ApplicationWindow {
             root.toggleGuide();
         else if (root.showChannels)
             root.showChannels = false;
+        else if (root.showCommentComposer)
+            root.closeCommentComposer();
         else if (root.showStats)
             root.showStats = false;
         else if (root.showProgram)
@@ -174,6 +182,7 @@ ApplicationWindow {
             // Below the panels: only a click on the video leaves text editing.
             anchors.fill: parent
             onClicked: {
+                root.showCommentComposer = false;
                 surface.forceActiveFocus();
                 overlayVisibility.reveal();
             }
@@ -225,19 +234,20 @@ ApplicationWindow {
                     && programIdentity.y < danmaku.y + danmaku.height
                     && programIdentity.y + programIdentity.height > danmaku.y
                 titleBottomInVideo: programIdentity.y + programIdentity.height - danmaku.y
-                controlsOverlapVideo: bottomPanel.visible
-                    && bottomPanel.y < danmaku.y + danmaku.height
-                    && bottomPanel.y + bottomPanel.height > danmaku.y
-                controlsTopInVideo: bottomPanel.y - danmaku.y
+                controlsOverlapVideo: (bottomPanel.visible || composer.visible)
+                    && controlsTopInVideo < danmaku.height
+                    && surface.height > danmaku.y
+                controlsTopInVideo: (composer.visible
+                    ? composer.y + composer.height - composer.occupiedHeight : bottomPanel.y) - danmaku.y
             }
         }
         Connections {
             target: player
             function onSelectedChanged() { if (danmaku.item) danmaku.item.clearComments(); }
             function onServerChanged() { if (danmaku.item) danmaku.item.clearComments(); }
-            function onCommentReceived(text, position, color) {
+            function onCommentReceived(text, position, color, own) {
                 if (danmaku.item)
-                    danmaku.item.receive(text, position, color);
+                    danmaku.item.receive(text, position, color, own);
             }
         }
         Loader {
@@ -361,7 +371,7 @@ ApplicationWindow {
             padding: 0
             bottomPadding: 22
             visible: opacity > 0
-            enabled: overlayVisibility.controlsVisible && !root.showChannels
+            enabled: overlayVisibility.controlsVisible && !root.showChannels && !root.showCommentComposer
             opacity: enabled ? 1 : 0
             Behavior on opacity {
                 NumberAnimation {
@@ -453,10 +463,14 @@ ApplicationWindow {
                         tip: qsTranslate("Main", "Channels")
                         onClicked: root.showChannels = true
                     }
-                    // Presentation-only in main as well; posting is not implemented there.
                     IconAction {
                         iconSource: "qrc:/qt/qml/MinimalViewer/assets/icons/pencil.svg"
                         tip: qsTranslate("Main", "Post a comment")
+                        enabled: player.comments_enabled
+                        onClicked: {
+                            root.showCommentComposer = true;
+                            composer.focusEditor();
+                        }
                     }
                     IconAction {
                         iconSource: "qrc:/qt/qml/MinimalViewer/assets/icons/captions.svg"
@@ -489,6 +503,20 @@ ApplicationWindow {
                     }
                 }
             }
+        }
+        CommentComposer {
+            id: composer
+            anchors { horizontalCenter: parent.horizontalCenter; bottom: parent.bottom; bottomMargin: 16 }
+            width: Math.min(760, parent.width - 48)
+            visible: root.showCommentComposer && !root.showChannels && !root.showGuide && !root.closing
+            draft: player.comment_draft
+            status: player.comment_post_status
+            available: player.comment_post_available
+            supported: player.comments_enabled && player.comment_post_target.length > 0
+            busy: player.comment_post_busy
+            sendOnEnter: player.comment_send_on_enter
+            onDraftEdited: function(text) { player.edit_comment_draft(text); }
+            onSendRequested: player.post_comment()
         }
         Loader {
             anchors.fill: parent

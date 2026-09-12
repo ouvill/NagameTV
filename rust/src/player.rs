@@ -3,6 +3,7 @@ mod audio_streams;
 mod channel_programs;
 mod channel_refresh;
 mod channels;
+mod comment_posting;
 mod comments;
 mod connection;
 mod epg;
@@ -97,6 +98,12 @@ pub mod ffi {
         #[qproperty(*mut CommentModel, comment_model, READ = comment_model, CONSTANT)]
         #[qproperty(QString, activity_data, READ, NOTIFY)]
         #[qproperty(QString, comment_status, READ, NOTIFY)]
+        #[qproperty(QString, comment_draft, READ, NOTIFY)]
+        #[qproperty(QString, comment_post_status, READ, NOTIFY)]
+        #[qproperty(QString, comment_post_target, READ, NOTIFY)]
+        #[qproperty(bool, comment_post_available, READ, NOTIFY)]
+        #[qproperty(bool, comment_post_busy, READ, NOTIFY)]
+        #[qproperty(bool, comment_send_on_enter, READ, NOTIFY)]
         #[qproperty(bool, subtitles_allowed, READ, NOTIFY)]
         #[qproperty(bool, epg_allowed, READ, NOTIFY)]
         #[qproperty(bool, subtitles_active, READ, NOTIFY)]
@@ -162,9 +169,21 @@ pub mod ffi {
         fn save_settings(self: Pin<&mut Player>);
         #[qinvokable]
         fn enable_comments(self: Pin<&mut Player>, enabled: bool);
+        #[qinvokable]
+        fn edit_comment_draft(self: Pin<&mut Player>, text: QString);
+        #[qinvokable]
+        fn post_comment(self: Pin<&mut Player>) -> bool;
+        #[qinvokable]
+        fn configure_comment_send_on_enter(self: Pin<&mut Player>, enabled: bool);
         #[qsignal]
         #[cxx_name = "commentReceived"]
-        fn comment_received(self: Pin<&mut Player>, text: QString, position: QString, color: u32);
+        fn comment_received(
+            self: Pin<&mut Player>,
+            text: QString,
+            position: QString,
+            color: u32,
+            own: bool,
+        );
         #[qinvokable]
         fn configure_danmaku(
             self: Pin<&mut Player>,
@@ -235,6 +254,12 @@ pub struct PlayerRust {
     activity_data: QString,
     activity: crate::features::comments::activity::Activity,
     comment_status: QString,
+    comment_draft: QString,
+    comment_post_status: QString,
+    comment_post_target: QString,
+    comment_post_available: bool,
+    comment_post_busy: bool,
+    comment_send_on_enter: bool,
     comments: crate::features::comments::Comments,
     subtitles_allowed: bool,
     epg_allowed: bool,
@@ -286,6 +311,42 @@ macro_rules! property_setter {
 }
 
 impl ffi::Player {
+    property_setter!(
+        set_comment_draft,
+        comment_draft,
+        comment_draft_changed,
+        QString
+    );
+    property_setter!(
+        set_comment_post_status,
+        comment_post_status,
+        comment_post_status_changed,
+        QString
+    );
+    property_setter!(
+        set_comment_post_target,
+        comment_post_target,
+        comment_post_target_changed,
+        QString
+    );
+    property_setter!(
+        set_comment_post_available,
+        comment_post_available,
+        comment_post_available_changed,
+        bool
+    );
+    property_setter!(
+        set_comment_post_busy,
+        comment_post_busy,
+        comment_post_busy_changed,
+        bool
+    );
+    property_setter!(
+        set_comment_send_on_enter,
+        comment_send_on_enter,
+        comment_send_on_enter_changed,
+        bool
+    );
     property_setter!(
         set_comment_program_title,
         comment_program_title,

@@ -23,6 +23,7 @@ pub enum PresentationStatus<'a> {
 pub struct Comments {
     controller: Controller,
     target: Option<(u64, u16)>,
+    pub posting: viewer_comments::posting::Controller,
 }
 
 fn jikkyo(channel: &Channel) -> Option<u16> {
@@ -40,11 +41,23 @@ impl Comments {
             return false;
         }
         self.target = target;
+        self.posting.configure(
+            target.map(|(service_id, id)| viewer_comments::posting::Target {
+                service_id,
+                watch_url: format!(
+                    "wss://nx-jikkyo.tsukumijima.net/api/v1/channels/jk{id}/ws/watch"
+                ),
+            }),
+        );
         self.controller.configure(target.map(|(_, id)| Endpoints {
             threads: format!("https://nx-jikkyo.tsukumijima.net/api/v1/channels/jk{id}/threads"),
             comments: format!("wss://nx-jikkyo.tsukumijima.net/api/v1/channels/jk{id}/ws/comment"),
         }));
         true
+    }
+
+    pub fn jikkyo_id(&self) -> Option<u16> {
+        self.target.map(|(_, id)| id)
     }
 
     pub fn poll(

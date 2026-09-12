@@ -10,7 +10,13 @@ serde_json = "1.0"
 thiserror = "2.0"
 
 [features]
-network = ["dep:futures-util", "dep:reqwest", "dep:tokio", "dep:tokio-tungstenite"]
+network = ["dep:futures-util", "dep:reqwest", "dep:tokio", "dep:tokio-tungstenite", "dep:time"]
+
+[dependencies.time]
+version = "0.3"
+default-features = false
+features = ["parsing"]
+optional = true
 
 [dependencies.futures-util]
 version = "0.3"
