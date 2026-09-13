@@ -11,3 +11,10 @@ add_custom_target(mirakurun-viewer-build ALL
     SOURCES ${SOURCES} rust/Cargo.toml rust/build.rs rust/qml/Main.qml rust/qml/SubtitleOverlay.qml rust/qml/ProgramGuide.qml
     VERBATIM)
 install(PROGRAMS "${CMAKE_BINARY_DIR}/mirakurun-viewer" DESTINATION bin)
+install(FILES packaging/linux/io.github.ouvill.litv.desktop DESTINATION share/applications)
+install(FILES packaging/linux/io.github.ouvill.litv.svg DESTINATION share/icons/hicolor/scalable/apps)
+install(FILES packaging/linux/io.github.ouvill.litv.metainfo.xml DESTINATION share/metainfo)
+install(FILES assets/fonts/LICENSE-Rounded-Mplus-1m-for-ARIB.txt
+    DESTINATION share/licenses/mirakurun-viewer)
+install(FILES third_party/libaribcaption/LICENSE
+    DESTINATION share/licenses/mirakurun-viewer RENAME libaribcaption.txt)

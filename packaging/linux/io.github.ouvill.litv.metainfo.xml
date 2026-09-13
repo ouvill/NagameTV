@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.ouvill.litv</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <name>Mirakurun Viewer</name>
+  <summary>Watch live TV with subtitles and live comments</summary>
+  <summary xml:lang="ja">字幕・実況コメント付きでテレビを視聴</summary>
+  <description>
+    <p>A television viewer for a Mirakurun server, with a program guide, ARIB subtitles, and NX-Jikkyo live comments.</p>
+    <p xml:lang="ja">Mirakurunサーバーのテレビ放送を視聴するアプリです。番組表、ARIB字幕、NX-Jikkyoの実況コメントに対応しています。</p>
+  </description>
+  <launchable type="desktop-id">io.github.ouvill.litv.desktop</launchable>
+  <url type="homepage">https://github.com/ouvill/litv</url>
+  <url type="bugtracker">https://github.com/ouvill/litv/issues</url>
+  <developer id="io.github.ouvill"><name>ouvill</name></developer>
+  <provides><binary>mirakurun-viewer</binary></provides>
+  <requires><internet>always</internet></requires>
+  <supports><control>keyboard</control><control>pointing</control></supports>
+  <releases><release version="0.1.0" date="2026-09-13"/></releases>
+</component>

@@ -8,8 +8,10 @@
 #include <QtCore/QStandardPaths>
 #include <QtCore/QUrl>
 #include <QtGui/QDesktopServices>
+#include <QtGui/QGuiApplication>
 inline void configureQtQuickOpenGl() {
     QCoreApplication::setApplicationName(QStringLiteral("mirakurun-viewer"));
+    QGuiApplication::setDesktopFileName(QStringLiteral("io.github.ouvill.litv"));
     QQuickWindow::setGraphicsApi(QSGRendererInterface::OpenGL);
 }
 inline QString playbackLogDirectory() {

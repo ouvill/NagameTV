@@ -1,142 +1,68 @@
-# Mirakurun Viewer — Feature Lab（Rust）
+# Mirakurun Viewer
 
-Qt Quick + GStreamerの最小版から、字幕とEPGを独立して検証するブランチ。
-基準は別worktreeの `minimal/qt-gstreamer` / `9fa758d`。通常版mainもそのまま保持する。
+Mirakurunサーバーのテレビ放送を視聴するLinux向けアプリです。
+番組表を見ながらチャンネルを選び、字幕や実況コメントと一緒にテレビを楽しめます。
 
-このブランチをmainを置き換える実装へ育てます。
-コード品質、整理の順序、置き換え条件は [開発方針](docs/main-replacement.md) に記載しています。
+## できること
 
-## ビルド
+- ライブ視聴と、放送種別で絞り込めるチャンネル一覧
+- 現在の番組情報と、複数のチャンネルを並べた今日から7日分の番組表
+- 字幕の表示／非表示
+- NX-Jikkyoの実況受信、映像への弾幕表示、コメント投稿
+- 音量・ミュート、音声トラックと二重音声の切り替え
+- 日本語／英語の表示切り替え
 
-Qt 6.8以降の Quick / Controls、GStreamer 1.24以降（qml6glsink・tsdemux・映像デコーダー・
-pulsesink）、Rust、CMake、C++コンパイラー、libclangが必要。
-PMT通知の取得にはgstreamer-mpegts-1.0の開発パッケージも必要。Ubuntuでは
-`libgstreamer-plugins-bad1.0-dev`を導入する。アプリがリンクする追加ライブラリーはlibgstmpegts。
+## 利用に必要なもの
 
-```sh
-git submodule update --init
-cmake -S . -B build
-cmake --build build
-CARGO_TARGET_DIR=build/cargo cargo test --manifest-path rust/Cargo.toml --release --locked
-```
+接続可能なMirakurunサーバーと、Flatpakが使えるLinuxのデスクトップ環境が必要です。
+テレビ放送の受信はMirakurun側で行うため、このアプリにはMirakurunの接続先を設定します。
+現在のFlatpak版はX11／XWaylandで動作します。
 
-ネイティブARIB字幕デコーダーは固定コミットのlibaribcaptionからビルドする。
-通常の `cargo test` は表示・GPU・音声機器を使わない。GStreamerの実TS demuxはメモリー上で検証する。
-音声切り替えのCPU結合試験にはtestsrcbin（GStreamer Bad Plug-insのdebugutilsbad）が必要。
-生成音声の出力サンプルと映像の継続を試験用sinkで測定する。Qtの画面試験は実際の表示環境を使う。
-Qt結合テストもRustで実装し、メインスレッドで実行する。翻訳・字幕・ポインターの
-実行コマンドと必要な環境は [Qtテスト](docs/qt-tests.md) を参照。
+## インストール
 
-## ログ
-
-アプリの通常ログは `tracing` / `tracing-subscriber` を通じて標準エラーへ出力します。
-既定は `info` 以上で、日時・レベル・モジュール名を付けます。
-`RUST_LOG=debug` または `RUST_LOG=info,mirakurun_viewer::features::subtitles=debug`
-で詳細度を変更できます。HTTPバッファー、EPGメモリー、音声経路、機能カウンターの
-詳細ログは `debug` です。端末以外への出力にはANSIカラーを付けません。
-
-Qt/QMLのメッセージも `qt` ターゲットへ送るため、`RUST_LOG=info,qt=debug` で
-Qtのdebugログを表示できます。Qt側で無効なカテゴリは引き続き `QT_LOGGING_RULES`
-などで有効にする必要があります。GStreamer/GLib自身のネイティブログ設定は従来どおりです。
-再生エラーファイルと資源診断JSONLは独立した記録として維持します。
-テスト専用の結果表示・停止段階のstderr記録、およびCargoビルド指示のstdout出力は
-ログフィルターの対象外です。
-
-## 起動・操作
+`.flatpak`ファイルを置いたディレクトリーで実行します。
 
 ```sh
-MIRAKURUN_SERVER=http://192.168.3.3:40772 QT_QPA_PLATFORM=xcb ./build/mirakurun-viewer
+flatpak install --user ./mirakurun-viewer-0.1.0-x86_64.flatpak
+flatpak run io.github.ouvill.litv
 ```
 
-通常起動は設定から接続先・選択局・音量・字幕の表示選択を復元します。
-字幕処理とEPG取得は有効で、字幕の表示は初期状態ではOFFです。
-接続後は選択局を復元して待機し、チャンネルを選ぶか再生ボタンで開始します。
-チャンネルは放送種別・リモコン番号順に表示し、地デジ／BS／CS／SKYなどで絞り込めます。
-種別を変えるだけでは再生局は変わりません。
-`MIRAKURUN_AUTOPLAY=1` で取得後に自動再生し、`MIRAKURUN_SERVICE_ID` で選択局を上書きできます。
-main互換のため、自動再生は未指定または正確に `0` の場合だけOFFです。
-`true`・空文字・`false` を含むその他の指定値はONとして扱います。
+インストール後はアプリ一覧からも起動できます。初回は必要な実行環境も自動でダウンロードします。
+パッケージの作成方法と、更新・削除の手順は[Flatpakの手順](docs/flatpak.md)を参照してください。
 
-音声出力はmainと同じく、`PULSE_SERVER` があればPulseAudioを指定し、
-なければGStreamerの自動選択を使います。main互換の検証用指定
-`MIRAKURUN_AUDIO_SINK=fakesink` は、クロック同期を保って音声データを破棄します。
-アプリが検証用出力を指定するのは、この値を明示した場合のみです。
-`pulsesink` の明示指定も可能です。それ以外の値は起動エラーになります。
-音声を捨てる指定での試験は、実際の音声出力の検証には使えません。
-Linuxではmainと同じ暫定互換設定として、`WAYLAND_DISPLAY` と `DISPLAY` が
-両方とも空でなく、`QT_QPA_PLATFORM` が未指定なら `xcb` を選択します。
-明示したQt設定は優先します。[背景と検証範囲](docs/platform-startup.md)。
-PgUp/PgDownで選局、Gで番組表、F11で全画面を切り替えます。
-Cまたは「チャンネル」でロゴ付きのチャンネル選択画面を開きます。
-矢印キーで移動しEnterで選局できます。[仕様と検証](docs/channel-browser.md)。
-Escapeはポップアップ、番組表、チャンネル選択、動画統計、全画面の順に閉じます。
-文字入力中はC・GとPgUp/PgDownによる画面・選局操作を抑止します。
-設定は左側のカテゴリから選び、右側のスイッチなどで変更します。
-[設定画面の仕様と検証](docs/settings-panel.md)、[ウィンドウ操作の仕様と検証](docs/window-actions.md)。
-ボタンの押し込みやカテゴリ移動など、[操作への反応](docs/ui-feedback.md)も共通部品で揃えています。
+## 使い方
 
-操作部は映像の上に重なり、再生中は無操作が3.2秒続くと隠れます。マウス移動で再表示します。
-文字入力・番組表・ポップアップ・音量ドラッグ中は表示を維持します。
-[表示制御と資源管理](docs/overlay-visibility.md)。
+1. 右上の設定ボタンから「接続」を開き、MirakurunのURL（例: `http://192.168.1.100:40772`）を入力して「保存して接続」を押します。
+2. チャンネルを選ぶか、再生ボタンを押して視聴を開始します。
+3. 字幕は再生バーの字幕ボタン、または設定の「表示」で切り替えます。初期状態では非表示です。
+4. 実況コメントの受信や映像への重ね表示は、設定の「コメント」で変更します。受信は初期状態で有効、映像への重ね表示はOFFです。
 
-- **字幕を表示する**：字幕のある番組で表示／非表示を切り替える。再接続せずに反映し、再起動後も選択を復元する。
-- **EPG**：番組情報を取得し、5分ごとに更新。再生停止中も利用できる。機能停止用の設定は通常の画面には置かない。
-- **番組表**：選択局の7日分を日付ごとに表示。番組を押すと詳細を開き、閉じると表示データを破棄する。
-- **更新**：EPGを手動更新。実行中の取得に重ねて通信しない。
+接続先・選択局・音量・表示設定は次回起動時に復元します。
+通常起動では前回の選択局で待機し、再生ボタンを押すと視聴を開始します。
+番組表は再生停止中も利用できます。
 
-## 同条件でのメモリー比較
+再生中の操作部は、しばらく操作しないと隠れます。マウスを動かすと再表示します。
 
-毎回新規プロセスで同じ局・表示サイズ・時間・選局回数に揃える。環境変数は上記と同じ。
+### コメントを投稿する
 
-```sh
-./build/mirakurun-viewer --features=none
-./build/mirakurun-viewer --features=subtitles
-./build/mirakurun-viewer --features=epg
-./build/mirakurun-viewer --features=subtitles,epg
-```
+再生バーの鉛筆ボタンで、画面下部に一行の投稿欄を開きます。
+**Ctrl + Enter**または送信ボタンで投稿します。設定の「コメント」でEnter送信にも切り替えられます。
+日本語入力の変換中は送信しません。
 
-指定した機能だけが起動時に有効になり、他の機能はUIからも有効化できない。
-標準エラーの `METRICS` 行に10秒間隔でVmRSSと機能の保持件数を記録する。
-必要なら `2> benchmark/subtitles.log` のように保存する。
+投稿先は視聴中の局に対応するNX-Jikkyoのチャンネルです。
+投稿成功の通知は3秒で消えます。弾幕に表示される自分のコメントは、細い黄色枠で強調します。
 
-`--features`は開発用の機能制限。通常起動での字幕の表示選択とは独立している。
-字幕は解析のみ／表示ありを比較。EPGは番組表を閉じた状態／開いた状態を比較する。
-短時間の増減だけでリークと判断せず、繰り返しで頭打ちになるか確認する。
-字幕機能を除いた起動では字幕購読と待機数、EPGを除いた起動では番組数・通信数がゼロになることを確認する。
-EPGの通信取消しが完了するまでは停止待ちになる。
+### キーボード操作
 
-詳しい所有関係、停止順序、上限と通常版との差は [architecture.md](docs/architecture.md)。
+| キー | 操作 |
+| --- | --- |
+| C | チャンネル一覧の開閉 |
+| G | 番組表の開閉 |
+| PgUp / PgDown | 前／次のチャンネルへ選局 |
+| F11 | 全画面の切り替え |
+| Escape | 開いている画面やポップアップを閉じる、全画面表示を解除する |
 
-実施済みの確認と未検証範囲は [verification.md](docs/verification.md) に記載。
+文字入力中はC・G・PgUp・PgDownによる画面切り替えや選局は働きません。
+設定画面の「ショートカット」でも操作を確認できます。
 
-配信中にHTTPの途中再開を拒否された場合は、新規接続で1回復旧します。
-繰り返し失敗する場合は停止します。[再現・修正の記録](docs/live-stream-errors.md)。
-
-停止・再開時のRSS増加については [allocator-investigation.md](docs/allocator-investigation.md)
-を参照。Linux/glibcでは `ALLOC` 行に使用中・空き領域・直接mmap確保量をKiBで出力します。
-
-Linux/glibcでは起動時に `M_MMAP_THRESHOLD` を128KiBに固定します（環境変数不要）。
-EPG有効時の停止・再開で、解放済み領域が大量に残る挙動を抑えるためです。
-設定理由とアロケーター変更の選択肢は [allocator-controls.md](docs/allocator-controls.md)。
-`HTTP_JSON` 行に受信バッファー、`EPG_MEMORY` 行に解析後の保持容量をバイトで記録します。
-
-型付きエラーとEPG取得状態の整理、および回帰検証は [refactoring-verification.md](docs/refactoring-verification.md)。
-
-mainからの機能移植状況と設定保存の仕様は [feature-migration.md](docs/feature-migration.md)。
-
-`MIRAKURUN_DEINTERLACE=yadif|linear|off` で起動時の映像処理を指定できます。
-「動画統計」で入力・出力形式、sinkとキューの集計を表示します。
-表示中だけ1秒ごとに更新します。[仕様と検証](docs/video-statistics.md)。
-
-字幕は同梱ARIBフォントと輪郭描画を使用します（Qt 6.6以降）。
-描画と資源の検証手順は [docs/subtitle-rendering.md](docs/subtitle-rendering.md) を参照してください。
-
-EPG有効時は選択局の現在番組・放送時間・進行率を表示します。番組名を押すと詳細を開けます。
-取得は5分間隔、現在番組と進行率は取得済みデータから1秒間隔で更新します。
-
-実況の画面表示は横流れ・上下固定・色指定に対応し、画面と文字サイズに応じて行数を変えます。
-鉛筆ボタンで画面下部の一行入力欄を開き、NX-Jikkyoへコメントを投稿できます。標準はCtrl+Enterで送信し、
-設定でEnter送信にも切り替えられます。[投稿の仕様と検証](docs/comment-posting.md)。
-表示時間と、将来の録画再生へ接続する時刻付きコメント部品は [danmaku.md](docs/danmaku.md) を参照してください。
-
-普段の視聴中のメモリ記録とheaptrack起動は [メモリ分析](docs/memory-profiling.md) を参照。
+ビルド・テスト・診断については[開発者向けガイド](docs/development.md)を参照してください。
