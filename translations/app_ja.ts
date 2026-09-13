@@ -937,6 +937,14 @@
       <translation>流れる速さ</translation>
     </message>
     <message>
+      <source>Drop shadow</source>
+      <translation>ドロップシャドウ</translation>
+    </message>
+    <message>
+      <source>Add a subtle shadow behind comments over the video.</source>
+      <translation>映像に重ねるコメントに薄い影を付けます。</translation>
+    </message>
+    <message>
       <source>Comment posting</source>
       <translation>コメントの投稿</translation>
     </message>

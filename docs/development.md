@@ -14,7 +14,7 @@
 
 - Rust / Cargo（Rust 1.98.1でビルド確認）
 - CMake 3.24以降、C/C++コンパイラー、pkg-config、libclang
-- Qt 6.8以降のQuick / Controls / Layouts / Shapes、SVG画像プラグイン、翻訳用の`lrelease`
+- Qt 6.8以降のQuick / Controls / Layouts / Shapes / Effects、SVG画像プラグイン、翻訳用の`lrelease`
 - GStreamer 1.24以降と開発ライブラリー（`gstreamer-mpegts-1.0`を含む）
 - GStreamerの`qml6glsink`、OpenGL関連プラグイン、`tsdemux`、映像・音声デコーダー、音声出力プラグイン
 

@@ -199,7 +199,7 @@ fn comment_presentation_bounds_survive_invalid_persisted_values()
 -> Result<(), Box<dyn std::error::Error>> {
     let prefs: Preferences =
         toml::from_str("comment_font_size = 500.0\ncomment_opacity = nan\ncomment_speed = -1.0")?;
-    assert_eq!(f64::from(prefs.comment_font_size), 48.0);
+    assert_eq!(f64::from(prefs.comment_font_size), 72.0);
     assert_eq!(f64::from(prefs.comment_opacity), 1.0);
     assert_eq!(f64::from(prefs.comment_speed), 0.5);
     assert!(CommentFontSize::checked(f64::NAN).is_none());
@@ -295,5 +295,26 @@ fn comment_send_shortcut_defaults_and_persists_without_saving_drafts()
         );
     }
     assert!(!fs::read_to_string(path)?.contains("draft"));
+    Ok(())
+}
+
+#[test]
+fn comment_shadow_and_large_font_survive_settings_reload() -> Result<(), Box<dyn std::error::Error>>
+{
+    let directory = tempfile::tempdir()?;
+    let path = directory.path().join("settings.toml");
+    // Existing settings acquire the default shadow without changing their size.
+    fs::write(&path, "comment_font_size = 36.0\n")?;
+    let mut session = Session::open(path.clone())?;
+    assert!(session.preferences().comment_shadow_enabled);
+    assert_eq!(f64::from(session.preferences().comment_font_size), 36.0);
+    for (shadow, size) in [(false, 72.0), (true, 60.0), (false, 14.0)] {
+        session.preferences_mut().comment_shadow_enabled = shadow;
+        session.preferences_mut().comment_font_size = CommentFontSize::checked(size).unwrap();
+        assert_eq!(session.flush()?, SaveStatus::Saved);
+        session = Session::open(path.clone())?;
+        assert_eq!(session.preferences().comment_shadow_enabled, shadow);
+        assert_eq!(f64::from(session.preferences().comment_font_size), size);
+    }
     Ok(())
 }

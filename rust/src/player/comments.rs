@@ -4,6 +4,16 @@ use cxx_qt_lib::QString;
 use std::pin::Pin;
 
 impl ffi::Player {
+    pub fn configure_comment_shadow(mut self: Pin<&mut Self>, enabled: bool) {
+        self.as_mut()
+            .rust_mut()
+            .preferences
+            .preferences_mut()
+            .comment_shadow_enabled = enabled;
+        self.as_mut().set_comment_shadow_enabled(enabled);
+        self.save_settings();
+    }
+
     pub fn configure_danmaku(
         mut self: Pin<&mut Self>,
         enabled: bool,

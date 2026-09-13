@@ -31,6 +31,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .qml_file("qml/CommentList.qml")
             .qml_file("qml/CommentComposer.qml")
             .qml_file("qml/DanmakuOverlay.qml")
+            .qml_file("qml/DanmakuShadow.qml")
             .qml_file("qml/DanmakuTimeline.qml")
             .qml_file("qml/ToggleSwitch.qml")
             .qml_file("qml/SidebarChannels.qml")
@@ -56,7 +57,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .depend("QtQuick")
             .depend("QtQuick.Controls")
             .depend("QtQuick.Layouts")
-            .depend("QtQuick.Shapes"),
+            .depend("QtQuick.Shapes")
+            .depend("QtQuick.Effects"),
     )
     .qrc(&translations)
     .qrc_resources([

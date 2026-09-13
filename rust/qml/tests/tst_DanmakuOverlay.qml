@@ -44,7 +44,7 @@ TestCase {
             overlay.receive("fixed", "top", 0xffffff);
         compare(overlay.activeCount, Math.min(100, overlay.laneCount));
         compare(entries().length, overlay.activeCount);
-        overlay.fontSize = 36;
+        overlay.fontSize = 72;
         compare(overlay.activeCount, 0);
         overlay.height = 480;
         verify(overlay.laneCount < initial);
@@ -112,6 +112,67 @@ TestCase {
         verify(!entries()[0].own);
         verify(!entries()[0].background.visible);
     }
+    function test_shadow_changes_pixels_without_replacing_comments_data() {
+        return [{tag: "small", size: 14}, {tag: "normal", size: 21}, {tag: "large", size: 72}];
+    }
+    function test_shadow_changes_pixels_without_replacing_comments(data) {
+        overlay.fontSize = data.size;
+        verify(overlay.receive("Shadow あいう", "top", 0xffffff, true));
+        overlay.paused = true;
+        const entry = entries()[0];
+        const shadow = findChild(entry, "commentShadow");
+        verify(shadow.visible);
+        compare(entry.font.pixelSize, data.size);
+        waitForRendering(overlay);
+        const before = grabImage(overlay);
+        const blur = findChild(shadow, "commentShadowBlur");
+        verify(blur !== null);
+        blur.blur = 0;
+        waitForRendering(overlay);
+        verify(!before.equals(grabImage(overlay)));
+        blur.blur = 1;
+        waitForRendering(overlay);
+        verify(before.equals(grabImage(overlay)));
+        overlay.shadowEnabled = false;
+        verify(!shadow.visible);
+        compare(shadow.item, null);
+        waitForRendering(overlay);
+        verify(!before.equals(grabImage(overlay)));
+        compare(entries()[0], entry);
+        compare(overlay.activeCount, 1);
+        verify(entry.background.visible);
+        compare(entry.background.border.width, 1);
+        overlay.shadowEnabled = true;
+        waitForRendering(overlay);
+        verify(before.equals(grabImage(overlay)));
+        overlay.clearComments();
+        tryVerify(() => overlay.visualCount === 0);
+    }
+    function test_long_comment_shadow_crops_to_video_and_releases_effects() {
+        overlay.fontSize = 72;
+        verify(overlay.receive("あいうえお".repeat(200), "right", 0xffffff));
+        overlay.paused = true;
+        const entry = entries()[0];
+        verify(entry.width > 16000);
+        const shadow = findChild(entry, "commentShadow");
+        const texture = findChild(shadow, "commentShadowTexture");
+        const blur = findChild(shadow, "commentShadowBlur");
+        verify(texture !== null);
+        verify(blur !== null);
+        for (const x of [-1000, -12000, -18000]) {
+            entry.x = x;
+            verify(waitForRendering(overlay));
+            verify(texture.sourceRect.width <= overlay.width + 16);
+            verify(blur.width <= overlay.width + 16);
+            // The captured strip covers the viewport as the long text moves.
+            verify(blur.mapToItem(overlay, 0, 0).x <= 0);
+            verify(blur.mapToItem(overlay, blur.width, 0).x >= overlay.width);
+        }
+        overlay.clearComments();
+        tryVerify(() => overlay.visualCount === 0);
+        compare(findChild(overlay, "commentShadowTexture"), null);
+        compare(findChild(overlay, "commentShadowBlur"), null);
+    }
     function test_pause_resume_and_core_expiration() {
         overlay.receive("test", "right", 0xffffff);
         wait(80);
@@ -149,8 +210,7 @@ TestCase {
         wait(60);
         verify(screenY(scroll) > yBefore);
         verify(screenY(scroll) < overlay.controller.flow_origin);
-        wait(170);
-        verify(screenY(scroll) >= 146);
+        tryVerify(() => screenY(scroll) >= 146, 1000);
         verify(screenY(bottom) < bottomBefore);
         verify(screenY(bottom) + bottom.height <= 334);
         verify(scroll.x < xBefore);

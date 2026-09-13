@@ -59,6 +59,7 @@ pub struct Preferences {
     pub comment_font_size: CommentFontSize,
     pub comment_opacity: CommentOpacity,
     pub comment_speed: CommentSpeed,
+    pub comment_shadow_enabled: bool,
     pub comment_send_on_enter: bool,
     // Preserve future settings until their
     // features are migrated; opening this version must not erase preferences.
@@ -81,6 +82,7 @@ impl Default for Preferences {
             comment_font_size: Default::default(),
             comment_opacity: Default::default(),
             comment_speed: Default::default(),
+            comment_shadow_enabled: true,
             comment_send_on_enter: false,
             extra: BTreeMap::new(),
         }

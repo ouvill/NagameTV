@@ -28,6 +28,8 @@ TestCase {
         property real comment_font_size: 21
         property real comment_opacity: 1
         property real comment_speed: 1
+        property bool comment_shadow_enabled: true
+        function configure_comment_shadow(value) { comment_shadow_enabled = value; }
         property string comment_status: ""
         property bool comment_send_on_enter: false
         function configure_comment_send_on_enter(value) { comment_send_on_enter = value; }
@@ -76,6 +78,7 @@ TestCase {
         backend.comment_font_size = 21;
         backend.comment_opacity = 1;
         backend.comment_speed = 1;
+        backend.comment_shadow_enabled = true;
         backend.comment_send_on_enter = false;
         backend.log_error = "";
         panel.statsVisible = false;
@@ -206,6 +209,11 @@ TestCase {
         size.forceActiveFocus();
         keyClick(Qt.Key_Right);
         compare(backend.comment_font_size, 22);
+        for (let value = 22; value < 72; ++value)
+            keyClick(Qt.Key_Right);
+        compare(backend.comment_font_size, 72);
+        keyClick(Qt.Key_Right);
+        compare(backend.comment_font_size, 72);
         const opacity = findChild(findChild(panel.contentItem, "commentOpacity"), "settingSlider");
         opacity.forceActiveFocus();
         keyClick(Qt.Key_Left);
@@ -214,6 +222,21 @@ TestCase {
         speed.forceActiveFocus();
         keyClick(Qt.Key_Right);
         fuzzyCompare(backend.comment_speed, 1.1, 0.001);
+    }
+    function test_comment_shadow_toggle_tracks_saved_value_and_disabled_reception() {
+        selectPage(SettingsPanel.Comments);
+        const shadow = findChild(panel.contentItem, "commentShadow");
+        compare(shadow.enabled, false);
+        compare(shadow.checked, true);
+        backend.comments_enabled = true;
+        shadow.forceActiveFocus();
+        keyClick(Qt.Key_Space);
+        compare(backend.comment_shadow_enabled, false);
+        backend.comment_shadow_enabled = true;
+        compare(shadow.checked, true);
+        backend.comments_enabled = false;
+        keyClick(Qt.Key_Space);
+        compare(backend.comment_shadow_enabled, true);
     }
     function test_language_rejection_restores_selection_and_popup_owns_escape() {
         selectPage(SettingsPanel.Display);

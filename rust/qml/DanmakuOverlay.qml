@@ -4,10 +4,11 @@ import QtQuick.Controls
 import MinimalViewer
 
 Item {
-    id: layer
+    id: overlay
     required property real fontSize
     required property real textOpacity
     required property real speed
+    property bool shadowEnabled: true
     property bool fullScreen: false
     property bool paused: false
     property bool titleOverlapsVideo: false
@@ -23,7 +24,7 @@ Item {
     readonly property int visualCount: flowRows.children.length + topRows.children.length + bottomRows.children.length
     clip: true
 
-    FontMetrics { id: metrics; font.pixelSize: layer.fontSize; font.bold: true }
+    FontMetrics { id: metrics; font.pixelSize: overlay.fontSize; font.bold: true }
     TextMetrics { id: measure; font: metrics.font }
     function configure() {
         backend.configure(width, height, metrics.height, fontSize, titleOverlapsVideo, titleBottomInVideo, controlsOverlapVideo, controlsTopInVideo, fullScreen, speed);
@@ -62,7 +63,7 @@ Item {
     }
     Connections {
         target: metrics
-        function onHeightChanged() { layer.configure(); }
+        function onHeightChanged() { overlay.configure(); }
     }
     DanmakuController {
         id: backend
@@ -77,34 +78,34 @@ Item {
                 "y": y, "destination": to_x, "duration": duration, "own": own
             });
             if (item)
-                layer.visuals.set(token, item);
+                overlay.visuals.set(token, item);
         }
-        onRemoved: function(token) { layer.removeVisual(token); }
-        onCleared: layer.clearVisuals()
+        onRemoved: function(token) { overlay.removeVisual(token); }
+        onCleared: overlay.clearVisuals()
     }
     // A render-frame notification, not a scheduler: Rust reads its own monotonic
     // clock and expires entries. No timer or callbacks run when the view is idle.
     FrameAnimation {
-        running: layer.visible && backend.active_count > 0 && !backend.paused
+        running: overlay.visible && backend.active_count > 0 && !backend.paused
         onTriggered: backend.tick()
     }
     // All labels of a kind share one animated origin. A newly created label
     // therefore follows the same vertical transition as existing comments.
     Item {
         id: flowRows
-        width: layer.width
+        width: overlay.width
         y: backend.flow_origin
         Behavior on y { enabled: backend.active_count > 0; NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
     }
     Item {
         id: topRows
-        width: layer.width
+        width: overlay.width
         y: backend.top_origin
         Behavior on y { enabled: backend.active_count > 0; NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
     }
     Item {
         id: bottomRows
-        width: layer.width
+        width: overlay.width
         y: backend.bottom_origin
         Behavior on y { enabled: backend.active_count > 0; NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
     }
@@ -117,14 +118,30 @@ Item {
             required property bool own
             textFormat: Text.PlainText
             wrapMode: Text.NoWrap
-            opacity: layer.textOpacity
+            opacity: overlay.textOpacity
             font: metrics.font
+            renderType: Text.QtRendering
             style: Text.Outline
             styleColor: "#d0000000"
             leftPadding: own ? 3 : 0
             rightPadding: own ? 3 : 0
             topPadding: own ? 1 : 0
             bottomPadding: own ? 1 : 0
+            Loader {
+                id: shadow
+                objectName: "commentShadow"
+                active: overlay.shadowEnabled
+                visible: active
+                x: entry.leftPadding + entry.font.pixelSize / 12
+                y: entry.topPadding + entry.font.pixelSize / 12
+                z: -1
+                sourceComponent: DanmakuShadow {
+                    text: entry.text
+                    font: entry.font
+                    viewportWidth: overlay.width
+                    textX: entry.x + shadow.x
+                }
+            }
             background: Rectangle {
                 visible: entry.own
                 color: "transparent"

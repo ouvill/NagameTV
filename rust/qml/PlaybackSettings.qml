@@ -10,16 +10,18 @@ Popup {
     required property real textSize
     required property real textOpacity
     required property real speed
+    required property bool shadowEnabled
     required property bool statsVisible
     signal danmakuRequested(bool enabled, real textSize, real textOpacity, real speed)
     signal statsRequested(bool visible)
+    signal shadowRequested(bool enabled)
     function toggle() {
         if (visible) close();
         else open();
     }
     parent: toggleButton
     width: 320
-    height: 340
+    height: 380
     x: (toggleButton.width - width) / 2
     y: -height - 28
     margins: 20
@@ -64,6 +66,18 @@ Popup {
             speed: popup.speed
             onAdjusted: function(size, opacity, speed) {
                 popup.danmakuRequested(popup.danmakuEnabled, size, opacity, speed);
+            }
+        }
+        RowLayout {
+            Layout.fillWidth: true
+            enabled: popup.commentsEnabled
+            Label { text: qsTranslate("Settings", "Drop shadow"); color: "#f4f5f3"; font.pixelSize: 13 }
+            Item { Layout.fillWidth: true }
+            ToggleSwitch {
+                objectName: "playbackShadowToggle"
+                text: qsTranslate("Settings", "Drop shadow")
+                checked: popup.shadowEnabled
+                onToggled: popup.shadowRequested(checked)
             }
         }
         RowLayout {

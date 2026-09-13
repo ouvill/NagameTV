@@ -16,8 +16,9 @@ ColumnLayout {
         Label { text: Math.round(root.textSize) + " px"; color: "#f4f5f3"; font.pixelSize: 11 }
     }
     ThemedSlider {
+        objectName: "danmakuTextSize"
         Layout.fillWidth: true
-        from: 14; to: 36; stepSize: 1
+        from: 14; to: 72; stepSize: 1
         value: root.textSize
         onMoved: root.adjusted(value, root.textOpacity, root.speed)
     }

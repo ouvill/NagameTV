@@ -93,6 +93,7 @@ pub mod ffi {
         #[qproperty(f64, comment_font_size, READ, NOTIFY)]
         #[qproperty(f64, comment_opacity, READ, NOTIFY)]
         #[qproperty(f64, comment_speed, READ, NOTIFY)]
+        #[qproperty(bool, comment_shadow_enabled, READ, NOTIFY)]
         #[qproperty(bool, comments_allowed, READ, NOTIFY)]
         #[qproperty(QString, comment_program_title, READ, NOTIFY)]
         #[qproperty(*mut CommentModel, comment_model, READ = comment_model, CONSTANT)]
@@ -171,6 +172,8 @@ pub mod ffi {
         fn post_comment(self: Pin<&mut Player>) -> bool;
         #[qinvokable]
         fn configure_comment_send_on_enter(self: Pin<&mut Player>, enabled: bool);
+        #[qinvokable]
+        fn configure_comment_shadow(self: Pin<&mut Player>, enabled: bool);
         #[qsignal]
         #[cxx_name = "commentReceived"]
         fn comment_received(
@@ -245,6 +248,7 @@ pub struct PlayerRust {
     comment_font_size: f64,
     comment_opacity: f64,
     comment_speed: f64,
+    comment_shadow_enabled: bool,
     comment_program_title: QString,
     comment_model: cxx::UniquePtr<crate::comment_model::ffi::CommentModel>,
     activity_data: QString,
@@ -384,6 +388,12 @@ impl ffi::Player {
         f64
     );
     property_setter!(set_comment_speed, comment_speed, comment_speed_changed, f64);
+    property_setter!(
+        set_comment_shadow_enabled,
+        comment_shadow_enabled,
+        comment_shadow_enabled_changed,
+        bool
+    );
     property_setter!(set_log_error, log_error, log_error_changed, QString);
     property_setter!(set_language, language, language_changed, QString);
     property_setter!(set_ui_language, ui_language, ui_language_changed, QString);

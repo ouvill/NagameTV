@@ -401,7 +401,7 @@ Popup {
                                 Layout.fillWidth: true
                                 text: qsTranslate("Settings", "Text size")
                                 valueText: Math.round(value) + " px"
-                                from: 14; to: 36; stepSize: 1; value: root.backend.comment_font_size
+                                from: 14; to: 72; stepSize: 1; value: root.backend.comment_font_size
                                 onMoved: function(value) { root.backend.configure_danmaku(root.backend.danmaku_enabled, value, root.backend.comment_opacity, root.backend.comment_speed); }
                             }
                             SettingsSlider {
@@ -420,6 +420,15 @@ Popup {
                                 from: 0.5; to: 2; stepSize: 0.1; value: root.backend.comment_speed
                                 onMoved: function(value) { root.backend.configure_danmaku(root.backend.danmaku_enabled, root.backend.comment_font_size, root.backend.comment_opacity, value); }
                             }
+                        }
+                        SettingsToggle {
+                            objectName: "commentShadow"
+                            Layout.fillWidth: true
+                            enabled: root.backend.comments_enabled
+                            text: qsTranslate("Settings", "Drop shadow")
+                            description: qsTranslate("Settings", "Add a subtle shadow behind comments over the video.")
+                            checked: root.backend.comment_shadow_enabled
+                            onClicked: root.backend.configure_comment_shadow(checked)
                         }
                         RowLayout {
                             Layout.topMargin: 20

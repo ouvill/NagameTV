@@ -27,7 +27,7 @@ macro_rules! bounded_setting {
         }
     };
 }
-// Match main's persisted bounds, which are wider than its size/opacity sliders.
-bounded_setting!(CommentFontSize, 12.0, 48.0, 21.0);
+// Retain the legacy lower bounds; the size slider and storage both allow 72 px.
+bounded_setting!(CommentFontSize, 12.0, 72.0, 21.0);
 bounded_setting!(CommentOpacity, 0.1, 1.0, 1.0);
 bounded_setting!(CommentSpeed, 0.5, 2.0, 1.0);

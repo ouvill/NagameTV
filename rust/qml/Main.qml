@@ -107,11 +107,13 @@ ApplicationWindow {
         textSize: player.comment_font_size
         textOpacity: player.comment_opacity
         speed: player.comment_speed
+        shadowEnabled: player.comment_shadow_enabled
         statsVisible: root.showStats
         onDanmakuRequested: function(enabled, size, opacity, speed) {
             player.configure_danmaku(enabled, size, opacity, speed);
         }
         onStatsRequested: function(visible) { root.showStats = visible; }
+        onShadowRequested: function(enabled) { player.configure_comment_shadow(enabled); }
         onClosed: {
             if (!root.closing) player.save_settings();
             overlayVisibility.reveal();
@@ -226,6 +228,7 @@ ApplicationWindow {
                 fontSize: player.comment_font_size
                 textOpacity: player.comment_opacity
                 speed: player.comment_speed
+                shadowEnabled: player.comment_shadow_enabled
                 fullScreen: root.visibility === Window.FullScreen
                 titleOverlapsVideo: programIdentity.visible
                     && programIdentity.y < danmaku.y + danmaku.height

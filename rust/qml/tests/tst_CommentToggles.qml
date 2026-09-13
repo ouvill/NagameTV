@@ -22,6 +22,8 @@ Item {
                 property bool enabled: true
                 property bool danmaku: false
                 property bool stats: false
+                property bool shadow: true
+                property real size: 21
                 property int requests: 0
                 function setDanmaku(value) { danmaku = value; requests++; }
             }
@@ -49,11 +51,16 @@ Item {
                 toggleButton: playbackButton
                 commentsEnabled: backend.enabled
                 danmakuEnabled: backend.danmaku
-                textSize: 21
+                textSize: backend.size
                 textOpacity: 1
                 speed: 1
+                shadowEnabled: backend.shadow
                 statsVisible: backend.stats
-                onDanmakuRequested: function(value) { backend.setDanmaku(value); }
+                onDanmakuRequested: function(value, size, opacity, speed) {
+                    backend.setDanmaku(value);
+                    backend.size = size;
+                }
+                onShadowRequested: function(value) { backend.shadow = value; }
                 onStatsRequested: function(value) { backend.stats = value; }
             }
             ProgramSidebar {
@@ -85,6 +92,8 @@ Item {
                 backend.enabled = true;
                 backend.danmaku = false;
                 backend.stats = false;
+                backend.shadow = true;
+                backend.size = 21;
                 backend.requests = 0;
                 statsRequests.clear();
                 host.requestActivate();
@@ -136,6 +145,25 @@ Item {
                 compare(backend.stats, false);
                 compare(statsRequests.count, 2);
                 compare(playback.opened, true);
+            }
+            function test_playback_shadow_and_large_font_apply_without_dismissing_menu() {
+                playback.open();
+                tryCompare(playback, "opened", true);
+                const shadow = findChild(playback.contentItem, "playbackShadowToggle");
+                mouseClick(shadow);
+                compare(backend.shadow, false);
+                compare(playback.opened, true);
+                backend.shadow = true;
+                compare(shadow.checked, true);
+                const size = findChild(playback.contentItem, "danmakuTextSize");
+                size.forceActiveFocus();
+                for (let value = 21; value < 72; ++value)
+                    keyClick(Qt.Key_Right);
+                compare(backend.size, 72);
+                compare(playback.opened, true);
+                backend.enabled = false;
+                mouseClick(shadow);
+                compare(backend.shadow, true);
             }
             function test_playback_button_closes_without_reopening_and_dismissal_still_works() {
                 mouseClick(playbackButton);
