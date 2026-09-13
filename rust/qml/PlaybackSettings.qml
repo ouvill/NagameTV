@@ -4,8 +4,7 @@ import QtQuick.Layouts
 
 Popup {
     id: popup
-    required property real videoWidth
-    required property real windowHeight
+    required property Item toggleButton
     required property bool commentsEnabled
     required property bool danmakuEnabled
     required property real textSize
@@ -14,16 +13,22 @@ Popup {
     required property bool statsVisible
     signal danmakuRequested(bool enabled, real textSize, real textOpacity, real speed)
     signal statsRequested(bool visible)
-    parent: Overlay.overlay
+    function toggle() {
+        if (visible) close();
+        else open();
+    }
+    parent: toggleButton
     width: 320
     height: 340
-    x: Math.max(20, videoWidth - width - 24)
-    y: Math.max(20, windowHeight - height - 92)
+    x: (toggleButton.width - width) / 2
+    y: -height - 28
+    margins: 20
     modal: false
     dim: false
     padding: 20
     focus: true
-    closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+    // Leave the opener's click to toggle(); outside dismissal must not reopen it.
+    closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutsideParent
     background: Rectangle {
         radius: 18
         color: "#f21a1c1a"
@@ -43,8 +48,10 @@ Popup {
             Label { text: qsTranslate("Main", "Danmaku comments"); color: "#f4f5f3"; font.pixelSize: 13 }
             Item { Layout.fillWidth: true }
             ToggleSwitch {
+                objectName: "playbackDanmakuToggle"
+                text: qsTranslate("Main", "Danmaku comments")
                 checked: popup.danmakuEnabled
-                onToggled: popup.danmakuRequested(!popup.danmakuEnabled, popup.textSize, popup.textOpacity, popup.speed)
+                onToggled: popup.danmakuRequested(checked, popup.textSize, popup.textOpacity, popup.speed)
             }
         }
         DanmakuAdjustments {
@@ -64,11 +71,10 @@ Popup {
             Label { text: qsTranslate("Main", "Stats for nerds"); color: "#f4f5f3"; font.pixelSize: 13 }
             Item { Layout.fillWidth: true }
             ToggleSwitch {
+                objectName: "playbackStatsToggle"
+                text: qsTranslate("Main", "Stats for nerds")
                 checked: popup.statsVisible
-                onToggled: {
-                    popup.statsRequested(!popup.statsVisible);
-                    popup.close();
-                }
+                onToggled: popup.statsRequested(checked)
             }
         }
     }

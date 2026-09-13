@@ -12,9 +12,10 @@ Slider {
         x: slider.leftPadding
         y: slider.topPadding + slider.availableHeight / 2 - height / 2
         width: slider.availableWidth
-        height: 4
-        radius: 2
+        height: slider.pressed || slider.hovered ? 6 : 4
+        radius: height / 2
         color: "#32ffffff"
+        Behavior on height { NumberAnimation { duration: 100; easing.type: Easing.OutCubic } }
         Rectangle {
             x: slider.mirrored ? parent.width - width : 0
             width: slider.position * parent.width
@@ -29,6 +30,15 @@ Slider {
         implicitWidth: 12
         implicitHeight: 12
         radius: 6
+        scale: slider.pressed ? 1.4 : slider.hovered || slider.visualFocus ? 1.2 : 1
+        Behavior on scale { NumberAnimation { duration: 100; easing.type: Easing.OutCubic } }
+        Rectangle {
+            anchors.centerIn: parent
+            width: 26; height: 26; radius: 13
+            color: "#9caf9f"
+            opacity: slider.pressed ? 0.18 : slider.hovered || slider.visualFocus ? 0.1 : 0
+            Behavior on opacity { NumberAnimation { duration: 120 } }
+        }
         color: slider.pressed || slider.hovered ? "#f4f5f3" : (slider.subdued ? "#b6bab6" : "#9caf9f")
         border.width: slider.visualFocus ? 2 : 0
         border.color: "#f4f5f3"

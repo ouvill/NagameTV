@@ -14,9 +14,17 @@ impl ffi::Player {
 
 impl ffi::Player {
     pub fn display_subtitles(mut self: Pin<&mut Self>, display: bool) {
+        if !self.rust().subtitles_enabled {
+            return;
+        }
         self.as_mut().set_subtitle_display(display);
-        self.as_mut().rust_mut().subtitle_cells = 0;
-        self.set_subtitle_data(QString::default());
+        {
+            let mut this = self.as_mut().rust_mut();
+            this.subtitle_cells = 0;
+            this.preferences.preferences_mut().show_subtitles = display;
+        }
+        self.as_mut().set_subtitle_data(QString::default());
+        self.save_settings();
     }
     pub fn poll_subtitles(mut self: Pin<&mut Self>) {
         let update = self.rust().subtitle_session.as_ref().map(|session| {

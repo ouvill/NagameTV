@@ -8,7 +8,6 @@ use cxx_qt_lib::QString;
 use std::pin::Pin;
 
 pub(super) enum Failure {
-    Operation,
     Server,
     Network,
     ChannelPresentation,
@@ -45,7 +44,6 @@ impl Status {
             Self::PlaybackFailed(hint) => tr(hint.source()),
             Self::Failure(kind, detail) => with_detail(
                 match kind {
-                    Failure::Operation => "Operation failed: %1",
                     Failure::Server => "Invalid server settings: %1",
                     Failure::Network => "Network initialization failed: %1",
                     Failure::ChannelPresentation => "Could not prepare the channel display: %1",

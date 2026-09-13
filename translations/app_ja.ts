@@ -315,6 +315,10 @@
   <context>
     <name>Backend</name>
     <message>
+      <source>Select a channel to receive live comments.</source>
+      <translation>チャンネルを選ぶと実況コメントを受信します。</translation>
+    </message>
+    <message>
       <source>Could not open the log folder.</source>
       <translation>ログフォルダーを開けませんでした。</translation>
     </message>
@@ -353,10 +357,6 @@
     <message>
       <source>The stream connection was interrupted. Reconnecting…</source>
       <translation>配信接続が途切れたため再接続中…</translation>
-    </message>
-    <message>
-      <source>Operation failed: %1</source>
-      <translation>操作失敗: %1</translation>
     </message>
     <message>
       <source>Invalid server settings: %1</source>
@@ -820,6 +820,221 @@
     <message>
       <source>Default: Ctrl+Enter. Enable to also send with Enter.</source>
       <translation>標準はCtrl+Enterで送信。有効にするとEnterでも送信できます。</translation>
+    </message>
+  </context>
+  <context>
+    <name>Settings</name>
+    <message>
+      <source>Connection</source>
+      <translation>接続</translation>
+    </message>
+    <message>
+      <source>Display</source>
+      <translation>表示</translation>
+    </message>
+    <message>
+      <source>Shortcuts</source>
+      <translation>ショートカット</translation>
+    </message>
+    <message>
+      <source>Diagnostics</source>
+      <translation>診断</translation>
+    </message>
+    <message>
+      <source>Hide details</source>
+      <translation>詳細を閉じる</translation>
+    </message>
+    <message>
+      <source>Show details</source>
+      <translation>詳細を表示</translation>
+    </message>
+    <message>
+      <source>Mirakurun connection</source>
+      <translation>Mirakurun 接続</translation>
+    </message>
+    <message>
+      <source>Could not read or save settings. Your changes may not be available the next time you open the app.</source>
+      <translation>設定の読み込み・保存で問題が発生しました。変更が次回の起動時に引き継がれない可能性があります。</translation>
+    </message>
+    <message>
+      <source>Server URL</source>
+      <translation>サーバーURL</translation>
+    </message>
+    <message>
+      <source>Enter the Mirakurun server address starting with http:// or https://.</source>
+      <translation>http:// または https:// で始まるMirakurunのアドレスを入力してください。</translation>
+    </message>
+    <message>
+      <source>Loading channels…</source>
+      <translation>チャンネルを取得中…</translation>
+    </message>
+    <message>
+      <source>Changing the server stops playback and loads the new channel list.</source>
+      <translation>接続先を変更すると再生を停止し、新しいチャンネル一覧を取得します。</translation>
+    </message>
+    <message>
+      <source>Could not connect. Check the server URL and try again.</source>
+      <translation>接続できませんでした。サーバーURLを確認して、もう一度お試しください。</translation>
+    </message>
+    <message>
+      <source>Display language</source>
+      <translation>表示言語</translation>
+    </message>
+    <message>
+      <source>Use system language</source>
+      <translation>システムの言語に合わせる</translation>
+    </message>
+    <message>
+      <source>Could not change the language. The previous language is still in use.</source>
+      <translation>表示言語を変更できませんでした。変更前の言語を引き続き使用します。</translation>
+    </message>
+    <message>
+      <source>Show subtitles</source>
+      <translation>字幕を表示する</translation>
+    </message>
+    <message>
+      <source>Show subtitles when available in the program. You can also change this from the playback controls.</source>
+      <translation>字幕のある番組で字幕を表示します。再生バーの字幕ボタンでも切り替えられます。</translation>
+    </message>
+    <message>
+      <source>Subtitles are disabled by the launch options.</source>
+      <translation>起動オプションで字幕が無効になっています。</translation>
+    </message>
+    <message>
+      <source>Enable live comments</source>
+      <translation>実況コメントを有効にする</translation>
+    </message>
+    <message>
+      <source>Receive and post NX-Jikkyo comments on supported channels.</source>
+      <translation>対応チャンネルでNX-Jikkyoの実況コメントを受信・投稿できます。</translation>
+    </message>
+    <message>
+      <source>Live comments are disabled by the launch options.</source>
+      <translation>起動オプションで実況コメントが無効になっています。</translation>
+    </message>
+    <message>
+      <source>Show comments over the video</source>
+      <translation>映像にコメントを重ねる</translation>
+    </message>
+    <message>
+      <source>When off, you can still read the comment list and post comments.</source>
+      <translation>オフでも、コメント一覧での確認と投稿はできます。</translation>
+    </message>
+    <message>
+      <source>Comment appearance</source>
+      <translation>コメントの見た目</translation>
+    </message>
+    <message>
+      <source>Text size</source>
+      <translation>文字の大きさ</translation>
+    </message>
+    <message>
+      <source>Text opacity</source>
+      <translation>文字の濃さ</translation>
+    </message>
+    <message>
+      <source>Scroll speed</source>
+      <translation>流れる速さ</translation>
+    </message>
+    <message>
+      <source>Comment posting</source>
+      <translation>コメントの投稿</translation>
+    </message>
+    <message>
+      <source>Press Enter to send. Ctrl + Enter also works.</source>
+      <translation>Enterで送信します。Ctrl + Enterでも送信できます。</translation>
+    </message>
+    <message>
+      <source>Press Ctrl + Enter to send. Enter alone does not send.</source>
+      <translation>Ctrl + Enterで送信します。Enterだけでは送信しません。</translation>
+    </message>
+    <message>
+      <source>Send with</source>
+      <translation>送信キー</translation>
+    </message>
+    <message>
+      <source>Ctrl + Enter (default)</source>
+      <translation>Ctrl + Enter（標準）</translation>
+    </message>
+    <message>
+      <source>Shortcuts for watching TV. Channel and guide shortcuts are inactive while typing.</source>
+      <translation>視聴中に使えるキーの一覧です。文字入力中はチャンネルや番組表のキー操作を無効にします。</translation>
+    </message>
+    <message>
+      <source>Send a comment</source>
+      <translation>コメントを送信する</translation>
+    </message>
+    <message>
+      <source>Toggle fullscreen</source>
+      <translation>全画面を切り替える</translation>
+    </message>
+    <message>
+      <source>Open channels</source>
+      <translation>チャンネルを開く</translation>
+    </message>
+    <message>
+      <source>Open program guide</source>
+      <translation>番組表を開く</translation>
+    </message>
+    <message>
+      <source>Previous channel</source>
+      <translation>前のチャンネルへ</translation>
+    </message>
+    <message>
+      <source>Next channel</source>
+      <translation>次のチャンネルへ</translation>
+    </message>
+    <message>
+      <source>Close a panel or leave fullscreen</source>
+      <translation>画面を閉じる・全画面を解除する</translation>
+    </message>
+    <message>
+      <source>Show video statistics</source>
+      <translation>動画統計を表示する</translation>
+    </message>
+    <message>
+      <source>Show resolution, frame rate and playback performance while watching.</source>
+      <translation>視聴中の解像度やフレームレート、再生処理の状態を表示します。</translation>
+    </message>
+    <message>
+      <source>Logs</source>
+      <translation>ログ</translation>
+    </message>
+    <message>
+      <source>Logs contain technical details to help investigate problems.</source>
+      <translation>不具合の原因を調べるための技術情報を記録しています。</translation>
+    </message>
+    <message>
+      <source>Could not access the logs. Check the error details and try again.</source>
+      <translation>ログを利用できませんでした。詳細を確認して、もう一度お試しください。</translation>
+    </message>
+    <message>
+      <source>Current activity</source>
+      <translation>現在の動作状況</translation>
+    </message>
+    <message>
+      <source>Subtitles: %1</source>
+      <translation>字幕: %1</translation>
+    </message>
+    <message>
+      <source>Live comments: %1</source>
+      <translation>実況コメント: %1</translation>
+    </message>
+    <message>
+      <source>Resource usage</source>
+      <translation>リソースの使用状況</translation>
+    </message>
+    <message>
+      <source>Diagnostic display settings apply to this session only.</source>
+      <translation>診断の表示設定は、今回の起動中だけ有効です。</translation>
+    </message>
+    <message>
+      <source>Changes take effect immediately.</source>
+      <translation>変更はすぐに反映されます。</translation>
+    </message>
+    <message>
+      <source>Back to viewing</source>
+      <translation>視聴へ戻る</translation>
     </message>
   </context>
 </TS>

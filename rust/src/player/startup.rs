@@ -16,8 +16,7 @@ impl Default for PlayerRust {
                 settings::Session::transient(settings::Preferences {
                     server: String::new(),
                     volume: settings::Volume::from(50.0),
-                    subtitles_enabled: plan.subtitles,
-                    epg_enabled: plan.epg,
+                    show_subtitles: plan.subtitles,
                     comments_enabled: plan.comments,
                     // Explicit feature experiments enable the commentary display
                     // as before, independently of normal startup defaults.
@@ -43,8 +42,6 @@ impl Default for PlayerRust {
             std::env::var("MIRAKURUN_SERVICE_ID").ok(),
         );
         if !plan.locked {
-            plan.subtitles = preferences.preferences().subtitles_enabled;
-            plan.epg = preferences.preferences().epg_enabled;
             plan.comments = preferences.preferences().comments_enabled;
         }
         let audio_output =
@@ -124,10 +121,8 @@ impl Default for PlayerRust {
             comment_post_busy: false,
             comment_send_on_enter: preferences.preferences().comment_send_on_enter,
             comments: Default::default(),
-            subtitles_allowed: !plan.locked || plan.subtitles,
-            epg_allowed: !plan.locked || plan.epg,
             subtitles_active: false,
-            subtitle_display: true,
+            subtitle_display: preferences.preferences().show_subtitles,
             subtitle_data: QString::default(),
             subtitle_status: super::status::tr("Stopped"),
             subtitle_phase: Default::default(),

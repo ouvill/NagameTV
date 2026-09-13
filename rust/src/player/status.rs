@@ -18,6 +18,9 @@ impl ffi::Player {
     pub(super) fn refresh_comment_status(mut self: Pin<&mut Self>) {
         let text = match self.rust().comments.status(self.rust().comments_enabled) {
             PresentationStatus::Disabled => tr("Disabled"),
+            PresentationStatus::WaitingForChannel => {
+                tr("Select a channel to receive live comments.")
+            }
             PresentationStatus::Unavailable => tr("Comments are unavailable for this channel"),
             PresentationStatus::Connecting => tr("Connecting to comments…"),
             PresentationStatus::Receiving => tr("Receiving comments"),

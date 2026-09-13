@@ -50,8 +50,10 @@ pub struct Preferences {
     pub server: String,
     pub service_id: String,
     pub volume: Volume,
-    pub subtitles_enabled: bool,
-    pub epg_enabled: bool,
+    // Keep the existing on-disk key, now solely a viewer's display preference.
+    // Subtitle processing and EPG availability are selected by LaunchPlan.
+    #[serde(rename = "subtitles_enabled")]
+    pub show_subtitles: bool,
     pub comments_enabled: bool,
     pub danmaku_enabled: bool,
     pub comment_font_size: CommentFontSize,
@@ -70,8 +72,7 @@ impl Default for Preferences {
             server: "http://127.0.0.1:40772".into(),
             service_id: String::new(),
             volume: Volume::default(),
-            subtitles_enabled: false,
-            epg_enabled: true,
+            show_subtitles: false,
             // main receives history independently of the scrolling overlay.
             // Its settings have no comments_enabled field; preserve reception
             // when importing them, including danmaku_enabled=true preferences.

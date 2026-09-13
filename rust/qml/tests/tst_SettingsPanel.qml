@@ -1,0 +1,296 @@
+import QtQuick
+import QtQuick.Controls
+import QtTest
+import ".."
+
+TestCase {
+    id: testCase
+    name: "SettingsPanel"
+    when: windowShown
+    visible: true
+    width: 900
+    height: 560
+    QtObject {
+        id: backend
+        property string server: "http://example.test:40772"
+        property bool loading: false
+        property bool subtitles_enabled: true
+        property bool subtitle_display: true
+        property bool epg_enabled: true
+        property string settings_error: ""
+        property string diagnostics: ""
+        property string status: ""
+        property string language: "en"
+        property string subtitle_status: ""
+        property bool comments_enabled: false
+        property bool comments_allowed: true
+        property bool danmaku_enabled: false
+        property real comment_font_size: 21
+        property real comment_opacity: 1
+        property real comment_speed: 1
+        property string comment_status: ""
+        property bool comment_send_on_enter: false
+        function configure_comment_send_on_enter(value) { comment_send_on_enter = value; }
+        property string log_error: ""
+        property bool acceptLanguage: true
+        function request_language(value) { if (!acceptLanguage) return false; language = value; return true; }
+        function display_subtitles(value) { subtitle_display = value; }
+        function enable_comments(value) { comments_enabled = value; }
+        function configure_danmaku(value, size, opacity, speed) {
+            danmaku_enabled = value;
+            comment_font_size = size;
+            comment_opacity = opacity;
+            comment_speed = speed;
+            return true;
+        }
+        property int logFolderRequests: 0
+        function open_log_folder() { logFolderRequests++; return true; }
+        signal connectRequested(string url)
+        property bool acceptConnection: false
+        function connect_server(url) { connectRequested(url); return acceptConnection; }
+    }
+    SettingsPanel {
+        id: panel
+        backend: backend
+        iconDirectory: Qt.resolvedUrl("../../../assets/icons/")
+        onStatsRequested: function(value) { statsVisible = value; }
+    }
+    SignalSpy { id: connections; target: backend; signalName: "connectRequested" }
+    SignalSpy { id: accepted; target: panel; signalName: "connectionAccepted" }
+    function init() {
+        failOnWarning(/.*/);
+        backend.loading = false;
+        backend.acceptConnection = false;
+        backend.diagnostics = "";
+        backend.status = "";
+        backend.settings_error = "";
+        backend.server = "http://example.test:40772";
+        backend.language = "en";
+        backend.acceptLanguage = true;
+        backend.subtitles_enabled = true;
+        backend.subtitle_display = true;
+        backend.epg_enabled = true;
+        backend.comments_enabled = false;
+        backend.comments_allowed = true;
+        backend.danmaku_enabled = false;
+        backend.comment_font_size = 21;
+        backend.comment_opacity = 1;
+        backend.comment_speed = 1;
+        backend.comment_send_on_enter = false;
+        backend.log_error = "";
+        panel.statsVisible = false;
+        panel.page = SettingsPanel.Connection;
+        connections.clear();
+        accepted.clear();
+        panel.open();
+        tryCompare(panel, "opened", true);
+    }
+    function cleanup() { panel.close(); tryCompare(panel, "visible", false); }
+    function selectPage(index) {
+        mouseClick(findChild(panel.contentItem, "settingsCategory" + index));
+        compare(panel.page, index);
+    }
+    function test_comment_send_shortcut_tracks_setting_and_can_be_toggled() {
+        selectPage(SettingsPanel.Comments);
+        const flick = findChild(panel.contentItem, "settingsFlickable");
+        flick.contentY = flick.contentHeight - flick.height;
+        const choice = findChild(panel.contentItem, "commentSendKey");
+        backend.comment_send_on_enter = false;
+        compare(choice.currentIndex, 0);
+        choice.forceActiveFocus();
+        keyClick(Qt.Key_Down);
+        compare(backend.comment_send_on_enter, true);
+        compare(choice.currentIndex, 1);
+        keyClick(Qt.Key_Up);
+        compare(backend.comment_send_on_enter, false);
+        backend.comment_send_on_enter = true;
+        compare(choice.currentIndex, 1);
+        keyClick(Qt.Key_Space);
+        tryCompare(choice.popup, "opened", true);
+        const popupPosition = choice.popup.contentItem.mapToItem(panel.contentItem, 0, 0);
+        verify(popupPosition.y >= 0);
+        verify(popupPosition.y + choice.popup.contentItem.height <= panel.height);
+        keyClick(Qt.Key_Escape);
+        tryCompare(choice.popup, "visible", false);
+        compare(panel.opened, true);
+    }
+    function test_connection_uses_edited_url_without_duplicate_loading_request() {
+        const field = findChild(panel.contentItem, "serverField");
+        const connect = findChild(panel.contentItem, "connectServer");
+        field.text = "http://new.example:40772";
+        mouseClick(connect);
+        compare(connections.count, 1);
+        compare(connections.signalArguments[0][0], field.text);
+        backend.loading = true;
+        field.forceActiveFocus();
+        keyClick(Qt.Key_Return);
+        compare(connections.count, 1);
+        compare(connect.enabled, false);
+    }
+    function test_accepted_connection_closes_and_rejection_stays_open() {
+        panel.connectToServer();
+        compare(panel.opened, true);
+        compare(accepted.count, 0);
+        compare(findChild(panel.contentItem, "connectionError").visible, true);
+        backend.acceptConnection = true;
+        panel.connectToServer();
+        tryCompare(panel, "visible", false);
+        compare(accepted.count, 1);
+        compare(findChild(panel.contentItem, "connectionError").visible, false);
+    }
+    function test_full_window_layout_and_escape_close() {
+        compare(panel.width, panel.parent.width);
+        compare(panel.height, panel.parent.height);
+        compare(panel.x, 0);
+        compare(panel.y, 0);
+        const nav = findChild(panel.contentItem, "settingsNavigation");
+        const scroll = findChild(panel.contentItem, "settingsScroll");
+        const footer = findChild(panel.contentItem, "settingsFooter");
+        verify(nav.x + nav.width < scroll.x);
+        verify(scroll.y + scroll.height < footer.y);
+        verify(footer.y + footer.height < panel.height);
+        keyClick(Qt.Key_Escape);
+        tryCompare(panel, "visible", false);
+    }
+    function test_server_draft_survives_category_switch_but_reopening_uses_saved_url() {
+        const field = findChild(panel.contentItem, "serverField");
+        field.text = "http://draft.example:40772";
+        selectPage(SettingsPanel.Comments);
+        selectPage(SettingsPanel.Connection);
+        compare(field.text, "http://draft.example:40772");
+        compare(connections.count, 0);
+        mouseClick(findChild(panel.contentItem, "closeSettings"));
+        tryCompare(panel, "visible", false);
+        panel.open();
+        tryCompare(panel, "opened", true);
+        compare(field.text, backend.server);
+    }
+    function test_subtitle_visibility_is_a_viewer_setting_independent_of_processing() {
+        selectPage(SettingsPanel.Display);
+        const subtitles = findChild(panel.contentItem, "subtitleDisplay");
+        compare(subtitles.visible, true);
+        compare(subtitles.checked, true);
+        mouseClick(subtitles);
+        compare(backend.subtitle_display, false);
+        compare(backend.subtitles_enabled, true);
+        compare(backend.epg_enabled, true);
+        // The playback bar calls the same backend action; reflect its change here.
+        backend.display_subtitles(true);
+        compare(subtitles.checked, true);
+        subtitles.forceActiveFocus();
+        keyClick(Qt.Key_Space);
+        compare(backend.subtitle_display, false);
+        compare(backend.subtitles_enabled, true);
+        compare(connections.count, 0);
+        selectPage(SettingsPanel.Diagnostics);
+        compare(subtitles.visible, false);
+    }
+    function test_development_feature_limit_does_not_enable_processing_from_display() {
+        backend.subtitles_enabled = false;
+        backend.subtitle_display = true;
+        selectPage(SettingsPanel.Display);
+        const subtitles = findChild(panel.contentItem, "subtitleDisplay");
+        compare(subtitles.enabled, false);
+        compare(subtitles.checked, false);
+        mouseClick(subtitles);
+        compare(backend.subtitles_enabled, false);
+        compare(backend.subtitle_display, true);
+    }
+    function test_comment_rows_and_sliders_apply_to_the_backend() {
+        selectPage(SettingsPanel.Comments);
+        mouseClick(findChild(panel.contentItem, "commentsEnabled"));
+        compare(backend.comments_enabled, true);
+        mouseClick(findChild(panel.contentItem, "danmakuEnabled"));
+        compare(backend.danmaku_enabled, true);
+        const size = findChild(findChild(panel.contentItem, "commentSize"), "settingSlider");
+        size.forceActiveFocus();
+        keyClick(Qt.Key_Right);
+        compare(backend.comment_font_size, 22);
+        const opacity = findChild(findChild(panel.contentItem, "commentOpacity"), "settingSlider");
+        opacity.forceActiveFocus();
+        keyClick(Qt.Key_Left);
+        fuzzyCompare(backend.comment_opacity, 0.95, 0.001);
+        const speed = findChild(findChild(panel.contentItem, "commentSpeed"), "settingSlider");
+        speed.forceActiveFocus();
+        keyClick(Qt.Key_Right);
+        fuzzyCompare(backend.comment_speed, 1.1, 0.001);
+    }
+    function test_language_rejection_restores_selection_and_popup_owns_escape() {
+        selectPage(SettingsPanel.Display);
+        const language = findChild(panel.contentItem, "languageSetting");
+        backend.acceptLanguage = false;
+        language.forceActiveFocus();
+        keyClick(Qt.Key_Space);
+        tryCompare(language.popup, "opened", true);
+        keyClick(Qt.Key_Up);
+        keyClick(Qt.Key_Return);
+        tryCompare(language.popup, "visible", false);
+        compare(backend.language, "en");
+        compare(language.currentIndex, 2);
+        compare(findChild(panel.contentItem, "languageError").visible, true);
+        language.forceActiveFocus();
+        keyClick(Qt.Key_Space);
+        tryCompare(language.popup, "opened", true);
+        keyClick(Qt.Key_Escape);
+        tryCompare(language.popup, "visible", false);
+        compare(panel.opened, true);
+        panel.close();
+        tryCompare(panel, "visible", false);
+        panel.open();
+        tryCompare(panel, "opened", true);
+        compare(findChild(panel.contentItem, "languageError").visible, false);
+    }
+    function test_error_details_are_available_without_overwhelming_the_message() {
+        backend.settings_error = "Cannot read <settings>: " + "technical details ".repeat(80);
+        const problem = findChild(panel.contentItem, "settingsError");
+        const details = findChild(problem, "problemDetails");
+        const disclosure = findChild(problem, "problemDetailsToggle");
+        compare(problem.visible, true);
+        compare(details.visible, false);
+        mouseClick(disclosure);
+        compare(details.visible, true);
+        compare(details.text, backend.settings_error);
+        compare(details.textFormat, Text.PlainText);
+        compare(details.truncated, false);
+        backend.settings_error = "A different error";
+        compare(details.visible, false);
+        backend.settings_error = "";
+        compare(problem.visible, false);
+    }
+    function test_scroll_keeps_navigation_and_return_visible_and_resets_on_category_change() {
+        backend.diagnostics = "Diagnostic details ".repeat(200);
+        selectPage(SettingsPanel.Diagnostics);
+        const flick = findChild(panel.contentItem, "settingsFlickable");
+        const scroll = findChild(panel.contentItem, "settingsScroll");
+        const nav = findChild(panel.contentItem, "settingsNavigation");
+        const footer = findChild(panel.contentItem, "settingsFooter");
+        const navY = nav.y;
+        const footerY = footer.y;
+        tryVerify(() => flick.contentHeight > flick.height);
+        compare(scroll.ScrollBar.vertical.policy, ScrollBar.AlwaysOn);
+        flick.contentY = flick.contentHeight - flick.height;
+        compare(nav.y, navY);
+        compare(footer.y, footerY);
+        selectPage(SettingsPanel.Connection);
+        tryCompare(flick, "contentY", 0);
+        tryCompare(scroll.ScrollBar.vertical, "policy", ScrollBar.AlwaysOff);
+        compare(findChild(panel.contentItem, "serverField").visible, true);
+    }
+    function test_diagnostics_remain_readable_data() {
+        return [
+            {tag: "English", text: "Subtitles: subscriptions 8, pending 128, received 18446744073709551615 | EPG: tasks 1, programs 50000, stopping Yes"},
+            {tag: "Japanese", text: "字幕: 購読 8, 待機 128, 受信 18446744073709551615 | EPG: タスク 1, 番組 50000, 停止待ち はい"}
+        ];
+    }
+    function test_diagnostics_remain_readable(data) {
+        backend.diagnostics = data.text;
+        selectPage(SettingsPanel.Diagnostics);
+        const label = findChild(panel.contentItem, "featureDiagnostics");
+        verify(label !== null);
+        tryVerify(() => label.lineCount > 1);
+        compare(label.truncated, false);
+        compare(label.text, data.text);
+        verify(label.width <= findChild(panel.contentItem, "settingsScroll").width);
+        tryVerify(() => label.height >= label.contentHeight);
+    }
+}

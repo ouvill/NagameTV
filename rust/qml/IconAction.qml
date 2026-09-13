@@ -7,15 +7,27 @@ ToolButton {
     required property string tip
     property bool active: false
     property bool primary: false
+    // Animate the visuals; keep the hit area still while the pointer is down.
+    property real feedbackScale: down ? 0.90 : hovered || visualFocus ? 1.06 : 1
+    Behavior on feedbackScale {
+        NumberAnimation { duration: control.down ? 65 : 150; easing.type: Easing.OutCubic }
+    }
+    hoverEnabled: true
+    opacity: enabled ? 1 : 0.38
     implicitWidth: 42
     implicitHeight: 42
     Accessible.name: tip
     background: Rectangle {
+        scale: control.feedbackScale
         radius: 21
-        color: control.hovered ? "#28ffffff" : (control.primary ? "#eeeeec" : (control.active ? "#389caf9f" : "#17000000"))
+        color: control.primary ? (control.down ? "#cbd8ce" : control.hovered ? "#ffffff" : "#eeeeec")
+            : control.down ? "#589caf9f" : control.hovered ? "#28ffffff" : control.active ? "#389caf9f" : "#17000000"
         border.color: control.visualFocus ? "#9caf9f" : (control.primary ? "#80ffffff" : (control.active ? "#9caf9f" : "#16ffffff"))
+        Behavior on color { ColorAnimation { duration: 100 } }
+        Behavior on border.color { ColorAnimation { duration: 100 } }
     }
     contentItem: Item {
+        scale: control.feedbackScale
         Image {
             anchors.centerIn: parent
             width: 24
@@ -28,7 +40,7 @@ ToolButton {
         parent: control
         visible: control.hovered
         text: control.tip
-        delay: 150
+        delay: 350
         timeout: 3000
         x: (control.width - implicitWidth) / 2
         y: -implicitHeight - 10

@@ -86,8 +86,8 @@ pub mod ffi {
         #[qproperty(bool, loading, READ, NOTIFY)]
         #[qproperty(bool, connecting, READ, NOTIFY)]
         #[qproperty(bool, playing, READ, NOTIFY)]
-        #[qproperty(bool, subtitles_enabled, READ, NOTIFY)]
-        #[qproperty(bool, epg_enabled, READ, NOTIFY)]
+        #[qproperty(bool, subtitles_enabled, READ, CONSTANT)]
+        #[qproperty(bool, epg_enabled, READ, CONSTANT)]
         #[qproperty(bool, comments_enabled, READ, NOTIFY)]
         #[qproperty(bool, danmaku_enabled, READ, NOTIFY)]
         #[qproperty(f64, comment_font_size, READ, NOTIFY)]
@@ -104,8 +104,6 @@ pub mod ffi {
         #[qproperty(bool, comment_post_available, READ, NOTIFY)]
         #[qproperty(bool, comment_post_busy, READ, NOTIFY)]
         #[qproperty(bool, comment_send_on_enter, READ, NOTIFY)]
-        #[qproperty(bool, subtitles_allowed, READ, NOTIFY)]
-        #[qproperty(bool, epg_allowed, READ, NOTIFY)]
         #[qproperty(bool, subtitles_active, READ, NOTIFY)]
         #[qproperty(bool, subtitle_display, READ, NOTIFY)]
         #[qproperty(QString, subtitle_data, READ, NOTIFY)]
@@ -121,8 +119,6 @@ pub mod ffi {
         type Player = super::PlayerRust;
         #[qinvokable]
         fn request_language(self: Pin<&mut Player>, language: QString) -> bool;
-        #[qinvokable]
-        fn configure_features(self: Pin<&mut Player>, subtitles: bool, epg: bool);
         #[qinvokable]
         fn display_subtitles(self: Pin<&mut Player>, display: bool);
         #[qinvokable]
@@ -261,8 +257,6 @@ pub struct PlayerRust {
     comment_post_busy: bool,
     comment_send_on_enter: bool,
     comments: crate::features::comments::Comments,
-    subtitles_allowed: bool,
-    epg_allowed: bool,
     subtitles_active: bool,
     subtitle_display: bool,
     subtitle_data: QString,
@@ -430,13 +424,6 @@ impl ffi::Player {
     property_setter!(set_connecting, connecting, connecting_changed, bool);
     property_setter!(set_playing, playing, playing_changed, bool);
     property_setter!(
-        set_subtitles_enabled,
-        subtitles_enabled,
-        subtitles_enabled_changed,
-        bool
-    );
-    property_setter!(set_epg_enabled, epg_enabled, epg_enabled_changed, bool);
-    property_setter!(
         set_subtitles_active,
         subtitles_active,
         subtitles_active_changed,
@@ -497,29 +484,6 @@ impl ffi::Player {
         QString
     );
 
-    pub fn configure_features(mut self: Pin<&mut Self>, subtitles: bool, epg: bool) {
-        let subtitles = subtitles && self.rust().subtitles_allowed;
-        let epg = epg && self.rust().epg_allowed;
-        let restart =
-            subtitles != self.rust().subtitles_enabled && self.rust().active_service.is_some();
-        if restart && let Err(error) = self.as_mut().end_stream() {
-            self.status_error(StatusFailure::Operation, error);
-            return;
-        }
-        self.as_mut().set_subtitles_enabled(subtitles);
-        self.as_mut().set_epg_enabled(epg);
-        {
-            let mut this = self.as_mut().rust_mut();
-            let prefs = this.preferences.preferences_mut();
-            prefs.subtitles_enabled = subtitles;
-            prefs.epg_enabled = epg;
-        }
-        self.as_mut().configure_epg();
-        self.as_mut().save_settings();
-        if restart {
-            self.as_mut().play();
-        }
-    }
     fn poll_features(mut self: Pin<&mut Self>) {
         // Consume notifications before acquisition so a pending change can start now.
         self.as_mut().poll_epg_events();

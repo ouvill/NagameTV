@@ -99,8 +99,10 @@ Rectangle {
                     font.pixelSize: 13
                 }
                 ToggleSwitch {
+                    objectName: "sidebarDanmakuToggle"
+                    text: qsTranslate("Main", "Danmaku")
                     checked: root.danmakuEnabled
-                    onToggled: root.danmakuRequested(!root.danmakuEnabled)
+                    onToggled: root.danmakuRequested(checked)
                 }
             }
         }

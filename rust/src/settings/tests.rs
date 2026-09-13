@@ -59,8 +59,7 @@ subtitles_enabled = true
     )?;
     let mut session = Session::open(path.clone())?;
     assert_eq!(session.preferences().volume.fraction(), 0.425);
-    assert!(session.preferences().subtitles_enabled);
-    assert!(session.preferences().epg_enabled);
+    assert!(session.preferences().show_subtitles);
     assert!(session.preferences().comments_enabled);
     session.preferences_mut().comments_enabled = true;
     session.preferences_mut().volume = Volume::from(20.0);
@@ -74,6 +73,38 @@ subtitles_enabled = true
     assert_eq!(f64::from(loaded.comment_font_size), 28.0);
     assert_eq!(f64::from(loaded.comment_opacity), 0.7);
     assert_eq!(fs::read_dir(dir.path())?.count(), 1);
+    Ok(())
+}
+
+#[test]
+fn subtitle_visibility_uses_the_existing_key_and_survives_restart()
+-> Result<(), Box<dyn std::error::Error>> {
+    let dir = tempfile::tempdir()?;
+    let path = dir.path().join("settings.toml");
+    assert!(!Preferences::default().show_subtitles);
+    for visible in [false, true] {
+        fs::write(
+            &path,
+            format!(
+                "subtitles_enabled = {visible}\nepg_enabled = false\nfuture_setting = 'keep'\n"
+            ),
+        )?;
+        let mut session = Session::open(path.clone())?;
+        assert_eq!(session.preferences().show_subtitles, visible);
+        // Legacy feature-disable flags cannot disable the normal launch's workers.
+        let plan = crate::features::LaunchPlan::parse([])?;
+        assert!(plan.subtitles && plan.epg);
+        session.preferences_mut().show_subtitles = !visible;
+        assert_eq!(session.flush()?, SaveStatus::Saved);
+        let restored = Session::open(path.clone())?;
+        assert_eq!(restored.preferences().show_subtitles, !visible);
+        assert_eq!(
+            restored.preferences().extra["future_setting"].as_str(),
+            Some("keep")
+        );
+        let document: toml::Table = toml::from_str(&fs::read_to_string(&path)?)?;
+        assert_eq!(document["subtitles_enabled"].as_bool(), Some(!visible));
+    }
     Ok(())
 }
 

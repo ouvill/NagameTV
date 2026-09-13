@@ -73,6 +73,11 @@ Item {
             root.selectRequested(root.filtered[currentIndex].index)
         delegate: ItemDelegate {
             id: card
+            property real feedbackScale: down ? 0.985 : 1
+            Behavior on feedbackScale {
+                NumberAnimation { duration: card.down ? 65 : 150; easing.type: Easing.OutCubic }
+            }
+            hoverEnabled: true
             objectName: "sidebarChannelCard"
             required property var modelData
             required property int index
@@ -84,11 +89,15 @@ Item {
             highlighted: modelData.index === root.selected
             onClicked: root.selectRequested(modelData.index)
             background: Rectangle {
+                scale: card.feedbackScale
                 radius: 14
-                color: card.highlighted ? "#26302a" : "#1c1f1c"
-                border.color: card.highlighted || card.visualFocus ? "#9caf9f" : "#24ffffff"
+                color: card.down ? "#344238" : card.highlighted ? "#26302a" : card.hovered ? "#272d28" : "#1c1f1c"
+                border.color: card.highlighted || card.hovered || card.visualFocus ? "#9caf9f" : "#24ffffff"
+                Behavior on color { ColorAnimation { duration: 120 } }
+                Behavior on border.color { ColorAnimation { duration: 120 } }
             }
             contentItem: Item {
+                scale: card.feedbackScale
                 Row {
                     id: heading
                     spacing: 8

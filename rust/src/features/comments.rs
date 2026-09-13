@@ -12,6 +12,7 @@ use viewer_comments::{
 #[derive(Debug)]
 pub enum PresentationStatus<'a> {
     Disabled,
+    WaitingForChannel,
     Unavailable,
     Connecting,
     Receiving,
@@ -22,6 +23,7 @@ pub enum PresentationStatus<'a> {
 #[derive(Default)]
 pub struct Comments {
     controller: Controller,
+    channel_selected: bool,
     target: Option<(u64, u16)>,
     pub posting: viewer_comments::posting::Controller,
 }
@@ -33,6 +35,7 @@ fn jikkyo(channel: &Channel) -> Option<u16> {
 
 impl Comments {
     pub fn configure(&mut self, enabled: bool, channel: Option<&Channel>) -> bool {
+        self.channel_selected = channel.is_some();
         let target = enabled
             .then_some(channel)
             .flatten()
@@ -70,6 +73,9 @@ impl Comments {
     pub fn status(&self, enabled: bool) -> PresentationStatus<'_> {
         if !enabled {
             return PresentationStatus::Disabled;
+        }
+        if !self.channel_selected {
+            return PresentationStatus::WaitingForChannel;
         }
         if self.target.is_none() {
             return PresentationStatus::Unavailable;
@@ -126,6 +132,40 @@ mod tests {
             Some(101)
         );
         assert_eq!(jikkyo(&channel(101, "OTHER", "Other", None)?), None);
+        Ok(())
+    }
+
+    #[test]
+    fn status_distinguishes_no_selection_from_an_unsupported_channel()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let mut comments = Comments::default();
+        let unsupported = channel(1, "BS", "Other", None)?;
+        let supported = channel(2, "BS", "NHK", Some(101))?;
+        assert!(matches!(
+            comments.status(true),
+            PresentationStatus::WaitingForChannel
+        ));
+        // These transitions have no reception target but must still update the status.
+        assert!(!comments.configure(true, Some(&unsupported)));
+        assert!(matches!(
+            comments.status(true),
+            PresentationStatus::Unavailable
+        ));
+        assert!(!comments.configure(true, None));
+        assert!(matches!(
+            comments.status(true),
+            PresentationStatus::WaitingForChannel
+        ));
+        assert!(comments.configure(true, Some(&supported)));
+        assert!(matches!(
+            comments.status(true),
+            PresentationStatus::Connecting
+        ));
+        assert!(comments.configure(false, Some(&supported)));
+        assert!(matches!(
+            comments.status(false),
+            PresentationStatus::Disabled
+        ));
         Ok(())
     }
 

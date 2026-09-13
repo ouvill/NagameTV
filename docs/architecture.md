@@ -35,13 +35,14 @@ READYで停止してplaybinを再利用する方針を保持するが、パイ�
 
 ## 起動と完全無効化
 
-機能の許可リストはQt/GStreamerの初期化前に確定。通常起動は保存設定を復元し、UIで変更可能。
+機能の許可リストはQt/GStreamerの初期化前に確定。通常起動では字幕処理・EPG取得を有効にする。
+字幕の表示選択と実況の有効化は保存設定から復元し、UIで変更可能。
 `--features=none` または `subtitles,epg,comments` の任意の重複しない組み合わせは
 厳密な許可リストで、その実行だけに適用。
 未許可の機能はUIからも起動できない。この明示的な検証モードでは保存設定を読み書きしない。
 通常起動の設定互換性と保存タイミングは [feature-migration.md](feature-migration.md) を参照。
 
-字幕OFFはSessionそのものが不在。字幕デコーダー、TS probe、tsdemux統計、時計同期、
+開発用起動オプションで字幕機能を除いた場合はSessionそのものが不在。字幕デコーダー、TS probe、tsdemux統計、時計同期、
 字幕poll、表示Loaderを生成しない。ARIBライブラリーはバイナリーにリンクされるが
 デコーダーインスタンスは作らない。「字幕を表示」OFFは解析を維持してLoaderだけ破棄する。
 表示を戻すと次の字幕更新から表示する。
@@ -60,8 +61,8 @@ comments_enabled・danmaku_enabled・playingが揃う間だけLoaderで生成す
 
 ## 字幕の停止順序
 
-選局・停止・字幕ON/OFFでは、Playerが先にPlaybackをREADYへ遷移させ、ストリーミング
-タスクが停止してから旧Sessionを破棄する。字幕ON/OFFで視聴中の映像は一度再接続する。
+選局・停止では、Playerが先にPlaybackをREADYへ遷移させ、ストリーミング
+タスクが停止してから旧Sessionを破棄する。視聴者の字幕表示ON/OFFではSessionを維持し、映像の再接続は行わない。
 購読Scopeはsignal/probeの解除IDを所有し、対象をWeakRefで保持して循環参照を避ける。
 解除時にtsdemux統計をOFF、signal/probeを除去、bus sync handlerを解除し、時計状態を破棄。
 その後に新Sessionを作り再生するので、旧局の字幕は新局に混ざらない。

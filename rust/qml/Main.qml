@@ -28,10 +28,8 @@ ApplicationWindow {
     Connections {
         target: player
         function onPlayingChanged() { root.recordUsage(); }
-        function onSubtitles_enabledChanged() { root.recordUsage(); }
         function onDanmaku_enabledChanged() { root.recordUsage(); }
         function onComments_enabledChanged() { root.recordUsage(); }
-        function onEpg_enabledChanged() { root.recordUsage(); }
     }
     property bool showGuide: false
     property bool showChannels: false
@@ -103,8 +101,7 @@ ApplicationWindow {
     }
     PlaybackSettings {
         id: playbackSettings
-        videoWidth: video.width
-        windowHeight: root.height
+        toggleButton: playbackSettingsButton
         commentsEnabled: player.comments_enabled
         danmakuEnabled: player.danmaku_enabled
         textSize: player.comment_font_size
@@ -326,15 +323,15 @@ ApplicationWindow {
                 targetWindow: root
             }
         }
-        SettingsDrawer {
+        SettingsPanel {
             id: settings
+            targetWindow: root
             onClosed: if (!root.closing) player.save_settings()
             backend: player
             statsVisible: root.showStats
             onStatsRequested: function (visible) {
                 root.showStats = visible;
             }
-            onEpgDisabled: root.showGuide = false
             onConnectionAccepted: {
                 player.guide_open(false);
                 root.showGuide = false;
@@ -480,9 +477,11 @@ ApplicationWindow {
                         onClicked: player.display_subtitles(!player.subtitle_display)
                     }
                     IconAction {
+                        id: playbackSettingsButton
                         iconSource: "qrc:/qt/qml/MinimalViewer/assets/icons/settings-2.svg"
                         tip: qsTranslate("Main", "Playback settings")
-                        onClicked: { playbackSettings.open(); overlayVisibility.reveal(); }
+                        active: playbackSettings.visible
+                        onClicked: { playbackSettings.toggle(); overlayVisibility.reveal(); }
                     }
                     IconAction {
                         iconSource: "qrc:/qt/qml/MinimalViewer/assets/icons/maximize.svg"

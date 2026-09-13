@@ -50,6 +50,11 @@ impl LaunchPlan {
                 }
             }
         }
+        if !plan.locked {
+            plan.subtitles = true;
+            plan.epg = true;
+            plan.comments = true;
+        }
         Ok(plan)
     }
 }
@@ -58,14 +63,15 @@ impl LaunchPlan {
 mod tests {
     use super::*;
     #[test]
-    fn launch_defaults_off_and_explicit_allowlist_is_strict() -> Result<(), ParseError> {
+    fn normal_launch_enables_features_and_development_allowlist_is_strict() -> Result<(), ParseError>
+    {
         let parse = |args: &[&str]| LaunchPlan::parse(args.iter().map(|s| s.to_string()));
         assert_eq!(
             parse(&[])?,
             LaunchPlan {
-                subtitles: false,
-                epg: false,
-                comments: false,
+                subtitles: true,
+                epg: true,
+                comments: true,
                 locked: false
             }
         );
