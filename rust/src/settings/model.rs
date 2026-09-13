@@ -70,7 +70,7 @@ impl Default for Preferences {
     fn default() -> Self {
         Self {
             language: Language::default(),
-            server: "http://127.0.0.1:40772".into(),
+            server: String::new(),
             service_id: String::new(),
             volume: Volume::default(),
             show_subtitles: false,

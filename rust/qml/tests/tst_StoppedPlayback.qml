@@ -19,12 +19,30 @@ TestCase {
     SignalSpy { id: play; target: panel; signalName: "playRequested" }
     SignalSpy { id: channels; target: panel; signalName: "channelsRequested" }
     SignalSpy { id: settings; target: panel; signalName: "settingsRequested" }
+    SignalSpy { id: reconnect; target: panel; signalName: "reconnectRequested" }
     function init() {
+        panel.hasServer = false;
+        reconnect.clear();
         panel.loading = false;
         panel.canPlay = false;
         panel.hasChannels = false;
         panel.playbackError = "";
         play.clear(); channels.clear(); settings.clear();
+    }
+    function test_configured_server_failure_offers_reconnect_and_change() {
+        failOnWarning(/.*/);
+        panel.hasServer = true;
+        verify(waitForRendering(panel));
+        mouseClick(findChild(panel, "stoppedAction"));
+        compare(reconnect.count, 1);
+        compare(settings.count, 0);
+        const change = findChild(panel, "changeConnection");
+        verify(change.visible);
+        mouseClick(change);
+        compare(settings.count, 1);
+        panel.loading = true;
+        verify(!change.visible);
+        compare(reconnect.count, 1);
     }
     function test_error_details_follow_failure_and_release_on_clear() {
         failOnWarning(/.*/);

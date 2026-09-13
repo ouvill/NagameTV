@@ -1,6 +1,24 @@
 use super::*;
 
 #[test]
+fn unconfigured_settings_stay_unconfigured_when_other_preferences_are_saved()
+-> Result<(), Box<dyn std::error::Error>> {
+    let directory = tempfile::tempdir()?;
+    let path = directory.path().join("settings.toml");
+    let mut session = Session::open(path.clone())?;
+    assert!(session.preferences().server.is_empty());
+    session.preferences_mut().language = Language::Japanese;
+    session.flush()?;
+    assert!(Session::open(path.clone())?.preferences().server.is_empty());
+    fs::write(&path, "server = 'http://127.0.0.1:40772'\n")?;
+    assert_eq!(
+        Session::open(path)?.preferences().server,
+        "http://127.0.0.1:40772"
+    );
+    Ok(())
+}
+
+#[test]
 fn autoplay_preserves_main_environment_convention() {
     assert!(!autoplay_requested(None));
     assert!(!autoplay_requested(Some("0")));

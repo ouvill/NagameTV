@@ -1045,4 +1045,55 @@
       <translation>視聴へ戻る</translation>
     </message>
   </context>
+  <context>
+    <name>Connection</name>
+    <message>
+      <source>Checking the connection…</source>
+      <translation>接続を確認しています…</translation>
+    </message>
+    <message>
+      <source>Could not connect. Check the server URL and network connection, then try again.</source>
+      <translation>接続できませんでした。サーバーURLとネットワーク接続を確認して、もう一度お試しください。</translation>
+    </message>
+    <message>
+      <source>Connected, but no channels were found. Check the tuner and channel settings on your Mirakurun server, then try again.</source>
+      <translation>接続できましたが、チャンネルが見つかりませんでした。Mirakurun サーバーのチューナー・チャンネル設定を確認して、もう一度お試しください。</translation>
+    </message>
+    <message>
+      <source>Connected. %1 channels were found.</source>
+      <translation>接続できました。%1局のチャンネルが見つかりました。</translation>
+    </message>
+    <message>
+      <source>Connected, but the settings could not be saved. Check the details and try again.</source>
+      <translation>接続できましたが、設定を保存できませんでした。詳細を確認して、もう一度お試しください。</translation>
+    </message>
+    <message>
+      <source>Choose a channel to start watching. You can change subtitles and comments later in Settings.</source>
+      <translation>チャンネルを選んで視聴を開始してください。字幕やコメントは、あとから設定で変更できます。</translation>
+    </message>
+    <message>
+      <source>Connect</source>
+      <translation>接続する</translation>
+    </message>
+    <message>
+      <source>Need to set up a Mirakurun server?</source>
+      <translation>サーバーをまだ用意していない方へ</translation>
+    </message>
+    <message>
+      <source>Connect to Mirakurun</source>
+      <translation>Mirakurun に接続</translation>
+    </message>
+    <message>
+      <source>To watch TV, you need a configured Mirakurun server. Enter its URL to get started.</source>
+      <translation>テレビを見るには、設定済みの Mirakurun サーバーが必要です。サーバーのURLを入力してください。</translation>
+    </message>
+    <message>
+      <source>Reconnect</source>
+      <translation>再接続</translation>
+    </message>
+    <message>
+      <source>Change server</source>
+      <translation>接続先を変更</translation>
+    </message>
+  </context>
 </TS>

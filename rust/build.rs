@@ -41,6 +41,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .qml_file("qml/ThemedSlider.qml")
             .qml_file("qml/VolumeSlider.qml")
             .qml_file("qml/SettingsPanel.qml")
+            .qml_file("qml/ConnectionForm.qml")
+            .qml_file("qml/FirstRunSetup.qml")
             .qml_file("qml/SettingsChoice.qml")
             .qml_file("qml/SettingsToggle.qml")
             .qml_file("qml/SettingsSlider.qml")

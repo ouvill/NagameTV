@@ -6,6 +6,8 @@ mod channels;
 mod comment_posting;
 mod comments;
 mod connection;
+#[cfg(feature = "native_tests")]
+pub(crate) mod connection_checks;
 mod epg;
 mod guide;
 mod language;
@@ -24,6 +26,13 @@ mod telemetry;
 
 #[cxx_qt::bridge]
 pub mod ffi {
+    #[cfg(feature = "native_tests")]
+    unsafe extern "C++" {
+        include!("cxx-qt-lib/common.h");
+        #[namespace = "rust::cxxqtlib1"]
+        #[cxx_name = "make_unique"]
+        fn new_player() -> UniquePtr<Player>;
+    }
     unsafe extern "C++" {
         include!("mirakurun-viewer/src/comment_model.cxxqt.h");
         type CommentModel = crate::comment_model::ffi::CommentModel;
@@ -140,6 +149,9 @@ pub mod ffi {
         unsafe fn observe_pointer(self: &Player, item: *mut QQuickItem);
         #[qinvokable]
         fn connect_server(self: Pin<&mut Player>, server: QString) -> bool;
+        #[qsignal]
+        #[cxx_name = "connectionFinished"]
+        fn connection_finished(self: Pin<&mut Player>, success: bool, channels: i32);
         #[qinvokable]
         fn select(self: Pin<&mut Player>, index: i32);
         #[qinvokable]
@@ -220,6 +232,7 @@ pub struct PlayerRust {
     language: QString,
     ui_language: QString,
     server: QString,
+    connection_pending: bool,
     status: QString,
     lifecycle_status: PlaybackStatus,
     playback_error: QString,

@@ -48,6 +48,7 @@ TestCase {
         property int logFolderRequests: 0
         function open_log_folder() { logFolderRequests++; return true; }
         signal connectRequested(string url)
+        signal connectionFinished(bool success, int channels)
         property bool acceptConnection: false
         function connect_server(url) { connectRequested(url); return acceptConnection; }
     }
@@ -130,16 +131,38 @@ TestCase {
         compare(connections.count, 1);
         compare(connect.enabled, false);
     }
-    function test_accepted_connection_closes_and_rejection_stays_open() {
+    function test_connection_waits_for_response_and_success_requires_continue() {
         panel.connectToServer();
         compare(panel.opened, true);
         compare(accepted.count, 0);
-        compare(findChild(panel.contentItem, "connectionError").visible, true);
+        compare(findChild(panel.contentItem, "connectionResult").visible, true);
         backend.acceptConnection = true;
         panel.connectToServer();
+        compare(panel.opened, true);
+        compare(accepted.count, 0);
+        backend.connectionFinished(false, 0);
+        compare(panel.opened, true);
+        compare(accepted.count, 0);
+        panel.connectToServer();
+        backend.connectionFinished(true, 4);
+        compare(panel.opened, true);
+        compare(accepted.count, 0);
+        const button = findChild(panel.contentItem, "connectServer");
+        button.forceActiveFocus();
+        keyClick(Qt.Key_Space);
         tryCompare(panel, "visible", false);
         compare(accepted.count, 1);
-        compare(findChild(panel.contentItem, "connectionError").visible, false);
+    }
+    function test_closed_panel_ignores_late_connection_result() {
+        backend.acceptConnection = true;
+        panel.connectToServer();
+        panel.close();
+        tryCompare(panel, "visible", false);
+        backend.connectionFinished(true, 4);
+        compare(accepted.count, 0);
+        panel.open();
+        tryCompare(panel, "opened", true);
+        compare(findChild(panel.contentItem, "connectionResult").visible, false);
     }
     function test_full_window_layout_and_escape_close() {
         compare(panel.width, panel.parent.width);
@@ -296,7 +319,7 @@ TestCase {
         compare(footer.y, footerY);
         selectPage(SettingsPanel.Connection);
         tryCompare(flick, "contentY", 0);
-        tryCompare(scroll.ScrollBar.vertical, "policy", ScrollBar.AlwaysOff);
+        compare(scroll.ScrollBar.vertical.policy, flick.contentHeight > flick.height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff);
         compare(findChild(panel.contentItem, "serverField").visible, true);
     }
     function test_diagnostics_remain_readable_data() {

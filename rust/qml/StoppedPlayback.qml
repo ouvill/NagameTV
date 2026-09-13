@@ -7,6 +7,7 @@ Rectangle {
     required property string status
     required property bool canPlay
     required property bool hasChannels
+    property bool hasServer: false
     property bool loading: false
     property string playbackError: ""
     property string playbackMessage: ""
@@ -16,6 +17,7 @@ Rectangle {
     signal playRequested
     signal channelsRequested
     signal settingsRequested
+    signal reconnectRequested
     color: "#141516"
     Column {
         anchors.centerIn: parent
@@ -56,7 +58,7 @@ Rectangle {
             implicitHeight: 44
             visible: !root.loading
             enabled: !root.loading
-            text: root.canPlay ? (root.playbackError.length ? qsTranslate("Main", "Retry") : qsTranslate("Main", "Watch")) : root.hasChannels ? qsTranslate("Viewer", "Choose a channel") : qsTranslate("Main", "Connection settings")
+            text: root.canPlay ? (root.playbackError.length ? qsTranslate("Main", "Retry") : qsTranslate("Main", "Watch")) : root.hasChannels ? qsTranslate("Viewer", "Choose a channel") : root.hasServer ? qsTranslate("Connection", "Reconnect") : qsTranslate("Main", "Connection settings")
             contentItem: Label {
                 text: action.text
                 color: "#191a1b"
@@ -73,9 +75,18 @@ Rectangle {
                     root.playRequested();
                 else if (root.hasChannels)
                     root.channelsRequested();
+                else if (root.hasServer)
+                    root.reconnectRequested();
                 else
                     root.settingsRequested();
             }
+        }
+        TextAction {
+            objectName: "changeConnection"
+            anchors.horizontalCenter: parent.horizontalCenter
+            visible: root.hasServer && !root.hasChannels && !root.loading
+            text: qsTranslate("Connection", "Change server")
+            onClicked: root.settingsRequested()
         }
         Row {
             anchors.horizontalCenter: parent.horizontalCenter

@@ -17,6 +17,7 @@ ApplicationWindow {
     color: "#0b0c0b"
     font.family: "Noto Sans CJK JP"
     property bool closing: false
+    property bool setupRequired: false
     property bool usageReady: false
     function recordUsage() {
         if (usageReady && !closing)
@@ -50,6 +51,19 @@ ApplicationWindow {
     readonly property var channelRows: JSON.parse(player.channel_data)
     Player {
         id: player
+    }
+    function openConnectionSettings() {
+        if (root.setupRequired) setup.open();
+        else {
+            settings.page = SettingsPanel.Connection;
+            settings.open();
+        }
+    }
+    function chooseConnectedChannel() {
+        player.guide_open(false);
+        root.showGuide = false;
+        root.showChannels = true;
+        overlayVisibility.reveal();
     }
     function step(offset) {
         overlayVisibility.reveal();
@@ -158,10 +172,11 @@ ApplicationWindow {
         root.usageReady = true;
         root.recordUsage();
         surface.forceActiveFocus();
-        if (player.attach(video) && player.server.length)
+        root.setupRequired = !player.server.trim().length;
+        if (player.attach(video) && !root.setupRequired)
             player.connect_server(player.server);
-        if (!player.server.length)
-            settings.open();
+        if (root.setupRequired)
+            setup.open();
     }
     Item {
         id: surface
@@ -198,13 +213,15 @@ ApplicationWindow {
                 playbackMessage: player.playback_message
                 canPlay: player.selected >= 0
                 hasChannels: root.channelRows.length > 0
+                hasServer: player.server.trim().length > 0 && !root.setupRequired
                 loading: player.loading || player.connecting
                 onPlayRequested: player.play()
                 onChannelsRequested: {
                     if (player.playback_error.length) player.refresh_channels(true)
                     root.showChannels = true
                 }
-                onSettingsRequested: settings.open()
+                onSettingsRequested: root.openConnectionSettings()
+                onReconnectRequested: player.connect_server(player.server)
             }
         }
         WindowDragArea {
@@ -335,10 +352,15 @@ ApplicationWindow {
             onStatsRequested: function (visible) {
                 root.showStats = visible;
             }
-            onConnectionAccepted: {
-                player.guide_open(false);
-                root.showGuide = false;
-                overlayVisibility.reveal();
+            onConnectionAccepted: root.chooseConnectedChannel()
+        }
+        FirstRunSetup {
+            id: setup
+            backend: player
+            targetWindow: root
+            onCompleted: {
+                root.setupRequired = false;
+                root.chooseConnectedChannel();
             }
         }
         Rectangle {

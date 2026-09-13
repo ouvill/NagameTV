@@ -86,6 +86,7 @@ impl Default for PlayerRust {
             error_log,
             log_error: QString::from(log_error),
             server: QString::from(preferences.preferences().server.clone()),
+            connection_pending: false,
             status: lifecycle_status.render(),
             lifecycle_status,
             playback_error: QString::default(),

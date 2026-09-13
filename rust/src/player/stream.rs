@@ -106,7 +106,9 @@ impl ffi::Player {
     pub fn poll(mut self: Pin<&mut Self>) {
         self.as_mut().refresh_channels_if_due();
         if let Err(error) = self.as_mut().poll_channels() {
-            self.status_error(StatusFailure::ChannelPresentation, error);
+            self.as_mut()
+                .status_error(StatusFailure::ChannelPresentation, error);
+            self.finish_connection(false);
             return;
         }
         self.as_mut().poll_features();

@@ -24,19 +24,13 @@ Popup {
     ]
     signal statsRequested(bool visible)
     signal connectionAccepted
-    function connectToServer() {
-        if (backend.loading) return;
-        connectionError.visible = !backend.connect_server(server.text);
-        if (!connectionError.visible) {
-            close();
-            connectionAccepted();
-        }
-    }
+    function connectToServer() { connectionForm.connectToServer(); }
     onPageChanged: {
         pageFlick.contentY = 0;
         if (opened) pageRevealMotion.restart();
     }
     onAboutToHide: pageRevealMotion.complete()
+    onClosed: connectionForm.phase = ConnectionForm.Idle
     NumberAnimation {
         id: pageRevealMotion
         target: root; property: "pageReveal"
@@ -44,8 +38,7 @@ Popup {
         easing.type: Easing.OutCubic
     }
     onAboutToShow: {
-        server.text = backend.server;
-        connectionError.visible = false;
+        connectionForm.reset();
         languageError.visible = false;
         if (!backend.server.length) page = SettingsPanel.Connection;
     }
@@ -284,46 +277,16 @@ Popup {
                         visible: root.page === SettingsPanel.Connection
                         Layout.fillWidth: true
                         spacing: 20
-                        Detail { text: qsTranslate("Settings", "Server URL"); font.pixelSize: 16; font.bold: true }
-                        Detail { text: qsTranslate("Settings", "Enter the Mirakurun server address starting with http:// or https://.") }
-                        RowLayout {
+                        ConnectionForm {
+                            id: connectionForm
                             Layout.fillWidth: true
-                            spacing: 20
-                            TextField {
-                                id: server
-                                objectName: "serverField"
-                                Layout.fillWidth: true
-                                implicitHeight: 58
-                                text: root.backend.server
-                                color: "#f4f5f3"
-                                font.pixelSize: 18
-                                placeholderText: "http://mirakurun:40772"
-                                placeholderTextColor: "#8c918c"
-                                leftPadding: 20; rightPadding: 20
-                                Accessible.name: qsTranslate("Settings", "Server URL")
-                                background: Rectangle {
-                                    radius: 10; color: "#2b2926"
-                                    border.color: server.activeFocus ? "#9caf9f" : "#8c918c"
-                                }
-                                onAccepted: root.connectToServer()
-                                onTextEdited: connectionError.visible = false
-                            }
-                            Action {
-                                objectName: "connectServer"
-                                primary: true
-                                text: root.backend.loading ? qsTranslate("Settings", "Loading channels…") : qsTranslate("Main", "Save and connect")
-                                enabled: !root.backend.loading
-                                onClicked: root.connectToServer()
+                            backend: root.backend
+                            onCompleted: {
+                                root.close();
+                                root.connectionAccepted();
                             }
                         }
                         Detail { text: qsTranslate("Settings", "Changing the server stops playback and loads the new channel list.") }
-                        Problem {
-                            id: connectionError
-                            objectName: "connectionError"
-                            visible: false
-                            message: qsTranslate("Settings", "Could not connect. Check the server URL and try again.")
-                            details: root.backend.status
-                        }
                     }
                     ColumnLayout {
                         visible: root.page === SettingsPanel.Display

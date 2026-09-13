@@ -19,6 +19,7 @@ pub fn run() -> i32 {
         Some("missing-catalog") => localization::run(true),
         Some("subtitle-outline") => outline::run(),
         Some("pointer-activity") => pointer::run(),
+        Some("connection") => crate::player::connection_checks::run(),
         Some("subtitle-rendering") => {
             let mut qt_arguments = vec!["viewer-subtitle-tests".to_owned()];
             qt_arguments.extend(arguments);
@@ -26,7 +27,7 @@ pub fn run() -> i32 {
         }
         _ => {
             eprintln!(
-                "Expected --native-tests localization|missing-catalog|subtitle-outline|pointer-activity|subtitle-rendering"
+                "Expected --native-tests localization|missing-catalog|subtitle-outline|pointer-activity|subtitle-rendering|connection"
             );
             2
         }
