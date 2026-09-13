@@ -95,4 +95,5 @@ pub(crate) unsafe fn check(
     playback.shutdown().unwrap();
     assert_eq!(writes.load(Ordering::Relaxed), 2);
     playback.stop().unwrap();
+    super::session::check_stop_ownership();
 }

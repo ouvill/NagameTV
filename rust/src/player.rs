@@ -20,6 +20,7 @@ mod startup;
 mod statistics;
 mod status;
 mod stream;
+mod stream_state;
 mod subtitle_rendering;
 mod subtitle_status;
 mod telemetry;
@@ -82,6 +83,7 @@ pub mod ffi {
         #[qproperty(QString, language, READ, NOTIFY)]
         #[qproperty(QString, ui_language, READ, NOTIFY)]
         #[qproperty(QString, server, READ, NOTIFY)]
+        #[qproperty(bool, server_configured, READ = server_configured, NOTIFY)]
         #[qproperty(QString, status, READ, NOTIFY)]
         #[qproperty(QString, playback_error, READ, NOTIFY)]
         #[qproperty(QString, playback_message, READ, NOTIFY)]
@@ -92,9 +94,9 @@ pub mod ffi {
         #[qproperty(QString, guide_visibility_data, READ, NOTIFY)]
         #[qproperty(f64, channel_program_now, READ, NOTIFY)]
         #[qproperty(i32, selected, READ, NOTIFY)]
-        #[qproperty(bool, loading, READ, NOTIFY)]
-        #[qproperty(bool, connecting, READ, NOTIFY)]
-        #[qproperty(bool, playing, READ, NOTIFY)]
+        #[qproperty(bool, loading, READ = loading, NOTIFY)]
+        #[qproperty(bool, connecting, READ = connecting, NOTIFY)]
+        #[qproperty(bool, playing, READ = playing, NOTIFY)]
         #[qproperty(bool, subtitles_enabled, READ, CONSTANT)]
         #[qproperty(bool, epg_enabled, READ, CONSTANT)]
         #[qproperty(bool, comments_enabled, READ, NOTIFY)]
@@ -120,6 +122,7 @@ pub mod ffi {
         #[qproperty(QString, subtitle_status, READ, NOTIFY)]
         #[qproperty(QString, epg_data, READ, NOTIFY)]
         #[qproperty(QString, epg_status, READ, NOTIFY)]
+        #[qproperty(bool, guide_visible, READ = guide_visible, NOTIFY)]
         #[qproperty(QString, current_program_data, READ, NOTIFY)]
         #[qproperty(f64, program_progress, READ, NOTIFY)]
         #[qproperty(f64, volume_level, READ, NOTIFY)]
@@ -127,6 +130,11 @@ pub mod ffi {
         #[qproperty(QString, settings_error, READ, NOTIFY)]
         #[qproperty(QString, diagnostics, READ, NOTIFY)]
         type Player = super::PlayerRust;
+        fn server_configured(self: &Player) -> bool;
+        fn loading(self: &Player) -> bool;
+        fn connecting(self: &Player) -> bool;
+        fn playing(self: &Player) -> bool;
+        fn guide_visible(self: &Player) -> bool;
         #[qinvokable]
         fn request_language(self: Pin<&mut Player>, language: QString) -> bool;
         #[qinvokable]
@@ -219,10 +227,7 @@ pub mod ffi {
     }
 }
 
-use crate::{
-    features::{program_info::ProgramInfo, subtitles},
-    playback, services, settings,
-};
+use crate::{features::program_info::ProgramInfo, playback, services, settings};
 use cxx_qt::CxxQtType;
 use cxx_qt_lib::QString;
 use std::pin::Pin;
@@ -232,7 +237,7 @@ pub struct PlayerRust {
     language: QString,
     ui_language: QString,
     server: QString,
-    connection_pending: bool,
+    pending_server: Option<services::ServerUrl>,
     status: QString,
     lifecycle_status: PlaybackStatus,
     playback_error: QString,
@@ -250,9 +255,7 @@ pub struct PlayerRust {
     browser_projection: Option<crate::features::program_info::browser::Projection>,
     selected: i32,
     catalog_selection: channels::SelectionPolicy,
-    loading: bool,
-    connecting: bool,
-    playing: bool,
+    stream_state: stream_state::State,
     subtitles_enabled: bool,
     epg_enabled: bool,
     comments_enabled: bool,
@@ -295,10 +298,7 @@ pub struct PlayerRust {
     settings_error: QString,
     preferences: settings::Session,
     autoplay_pending: bool,
-    subtitle_session: Option<subtitles::Session>,
     epg: ProgramInfo,
-    active_service: Option<u64>,
-    resume_retry_used: bool,
     guide: crate::features::program_info::guide::Guide,
     guide_dirty: bool,
     guide_revision: u64,
@@ -306,7 +306,7 @@ pub struct PlayerRust {
     request: crate::features::channel_catalog::Acquisition,
     channel_refresh: channel_refresh::Refresh,
     network: Option<services::Network>,
-    playback: Option<playback::Playback>,
+    media: playback::Session,
     entries: Vec<crate::channels::Channel>,
 }
 
@@ -443,9 +443,6 @@ impl ffi::Player {
         f64
     );
     property_setter!(set_selected, selected, selected_changed, i32);
-    property_setter!(set_loading, loading, loading_changed, bool);
-    property_setter!(set_connecting, connecting, connecting_changed, bool);
-    property_setter!(set_playing, playing, playing_changed, bool);
     property_setter!(
         set_subtitles_active,
         subtitles_active,
@@ -522,15 +519,9 @@ impl ffi::Player {
     /// must obtain a successful shutdown before destroying it. Native types must use truthful Qt
     /// meta-objects; the GStreamer QML module must come from the installed plugin.
     pub unsafe fn attach(mut self: Pin<&mut Self>, item: *mut ffi::QQuickItem) -> bool {
-        let result = self
-            .as_mut()
-            .rust_mut()
-            .playback
-            .as_mut()
-            .ok_or(playback::Error::Unavailable)
-            // SAFETY: The QML caller supplies the lifetime/thread guarantees
-            // above. Playback checks the concrete type before passing it to Gst.
-            .and_then(|p| unsafe { p.attach(item) });
+        // SAFETY: The QML caller supplies the lifetime/thread guarantees above.
+        // The session validates the concrete type before passing it to Gst.
+        let result = unsafe { self.as_mut().rust_mut().media.attach(item) };
         if let Err(error) = result {
             self.playback_failed(error);
             return false;
@@ -547,11 +538,9 @@ impl ffi::Player {
 impl Drop for PlayerRust {
     fn drop(&mut self) {
         self.epg_events.configure(None);
-        // Qt normally calls shutdown; also cover a failed QML construction.
-        if let Some(playback) = self.playback.as_mut() {
-            playback.shutdown_before_drop();
-        }
-        self.subtitle_session = None;
+        // The media owner enforces native shutdown before subtitle destruction,
+        // including when QML construction failed before onClosing could run.
+        self.media.shutdown_before_drop();
         self.epg.configure(None);
     }
 }

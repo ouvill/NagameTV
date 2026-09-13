@@ -5,7 +5,7 @@ use cxx_qt_lib::QString;
 
 impl ffi::Player {
     pub fn video_stats(&self) -> QString {
-        let Some(playback) = &self.rust().playback else {
+        let Some(playback) = self.rust().media.playback() else {
             return QString::from("{}");
         };
         match serde_json::to_string(&playback.video_stats()) {

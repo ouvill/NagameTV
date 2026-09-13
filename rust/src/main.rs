@@ -116,7 +116,7 @@ fn run() -> Result<(), StartupError> {
             settings::Language::System
         } else {
             settings::settings_path()
-                .and_then(settings::Session::open)
+                .and_then(settings::Loaded::open)
                 .map(|session| session.preferences().language)
                 .unwrap_or_default()
         };

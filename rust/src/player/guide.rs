@@ -6,12 +6,23 @@ use cxx_qt_lib::QString;
 use std::pin::Pin;
 
 impl ffi::Player {
+    pub fn guide_visible(&self) -> bool {
+        match self.rust().guide {
+            Guide::Closed => false,
+            Guide::AwaitingDay | Guide::Showing(_) => true,
+        }
+    }
+
     pub fn guide_open(mut self: Pin<&mut Self>, open: bool) {
-        if open && self.rust().epg_enabled {
+        let open = open && self.rust().epg_enabled;
+        if open == self.guide_visible() {
+            return;
+        }
+        if open {
             self.as_mut().refresh_channels(true);
             self.as_mut().refresh_epg();
         }
-        self.as_mut().rust_mut().guide = if open && self.rust().epg_enabled {
+        self.as_mut().rust_mut().guide = if open {
             Guide::AwaitingDay
         } else {
             Guide::Closed
@@ -22,7 +33,10 @@ impl ffi::Player {
         self.as_mut().rust_mut().guide_dirty = false;
         self.as_mut().rust_mut().guide_error = None;
         self.as_mut().refresh_epg_status();
-        self.set_epg_data(QString::from("[]"));
+        self.as_mut().set_epg_data(QString::from("[]"));
+        // The QML Loader may synchronously request its first day on this signal.
+        // Publish visibility only after the backend is ready to accept that day.
+        self.guide_visible_changed();
     }
     pub(super) fn poll_guide_visibility(self: Pin<&mut Self>, now: Option<u64>) {
         if matches!(self.rust().guide, Guide::Closed) {

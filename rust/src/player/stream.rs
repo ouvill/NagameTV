@@ -1,24 +1,43 @@
 //! Coordinate playback requests, native state changes and final shutdown.
 //!
-//! Keep READY-before-subtitle-release and the single fresh-connection retry in
-//! one place. Channel acquisition and feature workers retain their own modules.
+//! Delegate resource ordering to playback::Session and retain the single
+//! fresh-connection retry here. Feature workers own their own lifecycles.
+use super::stream_state::{Attempt, State};
 use super::{PlaybackStatus, StatusFailure, channel_refresh, ffi, subtitle_status};
-use crate::{features::subtitles, playback};
+use crate::playback;
 use cxx_qt::CxxQtType;
 use cxx_qt_lib::QString;
 use std::pin::Pin;
 
 impl ffi::Player {
+    pub fn connecting(&self) -> bool {
+        self.rust().stream_state.connecting()
+    }
+    pub fn playing(&self) -> bool {
+        self.rust().stream_state.playing()
+    }
+    pub(super) fn update_stream_state(mut self: Pin<&mut Self>, state: State) {
+        let was_connecting = self.connecting();
+        let was_playing = self.playing();
+        // Commit the whole state before notifying Qt: either signal's observers
+        // see coherent values for both properties and the active channel.
+        self.as_mut().rust_mut().stream_state = state;
+        if was_connecting != self.connecting() {
+            self.as_mut().connecting_changed();
+        }
+        if was_playing != self.playing() {
+            self.as_mut().playing_changed();
+        }
+    }
     /// READY joins streaming callbacks before dropping their subscriptions/state.
     pub(super) fn end_stream(mut self: Pin<&mut Self>) -> Result<(), playback::Error> {
-        // Reveal controls even if the native stop itself fails.
-        self.as_mut().set_connecting(false);
-        self.as_mut().set_playing(false);
-        if let Some(playback) = &self.rust().playback {
-            playback.stop()?;
+        let result = self.as_mut().rust_mut().media.stop().map(|_| ());
+        if let Err(error) = result {
+            let state = self.rust().stream_state.stop_failed();
+            self.as_mut().update_stream_state(state);
+            return Err(error);
         }
-        self.as_mut().rust_mut().subtitle_session = None;
-        self.as_mut().rust_mut().active_service = None;
+        self.as_mut().update_stream_state(State::Stopped);
         self.as_mut().set_subtitles_active(false);
         self.as_mut().rust_mut().subtitle_cells = 0;
         self.as_mut().set_subtitle_data(QString::default());
@@ -29,69 +48,64 @@ impl ffi::Player {
     pub fn play(mut self: Pin<&mut Self>) {
         self.record_diagnostic(viewer_diagnostics::recorder::Event::PlayRequested);
         self.as_mut().clear_playback_failure();
-        self.as_mut().rust_mut().resume_retry_used = false;
-        self.start_stream();
-    }
-    fn start_stream(mut self: Pin<&mut Self>) {
         let Some(entry) = self.rust().entries.get(*self.selected() as usize) else {
             return;
         };
-        let (id, name, broadcast) = (entry.id, entry.name.clone(), entry.broadcast);
+        if self.rust().stream_state.requested(entry.id) {
+            return;
+        }
+        let attempt = Attempt::new(entry);
+        self.start_stream(attempt);
+    }
+    fn start_stream(mut self: Pin<&mut Self>, attempt: Attempt) {
+        let (id, broadcast) = (attempt.service, attempt.broadcast);
         let server = self.server().to_string();
-        if self.rust().active_service == Some(id) {
-            return;
-        }
-        if let Err(error) = self.as_mut().end_stream() {
-            self.playback_failed(error);
-            return;
-        }
-        if self.rust().subtitles_enabled {
-            let result = self
-                .rust()
-                .playback
-                .as_ref()
-                .ok_or(subtitles::Error::PlaybackUnavailable)
-                .and_then(|p| subtitles::Session::start(p.element(), broadcast));
-            match result {
-                Ok(session) => {
-                    self.as_mut().rust_mut().subtitle_session = Some(session);
-                    self.as_mut().set_subtitles_active(true);
-                    self.as_mut()
-                        .update_subtitle_status(subtitle_status::Status::Parsing);
-                }
-                Err(error) => self
-                    .as_mut()
-                    .update_subtitle_status(subtitle_status::Status::Failed(error)),
+        let subtitles_enabled = self.rust().subtitles_enabled;
+        // Keep stop failure distinct: the previous generation is still owned.
+        // A successful stop grants an exclusive capability for the next start.
+        let result = {
+            let mut this = self.as_mut().rust_mut();
+            this.media
+                .stop()
+                .map(|stopped| stopped.start(&server, id, broadcast, subtitles_enabled))
+        };
+        let result = match result {
+            Ok(result) => result,
+            Err(error) => {
+                self.playback_failed(error);
+                return;
             }
-        }
-        let result = self
-            .rust()
-            .playback
-            .as_ref()
-            .map(|p| p.play(&server, id, broadcast));
+        };
+        self.as_mut().update_stream_state(State::Stopped);
+        self.as_mut().rust_mut().subtitle_cells = 0;
+        self.as_mut().set_subtitle_data(QString::default());
+        let active = self.rust().media.subtitles().is_some();
+        self.as_mut().set_subtitles_active(active);
+        self.as_mut().update_subtitle_status(if active {
+            subtitle_status::Status::Parsing
+        } else {
+            subtitle_status::Status::Stopped
+        });
         match result {
-            Some(Ok(_)) => {
+            Ok(subtitles) => {
+                match subtitles {
+                    playback::SubtitleStart::Disabled | playback::SubtitleStart::Parsing => {}
+                    playback::SubtitleStart::Failed(error) => self
+                        .as_mut()
+                        .update_subtitle_status(subtitle_status::Status::Failed(error)),
+                }
+
                 self.as_mut()
                     .rust_mut()
                     .preferences
-                    .preferences_mut()
-                    .service_id = id.to_string();
-                self.as_mut().rust_mut().active_service = Some(id);
-                self.as_mut().set_connecting(true);
+                    .change(crate::settings::Change::Service(id.to_string()));
+                let name = attempt.name.clone();
+                self.as_mut()
+                    .update_stream_state(State::Connecting(attempt));
                 self.as_mut()
                     .update_status(PlaybackStatus::Connecting(name));
             }
-            Some(Err(error)) => {
-                let failure = match self.as_mut().end_stream() {
-                    Ok(()) => error,
-                    Err(cleanup) => playback::Error::Cleanup {
-                        primary: Box::new(error),
-                        cleanup: Box::new(cleanup),
-                    },
-                };
-                self.as_mut().playback_failed(failure);
-            }
-            None => self.as_mut().playback_failed(playback::Error::Unavailable),
+            Err(error) => self.as_mut().playback_failed(error),
         }
     }
     pub fn stop(mut self: Pin<&mut Self>) {
@@ -112,25 +126,25 @@ impl ffi::Player {
             return;
         }
         self.as_mut().poll_features();
-        let result = self.rust().playback.as_ref().map(playback::Playback::poll);
+        let result = self.rust().media.playback().map(playback::Playback::poll);
         self.poll_audio_choice();
         match result {
             Some(Ok(true)) => {
-                self.as_mut().clear_playback_failure();
-                self.as_mut().set_playing(true);
-                self.as_mut().set_connecting(false);
-                if let Some(entry) = self.rust().entries.get(*self.selected() as usize) {
-                    let status = PlaybackStatus::Playing(entry.name.clone());
-                    tracing::info!("Pipeline PLAYING service {}", entry.id);
+                if let Some(attempt) = self.rust().stream_state.started() {
+                    let status = PlaybackStatus::Playing(attempt.name.clone());
+                    tracing::info!("Pipeline PLAYING service {}", attempt.service);
+                    self.as_mut().clear_playback_failure();
+                    self.as_mut().update_stream_state(State::Playing(attempt));
                     self.as_mut().update_status(status);
                 }
             }
             Some(Err(error)) => {
                 let text = error.to_string();
                 tracing::error!("Playback error: {text}");
-                let recover = error.is_live_resume_rejected()
-                    && self.rust().active_service.is_some()
-                    && !self.rust().resume_retry_used;
+                let retry = error
+                    .is_live_resume_rejected()
+                    .then(|| self.rust().stream_state.resume_retry())
+                    .flatten();
                 if let Err(stop_error) = self.as_mut().end_stream() {
                     self.playback_failed(playback::Error::Cleanup {
                         primary: Box::new(error),
@@ -138,11 +152,10 @@ impl ffi::Player {
                     });
                     return;
                 }
-                if recover {
-                    self.as_mut().rust_mut().resume_retry_used = true;
+                if let Some(attempt) = retry {
                     tracing::warn!("Live resume rejected; opening one fresh stream connection");
-                    self.as_mut().start_stream();
-                    if self.rust().active_service.is_some() {
+                    self.as_mut().start_stream(attempt);
+                    if self.connecting() {
                         self.update_status(PlaybackStatus::Reconnecting);
                     }
                 } else {
@@ -153,9 +166,8 @@ impl ffi::Player {
         }
     }
     pub fn shutdown(mut self: Pin<&mut Self>) -> bool {
-        if let Some(playback) = self.as_mut().rust_mut().playback.as_mut()
-            && let Err(error) = playback.shutdown()
-        {
+        let result = self.as_mut().rust_mut().media.shutdown();
+        if let Err(error) = result {
             tracing::error!("Playback shutdown failed; keeping the window alive: {error}");
             self.playback_failed(error);
             return false;
@@ -178,6 +190,7 @@ impl ffi::Player {
             tracing::error!("Stream cleanup after shutdown failed: {error}");
         }
         self.as_mut().rust_mut().request.cancel();
+        self.as_mut().cancel_connection();
         self.save_settings();
         true
     }

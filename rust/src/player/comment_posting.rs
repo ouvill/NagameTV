@@ -21,8 +21,7 @@ impl ffi::Player {
         self.as_mut()
             .rust_mut()
             .preferences
-            .preferences_mut()
-            .comment_send_on_enter = enabled;
+            .change(crate::settings::Change::CommentSendOnEnter(enabled));
         self.as_mut().set_comment_send_on_enter(enabled);
         self.save_settings();
     }

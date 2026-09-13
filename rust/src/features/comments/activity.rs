@@ -1,7 +1,7 @@
 //! One optional activity request, independent of commentary reception and video playback.
 use crate::{
     channels::Channel,
-    services::{Job, Network, NetworkError, Stopping},
+    services::{Job, Network, Progress, Stopping},
 };
 use std::time::{Duration, Instant};
 use viewer_comments::activity::{Error, MAX_RESPONSE_BYTES, Snapshot};
@@ -44,24 +44,27 @@ impl Activity {
     }
     fn poll_at(&mut self, network: &Network, now: Instant, endpoint: &str) {
         self.acquisition = match std::mem::take(&mut self.acquisition) {
-            Acquisition::Cancelling(job) if job.is_finished() => Acquisition::Idle,
-            Acquisition::Fetching(job) if job.is_finished() => {
-                let snapshot = match job
-                    .poll()
-                    .unwrap_or_else(|| Err(NetworkError::WorkerStopped.into()))
-                {
-                    Ok(snapshot) => snapshot,
-                    Err(error) => {
-                        tracing::error!("Comment activity fetch failed: {error}");
-                        Snapshot::default()
-                    }
-                };
-                self.dirty |= self.snapshot != snapshot;
-                self.snapshot = snapshot;
-                self.next = Some(now + REFRESH);
-                Acquisition::Idle
-            }
-            state => state,
+            Acquisition::Cancelling(job) => match job.poll() {
+                Progress::Pending(job) => Acquisition::Cancelling(job),
+                Progress::Complete(()) => Acquisition::Idle,
+            },
+            Acquisition::Fetching(job) => match job.poll() {
+                Progress::Pending(job) => Acquisition::Fetching(job),
+                Progress::Complete(result) => {
+                    let snapshot = match result {
+                        Ok(snapshot) => snapshot,
+                        Err(error) => {
+                            tracing::error!("Comment activity fetch failed: {error}");
+                            Snapshot::default()
+                        }
+                    };
+                    self.dirty |= self.snapshot != snapshot;
+                    self.snapshot = snapshot;
+                    self.next = Some(now + REFRESH);
+                    Acquisition::Idle
+                }
+            },
+            Acquisition::Idle => Acquisition::Idle,
         };
         if self.enabled
             && matches!(self.acquisition, Acquisition::Idle)

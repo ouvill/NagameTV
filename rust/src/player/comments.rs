@@ -8,8 +8,7 @@ impl ffi::Player {
         self.as_mut()
             .rust_mut()
             .preferences
-            .preferences_mut()
-            .comment_shadow_enabled = enabled;
+            .change(crate::settings::Change::CommentShadow(enabled));
         self.as_mut().set_comment_shadow_enabled(enabled);
         self.save_settings();
     }
@@ -31,11 +30,12 @@ impl ffi::Player {
         };
         {
             let mut this = self.as_mut().rust_mut();
-            let prefs = this.preferences.preferences_mut();
-            prefs.danmaku_enabled = enabled;
-            prefs.comment_font_size = size;
-            prefs.comment_opacity = opacity;
-            prefs.comment_speed = speed;
+            this.preferences.change(crate::settings::Change::Danmaku {
+                enabled,
+                size,
+                opacity,
+                speed,
+            });
         }
         self.as_mut().set_danmaku_enabled(enabled);
         self.as_mut().set_comment_font_size(size.into());
@@ -50,8 +50,7 @@ impl ffi::Player {
         self.as_mut()
             .rust_mut()
             .preferences
-            .preferences_mut()
-            .comments_enabled = enabled;
+            .change(crate::settings::Change::Comments(enabled));
         self.as_mut().poll_comments();
         self.save_settings();
     }
@@ -86,7 +85,11 @@ impl ffi::Player {
                 },
                 None => Vec::new(),
             };
-            (reset, comments, this.playing && this.danmaku_enabled)
+            (
+                reset,
+                comments,
+                this.stream_state.playing() && this.danmaku_enabled,
+            )
         };
         // Build only newly received live signals, before moving history into its model.
         let live = project_live_comments(

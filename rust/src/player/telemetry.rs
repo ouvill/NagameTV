@@ -39,7 +39,7 @@ impl ffi::Player {
         }
         let mut this = self.as_mut().rust_mut();
         let options = Options {
-            playing: this.playing,
+            playing: this.stream_state.playing(),
             subtitles: this.subtitles_enabled,
             comments: this.comments_enabled,
             epg: this.epg_enabled,
@@ -70,12 +70,12 @@ impl ffi::Player {
         let (history, text_bytes) = this.comment_model.storage();
         // Only queried while diagnostics are enabled; no frame probes or history.
         let video = this
-            .playback
-            .as_ref()
+            .media
+            .playback()
             .and_then(|playback| playback.video_frame_counters());
-        let warnings = this.playback.as_ref().map(|p| p.warning_counts());
+        let warnings = this.media.playback().map(|p| p.warning_counts());
         let snapshot = Snapshot {
-            playing: this.playing,
+            playing: this.stream_state.playing(),
             video_rendered: video.as_ref().map(|counters| counters.rendered),
             video_dropped: video.as_ref().map(|counters| counters.dropped),
             gst_warning_count: warnings.map(|counts| counts.total),
@@ -95,8 +95,8 @@ impl ffi::Player {
             comment_history_text_capacity_bytes: text_bytes,
             subtitle_cells: this.subtitle_cells,
             subtitle_pending: this
-                .subtitle_session
-                .as_ref()
+                .media
+                .subtitles()
                 .and_then(|session| session.pending_diagnostic()),
             epg_loading: tasks > 0 && !stopping,
         };
@@ -151,8 +151,8 @@ impl ffi::Player {
         if Instant::now() >= self.rust().next_diagnostic {
             let (subscriptions, pending, decoded) = self
                 .rust()
-                .subtitle_session
-                .as_ref()
+                .media
+                .subtitles()
                 .map(|s| s.counters())
                 .unwrap_or_default();
             let (tasks, programs, stopping) = self.rust().epg.counters();

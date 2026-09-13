@@ -14,7 +14,9 @@ normal application builds. Test QObjects are generated from
 | Command | Preserved coverage | Hardware |
 | --- | --- | --- |
 | `bash scripts/test-localization.sh` | Locale resolution, existing QML retranslation, date stability, dynamic snapshots, literal diagnostic arguments, 100 repeated language switches and translator ownership; a separate process removes the real catalog resource and checks failure cleanup | None: QCoreApplication and QtObject |
-| `bash scripts/test-connection.sh` | Real Player and local HTTP fixtures: pending/failed connections preserve saved settings, empty catalogs, successful saves, save failures and shutdown during a request | None: QCoreApplication and HTTP |
+| `bash scripts/test-connection.sh` | Real Player and local HTTP fixtures: pending/failed saves, empty catalogs, save failures, shutdown, coherent stream properties during Qt signals, retry allowance and guide visibility/day notification order | None: QCoreApplication and HTTP |
+| `bash scripts/test-startup.sh` | Production Main.qml in separate processes: first run, two saved startups, channel restoration, guide open/close, native playback failure and clean shutdown; QML warnings fail the test | Validated X11 display, GPU and PulseAudio output |
+| `bash scripts/test-video-item.sh` | Video-item attachment, terminal shutdown, failed native transitions, and retained subtitle subscriptions until a successful stop | Validated X11 display and GPU; native graph stays in NULL |
 | `bash scripts/test-subtitle-outline.sh` | Six pixel-exact QPainterPath/SVG comparisons: full height, small ink/cubic curves, midline, overhang/descender, separate contours, empty path | None: QCoreApplication and in-memory QImage rasterization |
 | `bash scripts/test-pointer-activity.sh` | Duplicate installation, repeated positions, disabled items, window changes, observer deletion and event delivery after item destruction | Validated X11 display and GPU |
 | `bash scripts/test-subtitle-rendering.sh` | Existing Qt Quick Test assertions, using the Rust TestOutlineProvider and the production outline helper | Validated X11 display and GPU |
@@ -32,6 +34,13 @@ cargo build --manifest-path rust/Cargo.toml --locked --features native_tests
 
 Use the validating scripts for hardware-dependent execution.
 `scripts/run-native-tests.sh` is their common Cargo launcher.
+
+The startup suite uses an isolated configuration and a local HTTP fixture, with
+the real Player, GStreamer pipeline and video item. The fixture returns HTTP 503
+for a stream request to exercise failure cleanup without a tuner. It does not
+verify successful broadcast playback or audible sound. The internal
+`startup-window` subprocess is launched by the suite after hardware validation;
+run the public script rather than invoking this subprocess directly.
 
 `rust/src/native_tests/qt_test_api.h` exposes resource registration, Qt object
 introspection, raster drawing and event delivery. It contains no test cases or

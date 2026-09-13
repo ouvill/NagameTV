@@ -2,6 +2,8 @@
 
 コマンドは、特記がない限りリポジトリーのルートで実行します。
 アプリの導入と基本操作は[README](../README.md)を参照してください。
+実装とレビューでは[コード規約](coding-conventions.md)に従い、enumとTypestateで
+状態・前提条件・操作順序を表す設計を優先します。
 
 ## Flatpakパッケージを作る
 
@@ -57,6 +59,22 @@ CARGO_TARGET_DIR=build/cargo cargo test --manifest-path rust/Cargo.toml --releas
 このコマンドは表示・GPU・音声機器を使用しません。
 音声切り替えのCPU結合試験にはGStreamer Bad Plug-insの`testsrcbin`が必要です。
 Qtの画面試験は別の実行手順で、表示環境などを確認してから起動します。[Qtテスト](qt-tests.md)
+
+RustとQMLのプロパティ・通知・起動処理を変更した場合は、次も実行します。
+
+```sh
+bash scripts/test-connection.sh
+bash scripts/test-startup.sh
+```
+
+接続テストは機器を使用せず、Qt通知時の状態の整合性も確認します。起動テストは
+表示・GPU・音声を検証してから製品の`Main.qml`を読み込み、初回・設定済み起動・
+番組表の開閉・再生エラー・終了を確認します。設定先は一時ディレクトリーです。
+画面部品を変更した場合は、その部品のQMLテストも実行してください。
+
+製品のQMLコンポーネントは`rust/qml/`直下に置きます。`rust/build.rs`がこのディレクトリーの
+`.qml`ファイルを列挙して登録するため、ファイル一覧の追記は不要です。
+`rust/qml/tests/`のテスト用コンポーネントは製品モジュールへ含めません。
 
 通常ログは標準エラーへ出力し、既定は`info`以上です。
 `RUST_LOG=debug`で詳細ログ、`RUST_LOG=info,qt=debug`でQt/QMLのdebugログも表示できます。

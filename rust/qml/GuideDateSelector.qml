@@ -30,12 +30,14 @@ Rectangle {
         scroll.to = Math.max(0, Math.min(Math.max(0, flick.contentWidth - flick.width), center - flick.width / 2))
         scroll.restart()
     }
+    // Deferred layout work belongs to this selector and is cancelled with it.
+    Timer { id: revealTimer; interval: 0; onTriggered: root.revealSelected() }
     onCurrentIndexChanged: {
-        Qt.callLater(revealSelected)
+        revealTimer.restart()
         if (fade && compact) fade.restart()
     }
-    onWidthChanged: Qt.callLater(revealSelected)
-    onCompactChanged: Qt.callLater(revealSelected)
+    onWidthChanged: revealTimer.restart()
+    onCompactChanged: revealTimer.restart()
     Component.onCompleted: revealSelected()
     Keys.onLeftPressed: selectDay(currentIndex - 1)
     Keys.onRightPressed: selectDay(currentIndex + 1)

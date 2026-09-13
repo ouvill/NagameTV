@@ -1,5 +1,11 @@
 # Video item FFI safety
 
+`playback::Session` now owns Playback and its subtitle generation together.
+Player delegates attachment and shutdown to this owner. Native stream control
+and the raw element accessor are private to the playback module; callers can
+start a replacement only through the exclusive `Stopped` capability returned
+after successful cleanup. This does not remove the Qt lifetime obligations below.
+
 `Player::attach` accepts a QML `QQuickItem*`, but `qml6glsink` does not accept
 arbitrary Qt Quick items. `Playback::attach` validates the pointer through
 `qml6VideoItemPointer` immediately before setting `widget`. Null, incompatible

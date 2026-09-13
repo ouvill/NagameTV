@@ -1,23 +1,23 @@
 //! Own one catalog acquisition until its task has released the previous generation.
 use crate::{
     channels,
-    services::{FetchError, Network, NetworkError, Request, Stopping},
+    services::{FetchError, Network, Probe, Progress, ServerUrl, Stopping, VerifiedServer},
 };
 
 #[derive(Default)]
 enum Phase {
     #[default]
     Idle,
-    Fetching(Request),
+    Fetching(Probe),
     Cancelling(Stopping),
 }
 #[derive(Default)]
 pub struct Acquisition {
     phase: Phase,
-    pending: Option<String>,
+    pending: Option<ServerUrl>,
 }
 impl Acquisition {
-    pub fn request(&mut self, server: String) {
+    pub fn request(&mut self, server: ServerUrl) {
         self.cancel();
         self.pending = Some(server);
     }
@@ -34,18 +34,21 @@ impl Acquisition {
     pub fn poll(
         &mut self,
         network: &Network,
-    ) -> Option<Result<Vec<channels::Channel>, FetchError<channels::Error>>> {
+    ) -> Option<Result<VerifiedServer, FetchError<channels::Error>>> {
         let mut result = None;
         self.phase = match std::mem::take(&mut self.phase) {
-            Phase::Cancelling(job) if job.is_finished() => Phase::Idle,
-            Phase::Fetching(job) if job.is_finished() => {
-                result = Some(
-                    job.poll()
-                        .unwrap_or_else(|| Err(NetworkError::WorkerStopped.into())),
-                );
-                Phase::Idle
-            }
-            phase => phase,
+            Phase::Cancelling(job) => match job.poll() {
+                Progress::Pending(job) => Phase::Cancelling(job),
+                Progress::Complete(()) => Phase::Idle,
+            },
+            Phase::Fetching(job) => match job.poll() {
+                Progress::Pending(job) => Phase::Fetching(job),
+                Progress::Complete(completed) => {
+                    result = Some(completed);
+                    Phase::Idle
+                }
+            },
+            Phase::Idle => Phase::Idle,
         };
         if matches!(self.phase, Phase::Idle)
             && let Some(server) = self.pending.take()
@@ -59,6 +62,7 @@ impl Acquisition {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::services::NetworkError;
     use std::{
         thread,
         time::{Duration, Instant},
@@ -71,7 +75,7 @@ mod tests {
         let mut acquisition = Acquisition::default();
         // Closed local endpoint produces a completed transport error without hardware.
         let listener = std::net::TcpListener::bind("127.0.0.1:0")?;
-        let server = format!("http://{}", listener.local_addr()?);
+        let server = ServerUrl::parse(&format!("http://{}", listener.local_addr()?))?;
         drop(listener);
         acquisition.request(server.clone());
         assert!(acquisition.poll(&network).is_none());
@@ -80,10 +84,13 @@ mod tests {
             assert!(Instant::now() < deadline);
             thread::sleep(Duration::from_millis(1));
         }
-        acquisition.request("http://obsolete.invalid".into());
+        acquisition.request(ServerUrl::parse("http://obsolete.invalid")?);
         acquisition.request(server.clone());
         assert!(matches!(acquisition.phase, Phase::Cancelling(_)));
-        assert_eq!(acquisition.pending.as_deref(), Some(server.as_str()));
+        assert_eq!(
+            acquisition.pending.as_ref().map(ServerUrl::as_str),
+            Some(server.as_str())
+        );
         assert!(
             acquisition.poll(&network).is_none(),
             "old completed error must not escape"
@@ -157,7 +164,7 @@ mod tests {
         }
         let listener = TcpListener::bind("127.0.0.1:0")?;
         listener.set_nonblocking(true)?;
-        let endpoint = format!("http://{}", listener.local_addr()?);
+        let endpoint = ServerUrl::parse(&format!("http://{}", listener.local_addr()?))?;
         let (ready, started) = mpsc::sync_channel(1);
         let server = thread::spawn(move || -> std::io::Result<()> {
             let mut old = request(&listener)?;
@@ -181,7 +188,7 @@ mod tests {
         assert!(acquisition.poll(&network).is_none());
         started.recv_timeout(Duration::from_secs(3))?;
         acquisition.cancel();
-        acquisition.request(endpoint);
+        acquisition.request(endpoint.clone());
         let deadline = Instant::now() + Duration::from_secs(3);
         let entries = loop {
             assert!(Instant::now() < deadline);
@@ -190,8 +197,9 @@ mod tests {
             }
             thread::sleep(Duration::from_millis(1));
         };
-        assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].id, 42);
+        assert_eq!(entries.channels().len(), 1);
+        assert_eq!(entries.channels()[0].id, 42);
+        assert_eq!(entries.url(), &endpoint);
         assert!(!acquisition.is_busy());
         assert!(
             acquisition.poll(&network).is_none(),

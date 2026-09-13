@@ -25,8 +25,6 @@ use std::sync::Arc;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("Playback unavailable")]
-    PlaybackUnavailable,
     #[error("Missing playback bin")]
     MissingBin,
     #[error("Missing playback bus")]

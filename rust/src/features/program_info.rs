@@ -1,6 +1,6 @@
 //! EPG acquisition lives independently of playback and of the guide's visibility.
 use crate::channels::BroadcastService;
-use crate::services::{FetchError, Job, Network, NetworkError, Stopping};
+use crate::services::{FetchError, Job, Network, Progress, Stopping};
 pub mod browser;
 mod genre;
 mod grid;
@@ -111,39 +111,42 @@ impl ProgramInfo {
     fn poll_at(&mut self, network: &Network, now: Instant) -> Update {
         let mut update = Update::default();
         self.acquisition = match std::mem::take(&mut self.acquisition) {
-            Acquisition::Cancelling(job) if job.is_finished() => Acquisition::default(),
-            Acquisition::Fetching(job) if job.is_finished() => {
-                let outcome = match job
-                    .poll()
-                    .unwrap_or_else(|| Err(NetworkError::WorkerStopped.into()))
-                {
-                    Ok(programs) => {
-                        update.completed = Some(Completion::Succeeded);
-                        let storage = programs.storage();
-                        tracing::debug!(
-                            "EPG_MEMORY programs={} record_capacity_bytes={} string_capacity_bytes={} audio_heap_bytes={} snapshot_capacity_bytes={}",
-                            programs.len(),
-                            storage.records,
-                            storage.strings,
-                            storage.audio,
-                            storage.total()
-                        );
-                        self.text_capacity_bytes = storage.strings;
-                        self.snapshot = programs;
-                        self.revision += 1;
-                        Outcome::Ready
+            Acquisition::Cancelling(job) => match job.poll() {
+                Progress::Pending(job) => Acquisition::Cancelling(job),
+                Progress::Complete(()) => Acquisition::default(),
+            },
+            Acquisition::Fetching(job) => match job.poll() {
+                Progress::Pending(job) => Acquisition::Fetching(job),
+                Progress::Complete(result) => {
+                    let outcome = match result {
+                        Ok(programs) => {
+                            update.completed = Some(Completion::Succeeded);
+                            let storage = programs.storage();
+                            tracing::debug!(
+                                "EPG_MEMORY programs={} record_capacity_bytes={} string_capacity_bytes={} audio_heap_bytes={} snapshot_capacity_bytes={}",
+                                programs.len(),
+                                storage.records,
+                                storage.strings,
+                                storage.audio,
+                                storage.total()
+                            );
+                            self.text_capacity_bytes = storage.strings;
+                            self.snapshot = programs;
+                            self.revision += 1;
+                            Outcome::Ready
+                        }
+                        Err(error) => {
+                            update.completed = Some(Completion::Failed);
+                            Outcome::Failed(error)
+                        }
+                    };
+                    Acquisition::Idle {
+                        next: Some(now + REFRESH),
+                        outcome,
                     }
-                    Err(error) => {
-                        update.completed = Some(Completion::Failed);
-                        Outcome::Failed(error)
-                    }
-                };
-                Acquisition::Idle {
-                    next: Some(now + REFRESH),
-                    outcome,
                 }
-            }
-            state => state,
+            },
+            state @ Acquisition::Idle { .. } => state,
         };
         if let Some(server) = &self.desired
             && matches!(&self.acquisition, Acquisition::Idle { next, .. } if self.refresh_pending || next.is_none_or(|deadline| now >= deadline))

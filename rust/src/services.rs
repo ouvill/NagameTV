@@ -2,7 +2,9 @@ use crate::channels;
 use std::time::Duration;
 
 mod job;
-pub use job::{Job, Stopping};
+pub use job::{Job, Progress, Stopping};
+mod server;
+pub use server::{Probe, ServerUrl, VerifiedServer};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -31,19 +33,6 @@ pub enum FetchError<E> {
     Network(#[from] NetworkError),
     #[error("{0}")]
     Parse(#[source] E),
-}
-
-pub fn server_url(value: &str) -> Result<String, Error> {
-    let value = value.trim().trim_end_matches('/');
-    let url = reqwest::Url::parse(value)?;
-    if !matches!(url.scheme(), "http" | "https")
-        || url.host_str().is_none()
-        || url.query().is_some()
-        || url.fragment().is_some()
-    {
-        return Err(Error::InvalidServerUrl);
-    }
-    Ok(value.into())
 }
 
 pub struct Network {
@@ -91,11 +80,14 @@ impl Network {
                 .build()?,
         })
     }
-    pub fn fetch(&self, server: &str) -> Request {
-        self.fetch_json(
-            format!("{server}/api/services"),
-            1024 * 1024,
-            channels::parse,
+    pub fn fetch(&self, server: &ServerUrl) -> Probe {
+        Probe::new(
+            server.clone(),
+            self.fetch_json(
+                format!("{}/api/services", server.as_str()),
+                1024 * 1024,
+                channels::parse,
+            ),
         )
     }
     pub fn fetch_json<T: Send + 'static, E: Send + 'static>(
@@ -116,10 +108,10 @@ mod tests {
     #[test]
     fn rejects_bad_urls() -> Result<(), Error> {
         for url in ["file:///tmp/a", "http://", "http://localhost/?q=1"] {
-            assert!(server_url(url).is_err());
+            assert!(ServerUrl::parse(url).is_err());
         }
         assert_eq!(
-            server_url(" http://localhost:40772/ ")?,
+            ServerUrl::parse(" http://localhost:40772/ ")?.as_str(),
             "http://localhost:40772"
         );
         Ok(())
@@ -174,11 +166,12 @@ mod tests {
                 )?;
                 Ok(())
             });
-            let job = network.fetch_json(url, limit, channels::parse);
+            let mut job = network.fetch_json(url, limit, channels::parse);
             let deadline = Instant::now() + Duration::from_secs(3);
             let outcome = loop {
-                if let Some(result) = job.poll() {
-                    break result;
+                match job.poll() {
+                    Progress::Pending(pending) => job = pending,
+                    Progress::Complete(result) => break result,
                 }
                 assert!(Instant::now() < deadline, "request did not finish");
                 thread::sleep(Duration::from_millis(1));

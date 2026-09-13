@@ -75,7 +75,7 @@ impl Response {
                 .pin_mut()
                 .connect_server(QString::from(self.url.as_str()))
         );
-        assert!(*player.loading());
+        assert!(player.loading());
         player.pin_mut().poll_channels()?;
         self.received.recv_timeout(Duration::from_secs(5))?;
         Ok(())
@@ -84,18 +84,18 @@ impl Response {
         self.release.send(())?;
         self.worker.join().map_err(|_| "HTTP fixture panicked")??;
         let deadline = Instant::now() + Duration::from_secs(5);
-        while *player.loading() {
+        while player.loading() {
             assert!(Instant::now() < deadline, "connection did not finish");
             player.pin_mut().poll_channels()?;
             thread::sleep(Duration::from_millis(1));
         }
-        assert!(!player.rust().connection_pending);
+        assert!(player.rust().pending_server.is_none());
         Ok(())
     }
 }
 
 fn saved_server(path: &Path) -> String {
-    settings::Session::open(path.to_owned())
+    settings::Loaded::open(path.to_owned())
         .expect("read saved preferences")
         .preferences()
         .server
@@ -111,31 +111,50 @@ fn checks() -> TestResult {
     let directory = tempfile::tempdir()?;
     let path = directory.path().join("settings.toml");
     let mut player = ffi::new_player();
-    player.pin_mut().rust_mut().preferences = settings::Session::open(path.clone())?;
+    player.pin_mut().rust_mut().preferences =
+        settings::Loaded::open(path.clone())?.activate(None, None);
     assert!(
-        player.rust().playback.is_none(),
+        player.rust().media.playback().is_none(),
         "test must not initialize playback"
     );
     assert!(player.server().is_empty());
+    assert!(!player.server_configured());
+    let configured_changes = Arc::new(Mutex::new(Vec::new()));
+    let recorded_configuration = configured_changes.clone();
+    let _configured_signal = player
+        .pin_mut()
+        .on_server_configured_changed(move |player| {
+            recorded_configuration
+                .lock()
+                .unwrap()
+                .push(player.server_configured());
+        });
     let outcomes = Arc::new(Mutex::new(Vec::new()));
     let recorded = outcomes.clone();
     let _signal = player
         .pin_mut()
-        .on_connection_finished(move |_, success, count| {
+        .on_connection_finished(move |player, success, count| {
+            assert!(
+                !player.loading(),
+                "completion observers see a finished request"
+            );
             recorded.lock().unwrap().push((success, count));
         });
 
     // A pending candidate must never leak into unrelated preference saves.
     let response = Response::new(503, "unavailable")?;
     response.begin(&mut player)?;
+    assert!(
+        !player.server_configured(),
+        "a candidate is not configuration"
+    );
     assert!(!path.exists());
     assert!(outcomes.lock().unwrap().is_empty());
     player
         .pin_mut()
         .rust_mut()
         .preferences
-        .preferences_mut()
-        .volume = 42.0.into();
+        .change(crate::settings::Change::Volume(42.0.into()));
     player.pin_mut().save_settings();
     assert_eq!(saved_server(&path), "");
     response.finish(&mut player)?;
@@ -143,6 +162,8 @@ fn checks() -> TestResult {
     assert_eq!(saved_server(&path), "");
     assert_eq!(*outcomes.lock().unwrap(), [(false, 0)]);
     assert!(!player.rust().channel_refresh.enabled());
+    assert!(!player.server_configured());
+    assert!(configured_changes.lock().unwrap().is_empty());
 
     // Valid empty catalogs confirm the server but remain distinct from failures.
     for (body, count) in [("[]", 0), (CHANNELS, 1)] {
@@ -154,11 +175,18 @@ fn checks() -> TestResult {
         assert_eq!(saved_server(&path), previous);
         response.finish(&mut player)?;
         assert_eq!(saved_server(&path), expected);
+        assert!(player.server_configured());
         assert_eq!(outcomes.lock().unwrap().last(), Some(&(true, count)));
-        assert!(!*player.playing());
-        assert!(!*player.connecting());
+        assert!(!player.playing());
+        assert!(!player.connecting());
     }
     let good_server = saved_server(&path);
+    assert_eq!(*configured_changes.lock().unwrap(), [true]);
+
+    // All Qt signal observers see the complete stream state, and a duplicate
+    // Play cannot replenish the one automatic retry of an active attempt.
+    check_stream_state(&mut player)?;
+    check_guide_state();
 
     // HTTP failures and non-Mirakurun responses preserve a working saved URL.
     for (status, body) in [(403, "denied"), (200, "<html>not Mirakurun</html>")] {
@@ -199,11 +227,76 @@ fn checks() -> TestResult {
             .connect_server(QString::from("http://127.0.0.1:1"))
     );
     assert!(player.pin_mut().shutdown());
+    assert!(!player.loading());
     assert_eq!(saved_server(&path), expected);
     println!(
         "Connection checks passed: pending/failed saves, empty catalog, success, save failure, shutdown"
     );
     Ok(())
+}
+
+fn check_stream_state(player: &mut cxx::UniquePtr<ffi::Player>) -> TestResult {
+    use super::stream_state::{Attempt, State};
+    let observed = Arc::new(Mutex::new(Vec::new()));
+    let connecting = observed.clone();
+    let playing = observed.clone();
+    let _connecting_signal = player.pin_mut().on_connecting_changed(move |player| {
+        connecting
+            .lock()
+            .unwrap()
+            .push((player.connecting(), player.playing()));
+    });
+    let _playing_signal = player.pin_mut().on_playing_changed(move |player| {
+        playing
+            .lock()
+            .unwrap()
+            .push((player.connecting(), player.playing()));
+    });
+    let attempt = Attempt::new(&player.rust().entries[0]);
+    player
+        .pin_mut()
+        .update_stream_state(State::Connecting(attempt));
+    let attempt = player.rust().stream_state.resume_retry().unwrap();
+    player
+        .pin_mut()
+        .update_stream_state(State::Playing(attempt));
+    player.pin_mut().play();
+    assert!(player.playing());
+    assert!(player.rust().stream_state.resume_retry().is_none());
+    player.pin_mut().end_stream()?;
+    assert_eq!(
+        *observed.lock().unwrap(),
+        [(true, false), (false, true), (false, true), (false, false)]
+    );
+    Ok(())
+}
+
+fn check_guide_state() {
+    use crate::features::program_info::guide::Guide;
+    let mut player = ffi::new_player();
+    player.pin_mut().rust_mut().epg_enabled = true;
+    let changes = Arc::new(Mutex::new(Vec::new()));
+    let recorded = changes.clone();
+    let _signal = player
+        .pin_mut()
+        .on_guide_visible_changed(move |mut player| {
+            recorded.lock().unwrap().push(player.guide_visible());
+            if player.guide_visible() {
+                // A newly constructed QML guide asks for its day during notification.
+                player.as_mut().guide_day(0.0, 86_400_000.0);
+                assert!(matches!(player.rust().guide, Guide::Showing(_)));
+            }
+        });
+    player.pin_mut().guide_open(true);
+    player.pin_mut().guide_open(true);
+    assert!(
+        matches!(player.rust().guide, Guide::Showing(_)),
+        "reopening must not discard the current day"
+    );
+    player.pin_mut().guide_open(false);
+    player.pin_mut().guide_day(0.0, 86_400_000.0);
+    assert!(matches!(player.rust().guide, Guide::Closed));
+    assert_eq!(*changes.lock().unwrap(), [true, false]);
 }
 
 pub fn run() -> i32 {

@@ -104,6 +104,8 @@ fn stream_error(message: &gst::message::Error) -> Error {
 }
 
 static PRELOADED: OnceLock<Weak<Mutex<Option<Playback>>>> = OnceLock::new();
+mod session;
+pub use session::{Session, SubtitleStart};
 
 /// Own the unclaimed playback until QML takes it, including failed UI creation.
 /// Declare after QGuiApplication and before QQmlApplicationEngine so native
@@ -148,7 +150,7 @@ pub struct Playback {
 }
 
 impl Playback {
-    pub fn element(&self) -> &gst::Element {
+    fn element(&self) -> &gst::Element {
         &self.playbin
     }
     pub fn video_stats(&self) -> stats::VideoStats {
@@ -254,7 +256,7 @@ impl Playback {
     /// alive through this call and, on success, until shutdown stops the sink.
     /// Qt meta-objects must identify their real native classes, and the video
     /// type must belong to the installed GStreamer plugin. No ownership transfers.
-    pub unsafe fn attach(&mut self, item: *mut crate::player::ffi::QQuickItem) -> Result<()> {
+    unsafe fn attach(&mut self, item: *mut crate::player::ffi::QQuickItem) -> Result<()> {
         // qml6glsink's widget setter shares its interface pointer with the
         // streaming thread without locking. Never replace an active binding.
         match self.video_output {
@@ -282,7 +284,7 @@ impl Playback {
     }
 
     /// Returns false when this stream is already connecting or playing.
-    pub fn play(
+    fn play(
         &self,
         server: &str,
         service: u64,
@@ -311,7 +313,7 @@ impl Playback {
         Ok(true)
     }
 
-    pub fn stop(&self) -> Result<()> {
+    fn stop(&self) -> Result<()> {
         match self.video_output {
             VideoOutputState::Closing => return Err(Error::OutputShutDown),
             VideoOutputState::Closed => {}
@@ -379,7 +381,7 @@ impl Playback {
         Ok(playing)
     }
 
-    pub fn shutdown(&mut self) -> Result<()> {
+    fn shutdown(&mut self) -> Result<()> {
         self.shutdown_with(|element| {
             element.set_state(gst::State::Null)?;
             let (result, current, pending) = element.state(gst::ClockTime::ZERO);

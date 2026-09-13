@@ -103,6 +103,25 @@ pub struct Session {
     preferences: Preferences,
     persistence: Persistence,
 }
+/// Startup is the only phase accepting unverified addresses from disk/env.
+/// Once activated, a server change requires proof from a successful probe.
+pub struct Loaded(Session);
+
+pub enum Change {
+    Language(Language),
+    Service(String),
+    Volume(Volume),
+    SubtitleDisplay(bool),
+    Comments(bool),
+    Danmaku {
+        enabled: bool,
+        size: CommentFontSize,
+        opacity: CommentOpacity,
+        speed: CommentSpeed,
+    },
+    CommentShadow(bool),
+    CommentSendOnEnter(bool),
+}
 #[derive(Debug, PartialEq, Eq)]
 pub enum SaveStatus {
     Transient,
@@ -113,28 +132,61 @@ enum Persistence {
     Transient,
     File { path: PathBuf, saved: Preferences },
 }
-impl Session {
+impl Loaded {
     pub fn open(path: PathBuf) -> Result<Self, Error> {
         let preferences = load(&path)?;
-        Ok(Self {
+        Ok(Self(Session {
             persistence: Persistence::File {
                 path,
                 saved: preferences.clone(),
             },
             preferences,
-        })
+        }))
     }
     pub fn transient(preferences: Preferences) -> Self {
-        Self {
+        Self(Session {
             preferences,
             persistence: Persistence::Transient,
-        }
+        })
     }
+    pub fn preferences(&self) -> &Preferences {
+        &self.0.preferences
+    }
+    pub fn activate(mut self, server: Option<String>, service: Option<String>) -> Session {
+        self.0.preferences.apply_overrides(server, service);
+        self.0
+    }
+}
+impl Session {
     pub fn preferences(&self) -> &Preferences {
         &self.preferences
     }
-    pub fn preferences_mut(&mut self) -> &mut Preferences {
-        &mut self.preferences
+    pub fn confirm_server(&mut self, server: &crate::services::VerifiedServer) {
+        self.preferences
+            .apply_overrides(Some(server.url().as_str().to_owned()), None);
+    }
+    pub fn change(&mut self, change: Change) {
+        let preferences = &mut self.preferences;
+        match change {
+            Change::Language(language) => preferences.language = language,
+            Change::Service(service) => preferences.service_id = service,
+            Change::Volume(volume) => preferences.volume = volume,
+            Change::SubtitleDisplay(display) => preferences.show_subtitles = display,
+            Change::Comments(enabled) => preferences.comments_enabled = enabled,
+            Change::Danmaku {
+                enabled,
+                size,
+                opacity,
+                speed,
+            } => {
+                preferences.danmaku_enabled = enabled;
+                preferences.comment_font_size = size;
+                preferences.comment_opacity = opacity;
+                preferences.comment_speed = speed;
+            }
+            Change::CommentShadow(enabled) => preferences.comment_shadow_enabled = enabled,
+            Change::CommentSendOnEnter(enabled) => preferences.comment_send_on_enter = enabled,
+        }
     }
     pub fn flush(&mut self) -> Result<SaveStatus, Error> {
         match &mut self.persistence {

@@ -5,57 +5,20 @@ mod translations;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let translations = translations::compile()?;
+    // The source directory is the module manifest. A new production component
+    // is registered and compiled without a second hand-maintained file list.
+    println!("cargo:rerun-if-changed=qml");
+    let mut qml_files = std::fs::read_dir("qml")?
+        .map(|entry| entry.map(|entry| entry.path()))
+        .collect::<Result<Vec<_>, _>>()?;
+    qml_files.retain(|path| path.extension().is_some_and(|extension| extension == "qml"));
+    qml_files.sort();
+    let mut module = QmlModule::new("MinimalViewer");
+    for path in &qml_files {
+        module = module.qml_file(path);
+    }
     let mut builder = CxxQtBuilder::new_qml_module(
-        QmlModule::new("MinimalViewer")
-            .qml_file("qml/Main.qml")
-            .qml_file("qml/AudioSettings.qml")
-            .qml_file("qml/PlaybackSettings.qml")
-            .qml_file("qml/DanmakuAdjustments.qml")
-            .qml_file("qml/StoppedPlayback.qml")
-            .qml_file("qml/TextAction.qml")
-            .qml_file("qml/PlaybackErrorDetails.qml")
-            .qml_file("qml/WindowActions.qml")
-            .qml_file("qml/WindowButtons.qml")
-            .qml_file("qml/WindowDragArea.qml")
-            .qml_file("qml/WindowResizeFrame.qml")
-            .qml_file("qml/OverlayVisibility.qml")
-            .qml_file("qml/SubtitleOverlay.qml")
-            .qml_file("qml/SubtitleGlyph.qml")
-            .qml_file("qml/ProgramGuide.qml")
-            .qml_file("qml/GuideTimeline.qml")
-            .qml_file("qml/GuideProgramDetails.qml")
-            .qml_file("qml/GuideDateSelector.qml")
-            .qml_file("qml/GuideToolbar.qml")
-            .qml_file("qml/CurrentProgram.qml")
-            .qml_file("qml/ProgramSidebar.qml")
-            .qml_file("qml/CommentList.qml")
-            .qml_file("qml/CommentComposer.qml")
-            .qml_file("qml/DanmakuOverlay.qml")
-            .qml_file("qml/DanmakuShadow.qml")
-            .qml_file("qml/DanmakuTimeline.qml")
-            .qml_file("qml/ToggleSwitch.qml")
-            .qml_file("qml/SidebarChannels.qml")
-            .qml_file("qml/SidebarTab.qml")
-            .qml_file("qml/SidePanel.qml")
-            .qml_file("qml/IconAction.qml")
-            .qml_file("qml/ThemedSlider.qml")
-            .qml_file("qml/VolumeSlider.qml")
-            .qml_file("qml/SettingsPanel.qml")
-            .qml_file("qml/ConnectionForm.qml")
-            .qml_file("qml/FirstRunSetup.qml")
-            .qml_file("qml/SettingsChoice.qml")
-            .qml_file("qml/SettingsToggle.qml")
-            .qml_file("qml/SettingsSlider.qml")
-            .qml_file("qml/ProgramDetails.qml")
-            .qml_file("qml/VideoStats.qml")
-            .qml_file("qml/ChannelSelector.qml")
-            .qml_file("qml/ChannelLogo.qml")
-            .qml_file("qml/ChannelBrowser.qml")
-            .qml_file("qml/ChannelWheelArea.qml")
-            .qml_file("qml/AnimatedPanel.qml")
-            .qml_file("qml/BroadcastTabs.qml")
-            .qml_file("qml/BrowserCollapseButton.qml")
-            .qml_file("qml/ChannelProgram.qml")
+        module
             .depend("QtQuick")
             .depend("QtQuick.Controls")
             .depend("QtQuick.Layouts")

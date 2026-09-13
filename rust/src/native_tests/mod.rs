@@ -6,6 +6,7 @@ mod bridge;
 mod localization;
 mod outline;
 mod pointer;
+mod startup;
 
 pub fn run() -> i32 {
     let mut arguments = std::env::args().skip(2);
@@ -20,6 +21,8 @@ pub fn run() -> i32 {
         Some("subtitle-outline") => outline::run(),
         Some("pointer-activity") => pointer::run(),
         Some("connection") => crate::player::connection_checks::run(),
+        Some("startup") => startup::run(),
+        Some("startup-window") => startup::run_window(),
         Some("subtitle-rendering") => {
             let mut qt_arguments = vec!["viewer-subtitle-tests".to_owned()];
             qt_arguments.extend(arguments);
@@ -27,7 +30,7 @@ pub fn run() -> i32 {
         }
         _ => {
             eprintln!(
-                "Expected --native-tests localization|missing-catalog|subtitle-outline|pointer-activity|subtitle-rendering|connection"
+                "Expected --native-tests localization|missing-catalog|subtitle-outline|pointer-activity|subtitle-rendering|connection|startup"
             );
             2
         }

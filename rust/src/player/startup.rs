@@ -11,9 +11,9 @@ impl Default for PlayerRust {
         let mut plan = *features::PLAN
             .get()
             .expect("LaunchPlan initialized before Qt");
-        let (mut preferences, settings_error) = if plan.locked {
+        let (preferences, settings_error) = if plan.locked {
             (
-                settings::Session::transient(settings::Preferences {
+                settings::Loaded::transient(settings::Preferences {
                     server: String::new(),
                     volume: settings::Volume::from(50.0),
                     show_subtitles: plan.subtitles,
@@ -26,18 +26,18 @@ impl Default for PlayerRust {
                 String::new(),
             )
         } else {
-            match settings::settings_path().and_then(settings::Session::open) {
+            match settings::settings_path().and_then(settings::Loaded::open) {
                 Ok(session) => (session, String::new()),
                 Err(error) => {
                     tracing::error!("Settings load failed: {error}");
                     (
-                        settings::Session::transient(settings::Preferences::default()),
+                        settings::Loaded::transient(settings::Preferences::default()),
                         error.to_string(),
                     )
                 }
             }
         };
-        preferences.preferences_mut().apply_overrides(
+        let preferences = preferences.activate(
             std::env::var("MIRAKURUN_SERVER").ok(),
             std::env::var("MIRAKURUN_SERVICE_ID").ok(),
         );
@@ -86,7 +86,7 @@ impl Default for PlayerRust {
             error_log,
             log_error: QString::from(log_error),
             server: QString::from(preferences.preferences().server.clone()),
-            connection_pending: false,
+            pending_server: None,
             status: lifecycle_status.render(),
             lifecycle_status,
             playback_error: QString::default(),
@@ -99,9 +99,7 @@ impl Default for PlayerRust {
             browser_projection: None,
             selected: -1,
             catalog_selection: Default::default(),
-            loading: false,
-            connecting: false,
-            playing: false,
+            stream_state: Default::default(),
             subtitles_enabled: plan.subtitles,
             epg_enabled: plan.epg,
             comments_enabled: plan.comments,
@@ -146,10 +144,7 @@ impl Default for PlayerRust {
             autoplay_pending: settings::autoplay_requested(
                 std::env::var("MIRAKURUN_AUTOPLAY").ok().as_deref(),
             ),
-            subtitle_session: None,
             epg: ProgramInfo::default(),
-            active_service: None,
-            resume_retry_used: false,
             guide: Default::default(),
             guide_dirty: false,
             guide_revision: 0,
@@ -157,7 +152,7 @@ impl Default for PlayerRust {
             request: Default::default(),
             channel_refresh: Default::default(),
             network: network.ok(),
-            playback,
+            media: playback::Session::new(playback),
             entries: vec![],
         }
     }

@@ -7,11 +7,49 @@ use cxx_qt_lib::QString;
 use std::{pin::Pin, time::Instant};
 
 impl ffi::Player {
+    pub fn server_configured(&self) -> bool {
+        !self
+            .rust()
+            .preferences
+            .preferences()
+            .server
+            .trim()
+            .is_empty()
+    }
+
+    pub fn loading(&self) -> bool {
+        self.rust().pending_server.is_some()
+    }
+
+    fn begin_connection(mut self: Pin<&mut Self>, server: services::ServerUrl) {
+        let was_loading = self.loading();
+        self.as_mut().rust_mut().pending_server = Some(server.clone());
+        self.as_mut().set_server(QString::from(server.as_str()));
+        if !was_loading {
+            self.loading_changed();
+        }
+    }
+
+    pub(super) fn cancel_connection(mut self: Pin<&mut Self>) {
+        if self.as_mut().rust_mut().pending_server.take().is_some() {
+            self.loading_changed();
+        }
+    }
+
+    fn confirm_server(mut self: Pin<&mut Self>, server: &services::VerifiedServer) {
+        let was_configured = self.server_configured();
+        self.as_mut().rust_mut().preferences.confirm_server(server);
+        self.as_mut().save_settings();
+        if was_configured != self.server_configured() {
+            self.server_configured_changed();
+        }
+    }
+
     /// Reports request acceptance; HTTP completion is delivered later by poll_channels.
     pub fn connect_server(mut self: Pin<&mut Self>, server: QString) -> bool {
         // Reject invalid input before cancelling requests or stopping the current
         // broadcast. An input error changes only the status shown to the user.
-        let server = match services::server_url(&server.to_string()) {
+        let server = match services::ServerUrl::parse(&server.to_string()) {
             Ok(server) => server,
             Err(error) => {
                 self.status_error(StatusFailure::Server, error);
@@ -25,8 +63,8 @@ impl ffi::Player {
 
         // A saved startup URL alone is not an established session. Once requests
         // are scheduled, reconnecting to that same URL only refreshes the catalog.
-        if self.rust().channel_refresh.enabled() && self.server().to_string() == server {
-            self.as_mut().rust_mut().connection_pending = true;
+        if self.rust().channel_refresh.enabled() && self.server().to_string() == server.as_str() {
+            self.as_mut().begin_connection(server);
             if !self.rust().request.is_busy() {
                 self.as_mut().refresh_channels(true);
                 if self.rust().epg_enabled {
@@ -34,7 +72,6 @@ impl ffi::Player {
                 }
                 self.as_mut().update_status(PlaybackStatus::Loading);
             }
-            self.as_mut().set_loading(true);
             return true;
         }
 
@@ -50,8 +87,7 @@ impl ffi::Player {
         self.as_mut().set_comment_program_title(QString::default());
         self.as_mut().clear_playback_failure();
         self.as_mut().rust_mut().request.cancel();
-        self.as_mut().rust_mut().connection_pending = false;
-        self.as_mut().set_loading(false);
+        self.as_mut().cancel_connection();
         self.as_mut().rust_mut().epg.configure(None);
         self.as_mut().set_epg_data(QString::from("[]"));
         if let Err(error) = self.as_mut().end_stream() {
@@ -66,22 +102,21 @@ impl ffi::Player {
         // Keep the candidate separate from persisted preferences until the HTTP
         // response has been parsed successfully. Other settings and shutdown may
         // be saved while this request is in flight or after it has failed.
-        self.as_mut().rust_mut().connection_pending = true;
         self.as_mut().rust_mut().request.request(server.clone());
         self.as_mut()
             .rust_mut()
             .channel_refresh
             .requested(Instant::now());
-        self.as_mut().set_server(QString::from(server));
+        self.as_mut().begin_connection(server);
         self.as_mut().configure_epg_events();
-        self.as_mut().set_loading(true);
         self.update_status(PlaybackStatus::Loading);
         true
     }
     pub(super) fn finish_connection(mut self: Pin<&mut Self>, success: bool) {
-        if !std::mem::take(&mut self.as_mut().rust_mut().connection_pending) {
+        if !self.loading() {
             return;
         }
+        self.as_mut().cancel_connection();
         let count = i32::try_from(self.rust().entries.len()).unwrap_or(i32::MAX);
         self.as_mut().connection_finished(success, count);
     }
@@ -93,8 +128,7 @@ impl ffi::Player {
         self.as_mut()
             .rust_mut()
             .preferences
-            .preferences_mut()
-            .service_id = id.to_string();
+            .change(crate::settings::Change::Service(id.to_string()));
         self.as_mut().set_selected(index);
         self.record_diagnostic(viewer_diagnostics::recorder::Event::ChannelSelected);
         self.as_mut().save_settings();
@@ -110,21 +144,15 @@ impl ffi::Player {
                 .and_then(|network| this.request.poll(network))
         };
         if let Some(result) = fetched {
-            self.as_mut().set_loading(false);
             match result {
-                Ok(entries) => {
+                Ok(verified) => {
+                    let entries = verified.channels();
                     // Validate the presentation before committing the candidate.
                     let presentation = (self.rust().entries != entries)
-                        .then(|| channels::presentation(&entries, &self.server().to_string()))
+                        .then(|| channels::presentation(entries, verified.url().as_str()))
                         .transpose()?;
-                    if self.rust().connection_pending {
-                        let server = self.server().to_string();
-                        self.as_mut()
-                            .rust_mut()
-                            .preferences
-                            .preferences_mut()
-                            .apply_overrides(Some(server), None);
-                        self.as_mut().save_settings();
+                    if self.rust().pending_server.is_some() {
+                        self.as_mut().confirm_server(&verified);
                     }
                     // Unchanged catalogs must not rebuild the guide or browser payloads.
                     if let Some(presentation) = presentation {
@@ -133,12 +161,12 @@ impl ffi::Player {
                             self.rust().catalog_selection,
                             &self.rust().entries,
                             self.rust().selected,
-                            &entries,
+                            entries,
                             self.rust().preferences.preferences(),
                         )
                         .and_then(|index| i32::try_from(index).ok())
                         .unwrap_or(-1);
-                        self.as_mut().rust_mut().entries = entries;
+                        self.as_mut().rust_mut().entries = verified.into_channels();
                         self.as_mut().rust_mut().activity.dirty = true;
                         self.as_mut().rust_mut().guide_dirty = true;
                         // Physical channel metadata also affects subchannel visibility.
@@ -165,7 +193,7 @@ impl ffi::Player {
                     } else {
                         PlaybackStatus::Select
                     };
-                    if self.rust().active_service.is_none() {
+                    if self.rust().stream_state.active_service().is_none() {
                         self.as_mut().update_status(status);
                     }
                     self.as_mut().finish_connection(true);

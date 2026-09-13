@@ -54,6 +54,11 @@ pub mod ffi {
             name: &QString,
             value: &QVariant,
         ) -> bool;
+        #[rust_name = "evaluate_root"]
+        fn evaluateRoot(
+            engine: Pin<&mut QQmlApplicationEngine>,
+            source: &QString,
+        ) -> Result<QVariant>;
         #[rust_name = "raster_path"]
         fn rasterPath(path: &QPainterPath, image: &mut QImage, offset: &QPoint);
         #[rust_name = "raster_svg"]

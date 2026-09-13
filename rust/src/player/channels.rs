@@ -94,7 +94,9 @@ impl super::ffi::Player {
         if self.rust().network.is_none() {
             return;
         }
-        let server = self.rust().server.to_string();
+        let Ok(server) = crate::services::ServerUrl::parse(&self.rust().server.to_string()) else {
+            return;
+        };
         self.as_mut().rust_mut().request.request(server);
         self.as_mut().rust_mut().channel_refresh.requested(now);
     }

@@ -4,7 +4,7 @@
 移植している。Rustの静的なモジュールで構成し、機能ごとの有効化・終了と資源所有を分離する。
 全面置き換えは未完了。方針は [main-replacement.md](main-replacement.md)、
 機能ごとの検証状況は [feature-migration.md](feature-migration.md) を参照。
-以下の所有関係は2026-09-07、製品コード568a853に照合したもの。
+以下の所有関係と状態変更の説明は2026-09-14の整理を反映したもの。
 
 ## 所有関係
 
@@ -14,9 +14,10 @@ main::run
  ├ diagnostics::Lifetime    記録ワーカーをQML engineの破棄後まで保持
  └ QQmlApplicationEngine
     └ PlayerRust（Qtへの投影と開始・停止順序）
-       ├ Playback           映像・音声、音声カタログ・PMT・主副出力
+       ├ playback::Session  再生と字幕世代の共通所有者
+       │  ├ Playback        映像・音声、音声カタログ・PMT・主副出力
+       │  └ Option<字幕Session> 購読・解析・同期時計
        ├ Acquisition        /api/servicesの取得・取消し待ち
-       ├ Option<Session>    字幕の購読・解析・同期時計
        ├ ProgramInfo        /api/programsの取得・現行スナップショット
        ├ EPG Controller     番組変更通知の購読・停止待ち
        ├ Comments/Activity  実況接続・履歴と勢い取得
@@ -26,12 +27,51 @@ main::run
 QML Loader                  字幕・番組表・流れる実況・統計表示の寿命
 ```
 
-Playbackは字幕デコーダーやEPGスナップショットを所有しない。再生制御の調整は
-player/stream.rs、EPGの通知消費と投影はplayer/epg.rs、設定保存はplayer/preferences.rsに置く。
+Playback本体は字幕デコーダーやEPGスナップショットを所有しない。Playbackと字幕の
+寿命の連動はplayback/session.rs、再生のQt投影はplayer/stream.rs、EPGの通知消費と
+投影はplayer/epg.rs、設定保存はplayer/preferences.rsに置く。
 音声選択はplayback/audio_streams、PMT照合はaudio_components、主副の変換はaudio_routing。
 PMTメッセージは通常のGStreamer bus pollで処理し、字幕の有効化には依存しない。
 字幕用のTSフレーミング・PAT/PMT・PES解析は引き続き字幕モジュールにある。
 READYで停止してplaybinを再利用する方針を保持するが、パイプライン全体が最小版と同一ではない。
+
+## 状態変更とQtへの通知（2026-09-14）
+
+状態の事実はRustで所有し、QML向けの派生値には書き込み用フィールドを作らない。
+`player/stream_state.rs`の`State`が停止・接続中・再生中・停止失敗を表し、
+稼働中のvariantは対象局と自動再試行の権利を持つ`Attempt`を必須とする。
+`playing`・`connecting`・対象局はこの状態から取得する。更新は
+`update_stream_state`に集約し、状態全体を置き換えてからQtへ通知する。
+一方の変更通知中に他方を読んでも更新途中の組み合わせにはならない。
+停止失敗時は字幕の購読を解放せず、対象局も保持して次の明示操作で停止を再試行する。
+
+途中再開拒否の再試行は、失敗したストリームの局と放送メタデータを引き継ぐ。
+再試行済みのストリームへの重複した再生要求は、再試行の権利を復活させない。
+`lifecycle::Status`は翻訳可能な説明文の状態として別に保持する。局一覧の通信失敗と
+映像の再生継続は同時に成立するので、説明文から再生の状態を推測しない。
+
+明示的な接続確認は`pending_server: Option<ServerUrl>`が形式検証済みの候補URLを所有し、
+`loading`は候補の有無から取得する。候補URLの公開・取消し・完了通知は接続モジュールへ
+まとめ、検証成功後の設定更新と保存は`confirm_server`を通す。`server_configured`は
+セッションの設定から取得し、未確認の候補やQMLの独立したフラグからは決めない。
+保存失敗は引き続き`settings_error`で通知し、接続フォームで完了を阻止する。
+
+`services::Probe`はURLと取得Jobを所有し、HTTP応答の解析に成功した場合だけ
+`VerifiedServer`を返す。結果の局一覧とその接続先は一つの値で運び、別のサーバーの
+確認結果を組み合わせない。通常の設定確定はこの型を必要とする。
+設定の`Loaded`はファイルと環境変数の値を取り込み、`activate`で実行中の`Session`に
+移る。SessionはPreferencesの可変参照を公開せず、`Change` enumの操作と
+`confirm_server(&VerifiedServer)`だけを受け付ける。起動時の既存設定の復元と、
+実行中の新規接続先の確定を区別し、保存形式と環境変数の挙動は維持する。
+
+番組表の表示は既存の`Guide`型を正とし、`guide_visible`を読み取り専用で公開する。
+QMLの操作は`guide_open`を呼ぶだけで、表示フラグを別に書き換えない。
+公開データの初期化後に表示を通知するため、Loader生成中の最初の日付要求も受け付ける。
+同じ表示状態への要求では選択中の日付を消さない。日付選択部品の遅延処理は
+その部品が所有するTimerで実行し、破棄とともに取り消す。
+
+これらの不変条件とQt通知中の読み取りは`test-connection.sh`、製品のMain.qmlを含む
+画面同士の接続は`test-startup.sh`で確認する。[Qtテスト](qt-tests.md)
 
 ## 起動と完全無効化
 
@@ -61,8 +101,13 @@ comments_enabled・danmaku_enabled・playingが揃う間だけLoaderで生成す
 
 ## 字幕の停止順序
 
-選局・停止では、Playerが先にPlaybackをREADYへ遷移させ、ストリーミング
-タスクが停止してから旧Sessionを破棄する。視聴者の字幕表示ON/OFFではSessionを維持し、映像の再接続は行わない。
+選局・停止では、playback::Sessionが先にPlaybackをREADYへ遷移させ、ストリーミング
+タスクが停止してから旧字幕Sessionを破棄する。成功時だけ返る`Stopped<'_>`は
+この所有者を排他的に借用し、次の字幕生成と再生開始で消費される。
+停止に失敗するとこの型は得られず、以前の字幕資源を保持して再試行できる。
+Playerは字幕Sessionを個別に取り外せない。下位Playbackの生の開始・停止・attach・element
+APIもモジュール外に公開しない。Dropは従来どおり、ネイティブ停止に成功してから字幕を解放する。
+視聴者の字幕表示ON/OFFではSessionを維持し、映像の再接続は行わない。
 購読Scopeはsignal/probeの解除IDを所有し、対象をWeakRefで保持して循環参照を避ける。
 解除時にtsdemux統計をOFF、signal/probeを除去、bus sync handlerを解除し、時計状態を破棄。
 その後に新Sessionを作り再生するので、旧局の字幕は新局に混ざらない。
@@ -78,6 +123,11 @@ Fetchingは結果受信可能なJob、Cancellingは終了確認専用のStopping
 結果チャネルをその場で解放する。Stoppingには結果を読むAPIがない。表示用の文字列は保持せず、
 型付きStatusをPlayerでQt向けの文字列へ変換する。
 
+Job/Stoppingの`poll(self)`は所有権を消費する。未完了なら`Progress::Pending(元の操作)`、
+完了なら`Progress::Complete(結果)`を返す。結果がキューに入っていてもワーカーが
+終わるまでPendingを維持し、終了したのに結果がない場合の分類もこの境界で行う。
+呼び出し元は完了したJobを再取得に使えず、各機能で終了確認と結果取得の手順を重複させない。
+
 設定変更時に古い結果の受理を止め、公開データを空にし、通信をabortする。
 完了確認までは停止待ちとし、新たなJobは開始しない。A→B→Aでも古い結果を受け取らない。
 HTTP失敗・サイズ超過はEPGの状態に表示し、再生を止めない。更新失敗では同じサーバーの
@@ -85,13 +135,13 @@ HTTP失敗・サイズ超過はEPGの状態に表示し、再生を止めない�
 
 同じJob→Stoppingの遷移を局一覧・実況勢い取得にも使用する。
 HTTP本文の上限付き取得、結果チャネル、Job／Stopping／Taskの所有権は
-`services/job.rs`にまとめる。`services.rs`はURL検証・エラー型・共通Networkの
+`services/job.rs`にまとめる。`services/server.rs`はURL検証と接続確認の型、`services.rs`はエラー型・共通Networkの
 生成と各機能への接続を担当する。Jobの生成にはRuntime HandleとHTTP Clientを渡し、
 呼び出し元のNetworkやQt状態を保持しない。既存の`services::Job`等の公開経路は再公開で維持する。
 停止待ち中の再設定では既存Stoppingを保持し、最新の希望状態だけ更新する。
 TaskのDropはabortを要求するが、終了を待ったことにはしない。
 [Tokio JoinHandle仕様](https://docs.rs/tokio/1.53.1/tokio/task/struct.JoinHandle.html#method.is_finished)
-に従い、GUIのpollでis_finishedを確認してから次の取得を開始する。
+に従い、Job/Stopping内部でis_finishedを確認してからCompleteを返し、次の取得を許可する。
 取消し済みの完成データを即時解放する試験と、部分HTTP本文の切断・同一サーバーへの
 再設定・無効化後の旧結果拒否の既存試験が成功。同期JSON解析中のabortは解析終了まで
 待つ可能性があり、取消し要求だけで即時終了するという保証はしない。

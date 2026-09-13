@@ -2,6 +2,14 @@
 use super::{FetchError, NetworkError};
 use std::sync::mpsc;
 
+/// Polling consumes the current operation. Only Pending retains a handle that
+/// can be polled or cancelled again; Complete proves its worker has finished.
+#[must_use = "retain Pending until completion or explicit cancellation"]
+pub enum Progress<P, T> {
+    Pending(P),
+    Complete(T),
+}
+
 impl<T: Send + 'static, E: Send + 'static> Job<T, E> {
     pub(super) fn start(
         runtime: &tokio::runtime::Handle,
@@ -60,21 +68,33 @@ impl<T, E> Job<T, E> {
         drop(self.rx);
         Stopping(self.task)
     }
+    #[cfg(test)]
     pub fn is_finished(&self) -> bool {
         self.task.0.is_finished()
     }
-    pub fn poll(&self) -> Option<Result<T, FetchError<E>>> {
-        match self.rx.try_recv() {
-            Ok(result) => Some(result),
-            Err(mpsc::TryRecvError::Empty) => None,
-            Err(mpsc::TryRecvError::Disconnected) => Some(Err(NetworkError::WorkerStopped.into())),
+    pub fn poll(self) -> Progress<Self, Result<T, FetchError<E>>> {
+        if !self.task.0.is_finished() {
+            return Progress::Pending(self);
         }
+        Progress::Complete(
+            self.rx
+                .try_recv()
+                .unwrap_or_else(|_| Err(NetworkError::WorkerStopped.into())),
+        )
     }
 }
-/// A cancelled request has no result API. Retain this until is_finished before
+/// A cancelled request has no result API. Retain Pending until Complete before
 /// starting its replacement: abort requests cancellation but does not await it.
 pub struct Stopping(Task);
 impl Stopping {
+    pub fn poll(self) -> Progress<Self, ()> {
+        if self.0.0.is_finished() {
+            Progress::Complete(())
+        } else {
+            Progress::Pending(self)
+        }
+    }
+    #[cfg(test)]
     pub fn is_finished(&self) -> bool {
         self.0.0.is_finished()
     }
@@ -93,6 +113,48 @@ impl Drop for Task {
 mod tests {
     use super::*;
     use crate::{channels, services::Request};
+    #[test]
+    fn queued_result_stays_owned_until_worker_completion() -> Result<(), Box<dyn std::error::Error>>
+    {
+        let runtime = tokio::runtime::Builder::new_current_thread().build()?;
+        let (tx, rx) = mpsc::sync_channel(1);
+        tx.send(Ok::<_, FetchError<channels::Error>>(42))?;
+        let job = Job {
+            task: Task(runtime.spawn(async {})),
+            rx,
+        };
+        let job = match job.poll() {
+            Progress::Pending(job) => job,
+            Progress::Complete(_) => panic!("a queued result does not prove worker completion"),
+        };
+        runtime.block_on(tokio::task::yield_now());
+        match job.poll() {
+            Progress::Complete(Ok(value)) => assert_eq!(value, 42),
+            _ => panic!("finished job must return its result"),
+        }
+        assert!(
+            tx.send(Ok(7)).is_err(),
+            "completed job releases its receiver"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn finished_worker_without_result_is_reported_at_the_job_boundary() -> Result<(), std::io::Error>
+    {
+        let runtime = tokio::runtime::Builder::new_current_thread().build()?;
+        let (_tx, rx) = mpsc::sync_channel(1);
+        let job: Job<(), channels::Error> = Job {
+            task: Task(runtime.spawn(async {})),
+            rx,
+        };
+        runtime.block_on(tokio::task::yield_now());
+        assert!(matches!(
+            job.poll(),
+            Progress::Complete(Err(FetchError::Network(NetworkError::WorkerStopped)))
+        ));
+        Ok(())
+    }
     #[test]
     fn replaced_request_cannot_publish_an_old_result() -> Result<(), std::io::Error> {
         let runtime = tokio::runtime::Builder::new_current_thread().build()?;

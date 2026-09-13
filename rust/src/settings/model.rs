@@ -100,7 +100,7 @@ impl Preferences {
         }
         first
     }
-    pub fn apply_overrides(&mut self, server: Option<String>, service: Option<String>) {
+    pub(super) fn apply_overrides(&mut self, server: Option<String>, service: Option<String>) {
         if let Some(server) = server {
             if self.server != server {
                 self.service_id.clear();

@@ -17,7 +17,7 @@ ApplicationWindow {
     color: "#0b0c0b"
     font.family: "Noto Sans CJK JP"
     property bool closing: false
-    property bool setupRequired: false
+    readonly property bool setupRequired: !player.server_configured
     property bool usageReady: false
     function recordUsage() {
         if (usageReady && !closing)
@@ -32,7 +32,7 @@ ApplicationWindow {
         function onDanmaku_enabledChanged() { root.recordUsage(); }
         function onComments_enabledChanged() { root.recordUsage(); }
     }
-    property bool showGuide: false
+    readonly property bool showGuide: player.guide_visible
     property bool showChannels: false
     property bool showStats: false
     property bool showProgram: false
@@ -45,6 +45,7 @@ ApplicationWindow {
     property int sidebarPage: ProgramSidebar.Program
     readonly property bool summariesVisible: !closing && (channelPanel.active || (sidebar.active && sidebarPage === ProgramSidebar.Channels))
     readonly property bool commentaryVisible: !closing && sidebar.active && sidebarPage === ProgramSidebar.Comments
+    readonly property bool guideVisible: !closing && player.epg_enabled && showGuide
     onCommentaryVisibleChanged: player.comments_open(commentaryVisible)
     onSummariesVisibleChanged: player.browser_open(summariesVisible)
     readonly property real panelWidth: Math.min(408, Math.max(360, width * 0.32))
@@ -61,7 +62,6 @@ ApplicationWindow {
     }
     function chooseConnectedChannel() {
         player.guide_open(false);
-        root.showGuide = false;
         root.showChannels = true;
         overlayVisibility.reveal();
     }
@@ -74,7 +74,6 @@ ApplicationWindow {
         if (!player.epg_enabled)
             return;
         player.guide_open(!root.showGuide);
-        root.showGuide = !root.showGuide;
     }
     function closeTopmost() {
         overlayVisibility.reveal();
@@ -172,7 +171,6 @@ ApplicationWindow {
         root.usageReady = true;
         root.recordUsage();
         surface.forceActiveFocus();
-        root.setupRequired = !player.server.trim().length;
         if (player.attach(video) && !root.setupRequired)
             player.connect_server(player.server);
         if (root.setupRequired)
@@ -213,7 +211,7 @@ ApplicationWindow {
                 playbackMessage: player.playback_message
                 canPlay: player.selected >= 0
                 hasChannels: root.channelRows.length > 0
-                hasServer: player.server.trim().length > 0 && !root.setupRequired
+                hasServer: player.server_configured
                 loading: player.loading || player.connecting
                 onPlayRequested: player.play()
                 onChannelsRequested: {
@@ -358,10 +356,7 @@ ApplicationWindow {
             id: setup
             backend: player
             targetWindow: root
-            onCompleted: {
-                root.setupRequired = false;
-                root.chooseConnectedChannel();
-            }
+            onCompleted: root.chooseConnectedChannel()
         }
         Rectangle {
             anchors {
@@ -545,7 +540,7 @@ ApplicationWindow {
         Loader {
             anchors.fill: parent
             z: 500
-            active: !root.closing && player.epg_enabled && root.showGuide
+            active: root.guideVisible
             visible: active
             sourceComponent: Component {
                 ProgramGuide {
@@ -554,7 +549,6 @@ ApplicationWindow {
                     onWatchRequested: function(key) {
                         const error = player.watch_program(key)
                         if (error.length) guidePanel.watchError = error
-                        else root.showGuide = false
                     }
                     targetWindow: root
                     onSettingsRequested: settings.open()
@@ -566,10 +560,7 @@ ApplicationWindow {
                     onDayRequested: function (start, end) {
                         player.guide_day(start, end);
                     }
-                    onCloseRequested: {
-                        root.showGuide = false;
-                        player.guide_open(false);
-                    }
+                    onCloseRequested: player.guide_open(false)
                 }
             }
         }

@@ -5,16 +5,13 @@ fn unconfigured_settings_stay_unconfigured_when_other_preferences_are_saved()
 -> Result<(), Box<dyn std::error::Error>> {
     let directory = tempfile::tempdir()?;
     let path = directory.path().join("settings.toml");
-    let mut session = Session::open(path.clone())?;
+    let mut session = open(path.clone())?;
     assert!(session.preferences().server.is_empty());
-    session.preferences_mut().language = Language::Japanese;
+    session.change(Change::Language(Language::Japanese));
     session.flush()?;
-    assert!(Session::open(path.clone())?.preferences().server.is_empty());
+    assert!(open(path.clone())?.preferences().server.is_empty());
     fs::write(&path, "server = 'http://127.0.0.1:40772'\n")?;
-    assert_eq!(
-        Session::open(path)?.preferences().server,
-        "http://127.0.0.1:40772"
-    );
+    assert_eq!(open(path)?.preferences().server, "http://127.0.0.1:40772");
     Ok(())
 }
 
@@ -32,26 +29,26 @@ fn explicit_commit_persists_latest_changes_without_waiting_for_shutdown()
 -> Result<(), Box<dyn std::error::Error>> {
     let dir = tempfile::tempdir()?;
     let path = dir.path().join("settings.toml");
-    let mut session = Session::open(path.clone())?;
+    let mut session = open(path.clone())?;
     assert_eq!(session.flush()?, SaveStatus::Unchanged);
     for volume in [10.0, 20.0, 30.0] {
-        session.preferences_mut().volume = Volume::from(volume);
+        session.change(Change::Volume(Volume::from(volume)));
     }
     assert!(!path.exists(), "editing alone must not perform IO");
     assert_eq!(session.flush()?, SaveStatus::Saved);
-    let reader = Session::open(path.clone())?;
+    let reader = open(path.clone())?;
     assert_eq!(reader.preferences().volume.fraction(), 0.3);
     // Even an inaccessible destination needs no IO when the snapshot is unchanged.
     fs::remove_file(&path)?;
     fs::create_dir(&path)?;
     assert_eq!(session.flush()?, SaveStatus::Unchanged);
-    session.preferences_mut().service_id = "123".into();
+    session.change(Change::Service("123".into()));
     assert!(matches!(session.flush(), Err(Error::Io { .. })));
     fs::remove_dir(&path)?;
     assert_eq!(session.flush()?, SaveStatus::Saved);
-    assert_eq!(Session::open(path)?.preferences().service_id, "123");
-    let mut transient = Session::transient(Preferences::default());
-    transient.preferences_mut().volume = Volume::from(50.0);
+    assert_eq!(open(path)?.preferences().service_id, "123");
+    let mut transient = Loaded::transient(Preferences::default()).activate(None, None);
+    transient.change(Change::Volume(Volume::from(50.0)));
     assert_eq!(transient.flush()?, SaveStatus::Transient);
     Ok(())
 }
@@ -75,12 +72,12 @@ comment_speed = 1.25
 subtitles_enabled = true
 "#,
     )?;
-    let mut session = Session::open(path.clone())?;
+    let mut session = open(path.clone())?;
     assert_eq!(session.preferences().volume.fraction(), 0.425);
     assert!(session.preferences().show_subtitles);
     assert!(session.preferences().comments_enabled);
-    session.preferences_mut().comments_enabled = true;
-    session.preferences_mut().volume = Volume::from(20.0);
+    session.change(Change::Comments(true));
+    session.change(Change::Volume(Volume::from(20.0)));
     session.flush()?;
     let loaded = load(&path)?;
     assert_eq!(loaded.volume.fraction(), 0.2);
@@ -107,14 +104,14 @@ fn subtitle_visibility_uses_the_existing_key_and_survives_restart()
                 "subtitles_enabled = {visible}\nepg_enabled = false\nfuture_setting = 'keep'\n"
             ),
         )?;
-        let mut session = Session::open(path.clone())?;
+        let mut session = open(path.clone())?;
         assert_eq!(session.preferences().show_subtitles, visible);
         // Legacy feature-disable flags cannot disable the normal launch's workers.
         let plan = crate::features::LaunchPlan::parse([])?;
         assert!(plan.subtitles && plan.epg);
-        session.preferences_mut().show_subtitles = !visible;
+        session.change(Change::SubtitleDisplay(!visible));
         assert_eq!(session.flush()?, SaveStatus::Saved);
-        let restored = Session::open(path.clone())?;
+        let restored = open(path.clone())?;
         assert_eq!(restored.preferences().show_subtitles, !visible);
         assert_eq!(
             restored.preferences().extra["future_setting"].as_str(),
@@ -157,14 +154,11 @@ fn missing_corrupt_and_oversized_files_are_distinct() -> Result<(), Box<dyn std:
     let dir = tempfile::tempdir()?;
     let path = dir.path().join("settings.toml");
     assert_eq!(load(&path)?, Preferences::default());
-    let mut session = Session::open(path.clone())?;
+    let mut session = open(path.clone())?;
     session.flush()?;
     assert!(!path.exists(), "unchanged defaults need no write");
     fs::write(&path, "volume = [")?;
-    assert!(matches!(
-        Session::open(path.clone()),
-        Err(Error::Parse { .. })
-    ));
+    assert!(matches!(open(path.clone()), Err(Error::Parse { .. })));
     assert_eq!(fs::read_to_string(&path)?, "volume = [");
     fs::write(&path, vec![b' '; MAX_SETTINGS_BYTES as usize + 1])?;
     assert!(matches!(load(&path), Err(Error::TooLarge)));
@@ -205,8 +199,8 @@ fn overrides_normalization_and_selection_are_independent_of_io()
     );
     prefs.apply_overrides(None, Some("14".into()));
     assert_eq!(prefs.selected_index([10, 12, 14].into_iter()), Some(2));
-    let mut session = Session::transient(prefs);
-    session.preferences_mut().volume = Volume::from(30.0);
+    let mut session = Loaded::transient(prefs).activate(None, None);
+    session.change(Change::Volume(Volume::from(30.0)));
     session.flush()?;
     assert!(matches!(session.persistence, Persistence::Transient));
     Ok(())
@@ -260,9 +254,9 @@ fn measure_explicit_save_latency() -> Result<(), Box<dyn std::error::Error>> {
         let path = directory
             .path()
             .join(format!("settings-{extra_bytes}.toml"));
-        let mut session = Session::open(path.clone())?;
+        let mut session = open(path.clone())?;
         if extra_bytes > 0 {
-            session.preferences_mut().extra.insert(
+            session.preferences.extra.insert(
                 "benchmark_payload".into(),
                 toml::Value::String("x".repeat(extra_bytes)),
             );
@@ -270,7 +264,7 @@ fn measure_explicit_save_latency() -> Result<(), Box<dyn std::error::Error>> {
         let mut saves = Vec::with_capacity(100);
         let mut unchanged = Vec::with_capacity(100);
         for index in 0..100 {
-            session.preferences_mut().service_id = index.to_string();
+            session.change(Change::Service(index.to_string()));
             let start = Instant::now();
             assert_eq!(session.flush()?, SaveStatus::Saved);
             saves.push(start.elapsed());
@@ -278,7 +272,7 @@ fn measure_explicit_save_latency() -> Result<(), Box<dyn std::error::Error>> {
             assert_eq!(session.flush()?, SaveStatus::Unchanged);
             unchanged.push(start.elapsed());
         }
-        assert_eq!(Session::open(path.clone())?.preferences().service_id, "99");
+        assert_eq!(open(path.clone())?.preferences().service_id, "99");
         saves.sort_unstable();
         unchanged.sort_unstable();
         println!(
@@ -300,15 +294,13 @@ fn comment_send_shortcut_defaults_and_persists_without_saving_drafts()
     let directory = tempfile::tempdir()?;
     let path = directory.path().join("settings.toml");
     fs::write(&path, "comments_enabled = true\n")?;
-    let mut session = Session::open(path.clone())?;
+    let mut session = open(path.clone())?;
     assert!(!session.preferences().comment_send_on_enter);
     for enabled in [true, false] {
-        session.preferences_mut().comment_send_on_enter = enabled;
+        session.change(Change::CommentSendOnEnter(enabled));
         assert_eq!(session.flush()?, SaveStatus::Saved);
         assert_eq!(
-            Session::open(path.clone())?
-                .preferences()
-                .comment_send_on_enter,
+            open(path.clone())?.preferences().comment_send_on_enter,
             enabled
         );
     }
@@ -323,16 +315,26 @@ fn comment_shadow_and_large_font_survive_settings_reload() -> Result<(), Box<dyn
     let path = directory.path().join("settings.toml");
     // Existing settings acquire the default shadow without changing their size.
     fs::write(&path, "comment_font_size = 36.0\n")?;
-    let mut session = Session::open(path.clone())?;
+    let mut session = open(path.clone())?;
     assert!(session.preferences().comment_shadow_enabled);
     assert_eq!(f64::from(session.preferences().comment_font_size), 36.0);
     for (shadow, size) in [(false, 72.0), (true, 60.0), (false, 14.0)] {
-        session.preferences_mut().comment_shadow_enabled = shadow;
-        session.preferences_mut().comment_font_size = CommentFontSize::checked(size).unwrap();
+        session.change(Change::CommentShadow(shadow));
+        let preferences = session.preferences();
+        session.change(Change::Danmaku {
+            enabled: preferences.danmaku_enabled,
+            size: CommentFontSize::checked(size).unwrap(),
+            opacity: preferences.comment_opacity,
+            speed: preferences.comment_speed,
+        });
         assert_eq!(session.flush()?, SaveStatus::Saved);
-        session = Session::open(path.clone())?;
+        session = open(path.clone())?;
         assert_eq!(session.preferences().comment_shadow_enabled, shadow);
         assert_eq!(f64::from(session.preferences().comment_font_size), size);
     }
     Ok(())
+}
+
+fn open(path: std::path::PathBuf) -> Result<Session, Error> {
+    Loaded::open(path).map(|loaded| loaded.activate(None, None))
 }

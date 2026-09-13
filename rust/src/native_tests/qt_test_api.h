@@ -7,7 +7,9 @@
 #include <QtGui/QPainter>
 #include <QtGui/QPainterPath>
 #include <QtSvg/QSvgRenderer>
+#include <QtQml/QQmlExpression>
 #include <memory>
+#include <stdexcept>
 
 inline void disableTranslationCatalog() { Q_CLEANUP_RESOURCE(translations_qrc); }
 inline void enableTranslationCatalog() { Q_INIT_RESOURCE(translations_qrc); }
@@ -24,6 +26,15 @@ inline QVariant rootProperty(const QQmlApplicationEngine &engine, const QString 
 inline bool setRootProperty(QQmlApplicationEngine &engine, const QString &name, const QVariant &value) {
     const auto roots = engine.rootObjects();
     return !roots.isEmpty() && roots.first()->setProperty(name.toUtf8().constData(), value);
+}
+inline QVariant evaluateRoot(QQmlApplicationEngine &engine, const QString &source) {
+    const auto roots = engine.rootObjects();
+    if (roots.isEmpty()) throw std::runtime_error("QML root is missing");
+    QQmlExpression expression(qmlContext(roots.first()), roots.first(), source);
+    const auto result = expression.evaluate();
+    if (expression.hasError())
+        throw std::runtime_error(expression.error().toString().toStdString());
+    return result;
 }
 
 // QPainter retains QPaintDevice*. Bound it to the image borrow entirely in C++.

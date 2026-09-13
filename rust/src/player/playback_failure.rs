@@ -34,7 +34,8 @@ impl Player {
     /// Retain only the latest failure for the UI; ordinary status updates do not erase it.
     /// User retry/server replacement and successful PLAYING clear this projection.
     pub(super) fn playback_failed(mut self: Pin<&mut Self>, error: crate::playback::Error) {
-        self.as_mut().set_connecting(false);
+        let state = self.rust().stream_state.stop_failed();
+        self.as_mut().update_stream_state(state);
         // Store only a static translation source plus the existing latest diagnostics.
         self.as_mut()
             .set_playback_message(QString::from(error.hint().source()));

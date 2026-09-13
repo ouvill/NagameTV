@@ -22,7 +22,6 @@ impl Status {
                 "Could not prepare subtitles for display. Stop playback and play again."
             }
             Self::Failed(error) => match error {
-                Error::PlaybackUnavailable => "Playback is unavailable for subtitles",
                 Error::MissingBin => "The playback bin is unavailable for subtitles",
                 Error::MissingBus => "The playback bus is unavailable for subtitles",
                 Error::MissingService => {

@@ -379,10 +379,6 @@
       <translation>解析中</translation>
     </message>
     <message>
-      <source>Playback is unavailable for subtitles</source>
-      <translation>字幕用の再生処理を利用できません</translation>
-    </message>
-    <message>
       <source>The playback bin is unavailable for subtitles</source>
       <translation>字幕用の再生binがありません</translation>
     </message>

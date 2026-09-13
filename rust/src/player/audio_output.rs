@@ -12,8 +12,7 @@ impl ffi::Player {
         self.as_mut()
             .rust_mut()
             .preferences
-            .preferences_mut()
-            .volume = output.volume();
+            .change(crate::settings::Change::Volume(output.volume()));
         self.apply_audio_output(output);
     }
     pub fn mute(self: Pin<&mut Self>, muted: bool) {
@@ -21,7 +20,7 @@ impl ffi::Player {
         self.apply_audio_output(output);
     }
     fn apply_audio_output(mut self: Pin<&mut Self>, output: Output) {
-        if let Some(playback) = &self.rust().playback {
+        if let Some(playback) = self.rust().media.playback() {
             playback.set_audio_output(output);
         }
         self.as_mut().rust_mut().audio_output = output;

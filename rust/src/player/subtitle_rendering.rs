@@ -21,17 +21,18 @@ impl ffi::Player {
         {
             let mut this = self.as_mut().rust_mut();
             this.subtitle_cells = 0;
-            this.preferences.preferences_mut().show_subtitles = display;
+            this.preferences
+                .change(crate::settings::Change::SubtitleDisplay(display));
         }
         self.as_mut().set_subtitle_data(QString::default());
         self.save_settings();
     }
     pub fn poll_subtitles(mut self: Pin<&mut Self>) {
-        let update = self.rust().subtitle_session.as_ref().map(|session| {
+        let update = self.rust().media.subtitles().map(|session| {
             session.poll(
                 self.rust()
-                    .playback
-                    .as_ref()
+                    .media
+                    .playback()
                     .and_then(playback::Playback::position),
             )
         });

@@ -14,8 +14,7 @@ impl ffi::Player {
         self.as_mut()
             .rust_mut()
             .preferences
-            .preferences_mut()
-            .language = preference;
+            .change(crate::settings::Change::Language(preference));
         self.as_mut().set_language(QString::from(preference.code()));
         self.as_mut().set_ui_language(effective);
         // Reproject existing state only: translating must not poll or restart workers.
