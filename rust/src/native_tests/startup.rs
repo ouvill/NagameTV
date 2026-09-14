@@ -132,6 +132,68 @@ fn wait_for(
     }
 }
 
+fn check_danmaku_layout(
+    app: &QGuiApplication,
+    engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
+) -> TestResult {
+    // Use the production overlay and layout with synthetic comments, without
+    // needing a successful broadcast stream from the HTTP failure fixture.
+    evaluate(
+        engine,
+        "root.showProgram = false; root.width = 1280; root.height = 720; danmaku.active = true; true",
+    )?;
+    wait_for(app, engine, "danmaku.item !== null")?;
+    assert!(evaluate(
+        engine,
+        r#"
+        danmaku.item.receive("resize flow", "right", 16777215);
+        danmaku.item.receive("resize fixed", "top", 16777215);
+        danmaku.item.paused = true;
+        danmaku.item.activeCount === 2
+    "#
+    )?);
+    for (open, width) in [(true, 1280), (false, 1280), (true, 1100), (false, 1200)] {
+        assert!(evaluate(
+            engine,
+            &format!(
+                r#"
+            (function() {{
+                const before = Array.from(danmaku.item.visuals.values());
+                root.showProgram = {open}; root.width = {width};
+                const after = Array.from(danmaku.item.visuals.values());
+                return after.length === 2 && before.every((entry, i) => entry === after[i])
+                    && after[1].x === (danmaku.width - after[1].width) / 2;
+            }})()
+        "#
+            )
+        )?);
+        wait_for(
+            app,
+            engine,
+            "danmaku.item.activeCount === 2 && danmaku.item.visualCount === 2",
+        )?;
+    }
+    for size in [36, 72, 14] {
+        assert!(evaluate(
+            engine,
+            &format!(
+                r#"
+            (function() {{
+                const before = Array.from(danmaku.item.visuals.values());
+                const oldWidth = before[1].width;
+                player.configure_danmaku(true, {size}, player.comment_opacity, player.comment_speed);
+                const after = Array.from(danmaku.item.visuals.values());
+                return after.length === 2 && before.every((entry, i) => entry === after[i])
+                    && after[1].font.pixelSize === {size} && after[1].width !== oldWidth;
+            }})()
+        "#
+            )
+        )?);
+    }
+    evaluate(engine, "danmaku.active = false; true")?;
+    Ok(())
+}
+
 fn window(app: &QGuiApplication, preferences: &settings::Preferences) -> TestResult {
     let _preloaded = playback::preload()?;
     let mut engine = QQmlApplicationEngine::new();
@@ -176,6 +238,9 @@ fn window(app: &QGuiApplication, preferences: &settings::Preferences) -> TestRes
                 "!player.playing && !player.connecting && !player.playback_error.length"
             )?);
         }
+        // The restored channel is now stable. Exercise danmaku before opening
+        // the channel browser, whose navigation is checked separately below.
+        check_danmaku_layout(app, &mut engine)?;
         // Every way of changing guide visibility must run the same synchronization.
         evaluate(&mut engine, "root.toggleGuide(); true")?;
         wait_for(app, &mut engine, "root.guideVisible && root.showGuide")?;
@@ -207,6 +272,7 @@ fn window(app: &QGuiApplication, preferences: &settings::Preferences) -> TestRes
             &mut engine,
             "root.setupRequired && !player.server_configured && !player.loading && !player.server.length && !root.channelRows.length"
         )?);
+        check_danmaku_layout(app, &mut engine)?;
     }
     assert!(evaluate(&mut engine, "root.close(); root.closing")?);
     app.process_events();

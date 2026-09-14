@@ -2,7 +2,7 @@
 //! Qt supplies text measurements; it never decides which comments are alive.
 use crate::Position;
 use serde::Deserialize;
-use std::time::Duration;
+use std::{collections::HashMap, time::Duration};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Color(u32);
@@ -159,9 +159,122 @@ fn kind(position: Position) -> usize {
 struct Active {
     id: Id,
     width: f64,
-    velocity: f64,
-    born: Duration,
+    motion: Motion,
     expires: Duration,
+}
+#[derive(Debug)]
+enum Motion {
+    Scrolling {
+        from_x: f64,
+        velocity: f64,
+        born: Duration,
+    },
+    Fixed,
+}
+impl Active {
+    fn x(&self, clock: Duration, viewport_width: f64) -> f64 {
+        match self.motion {
+            Motion::Fixed => (viewport_width - self.width) / 2.,
+            Motion::Scrolling {
+                from_x,
+                velocity,
+                born,
+            } => from_x - clock.saturating_sub(born).as_secs_f64() * velocity,
+        }
+    }
+
+    fn separate_from(&self, other: &Self, clock: Duration) -> bool {
+        match (&self.motion, &other.motion) {
+            (Motion::Scrolling { .. }, Motion::Scrolling { .. }) => {
+                let end = self.expires.min(other.expires);
+                let separated = |left: &Self, right: &Self| {
+                    [clock, end]
+                        .into_iter()
+                        .all(|time| left.x(time, 0.) + left.width + 10. <= right.x(time, 0.))
+                };
+                separated(self, other) || separated(other, self)
+            }
+            (Motion::Fixed, Motion::Fixed | Motion::Scrolling { .. })
+            | (Motion::Scrolling { .. }, Motion::Fixed) => false,
+        }
+    }
+
+    fn admits(&self, left: f64, velocity: f64, clock: Duration) -> bool {
+        match self.motion {
+            Motion::Fixed => false,
+            Motion::Scrolling {
+                from_x,
+                velocity: previous_velocity,
+                born,
+            } => {
+                // A resize changes the new comment's entry point, but not an
+                // existing comment's trajectory or the gap needed to follow it.
+                let elapsed = clock.saturating_sub(born).as_secs_f64();
+                let right = from_x + self.width - elapsed * previous_velocity;
+                if right <= 0. {
+                    return true;
+                }
+                let gap = left - right - 10.;
+                gap >= 0.
+                    && (velocity <= previous_velocity
+                        || gap / (velocity - previous_velocity) >= right / previous_velocity)
+            }
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum ConfigurationChange {
+    Preserved,
+    Remeasure { round: Id, comments: Vec<Id> },
+}
+
+#[derive(Default)]
+enum LayoutState {
+    #[default]
+    Ready,
+    Measuring(PendingMeasurements),
+}
+struct PendingMeasurements {
+    round: Id,
+    widths: HashMap<Id, Option<f64>>,
+}
+// Only a completed measurement batch can rebuild placement. Its constructor
+// and the unfinished widths remain private to this module.
+struct MeasuredLayout(HashMap<Id, f64>);
+enum MeasurementProgress {
+    Pending(PendingMeasurements),
+    Complete(MeasuredLayout),
+}
+impl PendingMeasurements {
+    fn record(mut self, round: u32, id: Id, width: f64) -> MeasurementProgress {
+        if self.round.value() == round
+            && width.is_finite()
+            && width > 0.
+            && let Some(slot) = self.widths.get_mut(&id)
+        {
+            *slot = Some(width);
+        }
+        match self
+            .widths
+            .iter()
+            .map(|(&id, &width)| width.map(|width| (id, width)))
+            .collect()
+        {
+            Some(widths) => MeasurementProgress::Complete(MeasuredLayout(widths)),
+            None => MeasurementProgress::Pending(self),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct Relayout {
+    pub id: Id,
+    pub width: f64,
+    pub from_x: f64,
+    pub to_x: f64,
+    pub y: f64,
+    pub remaining: Duration,
 }
 #[derive(Debug)]
 pub struct Spawn {
@@ -204,6 +317,7 @@ pub struct Engine {
     hidden: bool,
     serial: u32,
     pending: Option<(Id, Comment)>,
+    layout: LayoutState,
     lanes: [Vec<Vec<Active>>; 3],
     active: usize,
     timeline: Vec<TimedComment>,
@@ -235,27 +349,116 @@ impl Engine {
             self.pending = None;
         }
     }
-    pub fn configure(&mut self, viewport: Viewport, speed: f64) -> Option<bool> {
+    pub fn configure(&mut self, viewport: Viewport, speed: f64) -> Option<ConfigurationChange> {
         if !viewport.valid() || !speed.is_finite() || !(0.5..=2.).contains(&speed) {
             return None;
         }
-        // Controls move row groups; only structural geometry changes invalidate
-        // measured text or horizontal trajectories.
-        let changed = self.viewport.width != viewport.width
-            || self.viewport.height != viewport.height
-            || self.viewport.text_height != viewport.text_height
+        // Resizing and fullscreen changes preserve live trajectories and their
+        // deadlines. A font change must remeasure every surviving label first.
+        let change = if self.viewport.text_height != viewport.text_height
             || self.viewport.font_size != viewport.font_size
-            || self.viewport.full_screen != viewport.full_screen;
-        if changed {
-            self.clear();
-        }
+        {
+            let round = Id(self.serial.checked_add(1)?);
+            self.serial = round.value();
+            self.pending = None;
+            let comments: Vec<_> = self
+                .lanes
+                .iter()
+                .flatten()
+                .flatten()
+                .map(|entry| entry.id)
+                .collect();
+            self.layout = if comments.is_empty() {
+                LayoutState::Ready
+            } else {
+                LayoutState::Measuring(PendingMeasurements {
+                    round,
+                    widths: comments.iter().map(|&id| (id, None)).collect(),
+                })
+            };
+            ConfigurationChange::Remeasure { round, comments }
+        } else {
+            ConfigurationChange::Preserved
+        };
         self.viewport = viewport;
         self.speed = Some(speed);
         self.reflow();
-        Some(changed)
+        Some(change)
+    }
+    pub fn remeasured(&mut self, round: u32, token: u32, width: f64) -> Vec<Relayout> {
+        match std::mem::take(&mut self.layout) {
+            LayoutState::Ready => Vec::new(),
+            LayoutState::Measuring(pending) => match pending.record(round, Id(token), width) {
+                MeasurementProgress::Pending(pending) => {
+                    self.layout = LayoutState::Measuring(pending);
+                    Vec::new()
+                }
+                MeasurementProgress::Complete(measured) => self.relayout(measured),
+            },
+        }
+    }
+    fn relayout(&mut self, measured: MeasuredLayout) -> Vec<Relayout> {
+        let mut updates = Vec::with_capacity(self.active);
+        let previous = std::mem::take(&mut self.lanes);
+        for (kind, lanes) in previous.into_iter().enumerate() {
+            for (old_row, entries) in lanes.into_iter().enumerate() {
+                for mut entry in entries {
+                    let width = measured.0[&entry.id];
+                    let remaining = entry.expires.saturating_sub(self.clock);
+                    let from_x = match entry.motion {
+                        Motion::Fixed => (self.viewport.width - width) / 2.,
+                        Motion::Scrolling { .. } => {
+                            entry.x(self.clock, self.viewport.width).max(-width)
+                        }
+                    };
+                    entry.width = width;
+                    let to_x = match &mut entry.motion {
+                        Motion::Fixed => from_x,
+                        motion @ Motion::Scrolling { .. } => {
+                            *motion = Motion::Scrolling {
+                                from_x,
+                                velocity: (from_x + width) / remaining.as_secs_f64(),
+                                born: self.clock,
+                            };
+                            -width
+                        }
+                    };
+                    let rows = &mut self.lanes[kind];
+                    let fits = |row: usize| {
+                        rows.get(row).is_none_or(|entries| {
+                            entries
+                                .iter()
+                                .all(|other| entry.separate_from(other, self.clock))
+                        })
+                    };
+                    let row = if fits(old_row) {
+                        old_row
+                    } else {
+                        (0..=rows.len())
+                            .find(|&row| fits(row))
+                            .expect("new row is empty")
+                    };
+                    if row >= rows.len() {
+                        rows.resize_with(row + 1, Vec::new);
+                    }
+                    updates.push(Relayout {
+                        id: entry.id,
+                        width,
+                        from_x,
+                        to_x,
+                        y: row as f64 * self.viewport.spacing() * if kind == 2 { -1. } else { 1. },
+                        remaining,
+                    });
+                    rows[row].push(entry);
+                }
+            }
+        }
+        self.reflow();
+        updates
     }
     pub fn clear(&mut self) {
         self.pending = None;
+        self.layout = LayoutState::Ready;
         self.lanes = Default::default();
         self.active = 0;
         self.reflow();
@@ -284,6 +487,14 @@ impl Engine {
             }
         }
         self.active -= expired.len();
+        if let LayoutState::Measuring(pending) = &mut self.layout {
+            for id in &expired {
+                pending.widths.remove(id);
+            }
+            if pending.widths.is_empty() {
+                self.layout = LayoutState::Ready;
+            }
+        }
         if !expired.is_empty() {
             self.reflow();
         }
@@ -306,13 +517,15 @@ impl Engine {
                 if kind == 2 { bottom - spacing } else { top }
             } else if kind == 2 {
                 let extent = (rows - 1) as f64 * spacing;
+                // If a resize leaves fewer rows than are occupied, keep their
+                // spacing and clip the overflow, anchored to the same edge.
                 (bottom - spacing)
                     .max(top + extent)
-                    .min(hard_bottom - spacing)
                     .max(40. + extent)
+                    .min(hard_bottom - spacing)
             } else {
                 let extent = rows as f64 * spacing;
-                top.min(bottom - extent).max(40.).min(hard_bottom - extent)
+                top.min(bottom - extent).min(hard_bottom - extent).max(40.)
             };
             self.origins[kind].move_to(target, self.clock, self.active > 0);
         }
@@ -342,7 +555,12 @@ impl Engine {
         first..(end.max(0.) as usize).max(first)
     }
     pub fn prepare(&mut self, comment: Comment) -> Option<Measurement> {
-        if self.hidden || self.paused || self.lane_count() == 0 || self.viewport.width <= 0. {
+        if self.hidden
+            || self.paused
+            || self.lane_count() == 0
+            || self.viewport.width <= 0.
+            || matches!(self.layout, LayoutState::Measuring(_))
+        {
             return None;
         }
         self.serial = self.serial.checked_add(1)?; // Never reuse a stale UI token.
@@ -356,7 +574,7 @@ impl Engine {
             return None;
         }
         let (id, comment) = self.pending.take()?;
-        if !width.is_finite() || width <= 0. || self.paused {
+        if !width.is_finite() || width <= 0. || self.paused || self.viewport.width <= 0. {
             return None;
         }
         let seconds = match (comment.position, self.viewport.full_screen) {
@@ -376,17 +594,9 @@ impl Engine {
         let lanes = &mut self.lanes[kind];
         let lane = (first..limit.min(lanes.len().max(first) + 1)).find(|&index| {
             lanes.get(index).is_none_or(|entries| {
-                entries.iter().all(|entry| {
-                    if comment.position != Position::Right {
-                        return false;
-                    }
-                    let elapsed = self.clock.saturating_sub(entry.born).as_secs_f64();
-                    let right = self.viewport.width + entry.width - elapsed * entry.velocity;
-                    let gap = self.viewport.width - right - 10.;
-                    gap >= 0.
-                        && (velocity <= entry.velocity
-                            || gap / (velocity - entry.velocity) >= right / entry.velocity)
-                })
+                entries
+                    .iter()
+                    .all(|entry| entry.admits(self.viewport.width, velocity, self.clock))
             })
         })?;
         if lane >= lanes.len() {
@@ -395,8 +605,14 @@ impl Engine {
         lanes[lane].push(Active {
             id,
             width,
-            velocity,
-            born: self.clock,
+            motion: match comment.position {
+                Position::Right => Motion::Scrolling {
+                    from_x: self.viewport.width,
+                    velocity,
+                    born: self.clock,
+                },
+                Position::Top | Position::Bottom => Motion::Fixed,
+            },
             expires: self.clock.saturating_add(lifetime),
         });
         self.active += 1;

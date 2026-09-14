@@ -6,7 +6,7 @@ use cxx_qt::CxxQtType;
 use cxx_qt_lib::QString;
 use std::{pin::Pin, time::Instant};
 use viewer_comments::Position;
-use viewer_comments::danmaku::{self as danmaku_core, Engine, Viewport};
+use viewer_comments::danmaku::{self as danmaku_core, ConfigurationChange, Engine, Viewport};
 
 #[cxx_qt::bridge]
 pub mod ffi {
@@ -51,6 +51,8 @@ pub mod ffi {
         #[qinvokable]
         fn measured(self: Pin<&mut DanmakuController>, token: u32, width: f64);
         #[qinvokable]
+        fn remeasured(self: Pin<&mut DanmakuController>, round: u32, token: u32, width: f64);
+        #[qinvokable]
         fn tick(self: Pin<&mut DanmakuController>);
         #[qinvokable]
         fn clear(self: Pin<&mut DanmakuController>);
@@ -90,6 +92,18 @@ pub mod ffi {
         #[qsignal]
         fn removed(self: Pin<&mut DanmakuController>, token: u32);
         #[qsignal]
+        fn remeasure_requested(self: Pin<&mut DanmakuController>, round: u32, token: u32);
+        #[qsignal]
+        fn relaid_out(
+            self: Pin<&mut DanmakuController>,
+            token: u32,
+            width: f64,
+            from_x: f64,
+            to_x: f64,
+            y: f64,
+            duration: i32,
+        );
+        #[qsignal]
         fn cleared(self: Pin<&mut DanmakuController>);
     }
 }
@@ -127,34 +141,48 @@ impl ffi::DanmakuController {
         let active = i32::try_from(self.rust().engine.active_count()).unwrap_or(i32::MAX);
         let lanes = i32::try_from(self.rust().engine.lane_count()).unwrap_or(i32::MAX);
         let timeline = i32::try_from(self.rust().engine.timeline_count()).unwrap_or(i32::MAX);
-        if self.rust().active_count != active {
-            self.as_mut().rust_mut().active_count = active;
-            self.as_mut().active_count_changed();
-        }
-        if self.rust().lane_count != lanes {
-            self.as_mut().rust_mut().lane_count = lanes;
-            self.as_mut().lane_count_changed();
-        }
-        if self.rust().timeline_count != timeline {
-            self.as_mut().rust_mut().timeline_count = timeline;
-            self.as_mut().timeline_count_changed();
-        }
         let flow = self.rust().engine.origin(Position::Right);
         let top = self.rust().engine.origin(Position::Top);
         let bottom = self.rust().engine.origin(Position::Bottom);
-        if self.rust().flow_origin != flow {
-            self.as_mut().rust_mut().flow_origin = flow;
+        let changes = {
+            let mut this = self.as_mut().rust_mut();
+            let changes = [
+                this.active_count != active,
+                this.lane_count != lanes,
+                this.timeline_count != timeline,
+                this.flow_origin != flow,
+                this.top_origin != top,
+                this.bottom_origin != bottom,
+            ];
+            this.active_count = active;
+            this.lane_count = lanes;
+            this.timeline_count = timeline;
+            this.flow_origin = flow;
+            this.top_origin = top;
+            this.bottom_origin = bottom;
+            changes
+        };
+        // Synchronous QML readers see the complete new layout at every notify.
+        if changes[0] {
+            self.as_mut().active_count_changed();
+        }
+        if changes[1] {
+            self.as_mut().lane_count_changed();
+        }
+        if changes[2] {
+            self.as_mut().timeline_count_changed();
+        }
+        if changes[3] {
             self.as_mut().flow_origin_changed();
         }
-        if self.rust().top_origin != top {
-            self.as_mut().rust_mut().top_origin = top;
+        if changes[4] {
             self.as_mut().top_origin_changed();
         }
-        if self.rust().bottom_origin != bottom {
-            self.as_mut().rust_mut().bottom_origin = bottom;
+        if changes[5] {
             self.as_mut().bottom_origin_changed();
         }
     }
+
     pub fn tick(mut self: Pin<&mut Self>) {
         let expired = {
             let mut this = self.as_mut().rust_mut();
@@ -197,11 +225,36 @@ impl ffi::DanmakuController {
             },
             speed,
         );
-        if changed == Some(true) {
-            self.as_mut().cleared();
+        let accepted = changed.is_some();
+        match changed {
+            Some(ConfigurationChange::Remeasure { round, comments }) => {
+                for token in comments {
+                    self.as_mut()
+                        .remeasure_requested(round.value(), token.value());
+                }
+            }
+            Some(ConfigurationChange::Preserved) | None => {}
         }
         self.publish();
-        changed.is_some()
+        accepted
+    }
+    pub fn remeasured(mut self: Pin<&mut Self>, round: u32, token: u32, width: f64) {
+        let updates = self
+            .as_mut()
+            .rust_mut()
+            .engine
+            .remeasured(round, token, width);
+        self.as_mut().publish();
+        for update in updates {
+            self.as_mut().relaid_out(
+                update.id.value(),
+                update.width,
+                update.from_x,
+                update.to_x,
+                update.y,
+                update.remaining.as_millis() as i32,
+            );
+        }
     }
     pub fn receive(
         mut self: Pin<&mut Self>,

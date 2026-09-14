@@ -5,6 +5,7 @@ import MinimalViewer
 
 Item {
     id: overlay
+    enum Placement { Scrolling, Top, Bottom }
     required property real fontSize
     required property real textOpacity
     required property real speed
@@ -24,7 +25,13 @@ Item {
     readonly property int visualCount: flowRows.children.length + topRows.children.length + bottomRows.children.length
     clip: true
 
-    FontMetrics { id: metrics; font.pixelSize: overlay.fontSize; font.bold: true }
+    FontMetrics {
+        id: metrics
+        // Match the application's Japanese font for both measurement and text.
+        font.family: "Noto Sans CJK JP"
+        font.pixelSize: overlay.fontSize
+        font.bold: true
+    }
     TextMetrics { id: measure; font: metrics.font }
     function configure() {
         backend.configure(width, height, metrics.height, fontSize, titleOverlapsVideo, titleBottomInVideo, controlsOverlapVideo, controlsTopInVideo, fullScreen, speed);
@@ -74,13 +81,27 @@ Item {
         onSpawned: function(token, kind, text, color, width, from_x, to_x, y, duration, own) {
             const parentItem = [flowRows, topRows, bottomRows][kind];
             const item = label.createObject(parentItem, {
-                "text": text, "color": color, "width": width, "x": from_x,
+                "text": text, "color": color, "width": width, "startX": from_x, "placement": kind,
                 "y": y, "destination": to_x, "duration": duration, "own": own
             });
             if (item)
                 overlay.visuals.set(token, item);
         }
         onRemoved: function(token) { overlay.removeVisual(token); }
+        onRemeasure_requested: function(round, token) {
+            const item = overlay.visuals.get(token);
+            if (item) {
+                measure.text = item.text;
+                backend.remeasured(round, token, Math.ceil(measure.advanceWidth) + 2 + (item.own ? 6 : 0));
+            } else {
+                backend.remeasured(round, token, 0);
+            }
+        }
+        onRelaid_out: function(token, width, from_x, to_x, y, duration) {
+            const item = overlay.visuals.get(token);
+            if (item)
+                item.relayout(width, from_x, to_x, y, duration);
+        }
         onCleared: overlay.clearVisuals()
     }
     // A render-frame notification, not a scheduler: Rust reads its own monotonic
@@ -113,9 +134,25 @@ Item {
         id: label
         Label {
             id: entry
+            required property int placement
+            required property real startX
             required property real destination
             required property int duration
             required property bool own
+            function relayout(newWidth, fromX, toX, newY, remaining) {
+                motion.stop();
+                width = newWidth;
+                startX = fromX;
+                destination = toX;
+                y = newY;
+                duration = remaining;
+                x = Qt.binding(() => entry.placement === DanmakuOverlay.Scrolling ? entry.startX : (overlay.width - entry.width) / 2);
+                if (placement === DanmakuOverlay.Scrolling)
+                    motion.start();
+            }
+            // Only scrolling labels animate x. Fixed labels retain this binding
+            // to the new viewport center when the window or sidebar resizes it.
+            x: placement === DanmakuOverlay.Scrolling ? startX : (overlay.width - width) / 2
             textFormat: Text.PlainText
             wrapMode: Text.NoWrap
             opacity: overlay.textOpacity
@@ -148,7 +185,10 @@ Item {
                 border.color: "#ffe066"
                 border.width: 1
             }
-            Component.onCompleted: motion.start()
+            Component.onCompleted: {
+                if (placement === DanmakuOverlay.Scrolling)
+                    motion.start();
+            }
             NumberAnimation {
                 id: motion
                 target: entry
@@ -156,7 +196,7 @@ Item {
                 to: entry.destination
                 duration: entry.duration
                 easing.type: Easing.Linear
-                paused: backend.paused
+                paused: running && backend.paused
             }
         }
     }

@@ -44,8 +44,9 @@ TestCase {
             overlay.receive("fixed", "top", 0xffffff);
         compare(overlay.activeCount, Math.min(100, overlay.laneCount));
         compare(entries().length, overlay.activeCount);
+        const count = overlay.activeCount;
         overlay.fontSize = 72;
-        compare(overlay.activeCount, 0);
+        compare(overlay.activeCount, count);
         overlay.height = 480;
         verify(overlay.laneCount < initial);
         overlay.height = 20;
@@ -72,10 +73,111 @@ TestCase {
         verify(scroll.x < overlay.width);
         compare(top.x, (overlay.width - top.width) / 2);
         overlay.fullScreen = true;
+        compare(overlay.activeCount, 3);
+        compare(entries()[0], scroll);
         overlay.receive("full screen", "right", 0xffffff);
         overlay.receive("fixed", "top", 0xffffff);
-        compare(entries()[0].duration, 4000);
-        compare(entries()[1].duration, 3000);
+        compare(entries()[3].duration, 4000);
+        compare(entries()[4].duration, 3000);
+        compare(scroll.duration, 2500);
+        compare(top.duration, 2000);
+    }
+    function test_resize_keeps_labels_motion_and_fixed_centering() {
+        overlay.receive("scroll", "right", 0xffffff, true);
+        overlay.receive("top", "top", 0xffffff);
+        overlay.receive("bottom", "bottom", 0xffffff);
+        wait(500);
+        overlay.paused = true;
+        const original = entries();
+        const scroll = original[0];
+        const stoppedX = scroll.x;
+        const shadow = findChild(scroll, "commentShadow").item;
+        for (const size of [Qt.size(480, 270), Qt.size(960, 540), Qt.size(640, 480)]) {
+            overlay.width = size.width;
+            overlay.height = size.height;
+            compare(overlay.activeCount, 3);
+            compare(overlay.visualCount, 3);
+            for (let i = 0; i < 3; ++i)
+                compare(entries()[i], original[i]);
+            compare(scroll.x, stoppedX);
+            compare(findChild(scroll, "commentShadow").item, shadow);
+            verify(scroll.background.visible);
+            compare(original[1].x, (size.width - original[1].width) / 2);
+            compare(original[2].x, (size.width - original[2].width) / 2);
+            wait(220);
+            verify(screenY(original[1]) >= 40);
+            verify(screenY(original[2]) + original[2].height <= size.height - 24);
+        }
+        overlay.paused = false;
+        tryVerify(() => scroll.x < stoppedX, 500);
+        tryVerify(() => overlay.activeCount === 0, 3000);
+        tryVerify(() => overlay.visualCount === 0);
+    }
+    function test_height_shrink_clips_overflow_without_destroying_rows() {
+        for (let i = 0; i < overlay.laneCount; ++i)
+            overlay.receive("row " + i, "top", 0xffffff);
+        overlay.paused = true;
+        const original = entries();
+        overlay.height = 94;
+        wait(220);
+        compare(overlay.activeCount, original.length);
+        compare(overlay.visualCount, original.length);
+        compare(screenY(original[0]), 40);
+        overlay.height = 480;
+        wait(220);
+        for (let i = 0; i < original.length; ++i) {
+            compare(entries()[i], original[i]);
+            verify(screenY(original[i]) >= 40);
+            verify(screenY(original[i]) + original[i].height <= overlay.height - 24);
+        }
+    }
+    function test_font_changes_remeasure_live_labels_and_preserve_remaining_time() {
+        overlay.receive("scroll あいう", "right", 0xffffff, true);
+        overlay.receive("top あいう", "top", 0xffffff);
+        overlay.receive("bottom あいう", "bottom", 0xffffff);
+        wait(500);
+        overlay.paused = true;
+        const original = entries();
+        const shadow = findChild(original[0], "commentShadow").item;
+        for (const size of [36, 72, 14, 21]) {
+            const oldWidth = original[0].width;
+            const oldSize = overlay.fontSize;
+            overlay.fontSize = size;
+            compare(overlay.activeCount, 3);
+            compare(overlay.visualCount, 3);
+            for (let i = 0; i < 3; ++i) {
+                compare(entries()[i], original[i]);
+                compare(original[i].font.pixelSize, size);
+            }
+            verify(size > oldSize ? original[0].width > oldWidth : original[0].width < oldWidth);
+            compare(original[0].destination, -original[0].width);
+            compare(original[1].x, (overlay.width - original[1].width) / 2);
+            compare(original[2].x, (overlay.width - original[2].width) / 2);
+            compare(findChild(original[0], "commentShadow").item, shadow);
+            verify(original[0].background.visible);
+            verify(original[0].duration <= 2100);
+            verify(original[1].duration <= 1600);
+            const stoppedX = original[0].x;
+            wait(220);
+            compare(original[0].x, stoppedX);
+            verify(screenY(original[2]) + original[2].height <= overlay.height - 24,
+                "size=" + size + " y=" + screenY(original[2]) + " height=" + original[2].height + " origin=" + overlay.controller.bottom_origin);
+        }
+        overlay.paused = false;
+        tryVerify(() => overlay.activeCount === 0, 2400);
+        tryVerify(() => overlay.visualCount === 0);
+    }
+    function test_shrinking_long_flow_does_not_reappear_as_a_fixed_comment() {
+        overlay.fontSize = 72;
+        overlay.receive("あいうえお".repeat(60), "right", 0xffffff);
+        wait(1500);
+        overlay.paused = true;
+        const entry = entries()[0];
+        overlay.fontSize = 14;
+        verify(entry.x + entry.width <= 0.01);
+        overlay.width = 800;
+        verify(entry.x + entry.width <= 0.01);
+        compare(overlay.activeCount, 1);
     }
     function test_hiding_plain_text_and_invalid_input() {
         overlay.receive("visible", "right", 0xffffff);

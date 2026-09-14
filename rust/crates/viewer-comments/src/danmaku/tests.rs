@@ -10,7 +10,7 @@ fn engine(height: f64) -> Engine {
             },
             1.
         ),
-        Some(true)
+        Some(ConfigurationChange::Preserved)
     );
     engine
 }
@@ -66,6 +66,275 @@ fn collision_and_speed_changes_use_actual_predecessor_speed() {
     e.advance_wall(Duration::from_secs(6));
     assert_eq!(e.active_count(), 0);
     assert!(spawn(&mut e, Position::Right, 100.).is_some());
+}
+
+#[test]
+fn resize_and_fullscreen_preserve_ids_and_original_deadlines() {
+    let mut e = engine(480.);
+    let right = spawn(&mut e, Position::Right, 100.).expect("right");
+    let top = spawn(&mut e, Position::Top, 100.).expect("top");
+    let bottom = spawn(&mut e, Position::Bottom, 100.).expect("bottom");
+    e.advance_wall(Duration::from_secs(1));
+    e.set_paused(true);
+    for (width, height, full_screen) in
+        [(360., 240., false), (960., 540., true), (640., 480., false)]
+    {
+        assert_eq!(
+            e.configure(
+                Viewport {
+                    width,
+                    height,
+                    full_screen,
+                    ..e.viewport
+                },
+                2.
+            ),
+            Some(ConfigurationChange::Preserved)
+        );
+        assert_eq!(e.active_count(), 3);
+        assert!(e.advance_wall(Duration::from_secs(10)).is_empty());
+    }
+    e.set_paused(false);
+    let expired = e.advance_wall(Duration::from_secs(3));
+    assert_eq!(expired, [top.id, bottom.id]);
+    assert_eq!(e.advance_wall(Duration::from_secs(1)), [right.id]);
+}
+
+#[test]
+fn resize_collision_checks_use_existing_trajectories_and_new_entry_point() {
+    let mut e = engine(94.); // One row: collisions must reject the new comment.
+    let original = spawn(&mut e, Position::Right, 100.).expect("original");
+    e.advance_wall(Duration::from_secs(1)); // Its right edge is still at x=592.
+    e.configure(
+        Viewport {
+            width: 320.,
+            ..e.viewport
+        },
+        1.,
+    );
+    assert!(spawn(&mut e, Position::Right, 20.).is_none());
+    e.configure(
+        Viewport {
+            width: 1000.,
+            ..e.viewport
+        },
+        1.,
+    );
+    // There is now room, but a long, fast comment would catch its predecessor.
+    assert!(spawn(&mut e, Position::Right, 2000.).is_none());
+    let next = spawn(&mut e, Position::Right, 20.).expect("safe gap");
+    assert_eq!(next.from_x, 1000.);
+    assert_eq!(next.y, original.y);
+    assert_eq!(e.active_count(), 2);
+    assert_eq!(e.advance_wall(Duration::from_secs(4)), [original.id]);
+    assert_eq!(e.advance_wall(Duration::from_secs(1)), [next.id]);
+}
+
+#[test]
+fn resize_retains_measurements_but_font_changes_invalidate_them() {
+    let mut e = engine(480.);
+    let request = e
+        .prepare(Comment::new("pending", Position::Right, 0).unwrap())
+        .unwrap();
+    e.configure(
+        Viewport {
+            width: 400.,
+            ..e.viewport
+        },
+        1.,
+    );
+    let entry = e.measured(request.id.value(), 100.).expect("still valid");
+    assert_eq!(entry.from_x, 400.);
+    for viewport in [
+        Viewport {
+            font_size: 36.,
+            ..e.viewport
+        },
+        Viewport {
+            text_height: 44.,
+            ..e.viewport
+        },
+    ] {
+        let request = e
+            .prepare(Comment::new("old font", Position::Right, 0).unwrap())
+            .unwrap();
+        let Some(ConfigurationChange::Remeasure { round, comments }) = e.configure(viewport, 1.)
+        else {
+            panic!("font change requires measurements");
+        };
+        assert_eq!(e.active_count(), 1);
+        assert!(e.measured(request.id.value(), 100.).is_none());
+        for id in comments {
+            e.remeasured(round.value(), id.value(), 200.);
+        }
+    }
+    let request = e
+        .prepare(Comment::new("zero width", Position::Right, 0).unwrap())
+        .unwrap();
+    e.configure(
+        Viewport {
+            width: 0.,
+            ..e.viewport
+        },
+        1.,
+    );
+    assert!(e.measured(request.id.value(), 100.).is_none());
+}
+
+#[test]
+fn font_relayout_requires_complete_current_measurements_and_keeps_deadlines() {
+    let mut e = engine(480.);
+    let right = spawn(&mut e, Position::Right, 100.).unwrap();
+    let top = spawn(&mut e, Position::Top, 100.).unwrap();
+    let bottom = spawn(&mut e, Position::Bottom, 100.).unwrap();
+    e.advance_wall(Duration::from_secs(1));
+    e.set_paused(true);
+    let Some(ConfigurationChange::Remeasure { round: old, .. }) = e.configure(
+        Viewport {
+            font_size: 36.,
+            text_height: 44.,
+            ..e.viewport
+        },
+        1.,
+    ) else {
+        panic!("measurements");
+    };
+    let Some(ConfigurationChange::Remeasure { round, comments }) = e.configure(
+        Viewport {
+            font_size: 72.,
+            text_height: 86.,
+            ..e.viewport
+        },
+        1.,
+    ) else {
+        panic!("measurements");
+    };
+    assert_eq!(comments, [right.id, top.id, bottom.id]);
+    for id in &comments {
+        assert!(e.remeasured(old.value(), id.value(), 900.).is_empty());
+    }
+    assert!(
+        e.remeasured(round.value(), right.id.value(), f64::NAN)
+            .is_empty()
+    );
+    assert!(
+        e.remeasured(round.value(), right.id.value(), 300.)
+            .is_empty()
+    );
+    assert!(e.remeasured(round.value(), top.id.value(), 300.).is_empty());
+    let updates = e.remeasured(round.value(), bottom.id.value(), 300.);
+    assert_eq!(updates.len(), 3);
+    assert_eq!(updates[0].from_x, 492.);
+    assert_eq!(updates[0].to_x, -300.);
+    assert_eq!(updates[0].remaining, Duration::from_secs(4));
+    assert_eq!(updates[1].from_x, 170.);
+    assert_eq!(updates[1].remaining, Duration::from_secs(3));
+    assert_eq!(updates[2].remaining, Duration::from_secs(3));
+    assert_eq!(e.active_count(), 3);
+    assert!(e.advance_wall(Duration::from_secs(100)).is_empty());
+    e.set_paused(false);
+    assert_eq!(e.advance_wall(Duration::from_secs(3)), [top.id, bottom.id]);
+    assert_eq!(e.advance_wall(Duration::from_secs(1)), [right.id]);
+}
+
+#[test]
+fn growing_text_reassigns_colliding_comments_without_dropping_them() {
+    let mut e = engine(480.);
+    let first = spawn(&mut e, Position::Right, 100.).unwrap();
+    e.advance_wall(Duration::from_secs(1));
+    let second = spawn(&mut e, Position::Right, 20.).unwrap();
+    assert_eq!(first.y, second.y);
+    let Some(ConfigurationChange::Remeasure { round, comments }) = e.configure(
+        Viewport {
+            font_size: 72.,
+            text_height: 86.,
+            ..e.viewport
+        },
+        1.,
+    ) else {
+        panic!("measurements");
+    };
+    assert!(spawn(&mut e, Position::Right, 20.).is_none());
+    assert!(
+        e.remeasured(round.value(), comments[1].value(), 400.)
+            .is_empty()
+    );
+    let updates = e.remeasured(round.value(), comments[0].value(), 400.);
+    assert_eq!(updates.len(), 2);
+    assert_ne!(updates[0].y, updates[1].y);
+    assert_eq!(updates[1].y - updates[0].y, e.viewport.spacing());
+    assert_eq!(e.active_count(), 2);
+    assert!(spawn(&mut e, Position::Right, 20.).is_some());
+    e.clear();
+    assert!(
+        e.remeasured(round.value(), first.id.value(), 500.)
+            .is_empty()
+    );
+    assert_eq!(e.active_count(), 0);
+}
+
+#[test]
+fn expiration_during_font_measurement_cannot_restore_expired_comments() {
+    let mut e = engine(480.);
+    let fixed = spawn(&mut e, Position::Top, 100.).unwrap();
+    let flow = spawn(&mut e, Position::Right, 100.).unwrap();
+    let Some(ConfigurationChange::Remeasure { round, .. }) = e.configure(
+        Viewport {
+            font_size: 36.,
+            ..e.viewport
+        },
+        1.,
+    ) else {
+        panic!("measurements");
+    };
+    assert_eq!(e.advance_wall(Duration::from_secs(4)), [fixed.id]);
+    let updates = e.remeasured(round.value(), flow.id.value(), 200.);
+    assert_eq!(updates.len(), 1);
+    assert_eq!(updates[0].id, flow.id);
+    assert_eq!(updates[0].remaining, Duration::from_secs(1));
+    assert!(
+        e.remeasured(round.value(), fixed.id.value(), 200.)
+            .is_empty()
+    );
+    assert_eq!(e.active_count(), 1);
+}
+
+#[test]
+fn shrinking_below_occupied_height_retains_rows_until_expiration() {
+    for position in [Position::Right, Position::Top, Position::Bottom] {
+        let mut e = engine(480.);
+        let original: Vec<_> = (0..e.lane_count())
+            .map(|_| spawn(&mut e, position, 100.).expect("row"))
+            .collect();
+        e.configure(
+            Viewport {
+                height: 94.,
+                ..e.viewport
+            },
+            1.,
+        );
+        assert_eq!(e.active_count(), original.len());
+        assert_eq!(e.lane_count(), 1);
+        assert_eq!(e.origin(position), 40.);
+        assert!(spawn(&mut e, position, 100.).is_none());
+        e.advance_wall(Duration::from_millis(200));
+        assert!(spawn(&mut e, position, 100.).is_none());
+        e.configure(
+            Viewport {
+                height: 480.,
+                ..e.viewport
+            },
+            1.,
+        );
+        e.advance_wall(Duration::from_millis(200));
+        assert_rows_stay_in_frame(&e);
+        assert_eq!(e.active_count(), original.len());
+        let expired = e.advance_wall(original[0].lifetime - Duration::from_millis(400));
+        assert_eq!(
+            expired,
+            original.iter().map(|entry| entry.id).collect::<Vec<_>>()
+        );
+    }
 }
 #[test]
 fn formats_durations_pause_and_lifetime_are_core_owned() {
@@ -221,7 +490,10 @@ fn controls_move_rows_without_resetting_deadlines_or_occupancy() {
             controls_top: 350.,
             ..Viewport::default()
         };
-        assert_eq!(e.configure(reserved, 1.), Some(false));
+        assert_eq!(
+            e.configure(reserved, 1.),
+            Some(ConfigurationChange::Preserved)
+        );
         assert_eq!(e.active_count(), 1);
         if position == Position::Bottom {
             assert!(e.origin(position) < 480. - 24. - reserved.spacing());
@@ -239,7 +511,7 @@ fn controls_move_rows_without_resetting_deadlines_or_occupancy() {
                 },
                 1.
             ),
-            Some(false)
+            Some(ConfigurationChange::Preserved)
         );
         assert_eq!(e.active_count(), 2);
         // Fixed comments never reuse an occupied physical row after hiding UI.
@@ -289,7 +561,10 @@ fn full_height_preserves_spacing_and_entries_when_controls_cannot_fit() {
             controls_top: 300.,
             ..Viewport::default()
         };
-        assert_eq!(e.configure(reserved, 1.), Some(false));
+        assert_eq!(
+            e.configure(reserved, 1.),
+            Some(ConfigurationChange::Preserved)
+        );
         assert_eq!(e.active_count(), capacity);
         assert_eq!(e.origin(position), initial);
         assert!(spawn(&mut e, position, 100.).is_none());
@@ -303,7 +578,7 @@ fn full_height_preserves_spacing_and_entries_when_controls_cannot_fit() {
                 },
                 1.
             ),
-            Some(false)
+            Some(ConfigurationChange::Preserved)
         );
         assert_eq!(e.active_count(), capacity);
         assert_rows_stay_in_frame(&e);
