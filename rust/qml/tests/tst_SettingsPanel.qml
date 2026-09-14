@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Dialogs
 import QtTest
 import ".."
 
@@ -18,6 +19,13 @@ TestCase {
         property bool subtitle_display: true
         property bool epg_enabled: true
         property bool autoplay: false
+        property string screenshot_directory: "/pictures/mirakurun-viewer"
+        property string screenshot_error: ""
+        property int screenshotFolderRequests: 0
+        function screenshot_directory_url() { return "file://" + screenshot_directory; }
+        function configure_screenshot_directory(value) { screenshot_directory = value.toString().replace(/^file:\/\//, ""); return true; }
+        function open_screenshot_directory() { screenshotFolderRequests++; return true; }
+        function reset_screenshot_directory() { screenshot_directory = "/pictures/mirakurun-viewer"; return true; }
         function configure_autoplay(value) { autoplay = value; }
         property string settings_error: ""
         property string diagnostics: ""
@@ -76,6 +84,9 @@ TestCase {
         backend.subtitle_display = true;
         backend.epg_enabled = true;
         backend.autoplay = false;
+        backend.screenshot_directory = "/pictures/mirakurun-viewer";
+        backend.screenshot_error = "";
+        backend.screenshotFolderRequests = 0;
         backend.comments_enabled = false;
         backend.comments_allowed = true;
         backend.danmaku_enabled = false;
@@ -234,6 +245,51 @@ TestCase {
         compare(connections.count, 0);
         selectPage(SettingsPanel.Diagnostics);
         compare(subtitles.visible, false);
+    }
+    function test_screenshot_folder_controls_follow_setting_and_show_errors() {
+        selectPage(SettingsPanel.Display);
+        const flick = findChild(panel.contentItem, "settingsFlickable");
+        flick.contentY = Math.max(0, flick.contentHeight - flick.height);
+        const path = findChild(panel.contentItem, "screenshotDirectoryPath");
+        compare(path.text, backend.screenshot_directory);
+        const open = findChild(panel.contentItem, "openScreenshotDirectory");
+        open.forceActiveFocus();
+        keyClick(Qt.Key_Space);
+        compare(backend.screenshotFolderRequests, 1);
+        backend.configure_screenshot_directory("file:///custom/画像");
+        compare(path.text, "/custom/画像");
+        const reset = findChild(panel.contentItem, "resetScreenshotDirectory");
+        reset.forceActiveFocus();
+        keyClick(Qt.Key_Space);
+        compare(path.text, "/pictures/mirakurun-viewer");
+        const error = findChild(panel.contentItem, "screenshotFolderError");
+        compare(error.visible, false);
+        backend.screenshot_error = "Cannot write this folder";
+        compare(error.visible, true);
+        compare(error.text, backend.screenshot_error);
+    }
+    function test_screenshot_folder_picker_applies_only_after_acceptance() {
+        backend.configure_screenshot_directory(Qt.resolvedUrl("."));
+        const previous = backend.screenshot_directory;
+        selectPage(SettingsPanel.Display);
+        const dialog = findChild(panel, "screenshotFolderDialog");
+        dialog.options = FolderDialog.DontUseNativeDialog;
+        const choose = findChild(panel.contentItem, "chooseScreenshotDirectory");
+        choose.forceActiveFocus();
+        keyClick(Qt.Key_Space);
+        tryCompare(dialog, "visible", true);
+        dialog.selectedFolder = Qt.resolvedUrl("..");
+        dialog.reject();
+        tryCompare(dialog, "visible", false);
+        compare(backend.screenshot_directory, previous);
+        choose.forceActiveFocus();
+        keyClick(Qt.Key_Space);
+        tryCompare(dialog, "visible", true);
+        dialog.selectedFolder = Qt.resolvedUrl("..");
+        const selected = dialog.selectedFolder.toString().replace(/^file:\/\//, "");
+        dialog.accept();
+        tryCompare(dialog, "visible", false);
+        compare(backend.screenshot_directory, selected);
     }
     function test_development_feature_limit_does_not_enable_processing_from_display() {
         backend.subtitles_enabled = false;

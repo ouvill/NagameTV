@@ -8,20 +8,12 @@
       <translation>スクリーンショットを保存</translation>
     </message>
     <message>
-      <source>PNG images (*.png)</source>
-      <translation>PNG画像 (*.png)</translation>
-    </message>
-    <message>
       <source>Screenshot saved.</source>
       <translation>スクリーンショットを保存しました。</translation>
     </message>
     <message>
       <source>Could not capture the picture. Try again while the video is playing.</source>
       <translation>映像を撮影できませんでした。再生中にもう一度お試しください。</translation>
-    </message>
-    <message>
-      <source>Could not save the screenshot. Check the file name and folder permissions, then try again.</source>
-      <translation>スクリーンショットを保存できませんでした。ファイル名とフォルダーの書き込み権限を確認し、もう一度お試しください。</translation>
     </message>
     <message>
       <source>Audio %1</source>
@@ -334,6 +326,18 @@
   </context>
   <context>
     <name>Backend</name>
+    <message>
+      <source>Could not access the screenshot folder. Choose a writable folder in Settings.</source>
+      <translation>スクリーンショットの保存先に書き込めません。設定画面で書き込み可能なフォルダーを選んでください。</translation>
+    </message>
+    <message>
+      <source>Could not open the screenshot folder.</source>
+      <translation>スクリーンショットフォルダーを開けませんでした。</translation>
+    </message>
+    <message>
+      <source>Could not save the captured image as PNG. Try capturing again.</source>
+      <translation>撮影した画像をPNGで保存できませんでした。もう一度撮影してください。</translation>
+    </message>
     <message>
       <source>Select a channel to receive live comments.</source>
       <translation>チャンネルを選ぶと実況コメントを受信します。</translation>
@@ -840,6 +844,34 @@
   </context>
   <context>
     <name>Settings</name>
+    <message>
+      <source>Choose screenshot folder</source>
+      <translation>スクリーンショットの保存先を選択</translation>
+    </message>
+    <message>
+      <source>Screenshots</source>
+      <translation>スクリーンショット</translation>
+    </message>
+    <message>
+      <source>Save instantly to this folder when you press the camera button or Ctrl + S.</source>
+      <translation>カメラボタンまたはCtrl + Sを押すと、このフォルダーにすぐ保存します。</translation>
+    </message>
+    <message>
+      <source>Change folder</source>
+      <translation>保存先を変更</translation>
+    </message>
+    <message>
+      <source>Open folder</source>
+      <translation>フォルダーを開く</translation>
+    </message>
+    <message>
+      <source>Use default folder</source>
+      <translation>既定の保存先に戻す</translation>
+    </message>
+    <message>
+      <source>By default, screenshots are saved in the app's folder inside Pictures.</source>
+      <translation>既定では「ピクチャ」内のアプリ専用フォルダーに保存します。</translation>
+    </message>
     <message>
       <source>Startup</source>
       <translation>起動時の動作</translation>

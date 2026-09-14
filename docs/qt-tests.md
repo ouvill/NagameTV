@@ -16,7 +16,7 @@ normal application builds. Test QObjects are generated from
 | `bash scripts/test-localization.sh` | Locale resolution, existing QML retranslation, date stability, dynamic snapshots, literal diagnostic arguments, 100 repeated language switches and translator ownership; a separate process removes the real catalog resource and checks failure cleanup | None: QCoreApplication and QtObject |
 | `bash scripts/test-connection.sh` | Real Player and local HTTP fixtures: pending/failed saves, empty catalogs, save failures, shutdown, coherent stream properties during Qt signals, retry allowance and guide visibility/day notification order | None: QCoreApplication and HTTP |
 | `bash scripts/test-startup.sh` | Production Main.qml in separate processes: first run, two saved startups, channel restoration, guide open/close, native playback failure and clean shutdown; QML warnings fail the test | Validated X11 display, GPU and PulseAudio output |
-| `bash scripts/test-screenshot.sh` | Real item capture, overlay pixels, exclusion of sibling controls, retention while choosing a file, PNG save with Unicode/escaped names, cancellation and failed save recovery | Validated X11 display and GPU |
+| `bash scripts/test-screenshot.sh` | Real Player and item capture, instant PNG saving, overlay pixels, exclusion of sibling controls, repeated captures, Unicode/escaped folder names, cancellation and invalid folder rejection | Validated X11 display and GPU |
 | `bash scripts/test-video-item.sh` | Video-item attachment, terminal shutdown, failed native transitions, and retained subtitle subscriptions until a successful stop | Validated X11 display and GPU; native graph stays in NULL |
 | `bash scripts/test-subtitle-outline.sh` | Six pixel-exact QPainterPath/SVG comparisons: full height, small ink/cubic curves, midline, overhang/descender, separate contours, empty path | None: QCoreApplication and in-memory QImage rasterization |
 | `bash scripts/test-pointer-activity.sh` | Duplicate installation, repeated positions, disabled items, window changes, observer deletion and event delivery after item destruction | Validated X11 display and GPU |
@@ -45,10 +45,17 @@ run the public script rather than invoking this subprocess directly.
 
 The startup suite also covers persisted autoplay and both directions of the
 environment override, using the restored channel. Screenshot tests copy their
-fixture and production component into a temporary directory; saved images are
-removed at exit. They use a rendered rectangle and child overlay to verify the
-capture contract. Successful capture of broadcast video still requires manual
-verification with a playing stream, including visible subtitles and comments.
+fixture and production component into a temporary directory and run the native
+test runner with the real Player; saved images are removed at exit. They use a
+rendered rectangle and child overlay to verify the capture contract. Successful
+capture of broadcast video still requires manual verification with a playing
+stream, including visible subtitles and comments.
+
+Hardware-free Rust tests verify screenshot directory serialization, atomic PNG
+publication, filename collisions and cleanup. Connection tests also verify the
+real Qt properties, folder persistence, PNG saving and recovery after the folder
+becomes inaccessible. These checks only rasterize in-memory QImages and use
+temporary files; they do not create a display or use a GPU.
 
 `rust/src/native_tests/qt_test_api.h` exposes resource registration, Qt object
 introspection, raster drawing and event delivery. It contains no test cases or

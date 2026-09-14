@@ -152,6 +152,7 @@ ApplicationWindow {
     }
     ScreenshotCapture {
         id: screenshot
+        backend: player
         target: videoPicture
         available: player.playing
         enabled: !root.closing

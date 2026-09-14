@@ -1,6 +1,50 @@
 use super::*;
 
 #[test]
+fn screenshot_directory_defaults_and_custom_paths_survive_restart()
+-> Result<(), Box<dyn std::error::Error>> {
+    let temporary = tempfile::tempdir()?;
+    let path = temporary.path().join("settings.toml");
+    let pictures = temporary.path().join("Pictures");
+    let mut session = open(path.clone())?;
+    assert_eq!(
+        session
+            .preferences()
+            .screenshot_directory
+            .resolve(&pictures),
+        Some(pictures.join("mirakurun-viewer"))
+    );
+    assert!(
+        session
+            .preferences()
+            .screenshot_directory
+            .resolve(Path::new(""))
+            .is_none()
+    );
+    let custom = temporary.path().join("スクリーンショット #100%");
+    session.change(Change::ScreenshotDirectory(ScreenshotDirectory::try_from(
+        custom.to_string_lossy().into_owned(),
+    )?));
+    session.flush()?;
+    assert_eq!(
+        open(path.clone())?
+            .preferences()
+            .screenshot_directory
+            .resolve(&pictures),
+        Some(custom)
+    );
+    session.change(Change::ScreenshotDirectory(ScreenshotDirectory::Pictures));
+    session.flush()?;
+    assert_eq!(
+        open(path)?.preferences().screenshot_directory,
+        ScreenshotDirectory::Pictures
+    );
+    assert!(ScreenshotDirectory::try_from("relative/path".to_owned()).is_err());
+    assert!(toml::from_str::<Preferences>("screenshot_directory = '../relative'").is_err());
+    Ok(())
+}
+
+#[test]
 fn unconfigured_settings_stay_unconfigured_when_other_preferences_are_saved()
 -> Result<(), Box<dyn std::error::Error>> {
     let directory = tempfile::tempdir()?;

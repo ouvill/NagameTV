@@ -15,6 +15,7 @@ mod native_tests;
 mod platform;
 mod playback;
 mod player;
+mod screenshots;
 mod services;
 mod settings;
 #[cfg(feature = "video_item_tests")]

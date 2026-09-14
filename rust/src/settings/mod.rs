@@ -2,9 +2,11 @@
 mod comment_style;
 mod language;
 mod model;
+mod screenshot_directory;
 pub use comment_style::{CommentFontSize, CommentOpacity, CommentSpeed};
 pub use language::Language;
 pub use model::{Preferences, Volume, autoplay_requested};
+pub use screenshot_directory::ScreenshotDirectory;
 use std::{
     fs,
     io::{self, Read, Write},
@@ -111,6 +113,7 @@ pub enum Change {
     Language(Language),
     Service(String),
     Autoplay(bool),
+    ScreenshotDirectory(ScreenshotDirectory),
     Volume(Volume),
     SubtitleDisplay(bool),
     Comments(bool),
@@ -172,6 +175,7 @@ impl Session {
             Change::Language(language) => preferences.language = language,
             Change::Service(service) => preferences.service_id = service,
             Change::Autoplay(enabled) => preferences.autoplay = enabled,
+            Change::ScreenshotDirectory(directory) => preferences.screenshot_directory = directory,
             Change::Volume(volume) => preferences.volume = volume,
             Change::SubtitleDisplay(display) => preferences.show_subtitles = display,
             Change::Comments(enabled) => preferences.comments_enabled = enabled,

@@ -9,6 +9,13 @@
 #include <QtCore/QUrl>
 #include <QtGui/QDesktopServices>
 #include <QtGui/QGuiApplication>
+#include <QtGui/QImage>
+inline QString picturesDirectory() {
+  return QStandardPaths::writableLocation(QStandardPaths::PicturesLocation);
+}
+inline bool saveScreenshotPng(const QImage &image, const QString &path) {
+  return image.save(path, "PNG");
+}
 inline void configureQtQuickOpenGl() {
     QCoreApplication::setApplicationName(QStringLiteral("mirakurun-viewer"));
     QGuiApplication::setDesktopFileName(QStringLiteral("io.github.ouvill.litv"));
@@ -33,7 +40,7 @@ inline QString playbackLogDirectory() {
 #endif
 }
 
-inline bool openPlaybackLogDirectory(const QString &path) {
+inline bool openLocalDirectory(const QString &path) {
   return QDesktopServices::openUrl(QUrl::fromLocalFile(path));
 }
 

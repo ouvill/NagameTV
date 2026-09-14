@@ -144,6 +144,7 @@ impl Default for PlayerRust {
             audio_muted: audio_output.muted(),
             audio_output,
             settings_error: QString::from(settings_error),
+            screenshot_error: QString::default(),
             preferences,
             autoplay_pending,
             epg: ProgramInfo::default(),

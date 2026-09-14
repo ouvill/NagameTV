@@ -16,6 +16,7 @@ use lifecycle::{Failure as StatusFailure, Status as PlaybackStatus};
 mod playback_failure;
 mod preferences;
 mod program_info;
+mod screenshots;
 mod startup;
 mod statistics;
 mod status;
@@ -39,16 +40,24 @@ pub mod ffi {
         type CommentModel = crate::comment_model::ffi::CommentModel;
         include!("cxx-qt-lib/qstring.h");
         type QString = cxx_qt_lib::QString;
+        include!("cxx-qt-lib/qurl.h");
+        type QUrl = cxx_qt_lib::QUrl;
+        include!("cxx-qt-lib/qimage.h");
+        type QImage = cxx_qt_lib::QImage;
         include!("cxx-qt-lib/qfont.h");
         type QFont = cxx_qt_lib::QFont;
         include!("subtitle_outline.h");
         #[cxx_name = "subtitleOutlinePath"]
         fn subtitle_outline_path(text: &QString, font: &QFont) -> QString;
         include!("qt_helpers.h");
+        #[cxx_name = "picturesDirectory"]
+        fn pictures_directory() -> QString;
+        #[cxx_name = "saveScreenshotPng"]
+        fn save_screenshot_png(image: &QImage, path: &QString) -> bool;
         #[cxx_name = "playbackLogDirectory"]
         fn playback_log_directory() -> QString;
-        #[cxx_name = "openPlaybackLogDirectory"]
-        fn open_playback_log_directory(path: &QString) -> bool;
+        #[cxx_name = "openLocalDirectory"]
+        fn open_local_directory(path: &QString) -> bool;
         #[cxx_name = "installQtLogging"]
         fn install_qt_logging(callback: fn(level: u8, category: &str, message: &str));
         #[cxx_name = "installQtGcLogging"]
@@ -83,6 +92,8 @@ pub mod ffi {
         #[qproperty(QString, language, READ, NOTIFY)]
         #[qproperty(QString, ui_language, READ, NOTIFY)]
         #[qproperty(bool, autoplay, READ = autoplay, NOTIFY)]
+        #[qproperty(QString, screenshot_directory, READ = screenshot_directory, NOTIFY)]
+        #[qproperty(QString, screenshot_error, READ, NOTIFY)]
         #[qproperty(QString, server, READ, NOTIFY)]
         #[qproperty(bool, server_configured, READ = server_configured, NOTIFY)]
         #[qproperty(QString, status, READ, NOTIFY)]
@@ -132,6 +143,17 @@ pub mod ffi {
         #[qproperty(QString, diagnostics, READ, NOTIFY)]
         type Player = super::PlayerRust;
         fn autoplay(self: &Player) -> bool;
+        fn screenshot_directory(self: &Player) -> QString;
+        #[qinvokable]
+        fn screenshot_directory_url(self: &Player) -> QUrl;
+        #[qinvokable]
+        fn configure_screenshot_directory(self: Pin<&mut Player>, directory: QUrl) -> bool;
+        #[qinvokable]
+        fn reset_screenshot_directory(self: Pin<&mut Player>) -> bool;
+        #[qinvokable]
+        fn open_screenshot_directory(self: Pin<&mut Player>) -> bool;
+        #[qinvokable]
+        fn save_screenshot(self: Pin<&mut Player>, image: &QImage) -> QUrl;
         fn server_configured(self: &Player) -> bool;
         fn loading(self: &Player) -> bool;
         fn connecting(self: &Player) -> bool;
@@ -300,6 +322,7 @@ pub struct PlayerRust {
     audio_muted: bool,
     audio_output: playback::audio_output::Output,
     settings_error: QString,
+    screenshot_error: QString,
     preferences: settings::Session,
     autoplay_pending: bool,
     epg: ProgramInfo,
@@ -492,6 +515,12 @@ impl ffi::Player {
         set_settings_error,
         settings_error,
         settings_error_changed,
+        QString
+    );
+    property_setter!(
+        set_screenshot_error,
+        screenshot_error,
+        screenshot_error_changed,
         QString
     );
 

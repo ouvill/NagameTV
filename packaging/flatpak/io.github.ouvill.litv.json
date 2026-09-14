@@ -15,6 +15,7 @@
     "--socket=x11",
     "--socket=pulseaudio",
     "--device=dri",
+    "--filesystem=xdg-pictures/mirakurun-viewer:create",
     "--env=QT_QPA_PLATFORM=xcb"
   ],
   "build-options": {

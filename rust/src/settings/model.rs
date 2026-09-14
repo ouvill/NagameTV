@@ -1,5 +1,5 @@
 //! Preferences and normalization without filesystem, Qt or playback dependencies.
-use super::{CommentFontSize, CommentOpacity, CommentSpeed, Language};
+use super::{CommentFontSize, CommentOpacity, CommentSpeed, Language, ScreenshotDirectory};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -50,6 +50,7 @@ pub struct Preferences {
     pub server: String,
     pub service_id: String,
     pub autoplay: bool,
+    pub screenshot_directory: ScreenshotDirectory,
     pub volume: Volume,
     // Keep the existing on-disk key, now solely a viewer's display preference.
     // Subtitle processing and EPG availability are selected by LaunchPlan.
@@ -74,6 +75,7 @@ impl Default for Preferences {
             server: String::new(),
             service_id: String::new(),
             autoplay: false,
+            screenshot_directory: ScreenshotDirectory::default(),
             volume: Volume::default(),
             show_subtitles: false,
             // main receives history independently of the scrolling overlay.

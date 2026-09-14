@@ -21,6 +21,7 @@ trap 'rm -rf "$screenshot_test_dir"' EXIT
 mkdir -p "$screenshot_test_dir/rust/qml" "$screenshot_test_dir/tests/screenshots"
 cp rust/qml/ScreenshotCapture.qml "$screenshot_test_dir/rust/qml/"
 cp tests/screenshots/tst_ScreenshotCapture.qml "$screenshot_test_dir/tests/screenshots/"
-qt_bins=$(pkg-config --variable=bindir Qt6Core)
-QT_QPA_PLATFORM=xcb QSG_RHI_BACKEND=opengl "$qt_bins/qmltestrunner" \
+QT_QPA_PLATFORM=xcb QSG_RHI_BACKEND=opengl \
+    XDG_CONFIG_HOME="$screenshot_test_dir/config" XDG_STATE_HOME="$screenshot_test_dir/state" \
+    MIRAKURUN_DIAGNOSTICS=0 bash scripts/run-native-tests.sh screenshots \
     -input "$screenshot_test_dir/tests/screenshots" "$@"

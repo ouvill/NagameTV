@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQuick.Dialogs
 
 Popup {
     id: root
@@ -43,6 +44,12 @@ Popup {
         if (!backend.server.length) page = SettingsPanel.Connection;
     }
     parent: Overlay.overlay
+    FolderDialog {
+        id: screenshotFolderDialog
+        objectName: "screenshotFolderDialog"
+        title: qsTranslate("Settings", "Choose screenshot folder")
+        onAccepted: root.backend.configure_screenshot_directory(selectedFolder)
+    }
     x: 0; y: 0
     width: parent.width
     height: parent.height
@@ -333,6 +340,47 @@ Popup {
                             checked: root.backend.subtitles_enabled && root.backend.subtitle_display
                             enabled: root.backend.subtitles_enabled
                             onClicked: root.backend.display_subtitles(checked)
+                        }
+                        Heading { Layout.topMargin: 20; text: qsTranslate("Settings", "Screenshots") }
+                        Detail {
+                            text: qsTranslate("Settings", "Save instantly to this folder when you press the camera button or Ctrl + S.")
+                        }
+                        Detail {
+                            objectName: "screenshotDirectoryPath"
+                            text: root.backend.screenshot_directory
+                            color: "#f4f5f3"
+                            wrapMode: Text.WrapAnywhere
+                        }
+                        Flow {
+                            Layout.fillWidth: true
+                            spacing: 12
+                            Action {
+                                objectName: "chooseScreenshotDirectory"
+                                text: qsTranslate("Settings", "Change folder")
+                                onClicked: {
+                                    screenshotFolderDialog.currentFolder = root.backend.screenshot_directory_url();
+                                    screenshotFolderDialog.open();
+                                }
+                            }
+                            Action {
+                                objectName: "openScreenshotDirectory"
+                                text: qsTranslate("Settings", "Open folder")
+                                onClicked: root.backend.open_screenshot_directory()
+                            }
+                            Action {
+                                objectName: "resetScreenshotDirectory"
+                                text: qsTranslate("Settings", "Use default folder")
+                                onClicked: root.backend.reset_screenshot_directory()
+                            }
+                        }
+                        Detail {
+                            text: qsTranslate("Settings", "By default, screenshots are saved in the app's folder inside Pictures.")
+                        }
+                        Notice {
+                            objectName: "screenshotFolderError"
+                            visible: text.length > 0
+                            text: root.backend.screenshot_error
+                            color: "#ffb080"
                         }
                     }
                     ColumnLayout {

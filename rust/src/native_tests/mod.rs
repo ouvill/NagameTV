@@ -11,8 +11,10 @@ mod startup;
 pub fn run() -> i32 {
     let mut arguments = std::env::args().skip(2);
     let suite = arguments.next();
-    if suite.as_deref() != Some("subtitle-rendering") && arguments.next().is_some() {
-        eprintln!("Only subtitle-rendering accepts Qt Quick Test arguments");
+    if !matches!(suite.as_deref(), Some("subtitle-rendering" | "screenshots"))
+        && arguments.next().is_some()
+    {
+        eprintln!("Only subtitle-rendering and screenshots accept Qt Quick Test arguments");
         return 2;
     }
     match suite.as_deref() {
@@ -28,9 +30,20 @@ pub fn run() -> i32 {
             qt_arguments.extend(arguments);
             crate::danmaku_ui_tests::run_with_arguments(&qt_arguments)
         }
+        Some("screenshots") => {
+            crate::features::PLAN
+                .set(
+                    crate::features::LaunchPlan::parse(["--features=none".into()])
+                        .expect("test plan"),
+                )
+                .expect("test plan initialized once");
+            let mut qt_arguments = vec!["viewer-screenshot-tests".to_owned()];
+            qt_arguments.extend(arguments);
+            crate::danmaku_ui_tests::run_with_arguments(&qt_arguments)
+        }
         _ => {
             eprintln!(
-                "Expected --native-tests localization|missing-catalog|subtitle-outline|pointer-activity|subtitle-rendering|connection|startup"
+                "Expected --native-tests localization|missing-catalog|subtitle-outline|pointer-activity|subtitle-rendering|screenshots|connection|startup"
             );
             2
         }

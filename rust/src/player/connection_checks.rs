@@ -188,6 +188,7 @@ fn checks() -> TestResult {
     check_stream_state(&mut player)?;
     check_guide_state();
     check_autoplay()?;
+    check_screenshot_directory()?;
 
     // HTTP failures and non-Mirakurun responses preserve a working saved URL.
     for (status, body) in [(403, "denied"), (200, "<html>not Mirakurun</html>")] {
@@ -311,6 +312,76 @@ fn check_autoplay() -> TestResult {
     player.pin_mut().configure_autoplay(true);
     assert!(player.settings_error().is_empty());
     assert!(settings::Loaded::open(path)?.preferences().autoplay);
+    Ok(())
+}
+
+fn check_screenshot_directory() -> TestResult {
+    use cxx_qt_lib::{QColor, QImage, QImageFormat, QUrl};
+    let temporary = tempfile::tempdir()?;
+    let path = temporary.path().join("settings.toml");
+    let directory = temporary.path().join("画像 #100%");
+    let mut player = ffi::new_player();
+    player.pin_mut().rust_mut().preferences =
+        settings::Loaded::open(path.clone())?.activate(None, None);
+    let observed = Arc::new(Mutex::new(Vec::new()));
+    let changes = observed.clone();
+    let _signal = player
+        .pin_mut()
+        .on_screenshot_directory_changed(move |player| {
+            let path = player.screenshot_directory().to_string();
+            let saved = player
+                .rust()
+                .preferences
+                .preferences()
+                .screenshot_directory
+                .resolve(Path::new(""));
+            assert_eq!(saved.as_deref(), Some(Path::new(&path)));
+            assert_eq!(
+                std::fs::read_dir(&path).unwrap().count(),
+                0,
+                "the writable probe is released before notification"
+            );
+            changes.lock().unwrap().push(path);
+        });
+    let url = QUrl::from_local_file(&QString::from(directory.to_string_lossy().as_ref()));
+    assert!(player.pin_mut().configure_screenshot_directory(url.clone()));
+    assert_eq!(player.screenshot_directory_url(), url);
+    assert!(player.pin_mut().configure_screenshot_directory(url));
+    assert_eq!(observed.lock().unwrap().len(), 1);
+    let mut restored = ffi::new_player();
+    restored.pin_mut().rust_mut().preferences = settings::Loaded::open(path)?.activate(None, None);
+    assert_eq!(
+        restored.screenshot_directory(),
+        player.screenshot_directory()
+    );
+    assert!(
+        !player
+            .pin_mut()
+            .configure_screenshot_directory(QUrl::from("https://example.test/folder"))
+    );
+    assert!(!player.screenshot_error().is_empty());
+    let mut image = QImage::from_width_height_and_format(8, 6, QImageFormat::Format_RGB32);
+    image.fill(&QColor::from_rgb(255, 0, 0));
+    let saved = player
+        .pin_mut()
+        .save_screenshot(&image)
+        .to_local_file()
+        .expect("saved local image");
+    let bytes = std::fs::read(saved.to_string())?;
+    let decoded = QImage::from_data(&bytes, Some("PNG")).expect("PNG image");
+    assert_eq!(decoded.size(), image.size());
+    assert!(player.screenshot_error().is_empty());
+    // Losing the destination after configuration reports an error and permits
+    // recovery without changing the saved folder or overwriting existing files.
+    std::fs::remove_file(saved.to_string())?;
+    std::fs::remove_dir(&directory)?;
+    std::fs::write(&directory, b"keep")?;
+    assert!(player.pin_mut().save_screenshot(&image).is_empty());
+    assert!(!player.screenshot_error().is_empty());
+    assert_eq!(std::fs::read(&directory)?, b"keep");
+    std::fs::remove_file(&directory)?;
+    assert!(!player.pin_mut().save_screenshot(&image).is_empty());
+    assert!(player.screenshot_error().is_empty());
     Ok(())
 }
 
