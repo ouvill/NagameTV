@@ -1156,4 +1156,75 @@
       <translation>接続先を変更</translation>
     </message>
   </context>
+<context>
+    <name>Remote</name>
+    <message>
+        <source>Remote control</source>
+        <translation>リモート操作</translation>
+    </message>
+    <message>
+        <source>Enable remote control</source>
+        <translation>リモート操作を有効にする</translation>
+    </message>
+    <message>
+        <source>Allow devices on your home network to control this viewer without authentication.</source>
+        <translation>家庭内LANの端末から、このViewerを認証なしで操作できます。</translation>
+    </message>
+    <message>
+        <source>These settings apply to this launch only and will not be saved.</source>
+        <translation>この設定は今回の起動だけに適用され、保存されません。</translation>
+    </message>
+    <message>
+        <source>Listen address</source>
+        <translation>待受IPアドレス</translation>
+    </message>
+    <message>
+        <source>The default 0.0.0.0 accepts connections on all IPv4 interfaces.</source>
+        <translation>既定の0.0.0.0では、すべてのIPv4インターフェースで接続を受け付けます。</translation>
+    </message>
+    <message>
+        <source>Port</source>
+        <translation>ポート</translation>
+    </message>
+    <message>
+        <source>The default port is 50051. Use a different port for each additional viewer.</source>
+        <translation>既定のポートは50051です。複数のViewerを操作する場合は、それぞれ別のポートを指定してください。</translation>
+    </message>
+    <message>
+        <source>Apply / retry</source>
+        <translation>適用・再試行</translation>
+    </message>
+    <message>
+        <source>Enter a valid IP address and a port between 1 and 65535.</source>
+        <translation>有効なIPアドレスと、1〜65535のポート番号を入力してください。</translation>
+    </message>
+    <message>
+        <source>Remote control is off.</source>
+        <translation>リモート操作はOFFです。</translation>
+    </message>
+    <message>
+        <source>Starting remote control…</source>
+        <translation>リモート操作を開始しています…</translation>
+    </message>
+    <message>
+        <source>Remote control is ready.</source>
+        <translation>リモート操作を受け付けています。</translation>
+    </message>
+    <message>
+        <source>Stopping the previous listener…</source>
+        <translation>変更前の受付を停止しています…</translation>
+    </message>
+    <message>
+        <source>Could not start remote control. Check the address and port, then retry.</source>
+        <translation>リモート操作を開始できませんでした。IPアドレスとポートを確認し、再試行してください。</translation>
+    </message>
+    <message>
+        <source>Could not save the remote settings: %1</source>
+        <translation>リモート設定を保存できませんでした: %1</translation>
+    </message>
+    <message>
+        <source>Connection addresses</source>
+        <translation>接続先</translation>
+    </message>
+</context>
 </TS>

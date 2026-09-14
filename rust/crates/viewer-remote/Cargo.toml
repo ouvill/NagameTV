@@ -1,0 +1,22 @@
+[package]
+name = "viewer-remote"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+prost = "0.14"
+tonic = "0.14"
+tonic-prost = "0.14"
+tonic-web = "0.14"
+tokio = { version = "1.47", features = ["rt", "net", "sync", "time", "macros"] }
+tokio-stream = { version = "0.1", features = ["net", "sync"] }
+tokio-util = { version = "0.7", features = ["rt"] }
+async-stream = "0.3"
+thiserror = "2.0"
+
+[build-dependencies]
+tonic-prost-build = "0.14"
+protoc-bin-vendored = "3.2"
+
+[dev-dependencies]
+reqwest = { version = "0.13", default-features = false, features = ["stream"] }

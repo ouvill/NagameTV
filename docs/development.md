@@ -93,6 +93,7 @@ RSSなどの資源使用量は診断JSONLに記録します。[メモリー分�
 ## 開発資料
 
 - [構成と資源の所有関係](architecture.md)
+- [遠隔操作API・Protobufとドキュメント生成](remote-control.md)
 - [番組表](guide-calendar.md)・[EPGの更新](epg-event-stream.md)
 - [弾幕表示](danmaku.md)・[字幕描画](subtitle-rendering.md)・[音声切り替え](audio-selection.md)
 - [動画統計](video-statistics.md)・[操作への反応](ui-feedback.md)

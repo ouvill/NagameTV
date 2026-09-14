@@ -15,6 +15,7 @@ mod native_tests;
 mod platform;
 mod playback;
 mod player;
+mod remote;
 mod screenshots;
 mod services;
 mod settings;

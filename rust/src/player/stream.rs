@@ -118,6 +118,11 @@ impl ffi::Player {
         }
     }
     pub fn poll(mut self: Pin<&mut Self>) {
+        self.as_mut().poll_remote_commands();
+        self.as_mut().poll_player();
+        self.publish_remote();
+    }
+    fn poll_player(mut self: Pin<&mut Self>) {
         self.as_mut().refresh_channels_if_due();
         if let Err(error) = self.as_mut().poll_channels() {
             self.as_mut()
@@ -172,6 +177,7 @@ impl ffi::Player {
             self.playback_failed(error);
             return false;
         }
+        self.as_mut().rust_mut().remote.stop();
         self.as_mut().rust_mut().epg_events.configure(None);
         self.as_mut().rust_mut().channel_refresh = channel_refresh::Refresh::Disabled;
         // Stop UI samples; the application owner retains GC logging through engine teardown.

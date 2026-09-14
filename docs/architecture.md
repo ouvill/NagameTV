@@ -23,6 +23,7 @@ main::run
        ├ Comments/Activity  実況接続・履歴と勢い取得
        ├ settings::Session  現在の設定・保存済みスナップショット
        ├ Network            Tokioランタイムと有限JSON用HTTPクライアント
+       ├ Remote Control     任意のgRPC/gRPC-Web受付・有界操作キュー・状態通知
        └ diagnostics::Client 記録所有者への弱い参照
 QML Loader                  字幕・番組表・流れる実況・統計表示の寿命
 ```

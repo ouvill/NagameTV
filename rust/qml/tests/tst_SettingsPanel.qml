@@ -19,6 +19,25 @@ TestCase {
         property bool subtitle_display: true
         property bool epg_enabled: true
         property bool autoplay: false
+        property bool remote_enabled: false
+        property string remote_address: "0.0.0.0"
+        property int remote_port: 50051
+        property string remote_status: "disabled"
+        property string remote_error: ""
+        property string remote_save_error: ""
+        property string remote_endpoints: ""
+        property bool remote_session_only: false
+        property bool acceptRemote: true
+        signal remoteRequested(bool enabled, string address, int port)
+        function configure_remote(enabled, address, port) {
+            remoteRequested(enabled, address, port);
+            if (!acceptRemote) return false;
+            remote_enabled = enabled;
+            remote_address = address;
+            remote_port = port;
+            return true;
+        }
+        function refresh_remote_addresses() {}
         property string screenshot_directory: "/pictures/mirakurun-viewer"
         property string screenshot_error: ""
         property int screenshotFolderRequests: 0
@@ -70,6 +89,7 @@ TestCase {
     }
     SignalSpy { id: connections; target: backend; signalName: "connectRequested" }
     SignalSpy { id: accepted; target: panel; signalName: "connectionAccepted" }
+    SignalSpy { id: remoteRequests; target: backend; signalName: "remoteRequested" }
     function init() {
         failOnWarning(/.*/);
         backend.loading = false;
@@ -84,6 +104,16 @@ TestCase {
         backend.subtitle_display = true;
         backend.epg_enabled = true;
         backend.autoplay = false;
+        backend.remote_enabled = false;
+        backend.remote_address = "0.0.0.0";
+        backend.remote_port = 50051;
+        backend.remote_status = "disabled";
+        backend.remote_error = "";
+        backend.remote_save_error = "";
+        backend.remote_endpoints = "";
+        backend.remote_session_only = false;
+        backend.acceptRemote = true;
+        remoteRequests.clear();
         backend.screenshot_directory = "/pictures/mirakurun-viewer";
         backend.screenshot_error = "";
         backend.screenshotFolderRequests = 0;
@@ -104,6 +134,55 @@ TestCase {
         tryCompare(panel, "opened", true);
     }
     function cleanup() { panel.close(); tryCompare(panel, "visible", false); }
+    function test_remote_defaults_can_be_enabled_and_binding_failures_remain_visible() {
+        selectPage(SettingsPanel.Remote);
+        const toggle = findChild(panel.contentItem, "remoteEnabled");
+        compare(findChild(panel.contentItem, "remoteAddress").text, "0.0.0.0");
+        compare(findChild(panel.contentItem, "remotePort").text, "50051");
+        mouseClick(toggle);
+        compare(remoteRequests.count, 1);
+        compare(remoteRequests.signalArguments[0][0], true);
+        compare(remoteRequests.signalArguments[0][1], "0.0.0.0");
+        compare(remoteRequests.signalArguments[0][2], 50051);
+        backend.remote_status = "failed";
+        backend.remote_error = "Port is already in use";
+        compare(toggle.checked, true);
+        compare(findChild(panel.contentItem, "remoteError").text, backend.remote_error);
+        compare(findChild(panel.contentItem, "remoteError").visible, true);
+        findChild(panel.contentItem, "remoteAddress").text = "invalid draft";
+        findChild(panel.contentItem, "remotePort").text = "0";
+        mouseClick(toggle);
+        compare(backend.remote_enabled, false);
+        compare(backend.remote_port, 50051);
+    }
+    function test_remote_invalid_edits_do_not_enable_and_reopening_discards_draft() {
+        selectPage(SettingsPanel.Remote);
+        backend.acceptRemote = false;
+        findChild(panel.contentItem, "remoteAddress").text = "invalid";
+        mouseClick(findChild(panel.contentItem, "remoteEnabled"));
+        compare(backend.remote_enabled, false);
+        compare(findChild(panel.contentItem, "remoteEnabled").checked, false);
+        compare(findChild(panel.contentItem, "remoteInvalidInput").visible, true);
+        panel.close();
+        tryCompare(panel, "visible", false);
+        panel.open();
+        tryCompare(panel, "opened", true);
+        compare(findChild(panel.contentItem, "remoteAddress").text, "0.0.0.0");
+    }
+    function test_remote_port_edits_and_connection_addresses() {
+        selectPage(SettingsPanel.Remote);
+        findChild(panel.contentItem, "remotePort").text = "50052";
+        const button = findChild(panel.contentItem, "applyRemote");
+        button.forceActiveFocus();
+        keyClick(Qt.Key_Space);
+        compare(backend.remote_port, 50052);
+        compare(backend.remote_enabled, false);
+        backend.remote_session_only = true;
+        backend.remote_status = "listening";
+        backend.remote_endpoints = "192.168.1.10:50052";
+        compare(findChild(panel.contentItem, "remoteSessionOnly").visible, true);
+        compare(findChild(panel.contentItem, "remoteEndpoints").text, "192.168.1.10:50052");
+    }
     function selectPage(index) {
         mouseClick(findChild(panel.contentItem, "settingsCategory" + index));
         compare(panel.page, index);
@@ -282,7 +361,10 @@ TestCase {
         dialog.reject();
         tryCompare(dialog, "visible", false);
         compare(backend.screenshot_directory, previous);
+        // Dialog dismissal restores focus asynchronously; wait for the parent to render.
+        verify(waitForRendering(panel.contentItem));
         choose.forceActiveFocus();
+        tryCompare(choose, "activeFocus", true);
         keyClick(Qt.Key_Space);
         tryCompare(dialog, "visible", true);
         dialog.selectedFolder = Qt.resolvedUrl("..");

@@ -86,6 +86,11 @@ pub struct ProgramInfo {
     pub text_capacity_bytes: usize,
 }
 impl ProgramInfo {
+    /// Borrow current metadata for another presentation without parsing QML JSON.
+    pub fn current(&self, service: Option<BroadcastService>, now: u64) -> Option<&model::Program> {
+        self.snapshot.current(service, now)
+    }
+
     /// Invalidate before cancellation. Never reuse results, even for A -> B -> A.
     pub fn configure(&mut self, server: Option<String>) {
         if self.desired == server {

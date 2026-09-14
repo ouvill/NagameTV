@@ -1,0 +1,130 @@
+syntax = "proto3";
+
+package viewer.v1;
+
+// Controls one running desktop viewer on a trusted home LAN. All RPCs are available
+// without authentication to clients that can reach the configured listener.
+// Commands run in order on the player's Qt thread. Success acknowledges command
+// execution, not receipt of video or durable settings storage. Observe WatchState
+// for asynchronous playback failures. Timed-out commands may already have run;
+// reconcile using GetState before retrying. No command is automatically replayed.
+service PlayerService {
+  // Returns the current catalog in the viewer's channel order, including subchannels.
+  rpc ListChannels(ListChannelsRequest) returns (ListChannelsResponse);
+  // Returns the most recently published state (normally within one 50 ms UI tick).
+  rpc GetState(GetStateRequest) returns (GetStateResponse);
+  // Sends a full state immediately, then the latest state on change. Slow readers
+  // may skip intermediate states. Reconnect explicitly; every connection starts
+  // with a fresh full state. Revisions are scoped to this server lifetime.
+  rpc WatchState(WatchStateRequest) returns (stream WatchStateResponse);
+  // Selects a catalog ID and starts playback. Unknown IDs return NOT_FOUND.
+  rpc SelectChannel(SelectChannelRequest) returns (SelectChannelResponse);
+  // Starts the selected channel. No selection/output returns FAILED_PRECONDITION.
+  rpc Play(PlayRequest) returns (PlayResponse);
+  // Stops playback and cancels pending startup autoplay. Safe to repeat.
+  rpc Stop(StopRequest) returns (StopResponse);
+  // Sets the volume fraction and unmutes, matching the desktop volume slider.
+  rpc SetVolume(SetVolumeRequest) returns (SetVolumeResponse);
+  // Sets mute explicitly. Unmuting restores the selected volume.
+  rpc SetMuted(SetMutedRequest) returns (SetMutedResponse);
+  // Controls subtitle display. A disabled subtitle feature returns FAILED_PRECONDITION.
+  rpc SetSubtitles(SetSubtitlesRequest) returns (SetSubtitlesResponse);
+}
+
+message ListChannelsRequest {}
+message ListChannelsResponse {
+  // Opaque IDs belong to the currently configured Mirakurun server.
+  repeated Channel channels = 1;
+}
+message GetStateRequest {}
+message GetStateResponse {
+  // Always present in a successful response.
+  PlayerState state = 1;
+}
+message WatchStateRequest {}
+message WatchStateResponse {
+  // Always present; never a delta.
+  PlayerState state = 1;
+}
+message SelectChannelRequest {
+  // Required. Mirakurun's opaque channel ID, not the catalog index or broadcast serviceId.
+  optional uint64 channel_id = 1;
+}
+message SelectChannelResponse {}
+message PlayRequest {}
+message PlayResponse {}
+message StopRequest {}
+message StopResponse {}
+message SetVolumeRequest {
+  // Required, finite, inclusive range 0.0 to 1.0. Out-of-range values are rejected.
+  optional double fraction = 1;
+}
+message SetVolumeResponse {}
+message SetMutedRequest {
+  // Required, including when setting false.
+  optional bool muted = 1;
+}
+message SetMutedResponse {}
+message SetSubtitlesRequest {
+  // Required, including when setting false.
+  optional bool visible = 1;
+}
+message SetSubtitlesResponse {}
+
+// A consistent projection of the player's authoritative state.
+message PlayerState {
+  // Increases on published state changes; resets when the API restarts.
+  uint64 revision = 1;
+  // May differ from the active channel after catalog updates or failed switches.
+  optional uint64 selected_channel_id = 2;
+  // Exactly one variant is present. An active variant always includes its target.
+  oneof playback {
+    StoppedPlayback stopped = 3;
+    ActivePlayback connecting = 4;
+    ActivePlayback playing = 5;
+    ActivePlayback stop_failed = 6;
+  }
+  // Selected volume, even while muted, in the inclusive range 0.0 to 1.0.
+  double volume_fraction = 7;
+  bool muted = 8;
+  SubtitleDisplay subtitles = 9;
+  // Last playback error, empty if none. Human-readable; not a stable error code.
+  string playback_error = 10;
+  // Current program for the active channel, absent when unknown or stopped.
+  Program current_program = 11;
+  // Last settings write error; a successful control RPC does not guarantee persistence.
+  string settings_error = 12;
+}
+message StoppedPlayback {}
+message ActivePlayback {
+  // Mirakurun catalog ID of the current stream attempt, retained on stop failure.
+  uint64 channel_id = 1;
+}
+enum SubtitleDisplay {
+  SUBTITLE_DISPLAY_UNSPECIFIED = 0;
+  SUBTITLE_DISPLAY_DISABLED = 1;
+  SUBTITLE_DISPLAY_HIDDEN = 2;
+  SUBTITLE_DISPLAY_VISIBLE = 3;
+}
+message Channel {
+  uint64 id = 1;
+  string name = 2;
+  string label = 3;
+  BroadcastBand band = 4;
+}
+enum BroadcastBand {
+  BROADCAST_BAND_UNSPECIFIED = 0;
+  BROADCAST_BAND_TERRESTRIAL = 1;
+  BROADCAST_BAND_BS = 2;
+  BROADCAST_BAND_CS = 3;
+  BROADCAST_BAND_SKY = 4;
+  BROADCAST_BAND_OTHER = 5;
+}
+message Program {
+  uint64 id = 1;
+  string name = 2;
+  string description = 3;
+  // Unix epoch milliseconds.
+  uint64 start_at_ms = 4;
+  uint64 duration_ms = 5;
+}

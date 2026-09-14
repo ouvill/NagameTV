@@ -16,6 +16,9 @@ use lifecycle::{Failure as StatusFailure, Status as PlaybackStatus};
 mod playback_failure;
 mod preferences;
 mod program_info;
+mod remote;
+#[cfg(feature = "native_tests")]
+mod remote_checks;
 mod screenshots;
 mod startup;
 mod statistics;
@@ -92,6 +95,14 @@ pub mod ffi {
         #[qproperty(QString, language, READ, NOTIFY)]
         #[qproperty(QString, ui_language, READ, NOTIFY)]
         #[qproperty(bool, autoplay, READ = autoplay, NOTIFY)]
+        #[qproperty(bool, remote_enabled, READ = remote_enabled, NOTIFY)]
+        #[qproperty(QString, remote_address, READ = remote_address, NOTIFY)]
+        #[qproperty(i32, remote_port, READ = remote_port, NOTIFY)]
+        #[qproperty(QString, remote_status, READ = remote_status, NOTIFY)]
+        #[qproperty(QString, remote_error, READ = remote_error, NOTIFY)]
+        #[qproperty(QString, remote_save_error, READ = remote_save_error, NOTIFY)]
+        #[qproperty(QString, remote_endpoints, READ = remote_endpoints, NOTIFY)]
+        #[qproperty(bool, remote_session_only, READ = remote_session_only, NOTIFY)]
         #[qproperty(QString, screenshot_directory, READ = screenshot_directory, NOTIFY)]
         #[qproperty(QString, screenshot_error, READ, NOTIFY)]
         #[qproperty(QString, server, READ, NOTIFY)]
@@ -143,6 +154,23 @@ pub mod ffi {
         #[qproperty(QString, diagnostics, READ, NOTIFY)]
         type Player = super::PlayerRust;
         fn autoplay(self: &Player) -> bool;
+        fn remote_enabled(self: &Player) -> bool;
+        fn remote_address(self: &Player) -> QString;
+        fn remote_port(self: &Player) -> i32;
+        fn remote_status(self: &Player) -> QString;
+        fn remote_error(self: &Player) -> QString;
+        fn remote_save_error(self: &Player) -> QString;
+        fn remote_endpoints(self: &Player) -> QString;
+        fn remote_session_only(self: &Player) -> bool;
+        #[qinvokable]
+        fn configure_remote(
+            self: Pin<&mut Player>,
+            enabled: bool,
+            address: QString,
+            port: i32,
+        ) -> bool;
+        #[qinvokable]
+        fn refresh_remote_addresses(self: Pin<&mut Player>);
         fn screenshot_directory(self: &Player) -> QString;
         #[qinvokable]
         fn screenshot_directory_url(self: &Player) -> QUrl;
@@ -332,6 +360,7 @@ pub struct PlayerRust {
     next_diagnostic: Instant,
     request: crate::features::channel_catalog::Acquisition,
     channel_refresh: channel_refresh::Refresh,
+    remote: crate::remote::Control,
     network: Option<services::Network>,
     media: playback::Session,
     entries: Vec<crate::channels::Channel>,
@@ -570,6 +599,7 @@ impl ffi::Player {
 
 impl Drop for PlayerRust {
     fn drop(&mut self) {
+        self.remote.stop();
         self.epg_events.configure(None);
         // The media owner enforces native shutdown before subtitle destruction,
         // including when QML construction failed before onClosing could run.

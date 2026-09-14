@@ -266,6 +266,31 @@ fn window(app: &QGuiApplication, preferences: &settings::Preferences) -> TestRes
             "!player.playing && player.selected === 1"
         )?);
         evaluate(&mut engine, "player.stop(); true")?;
+        // Exercise the production settings page and live listener lifecycle.
+        let port = TcpListener::bind("127.0.0.1:0")?.local_addr()?.port();
+        assert!(evaluate(
+            &mut engine,
+            &format!("player.configure_remote(true, '127.0.0.1', {port})")
+        )?);
+        wait_for(app, &mut engine, "player.remote_status === 'listening'")?;
+        evaluate(
+            &mut engine,
+            "settings.open(); settings.page = SettingsPanel.Remote; true",
+        )?;
+        wait_for(app, &mut engine, "settings.opened")?;
+        assert!(evaluate(
+            &mut engine,
+            &format!(
+                "player.remote_enabled && player.remote_port === {port} && player.remote_endpoints === '127.0.0.1:{port}'"
+            )
+        )?);
+        assert!(evaluate(
+            &mut engine,
+            "player.configure_remote(false, '0.0.0.0', 50051)"
+        )?);
+        wait_for(app, &mut engine, "player.remote_status === 'disabled'")?;
+        TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, port))?;
+        evaluate(&mut engine, "settings.close(); true")?;
     } else {
         wait_for(app, &mut engine, "setup.opened")?;
         assert!(evaluate(

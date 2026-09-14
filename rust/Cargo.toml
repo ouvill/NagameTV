@@ -10,9 +10,11 @@ qml_tests = []
 # Main-thread Qt/GStreamer integration checks, implemented in Rust.
 video_item_tests = []
 # Rust runners for Qt translation, raster geometry, pointer and QML checks.
-native_tests = ["qml_tests"]
+native_tests = ["qml_tests", "dep:tonic"]
 
 [dependencies]
+viewer-remote = { path = "crates/viewer-remote" }
+tonic = { version = "0.14", optional = true }
 viewer-epg-events = { path = "crates/viewer-epg-events", features = ["network"] }
 viewer-diagnostics = { path = "crates/viewer-diagnostics" }
 viewer-comments = { path = "crates/viewer-comments", features = ["network"] }
@@ -34,6 +36,7 @@ url = "2.5"
 toml = "0.9"
 tempfile = "3.27"
 bitfield = "0.19.5"
+local-ip-address = "0.6.13"
 
 [build-dependencies]
 cxx-qt-build = { version = "0.10", features = ["link_qt_object_files"] }

@@ -189,6 +189,7 @@ fn checks() -> TestResult {
     check_guide_state();
     check_autoplay()?;
     check_screenshot_directory()?;
+    super::remote_checks::run()?;
 
     // HTTP failures and non-Mirakurun responses preserve a working saved URL.
     for (status, body) in [(403, "denied"), (200, "<html>not Mirakurun</html>")] {

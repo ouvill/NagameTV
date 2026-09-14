@@ -41,6 +41,15 @@ pub struct Network {
 }
 
 impl Network {
+    pub fn start_remote(
+        &self,
+        bound: viewer_remote::Bound,
+        state: viewer_remote::model::State,
+        channels: Vec<viewer_remote::model::Channel>,
+    ) -> std::io::Result<viewer_remote::Session> {
+        bound.start(self.runtime.handle(), state, channels)
+    }
+
     pub fn poll_epg_events(
         &self,
         controller: &mut viewer_epg_events::controller::Controller,

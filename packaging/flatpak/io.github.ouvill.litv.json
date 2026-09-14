@@ -68,6 +68,7 @@
           "dest": "rust",
           "skip": ["target", "target-before-26.04", "crates"]
         },
+        { "type": "dir", "path": "../../rust/crates/viewer-remote", "dest": "rust/crates/viewer-remote", "skip": ["target"] },
         { "type": "dir", "path": "../../rust/crates/viewer-epg-events", "dest": "rust/crates/viewer-epg-events", "skip": ["target"] },
         { "type": "dir", "path": "../../rust/crates/viewer-diagnostics", "dest": "rust/crates/viewer-diagnostics", "skip": ["target"] },
         { "type": "dir", "path": "../../rust/crates/viewer-comments", "dest": "rust/crates/viewer-comments", "skip": ["target"] },

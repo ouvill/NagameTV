@@ -6,7 +6,7 @@ import QtQuick.Dialogs
 
 Popup {
     id: root
-    enum Page { Connection, Display, Comments, Shortcuts, Diagnostics }
+    enum Page { Connection, Display, Comments, Shortcuts, Diagnostics, Remote }
     required property var backend
     property Window targetWindow: null
     property bool statsVisible: false
@@ -16,12 +16,13 @@ Popup {
     readonly property bool compact: width < 1200 || height < 700
     readonly property real navLeft: compact ? 24 : 36
     readonly property real navWidth: Math.min(310, Math.max(196, width * 0.2153))
+    readonly property real navStep: compact ? 56 : 64
     readonly property real contentLeft: navLeft + navWidth + (compact ? 40 : 64)
     readonly property real sideMargin: compact ? 32 : 80
     readonly property var categories: [
         qsTranslate("Settings", "Connection"), qsTranslate("Settings", "Display"),
         qsTranslate("Main", "Comments"), qsTranslate("Settings", "Shortcuts"),
-        qsTranslate("Settings", "Diagnostics")
+        qsTranslate("Settings", "Diagnostics"), qsTranslate("Remote", "Remote control")
     ]
     signal statsRequested(bool visible)
     signal connectionAccepted
@@ -40,6 +41,7 @@ Popup {
     }
     onAboutToShow: {
         connectionForm.reset();
+        remoteSettings.reset();
         languageError.visible = false;
         if (!backend.server.length) page = SettingsPanel.Connection;
     }
@@ -189,9 +191,9 @@ Popup {
             x: root.navLeft
             y: root.compact ? 136 : 160
             width: root.navWidth
-            height: root.categories.length * 64 - 16
+            height: (root.categories.length - 1) * root.navStep + 48
             Rectangle {
-                y: root.page * 64
+                y: root.page * root.navStep
                 width: parent.width; height: 48
                 radius: 10
                 color: "#2b2926"
@@ -208,7 +210,7 @@ Popup {
                     required property int index
                     required property string modelData
                     objectName: "settingsCategory" + index
-                    y: index * 64
+                    y: index * root.navStep
                     width: navigation.width
                     height: 48
                     leftPadding: 26; rightPadding: 18
@@ -303,6 +305,12 @@ Popup {
                             checked: root.backend.autoplay
                             onClicked: root.backend.configure_autoplay(checked)
                         }
+                    }
+                    RemoteSettings {
+                        id: remoteSettings
+                        visible: root.page === SettingsPanel.Remote
+                        Layout.fillWidth: true
+                        backend: root.backend
                     }
                     ColumnLayout {
                         visible: root.page === SettingsPanel.Display
