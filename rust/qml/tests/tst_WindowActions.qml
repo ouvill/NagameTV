@@ -29,10 +29,13 @@ Item {
                     property int channelRequests: 0
                     property int steps: 0
                     property int escapes: 0
+                    property int screenshots: 0
                     Viewer.WindowActions {
                         id: actions
                         targetWindow: host
                         guideEnabled: true
+                        screenshotEnabled: true
+                        onScreenshotRequested: parent.screenshots++
                         onGuideToggleRequested: parent.guideRequests++
                         onChannelsToggleRequested: parent.channelRequests++
                         onChannelStepRequested: function (offset) {
@@ -126,6 +129,27 @@ Item {
                 view.forceActiveFocus();
                 keyClick(Qt.Key_Escape);
                 compare(view.escapes, 1);
+            }
+            function test_screenshot_shortcut_respects_playback_and_modal_state() {
+                keyClick(Qt.Key_S, Qt.ControlModifier);
+                compare(view.screenshots, 1);
+                view.actions.screenshotEnabled = false;
+                keyClick(Qt.Key_S, Qt.ControlModifier);
+                compare(view.screenshots, 1);
+                view.actions.screenshotEnabled = true;
+                view.editor.forceActiveFocus();
+                keyClick(Qt.Key_S, Qt.ControlModifier);
+                compare(view.screenshots, 1);
+                view.forceActiveFocus();
+                view.popup.open();
+                tryCompare(view.popup, "opened", true);
+                keyClick(Qt.Key_S, Qt.ControlModifier);
+                compare(view.screenshots, 1);
+                view.popup.close();
+                tryCompare(view.popup, "visible", false);
+                view.forceActiveFocus();
+                keyClick(Qt.Key_S, Qt.ControlModifier);
+                compare(view.screenshots, 2);
             }
             function test_fullscreen_restores_window_mode() {
                 const window = host;

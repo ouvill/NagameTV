@@ -17,11 +17,37 @@ fn unconfigured_settings_stay_unconfigured_when_other_preferences_are_saved()
 
 #[test]
 fn autoplay_preserves_main_environment_convention() {
-    assert!(!autoplay_requested(None));
-    assert!(!autoplay_requested(Some("0")));
-    for value in ["1", "true", "yes", "", "false", " 0 "] {
-        assert!(autoplay_requested(Some(value)), "main enables {value:?}");
+    for saved in [false, true] {
+        assert_eq!(autoplay_requested(saved, None), saved);
+        assert!(!autoplay_requested(saved, Some("0")));
+        for value in ["1", "true", "yes", "", "false", " 0 "] {
+            assert!(
+                autoplay_requested(saved, Some(value)),
+                "main enables {value:?}"
+            );
+        }
     }
+}
+
+#[test]
+fn autoplay_defaults_off_and_survives_restart() -> Result<(), Box<dyn std::error::Error>> {
+    let dir = tempfile::tempdir()?;
+    let path = dir.path().join("settings.toml");
+    fs::write(&path, "service_id = '123'\nfuture_setting = 'keep'\n")?;
+    assert!(!open(path.clone())?.preferences().autoplay);
+    for enabled in [true, false] {
+        let mut session = open(path.clone())?;
+        session.change(Change::Autoplay(enabled));
+        assert_eq!(session.flush()?, SaveStatus::Saved);
+        let restored = open(path.clone())?;
+        assert_eq!(restored.preferences().autoplay, enabled);
+        assert_eq!(restored.preferences().service_id, "123");
+        assert_eq!(
+            restored.preferences().extra["future_setting"].as_str(),
+            Some("keep")
+        );
+    }
+    Ok(())
 }
 
 #[test]

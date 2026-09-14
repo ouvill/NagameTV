@@ -287,6 +287,15 @@ Popup {
                             }
                         }
                         Detail { text: qsTranslate("Settings", "Changing the server stops playback and loads the new channel list.") }
+                        Heading { Layout.topMargin: 20; text: qsTranslate("Settings", "Startup") }
+                        SettingsToggle {
+                            objectName: "autoplaySetting"
+                            Layout.fillWidth: true
+                            text: qsTranslate("Settings", "Play automatically on startup")
+                            description: qsTranslate("Settings", "Start playing the last selected channel when you open the app. Applies from the next launch.")
+                            checked: root.backend.autoplay
+                            onClicked: root.backend.configure_autoplay(checked)
+                        }
                     }
                     ColumnLayout {
                         visible: root.page === SettingsPanel.Display
@@ -433,6 +442,7 @@ Popup {
                             ShortcutRow { text: qsTranslate("Settings", "Send a comment"); keys: root.backend.comment_send_on_enter ? "Enter / Ctrl + Enter" : "Ctrl + Enter" }
                             ShortcutRow { text: qsTranslate("Settings", "Toggle fullscreen"); keys: "F11" }
                             ShortcutRow { text: qsTranslate("Settings", "Open channels"); keys: "C" }
+                            ShortcutRow { text: qsTranslate("Main", "Save screenshot"); keys: "Ctrl + S" }
                             ShortcutRow { text: qsTranslate("Settings", "Open program guide"); keys: "G" }
                             ShortcutRow { text: qsTranslate("Settings", "Previous channel"); keys: "Page Up" }
                             ShortcutRow { text: qsTranslate("Settings", "Next channel"); keys: "Page Down" }

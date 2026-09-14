@@ -187,6 +187,7 @@ fn checks() -> TestResult {
     // Play cannot replenish the one automatic retry of an active attempt.
     check_stream_state(&mut player)?;
     check_guide_state();
+    check_autoplay()?;
 
     // HTTP failures and non-Mirakurun responses preserve a working saved URL.
     for (status, body) in [(403, "denied"), (200, "<html>not Mirakurun</html>")] {
@@ -268,6 +269,48 @@ fn check_stream_state(player: &mut cxx::UniquePtr<ffi::Player>) -> TestResult {
         *observed.lock().unwrap(),
         [(true, false), (false, true), (false, true), (false, false)]
     );
+    Ok(())
+}
+
+fn check_autoplay() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let path = dir.path().join("settings.toml");
+    let mut player = ffi::new_player();
+    player.pin_mut().rust_mut().preferences =
+        settings::Loaded::open(path.clone())?.activate(None, None);
+    let changes = Arc::new(Mutex::new(Vec::new()));
+    let observed = changes.clone();
+    let _signal = player.pin_mut().on_autoplay_changed(move |player| {
+        let value = player.autoplay();
+        assert_eq!(value, player.rust().preferences.preferences().autoplay);
+        observed.lock().unwrap().push(value);
+    });
+    assert!(!player.autoplay());
+    for enabled in [true, true, false] {
+        player.pin_mut().configure_autoplay(enabled);
+        assert_eq!(player.autoplay(), enabled);
+        assert_eq!(
+            settings::Loaded::open(path.clone())?.preferences().autoplay,
+            enabled
+        );
+        assert!(
+            !player.rust().autoplay_pending,
+            "edits apply on the next launch"
+        );
+        assert!(!player.loading() && !player.connecting() && !player.playing());
+    }
+    assert_eq!(*changes.lock().unwrap(), [true, false]);
+    // A write error is visible, while the in-memory choice stays coherent and
+    // can be saved again without requiring another toggle.
+    std::fs::remove_file(&path)?;
+    std::fs::create_dir(&path)?;
+    player.pin_mut().configure_autoplay(true);
+    assert!(player.autoplay());
+    assert!(!player.settings_error().is_empty());
+    std::fs::remove_dir(&path)?;
+    player.pin_mut().configure_autoplay(true);
+    assert!(player.settings_error().is_empty());
+    assert!(settings::Loaded::open(path)?.preferences().autoplay);
     Ok(())
 }
 

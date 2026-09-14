@@ -17,6 +17,8 @@ TestCase {
         property bool subtitles_enabled: true
         property bool subtitle_display: true
         property bool epg_enabled: true
+        property bool autoplay: false
+        function configure_autoplay(value) { autoplay = value; }
         property string settings_error: ""
         property string diagnostics: ""
         property string status: ""
@@ -73,6 +75,7 @@ TestCase {
         backend.subtitles_enabled = true;
         backend.subtitle_display = true;
         backend.epg_enabled = true;
+        backend.autoplay = false;
         backend.comments_enabled = false;
         backend.comments_allowed = true;
         backend.danmaku_enabled = false;
@@ -117,6 +120,27 @@ TestCase {
         keyClick(Qt.Key_Escape);
         tryCompare(choice.popup, "visible", false);
         compare(panel.opened, true);
+    }
+    function test_autoplay_tracks_preference_without_connecting() {
+        const flick = findChild(panel.contentItem, "settingsFlickable");
+        flick.contentY = Math.max(0, flick.contentHeight - flick.height);
+        const toggle = findChild(panel.contentItem, "autoplaySetting");
+        compare(toggle.checked, false);
+        mouseClick(toggle);
+        compare(backend.autoplay, true);
+        compare(connections.count, 0);
+        backend.autoplay = false;
+        compare(toggle.checked, false);
+        toggle.forceActiveFocus();
+        keyClick(Qt.Key_Space);
+        compare(backend.autoplay, true);
+        panel.close();
+        tryCompare(panel, "visible", false);
+        panel.open();
+        tryCompare(panel, "opened", true);
+        compare(toggle.checked, true);
+        compare(connections.count, 0);
+        flick.contentY = 0;
     }
     function test_connection_uses_edited_url_without_duplicate_loading_request() {
         const field = findChild(panel.contentItem, "serverField");

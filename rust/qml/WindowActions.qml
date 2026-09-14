@@ -5,6 +5,7 @@ Item {
     id: actions
     required property Window targetWindow
     property bool guideEnabled: false
+    property bool screenshotEnabled: false
     property int restoreVisibility: Window.Windowed
     readonly property bool fullscreen: targetWindow !== null && targetWindow.visibility === Window.FullScreen
     // A closed Drawer keeps Overlay itself visible for edge-drag handling.
@@ -17,6 +18,7 @@ Item {
     signal guideToggleRequested
     signal channelStepRequested(int offset)
     signal escapeRequested
+    signal screenshotRequested
 
     function toggleFullscreen() {
         if (!targetWindow)
@@ -56,6 +58,13 @@ Item {
         autoRepeat: false
         enabled: actions.navigationEnabled && actions.guideEnabled
         onActivated: actions.guideToggleRequested()
+    }
+    Shortcut {
+        sequence: "Ctrl+S"
+        context: Qt.WindowShortcut
+        autoRepeat: false
+        enabled: actions.navigationEnabled && actions.screenshotEnabled
+        onActivated: actions.screenshotRequested()
     }
     Shortcut {
         sequence: "PgUp"

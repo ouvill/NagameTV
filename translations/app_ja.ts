@@ -4,6 +4,26 @@
   <context>
     <name>Main</name>
     <message>
+      <source>Save screenshot</source>
+      <translation>スクリーンショットを保存</translation>
+    </message>
+    <message>
+      <source>PNG images (*.png)</source>
+      <translation>PNG画像 (*.png)</translation>
+    </message>
+    <message>
+      <source>Screenshot saved.</source>
+      <translation>スクリーンショットを保存しました。</translation>
+    </message>
+    <message>
+      <source>Could not capture the picture. Try again while the video is playing.</source>
+      <translation>映像を撮影できませんでした。再生中にもう一度お試しください。</translation>
+    </message>
+    <message>
+      <source>Could not save the screenshot. Check the file name and folder permissions, then try again.</source>
+      <translation>スクリーンショットを保存できませんでした。ファイル名とフォルダーの書き込み権限を確認し、もう一度お試しください。</translation>
+    </message>
+    <message>
       <source>Audio %1</source>
       <translation>音声 %1</translation>
     </message>
@@ -820,6 +840,18 @@
   </context>
   <context>
     <name>Settings</name>
+    <message>
+      <source>Startup</source>
+      <translation>起動時の動作</translation>
+    </message>
+    <message>
+      <source>Play automatically on startup</source>
+      <translation>起動時に自動再生する</translation>
+    </message>
+    <message>
+      <source>Start playing the last selected channel when you open the app. Applies from the next launch.</source>
+      <translation>アプリを開くと、前回選択したチャンネルを再生します。次回の起動から適用されます。</translation>
+    </message>
     <message>
       <source>Connection</source>
       <translation>接続</translation>

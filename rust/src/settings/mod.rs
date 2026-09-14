@@ -110,6 +110,7 @@ pub struct Loaded(Session);
 pub enum Change {
     Language(Language),
     Service(String),
+    Autoplay(bool),
     Volume(Volume),
     SubtitleDisplay(bool),
     Comments(bool),
@@ -170,6 +171,7 @@ impl Session {
         match change {
             Change::Language(language) => preferences.language = language,
             Change::Service(service) => preferences.service_id = service,
+            Change::Autoplay(enabled) => preferences.autoplay = enabled,
             Change::Volume(volume) => preferences.volume = volume,
             Change::SubtitleDisplay(display) => preferences.show_subtitles = display,
             Change::Comments(enabled) => preferences.comments_enabled = enabled,

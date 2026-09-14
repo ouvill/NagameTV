@@ -135,8 +135,10 @@ ApplicationWindow {
     WindowActions {
         id: windowActions
         targetWindow: root
-        enabled: !root.closing
+        enabled: !root.closing && !screenshot.busy
         guideEnabled: player.epg_enabled
+        screenshotEnabled: screenshot.canCapture && !root.showGuide && !root.showChannels
+        onScreenshotRequested: screenshot.capture()
         onFullscreenChanged: overlayVisibility.reveal()
         onChannelsToggleRequested: {
             overlayVisibility.reveal();
@@ -147,6 +149,20 @@ ApplicationWindow {
             root.step(offset);
         }
         onEscapeRequested: root.closeTopmost()
+    }
+    ScreenshotCapture {
+        id: screenshot
+        target: videoPicture
+        available: player.playing
+        enabled: !root.closing
+        onSaved: {
+            screenshotNotice.text = qsTranslate("Main", "Screenshot saved.");
+            screenshotNoticeTimer.restart();
+        }
+        onFailed: function(message) {
+            screenshotNotice.text = message;
+            screenshotNoticeTimer.restart();
+        }
     }
     Timer {
         interval: 50
@@ -184,11 +200,61 @@ ApplicationWindow {
         signal activity
         onActivity: overlayVisibility.reveal()
         Component.onCompleted: player.observe_pointer(surface)
-        GstGLQt6VideoItem {
-            id: video
+        Rectangle {
+            id: videoPicture
+            color: "#0b0c0b"
             width: parent.width
             height: root.showProgram ? Math.min(parent.height, width * 9 / 16) : parent.height
             anchors.verticalCenter: parent.verticalCenter
+            GstGLQt6VideoItem {
+                id: video
+                anchors.fill: parent
+            }
+            Loader {
+                id: danmaku
+                anchors.centerIn: video
+                width: video.width
+                height: Math.min(video.height, width * 9 / 16)
+                active: !root.closing && player.comments_enabled && player.danmaku_enabled && player.playing
+                sourceComponent: DanmakuOverlay {
+                    fontSize: player.comment_font_size
+                    textOpacity: player.comment_opacity
+                    speed: player.comment_speed
+                    shadowEnabled: player.comment_shadow_enabled
+                    fullScreen: root.visibility === Window.FullScreen
+                    titleOverlapsVideo: programIdentity.visible
+                        && programIdentity.y < videoPicture.y + danmaku.y + danmaku.height
+                        && programIdentity.y + programIdentity.height > videoPicture.y + danmaku.y
+                    titleBottomInVideo: programIdentity.y + programIdentity.height - videoPicture.y - danmaku.y
+                    controlsOverlapVideo: (bottomPanel.visible || composer.visible)
+                        && controlsTopInVideo < danmaku.height
+                        && surface.height > videoPicture.y + danmaku.y
+                    controlsTopInVideo: (composer.visible
+                        ? composer.y + composer.height - composer.occupiedHeight : bottomPanel.y) - videoPicture.y - danmaku.y
+                }
+            }
+            Connections {
+                target: player
+                function onSelectedChanged() { if (danmaku.item) danmaku.item.clearComments(); }
+                function onServerChanged() { if (danmaku.item) danmaku.item.clearComments(); }
+                function onCommentReceived(text, position, color, own) {
+                    if (danmaku.item)
+                        danmaku.item.receive(text, position, color, own);
+                }
+            }
+            Loader {
+                // Match a 16:9 broadcast's letterboxed video area.
+                anchors.centerIn: parent
+                width: Math.min(parent.width, parent.height * 16 / 9)
+                height: width * 9 / 16
+                active: !root.closing && player.subtitles_active && player.subtitle_display
+                sourceComponent: Component {
+                    SubtitleOverlay {
+                        captionJson: player.subtitle_data
+                        outlineProvider: player
+                    }
+                }
+            }
         }
         MouseArea {
             // Below the panels: only a click on the video leaves text editing.
@@ -232,51 +298,6 @@ ApplicationWindow {
             targetWindow: root
             enabled: !root.closing && !root.showGuide && !root.showChannels
             onActivity: overlayVisibility.reveal()
-        }
-        Loader {
-            id: danmaku
-            anchors.centerIn: video
-            width: video.width
-            height: Math.min(video.height, width * 9 / 16)
-            active: !root.closing && player.comments_enabled && player.danmaku_enabled && player.playing
-            sourceComponent: DanmakuOverlay {
-                fontSize: player.comment_font_size
-                textOpacity: player.comment_opacity
-                speed: player.comment_speed
-                shadowEnabled: player.comment_shadow_enabled
-                fullScreen: root.visibility === Window.FullScreen
-                titleOverlapsVideo: programIdentity.visible
-                    && programIdentity.y < danmaku.y + danmaku.height
-                    && programIdentity.y + programIdentity.height > danmaku.y
-                titleBottomInVideo: programIdentity.y + programIdentity.height - danmaku.y
-                controlsOverlapVideo: (bottomPanel.visible || composer.visible)
-                    && controlsTopInVideo < danmaku.height
-                    && surface.height > danmaku.y
-                controlsTopInVideo: (composer.visible
-                    ? composer.y + composer.height - composer.occupiedHeight : bottomPanel.y) - danmaku.y
-            }
-        }
-        Connections {
-            target: player
-            function onSelectedChanged() { if (danmaku.item) danmaku.item.clearComments(); }
-            function onServerChanged() { if (danmaku.item) danmaku.item.clearComments(); }
-            function onCommentReceived(text, position, color, own) {
-                if (danmaku.item)
-                    danmaku.item.receive(text, position, color, own);
-            }
-        }
-        Loader {
-            // Match a 16:9 broadcast's letterboxed video area.
-            anchors.centerIn: parent
-            width: Math.min(parent.width, parent.height * 16 / 9)
-            height: width * 9 / 16
-            active: !root.closing && player.subtitles_active && player.subtitle_display
-            sourceComponent: Component {
-                SubtitleOverlay {
-                    captionJson: player.subtitle_data
-                    outlineProvider: player
-                }
-            }
         }
         Rectangle {
             anchors {
@@ -497,6 +518,13 @@ ApplicationWindow {
                         onClicked: player.display_subtitles(!player.subtitle_display)
                     }
                     IconAction {
+                        objectName: "screenshotButton"
+                        iconSource: "qrc:/qt/qml/MinimalViewer/assets/icons/camera.svg"
+                        tip: qsTranslate("Main", "Save screenshot")
+                        enabled: screenshot.canCapture
+                        onClicked: screenshot.capture()
+                    }
+                    IconAction {
                         id: playbackSettingsButton
                         iconSource: "qrc:/qt/qml/MinimalViewer/assets/icons/settings-2.svg"
                         tip: qsTranslate("Main", "Playback settings")
@@ -523,6 +551,22 @@ ApplicationWindow {
                 }
             }
         }
+        Label {
+            id: screenshotNotice
+            objectName: "screenshotNotice"
+            anchors { horizontalCenter: parent.horizontalCenter; top: parent.top; topMargin: 90 }
+            width: Math.min(560, parent.width - 48)
+            padding: 14
+            visible: screenshotNoticeTimer.running
+            textFormat: Text.PlainText
+            wrapMode: Text.Wrap
+            horizontalAlignment: Text.AlignHCenter
+            color: "#f4f5f3"
+            font.pixelSize: 14
+            z: 8
+            background: Rectangle { color: "#f21a1c1a"; radius: 10; border.color: "#42ffffff" }
+        }
+        Timer { id: screenshotNoticeTimer; interval: 6000 }
         CommentComposer {
             id: composer
             anchors { horizontalCenter: parent.horizontalCenter; bottom: parent.bottom; bottomMargin: 16 }

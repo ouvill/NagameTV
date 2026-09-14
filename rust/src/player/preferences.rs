@@ -6,6 +6,21 @@ use cxx_qt_lib::QString;
 use std::pin::Pin;
 
 impl ffi::Player {
+    pub fn autoplay(&self) -> bool {
+        self.rust().preferences.preferences().autoplay
+    }
+
+    pub fn configure_autoplay(mut self: Pin<&mut Self>, enabled: bool) {
+        if self.autoplay() != enabled {
+            self.as_mut()
+                .rust_mut()
+                .preferences
+                .change(crate::settings::Change::Autoplay(enabled));
+            self.as_mut().autoplay_changed();
+        }
+        self.save_settings();
+    }
+
     pub fn save_settings(mut self: Pin<&mut Self>) {
         let result = self.as_mut().rust_mut().preferences.flush();
         match result {

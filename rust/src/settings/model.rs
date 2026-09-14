@@ -3,10 +3,10 @@ use super::{CommentFontSize, CommentOpacity, CommentSpeed, Language};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-/// Preserve main's environment convention: absent or exactly "0" disables
-/// autoplay; every other Unicode value requests it, including an empty value.
-pub fn autoplay_requested(value: Option<&str>) -> bool {
-    value.is_some_and(|value| value != "0")
+/// An explicit environment value overrides the saved preference for this launch.
+/// Preserve the convention that only exactly "0" disables an explicit override.
+pub fn autoplay_requested(saved: bool, value: Option<&str>) -> bool {
+    value.map_or(saved, |value| value != "0")
 }
 
 /// Persisted as main's 0..100 percentage; the playback/UI boundary uses 0..1.
@@ -49,6 +49,7 @@ pub struct Preferences {
     pub language: Language,
     pub server: String,
     pub service_id: String,
+    pub autoplay: bool,
     pub volume: Volume,
     // Keep the existing on-disk key, now solely a viewer's display preference.
     // Subtitle processing and EPG availability are selected by LaunchPlan.
@@ -72,6 +73,7 @@ impl Default for Preferences {
             language: Language::default(),
             server: String::new(),
             service_id: String::new(),
+            autoplay: false,
             volume: Volume::default(),
             show_subtitles: false,
             // main receives history independently of the scrolling overlay.

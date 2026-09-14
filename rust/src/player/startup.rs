@@ -44,6 +44,10 @@ impl Default for PlayerRust {
         if !plan.locked {
             plan.comments = preferences.preferences().comments_enabled;
         }
+        let autoplay_pending = settings::autoplay_requested(
+            preferences.preferences().autoplay,
+            std::env::var("MIRAKURUN_AUTOPLAY").ok().as_deref(),
+        );
         let audio_output =
             playback::audio_output::Output::Audible(preferences.preferences().volume);
         let volume_level = audio_output.volume().fraction();
@@ -141,9 +145,7 @@ impl Default for PlayerRust {
             audio_output,
             settings_error: QString::from(settings_error),
             preferences,
-            autoplay_pending: settings::autoplay_requested(
-                std::env::var("MIRAKURUN_AUTOPLAY").ok().as_deref(),
-            ),
+            autoplay_pending,
             epg: ProgramInfo::default(),
             guide: Default::default(),
             guide_dirty: false,

@@ -16,7 +16,7 @@
 
 - Rust / Cargo（Rust 1.98.1でビルド確認）
 - CMake 3.24以降、C/C++コンパイラー、pkg-config、libclang
-- Qt 6.8以降のQuick / Controls / Layouts / Shapes / Effects、SVG画像プラグイン、翻訳用の`lrelease`
+- Qt 6.8以降のQuick / Controls / Dialogs / Layouts / Shapes / EffectsとQtCore QMLモジュール、SVG画像プラグイン、翻訳用の`lrelease`
 - GStreamer 1.24以降と開発ライブラリー（`gstreamer-mpegts-1.0`を含む）
 - GStreamerの`qml6glsink`、OpenGL関連プラグイン、`tsdemux`、映像・音声デコーダー、音声出力プラグイン
 
@@ -44,7 +44,8 @@ MIRAKURUN_SERVER=http://192.168.1.100:40772 MIRAKURUN_AUTOPLAY=1 ./build/mirakur
 ```
 
 `MIRAKURUN_SERVICE_ID`で選択局を上書きできます。
-`MIRAKURUN_AUTOPLAY`は未指定または`0`で無効、それ以外の指定値で有効です。
+`MIRAKURUN_AUTOPLAY`は未指定なら保存済みの自動再生設定（初期値OFF）を使います。
+`0`で無効、それ以外の指定値で有効になり、この上書きは設定ファイルに保存しません。
 `MIRAKURUN_DEINTERLACE=yadif|linear|off`で起動時の映像処理を指定できます。
 音声出力の選択は[音声出力](audio-output.md)を参照してください。
 
@@ -71,6 +72,8 @@ bash scripts/test-startup.sh
 表示・GPU・音声を検証してから製品の`Main.qml`を読み込み、初回・設定済み起動・
 番組表の開閉・再生エラー・終了を確認します。設定先は一時ディレクトリーです。
 画面部品を変更した場合は、その部品のQMLテストも実行してください。
+スクリーンショットの撮影・保存・キャンセル試験は`bash scripts/test-screenshot.sh`で実行します。
+この試験はX11表示とGPUを検証し、画像を一時ディレクトリーに保存して終了時に削除します。
 
 製品のQMLコンポーネントは`rust/qml/`直下に置きます。`rust/build.rs`がこのディレクトリーの
 `.qml`ファイルを列挙して登録するため、ファイル一覧の追記は不要です。

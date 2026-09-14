@@ -82,6 +82,7 @@ pub mod ffi {
         #[qml_element]
         #[qproperty(QString, language, READ, NOTIFY)]
         #[qproperty(QString, ui_language, READ, NOTIFY)]
+        #[qproperty(bool, autoplay, READ = autoplay, NOTIFY)]
         #[qproperty(QString, server, READ, NOTIFY)]
         #[qproperty(bool, server_configured, READ = server_configured, NOTIFY)]
         #[qproperty(QString, status, READ, NOTIFY)]
@@ -130,6 +131,7 @@ pub mod ffi {
         #[qproperty(QString, settings_error, READ, NOTIFY)]
         #[qproperty(QString, diagnostics, READ, NOTIFY)]
         type Player = super::PlayerRust;
+        fn autoplay(self: &Player) -> bool;
         fn server_configured(self: &Player) -> bool;
         fn loading(self: &Player) -> bool;
         fn connecting(self: &Player) -> bool;
@@ -184,6 +186,8 @@ pub mod ffi {
         fn open_log_folder(self: Pin<&mut Player>) -> bool;
         #[qinvokable]
         fn save_settings(self: Pin<&mut Player>);
+        #[qinvokable]
+        fn configure_autoplay(self: Pin<&mut Player>, enabled: bool);
         #[qinvokable]
         fn enable_comments(self: Pin<&mut Player>, enabled: bool);
         #[qinvokable]

@@ -132,7 +132,7 @@ fn wait_for(
     }
 }
 
-fn window(app: &QGuiApplication, configured: bool) -> TestResult {
+fn window(app: &QGuiApplication, preferences: &settings::Preferences) -> TestResult {
     let _preloaded = playback::preload()?;
     let mut engine = QQmlApplicationEngine::new();
     assert!(player::ffi::initialize_ui_language(
@@ -143,16 +143,39 @@ fn window(app: &QGuiApplication, configured: bool) -> TestResult {
         .pin_mut()
         .load(&QUrl::from("qrc:/qt/qml/MinimalViewer/qml/Main.qml"));
     assert_eq!(ffi::root_count(&engine), 1);
-    if configured {
+    assert!(evaluate(&mut engine, "!screenshot.canCapture")?);
+    assert!(evaluate(
+        &mut engine,
+        &format!("player.autoplay === {}", preferences.autoplay)
+    )?);
+    if !preferences.server.is_empty() {
         wait_for(
             app,
             &mut engine,
             "!player.loading && root.channelRows.length === 2",
         )?;
+        let autoplay = settings::autoplay_requested(
+            preferences.autoplay,
+            std::env::var("MIRAKURUN_AUTOPLAY").ok().as_deref(),
+        );
         assert!(evaluate(
             &mut engine,
-            "!root.setupRequired && !setup.visible && player.server_configured && player.selected === 1 && !player.playing && !player.connecting"
+            "!root.setupRequired && !setup.visible && player.server_configured && player.selected === 1"
         )?);
+        if autoplay {
+            // No explicit play(): the saved setting / launch override must start
+            // the restored channel after its asynchronous catalog arrives.
+            wait_for(
+                app,
+                &mut engine,
+                "!player.connecting && player.playback_error.length > 0",
+            )?;
+        } else {
+            assert!(evaluate(
+                &mut engine,
+                "!player.playing && !player.connecting && !player.playback_error.length"
+            )?);
+        }
         // Every way of changing guide visibility must run the same synchronization.
         evaluate(&mut engine, "root.toggleGuide(); true")?;
         wait_for(app, &mut engine, "root.guideVisible && root.showGuide")?;
@@ -201,30 +224,47 @@ fn checks() -> TestResult {
         !path.exists(),
         "run with the isolated test-startup.sh configuration"
     );
-    launch_window()?;
+    launch_window(None)?;
     assert_eq!(server.requests.load(Ordering::Relaxed), 0);
     let mut preferences =
         settings::Loaded::open(path.clone())?.activate(Some(server.url.clone()), Some("2".into()));
     preferences.change(settings::Change::Comments(false));
     preferences.flush()?;
-    for _ in 0..2 {
+    for (autoplay, launch_override) in [
+        (false, None),
+        (false, None),
+        (true, None),
+        (true, Some("0")),
+        (false, Some("1")),
+    ] {
+        preferences.change(settings::Change::Autoplay(autoplay));
+        preferences.flush()?;
         let before = server.requests.load(Ordering::Relaxed);
-        launch_window()?;
+        launch_window(launch_override)?;
         assert!(server.requests.load(Ordering::Relaxed) > before);
         let saved = settings::Loaded::open(path.clone())?;
         assert_eq!(saved.preferences().server, server.url);
         assert_eq!(saved.preferences().service_id, "2");
+        assert_eq!(saved.preferences().autoplay, autoplay);
     }
     println!(
-        "Main.qml checks passed: first run, saved startup twice, guide/channel visibility, clean shutdown"
+        "Main.qml checks passed: first run, saved startup, autoplay and environment overrides, guide/channel visibility, clean shutdown"
     );
     Ok(())
 }
 
-fn launch_window() -> TestResult {
-    let status = std::process::Command::new(std::env::current_exe()?)
-        .args(["--native-tests", "startup-window"])
-        .status()?;
+fn launch_window(autoplay_override: Option<&str>) -> TestResult {
+    let mut command = std::process::Command::new(std::env::current_exe()?);
+    command.args(["--native-tests", "startup-window"]);
+    match autoplay_override {
+        Some(value) => {
+            command.env("MIRAKURUN_AUTOPLAY", value);
+        }
+        None => {
+            command.env_remove("MIRAKURUN_AUTOPLAY");
+        }
+    }
+    let status = command.status()?;
     if !status.success() {
         return Err(format!("startup process failed: {status}").into());
     }
@@ -242,7 +282,7 @@ pub fn run_window() -> i32 {
         let app = QGuiApplication::new();
         assert!(!app.is_null());
         let preferences = settings::Loaded::open(settings::settings_path()?)?;
-        window(&app, !preferences.preferences().server.is_empty())
+        window(&app, preferences.preferences())
     })();
     match result {
         Ok(()) => 0,
