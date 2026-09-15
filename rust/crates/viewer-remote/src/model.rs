@@ -49,6 +49,9 @@ pub enum Playback {
     Connecting(u64),
     Playing(u64),
     StopFailed(u64),
+    FileConnecting(String),
+    FilePlaying(String),
+    FileStopFailed(String),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

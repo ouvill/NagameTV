@@ -73,7 +73,8 @@ impl ffi::Player {
             let this = &mut *this;
             let channel = usize::try_from(this.selected)
                 .ok()
-                .and_then(|index| this.entries.get(index));
+                .and_then(|index| this.entries.get(index))
+                .filter(|_| this.stream_state.recording().is_none());
             let reset = this.comments.configure(this.comments_enabled, channel);
             let comments = match &this.network {
                 Some(network) => match this.comments.poll(network) {
@@ -106,7 +107,8 @@ impl ffi::Player {
             let this = self.rust();
             let channel = usize::try_from(this.selected)
                 .ok()
-                .and_then(|index| this.entries.get(index));
+                .and_then(|index| this.entries.get(index))
+                .filter(|_| this.stream_state.recording().is_none());
             QString::from(this.activity.program_title(channel))
         };
         self.as_mut().set_comment_program_title(title);

@@ -90,6 +90,7 @@ impl ffi::Player {
         self.as_mut().cancel_connection();
         self.as_mut().rust_mut().epg.configure(None);
         self.as_mut().set_epg_data(QString::from("[]"));
+        self.as_mut().cancel_recording_open();
         if let Err(error) = self.as_mut().end_stream() {
             self.playback_failed(error);
             return false;
@@ -132,7 +133,9 @@ impl ffi::Player {
         self.as_mut().set_selected(index);
         self.record_diagnostic(viewer_diagnostics::recorder::Event::ChannelSelected);
         self.as_mut().save_settings();
-        self.play();
+        let attempt = super::stream_state::Attempt::new(&self.rust().entries[index as usize]);
+        self.as_mut().clear_playback_failure();
+        self.start_stream(attempt);
     }
     /// Publish a complete catalog or report a projection error to the UI poll loop.
     pub(super) fn poll_channels(mut self: Pin<&mut Self>) -> Result<(), serde_json::Error> {
@@ -193,7 +196,7 @@ impl ffi::Player {
                     } else {
                         PlaybackStatus::Select
                     };
-                    if self.rust().stream_state.active_service().is_none() {
+                    if !self.recording() && self.rust().stream_state.active_service().is_none() {
                         self.as_mut().update_status(status);
                     }
                     self.as_mut().finish_connection(true);

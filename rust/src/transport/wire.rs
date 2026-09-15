@@ -5,11 +5,11 @@
 //! Bit positions below describe big-endian wire words, never native memory layout.
 use bitfield::bitfield;
 
-pub(super) const TS_PACKET_SIZE: usize = 188;
-pub(super) const SYNC_BYTE: u8 = 0x47;
-pub(super) const STUFFING_BYTE: u8 = 0xff;
-pub(super) const PAT_TABLE_ID: u8 = 0x00;
-pub(super) const PMT_TABLE_ID: u8 = 0x02;
+pub(crate) const TS_PACKET_SIZE: usize = 188;
+pub(crate) const SYNC_BYTE: u8 = 0x47;
+pub(crate) const STUFFING_BYTE: u8 = 0xff;
+pub(crate) const PAT_TABLE_ID: u8 = 0x00;
+pub(crate) const PMT_TABLE_ID: u8 = 0x02;
 const TS_HEADER_SIZE: usize = 4;
 const SECTION_PREFIX_SIZE: usize = 3;
 const SECTION_HEADER_SIZE: usize = 8;
@@ -22,14 +22,14 @@ const HIERARCHICAL_TRANSMISSION_DESCRIPTOR: u8 = 0xc0;
 const DATA_COMPONENT_DESCRIPTOR: u8 = 0xfd;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(super) struct Pid(pub u16);
+pub(crate) struct Pid(pub u16);
 impl Pid {
     pub const PAT: Self = Self(0x0000);
     pub const NULL: Self = Self(0x1fff);
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(super) struct ComponentTag(pub u8);
+pub(crate) struct ComponentTag(pub u8);
 impl ComponentTag {
     pub const DEFAULT_CAPTION: Self = Self(0x30);
     pub fn is_caption(self) -> bool {
@@ -38,29 +38,29 @@ impl ComponentTag {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum TransmissionLayer {
+pub(crate) enum TransmissionLayer {
     High,
     Low,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) struct Hierarchy {
+pub(crate) struct Hierarchy {
     pub layer: TransmissionLayer,
     pub reference: Option<Pid>,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) struct CaptionStream {
+pub(crate) struct CaptionStream {
     pub pid: Pid,
     pub component_tag: ComponentTag,
     pub hierarchy: Option<Hierarchy>,
 }
 #[derive(Debug, PartialEq, Eq)]
-pub(super) struct ProgramMap {
+pub(crate) struct ProgramMap {
     pub service: u16,
     pub captions: Vec<CaptionStream>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum ParseError {
+pub(crate) enum ParseError {
     Incomplete,
     Invalid(&'static str),
 }
@@ -161,7 +161,7 @@ impl<'a> Cursor<'a> {
 }
 
 #[derive(Debug)]
-pub(super) struct TransportPacket<'a> {
+pub(crate) struct TransportPacket<'a> {
     pub pid: Pid,
     pub start: bool,
     pub payload: &'a [u8],
@@ -245,7 +245,7 @@ impl<'a> TransportPacket<'a> {
 /// H.222.0 §2.4.3.3 allows a duplicate payload packet to carry an updated PCR.
 /// Every other byte, including adaptation flags and OPCR, must remain identical.
 /// https://www.itu.int/rec/T-REC-H.222.0/en
-pub(super) fn same_payload_packet(
+pub(crate) fn same_payload_packet(
     previous: &[u8; TS_PACKET_SIZE],
     current: &[u8; TS_PACKET_SIZE],
 ) -> bool {
@@ -277,7 +277,7 @@ pub(super) fn same_payload_packet(
 }
 
 /// Required total size from the section prefix; does not require its body yet.
-pub(super) fn section_size(bytes: &[u8]) -> Result<usize, ParseError> {
+pub(crate) fn section_size(bytes: &[u8]) -> Result<usize, ParseError> {
     let mut cursor = Cursor::new(bytes);
     cursor.byte()?;
     let header = SectionLength(cursor.word()?);
@@ -294,7 +294,7 @@ pub(super) fn section_size(bytes: &[u8]) -> Result<usize, ParseError> {
 }
 
 #[derive(Debug)]
-pub(super) struct PsiSection<'a> {
+pub(crate) struct PsiSection<'a> {
     pub table_id: u8,
     pub extension: u16,
     pub version: u8,

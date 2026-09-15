@@ -4,7 +4,7 @@
 移植している。Rustの静的なモジュールで構成し、機能ごとの有効化・終了と資源所有を分離する。
 全面置き換えは未完了。方針は [main-replacement.md](main-replacement.md)、
 機能ごとの検証状況は [feature-migration.md](feature-migration.md) を参照。
-以下の所有関係と状態変更の説明は2026-09-14の整理を反映したもの。
+以下の所有関係と状態変更の説明は2026-09-15の整理を反映したもの。
 
 ## 所有関係
 
@@ -17,6 +17,7 @@ main::run
        ├ playback::Session  再生と字幕世代の共通所有者
        │  ├ Playback        映像・音声、音声カタログ・PMT・主副出力
        │  └ Option<字幕Session> 購読・解析・同期時計
+       ├ recording::Loader ローカルTS検証・取消し待ち・最新要求の所有
        ├ Acquisition        /api/servicesの取得・取消し待ち
        ├ ProgramInfo        /api/programsの取得・現行スナップショット
        ├ EPG Controller     番組変更通知の購読・停止待ち
@@ -33,21 +34,27 @@ Playback本体は字幕デコーダーやEPGスナップショットを所有し
 投影はplayer/epg.rs、設定保存はplayer/preferences.rsに置く。
 音声選択はplayback/audio_streams、PMT照合はaudio_components、主副の変換はaudio_routing。
 PMTメッセージは通常のGStreamer bus pollで処理し、字幕の有効化には依存しない。
-字幕用のTSフレーミング・PAT/PMT・PES解析は引き続き字幕モジュールにある。
+TS/PAT/PMTの構文とPSI再構成・PAT集約は`transport`で録画検証と字幕機能が共有する。
+字幕用フレーミング・PES解析・字幕ES選択は字幕モジュールにある。
 READYで停止してplaybinを再利用する方針を保持するが、パイプライン全体が最小版と同一ではない。
 
-## 状態変更とQtへの通知（2026-09-14）
+## 状態変更とQtへの通知（2026-09-15）
 
 状態の事実はRustで所有し、QML向けの派生値には書き込み用フィールドを作らない。
 `player/stream_state.rs`の`State`が停止・接続中・再生中・停止失敗を表し、
-稼働中のvariantは対象局と自動再試行の権利を持つ`Attempt`を必須とする。
-`playing`・`connecting`・対象局はこの状態から取得する。更新は
-`update_stream_state`に集約し、状態全体を置き換えてからQtへ通知する。
+稼働中のvariantは再生対象を持つ`Attempt`を必須とする。
+`Attempt::Live`は対象局と自動再試行の権利、`Attempt::File`は検証したローカルTSを保持する。
+停止時の`State::Stopped`にも再再生対象を保持し、別フィールドの選択対象との同期を不要にする。
+録画にはHTTP再試行や現在放送中の番組情報を適用しない。
+`playing`・`connecting`・対象局・`recording`・録画名はこの状態から取得する。更新は
+`change_stream_state`に集約し、状態全体を置き換えてからQtへ通知する。
 一方の変更通知中に他方を読んでも更新途中の組み合わせにはならない。
 停止失敗時は字幕の購読を解放せず、対象局も保持して次の明示操作で停止を再試行する。
 
 途中再開拒否の再試行は、失敗したストリームの局と放送メタデータを引き継ぐ。
 再試行済みのストリームへの重複した再生要求は、再試行の権利を復活させない。
+`LiveAttempt`のフィールドと`Retry`は非公開で、AttemptにはCloneを実装しない。
+再試行の取り出し自体が元の権利を消費するため、停止前にも二重取得できない。
 `lifecycle::Status`は翻訳可能な説明文の状態として別に保持する。局一覧の通信失敗と
 映像の再生継続は同時に成立するので、説明文から再生の状態を推測しない。
 

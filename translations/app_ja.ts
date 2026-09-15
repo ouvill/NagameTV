@@ -626,7 +626,19 @@
       <source>Delivery could not be confirmed. Check the comments before sending again.</source>
       <translation>送信結果を確認できませんでした。再送する前にコメントを確認してください。</translation>
     </message>
-  </context>
+      <message>
+        <source>Could not open the TS file: %1</source>
+        <translation>TSファイルを開けませんでした: %1</translation>
+    </message>
+    <message>
+        <source>Playback finished</source>
+        <translation>再生が終了しました</translation>
+    </message>
+    <message>
+        <source>Could not play this TS file. Check that it is readable and contains supported video and audio.</source>
+        <translation>このTSファイルを再生できませんでした。読み取り可能で、対応する映像・音声が含まれているか確認してください。</translation>
+    </message>
+</context>
   <context>
     <name>Viewer</name>
     <message>
@@ -1225,6 +1237,37 @@
     <message>
         <source>Connection addresses</source>
         <translation>接続先</translation>
+    </message>
+</context>
+<context>
+    <name>Recording</name>
+    <message>
+        <source>Opening TS file…</source>
+        <translation>TSファイルを開いています…</translation>
+    </message>
+    <message>
+        <source>Cancel</source>
+        <translation>キャンセル</translation>
+    </message>
+    <message>
+        <source>Open TS file</source>
+        <translation>TSファイルを開く</translation>
+    </message>
+    <message>
+        <source>Transport streams (*.ts *.TS)</source>
+        <translation>TSファイル (*.ts *.TS)</translation>
+    </message>
+    <message>
+        <source>All files (*)</source>
+        <translation>すべてのファイル (*)</translation>
+    </message>
+    <message>
+        <source>Could not open recording</source>
+        <translation>録画を開けませんでした</translation>
+    </message>
+    <message>
+        <source>Recording</source>
+        <translation>録画</translation>
     </message>
 </context>
 </TS>

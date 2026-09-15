@@ -8,6 +8,8 @@ Popup {
     required property var backend
     property Window targetWindow: null
     signal completed
+    signal openFileRequested
+    signal fileDropped(url file)
     parent: Overlay.overlay
     x: 0; y: 0
     width: parent.width; height: parent.height
@@ -21,6 +23,16 @@ Popup {
     onOpened: form.focusInput()
     onClosed: form.phase = ConnectionForm.Idle
     contentItem: Item {
+        DropArea {
+            anchors.fill: parent
+            onEntered: function(drag) { drag.accepted = drag.hasUrls && drag.urls.length === 1; }
+            onDropped: function(drop) {
+                if (drop.hasUrls && drop.urls.length === 1) {
+                    root.fileDropped(drop.urls[0]);
+                    drop.acceptProposedAction();
+                }
+            }
+        }
         Loader {
             anchors { left: parent.left; right: parent.right; top: parent.top }
             height: 76
@@ -76,6 +88,12 @@ Popup {
                         root.close();
                         root.completed();
                     }
+                }
+                TextAction {
+                    objectName: "setupOpenRecording"
+                    Layout.alignment: Qt.AlignHCenter
+                    text: qsTranslate("Recording", "Open TS file")
+                    onClicked: root.openFileRequested()
                 }
             }
         }

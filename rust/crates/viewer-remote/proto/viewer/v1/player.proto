@@ -19,7 +19,8 @@ service PlayerService {
   rpc WatchState(WatchStateRequest) returns (stream WatchStateResponse);
   // Selects a catalog ID and starts playback. Unknown IDs return NOT_FOUND.
   rpc SelectChannel(SelectChannelRequest) returns (SelectChannelResponse);
-  // Starts the selected channel. No selection/output returns FAILED_PRECONDITION.
+  // Starts the selected channel or replays the locally selected recording.
+  // No selection/output returns FAILED_PRECONDITION. Does not open arbitrary files.
   rpc Play(PlayRequest) returns (PlayResponse);
   // Stops playback and cancels pending startup autoplay. Safe to repeat.
   rpc Stop(StopRequest) returns (StopResponse);
@@ -83,6 +84,9 @@ message PlayerState {
     ActivePlayback connecting = 4;
     ActivePlayback playing = 5;
     ActivePlayback stop_failed = 6;
+    FilePlayback file_connecting = 13;
+    FilePlayback file_playing = 14;
+    FilePlayback file_stop_failed = 15;
   }
   // Selected volume, even while muted, in the inclusive range 0.0 to 1.0.
   double volume_fraction = 7;
@@ -96,6 +100,10 @@ message PlayerState {
   string settings_error = 12;
 }
 message StoppedPlayback {}
+message FilePlayback {
+  // Display filename only; the local filesystem path is not published.
+  string name = 1;
+}
 message ActivePlayback {
   // Mirakurun catalog ID of the current stream attempt, retained on stop failure.
   uint64 channel_id = 1;

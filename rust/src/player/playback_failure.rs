@@ -34,11 +34,16 @@ impl Player {
     /// Retain only the latest failure for the UI; ordinary status updates do not erase it.
     /// User retry/server replacement and successful PLAYING clear this projection.
     pub(super) fn playback_failed(mut self: Pin<&mut Self>, error: crate::playback::Error) {
-        let state = self.rust().stream_state.stop_failed();
-        self.as_mut().update_stream_state(state);
-        // Store only a static translation source plus the existing latest diagnostics.
         self.as_mut()
-            .set_playback_message(QString::from(error.hint().source()));
+            .change_stream_state(super::stream_state::State::stop_failed);
+        // Store only a static translation source plus the existing latest diagnostics.
+        let hint = if self.recording() {
+            crate::playback::failure::Hint::Recording
+        } else {
+            error.hint()
+        };
+        self.as_mut()
+            .set_playback_message(QString::from(hint.source()));
         let text = error.to_string();
         let result = match &self.rust().error_log {
             Ok(log) => log.save(&text).map_err(|error| error.to_string()),
@@ -51,6 +56,6 @@ impl Player {
         self.as_mut().set_log_error(QString::from(log_error));
         self.as_mut()
             .set_playback_error(QString::from(text.as_str()));
-        self.update_status(super::lifecycle::Status::PlaybackFailed(error.hint()));
+        self.update_status(super::lifecycle::Status::PlaybackFailed(hint));
     }
 }

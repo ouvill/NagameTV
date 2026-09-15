@@ -3,11 +3,14 @@ use crate::{model, proto};
 pub(crate) fn state(state: &model::State, revision: u64) -> proto::PlayerState {
     use proto::player_state::Playback;
     let active = |channel_id| proto::ActivePlayback { channel_id };
-    let playback = match state.playback {
+    let playback = match &state.playback {
         model::Playback::Stopped => Playback::Stopped(proto::StoppedPlayback {}),
-        model::Playback::Connecting(id) => Playback::Connecting(active(id)),
-        model::Playback::Playing(id) => Playback::Playing(active(id)),
-        model::Playback::StopFailed(id) => Playback::StopFailed(active(id)),
+        model::Playback::Connecting(id) => Playback::Connecting(active(*id)),
+        model::Playback::Playing(id) => Playback::Playing(active(*id)),
+        model::Playback::StopFailed(id) => Playback::StopFailed(active(*id)),
+        model::Playback::FileConnecting(name) => Playback::FileConnecting(proto::FilePlayback { name: name.clone() }),
+        model::Playback::FilePlaying(name) => Playback::FilePlaying(proto::FilePlayback { name: name.clone() }),
+        model::Playback::FileStopFailed(name) => Playback::FileStopFailed(proto::FilePlayback { name: name.clone() }),
     };
     proto::PlayerState {
         revision,

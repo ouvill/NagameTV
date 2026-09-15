@@ -51,6 +51,19 @@ rendered rectangle and child overlay to verify the capture contract. Successful
 capture of broadcast video still requires manual verification with a playing
 stream, including visible subtitles and comments.
 
+Local recording coverage in the startup suite drops a generated MPEG-2/AAC TS
+onto the production window, including its first-run setup screen. It verifies
+rendered video frames, an audio track, no live program/comment association,
+stop/replay, normal EOF, file removal, cancellation and switching back to a live
+channel. The audio fixture is silent. This does not verify real broadcast
+captions or Flatpak portal access. Component tests cover the file-open actions,
+single-file URL handling and rejected input.
+Recording inspection is asynchronous: component tests cover completion, failure
+and cancellation UI; connection tests verify input/activity coherence during
+every related Qt notification. Hardware-free worker tests control completion to
+check that cancelled and superseded results cannot start playback, and that a
+replacement never overlaps its predecessor's filesystem worker.
+
 Hardware-free Rust tests verify screenshot directory serialization, atomic PNG
 publication, filename collisions and cleanup. Connection tests also verify the
 real Qt properties, folder persistence, PNG saving and recovery after the folder

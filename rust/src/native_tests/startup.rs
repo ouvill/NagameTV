@@ -291,6 +291,15 @@ fn window(app: &QGuiApplication, preferences: &settings::Preferences) -> TestRes
         wait_for(app, &mut engine, "player.remote_status === 'disabled'")?;
         TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, port))?;
         evaluate(&mut engine, "settings.close(); true")?;
+        if !autoplay {
+            check_recording(app, &mut engine)?;
+            evaluate(&mut engine, "player.select(1); true")?;
+            wait_for(
+                app,
+                &mut engine,
+                "!player.recording && !player.connecting && player.playback_error.length > 0",
+            )?;
+        }
     } else {
         wait_for(app, &mut engine, "setup.opened")?;
         assert!(evaluate(
@@ -298,6 +307,7 @@ fn window(app: &QGuiApplication, preferences: &settings::Preferences) -> TestRes
             "root.setupRequired && !player.server_configured && !player.loading && !player.server.length && !root.channelRows.length"
         )?);
         check_danmaku_layout(app, &mut engine)?;
+        check_recording(app, &mut engine)?;
     }
     assert!(evaluate(&mut engine, "root.close(); root.closing")?);
     app.process_events();
@@ -305,6 +315,89 @@ fn window(app: &QGuiApplication, preferences: &settings::Preferences) -> TestRes
     app.process_events();
     let warnings = QML_WARNINGS.lock().unwrap();
     assert!(warnings.is_empty(), "QML warnings: {warnings:?}");
+    Ok(())
+}
+
+fn check_recording(
+    app: &QGuiApplication,
+    engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
+) -> TestResult {
+    let directory = tempfile::tempdir()?;
+    let path = directory.path().join("録画 #100%.ts");
+    std::fs::write(
+        &path,
+        include_bytes!("../../../tests/fixtures/recording.ts"),
+    )?;
+    let url = url::Url::from_file_path(&path)
+        .map_err(|_| "fixture URL")?
+        .to_string();
+    let quoted_url = serde_json::to_string(&url)?;
+    assert!(ffi::drop_file_on_root(
+        engine.pin_mut(),
+        &QString::from(&url),
+        &cxx_qt_lib::QPoint::new(20, 200)
+    ));
+    wait_for(
+        app,
+        engine,
+        "player.playing && JSON.parse(player.video_stats()).rendered > 0 && JSON.parse(player.audio_tracks()).length > 0",
+    )?;
+    assert!(evaluate(
+        engine,
+        "player.recording && player.recording_name === '録画 #100%.ts' && !setup.visible && player.current_program_data === 'null' && !player.comment_post_available && !danmaku.active && player.subtitles_active"
+    )?);
+    // Invalid input and a multiple-file drop must leave the current stream intact.
+    assert!(evaluate(
+        engine,
+        "!player.open_recording('https://example.invalid/recording.ts') && player.playing && player.recording && player.file_error.length > 0"
+    )?);
+    assert!(evaluate(
+        engine,
+        &format!("!recordingInput.dropUrls([{quoted_url}, {quoted_url}]) && player.playing")
+    )?);
+    evaluate(engine, "player.stop(); true")?;
+    assert!(evaluate(
+        engine,
+        "!player.playing && !player.connecting && !player.subtitles_active && player.recording"
+    )?);
+    // Replay through the ordinary Play button, then reach a normal file EOF.
+    evaluate(engine, "player.play(); true")?;
+    wait_for(
+        app,
+        engine,
+        "player.playing && JSON.parse(player.video_stats()).rendered > 0",
+    )?;
+    wait_for(
+        app,
+        engine,
+        "!player.playing && !player.connecting && player.status === 'Playback finished'",
+    )?;
+    assert!(evaluate(
+        engine,
+        "!player.playback_error.length && !player.subtitles_active && player.recording"
+    )?);
+    std::fs::remove_file(&path)?;
+    evaluate(engine, "player.play(); true")?;
+    wait_for(
+        app,
+        engine,
+        "!player.recording_loading && !player.playing && player.playback_error.length > 0 && player.recording",
+    )?;
+    std::fs::write(
+        &path,
+        include_bytes!("../../../tests/fixtures/recording.ts"),
+    )?;
+    assert!(evaluate(
+        engine,
+        &format!("recordingInput.openUrl({quoted_url})")
+    )?);
+    // Cancellation during connection must not resurrect playback on a late message.
+    evaluate(engine, "player.stop(); true")?;
+    app.process_events();
+    assert!(evaluate(
+        engine,
+        "!player.connecting && !player.playing && !player.subtitles_active"
+    )?);
     Ok(())
 }
 

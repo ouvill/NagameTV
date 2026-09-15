@@ -1,0 +1,83 @@
+pragma ComponentBehavior: Bound
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Dialogs as FileDialogs
+
+Item {
+    id: root
+    required property var backend
+    signal started
+
+    function open() { picker.open(); }
+    function openUrl(url) {
+        if (backend.open_recording(url)) {
+            return true;
+        }
+        errorDialog.open();
+        return false;
+    }
+    function dropUrls(urls) {
+        if (urls.length !== 1)
+            return false;
+        return openUrl(urls[0]);
+    }
+    Connections {
+        target: root.backend
+        function onRecordingOpened(success) {
+            if (success) root.started();
+            else errorDialog.open();
+        }
+    }
+    Popup {
+        objectName: "recordingOpening"
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        visible: root.backend.recording_loading
+        closePolicy: Popup.NoAutoClose
+        contentItem: Row {
+            spacing: 12
+            BusyIndicator { running: root.backend.recording_loading }
+            Label {
+                anchors.verticalCenter: parent.verticalCenter
+                text: qsTranslate("Recording", "Opening TS file…")
+            }
+            Button {
+                objectName: "cancelRecordingOpen"
+                anchors.verticalCenter: parent.verticalCenter
+                text: qsTranslate("Recording", "Cancel")
+                onClicked: root.backend.cancel_recording_open()
+            }
+        }
+    }
+    DropArea {
+        anchors.fill: parent
+        onEntered: function(drag) { drag.accepted = drag.hasUrls && drag.urls.length === 1; }
+        onDropped: function(drop) {
+            if (root.dropUrls(drop.urls))
+                drop.acceptProposedAction();
+        }
+    }
+    FileDialogs.FileDialog {
+        id: picker
+        objectName: "recordingPicker"
+        title: qsTranslate("Recording", "Open TS file")
+        fileMode: FileDialogs.FileDialog.OpenFile
+        nameFilters: [qsTranslate("Recording", "Transport streams (*.ts *.TS)"), qsTranslate("Recording", "All files (*)")]
+        onAccepted: root.openUrl(selectedFile)
+    }
+    Dialog {
+        id: errorDialog
+        objectName: "recordingOpenError"
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        width: Math.min(480, parent.width - 32)
+        modal: true
+        title: qsTranslate("Recording", "Could not open recording")
+        standardButtons: Dialog.Ok
+        contentItem: Label {
+            text: root.backend.file_error.length ? root.backend.file_error : root.backend.playback_error
+            textFormat: Text.PlainText
+            wrapMode: Text.Wrap
+        }
+    }
+}

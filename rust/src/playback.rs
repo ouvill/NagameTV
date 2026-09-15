@@ -7,6 +7,7 @@ mod audio_sink;
 pub mod audio_streams;
 pub mod deinterlace;
 pub mod failure;
+pub mod recording;
 pub mod stats;
 #[cfg(feature = "video_item_tests")]
 pub(crate) mod video_item_checks;
@@ -17,6 +18,12 @@ use std::cell::{Cell, RefCell};
 use std::sync::{Arc, Mutex, OnceLock, Weak};
 
 type Result<T> = std::result::Result<T, Error>;
+
+pub enum Event {
+    Idle,
+    Playing,
+    Ended,
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -56,6 +63,8 @@ pub enum Error {
     MissingBus,
     #[error("配信が終了しました")]
     EndOfStream,
+    #[error("{0}")]
+    Recording(#[from] recording::Error),
     #[error("{source} ({debug:?})")]
     LiveResumeRejected {
         source: gst::glib::Error,
@@ -147,6 +156,7 @@ pub struct Playback {
     audio_default: RefCell<audio_default::Policy>,
     requested_uri: RefCell<Option<String>>,
     warnings: Cell<warnings::Counts>,
+    program_number: Arc<std::sync::atomic::AtomicI32>,
 }
 
 impl Playback {
@@ -217,6 +227,23 @@ impl Playback {
         let routing = audio_routing::Routing::default();
         let audio_filter = routing.filter()?;
         let playbin = gst::ElementFactory::make("playbin3").build()?;
+        let program_number = Arc::new(std::sync::atomic::AtomicI32::new(-1));
+        let program = program_number.clone();
+        playbin.connect("element-setup", false, move |values| {
+            if let Some(element) = values
+                .get(1)
+                .and_then(|value| value.get::<gst::Element>().ok())
+                && element
+                    .factory()
+                    .is_some_and(|factory| factory.name() == "tsdemux")
+            {
+                element.set_property(
+                    "program-number",
+                    program.load(std::sync::atomic::Ordering::Relaxed),
+                );
+            }
+            None
+        });
         playbin.set_property("audio-filter", &audio_filter);
         playbin.set_property_from_str("flags", "video+audio+soft-volume+buffering+native-video");
         playbin.set_property("video-sink", &output);
@@ -246,6 +273,7 @@ impl Playback {
             audio_default: RefCell::default(),
             requested_uri: RefCell::new(None),
             warnings: Cell::default(),
+            program_number,
         })
     }
 
@@ -284,32 +312,29 @@ impl Playback {
     }
 
     /// Returns false when this stream is already connecting or playing.
-    fn play(
-        &self,
-        server: &str,
-        service: u64,
-        broadcast: Option<crate::channels::BroadcastService>,
-    ) -> Result<bool> {
+    fn play(&self, uri: &str, service: Option<u16>) -> Result<bool> {
         if self.video_output != VideoOutputState::Attached {
             return Err(Error::OutputNotReady);
         }
-        let uri = format!("{server}/api/services/{service}/stream");
-        if self.requested_uri.borrow().as_ref() == Some(&uri) {
+        if self.requested_uri.borrow().as_deref() == Some(uri) {
             return Ok(false);
         }
         self.stop()?;
-        *self.audio_streams.borrow_mut() =
-            audio_streams::Streams::for_service(broadcast.map(|service| service.service_id));
+        *self.audio_streams.borrow_mut() = audio_streams::Streams::for_service(service);
+        self.program_number.store(
+            service.map(i32::from).unwrap_or(-1),
+            std::sync::atomic::Ordering::Relaxed,
+        );
         // Qt must supply the GL display before any other GL element starts.
         self.sink.set_state(gst::State::Ready)?;
-        self.playbin.set_property("uri", &uri);
+        self.playbin.set_property("uri", uri);
         if let Err(error) = self.playbin.set_state(gst::State::Playing) {
             // A synchronous failure may already have a more specific HTTP error queued.
             // Read it before cleanup flushes the bus; never parse diagnostic prose.
             return Err(self.poll().err().unwrap_or(Error::StateChange(error)));
         }
-        *self.requested_uri.borrow_mut() = Some(uri);
-        tracing::info!("Starting service {service}");
+        *self.requested_uri.borrow_mut() = Some(uri.to_owned());
+        tracing::info!(?service, "Starting playback");
         Ok(true)
     }
 
@@ -343,9 +368,9 @@ impl Playback {
         self.audio_streams.borrow_mut().select(&self.playbin, id)
     }
 
-    pub fn poll(&self) -> Result<bool> {
+    pub fn poll(&self) -> Result<Event> {
         let bus = self.playbin.bus().ok_or(Error::MissingBus)?;
-        let mut playing = false;
+        let mut event = Event::Idle;
         let mut failure = None;
         while let Some(message) = bus.pop() {
             if let Err(error) = self
@@ -367,10 +392,14 @@ impl Playback {
                     }
                 }
                 gst::MessageView::Eos(_) => {
-                    failure.get_or_insert(Error::EndOfStream);
+                    event = Event::Ended;
                 }
-                gst::MessageView::StateChanged(s) if s.src() == Some(self.playbin.upcast_ref()) => {
-                    playing |= s.current() == gst::State::Playing;
+                gst::MessageView::StateChanged(s)
+                    if s.src() == Some(self.playbin.upcast_ref())
+                        && s.current() == gst::State::Playing
+                        && !matches!(event, Event::Ended) =>
+                {
+                    event = Event::Playing;
                 }
                 _ => {}
             }
@@ -378,7 +407,7 @@ impl Playback {
         if let Some(error) = failure {
             return Err(error);
         }
-        Ok(playing)
+        Ok(event)
     }
 
     fn shutdown(&mut self) -> Result<()> {

@@ -1,26 +1,18 @@
 //! MPEG-TS reassembly and atomic PAT/PMT updates. Binary syntax lives in `wire`;
 //! caption selection policy lives in `selection`.
-use super::wire::{
-    self, Pid, PsiSection, STUFFING_BYTE, SYNC_BYTE, TS_PACKET_SIZE, TransportPacket,
-};
+use super::wire::{self, Pid, PsiSection, SYNC_BYTE, TS_PACKET_SIZE, TransportPacket};
 use super::{CaptionDecoder, SubtitleCue, selection::select_caption};
-use std::collections::{BTreeMap, HashMap, HashSet};
-
-/// A PAT version is applied only after all of its sections have arrived.
-#[derive(Default)]
-struct PendingPat {
-    identity: Option<(u16, u8, u8)>,
-    sections: BTreeMap<u8, Vec<(u16, Pid)>>,
-}
+use crate::transport::{Pat, Sections};
+use std::collections::{HashMap, HashSet};
 
 /// Parses transport tables and forwards exactly one selected subtitle ES.
 /// The native ARIB decoder owns the management/character state of that ES.
 pub struct TransportParser {
     service: Option<u16>,
     bytes: Vec<u8>,
-    psi: HashMap<Pid, Vec<u8>>,
+    psi: HashMap<Pid, Sections>,
     pmt_pids: HashSet<Pid>,
-    pat: PendingPat,
+    pat: Pat,
     active_transport: Option<u16>,
     active_service: Option<u16>,
     continuity: HashMap<Pid, (u8, [u8; TS_PACKET_SIZE])>,
@@ -37,7 +29,7 @@ impl TransportParser {
             bytes: Vec::new(),
             psi: HashMap::new(),
             pmt_pids: HashSet::new(),
-            pat: PendingPat::default(),
+            pat: Pat::default(),
             continuity: HashMap::new(),
             active_transport: None,
             active_service: None,
@@ -53,7 +45,7 @@ impl TransportParser {
             self.service = Some(service);
             self.psi.clear();
             self.pmt_pids.clear();
-            self.pat = PendingPat::default();
+            self.pat = Pat::default();
             self.active_transport = None;
             self.active_service = None;
             self.continuity.clear();
@@ -133,7 +125,7 @@ impl TransportParser {
     fn reset_pid(&mut self, pid: Pid) {
         self.psi.remove(&pid);
         if pid == Pid::PAT {
-            self.pat = PendingPat::default();
+            self.pat = Pat::default();
         }
         if self.subtitle_pid == Some(pid) {
             self.reset_captions();
@@ -174,48 +166,11 @@ impl TransportParser {
             .insert(pid, (packet.continuity_counter, *bytes));
         let payload = packet.payload;
         if is_table {
-            if packet.start {
-                let pointer = usize::from(payload[0]);
-                if pointer >= payload.len() {
-                    self.psi.remove(&pid);
-                    return;
-                }
-                if let Some(section) = self.psi.get_mut(&pid) {
-                    section.extend_from_slice(&payload[1..1 + pointer]);
-                    self.parse_complete_psi_sections(pid);
-                }
-                self.psi.insert(pid, payload[1 + pointer..].to_vec());
-            } else if let Some(section) = self.psi.get_mut(&pid) {
-                section.extend_from_slice(payload);
+            for section in self.psi.entry(pid).or_default().push(packet.start, payload) {
+                self.parse_psi(pid, &section);
             }
-            self.parse_complete_psi_sections(pid);
         } else if let Some(captions) = self.captions.as_mut() {
             captions.push(pid.0, packet.start, payload, texts);
-        }
-    }
-
-    fn parse_complete_psi_sections(&mut self, pid: Pid) {
-        while let Some(data) = self.psi.get(&pid) {
-            if data.is_empty() || data.first() == Some(&STUFFING_BYTE) {
-                self.psi.remove(&pid);
-                break;
-            }
-            let section_size = match wire::section_size(data) {
-                Ok(size) => size,
-                Err(wire::ParseError::Incomplete) => break,
-                Err(_) => {
-                    self.psi.remove(&pid);
-                    break;
-                }
-            };
-            let Some(data) = self.psi.get_mut(&pid) else {
-                break;
-            };
-            if data.len() < section_size {
-                break;
-            }
-            let section = data.drain(..section_size).collect::<Vec<_>>();
-            self.parse_psi(pid, &section);
         }
     }
 
@@ -235,30 +190,9 @@ impl TransportParser {
             return;
         };
         if pid == Pid::PAT && section.table_id == wire::PAT_TABLE_ID {
-            let Ok(programs) = section.pat_programs() else {
+            let Some(programs_by_service) = self.pat.push(&section) else {
                 return;
             };
-            let identity = (
-                section.extension,
-                section.version,
-                section.last_section_number,
-            );
-            if self.pat.identity != Some(identity) {
-                self.pat = PendingPat {
-                    identity: Some(identity),
-                    sections: BTreeMap::new(),
-                };
-            }
-            self.pat.sections.insert(section.section_number, programs);
-            if self.pat.sections.len() != usize::from(section.last_section_number) + 1 {
-                return;
-            }
-            let mut programs_by_service = BTreeMap::new();
-            for &(service, pid) in self.pat.sections.values().flatten() {
-                if programs_by_service.insert(service, pid).is_some() {
-                    return;
-                }
-            }
             // Production always specifies a service. Fixture/tool callers without
             // one choose one service deterministically, never mix multiple PMTs.
             let chosen = self
@@ -651,7 +585,12 @@ mod tests {
         for _ in 0..1000 {
             extractor.push(&ts_packet(0, false, &[0xff; 184]));
         }
-        assert!(extractor.psi.get(&Pid::PAT).is_none_or(Vec::is_empty));
+        assert!(
+            extractor
+                .psi
+                .get(&Pid::PAT)
+                .is_none_or(crate::transport::Sections::is_empty)
+        );
         let pat = pat_payload();
         extractor.push(&ts_packet(0, true, &pat));
         assert!(extractor.pmt_pids.contains(&Pid(0x100)));

@@ -67,7 +67,8 @@ impl ffi::Player {
             .rust()
             .entries
             .get(self.rust().selected as usize)
-            .and_then(|s| s.broadcast);
+            .and_then(|s| s.broadcast)
+            .filter(|_| !self.recording());
         self.as_mut().poll_current_program(service);
         self.as_mut().publish_guide();
         self.refresh_epg_status();

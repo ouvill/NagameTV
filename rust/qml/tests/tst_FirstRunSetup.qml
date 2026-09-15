@@ -22,6 +22,7 @@ TestCase {
     }
     FirstRunSetup { id: setup; backend: backend }
     SignalSpy { id: completed; target: setup; signalName: "completed" }
+    SignalSpy { id: openFile; target: setup; signalName: "openFileRequested" }
     function form() { return findChild(setup.contentItem, "setupConnectionForm"); }
     function field() { return findChild(setup.contentItem, "serverField"); }
     function action() { return findChild(setup.contentItem, "connectServer"); }
@@ -37,10 +38,19 @@ TestCase {
         backend.settings_error = "";
         backend.requests = 0;
         completed.clear();
+        openFile.clear();
         setup.open();
         tryCompare(setup, "opened", true);
     }
     function cleanup() { setup.close(); tryCompare(setup, "visible", false); }
+    function test_open_recording_does_not_require_a_server() {
+        const button = findChild(setup.contentItem, "setupOpenRecording");
+        verify(button.visible);
+        verify(waitForRendering(button));
+        mouseClick(button);
+        compare(openFile.count, 1);
+        compare(backend.requests, 0);
+    }
     function test_initial_input_is_empty_and_does_not_connect_automatically() {
         compare(field().text, "");
         verify(field().activeFocus);

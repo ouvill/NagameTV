@@ -19,6 +19,7 @@ mod remote;
 mod screenshots;
 mod services;
 mod settings;
+mod transport;
 #[cfg(feature = "video_item_tests")]
 mod video_item_tests;
 

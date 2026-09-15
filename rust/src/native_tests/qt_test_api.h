@@ -1,8 +1,12 @@
-#pragma once
+#ifndef VIEWER_NATIVE_TESTS_QT_TEST_API_H
+#define VIEWER_NATIVE_TESTS_QT_TEST_API_H
 // Missing binding operations only. Test cases, inputs and assertions live in Rust.
 #include "localization.h"
 #include "pointer_activity.h"
 #include <QtCore/QFile>
+#include <QtCore/QMimeData>
+#include <QtGui/QDragEnterEvent>
+#include <QtGui/QDropEvent>
 #include <QtGui/QImage>
 #include <QtGui/QPainter>
 #include <QtGui/QPainterPath>
@@ -37,6 +41,20 @@ inline QVariant evaluateRoot(QQmlApplicationEngine &engine, const QString &sourc
     return result;
 }
 
+inline bool dropFileOnRoot(QQmlApplicationEngine &engine, const QString &url, const QPoint &position) {
+    const auto roots = engine.rootObjects();
+    auto *window = roots.isEmpty() ? nullptr : qobject_cast<QQuickWindow *>(roots.first());
+    if (!window) return false;
+    QMimeData mime;
+    mime.setUrls({QUrl(url)});
+    QDragEnterEvent enter(position, Qt::CopyAction, &mime, Qt::LeftButton, Qt::NoModifier);
+    QCoreApplication::sendEvent(window, &enter);
+    if (!enter.isAccepted()) return false;
+    QDropEvent drop(QPointF(position), Qt::CopyAction, &mime, Qt::LeftButton, Qt::NoModifier);
+    QCoreApplication::sendEvent(window, &drop);
+    return drop.isAccepted();
+}
+
 // QPainter retains QPaintDevice*. Bound it to the image borrow entirely in C++.
 inline void rasterPath(const QPainterPath &path, QImage &image, const QPoint &offset) {
     QPainter painter(&image);
@@ -69,3 +87,4 @@ inline void sendMouseMove(QQuickWindow &window, const QPointF &position) {
                      Qt::NoButton, Qt::NoButton, Qt::NoModifier);
     QCoreApplication::sendEvent(&window, &event);
 }
+#endif

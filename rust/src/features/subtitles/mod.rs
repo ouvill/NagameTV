@@ -16,7 +16,7 @@ mod selection;
 #[cfg(test)]
 mod stream_selection_tests;
 mod transport;
-mod wire;
+use crate::transport::wire;
 
 use crate::channels::BroadcastService;
 use crate::features::subscriptions::Subscriptions;
@@ -61,6 +61,20 @@ impl Session {
     pub fn start(playbin: &gst::Element, service: Option<BroadcastService>) -> Result<Self, Error> {
         // Reject missing metadata before attaching any callbacks or probes.
         let parser = parser_for(service)?;
+        Self::with_parser(playbin, parser)
+    }
+    pub fn start_recording(playbin: &gst::Element, service: u16) -> Result<Self, Error> {
+        let mut parser = transport::TransportParser::new(true);
+        parser.select_service(service);
+        if !parser.decoder_available() {
+            return Err(Error::DecoderUnavailable);
+        }
+        Self::with_parser(playbin, parser)
+    }
+    fn with_parser(
+        playbin: &gst::Element,
+        parser: transport::TransportParser,
+    ) -> Result<Self, Error> {
         let bin = playbin
             .downcast_ref::<gst::Bin>()
             .ok_or(Error::MissingBin)?;
@@ -118,6 +132,7 @@ impl Session {
         )
     }
 }
+
 impl Drop for Session {
     fn drop(&mut self) {
         self.subscriptions.close();

@@ -59,6 +59,12 @@ pub mod ffi {
             engine: Pin<&mut QQmlApplicationEngine>,
             source: &QString,
         ) -> Result<QVariant>;
+        #[rust_name = "drop_file_on_root"]
+        fn dropFileOnRoot(
+            engine: Pin<&mut QQmlApplicationEngine>,
+            url: &QString,
+            position: &QPoint,
+        ) -> bool;
         #[rust_name = "raster_path"]
         fn rasterPath(path: &QPainterPath, image: &mut QImage, offset: &QPoint);
         #[rust_name = "raster_svg"]

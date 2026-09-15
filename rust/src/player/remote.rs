@@ -32,18 +32,30 @@ impl PlayerRust {
     }
 
     fn remote_state(&self) -> model::State {
+        use stream_state::{Attempt, State};
         let (playback, broadcast) = match &self.stream_state {
-            stream_state::State::Stopped => (model::Playback::Stopped, None),
-            stream_state::State::Connecting(attempt) => (
-                model::Playback::Connecting(attempt.service),
-                attempt.broadcast,
+            State::Stopped(_) => (model::Playback::Stopped, None),
+            State::Connecting(Attempt::Live(live)) => (
+                model::Playback::Connecting(live.service()),
+                live.broadcast(),
             ),
-            stream_state::State::Playing(attempt) => {
-                (model::Playback::Playing(attempt.service), attempt.broadcast)
+            State::Playing(Attempt::Live(live)) => {
+                (model::Playback::Playing(live.service()), live.broadcast())
             }
-            stream_state::State::StopFailed(attempt) => (
-                model::Playback::StopFailed(attempt.service),
-                attempt.broadcast,
+            State::StopFailed(Attempt::Live(live)) => (
+                model::Playback::StopFailed(live.service()),
+                live.broadcast(),
+            ),
+            State::Connecting(Attempt::File(file)) => (
+                model::Playback::FileConnecting(file.name().to_owned()),
+                None,
+            ),
+            State::Playing(Attempt::File(file)) => {
+                (model::Playback::FilePlaying(file.name().to_owned()), None)
+            }
+            State::StopFailed(Attempt::File(file)) => (
+                model::Playback::FileStopFailed(file.name().to_owned()),
+                None,
             ),
         };
         let now = SystemTime::now()
@@ -196,13 +208,17 @@ impl ffi::Player {
                     .iter()
                     .position(|channel| channel.id == id)
                     .ok_or(CommandError::ChannelNotFound)?;
-                self.remote_can_play()?;
+                self.remote_live_ready()?;
                 self.as_mut().select(index as i32);
                 self.remote_play_result()
             }
             Command::Play => {
-                self.remote_can_play()?;
-                if self.rust().entries.get(*self.selected() as usize).is_none() {
+                self.remote_output_ready()?;
+                if !self.recording() {
+                    self.remote_live_ready()?;
+                }
+                if !self.recording() && self.rust().entries.get(*self.selected() as usize).is_none()
+                {
                     return Err(CommandError::NotReady("no channel selected"));
                 }
                 self.as_mut().play();
@@ -237,10 +253,15 @@ impl ffi::Player {
         }
     }
 
-    fn remote_can_play(&self) -> Result<(), CommandError> {
+    fn remote_output_ready(&self) -> Result<(), CommandError> {
         if self.rust().media.playback().is_none() {
             return Err(CommandError::NotReady("playback output is unavailable"));
         }
+        Ok(())
+    }
+
+    fn remote_live_ready(&self) -> Result<(), CommandError> {
+        self.remote_output_ready()?;
         if !self.server_configured() || self.loading() {
             return Err(CommandError::NotReady("server connection is not ready"));
         }
@@ -248,9 +269,12 @@ impl ffi::Player {
     }
 
     fn remote_play_result(&self) -> Result<(), CommandError> {
+        if self.recording_loading() {
+            return Ok(());
+        }
         match self.rust().stream_state {
             stream_state::State::Connecting(_) | stream_state::State::Playing(_) => Ok(()),
-            stream_state::State::Stopped | stream_state::State::StopFailed(_) => {
+            stream_state::State::Stopped(_) | stream_state::State::StopFailed(_) => {
                 Err(CommandError::Playback(self.playback_error().to_string()))
             }
         }

@@ -13,6 +13,7 @@ pub enum Hint {
     Network,
     Ended,
     Generic,
+    Recording,
 }
 
 impl Hint {
@@ -41,6 +42,9 @@ impl Hint {
             Self::Generic => {
                 "Could not play this channel. Try again or choose another channel. See the error details if the problem continues."
             }
+            Self::Recording => {
+                "Could not play this TS file. Check that it is readable and contains supported video and audio."
+            }
         }
     }
 }
@@ -48,6 +52,7 @@ impl Hint {
 impl Error {
     pub fn hint(&self) -> Hint {
         match self {
+            Self::Recording(_) => Hint::Recording,
             // Cleanup must not hide the reason the original stream failed.
             Self::Cleanup { primary, .. } => primary.hint(),
             Self::EndOfStream => Hint::Ended,

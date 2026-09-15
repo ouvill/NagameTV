@@ -77,9 +77,41 @@ impl Stopped<'_> {
         broadcast: Option<BroadcastService>,
         subtitles_enabled: bool,
     ) -> Result<SubtitleStart> {
+        let uri = format!("{server}/api/services/{service}/stream");
+        self.start_uri(
+            &uri,
+            broadcast.map(|s| s.service_id),
+            |element| subtitles::Session::start(element, broadcast),
+            subtitles_enabled,
+        )
+    }
+
+    pub fn start_file(
+        self,
+        file: &super::recording::Recording,
+        subtitles_enabled: bool,
+    ) -> Result<SubtitleStart> {
+        self.start_uri(
+            file.uri(),
+            Some(file.service()),
+            |element| subtitles::Session::start_recording(element, file.service()),
+            subtitles_enabled,
+        )
+    }
+
+    fn start_uri(
+        self,
+        uri: &str,
+        service: Option<u16>,
+        start_subtitles: impl FnOnce(
+            &gstreamer::Element,
+        )
+            -> std::result::Result<subtitles::Session, subtitles::Error>,
+        subtitles_enabled: bool,
+    ) -> Result<SubtitleStart> {
         let playback = self.0.playback.as_ref().ok_or(Error::Unavailable)?;
         let subtitles = if subtitles_enabled {
-            match subtitles::Session::start(playback.element(), broadcast) {
+            match start_subtitles(playback.element()) {
                 Ok(session) => {
                     self.0.subtitles = Some(session);
                     SubtitleStart::Parsing
@@ -89,7 +121,7 @@ impl Stopped<'_> {
         } else {
             SubtitleStart::Disabled
         };
-        if let Err(error) = playback.play(server, service, broadcast) {
+        if let Err(error) = playback.play(uri, service) {
             let failure = match self.0.stop() {
                 Ok(_) => error,
                 Err(cleanup) => Error::Cleanup {

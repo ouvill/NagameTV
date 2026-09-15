@@ -16,6 +16,7 @@ use lifecycle::{Failure as StatusFailure, Status as PlaybackStatus};
 mod playback_failure;
 mod preferences;
 mod program_info;
+mod recordings;
 mod remote;
 #[cfg(feature = "native_tests")]
 mod remote_checks;
@@ -120,6 +121,10 @@ pub mod ffi {
         #[qproperty(bool, loading, READ = loading, NOTIFY)]
         #[qproperty(bool, connecting, READ = connecting, NOTIFY)]
         #[qproperty(bool, playing, READ = playing, NOTIFY)]
+        #[qproperty(bool, recording, READ = recording, NOTIFY)]
+        #[qproperty(QString, recording_name, READ = recording_name, NOTIFY)]
+        #[qproperty(QString, file_error, READ, NOTIFY)]
+        #[qproperty(bool, recording_loading, READ = recording_loading, NOTIFY)]
         #[qproperty(bool, subtitles_enabled, READ, CONSTANT)]
         #[qproperty(bool, epg_enabled, READ, CONSTANT)]
         #[qproperty(bool, comments_enabled, READ, NOTIFY)]
@@ -186,6 +191,8 @@ pub mod ffi {
         fn loading(self: &Player) -> bool;
         fn connecting(self: &Player) -> bool;
         fn playing(self: &Player) -> bool;
+        fn recording(self: &Player) -> bool;
+        fn recording_name(self: &Player) -> QString;
         fn guide_visible(self: &Player) -> bool;
         #[qinvokable]
         fn request_language(self: Pin<&mut Player>, language: QString) -> bool;
@@ -216,6 +223,14 @@ pub mod ffi {
         fn select(self: Pin<&mut Player>, index: i32);
         #[qinvokable]
         fn play(self: Pin<&mut Player>);
+        #[qinvokable]
+        fn open_recording(self: Pin<&mut Player>, file: QUrl) -> bool;
+        fn recording_loading(self: &Player) -> bool;
+        #[qsignal]
+        #[cxx_name = "recordingOpened"]
+        fn recording_opened(self: Pin<&mut Player>, success: bool);
+        #[qinvokable]
+        fn cancel_recording_open(self: Pin<&mut Player>);
         #[qinvokable]
         fn stop(self: Pin<&mut Player>);
         #[qinvokable]
@@ -310,6 +325,8 @@ pub struct PlayerRust {
     selected: i32,
     catalog_selection: channels::SelectionPolicy,
     stream_state: stream_state::State,
+    recording_loader: playback::recording::Loader,
+    file_error: QString,
     subtitles_enabled: bool,
     epg_enabled: bool,
     comments_enabled: bool,
@@ -378,6 +395,7 @@ macro_rules! property_setter {
 }
 
 impl ffi::Player {
+    property_setter!(set_file_error, file_error, file_error_changed, QString);
     property_setter!(
         set_comment_draft,
         comment_draft,

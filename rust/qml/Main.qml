@@ -12,7 +12,7 @@ ApplicationWindow {
     height: 900
     minimumWidth: 900
     minimumHeight: 560
-    title: programIdentity.item && programIdentity.item.program && programIdentity.item.program.name
+    title: player.recording ? player.recording_name : programIdentity.item && programIdentity.item.program && programIdentity.item.program.name
         ? programIdentity.item.program.name : qsTranslate("Main", "Mirakurun Viewer")
     color: "#0b0c0b"
     font.family: "Noto Sans CJK JP"
@@ -52,6 +52,27 @@ ApplicationWindow {
     readonly property var channelRows: JSON.parse(player.channel_data)
     Player {
         id: player
+    }
+    RecordingInput {
+        id: recordingInput
+        anchors.fill: parent
+        z: 100
+        backend: player
+        enabled: !root.closing
+        onStarted: {
+            setup.close();
+            player.guide_open(false);
+            root.showChannels = false;
+            root.showProgram = false;
+            root.closeCommentComposer();
+        }
+    }
+    Shortcut {
+        sequence: "Ctrl+O"
+        context: Qt.WindowShortcut
+        autoRepeat: false
+        enabled: !root.closing
+        onActivated: recordingInput.open()
     }
     function openConnectionSettings() {
         if (root.setupRequired) setup.open();
@@ -216,7 +237,7 @@ ApplicationWindow {
                 anchors.centerIn: video
                 width: video.width
                 height: Math.min(video.height, width * 9 / 16)
-                active: !root.closing && player.comments_enabled && player.danmaku_enabled && player.playing
+                active: !root.closing && !player.recording && player.comments_enabled && player.danmaku_enabled && player.playing
                 sourceComponent: DanmakuOverlay {
                     fontSize: player.comment_font_size
                     textOpacity: player.comment_opacity
@@ -276,7 +297,8 @@ ApplicationWindow {
                 status: player.status
                 playbackError: player.playback_error
                 playbackMessage: player.playback_message
-                canPlay: player.selected >= 0
+                canPlay: player.recording || player.selected >= 0
+                recording: player.recording
                 hasChannels: root.channelRows.length > 0
                 hasServer: player.server_configured
                 loading: player.loading || player.connecting
@@ -287,6 +309,7 @@ ApplicationWindow {
                 }
                 onSettingsRequested: root.openConnectionSettings()
                 onReconnectRequested: player.connect_server(player.server)
+                onOpenFileRequested: recordingInput.open()
             }
         }
         WindowDragArea {
@@ -327,7 +350,7 @@ ApplicationWindow {
                 margins: 24
             }
             width: Math.max(360, surface.width - 430)
-            active: !root.closing
+            active: !root.closing && !player.recording
             visible: overlayVisibility.controlsVisible && !root.showGuide
             sourceComponent: CurrentProgram {
                 programJson: player.current_program_data
@@ -335,9 +358,22 @@ ApplicationWindow {
                     root.sidebarPage = ProgramSidebar.Program;
                     root.showProgram = true;
                 }
-                channelLabel: player.selected >= 0 && player.selected < root.channelRows.length ? root.channelRows[player.selected].label : ""
-                logoUrl: player.selected >= 0 && player.selected < root.channelRows.length ? root.channelRows[player.selected].logo : ""
+                channelLabel: player.recording ? player.recording_name : player.selected >= 0 && player.selected < root.channelRows.length ? root.channelRows[player.selected].label : ""
+                logoUrl: !player.recording && player.selected >= 0 && player.selected < root.channelRows.length ? root.channelRows[player.selected].logo : ""
             }
+        }
+        Label {
+            anchors { left: parent.left; top: parent.top; margins: 24 }
+            width: Math.max(220, surface.width - 580)
+            visible: player.recording && overlayVisibility.controlsVisible && !root.showGuide
+            text: player.recording_name
+            textFormat: Text.PlainText
+            color: "#f4f5f3"
+            font.pixelSize: 23
+            font.bold: true
+            wrapMode: Text.Wrap
+            maximumLineCount: 2
+            elide: Text.ElideRight
         }
         Row {
             anchors {
@@ -348,6 +384,11 @@ ApplicationWindow {
             spacing: 14
             z: 7
             visible: overlayVisibility.controlsVisible && !root.showProgram
+            TextAction {
+                objectName: "openRecordingAction"
+                text: qsTranslate("Recording", "Open TS file")
+                onClicked: recordingInput.open()
+            }
             IconAction {
                 iconSource: "qrc:/qt/qml/MinimalViewer/assets/icons/calendar-days.svg"
                 tip: qsTranslate("Main", "Program guide")
@@ -379,6 +420,8 @@ ApplicationWindow {
             backend: player
             targetWindow: root
             onCompleted: root.chooseConnectedChannel()
+            onOpenFileRequested: recordingInput.open()
+            onFileDropped: function(file) { recordingInput.openUrl(file); }
         }
         Rectangle {
             anchors {
@@ -434,11 +477,13 @@ ApplicationWindow {
                 spacing: 12
                 Label {
                     text: Math.round(player.program_progress * 100) + "%"
+                    visible: !player.recording
                     color: "#b6bab6"
                     font.pixelSize: 11
                     Layout.leftMargin: 24
                 }
                 ProgressBar {
+                    visible: !player.recording
                     Layout.fillWidth: true
                     Layout.leftMargin: 24
                     Layout.rightMargin: 24
@@ -469,7 +514,7 @@ ApplicationWindow {
                         iconSource: "qrc:/qt/qml/MinimalViewer/assets/icons/" + (player.playing ? "square.svg" : "play.svg")
                         tip: player.playing ? qsTranslate("Main", "Stop") : qsTranslate("Viewer", "Play")
                         primary: !player.playing
-                        enabled: player.playing || player.selected >= 0
+                        enabled: player.playing || player.recording || player.selected >= 0
                         onClicked: player.playing ? player.stop() : player.play()
                     }
                     IconAction {

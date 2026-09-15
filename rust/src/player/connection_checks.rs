@@ -186,6 +186,8 @@ fn checks() -> TestResult {
     // All Qt signal observers see the complete stream state, and a duplicate
     // Play cannot replenish the one automatic retry of an active attempt.
     check_stream_state(&mut player)?;
+    check_recording_input(&mut player)?;
+    check_recording_notifications(&mut player)?;
     check_guide_state();
     check_autoplay()?;
     check_screenshot_directory()?;
@@ -259,13 +261,25 @@ fn check_stream_state(player: &mut cxx::UniquePtr<ffi::Player>) -> TestResult {
     player
         .pin_mut()
         .update_stream_state(State::Connecting(attempt));
-    let attempt = player.rust().stream_state.resume_retry().unwrap();
+    let attempt = player
+        .pin_mut()
+        .rust_mut()
+        .stream_state
+        .take_retry()
+        .unwrap();
     player
         .pin_mut()
         .update_stream_state(State::Playing(attempt));
     player.pin_mut().play();
     assert!(player.playing());
-    assert!(player.rust().stream_state.resume_retry().is_none());
+    assert!(
+        player
+            .pin_mut()
+            .rust_mut()
+            .stream_state
+            .take_retry()
+            .is_none()
+    );
     player.pin_mut().end_stream()?;
     assert_eq!(
         *observed.lock().unwrap(),
@@ -313,6 +327,89 @@ fn check_autoplay() -> TestResult {
     player.pin_mut().configure_autoplay(true);
     assert!(player.settings_error().is_empty());
     assert!(settings::Loaded::open(path)?.preferences().autoplay);
+    Ok(())
+}
+
+fn check_recording_input(player: &mut cxx::UniquePtr<ffi::Player>) -> TestResult {
+    use super::stream_state::{Attempt, State};
+    let channel = &player.rust().entries[0];
+    let attempt = Attempt::new(channel);
+    let service = channel.id;
+    player
+        .pin_mut()
+        .update_stream_state(State::Playing(attempt));
+    let directory = tempfile::tempdir()?;
+    let path = directory.path().join("invalid.ts");
+    std::fs::write(&path, b"not a transport stream")?;
+    let url = cxx_qt_lib::QUrl::from_local_file(&QString::from(path.to_string_lossy().as_ref()));
+    assert!(player.pin_mut().open_recording(url));
+    assert!(player.recording_loading());
+    assert!(player.file_error().is_empty());
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while player.recording_loading() {
+        assert!(Instant::now() < deadline);
+        player.pin_mut().poll_recording();
+        thread::sleep(Duration::from_millis(1));
+    }
+    assert!(player.playing());
+    assert_eq!(player.rust().stream_state.active_service(), Some(service));
+    assert!(!player.recording());
+    assert!(!player.file_error().is_empty());
+    player.pin_mut().end_stream()?;
+    Ok(())
+}
+
+fn check_recording_notifications(player: &mut cxx::UniquePtr<ffi::Player>) -> TestResult {
+    use super::stream_state::{Attempt, State};
+    let file = crate::playback::recording::Recording::open(Path::new(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../tests/fixtures/subtitle-clock.ts"
+    )))?;
+    let observed = Arc::new(Mutex::new(Vec::new()));
+    let sample = |player: std::pin::Pin<&mut ffi::Player>| {
+        (
+            player.recording(),
+            player.recording_name().to_string(),
+            player.connecting(),
+            player.playing(),
+        )
+    };
+    let changes = observed.clone();
+    let _source = player.pin_mut().on_recording_changed(move |player| {
+        changes.lock().unwrap().push(sample(player));
+    });
+    let changes = observed.clone();
+    let _name = player.pin_mut().on_recording_name_changed(move |player| {
+        changes.lock().unwrap().push(sample(player));
+    });
+    let changes = observed.clone();
+    let _connecting = player.pin_mut().on_connecting_changed(move |player| {
+        changes.lock().unwrap().push(sample(player));
+    });
+    player
+        .pin_mut()
+        .update_stream_state(State::Connecting(Attempt::File(file)));
+    assert_eq!(
+        observed.lock().unwrap().as_slice(),
+        &vec![(true, "subtitle-clock.ts".to_owned(), true, false); 3]
+    );
+    player.pin_mut().change_stream_state(State::started);
+    player.pin_mut().end_stream()?;
+    assert!(
+        player.recording(),
+        "stop retains replay target in the same state"
+    );
+    assert_eq!(player.recording_name().to_string(), "subtitle-clock.ts");
+    observed.lock().unwrap().clear();
+    let attempt = Attempt::new(&player.rust().entries[0]);
+    player
+        .pin_mut()
+        .update_stream_state(State::Connecting(attempt));
+    assert_eq!(
+        observed.lock().unwrap().as_slice(),
+        &vec![(false, String::new(), true, false); 3]
+    );
+    player.pin_mut().end_stream()?;
     Ok(())
 }
 

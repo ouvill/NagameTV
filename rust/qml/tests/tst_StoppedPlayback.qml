@@ -20,14 +20,28 @@ TestCase {
     SignalSpy { id: channels; target: panel; signalName: "channelsRequested" }
     SignalSpy { id: settings; target: panel; signalName: "settingsRequested" }
     SignalSpy { id: reconnect; target: panel; signalName: "reconnectRequested" }
+    SignalSpy { id: openFile; target: panel; signalName: "openFileRequested" }
     function init() {
         panel.hasServer = false;
+        panel.recording = false;
+        openFile.clear();
         reconnect.clear();
         panel.loading = false;
         panel.canPlay = false;
         panel.hasChannels = false;
         panel.playbackError = "";
         play.clear(); channels.clear(); settings.clear();
+    }
+    function test_recording_can_be_replayed_without_channels() {
+        panel.recording = true;
+        panel.canPlay = true;
+        verify(waitForRendering(panel));
+        mouseClick(findChild(panel, "stoppedAction"));
+        compare(play.count, 1);
+        compare(reconnect.count, 0);
+        mouseClick(findChild(panel, "openRecording"));
+        compare(openFile.count, 1);
+        compare(settings.count, 0);
     }
     function test_configured_server_failure_offers_reconnect_and_change() {
         failOnWarning(/.*/);

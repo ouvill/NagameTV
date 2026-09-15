@@ -1,0 +1,75 @@
+import QtQuick
+import QtQuick.Controls
+import QtTest
+import ".."
+
+TestCase {
+    name: "RecordingInput"
+    when: windowShown
+    visible: true
+    width: 640
+    height: 480
+    QtObject {
+        id: backend
+        property int calls: 0
+        property string lastUrl: ""
+        property bool accept: true
+        property bool recording_loading: false
+        property string file_error: "<b>Invalid recording</b>"
+        property string playback_error: ""
+        signal recordingOpened(bool success)
+        function open_recording(url) { calls++; lastUrl = String(url); recording_loading = accept; return accept; }
+        function cancel_recording_open() { recording_loading = false; }
+    }
+    RecordingInput { id: input; anchors.fill: parent; backend: backend }
+    SignalSpy { id: started; target: input; signalName: "started" }
+    function init() {
+        failOnWarning(/.*/);
+        backend.calls = 0;
+        backend.accept = true;
+        backend.recording_loading = false;
+        started.clear();
+    }
+    function cleanup() {
+        const error = findChild(input, "recordingOpenError");
+        error.close();
+        tryCompare(error, "visible", false);
+    }
+    function test_single_drop_preserves_url_and_multiple_drop_is_ignored() {
+        const url = "file:///tmp/%E9%8C%B2%E7%94%BB%20%23100%25.ts";
+        verify(!input.dropUrls([]));
+        verify(!input.dropUrls([url, url]));
+        compare(backend.calls, 0);
+        verify(input.dropUrls([url]));
+        compare(backend.lastUrl, url);
+        compare(backend.calls, 1);
+        compare(started.count, 0);
+        backend.recording_loading = false;
+        backend.recordingOpened(true);
+        compare(started.count, 1);
+    }
+    function test_rejected_file_reports_plain_text_without_starting() {
+        backend.accept = false;
+        verify(!input.openUrl("file:///tmp/invalid.ts"));
+        compare(started.count, 0);
+        const error = findChild(input, "recordingOpenError");
+        tryCompare(error, "opened", true);
+        compare(error.contentItem.text, backend.file_error);
+        compare(error.contentItem.textFormat, Text.PlainText);
+    }
+    function test_async_failure_and_cancel() {
+        verify(input.openUrl("file:///tmp/invalid.ts"));
+        const opening = findChild(input, "recordingOpening");
+        tryCompare(opening, "opened", true);
+        mouseClick(findChild(input, "cancelRecordingOpen"));
+        tryCompare(opening, "visible", false);
+        compare(started.count, 0);
+        verify(input.openUrl("file:///tmp/invalid.ts"));
+        backend.recording_loading = false;
+        backend.recordingOpened(false);
+        const error = findChild(input, "recordingOpenError");
+        tryCompare(error, "opened", true);
+        compare(started.count, 0);
+        compare(error.contentItem.text, backend.file_error);
+    }
+}

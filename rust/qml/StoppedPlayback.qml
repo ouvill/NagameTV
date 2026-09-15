@@ -11,6 +11,7 @@ Rectangle {
     property bool loading: false
     property string playbackError: ""
     property string playbackMessage: ""
+    property bool recording: false
     property bool showDetails: false
     onPlaybackErrorChanged: if (!playbackError.length)
         showDetails = false
@@ -18,13 +19,14 @@ Rectangle {
     signal channelsRequested
     signal settingsRequested
     signal reconnectRequested
+    signal openFileRequested
     color: "#141516"
     Column {
         anchors.centerIn: parent
         spacing: 14
         Label {
             anchors.horizontalCenter: parent.horizontalCenter
-            text: root.playbackError.length ? qsTranslate("Viewer", "Playback unavailable") : qsTranslate("Main", "Live TV")
+            text: root.playbackError.length ? qsTranslate("Viewer", "Playback unavailable") : root.recording ? qsTranslate("Recording", "Recording") : qsTranslate("Main", "Live TV")
             color: "#f4f5f3"
             font.pixelSize: root.playbackError.length ? 26 : 32
             font.bold: true
@@ -58,7 +60,7 @@ Rectangle {
             implicitHeight: 44
             visible: !root.loading
             enabled: !root.loading
-            text: root.canPlay ? (root.playbackError.length ? qsTranslate("Main", "Retry") : qsTranslate("Main", "Watch")) : root.hasChannels ? qsTranslate("Viewer", "Choose a channel") : root.hasServer ? qsTranslate("Connection", "Reconnect") : qsTranslate("Main", "Connection settings")
+            text: root.canPlay ? (root.playbackError.length ? qsTranslate("Main", "Retry") : root.recording ? qsTranslate("Viewer", "Play") : qsTranslate("Main", "Watch")) : root.hasChannels ? qsTranslate("Viewer", "Choose a channel") : root.hasServer ? qsTranslate("Connection", "Reconnect") : qsTranslate("Main", "Connection settings")
             contentItem: Label {
                 text: action.text
                 color: "#191a1b"
@@ -80,6 +82,12 @@ Rectangle {
                 else
                     root.settingsRequested();
             }
+        }
+        TextAction {
+            objectName: "openRecording"
+            anchors.horizontalCenter: parent.horizontalCenter
+            text: qsTranslate("Recording", "Open TS file")
+            onClicked: root.openFileRequested()
         }
         TextAction {
             objectName: "changeConnection"

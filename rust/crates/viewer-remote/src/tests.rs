@@ -205,7 +205,7 @@ async fn state_stream_starts_with_snapshot_and_recovers_latest_on_reconnect() {
         ))
     ));
     drop(stream);
-    state.playback = Playback::Playing(77);
+    state.playback = Playback::FilePlaying("録画.ts".into());
     session.publish(state, Some(vec![]));
     let mut stream = client
         .watch_state(Request::new(proto::WatchStateRequest {}))
@@ -214,6 +214,9 @@ async fn state_stream_starts_with_snapshot_and_recovers_latest_on_reconnect() {
         .into_inner();
     let resumed = stream.message().await.unwrap().unwrap().state.unwrap();
     assert_eq!(resumed.revision, 3);
+    assert!(matches!(resumed.playback, Some(proto::player_state::Playback::FilePlaying(
+        proto::FilePlayback { ref name }
+    )) if name == "録画.ts"));
     assert!(
         client
             .list_channels(Request::new(proto::ListChannelsRequest {}))
