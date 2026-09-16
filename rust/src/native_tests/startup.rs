@@ -208,6 +208,10 @@ fn window(app: &QGuiApplication, preferences: &settings::Preferences) -> TestRes
     assert!(evaluate(&mut engine, "!screenshot.canCapture")?);
     assert!(evaluate(
         &mut engine,
+        "modeNavigation.mode === ModeNavigation.Live"
+    )?);
+    assert!(evaluate(
+        &mut engine,
         &format!("player.autoplay === {}", preferences.autoplay)
     )?);
     if !preferences.server.is_empty() {
@@ -293,11 +297,14 @@ fn window(app: &QGuiApplication, preferences: &settings::Preferences) -> TestRes
         evaluate(&mut engine, "settings.close(); true")?;
         if !autoplay {
             check_recording(app, &mut engine)?;
-            evaluate(&mut engine, "player.select(1); true")?;
+            evaluate(
+                &mut engine,
+                "modeNavigation.modeRequested(ModeNavigation.Live); true",
+            )?;
             wait_for(
                 app,
                 &mut engine,
-                "!player.recording && !player.connecting && player.playback_error.length > 0",
+                "!player.recording && !player.connecting && player.playback_error.length > 0 && modeNavigation.mode === ModeNavigation.Live",
             )?;
         }
     } else {
@@ -344,7 +351,7 @@ fn check_recording(
     )?;
     assert!(evaluate(
         engine,
-        "player.recording && player.recording_name === '録画 #100%.ts' && !setup.visible && player.current_program_data === 'null' && !player.comment_post_available && !danmaku.active && player.subtitles_active"
+        "player.recording && player.recording_name === '録画 #100%.ts' && modeNavigation.mode === ModeNavigation.Recording && !setup.visible && player.current_program_data === 'null' && !player.comment_post_available && !danmaku.active && player.subtitles_active"
     )?);
     // Invalid input and a multiple-file drop must leave the current stream intact.
     assert!(evaluate(

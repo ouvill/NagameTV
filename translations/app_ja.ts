@@ -4,6 +4,14 @@
   <context>
     <name>Main</name>
     <message>
+      <source>Hide danmaku</source>
+      <translation>弾幕を非表示</translation>
+    </message>
+    <message>
+      <source>Show danmaku</source>
+      <translation>弾幕を表示</translation>
+    </message>
+    <message>
       <source>Save screenshot</source>
       <translation>スクリーンショットを保存</translation>
     </message>

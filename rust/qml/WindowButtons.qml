@@ -6,11 +6,12 @@ Rectangle {
     id: root
     required property Window targetWindow
     property url iconDirectory: "qrc:/qt/qml/MinimalViewer/assets/icons/"
+    property bool flat: false
     implicitWidth: 126
     implicitHeight: 42
     radius: 21
-    color: "#b8171819"
-    border.color: "#16ffffff"
+    color: flat ? "transparent" : "#b8171819"
+    border.color: flat ? "transparent" : "#16ffffff"
     component Action: ToolButton {
         id: action
         required property string iconName

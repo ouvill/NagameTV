@@ -31,11 +31,8 @@ Rectangle {
     property string channelLabel: ""
     property string logoUrl: ""
     property real progress: 0
-    property bool guideEnabled: false
     readonly property var program: JSON.parse(programJson)
     signal closeRequested
-    signal guideRequested
-    signal settingsRequested
     color: "#151715"
     clip: true
     Rectangle {
@@ -43,28 +40,10 @@ Rectangle {
         height: parent.height
         color: "#20ffffff"
     }
-    Row {
-        anchors {
-            right: parent.right
-            top: parent.top
-            margins: 18
-        }
-        spacing: 10
-        IconAction {
-            iconSource: root.iconDirectory + "calendar-days.svg"
-            tip: qsTranslate("Main", "Program guide")
-            enabled: root.guideEnabled
-            onClicked: root.guideRequested()
-        }
-        IconAction {
-            iconSource: root.iconDirectory + "settings-2.svg"
-            tip: qsTranslate("Main", "Settings")
-            onClicked: root.settingsRequested()
-        }
-        WindowButtons {
-            targetWindow: root.targetWindow
-            iconDirectory: root.iconDirectory
-        }
+    WindowDragArea {
+        anchors { left: parent.left; right: parent.right; top: parent.top }
+        height: 76
+        targetWindow: root.targetWindow
     }
     ColumnLayout {
         x: 24

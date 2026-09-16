@@ -86,6 +86,32 @@ ApplicationWindow {
         root.showChannels = true;
         overlayVisibility.reveal();
     }
+    function requestMode(mode) {
+        overlayVisibility.reveal();
+        switch (mode) {
+        case ModeNavigation.Live:
+            player.cancel_recording_open();
+            if (root.setupRequired) {
+                setup.open();
+            } else if (player.recording && player.selected >= 0) {
+                player.select(player.selected);
+            } else if (player.recording || root.channelRows.length === 0) {
+                root.chooseConnectedChannel();
+            }
+            break;
+        case ModeNavigation.Recording:
+            // Replace this destination with the recording library when available.
+            // Selection/cancellation leaves the current playback mode unchanged.
+            recordingInput.open();
+            break;
+        case ModeNavigation.Guide:
+            root.toggleGuide();
+            break;
+        case ModeNavigation.Settings:
+            settings.open();
+            break;
+        }
+    }
     function step(offset) {
         overlayVisibility.reveal();
         player.step_channel(offset);
@@ -117,7 +143,7 @@ ApplicationWindow {
         enabled: !root.closing
         playing: player.playing
         // Like main, the persistent sidebar does not pin the video controls.
-        pinned: root.showChannels || root.showGuide || windowActions.popupOpen || windowActions.editingText || volumeSlider.pressed
+        pinned: root.showChannels || root.showGuide || windowActions.popupOpen || windowActions.editingText || playerControls.volumePressed
     }
     AudioSettings {
         id: audioSettings
@@ -135,7 +161,7 @@ ApplicationWindow {
     }
     PlaybackSettings {
         id: playbackSettings
-        toggleButton: playbackSettingsButton
+        toggleButton: playerControls.settingsButton
         commentsEnabled: player.comments_enabled
         danmakuEnabled: player.danmaku_enabled
         textSize: player.comment_font_size
@@ -375,35 +401,6 @@ ApplicationWindow {
             maximumLineCount: 2
             elide: Text.ElideRight
         }
-        Row {
-            anchors {
-                right: parent.right
-                top: parent.top
-                margins: 18
-            }
-            spacing: 14
-            z: 7
-            visible: overlayVisibility.controlsVisible && !root.showProgram
-            TextAction {
-                objectName: "openRecordingAction"
-                text: qsTranslate("Recording", "Open TS file")
-                onClicked: recordingInput.open()
-            }
-            IconAction {
-                iconSource: "qrc:/qt/qml/MinimalViewer/assets/icons/calendar-days.svg"
-                tip: qsTranslate("Main", "Program guide")
-                enabled: player.epg_enabled
-                onClicked: root.toggleGuide()
-            }
-            IconAction {
-                iconSource: "qrc:/qt/qml/MinimalViewer/assets/icons/settings-2.svg"
-                tip: qsTranslate("Main", "Settings")
-                onClicked: settings.open()
-            }
-            WindowButtons {
-                targetWindow: root
-            }
-        }
         SettingsPanel {
             id: settings
             targetWindow: root
@@ -505,95 +502,26 @@ ApplicationWindow {
                     }
                 }
 
-                RowLayout {
+                PlayerControls {
+                    id: playerControls
                     Layout.fillWidth: true
                     Layout.leftMargin: 24
                     Layout.rightMargin: 24
-                    spacing: 12
-                    IconAction {
-                        iconSource: "qrc:/qt/qml/MinimalViewer/assets/icons/" + (player.playing ? "square.svg" : "play.svg")
-                        tip: player.playing ? qsTranslate("Main", "Stop") : qsTranslate("Viewer", "Play")
-                        primary: !player.playing
-                        enabled: player.playing || player.recording || player.selected >= 0
-                        onClicked: player.playing ? player.stop() : player.play()
+                    backend: player
+                    closing: root.closing
+                    canCapture: screenshot.canCapture
+                    settingsVisible: playbackSettings.visible
+                    sidePanelOpen: root.showProgram
+                    onAudioRequested: audioSettings.open()
+                    onChannelsRequested: root.showChannels = true
+                    onCommentRequested: {
+                        root.showCommentComposer = true;
+                        composer.focusEditor();
                     }
-                    IconAction {
-                        iconSource: "qrc:/qt/qml/MinimalViewer/assets/icons/" + (player.audio_muted || player.volume_level === 0 ? "volume-x.svg" : "volume-2.svg")
-                        tip: player.audio_muted ? qsTranslate("Viewer", "Unmute") : qsTranslate("Viewer", "Mute")
-                        active: player.audio_muted
-                        onClicked: player.mute(!player.audio_muted)
-                    }
-                    IconAction {
-                        iconSource: "qrc:/qt/qml/MinimalViewer/assets/icons/chevron-down.svg"
-                        tip: qsTranslate("Viewer", "Audio selection")
-                        implicitWidth: 28
-                        implicitHeight: 28
-                        onClicked: audioSettings.open()
-                    }
-                    VolumeSlider {
-                        id: volumeSlider
-                        value: player.volume_level
-                        subdued: player.audio_muted
-                        closing: root.closing
-                        Layout.preferredWidth: 132
-                        onVolumeRequested: function (fraction) { player.volume(fraction) }
-                        onSaveRequested: player.save_settings()
-                    }
-                    Item {
-                        Layout.fillWidth: true
-                    }
-                    IconAction {
-                        iconSource: "qrc:/qt/qml/MinimalViewer/assets/icons/grid-2x2.svg"
-                        tip: qsTranslate("Main", "Channels")
-                        onClicked: root.showChannels = true
-                    }
-                    IconAction {
-                        iconSource: "qrc:/qt/qml/MinimalViewer/assets/icons/pencil.svg"
-                        tip: qsTranslate("Main", "Post a comment")
-                        enabled: player.comments_enabled
-                        onClicked: {
-                            root.showCommentComposer = true;
-                            composer.focusEditor();
-                        }
-                    }
-                    IconAction {
-                        iconSource: "qrc:/qt/qml/MinimalViewer/assets/icons/captions.svg"
-                        tip: player.subtitle_display ? qsTranslate("Main", "Hide subtitles") : qsTranslate("Main", "Show subtitles")
-                        active: player.subtitles_enabled && player.subtitle_display
-                        enabled: player.subtitles_enabled
-                        onClicked: player.display_subtitles(!player.subtitle_display)
-                    }
-                    IconAction {
-                        objectName: "screenshotButton"
-                        iconSource: "qrc:/qt/qml/MinimalViewer/assets/icons/camera.svg"
-                        tip: qsTranslate("Main", "Save screenshot")
-                        enabled: screenshot.canCapture
-                        onClicked: screenshot.capture()
-                    }
-                    IconAction {
-                        id: playbackSettingsButton
-                        iconSource: "qrc:/qt/qml/MinimalViewer/assets/icons/settings-2.svg"
-                        tip: qsTranslate("Main", "Playback settings")
-                        active: playbackSettings.visible
-                        onClicked: { playbackSettings.toggle(); overlayVisibility.reveal(); }
-                    }
-                    IconAction {
-                        iconSource: "qrc:/qt/qml/MinimalViewer/assets/icons/maximize.svg"
-                        tip: qsTranslate("Main", "Fullscreen")
-                        onClicked: windowActions.toggleFullscreen()
-                    }
-                    Rectangle {
-                        width: 1
-                        height: 28
-                        color: "#28ffffff"
-                        Layout.leftMargin: 4
-                        Layout.rightMargin: 4
-                    }
-                    IconAction {
-                        iconSource: "qrc:/qt/qml/MinimalViewer/assets/icons/" + (root.showProgram ? "panel-right-close.svg" : "panel-right-open.svg")
-                        tip: root.showProgram ? qsTranslate("Main", "Close side panel") : qsTranslate("Main", "Program information")
-                        onClicked: root.showProgram = !root.showProgram
-                    }
+                    onCaptureRequested: screenshot.capture()
+                    onSettingsRequested: { playbackSettings.toggle(); overlayVisibility.reveal(); }
+                    onFullscreenRequested: windowActions.toggleFullscreen()
+                    onSidePanelRequested: root.showProgram = !root.showProgram
                 }
             }
         }
@@ -748,11 +676,19 @@ ApplicationWindow {
             progress: player.program_progress
             channelLabel: player.selected >= 0 && player.selected < root.channelRows.length ? root.channelRows[player.selected].label : ""
             logoUrl: player.selected >= 0 && player.selected < root.channelRows.length ? root.channelRows[player.selected].logo : ""
-            guideEnabled: player.epg_enabled
             onCloseRequested: root.showProgram = false
-            onGuideRequested: root.toggleGuide()
-            onSettingsRequested: settings.open()
         }
+    }
+    ModeNavigation {
+        id: modeNavigation
+        anchors { right: parent.right; top: parent.top; margins: 18 }
+        z: 20
+        targetWindow: root
+        enabled: !root.closing
+        visible: !root.showGuide && !settings.visible && (root.showProgram || overlayVisibility.controlsVisible)
+        mode: player.recording ? ModeNavigation.Recording : ModeNavigation.Live
+        guideEnabled: player.epg_enabled
+        onModeRequested: function(mode) { root.requestMode(mode); }
     }
     WindowResizeFrame {
         anchors.fill: parent

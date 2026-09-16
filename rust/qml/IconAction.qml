@@ -7,6 +7,8 @@ ToolButton {
     required property string tip
     property bool active: false
     property bool primary: false
+    // Player overlays use bare icons until hover, focus, or selection.
+    flat: false
     // Animate the visuals; keep the hit area still while the pointer is down.
     property real feedbackScale: down ? 0.90 : hovered || visualFocus ? 1.06 : 1
     Behavior on feedbackScale {
@@ -21,8 +23,8 @@ ToolButton {
         scale: control.feedbackScale
         radius: 21
         color: control.primary ? (control.down ? "#cbd8ce" : control.hovered ? "#ffffff" : "#eeeeec")
-            : control.down ? "#589caf9f" : control.hovered ? "#28ffffff" : control.active ? "#389caf9f" : "#17000000"
-        border.color: control.visualFocus ? "#9caf9f" : (control.primary ? "#80ffffff" : (control.active ? "#9caf9f" : "#16ffffff"))
+            : control.down ? "#589caf9f" : control.hovered ? "#28ffffff" : control.active ? "#389caf9f" : control.flat ? "transparent" : "#17000000"
+        border.color: control.visualFocus ? "#9caf9f" : control.flat ? "transparent" : (control.primary ? "#80ffffff" : (control.active ? "#9caf9f" : "#16ffffff"))
         Behavior on color { ColorAnimation { duration: 100 } }
         Behavior on border.color { ColorAnimation { duration: 100 } }
     }
