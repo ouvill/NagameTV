@@ -459,9 +459,25 @@ async fn unauthenticated_grpc_web_unary_and_server_streaming_work_over_http1() -
 }
 
 #[test]
-fn recording_transport_variants_roundtrip_without_exposing_a_path() {
+fn live_and_recording_transport_variants_roundtrip_without_exposing_a_path() {
     use proto::player_state::Playback as Wire;
     for (phase, expected) in [
+        (
+            Playback::Paused(42),
+            Wire::Paused(proto::ActivePlayback { channel_id: 42 }),
+        ),
+        (
+            Playback::Seeking(42),
+            Wire::Seeking(proto::ActivePlayback { channel_id: 42 }),
+        ),
+        (
+            Playback::SeekingPaused(42),
+            Wire::SeekingPaused(proto::ActivePlayback { channel_id: 42 }),
+        ),
+        (
+            Playback::Ended(42),
+            Wire::Ended(proto::ActivePlayback { channel_id: 42 }),
+        ),
         (
             Playback::FilePaused("sample.ts".into()),
             Wire::FilePaused(proto::FilePlayback {

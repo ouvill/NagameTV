@@ -18,3 +18,6 @@ install(FILES assets/fonts/LICENSE-Rounded-Mplus-1m-for-ARIB.txt
     DESTINATION share/licenses/mirakurun-viewer)
 install(FILES third_party/libaribcaption/LICENSE
     DESTINATION share/licenses/mirakurun-viewer RENAME libaribcaption.txt)
+
+install(FILES third_party/tsreadex/License.txt
+    DESTINATION share/licenses/mirakurun-viewer RENAME tsreadex.txt)

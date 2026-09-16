@@ -108,31 +108,6 @@ impl SubtitleClock {
             state.programs.push(observation);
         }
     }
-    pub fn program(&self, position: Option<gst::ClockTime>) -> Result<(String, f64), Error> {
-        let mut state = self.state()?;
-        let State {
-            timeline, programs, ..
-        } = &mut *state;
-        let presentation = programs.poll(position.map(|time| time.nseconds()), |pcr| {
-            timeline.map_ticks(pcr)
-        });
-        let data = presentation
-            .program
-            .map(|program| {
-                let mut value = serde_json::to_value(&program).unwrap_or(serde_json::Value::Null);
-                value["station"] = presentation.station.into();
-                value["provider"] = presentation.provider.into();
-                if !program.extended.is_empty() {
-                    value["description"] =
-                        format!("{}\n\n{}", program.description, program.extended)
-                            .trim()
-                            .into();
-                }
-                value
-            })
-            .unwrap_or(serde_json::Value::Null);
-        Ok((data.to_string(), presentation.progress))
-    }
     pub fn clear_captions(&self) {
         if let Ok(mut state) = self.state() {
             state.timeline.clear_captions();

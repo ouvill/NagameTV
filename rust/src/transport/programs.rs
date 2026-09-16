@@ -37,7 +37,7 @@ pub(crate) struct Information {
     pub next: Option<Program>,
     pub time: Option<(u64, i64)>, // PCR ticks, UTC epoch milliseconds (wire time is JST).
 }
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) struct Observation {
     pub pcr: u64,
     pub information: Information,

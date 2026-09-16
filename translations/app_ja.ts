@@ -650,6 +650,26 @@
   <context>
     <name>Viewer</name>
     <message>
+      <source>Return to live</source>
+      <translation>ライブに戻る</translation>
+    </message>
+    <message>
+      <source>Live rewind storage (next playback)</source>
+      <translation>振り返りの保存先（次回再生から）</translation>
+    </message>
+    <message>
+      <source>Disabled</source>
+      <translation>無効</translation>
+    </message>
+    <message>
+      <source>Memory</source>
+      <translation>メモリー</translation>
+    </message>
+    <message>
+      <source>Temporary files</source>
+      <translation>一時ファイル</translation>
+    </message>
+    <message>
       <source>NX-Jikkyo program</source>
       <translation>NX-Jikkyo側の番組</translation>
     </message>
@@ -929,9 +949,53 @@
       <source>Welfare</source>
       <translation>福祉</translation>
     </message>
+    <message>
+      <source>Timeshift</source>
+      <translation>タイムシフト</translation>
+    </message>
+    <message>
+      <source>Timeshift settings…</source>
+      <translation>タイムシフト設定…</translation>
+    </message>
+    <message>
+      <source>Enable timeshift</source>
+      <translation>タイムシフトを有効にする</translation>
+    </message>
+    <message>
+      <source>Pause and rewind live TV.</source>
+      <translation>ライブ放送を一時停止・巻き戻しできます。</translation>
+    </message>
+    <message>
+      <source>Storage</source>
+      <translation>保存先</translation>
+    </message>
+    <message>
+      <source>Maximum TS memory (MiB)</source>
+      <translation>TS保持用メモリーの上限（MiB）</translation>
+    </message>
+    <message>
+      <source>Maximum temporary files (MiB)</source>
+      <translation>一時ファイルの容量上限（MiB）</translation>
+    </message>
+    <message>
+      <source>Maximum retention (minutes)</source>
+      <translation>保持時間の上限（分）</translation>
+    </message>
+    <message>
+      <source>Old data is discarded at either limit. If your paused position expires, playback resumes from the retained range. Memory limits cover retained TS data; decoding uses additional memory.</source>
+      <translation>容量・時間のどちらかが上限に達すると古いデータを破棄します。一時停止位置が失われた場合は、残っている範囲から再開します。上限はTS保持用で、映像のデコードなどには別途メモリーを使用します。</translation>
+    </message>
+    <message>
+      <source>Applying changes returns live playback to the live edge and clears its previous history.</source>
+      <translation>設定を適用するとライブの最新位置へ戻り、それまでの保持データを破棄します。</translation>
+    </message>
 </context>
   <context>
     <name>Settings</name>
+    <message>
+      <source>Apply</source>
+      <translation>適用</translation>
+    </message>
     <message>
       <source>Choose screenshot folder</source>
       <translation>スクリーンショットの保存先を選択</translation>

@@ -50,6 +50,8 @@ pub struct Preferences {
     pub server: String,
     pub service_id: String,
     pub autoplay: bool,
+    pub timeshift: crate::playback::input::Retention,
+    pub timeshift_limits: crate::playback::input::Limits,
     pub screenshot_directory: ScreenshotDirectory,
     pub volume: Volume,
     // Keep the existing on-disk key, now solely a viewer's display preference.
@@ -75,6 +77,8 @@ impl Default for Preferences {
             server: String::new(),
             service_id: String::new(),
             autoplay: false,
+            timeshift: Default::default(),
+            timeshift_limits: Default::default(),
             screenshot_directory: ScreenshotDirectory::default(),
             volume: Volume::default(),
             show_subtitles: false,
@@ -93,6 +97,9 @@ impl Default for Preferences {
     }
 }
 impl Preferences {
+    pub fn timeshift_policy(&self) -> crate::playback::input::Policy {
+        crate::playback::input::Policy::new(self.timeshift, self.timeshift_limits)
+    }
     pub fn selected_index(&self, ids: impl Iterator<Item = u64>) -> Option<usize> {
         let requested = self.service_id.parse::<u64>().ok();
         let mut first = None;

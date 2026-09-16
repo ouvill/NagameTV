@@ -92,6 +92,10 @@ message PlayerState {
     FilePlayback file_seeking = 17;
     FilePlayback file_seeking_paused = 18;
     FilePlayback file_ended = 19;
+    ActivePlayback paused = 20;
+    ActivePlayback seeking = 21;
+    ActivePlayback seeking_paused = 22;
+    ActivePlayback ended = 23;
   }
   // Selected volume, even while muted, in the inclusive range 0.0 to 1.0.
   double volume_fraction = 7;

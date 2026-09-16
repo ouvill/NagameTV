@@ -7,6 +7,7 @@ mod audio_sink;
 pub mod audio_streams;
 pub mod deinterlace;
 pub mod failure;
+pub mod input;
 pub mod recording;
 pub mod stats;
 pub mod timeline;
@@ -66,6 +67,8 @@ pub enum Error {
     EndOfStream,
     #[error("{0}")]
     Recording(#[from] recording::Error),
+    #[error("{0}")]
+    Input(#[from] input::Error),
     #[error("{0}")]
     Transport(#[from] timeline::Error),
     #[error("{source} ({debug:?})")]

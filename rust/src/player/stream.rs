@@ -36,6 +36,13 @@ impl ffi::Player {
         let old_program = self.current_program_data().clone();
         let old_progress = *self.program_progress();
         let old_subtitle = self.subtitle_data().clone();
+        let before_live = (
+            self.timeshift(),
+            self.window_start_ms(),
+            self.live_delay_ms(),
+            self.window_end_ms(),
+            self.duration_estimated(),
+        );
         let before = (
             self.connecting(),
             self.playing(),
@@ -52,7 +59,7 @@ impl ffi::Player {
         {
             let mut this = self.as_mut().rust_mut();
             this.stream_state = change(std::mem::take(&mut this.stream_state));
-            if matches!(this.stream_state, State::Recording(_, _)) {
+            if this.stream_state.active() {
                 if let Some((phase, snapshot)) = this.media.timeline() {
                     this.stream_state = std::mem::take(&mut this.stream_state).transport(phase);
                     this.timeline = snapshot;
@@ -70,6 +77,21 @@ impl ffi::Player {
                 this.subtitle_data = QString::default();
                 this.subtitle_cells = 0;
             }
+        }
+        if before_live.0 != self.timeshift() {
+            self.as_mut().timeshift_changed();
+        }
+        if before_live.1 != self.window_start_ms() {
+            self.as_mut().window_start_ms_changed();
+        }
+        if before_live.2 != self.live_delay_ms() {
+            self.as_mut().live_delay_ms_changed();
+        }
+        if before_live.3 != self.window_end_ms() {
+            self.as_mut().window_end_ms_changed();
+        }
+        if before_live.4 != self.duration_estimated() {
+            self.as_mut().duration_estimated_changed();
         }
         // Commit input and activity together before any Qt observer reads them.
         if old_program != *self.current_program_data() {
@@ -143,7 +165,7 @@ impl ffi::Player {
             return;
         }
         if self.paused() {
-            self.resume_recording();
+            self.resume_transport();
             return;
         }
         if self.ended() {
@@ -164,7 +186,10 @@ impl ffi::Player {
         if self.rust().stream_state.requested(entry.id) {
             return;
         }
-        let attempt = Attempt::new(entry);
+        let attempt = Attempt::new(
+            entry,
+            self.rust().preferences.preferences().timeshift_policy(),
+        );
         self.start_stream(attempt);
     }
     pub(super) fn start_stream(mut self: Pin<&mut Self>, attempt: Attempt) -> bool {
@@ -184,9 +209,14 @@ impl ffi::Player {
         let result = {
             let mut this = self.as_mut().rust_mut();
             this.media.stop().map(|stopped| match &attempt {
-                Attempt::Live(live) => {
-                    stopped.start(&server, live.service(), live.broadcast(), subtitles_enabled)
-                }
+                Attempt::Live(live) => stopped.start(
+                    &server,
+                    live.service(),
+                    live.broadcast(),
+                    subtitles_enabled,
+                    programs_enabled,
+                    live.retention(),
+                ),
                 Attempt::File(file) => {
                     stopped.start_file(file, subtitles_enabled, programs_enabled)
                 }
@@ -269,6 +299,9 @@ impl ffi::Player {
         self.as_mut().poll_recording();
         self.as_mut().poll_features();
         let result = self.as_mut().rust_mut().media.poll();
+        if let Some(notice) = self.as_mut().rust_mut().media.take_notice() {
+            self.as_mut().set_transport_error(QString::from(notice));
+        }
         self.poll_audio_choice();
         match result {
             Ok(playback::Event::Playing) => {

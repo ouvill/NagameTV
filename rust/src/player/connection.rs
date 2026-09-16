@@ -133,7 +133,10 @@ impl ffi::Player {
         self.as_mut().set_selected(index);
         self.record_diagnostic(viewer_diagnostics::recorder::Event::ChannelSelected);
         self.as_mut().save_settings();
-        let attempt = super::stream_state::Attempt::new(&self.rust().entries[index as usize]);
+        let attempt = super::stream_state::Attempt::new(
+            &self.rust().entries[index as usize],
+            self.rust().preferences.preferences().timeshift_policy(),
+        );
         self.as_mut().clear_playback_failure();
         self.start_stream(attempt);
     }

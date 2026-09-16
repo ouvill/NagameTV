@@ -13,10 +13,11 @@ Item {
             id: backend
             property bool playing: false
             property bool recording: false
+            property bool timeshift: false
             property bool media_active: playing || paused
             property bool paused: false
             property bool connecting: false
-            property bool seekable: recording && media_active
+            property bool seekable: (recording || timeshift) && media_active
             property int selected: 0
             property bool audio_muted: false
             property real volume_level: 0.5
@@ -66,7 +67,7 @@ Item {
                 failOnWarning(/.*/);
                 backend.playing = false;
                 backend.paused = false;
-                backend.recording = false;
+                backend.recording = false; backend.timeshift = false;
                 backend.comments_enabled = true;
                 backend.danmaku_enabled = false;
                 backend.saved = 0;
@@ -78,6 +79,17 @@ Item {
                 controls.canCapture = true;
                 navigation.guideEnabled = true;
                 modes.clear(); capture.clear(); comments.clear();
+            }
+            function test_live_timeshift_has_pause_and_skip_controls() {
+                backend.timeshift = true; backend.playing = true;
+                const play = findChild(controls, "playStopButton");
+                verify(String(play.iconSource).endsWith("pause.svg"));
+                verify(findChild(controls, "skipBackButton").visible);
+                verify(findChild(controls, "skipForwardButton").visible);
+                mouseClick(play);
+                verify(backend.paused); verify(!backend.playing);
+                mouseClick(play);
+                verify(backend.playing); verify(!backend.paused);
             }
             function test_actions_follow_backend_and_recording_disables_live_comments() {
                 const play = findChild(controls, "playStopButton");

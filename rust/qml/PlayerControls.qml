@@ -14,7 +14,8 @@ Item {
     readonly property bool volumePressed: volumeSlider.pressed
     readonly property Item settingsButton: playbackSettingsButton
     // Keep all controls reachable when the sidebar narrows the video surface.
-    readonly property bool compact: width < (backend.recording ? 1000 : 780)
+    readonly property bool transportControls: backend.recording || backend.timeshift === true
+    readonly property bool compact: width < (transportControls ? 1000 : 780)
     readonly property int buttonSize: compact ? 36 : 42
     implicitHeight: compact ? 96 : 54
     signal audioRequested
@@ -77,7 +78,7 @@ Item {
         }
         Action {
             objectName: "skipBackButton"
-            visible: root.backend.recording
+            visible: root.transportControls
             enabled: root.backend.seekable
             iconSource: root.iconDirectory + "rotate-ccw.svg"
             iconLabel: String(recordingSeekSteps.backwardSeconds)
@@ -86,14 +87,14 @@ Item {
         }
         Action {
             objectName: "playStopButton"
-            iconSource: root.iconDirectory + (root.backend.playing ? (root.backend.recording ? "pause.svg" : "square.svg") : "play-outline.svg")
-            tip: root.backend.playing ? (root.backend.recording ? qsTranslate("Viewer", "Pause") : qsTranslate("Main", "Stop")) : qsTranslate("Viewer", "Play")
+            iconSource: root.iconDirectory + (root.backend.playing ? (root.transportControls ? "pause.svg" : "square.svg") : "play-outline.svg")
+            tip: root.backend.playing ? (root.transportControls ? qsTranslate("Viewer", "Pause") : qsTranslate("Main", "Stop")) : qsTranslate("Viewer", "Play")
             enabled: root.backend.playing || root.backend.recording || root.backend.selected >= 0
-            onClicked: root.backend.playing ? (root.backend.recording ? root.backend.pause() : root.backend.stop()) : root.backend.play()
+            onClicked: root.backend.playing ? (root.transportControls ? root.backend.pause() : root.backend.stop()) : root.backend.play()
         }
         Action {
             objectName: "skipForwardButton"
-            visible: root.backend.recording
+            visible: root.transportControls
             enabled: root.backend.seekable
             iconSource: root.iconDirectory + "rotate-cw.svg"
             iconLabel: String(recordingSeekSteps.forwardSeconds)

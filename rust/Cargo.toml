@@ -13,6 +13,7 @@ video_item_tests = []
 native_tests = ["qml_tests", "dep:tonic"]
 
 [dependencies]
+tsreadex = { path = "crates/tsreadex" }
 viewer-remote = { path = "crates/viewer-remote" }
 tonic = { version = "0.14", optional = true }
 viewer-epg-events = { path = "crates/viewer-epg-events", features = ["network"] }
@@ -25,6 +26,7 @@ cxx = "1.0"
 cxx-qt = "0.10"
 cxx-qt-lib = { version = "0.10", features = ["qt_gui", "qt_qml", "qt_quickcontrols"] }
 gstreamer = { version = "0.25", features = ["v1_24"] }
+gstreamer-app = { version = "0.25", features = ["v1_24"] }
 gstreamer-base = { version = "0.25", features = ["v1_24"] }
 gstreamer-mpegts = { version = "0.25.2", features = ["v1_24"] }
 reqwest = { version = "0.13", default-features = false, features = ["rustls"] }

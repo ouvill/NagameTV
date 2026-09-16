@@ -11,17 +11,19 @@ pub struct Session {
 
 enum Input {
     Idle,
-    Live,
-    Recording(super::timeline::Controller),
+    Active {
+        source: super::input::Input,
+        controller: Box<super::timeline::Controller>,
+    },
 }
 
-/// Exclusive access to a recording's own pipeline, never a live source.
-pub struct RecordingControl<'a> {
+/// Exclusive access to this session's playback cursor; reception has a separate owner.
+pub struct TransportControl<'a> {
     playback: &'a Playback,
     controller: &'a mut super::timeline::Controller,
 }
 
-impl RecordingControl<'_> {
+impl TransportControl<'_> {
     pub fn seek(self, milliseconds: f64) -> std::result::Result<(), super::timeline::Error> {
         self.controller
             .prepare(self.playback.element())?
@@ -65,11 +67,11 @@ impl Session {
         self.subtitles.as_ref()
     }
 
-    pub fn recording_control(
+    pub fn transport_control(
         &mut self,
-    ) -> std::result::Result<RecordingControl<'_>, super::timeline::Error> {
+    ) -> std::result::Result<TransportControl<'_>, super::timeline::Error> {
         match (&self.playback, &mut self.input) {
-            (Some(playback), Input::Recording(controller)) => Ok(RecordingControl {
+            (Some(playback), Input::Active { controller, .. }) => Ok(TransportControl {
                 playback,
                 controller,
             }),
@@ -77,10 +79,22 @@ impl Session {
         }
     }
 
+    pub fn take_notice(&mut self) -> Option<&'static str> {
+        match &mut self.input {
+            Input::Active { controller, .. } => controller.take_notice(),
+            Input::Idle => None,
+        }
+    }
+    pub fn program(&self, position: Option<gstreamer::ClockTime>) -> Option<(String, f64)> {
+        match &self.input {
+            Input::Active { source, .. } => source.program(position?.nseconds()),
+            Input::Idle => None,
+        }
+    }
     pub fn timeline(&self) -> Option<(super::timeline::Phase, super::timeline::Snapshot)> {
         match &self.input {
-            Input::Recording(controller) => Some((controller.phase(), controller.snapshot())),
-            Input::Idle | Input::Live => None,
+            Input::Active { controller, .. } => Some((controller.phase(), controller.snapshot())),
+            Input::Idle => None,
         }
     }
 
@@ -88,14 +102,24 @@ impl Session {
         let Some(playback) = &self.playback else {
             return Ok(super::Event::Idle);
         };
+        if let Input::Active { source, .. } = &self.input {
+            source.check()?;
+        }
         let mut event = playback.poll()?;
-        if let Input::Recording(controller) = &mut self.input {
+        if let Input::Active { controller, source } = &mut self.input {
+            controller.set_estimated(source.duration_estimated());
             if let super::Event::Ended(sequence) = event
                 && !controller.ended(sequence)?
             {
                 event = super::Event::Idle;
             }
             controller.poll(playback.element())?;
+            if let Input::Active { source, controller } = &mut self.input
+                && source.is_live()
+                && let Some((start, end)) = source.window()
+            {
+                controller.retained(playback.element(), start, end, source.take_expired())?;
+            }
         }
         Ok(event)
     }
@@ -113,8 +137,16 @@ impl Session {
         self.stop_with(Playback::stop)
     }
     fn stop_with(&mut self, stop: impl FnOnce(&Playback) -> Result<()>) -> Result<Stopped<'_>> {
-        if let Some(playback) = &self.playback {
-            stop(playback)?;
+        if let Input::Active { source, .. } = &self.input {
+            source.suspend(true);
+        }
+        if let Some(playback) = &self.playback
+            && let Err(error) = stop(playback)
+        {
+            if let Input::Active { source, .. } = &self.input {
+                source.suspend(false);
+            }
+            return Err(error);
         }
         // A failed native transition cannot reach either resource release or
         // construction of Stopped. The caller retains this owner for retry.
@@ -123,6 +155,9 @@ impl Session {
         Ok(Stopped(self))
     }
     pub fn shutdown(&mut self) -> Result<()> {
+        if let Input::Active { source, .. } = &self.input {
+            source.suspend(true);
+        }
         if let Some(playback) = &mut self.playback {
             playback.shutdown()?;
         }
@@ -131,6 +166,9 @@ impl Session {
         Ok(())
     }
     pub fn shutdown_before_drop(&mut self) {
+        if let Input::Active { source, .. } = &self.input {
+            source.suspend(true);
+        }
         if let Some(playback) = &mut self.playback {
             playback.shutdown_before_drop();
         }
@@ -146,14 +184,28 @@ impl Stopped<'_> {
         service: u64,
         broadcast: Option<BroadcastService>,
         subtitles_enabled: bool,
+        programs_enabled: bool,
+        retention: super::input::Policy,
     ) -> Result<SubtitleStart> {
         let uri = format!("{server}/api/services/{service}/stream");
+        let playback = self.0.playback.as_ref().ok_or(Error::Unavailable)?;
+        let service = broadcast.map_or(0, |service| service.service_id);
+        let input = Input::Active {
+            source: super::input::Input::live(
+                playback.element(),
+                &uri,
+                service,
+                retention,
+                programs_enabled,
+            )?,
+            controller: Box::new(super::timeline::Controller::new(&playback.sink)?),
+        };
         self.start_uri(
-            &uri,
-            broadcast.map(|s| s.service_id),
+            "appsrc://",
+            (service != 0).then_some(service),
             |element| subtitles::Session::start(element, broadcast),
             subtitles_enabled,
-            Input::Live,
+            input,
         )
     }
 
@@ -164,19 +216,27 @@ impl Stopped<'_> {
         programs_enabled: bool,
     ) -> Result<SubtitleStart> {
         let playback = self.0.playback.as_ref().ok_or(Error::Unavailable)?;
-        let input = Input::Recording(super::timeline::Controller::new(&playback.sink)?);
+        let input = Input::Active {
+            source: super::input::Input::file(
+                playback.element(),
+                file.path(),
+                file.service(),
+                programs_enabled,
+            )?,
+            controller: Box::new(super::timeline::Controller::new(&playback.sink)?),
+        };
         self.start_uri(
-            file.uri(),
+            "appsrc://",
             Some(file.service()),
             |element| {
                 subtitles::Session::start_recording(
                     element,
                     file.service(),
                     subtitles_enabled,
-                    programs_enabled,
+                    false,
                 )
             },
-            subtitles_enabled || programs_enabled,
+            subtitles_enabled,
             input,
         )
     }
@@ -243,7 +303,7 @@ pub(super) fn check_stop_ownership() {
     let mut session = Session {
         playback: Some(playback),
         subtitles: Some(subtitles),
-        input: Input::Live,
+        input: Input::Idle,
     };
     let before = session.subtitles().expect("subtitle generation").counters();
     assert!(before.0 > 0);

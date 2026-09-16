@@ -2,6 +2,7 @@
 use crate::{
     channels::{BroadcastService, Channel},
     playback::{
+        input::{Policy, Retention},
         recording::Recording,
         timeline::{Phase, Resume},
     },
@@ -20,6 +21,7 @@ pub(super) struct LiveAttempt {
     name: String,
     broadcast: Option<BroadcastService>,
     retry: Retry,
+    retention: Policy,
 }
 #[derive(Debug, PartialEq, Eq)]
 enum Retry {
@@ -31,6 +33,9 @@ impl LiveAttempt {
     pub(super) fn service(&self) -> u64 {
         self.service
     }
+    pub(super) fn retention(&self) -> Policy {
+        self.retention
+    }
     pub(super) fn broadcast(&self) -> Option<BroadcastService> {
         self.broadcast
     }
@@ -41,6 +46,7 @@ impl LiveAttempt {
                 name: self.name.clone(),
                 broadcast: self.broadcast,
                 retry: Retry::Used,
+                retention: self.retention,
             }),
             Retry::Used => None,
         }
@@ -55,12 +61,13 @@ pub(super) enum Selection {
 }
 
 impl Attempt {
-    pub(super) fn new(channel: &Channel) -> Self {
+    pub(super) fn new(channel: &Channel, retention: Policy) -> Self {
         Self::Live(LiveAttempt {
             service: channel.id,
             name: channel.name.clone(),
             broadcast: channel.broadcast,
             retry: Retry::Available,
+            retention,
         })
     }
     pub(super) fn service(&self) -> Option<u64> {
@@ -87,7 +94,7 @@ impl Attempt {
 pub(super) enum State {
     Stopped(Selection),
     Connecting(Attempt),
-    Playing(LiveAttempt),
+    Playing(LiveAttempt, Phase),
     Recording(Recording, Phase),
     // Failed cleanup retains input identity and native subscriptions for retry.
     StopFailed(Attempt),
@@ -98,34 +105,62 @@ impl Default for State {
     }
 }
 impl State {
+    pub(super) fn reconfigured_live(&self, retention: Policy) -> Option<Attempt> {
+        let live = match self {
+            Self::Playing(live, _)
+            | Self::Connecting(Attempt::Live(live))
+            | Self::StopFailed(Attempt::Live(live)) => live,
+            Self::Stopped(_)
+            | Self::Recording(_, _)
+            | Self::Connecting(Attempt::File(_))
+            | Self::StopFailed(Attempt::File(_)) => return None,
+        };
+        Some(Attempt::Live(LiveAttempt {
+            service: live.service,
+            name: live.name.clone(),
+            broadcast: live.broadcast,
+            retry: Retry::Available,
+            retention,
+        }))
+    }
+
     pub(super) fn connecting(&self) -> bool {
         matches!(self, Self::Connecting(_))
     }
     pub(super) fn playing(&self) -> bool {
         matches!(
             self,
-            Self::Playing(_) | Self::Recording(_, Phase::Playing | Phase::Seeking(Resume::Playing))
+            Self::Playing(_, Phase::Playing | Phase::Seeking(Resume::Playing))
+                | Self::Recording(_, Phase::Playing | Phase::Seeking(Resume::Playing))
         )
     }
     pub(super) fn paused(&self) -> bool {
         matches!(
             self,
-            Self::Recording(_, Phase::Paused | Phase::Seeking(Resume::Paused))
+            Self::Playing(_, Phase::Paused | Phase::Seeking(Resume::Paused))
+                | Self::Recording(_, Phase::Paused | Phase::Seeking(Resume::Paused))
         )
     }
     pub(super) fn seeking(&self) -> bool {
-        matches!(self, Self::Recording(_, Phase::Seeking(_)))
+        matches!(
+            self,
+            Self::Playing(_, Phase::Seeking(_)) | Self::Recording(_, Phase::Seeking(_))
+        )
     }
     pub(super) fn ended(&self) -> bool {
         matches!(self, Self::Recording(_, Phase::Ended))
     }
+    pub(super) fn timeshift(&self) -> bool {
+        matches!(self, Self::Playing(live, _) if live.retention.storage() != Retention::Off)
+    }
     pub(super) fn active(&self) -> bool {
-        matches!(self, Self::Playing(_) | Self::Recording(_, _))
+        matches!(self, Self::Playing(_, _) | Self::Recording(_, _))
     }
     pub(super) fn transport(self, phase: Phase) -> Self {
         match self {
             Self::Recording(file, _) => Self::Recording(file, phase),
-            Self::Stopped(_) | Self::Connecting(_) | Self::Playing(_) | Self::StopFailed(_) => self,
+            Self::Playing(live, _) => Self::Playing(live, phase),
+            Self::Stopped(_) | Self::Connecting(_) | Self::StopFailed(_) => self,
         }
     }
     pub(super) fn recording(&self) -> Option<&Recording> {
@@ -136,38 +171,39 @@ impl State {
             | Self::StopFailed(Attempt::File(file)) => Some(file),
             Self::Stopped(Selection::Live)
             | Self::Connecting(Attempt::Live(_))
-            | Self::Playing(_)
+            | Self::Playing(_, _)
             | Self::StopFailed(Attempt::Live(_)) => None,
         }
     }
     pub(super) fn active_service(&self) -> Option<u64> {
         match self {
             Self::Stopped(_) | Self::Recording(_, _) => None,
-            Self::Playing(live) => Some(live.service()),
+            Self::Playing(live, _) => Some(live.service()),
             Self::Connecting(attempt) | Self::StopFailed(attempt) => attempt.service(),
         }
     }
     pub(super) fn requested(&self, service: u64) -> bool {
         match self {
             Self::Connecting(attempt) => attempt.service() == Some(service),
-            Self::Playing(live) => live.service() == service,
+            Self::Playing(live, _) => live.service() == service,
             Self::Stopped(_) | Self::StopFailed(_) | Self::Recording(_, _) => false,
         }
     }
     /// Consume the attempt; late PLAYING messages cannot resurrect stopped input.
     pub(super) fn started(self) -> Self {
         match self {
-            Self::Connecting(Attempt::Live(live)) => Self::Playing(live),
+            Self::Connecting(Attempt::Live(live)) => Self::Playing(live, Phase::Playing),
             Self::Connecting(Attempt::File(file)) => Self::Recording(file, Phase::Playing),
-            Self::Stopped(_) | Self::Playing(_) | Self::StopFailed(_) | Self::Recording(_, _) => {
-                self
-            }
+            Self::Stopped(_)
+            | Self::Playing(_, _)
+            | Self::StopFailed(_)
+            | Self::Recording(_, _) => self,
         }
     }
     pub(super) fn stopped(self) -> Self {
         match self {
             Self::Stopped(_) => self,
-            Self::Playing(live) => Attempt::Live(live).stopped(),
+            Self::Playing(live, _) => Attempt::Live(live).stopped(),
             Self::Recording(file, _) => Attempt::File(file).stopped(),
             Self::Connecting(attempt) | Self::StopFailed(attempt) => attempt.stopped(),
         }
@@ -175,7 +211,7 @@ impl State {
     pub(super) fn stop_failed(self) -> Self {
         match self {
             Self::Stopped(_) => self,
-            Self::Playing(live) => Self::StopFailed(Attempt::Live(live)),
+            Self::Playing(live, _) => Self::StopFailed(Attempt::Live(live)),
             Self::Recording(file, _) => Self::StopFailed(Attempt::File(file)),
             Self::Connecting(attempt) | Self::StopFailed(attempt) => Self::StopFailed(attempt),
         }
@@ -183,7 +219,7 @@ impl State {
     /// Taking a retry spends the original allowance, even before native cleanup.
     pub(super) fn take_retry(&mut self) -> Option<Attempt> {
         match self {
-            Self::Connecting(Attempt::Live(live)) | Self::Playing(live) => {
+            Self::Connecting(Attempt::Live(live)) | Self::Playing(live, _) => {
                 live.take_retry().map(Attempt::Live)
             }
             Self::Connecting(Attempt::File(_))
@@ -206,6 +242,7 @@ mod tests {
                 service_id: 2,
             }),
             retry: Retry::Available,
+            retention: Retention::Memory.into(),
         })
     }
     #[test]

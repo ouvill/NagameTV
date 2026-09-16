@@ -1,4 +1,6 @@
 //! Transport syntax and program discovery shared by playback and subtitles.
+pub(crate) mod framing;
+pub(crate) mod pes;
 pub(crate) mod programs;
 mod psi;
 pub(crate) mod wire;
@@ -10,6 +12,12 @@ use wire::{Pid, PsiSection, SYNC_BYTE, TS_PACKET_SIZE, TransportPacket};
 /// Choose the lowest service in the first complete, current, CRC-checked PAT.
 /// Discovery neither constructs a caption decoder nor depends on a GUI/runtime.
 pub(crate) fn recording_service(data: &[u8]) -> Option<u16> {
+    let layout = framing::Framing::detect(data)?;
+    let aligned: Vec<u8> = layout
+        .packets(data.get(layout.offset() as usize..)?)
+        .flat_map(|(_, packet)| packet.iter().copied())
+        .collect();
+    let data = aligned.as_slice();
     let mut pat = Pat::default();
     let mut sections = Sections::default();
     let mut previous: Option<(u8, [u8; TS_PACKET_SIZE])> = None;

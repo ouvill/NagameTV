@@ -139,6 +139,13 @@ pub mod ffi {
         #[qproperty(bool, seekable, READ = seekable, NOTIFY)]
         #[qproperty(f64, position_ms, READ = position_ms, NOTIFY)]
         #[qproperty(f64, duration_ms, READ = duration_ms, NOTIFY)]
+        #[qproperty(bool, duration_estimated, READ = duration_estimated, NOTIFY)]
+        #[qproperty(bool, timeshift, READ = timeshift, NOTIFY)]
+        #[qproperty(f64, window_start_ms, READ = window_start_ms, NOTIFY)]
+        #[qproperty(f64, window_end_ms, READ = window_end_ms, NOTIFY)]
+        #[qproperty(f64, live_delay_ms, READ = live_delay_ms, NOTIFY)]
+        #[qproperty(QString, timeshift_storage, READ = timeshift_storage, NOTIFY)]
+        #[qproperty(QString, timeshift_limits, READ = timeshift_limits, NOTIFY)]
         #[qproperty(QString, transport_error, READ, NOTIFY)]
         #[qproperty(bool, recording, READ = recording, NOTIFY)]
         #[qproperty(QString, recording_name, READ = recording_name, NOTIFY)]
@@ -217,6 +224,25 @@ pub mod ffi {
         fn seekable(self: &Player) -> bool;
         fn position_ms(self: &Player) -> f64;
         fn duration_ms(self: &Player) -> f64;
+        fn duration_estimated(self: &Player) -> bool;
+        fn timeshift(self: &Player) -> bool;
+        fn window_start_ms(self: &Player) -> f64;
+        fn window_end_ms(self: &Player) -> f64;
+        fn live_delay_ms(self: &Player) -> f64;
+        fn timeshift_storage(self: &Player) -> QString;
+        fn timeshift_limits(self: &Player) -> QString;
+        #[qinvokable]
+        fn return_to_live(self: Pin<&mut Player>) -> bool;
+        #[qinvokable]
+        fn configure_timeshift(self: Pin<&mut Player>, storage: QString) -> bool;
+        #[qinvokable]
+        fn configure_timeshift_options(
+            self: Pin<&mut Player>,
+            storage: QString,
+            memory_mib: i32,
+            filesystem_mib: i32,
+            minutes: i32,
+        ) -> bool;
         fn recording(self: &Player) -> bool;
         fn recording_name(self: &Player) -> QString;
         fn guide_visible(self: &Player) -> bool;

@@ -5,6 +5,8 @@
 全面置き換えは未完了。方針は [main-replacement.md](main-replacement.md)、
 機能ごとの検証状況は [feature-migration.md](feature-migration.md) を参照。
 以下の所有関係と状態変更の説明は2026-09-15の整理を反映したもの。
+2026-09-17の[共通TS入力](ts-input-implementation.md)で、Sessionに元TSの受信・保持・
+索引・Readerとシーク制御を追加した。PESヘッダー解析も`transport`へ共通化した。
 
 ## 所有関係
 

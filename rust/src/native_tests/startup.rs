@@ -201,7 +201,9 @@ fn check_danmaku_layout(
 enum WindowCheck {
     Startup,
     PidChange,
+    Timeshift,
     RecordingAudit(std::path::PathBuf),
+    RecordingProbe(std::path::PathBuf),
 }
 
 fn window(
@@ -221,6 +223,12 @@ fn window(
     assert_eq!(ffi::root_count(&engine), 1);
     match check {
         WindowCheck::Startup => {}
+        WindowCheck::Timeshift => {
+            let result = super::timeshift::run(app, &mut engine);
+            assert!(evaluate(&mut engine, "root.close(); root.closing")?);
+            app.process_events();
+            return result;
+        }
         WindowCheck::PidChange => {
             // Targeted regression check, also included in the startup suite.
             let result = check_recording_recovery(app, &mut engine, "recording-pid-change.ts");
@@ -232,6 +240,11 @@ fn window(
             let result = super::recording_audit::run(app, &mut engine, &path);
             assert!(evaluate(&mut engine, "root.close(); root.closing")?);
             app.process_events();
+            return result;
+        }
+        WindowCheck::RecordingProbe(path) => {
+            let result = super::recording_audit::probe(app, &mut engine, &path);
+            evaluate(&mut engine, "player.stop(); root.close(); true")?;
             return result;
         }
     }
@@ -347,6 +360,7 @@ fn window(
         check_recording(app, &mut engine)?;
         check_recording_recovery(app, &mut engine, "recording-clock-reset.ts")?;
         check_recording_recovery(app, &mut engine, "recording-pid-change.ts")?;
+        super::timeshift::run(app, &mut engine)?;
     }
     assert!(evaluate(&mut engine, "root.close(); root.closing")?);
     app.process_events();
@@ -682,12 +696,19 @@ pub fn run_window() -> i32 {
     run_window_check(WindowCheck::Startup)
 }
 
+pub fn run_timeshift() -> i32 {
+    run_window_check(WindowCheck::Timeshift)
+}
+
 pub fn run_pid_change() -> i32 {
     run_window_check(WindowCheck::PidChange)
 }
 
 pub fn run_recording_audit(path: std::path::PathBuf) -> i32 {
     run_window_check(WindowCheck::RecordingAudit(path))
+}
+pub fn run_recording_probe(path: std::path::PathBuf) -> i32 {
+    run_window_check(WindowCheck::RecordingProbe(path))
 }
 
 fn run_window_check(check: WindowCheck) -> i32 {

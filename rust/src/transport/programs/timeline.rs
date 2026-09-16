@@ -17,6 +17,26 @@ pub(crate) struct Presentation {
     pub provider: String,
     pub progress: f64,
 }
+impl Presentation {
+    pub fn serialize(self) -> (String, f64) {
+        let data = self
+            .program
+            .map(|program| {
+                let mut value = serde_json::to_value(&program).unwrap_or(serde_json::Value::Null);
+                value["station"] = self.station.into();
+                value["provider"] = self.provider.into();
+                if !program.extended.is_empty() {
+                    value["description"] =
+                        format!("{}\n\n{}", program.description, program.extended)
+                            .trim()
+                            .into();
+                }
+                value
+            })
+            .unwrap_or(serde_json::Value::Null);
+        (data.to_string(), self.progress)
+    }
+}
 impl Timeline {
     pub fn push(&mut self, observation: Observation) {
         if self.pending.len() < MAX_PENDING_OBSERVATIONS {

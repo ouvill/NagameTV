@@ -13,6 +13,9 @@ Popup {
     required property bool shadowEnabled
     required property bool statsVisible
     signal danmakuRequested(bool enabled, real textSize, real textOpacity, real speed)
+    property string timeshiftStorage: "memory"
+    signal timeshiftRequested(string storage)
+    signal timeshiftSettingsRequested()
     signal statsRequested(bool visible)
     signal shadowRequested(bool enabled)
     function toggle() {
@@ -21,7 +24,7 @@ Popup {
     }
     parent: toggleButton
     width: 320
-    height: 380
+    height: 430
     x: (toggleButton.width - width) / 2
     y: -height - 28
     margins: 20
@@ -79,6 +82,11 @@ Popup {
                 checked: popup.shadowEnabled
                 onToggled: popup.shadowRequested(checked)
             }
+        }
+        Button {
+            Layout.fillWidth: true
+            text: qsTranslate("Viewer", "Timeshift settings…")
+            onClicked: { popup.close(); popup.timeshiftSettingsRequested(); }
         }
         RowLayout {
             Layout.fillWidth: true

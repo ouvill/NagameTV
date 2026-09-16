@@ -10,20 +10,28 @@ mod pointer;
 mod portal_dialogs;
 mod recording_audit;
 mod startup;
+mod timeshift;
 
 pub fn run() -> i32 {
     let mut arguments = std::env::args().skip(2);
     let suite = arguments.next();
-    if suite.as_deref() == Some("recording-audit") {
+    if matches!(
+        suite.as_deref(),
+        Some("recording-audit" | "recording-probe")
+    ) {
         let Some(path) = arguments.next() else {
-            eprintln!("recording-audit requires a six-second recovery fixture path");
+            eprintln!("recording-audit / recording-probe requires a TS path");
             return 2;
         };
         if arguments.next().is_some() {
             eprintln!("recording-audit accepts one fixture path");
             return 2;
         }
-        return startup::run_recording_audit(path.into());
+        return if suite.as_deref() == Some("recording-probe") {
+            startup::run_recording_probe(path.into())
+        } else {
+            startup::run_recording_audit(path.into())
+        };
     }
     if !matches!(suite.as_deref(), Some("subtitle-rendering" | "screenshots"))
         && arguments.next().is_some()
@@ -39,6 +47,7 @@ pub fn run() -> i32 {
         Some("connection") => crate::player::connection_checks::run(),
         Some("startup") => startup::run(),
         Some("startup-window") => startup::run_window(),
+        Some("timeshift") => startup::run_timeshift(),
         Some("recording-pid-change") => startup::run_pid_change(),
         #[cfg(target_os = "linux")]
         Some("portal-dialogs") => portal_dialogs::run(),

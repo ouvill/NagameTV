@@ -6,6 +6,9 @@ import QtQuick.Layouts
 ColumnLayout {
     id: root
     required property var backend
+    readonly property bool live: backend.timeshift === true
+    readonly property real seekEnd: Number.isFinite(backend.window_end_ms)
+        ? backend.window_end_ms : backend.duration_ms
     property bool closing: false
     readonly property bool pressed: slider.pressed
     readonly property bool hovered: slider.enabled && seekHover.hovered
@@ -26,10 +29,17 @@ ColumnLayout {
         Label {
             objectName: "recordingTime"
             text: root.timeLabel(slider.pressed ? slider.value : root.backend.position_ms)
-                + " / " + root.timeLabel(root.backend.duration_ms)
+                + (root.live ? "  (−" + root.timeLabel(root.backend.live_delay_ms) + ")" : " / " + (root.backend.duration_estimated === true ? "≈" : "") + root.timeLabel(root.backend.duration_ms))
             color: "#f4f5f3"
             font.pixelSize: 12
             font.family: "monospace"
+        }
+        Button {
+            objectName: "returnToLiveButton"
+            visible: root.live
+            text: qsTranslate("Viewer", "Return to live")
+            enabled: !root.closing && root.backend.seekable
+            onClicked: root.backend.return_to_live()
         }
         Label {
             Layout.fillWidth: true
@@ -47,10 +57,10 @@ ColumnLayout {
         id: slider
         objectName: "recordingSeekSlider"
         Layout.fillWidth: true
-        enabled: !root.closing && root.backend.seekable && root.backend.duration_ms > 0
+        enabled: !root.closing && root.backend.seekable && root.seekEnd > from
         Accessible.name: qsTranslate("Viewer", "Playback position")
-        from: 0
-        to: Math.max(1, root.backend.duration_ms)
+        from: Number.isFinite(root.backend.window_start_ms) ? root.backend.window_start_ms : 0
+        to: Math.max(1, root.seekEnd)
         stepSize: 1000
         property var pendingTarget: null
         onEnabledChanged: if (!enabled) pendingTarget = null

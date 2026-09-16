@@ -7,6 +7,10 @@ pub(crate) fn state(state: &model::State, revision: u64) -> proto::PlayerState {
         model::Playback::Stopped => Playback::Stopped(proto::StoppedPlayback {}),
         model::Playback::Connecting(id) => Playback::Connecting(active(*id)),
         model::Playback::Playing(id) => Playback::Playing(active(*id)),
+        model::Playback::Paused(id) => Playback::Paused(active(*id)),
+        model::Playback::Seeking(id) => Playback::Seeking(active(*id)),
+        model::Playback::SeekingPaused(id) => Playback::SeekingPaused(active(*id)),
+        model::Playback::Ended(id) => Playback::Ended(active(*id)),
         model::Playback::StopFailed(id) => Playback::StopFailed(active(*id)),
         model::Playback::FileConnecting(name) => {
             Playback::FileConnecting(proto::FilePlayback { name: name.clone() })

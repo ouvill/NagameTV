@@ -212,3 +212,7 @@ APIを含む比較元コミットができたら、
 [Connectのプロトコル選択](https://connectrpc.com/docs/web/choosing-a-protocol/)、
 [protoc-gen-doc](https://github.com/pseudomuto/protoc-gen-doc)、
 [Buf互換性検査](https://buf.build/docs/breaking/)。
+
+ライブ振り返り中は `paused` / `seeking` / `seeking_paused` を通知する。
+番組IDの供給元がサーバーの現在EPGであるため、振り返りを有効にしたセッションでは
+`current_program` を省略する。画面上の番組情報は元TSの再生位置から取得する。

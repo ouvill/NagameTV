@@ -36,7 +36,7 @@ cmake --build build
 ./build/mirakurun-viewer
 ```
 
-字幕デコーダーのlibaribcaptionはサブモジュールからビルドします。
+字幕デコーダーのlibaribcaptionとTS整形のtsreadexはサブモジュールからビルドします。
 映像表示にはOpenGL、音声再生には利用可能な音声出力が必要です。
 LinuxではX11とWaylandの両方の環境変数がある場合、Qtの表示先が未指定なら互換設定として`xcb`を選びます。
 明示した`QT_QPA_PLATFORM`は優先します。[表示環境の扱い](platform-startup.md)
@@ -97,6 +97,7 @@ RSSなどの資源使用量は診断JSONLに記録します。[メモリー分�
 ## 開発資料
 
 - [構成と資源の所有関係](architecture.md)
+- [共通TS入力・ライブ振り返り](ts-input-implementation.md)
 - [TS録画の再生](recording-playback.md)
 - [録画シーク・TS番組情報取得のロードマップ](recording-seek-roadmap.md)
 - [遠隔操作API・Protobufとドキュメント生成](remote-control.md)
@@ -106,3 +107,8 @@ RSSなどの資源使用量は診断JSONLに記録します。[メモリー分�
 - [検証の記録](verification.md)・[実装移行の経緯](feature-migration.md)
 
 開発資料には実装途中の検証記録も含まれます。現在の動作と過去の状態は、各資料の更新日・追記を確認してください。
+
+長い実録画の冒頭停止・遠方シークを製品画面で調べる場合は、
+`bash scripts/test-startup.sh recording-probe /path/to/recording.ts` を使います。
+表示・GPU・音声の検証後に実行し、通常の起動試験とは別に約28秒の再生と
+境界前後・長い録画の80%位置へのシークを確認します。全編の検査ではありません。

@@ -72,6 +72,7 @@
         { "type": "dir", "path": "../../rust/crates/viewer-epg-events", "dest": "rust/crates/viewer-epg-events", "skip": ["target"] },
         { "type": "dir", "path": "../../rust/crates/viewer-diagnostics", "dest": "rust/crates/viewer-diagnostics", "skip": ["target"] },
         { "type": "dir", "path": "../../rust/crates/viewer-comments", "dest": "rust/crates/viewer-comments", "skip": ["target"] },
+        { "type": "dir", "path": "../../rust/crates/tsreadex", "dest": "rust/crates/tsreadex", "skip": ["target"] },
         { "type": "dir", "path": "../../rust/crates/libaribcaption", "dest": "rust/crates/libaribcaption", "skip": ["target"] },
         { "type": "dir", "path": "../../rust/crates/libaribcaption-sys", "dest": "rust/crates/libaribcaption-sys", "skip": ["target"] },
         { "type": "dir", "path": "../../assets", "dest": "assets" },
@@ -83,6 +84,12 @@
           "url": "https://github.com/xqq/libaribcaption.git",
           "commit": "c64c23b8905ba514b87c9789269e9f66f949ffe0",
           "dest": "third_party/libaribcaption"
+        },
+        {
+          "type": "git",
+          "url": "https://github.com/xtne6f/tsreadex.git",
+          "commit": "a82528ccb698fcd07b4da1bb2243e63d685c34a7",
+          "dest": "third_party/tsreadex"
         },
         "cargo-sources.json"
       ]

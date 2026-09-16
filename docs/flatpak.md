@@ -53,7 +53,7 @@ flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/fl
 - Qtは`org.kde.Platform//6.10`を使用し、対応する`org.kde.Sdk`でビルドする。
 - ランタイムにない`qml6glsink`はGStreamer Good Plug-ins 1.26.11から追加ビルドする。
   そのほかの再生プラグインとコーデックはランタイムとその拡張を使用する。
-- libaribcaptionはリポジトリーのサブモジュールと同じ固定コミットから静的リンクする。
+- libaribcaptionとtsreadexはリポジトリーのサブモジュールと同じ固定コミットから静的リンクする。
 - Rust依存はCargo.lockのバージョンとSHA-256を使って事前取得し、コンパイル時の通信を無効にする。
   ローカルcrateとqt-build-utilsのパッチもソースとして含める。
 

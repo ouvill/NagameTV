@@ -1,3 +1,6 @@
 [submodule "third_party/libaribcaption"]
 	path = third_party/libaribcaption
 	url = https://github.com/xqq/libaribcaption.git
+[submodule "third_party/tsreadex"]
+	path = third_party/tsreadex
+	url = https://github.com/xtne6f/tsreadex.git

@@ -136,10 +136,6 @@ impl Session {
         self.ingest.check()?;
         self.clock.poll(position)
     }
-    pub fn program(&self, position: Option<gst::ClockTime>) -> Result<(String, f64), Error> {
-        self.ingest.check()?;
-        self.clock.program(position)
-    }
     pub fn pending_diagnostic(&self) -> Option<usize> {
         self.clock.pending_count()
     }

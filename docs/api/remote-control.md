@@ -184,6 +184,10 @@ A consistent projection of the player&#39;s authoritative state.
 | file_seeking | [FilePlayback](#viewer-v1-FilePlayback) |  |  |
 | file_seeking_paused | [FilePlayback](#viewer-v1-FilePlayback) |  |  |
 | file_ended | [FilePlayback](#viewer-v1-FilePlayback) |  |  |
+| paused | [ActivePlayback](#viewer-v1-ActivePlayback) |  |  |
+| seeking | [ActivePlayback](#viewer-v1-ActivePlayback) |  |  |
+| seeking_paused | [ActivePlayback](#viewer-v1-ActivePlayback) |  |  |
+| ended | [ActivePlayback](#viewer-v1-ActivePlayback) |  |  |
 | volume_fraction | [double](#double) |  | Selected volume, even while muted, in the inclusive range 0.0 to 1.0. |
 | muted | [bool](#bool) |  |  |
 | subtitles | [SubtitleDisplay](#viewer-v1-SubtitleDisplay) |  |  |

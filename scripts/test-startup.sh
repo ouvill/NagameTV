@@ -3,15 +3,15 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 startup_suite=${1:-startup}
 case "$startup_suite" in
-    startup|recording-pid-change)
+    startup|recording-pid-change|timeshift)
         if (( $# > 1 )); then
             echo "This suite does not accept a fixture path" >&2; exit 2
         fi ;;
-    recording-audit)
+    recording-audit|recording-probe)
         if (( $# != 2 )) || [[ ! -f $2 ]]; then
-            echo "Expected recording-audit PATH_TO_SIX_SECOND_FIXTURE" >&2; exit 2
+            echo "Expected recording-audit or recording-probe followed by a TS path" >&2; exit 2
         fi ;;
-    *) echo "Expected startup, recording-pid-change or recording-audit" >&2; exit 2 ;;
+    *) echo "Expected startup, timeshift, recording-pid-change, recording-audit or recording-probe" >&2; exit 2 ;;
 esac
 # The production Main.qml creates the real video item and audio output.
 if [[ -z ${DISPLAY:-} ]]; then
@@ -43,7 +43,7 @@ startup_test_dir=$(mktemp -d)
 trap 'rm -rf "$startup_test_dir"' EXIT
 env -u MIRAKURUN_SERVER -u MIRAKURUN_SERVICE_ID -u MIRAKURUN_AUTOPLAY \
     -u MIRAKURUN_REMOTE_ENABLED -u MIRAKURUN_REMOTE_ADDR -u MIRAKURUN_REMOTE_PORT \
-    XDG_CONFIG_HOME="$startup_test_dir/config" XDG_STATE_HOME="$startup_test_dir/state" \
+    XDG_CONFIG_HOME="$startup_test_dir/config" XDG_CACHE_HOME="$startup_test_dir/cache" XDG_STATE_HOME="$startup_test_dir/state" \
     MIRAKURUN_DIAGNOSTICS=0 MIRAKURUN_AUDIO_SINK=pulsesink \
     QT_QPA_PLATFORM=xcb QSG_RHI_BACKEND=opengl \
     bash scripts/run-native-tests.sh "$startup_suite" "${@:2}"

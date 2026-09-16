@@ -46,7 +46,8 @@ impl Recording {
         // Bound memory and check cancellation between reads. Filesystem syscalls
         // themselves cannot be interrupted portably; the UI never waits on them.
         let mut prefix = Vec::new();
-        let mut chunk = [0; 64 * 1024];
+        const INSPECTION_READ_BYTES: usize = 64 * 1024;
+        let mut chunk = [0; INSPECTION_READ_BYTES];
         const PROBE_LIMIT: usize = 4 * 1024 * 1024;
         while prefix.len() < PROBE_LIMIT {
             if cancelled.load(Ordering::Relaxed) {
@@ -62,6 +63,9 @@ impl Recording {
                 break;
             }
             prefix.extend_from_slice(&chunk[..size]);
+            if crate::transport::recording_service(&prefix).is_some() {
+                break;
+            }
         }
         if cancelled.load(Ordering::Relaxed) {
             return Err(Error::Cancelled);
@@ -84,6 +88,10 @@ impl Recording {
         })
     }
 
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+    #[cfg(test)]
     pub fn uri(&self) -> &str {
         &self.uri
     }

@@ -86,7 +86,7 @@ ApplicationWindow {
         sequence: "Space"
         context: Qt.WindowShortcut
         autoRepeat: false
-        enabled: windowActions.navigationEnabled && player.recording && !root.showGuide && !root.showChannels
+        enabled: windowActions.navigationEnabled && (player.recording || player.timeshift) && !root.showGuide && !root.showChannels
         onActivated: {
             player.playing ? player.pause() : player.play();
             overlayVisibility.reveal();
@@ -186,6 +186,9 @@ ApplicationWindow {
     }
     PlaybackSettings {
         id: playbackSettings
+        timeshiftStorage: player.timeshift_storage
+        onTimeshiftRequested: function(storage) { player.configure_timeshift(storage); }
+        onTimeshiftSettingsRequested: { settings.open(); settings.page = SettingsPanel.Timeshift; }
         toggleButton: playerControls.settingsButton
         commentsEnabled: player.comments_enabled
         danmakuEnabled: player.danmaku_enabled
@@ -501,7 +504,7 @@ ApplicationWindow {
                 spacing: 12
                 RecordingTimeline {
                     id: recordingTimeline
-                    visible: player.recording
+                    visible: player.recording || player.timeshift
                     Layout.fillWidth: true
                     Layout.leftMargin: 24
                     Layout.rightMargin: 24

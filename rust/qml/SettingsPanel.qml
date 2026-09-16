@@ -6,7 +6,7 @@ import QtQuick.Dialogs
 
 Popup {
     id: root
-    enum Page { Connection, Display, Comments, Shortcuts, Diagnostics, Remote }
+    enum Page { Connection, Display, Comments, Shortcuts, Diagnostics, Remote, Timeshift }
     required property var backend
     property Window targetWindow: null
     property bool statsVisible: false
@@ -22,7 +22,7 @@ Popup {
     readonly property var categories: [
         qsTranslate("Settings", "Connection"), qsTranslate("Settings", "Display"),
         qsTranslate("Main", "Comments"), qsTranslate("Settings", "Shortcuts"),
-        qsTranslate("Settings", "Diagnostics"), qsTranslate("Remote", "Remote control")
+        qsTranslate("Settings", "Diagnostics"), qsTranslate("Remote", "Remote control"), qsTranslate("Viewer", "Timeshift")
     ]
     signal statsRequested(bool visible)
     signal connectionAccepted
@@ -185,13 +185,18 @@ Popup {
             font.pixelSize: root.compact ? 30 : 34
             font.bold: true
         }
-        Item {
+        Flickable {
             id: navigation
             objectName: "settingsNavigation"
             x: root.navLeft
             y: root.compact ? 136 : 160
             width: root.navWidth
-            height: (root.categories.length - 1) * root.navStep + 48
+            height: Math.min(contentHeight, parent.height - y - root.navLeft)
+            contentHeight: (root.categories.length - 1) * root.navStep + 48
+            clip: true
+            flickableDirection: Flickable.VerticalFlick
+            boundsBehavior: Flickable.StopAtBounds
+            ScrollBar.vertical: ScrollBar { policy: navigation.contentHeight > navigation.height ? ScrollBar.AsNeeded : ScrollBar.AlwaysOff }
             Rectangle {
                 y: root.page * root.navStep
                 width: parent.width; height: 48
@@ -305,6 +310,12 @@ Popup {
                             checked: root.backend.autoplay
                             onClicked: root.backend.configure_autoplay(checked)
                         }
+                    }
+                    Loader {
+                        Layout.fillWidth: true
+                        active: root.page === SettingsPanel.Timeshift
+                        visible: active
+                        sourceComponent: TimeshiftSettings { backend: root.backend }
                     }
                     RemoteSettings {
                         id: remoteSettings

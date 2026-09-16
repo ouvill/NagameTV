@@ -1,5 +1,5 @@
-//! Publish recording controls as one coherent Qt snapshot.
-use super::{ffi, stream_state::State};
+//! Publish transport controls as one coherent Qt snapshot.
+use super::ffi;
 use crate::playback::{
     self,
     timeline::{Error, Resume},
@@ -9,6 +9,37 @@ use cxx_qt_lib::QString;
 use std::pin::Pin;
 
 impl ffi::Player {
+    pub fn timeshift(&self) -> bool {
+        self.rust().stream_state.timeshift()
+    }
+    pub fn window_start_ms(&self) -> f64 {
+        self.rust()
+            .timeline
+            .range
+            .map_or(0.0, |range| range.start().mseconds() as f64)
+    }
+    pub fn window_end_ms(&self) -> f64 {
+        self.rust()
+            .timeline
+            .range
+            .map_or(-1.0, |range| range.end().mseconds() as f64)
+    }
+    pub fn live_delay_ms(&self) -> f64 {
+        if self.timeshift() {
+            (self.duration_ms() - self.position_ms()).max(0.0)
+        } else {
+            0.0
+        }
+    }
+    pub fn return_to_live(mut self: Pin<&mut Self>) -> bool {
+        const LIVE_PREROLL_MS: f64 = 1_000.0;
+        if !self.timeshift() {
+            return false;
+        }
+        let target = (self.duration_ms() - LIVE_PREROLL_MS).max(self.window_start_ms());
+        self.as_mut().seek_to(target) && self.resume_transport()
+    }
+
     pub fn media_active(&self) -> bool {
         self.rust().stream_state.active()
     }
@@ -22,14 +53,16 @@ impl ffi::Player {
         self.rust().stream_state.ended()
     }
     pub fn seekable(&self) -> bool {
-        matches!(self.rust().stream_state, State::Recording(_, _))
-            && self.rust().timeline.range.is_some()
+        (self.recording() || self.timeshift()) && self.rust().timeline.range.is_some()
     }
     pub fn position_ms(&self) -> f64 {
         self.rust()
             .timeline
             .position
             .map_or(-1.0, |value| value.mseconds() as f64)
+    }
+    pub fn duration_estimated(&self) -> bool {
+        self.rust().timeline.estimated
     }
     pub fn duration_ms(&self) -> f64 {
         self.rust()
@@ -38,22 +71,23 @@ impl ffi::Player {
             .map_or(-1.0, |value| value.mseconds() as f64)
     }
     pub fn pause(self: Pin<&mut Self>) -> bool {
-        self.control_recording(|media| media.recording_control()?.resume(Resume::Paused))
+        self.control_transport(|media| media.transport_control()?.resume(Resume::Paused))
     }
-    pub(super) fn resume_recording(self: Pin<&mut Self>) -> bool {
-        self.control_recording(|media| media.recording_control()?.resume(Resume::Playing))
+    pub(super) fn resume_transport(self: Pin<&mut Self>) -> bool {
+        self.control_transport(|media| media.transport_control()?.resume(Resume::Playing))
     }
     pub fn seek_to(self: Pin<&mut Self>, milliseconds: f64) -> bool {
-        self.control_recording(|media| media.recording_control()?.seek(milliseconds))
+        self.control_transport(|media| media.transport_control()?.seek(milliseconds))
     }
     pub fn skip(self: Pin<&mut Self>, milliseconds: f64) -> bool {
-        self.control_recording(|media| media.recording_control()?.skip(milliseconds))
+        self.control_transport(|media| media.transport_control()?.skip(milliseconds))
     }
-    fn control_recording(
+    fn control_transport(
         mut self: Pin<&mut Self>,
         operation: impl FnOnce(&mut playback::Session) -> Result<(), Error>,
     ) -> bool {
-        let result = if matches!(self.rust().stream_state, State::Recording(_, _)) {
+        let result = if self.rust().stream_state.active() && (self.recording() || self.timeshift())
+        {
             operation(&mut self.as_mut().rust_mut().media)
         } else {
             Err(Error::Unavailable)

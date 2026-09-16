@@ -6,6 +6,83 @@ use cxx_qt_lib::QString;
 use std::pin::Pin;
 
 impl ffi::Player {
+    pub fn timeshift_storage(&self) -> QString {
+        use crate::playback::input::Retention;
+        QString::from(match self.rust().preferences.preferences().timeshift {
+            Retention::Off => "off",
+            Retention::Memory => "memory",
+            Retention::Filesystem => "filesystem",
+        })
+    }
+    pub fn timeshift_limits(&self) -> QString {
+        use crate::playback::input::limits;
+        let limits = self.rust().preferences.preferences().timeshift_limits;
+        QString::from(
+            serde_json::json!({
+                "memory_mib": limits.memory_mib(), "filesystem_mib": limits.filesystem_mib(),
+                "minutes": limits.minutes(), "min_mib": limits::MIN_CAPACITY_MIB,
+                "max_mib": limits::MAX_CAPACITY_MIB, "min_minutes": limits::MIN_RETENTION_MINUTES,
+                "max_minutes": limits::MAX_RETENTION_MINUTES,
+            })
+            .to_string(),
+        )
+    }
+    pub fn configure_timeshift(self: Pin<&mut Self>, storage: QString) -> bool {
+        let limits = self.rust().preferences.preferences().timeshift_limits;
+        self.configure_timeshift_options(
+            storage,
+            limits.memory_mib() as i32,
+            limits.filesystem_mib() as i32,
+            limits.minutes() as i32,
+        )
+    }
+    pub fn configure_timeshift_options(
+        mut self: Pin<&mut Self>,
+        storage: QString,
+        memory_mib: i32,
+        filesystem_mib: i32,
+        minutes: i32,
+    ) -> bool {
+        use crate::playback::input::{Limits, Policy, Retention};
+        let storage = match storage.to_string().as_str() {
+            "off" => Retention::Off,
+            "memory" => Retention::Memory,
+            "filesystem" => Retention::Filesystem,
+            _ => return false,
+        };
+        let Some(limits) = Limits::new(memory_mib as u32, filesystem_mib as u32, minutes as u32)
+        else {
+            return false;
+        };
+        let policy = Policy::new(storage, limits);
+        if policy == self.rust().preferences.preferences().timeshift_policy() {
+            self.as_mut().save_settings();
+            return true;
+        }
+        let restart = self.rust().stream_state.reconfigured_live(policy);
+        {
+            let mut this = self.as_mut().rust_mut();
+            this.preferences
+                .change(crate::settings::Change::Timeshift(storage));
+            this.preferences
+                .change(crate::settings::Change::TimeshiftLimits(limits));
+        }
+        self.as_mut().timeshift_storage_changed();
+        self.as_mut().timeshift_limits_changed();
+        self.as_mut().save_settings();
+        if let Some(attempt) = restart {
+            self.as_mut().stop();
+            if !matches!(
+                self.rust().stream_state,
+                super::stream_state::State::Stopped(_)
+            ) {
+                return false;
+            }
+            return self.start_stream(attempt);
+        }
+        true
+    }
+
     pub fn autoplay(&self) -> bool {
         self.rust().preferences.preferences().autoplay
     }

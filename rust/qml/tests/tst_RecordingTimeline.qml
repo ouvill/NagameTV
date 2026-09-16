@@ -8,6 +8,12 @@ Item {
         width: 720; height: 320; visible: true
         QtObject {
             id: backend
+            property bool timeshift: false
+            property real window_start_ms: 0
+            property real window_end_ms: duration_ms
+            property real live_delay_ms: duration_ms - position_ms
+            property int liveRequests: 0
+            function return_to_live() { liveRequests++; }
             property bool seekable: true
             property real position_ms: 5000
             property real duration_ms: 60000
@@ -25,12 +31,40 @@ Item {
             function init() {
                 failOnWarning(/.*/);
                 backend.seekable = true; backend.position_ms = 5000; backend.duration_ms = 60000;
+                backend.timeshift = false; backend.window_start_ms = 0; backend.liveRequests = 0;
+                backend.window_end_ms = Qt.binding(function() { return backend.duration_ms; });
                 backend.requests = []; timeline.closing = false;
                 timeline.LayoutMirroring.enabled = false;
                 host.requestActivate();
                 tryCompare(host, "active", true);
                 waitForRendering(timeline);
                 mouseMove(host.contentItem, 5, 5);
+            }
+            function test_live_window_hover_uses_retained_start_and_returns_to_live() {
+                backend.timeshift = true;
+                backend.window_start_ms = 70000; backend.duration_ms = 100000; backend.position_ms = 73000;
+                const slider = findChild(timeline, "recordingSeekSlider");
+                compare(slider.from, 70000); compare(slider.to, 100000);
+                mouseMove(slider, slider.width / 2, slider.height / 2);
+                const preview = findChild(timeline, "recordingSeekPreview");
+                tryCompare(preview, "visible", true); compare(preview.text, "1:25");
+                compare(backend.requests.length, 0);
+                const live = findChild(timeline, "returnToLiveButton");
+                verify(live.visible); mouseClick(live);
+                compare(backend.liveRequests, 1);
+            }
+            function test_partial_index_remains_seekable_before_total_duration_is_known() {
+                backend.duration_ms = -1;
+                backend.window_end_ms = 20000;
+                const slider = findChild(timeline, "recordingSeekSlider");
+                verify(slider.enabled); compare(slider.to, 20000);
+                mouseMove(slider, slider.width / 2, slider.height / 2);
+                const preview = findChild(timeline, "recordingSeekPreview");
+                tryCompare(preview, "visible", true); compare(preview.text, "0:10");
+                verify(findChild(timeline, "recordingTime").text.endsWith(" / --:--"));
+                mouseClick(slider, slider.width / 2, slider.height / 2);
+                compare(backend.requests.length, 1);
+                compare(backend.requests[0], 10000);
             }
             function test_hover_previews_position_without_seeking() {
                 const slider = findChild(timeline, "recordingSeekSlider");
@@ -86,6 +120,7 @@ Item {
                 keyClick(Qt.Key_Right);
                 compare(backend.requests.length, 1);
                 compare(backend.requests[0], 6000);
+                backend.timeshift = false; backend.window_start_ms = 0; backend.liveRequests = 0;
                 backend.requests = [];
                 mousePress(slider, slider.width * 0.5, slider.height / 2);
                 backend.seekable = false;

@@ -68,6 +68,11 @@ impl ffi::Player {
 
     pub(super) fn poll_comments(mut self: Pin<&mut Self>) {
         self.as_mut().poll_activity();
+        const LIVE_COMMENT_DELAY_LIMIT_MS: f64 = 3_000.0;
+        let delayed = self.timeshift()
+            && (self.paused()
+                || self.seeking()
+                || self.live_delay_ms() > LIVE_COMMENT_DELAY_LIMIT_MS);
         let (reset, comments, show_live) = {
             let mut this = self.as_mut().rust_mut();
             let this = &mut *this;
@@ -89,7 +94,7 @@ impl ffi::Player {
             (
                 reset,
                 comments,
-                this.stream_state.playing() && this.danmaku_enabled,
+                this.stream_state.playing() && this.danmaku_enabled && !delayed,
             )
         };
         // Build only newly received live signals, before moving history into its model.

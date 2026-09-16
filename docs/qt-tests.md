@@ -119,3 +119,22 @@ The subtitle memory benchmark builds and copies the same Rust runner, including
 its Rust outline provider. It preserves Qt Quick Test arguments and the stroke
 setting. Its baseline includes the Rust application module and differs from the
 former small C++ executable; compare memory measurements using the same runner.
+
+`bash scripts/test-startup.sh timeshift` uses a paced local HTTP TS source and
+production Main.qml with the validated display/GPU/audio. It tests both memory
+and filesystem retention: the window advances while paused, a backward seek
+retains pause, return-to-live resumes playback, and stop releases the session.
+The startup suite also includes these cases. Tests isolate XDG cache as well as
+settings; they do not connect to a real tuner. Rust memory-sink tests independently
+check raw SI at the playhead, TS/M2TS/204-byte framing, both store contracts,
+stale disk-session cleanup, sequential discontinuities and paused boundary seeks.
+
+`bash scripts/test-startup.sh recording-probe PATH` accepts a longer real broadcast
+recording. It checks output progress through 28 seconds (six seconds without new
+rendering fails), paused seeks to 20 and 10 seconds, and a seek to 80% for files
+longer than one minute. It logs the provisional duration and audio selection.
+This uses the same real hardware checks; it is not a full-file playback or audible
+quality test. The timeshift suite also opens the production settings page, applies
+custom budgets, and enables/disables retention during playback and pause.
+Connection tests verify atomic budget notifications, rejected invalid values and
+persistence without using display or audio hardware.

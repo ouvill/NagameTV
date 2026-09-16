@@ -1,4 +1,4 @@
-//! Recording-only transport. A prepared operation borrows the same controller
+//! Time-based transport for recordings and retained live streams. A prepared operation borrows the same controller
 //! and pipeline whose TIME seeking capability was checked.
 use gstreamer::{self as gst, prelude::*};
 use std::{
@@ -27,6 +27,7 @@ pub enum Phase {
 pub struct Snapshot {
     pub position: Option<gst::ClockTime>,
     pub duration: Option<gst::ClockTime>,
+    pub estimated: bool,
     pub range: Option<Range>,
 }
 
@@ -37,6 +38,12 @@ pub struct Range {
 }
 
 impl Range {
+    pub fn start(self) -> gst::ClockTime {
+        self.start
+    }
+    pub fn end(self) -> gst::ClockTime {
+        self.end
+    }
     fn target(self, milliseconds: f64) -> Result<gst::ClockTime, Error> {
         if !milliseconds.is_finite() || milliseconds < 0.0 {
             return Err(Error::InvalidPosition);
@@ -54,7 +61,7 @@ impl Range {
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("録画のシークをまだ利用できません")]
+    #[error("シークをまだ利用できません")]
     Unavailable,
     #[error("再生位置が不正です")]
     InvalidPosition,
@@ -86,6 +93,7 @@ struct Seek {
 enum State {
     Playing,
     Paused,
+    ExpiredPause,
     Seeking(Seek),
     Ended,
 }
@@ -96,6 +104,7 @@ pub(super) struct Controller {
     output: Arc<Mutex<Output>>,
     subscriptions: crate::features::subscriptions::Subscriptions,
     next_sample: Instant,
+    notice: Option<&'static str>,
 }
 
 /// A short exclusive borrow, never an interchangeable capability token.
@@ -149,16 +158,25 @@ impl Controller {
             output,
             subscriptions,
             next_sample: Instant::now(),
+            notice: None,
         })
     }
 
     pub fn phase(&self) -> Phase {
         match &self.state {
             State::Playing => Phase::Playing,
-            State::Paused => Phase::Paused,
+            State::Paused | State::ExpiredPause => Phase::Paused,
             State::Seeking(seek) => Phase::Seeking(seek.resume),
             State::Ended => Phase::Ended,
         }
+    }
+
+    pub fn take_notice(&mut self) -> Option<&'static str> {
+        self.notice.take()
+    }
+
+    pub fn set_estimated(&mut self, estimated: bool) {
+        self.snapshot.estimated = estimated;
     }
 
     pub fn snapshot(&self) -> Snapshot {
@@ -187,8 +205,52 @@ impl Controller {
         self.snapshot = Snapshot {
             position: pipeline.query_position::<gst::ClockTime>(),
             duration,
+            estimated: self.snapshot.estimated,
             range,
         };
+    }
+
+    pub fn retained(
+        &mut self,
+        pipeline: &gst::Element,
+        start: gst::ClockTime,
+        end: gst::ClockTime,
+        expired: bool,
+    ) -> Result<(), Error> {
+        self.snapshot.range = (end > start).then_some(Range { start, end });
+        self.snapshot.duration = Some(end);
+        if matches!(self.state, State::Paused | State::ExpiredPause)
+            && (expired
+                || self
+                    .snapshot
+                    .position
+                    .is_some_and(|position| position < start))
+        {
+            // Keep the paused frame. Do not keep decoding/seek at every eviction;
+            // resume will flush the old queue and choose the then-current start.
+            self.state = State::ExpiredPause;
+            return Ok(());
+        }
+        if expired
+            || (self
+                .snapshot
+                .position
+                .is_some_and(|position| position < start)
+                && !matches!(self.state, State::Seeking(_)))
+        {
+            let (target, resume) = match &self.state {
+                State::Paused | State::ExpiredPause => (start, Resume::Paused),
+                State::Playing | State::Ended => (start, Resume::Playing),
+                State::Seeking(seek) => (seek.next.unwrap_or(seek.target).max(start), seek.resume),
+            };
+            self.start_seek(pipeline, target, resume)?;
+            self.notice = Some("保持期限を過ぎたため、再生位置を保持範囲の先頭へ移動しました");
+            tracing::info!(
+                start = start.mseconds(),
+                "Paused TS position expired; moved to retained start"
+            );
+        }
+        Ok(())
     }
 
     pub fn prepare<'a>(&'a mut self, pipeline: &'a gst::Element) -> Result<Ready<'a>, Error> {
@@ -209,6 +271,15 @@ impl Controller {
         if matches!(self.state, State::Ended) {
             return Err(Error::Unavailable);
         }
+        if matches!(self.state, State::ExpiredPause) {
+            if resume == Resume::Playing {
+                self.sample(pipeline);
+                let target = self.snapshot.range.ok_or(Error::Unavailable)?.start;
+                self.start_seek(pipeline, target, resume)?;
+                self.notice = Some("保持期限を過ぎたため、再生位置を保持範囲の先頭へ移動しました");
+            }
+            return Ok(());
+        }
         pipeline.set_state(match resume {
             Resume::Playing => gst::State::Playing,
             Resume::Paused => gst::State::Paused,
@@ -221,7 +292,7 @@ impl Controller {
                     Resume::Paused => State::Paused,
                 }
             }
-            State::Ended => unreachable!("ended transport rejected above"),
+            State::Ended | State::ExpiredPause => unreachable!("handled before state change"),
         }
         Ok(())
     }
@@ -316,7 +387,9 @@ impl Controller {
         }
         let position = match &self.state {
             State::Seeking(seek) => Some(seek.next.unwrap_or(seek.target)),
-            State::Playing | State::Paused | State::Ended => self.snapshot.position,
+            State::Playing | State::Paused | State::ExpiredPause | State::Ended => {
+                self.snapshot.position
+            }
         }
         .ok_or(Error::Unavailable)?;
         Ok((position.mseconds() as f64 + delta_ms).max(0.0))
@@ -332,7 +405,7 @@ impl Ready<'_> {
                 return Ok(());
             }
             State::Playing | State::Ended => Resume::Playing,
-            State::Paused => Resume::Paused,
+            State::Paused | State::ExpiredPause => Resume::Paused,
         };
         self.controller.start_seek(self.pipeline, target, resume)
     }

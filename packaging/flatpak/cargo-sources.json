@@ -1250,6 +1250,32 @@
   {
     "type": "archive",
     "archive-type": "tar-gzip",
+    "url": "https://static.crates.io/crates/gstreamer-app/gstreamer-app-0.25.2.crate",
+    "sha256": "97f8ae9238c2352398dcc084de28df3f7099af216ac6c160b52318d23f25c010",
+    "dest": "cargo/vendor/gstreamer-app-0.25.2"
+  },
+  {
+    "type": "inline",
+    "contents": "{\"package\": \"97f8ae9238c2352398dcc084de28df3f7099af216ac6c160b52318d23f25c010\", \"files\": {}}",
+    "dest": "cargo/vendor/gstreamer-app-0.25.2",
+    "dest-filename": ".cargo-checksum.json"
+  },
+  {
+    "type": "archive",
+    "archive-type": "tar-gzip",
+    "url": "https://static.crates.io/crates/gstreamer-app-sys/gstreamer-app-sys-0.25.0.crate",
+    "sha256": "7a74a8211e5d7df2f45b612c284ddf56b92bdf4e879e8ed72e7c46dd0842e158",
+    "dest": "cargo/vendor/gstreamer-app-sys-0.25.0"
+  },
+  {
+    "type": "inline",
+    "contents": "{\"package\": \"7a74a8211e5d7df2f45b612c284ddf56b92bdf4e879e8ed72e7c46dd0842e158\", \"files\": {}}",
+    "dest": "cargo/vendor/gstreamer-app-sys-0.25.0",
+    "dest-filename": ".cargo-checksum.json"
+  },
+  {
+    "type": "archive",
+    "archive-type": "tar-gzip",
     "url": "https://static.crates.io/crates/gstreamer-base/gstreamer-base-0.25.3.crate",
     "sha256": "c91c94a4d3047d05dd6e1f6d91c74f61f56384c7ea1c9d0c1051572eeeb0138d",
     "dest": "cargo/vendor/gstreamer-base-0.25.3"

@@ -39,7 +39,18 @@ impl PlayerRust {
                 model::Playback::Connecting(live.service()),
                 live.broadcast(),
             ),
-            State::Playing(live) => (model::Playback::Playing(live.service()), live.broadcast()),
+            State::Playing(live, phase) => {
+                use crate::playback::timeline::{Phase, Resume};
+                let id = live.service();
+                let playback = match phase {
+                    Phase::Playing => model::Playback::Playing(id),
+                    Phase::Paused => model::Playback::Paused(id),
+                    Phase::Seeking(Resume::Playing) => model::Playback::Seeking(id),
+                    Phase::Seeking(Resume::Paused) => model::Playback::SeekingPaused(id),
+                    Phase::Ended => model::Playback::Ended(id),
+                };
+                (playback, live.broadcast())
+            }
             State::StopFailed(Attempt::Live(live)) => (
                 model::Playback::StopFailed(live.service()),
                 live.broadcast(),
@@ -69,6 +80,13 @@ impl PlayerRust {
             .duration_since(UNIX_EPOCH)
             .ok()
             .and_then(|duration| u64::try_from(duration.as_millis()).ok());
+        // The remote API's program IDs come from the server's wall-clock EPG.
+        // Do not label retained playback with a program currently on air.
+        let broadcast = if self.stream_state.timeshift() {
+            None
+        } else {
+            broadcast
+        };
         let current_program = now
             .and_then(|now| self.epg.current(broadcast, now))
             .map(|program| model::Program {
@@ -281,7 +299,7 @@ impl ffi::Player {
         }
         match self.rust().stream_state {
             stream_state::State::Connecting(_)
-            | stream_state::State::Playing(_)
+            | stream_state::State::Playing(_, _)
             | stream_state::State::Recording(_, _) => Ok(()),
             stream_state::State::Stopped(_) | stream_state::State::StopFailed(_) => {
                 Err(CommandError::Playback(self.playback_error().to_string()))

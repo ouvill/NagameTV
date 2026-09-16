@@ -24,6 +24,7 @@ struct Observation {
     seeking: bool,
     paused: bool,
     position_ms: f64,
+    duration_ms: f64,
     error: String,
     transport_error: String,
     rendered: Option<u64>,
@@ -31,7 +32,7 @@ struct Observation {
 
 fn observe(engine: &mut cxx::UniquePtr<QQmlApplicationEngine>) -> TestResult<Observation> {
     let json = ffi::evaluate_root(engine.pin_mut(), &QString::from(
-        "JSON.stringify({ended: player.ended, seeking: player.seeking, paused: player.paused, position_ms: player.position_ms, duration_ms: player.duration_ms, error: player.playback_error, transport_error: player.transport_error, rendered: JSON.parse(player.video_stats()).rendered, audio: JSON.parse(player.audio_tracks())})",
+        "JSON.stringify({ended: player.ended, seeking: player.seeking, paused: player.paused, position_ms: player.position_ms, duration_ms: player.duration_ms, estimated: player.duration_estimated, error: player.playback_error, transport_error: player.transport_error, rendered: JSON.parse(player.video_stats()).rendered, audio: JSON.parse(player.audio_tracks())})",
     ))?.value::<QString>().ok_or("missing recording observation")?.to_string();
     eprintln!("Recording observation: {json}");
     Ok(serde_json::from_str(&json)?)
@@ -122,5 +123,69 @@ pub(super) fn run(
     if !failed_targets.is_empty() {
         return Err(format!("recording audit seek targets failed: {failed_targets:?}").into());
     }
+    Ok(())
+}
+
+/// Real broadcast regression: cross the reported transition, then seek both ways.
+pub(super) fn probe(
+    app: &QGuiApplication,
+    engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
+    path: &Path,
+) -> TestResult {
+    const OBSERVE_FOR: Duration = Duration::from_secs(28);
+    const STALL_LIMIT: Duration = Duration::from_secs(6);
+    const PROBE_POLL: Duration = Duration::from_millis(500);
+    const CROSSING_TARGETS_MS: [u32; 2] = [20_000, 10_000];
+    const LONG_RECORDING: Duration = Duration::from_secs(60);
+    const FAR_SEEK_FRACTION: f64 = 0.8;
+    let uri = url::Url::from_file_path(path.canonicalize()?).map_err(|_| "recording URL")?;
+    assert!(evaluate(
+        engine,
+        &format!(
+            "recordingInput.openUrl({})",
+            serde_json::to_string(uri.as_str())?
+        )
+    )?);
+    if let Err(error) = wait_for(app, engine, "player.playing") {
+        let state = ffi::evaluate_root(
+            engine.pin_mut(),
+            &QString::from(
+                "JSON.stringify({playing: player.playing, loading: player.recording_loading, file_error: player.file_error, playback_error: player.playback_error, status: player.status})",
+            ),
+        )?;
+        return Err(format!("{error}: {state:?}").into());
+    }
+    let started = Instant::now();
+    let mut progressed = Instant::now();
+    let mut frames = None;
+    while started.elapsed() < OBSERVE_FOR {
+        app.process_events();
+        let sample = observe(engine)?;
+        if !sample.error.is_empty() {
+            return Err(sample.error.into());
+        }
+        if frames != sample.rendered {
+            frames = sample.rendered;
+            progressed = Instant::now();
+        }
+        if progressed.elapsed() > STALL_LIMIT {
+            return Err("decoded output stopped at broadcast transition".into());
+        }
+        thread::sleep(PROBE_POLL);
+    }
+    assert!(evaluate(engine, "player.pause()")?);
+    let duration = observe(engine)?.duration_ms;
+    let mut targets = CROSSING_TARGETS_MS.to_vec();
+    if duration > LONG_RECORDING.as_millis() as f64 {
+        targets.push((duration * FAR_SEEK_FRACTION) as u32);
+    }
+    for target in targets {
+        assert!(evaluate(engine, &format!("player.seek_to({target})"))?);
+        wait_for(app, engine, "player.paused && !player.seeking")?;
+        let sample = observe(engine)?;
+        assert!((sample.position_ms - f64::from(target)).abs() <= SEEK_TOLERANCE_MS);
+    }
+    evaluate(engine, "player.stop(); true")?;
+    eprintln!("Broadcast probe passed: continuous output and seeks across transition");
     Ok(())
 }

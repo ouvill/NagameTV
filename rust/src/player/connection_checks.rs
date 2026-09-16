@@ -190,6 +190,7 @@ fn checks() -> TestResult {
     check_recording_notifications(&mut player)?;
     check_guide_state();
     check_autoplay()?;
+    check_timeshift_options()?;
     check_screenshot_directory()?;
     super::remote_checks::run()?;
 
@@ -243,6 +244,16 @@ fn checks() -> TestResult {
 fn check_stream_state(player: &mut cxx::UniquePtr<ffi::Player>) -> TestResult {
     use super::stream_state::{Attempt, State};
     let observed = Arc::new(Mutex::new(Vec::new()));
+    let transport = Arc::new(Mutex::new(Vec::new()));
+    let transport_observer = transport.clone();
+    let _transport_signal = player.pin_mut().on_timeshift_changed(move |player| {
+        transport_observer.lock().unwrap().push((
+            player.timeshift(),
+            player.playing(),
+            player.media_active(),
+            player.recording(),
+        ));
+    });
     let connecting = observed.clone();
     let playing = observed.clone();
     let _connecting_signal = player.pin_mut().on_connecting_changed(move |player| {
@@ -257,7 +268,7 @@ fn check_stream_state(player: &mut cxx::UniquePtr<ffi::Player>) -> TestResult {
             .unwrap()
             .push((player.connecting(), player.playing()));
     });
-    let attempt = Attempt::new(&player.rust().entries[0]);
+    let attempt = Attempt::new(&player.rust().entries[0], Default::default());
     player
         .pin_mut()
         .update_stream_state(State::Connecting(attempt));
@@ -284,6 +295,10 @@ fn check_stream_state(player: &mut cxx::UniquePtr<ffi::Player>) -> TestResult {
     assert_eq!(
         *observed.lock().unwrap(),
         [(true, false), (false, true), (false, true), (false, false)]
+    );
+    assert_eq!(
+        *transport.lock().unwrap(),
+        [(true, true, true, false), (false, false, false, false)]
     );
     Ok(())
 }
@@ -330,10 +345,64 @@ fn check_autoplay() -> TestResult {
     Ok(())
 }
 
+fn check_timeshift_options() -> TestResult {
+    use crate::playback::input::{Limits, Policy, Retention};
+    const MEMORY_MIB: i32 = 64;
+    const FILESYSTEM_MIB: i32 = 512;
+    const MINUTES: i32 = 10;
+    let dir = tempfile::tempdir()?;
+    let path = dir.path().join("settings.toml");
+    let mut player = ffi::new_player();
+    player.pin_mut().rust_mut().preferences =
+        settings::Loaded::open(path.clone())?.activate(None, None);
+    let observed = Arc::new(Mutex::new(Vec::new()));
+    let snapshots = observed.clone();
+    let _signal = player
+        .pin_mut()
+        .on_timeshift_storage_changed(move |player| {
+            let limits: serde_json::Value =
+                serde_json::from_str(&player.timeshift_limits().to_string()).unwrap();
+            snapshots.lock().unwrap().push((
+                player.timeshift_storage().to_string(),
+                limits["memory_mib"].as_i64().unwrap(),
+            ));
+        });
+    assert!(!player.pin_mut().configure_timeshift_options(
+        QString::from("off"),
+        -1,
+        FILESYSTEM_MIB,
+        MINUTES
+    ));
+    assert_eq!(player.timeshift_storage().to_string(), "memory");
+    assert!(observed.lock().unwrap().is_empty());
+    assert!(player.pin_mut().configure_timeshift_options(
+        QString::from("filesystem"),
+        MEMORY_MIB,
+        FILESYSTEM_MIB,
+        MINUTES
+    ));
+    assert_eq!(
+        *observed.lock().unwrap(),
+        [("filesystem".to_owned(), i64::from(MEMORY_MIB))]
+    );
+    let expected = Policy::new(
+        Retention::Filesystem,
+        Limits::new(MEMORY_MIB as u32, FILESYSTEM_MIB as u32, MINUTES as u32).unwrap(),
+    );
+    assert_eq!(
+        settings::Loaded::open(path)?
+            .preferences()
+            .timeshift_policy(),
+        expected
+    );
+    assert!(!player.loading() && !player.connecting() && !player.playing());
+    Ok(())
+}
+
 fn check_recording_input(player: &mut cxx::UniquePtr<ffi::Player>) -> TestResult {
     use super::stream_state::{Attempt, State};
     let channel = &player.rust().entries[0];
-    let attempt = Attempt::new(channel);
+    let attempt = Attempt::new(channel, Default::default());
     let service = channel.id;
     player
         .pin_mut()
@@ -435,7 +504,7 @@ fn check_recording_notifications(player: &mut cxx::UniquePtr<ffi::Player>) -> Te
     );
     assert_eq!(player.recording_name().to_string(), "subtitle-clock.ts");
     observed.lock().unwrap().clear();
-    let attempt = Attempt::new(&player.rust().entries[0]);
+    let attempt = Attempt::new(&player.rust().entries[0], Default::default());
     player
         .pin_mut()
         .update_stream_state(State::Connecting(attempt));
