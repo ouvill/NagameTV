@@ -76,6 +76,13 @@ error, corrected on 2026-09-17. Run
 `bash scripts/test-startup.sh recording-pid-change` for the targeted regression
 check. Both UI commands validate display, GPU and audio access first.
 
+`scripts/fixtures/recording-output-audit.py` counts decoded buffers per stream ID
+with CPU MPEG-2/AAC decoders and explicit memory sinks. It requires PyGObject,
+GStreamer introspection and libav, and never uses display, GPU or audio devices.
+`--paced` synchronizes to the clock; the deadline is 12 seconds, intended for the
+short recovery fixtures. The [tsreadex trial](../../docs/tsreadex-trial.md) uses it
+alongside the hardware-validated production `recording-audit` suite.
+
 Subtitle recovery uses authored ARIB management, statement and DRCS data groups
 in `rust/src/features/subtitles/stream_selection_tests.rs`, without broadcast
 content. These tests cover decoder state and queued captions; arbitrary DRCS

@@ -76,6 +76,15 @@ failure caused by reset counters, corrected on 2026-09-17. Position continuity a
 seeking across PID changes remain separate validation work. See the
 [recording verification record](recording-seek-verification.md#代表ケースの信頼性検証2026-09-16).
 
+`bash scripts/test-startup.sh recording-audit PATH` compares a six-second recovery
+fixture through the production window. It logs position and audio selection every
+100 ms, then checks paused seeks to 4500, 1000 and 4500 ms (500 ms tolerance),
+resumes and requires rendered output and normal EOF. Position decreases and audio
+selection are diagnostic observations, not asserted by the exit status. This is
+not a general-purpose long-recording test. The same hardware validation applies.
+See the [tsreadex comparison](tsreadex-trial.md) for inputs, CPU output counting,
+real audio sink diagnostics and known failures in the original input.
+
 GTK warnings and criticals also fail the startup suite. To check the native Linux
 fallback, run `bash scripts/test-startup.sh` in a session without a FileChooser
 portal. Production startup selects Qt Quick dialogs in this case.

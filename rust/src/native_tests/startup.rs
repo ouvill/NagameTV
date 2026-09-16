@@ -14,7 +14,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-type TestResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
+pub(super) type TestResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
 static UI_WARNINGS: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
 fn record_qt(level: u8, category: &str, message: &str) {
@@ -109,13 +109,16 @@ impl Drop for Server {
     }
 }
 
-fn evaluate(engine: &mut cxx::UniquePtr<QQmlApplicationEngine>, source: &str) -> TestResult<bool> {
+pub(super) fn evaluate(
+    engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
+    source: &str,
+) -> TestResult<bool> {
     ffi::evaluate_root(engine.pin_mut(), &QString::from(source))?
         .value::<bool>()
         .ok_or_else(|| format!("Expected a boolean: {source}").into())
 }
 
-fn wait_for(
+pub(super) fn wait_for(
     app: &QGuiApplication,
     engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
     source: &str,
@@ -198,6 +201,7 @@ fn check_danmaku_layout(
 enum WindowCheck {
     Startup,
     PidChange,
+    RecordingAudit(std::path::PathBuf),
 }
 
 fn window(
@@ -220,6 +224,12 @@ fn window(
         WindowCheck::PidChange => {
             // Targeted regression check, also included in the startup suite.
             let result = check_recording_recovery(app, &mut engine, "recording-pid-change.ts");
+            assert!(evaluate(&mut engine, "root.close(); root.closing")?);
+            app.process_events();
+            return result;
+        }
+        WindowCheck::RecordingAudit(path) => {
+            let result = super::recording_audit::run(app, &mut engine, &path);
             assert!(evaluate(&mut engine, "root.close(); root.closing")?);
             app.process_events();
             return result;
@@ -674,6 +684,10 @@ pub fn run_window() -> i32 {
 
 pub fn run_pid_change() -> i32 {
     run_window_check(WindowCheck::PidChange)
+}
+
+pub fn run_recording_audit(path: std::path::PathBuf) -> i32 {
+    run_window_check(WindowCheck::RecordingAudit(path))
 }
 
 fn run_window_check(check: WindowCheck) -> i32 {

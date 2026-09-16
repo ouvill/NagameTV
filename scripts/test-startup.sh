@@ -3,8 +3,15 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 startup_suite=${1:-startup}
 case "$startup_suite" in
-    startup|recording-pid-change) ;;
-    *) echo "Expected startup or recording-pid-change" >&2; exit 2 ;;
+    startup|recording-pid-change)
+        if (( $# > 1 )); then
+            echo "This suite does not accept a fixture path" >&2; exit 2
+        fi ;;
+    recording-audit)
+        if (( $# != 2 )) || [[ ! -f $2 ]]; then
+            echo "Expected recording-audit PATH_TO_SIX_SECOND_FIXTURE" >&2; exit 2
+        fi ;;
+    *) echo "Expected startup, recording-pid-change or recording-audit" >&2; exit 2 ;;
 esac
 # The production Main.qml creates the real video item and audio output.
 if [[ -z ${DISPLAY:-} ]]; then
@@ -39,4 +46,4 @@ env -u MIRAKURUN_SERVER -u MIRAKURUN_SERVICE_ID -u MIRAKURUN_AUTOPLAY \
     XDG_CONFIG_HOME="$startup_test_dir/config" XDG_STATE_HOME="$startup_test_dir/state" \
     MIRAKURUN_DIAGNOSTICS=0 MIRAKURUN_AUDIO_SINK=pulsesink \
     QT_QPA_PLATFORM=xcb QSG_RHI_BACKEND=opengl \
-    bash scripts/run-native-tests.sh "$startup_suite"
+    bash scripts/run-native-tests.sh "$startup_suite" "${@:2}"

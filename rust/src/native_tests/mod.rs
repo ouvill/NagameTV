@@ -8,11 +8,23 @@ mod outline;
 mod pointer;
 #[cfg(target_os = "linux")]
 mod portal_dialogs;
+mod recording_audit;
 mod startup;
 
 pub fn run() -> i32 {
     let mut arguments = std::env::args().skip(2);
     let suite = arguments.next();
+    if suite.as_deref() == Some("recording-audit") {
+        let Some(path) = arguments.next() else {
+            eprintln!("recording-audit requires a six-second recovery fixture path");
+            return 2;
+        };
+        if arguments.next().is_some() {
+            eprintln!("recording-audit accepts one fixture path");
+            return 2;
+        }
+        return startup::run_recording_audit(path.into());
+    }
     if !matches!(suite.as_deref(), Some("subtitle-rendering" | "screenshots"))
         && arguments.next().is_some()
     {
@@ -48,7 +60,7 @@ pub fn run() -> i32 {
         }
         _ => {
             eprintln!(
-                "Expected --native-tests localization|missing-catalog|subtitle-outline|pointer-activity|subtitle-rendering|screenshots|connection|startup|recording-pid-change|portal-dialogs"
+                "Expected --native-tests localization|missing-catalog|subtitle-outline|pointer-activity|subtitle-rendering|screenshots|connection|startup|recording-pid-change|recording-audit PATH|portal-dialogs"
             );
             2
         }
