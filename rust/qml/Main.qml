@@ -53,6 +53,7 @@ ApplicationWindow {
     Player {
         id: player
     }
+    RecordingSeekSteps { id: recordingSeekSteps }
     RecordingInput {
         id: recordingInput
         anchors.fill: parent
@@ -96,14 +97,14 @@ ApplicationWindow {
         context: Qt.WindowShortcut
         enabled: windowActions.navigationEnabled && player.seekable && !root.showGuide && !root.showChannels
             && !(root.activeFocusItem instanceof Slider)
-        onActivated: { player.skip(-10000); overlayVisibility.reveal(); }
+        onActivated: { player.skip(recordingSeekSteps.backwardMilliseconds); overlayVisibility.reveal(); }
     }
     Shortcut {
         sequence: "Right"
         context: Qt.WindowShortcut
         enabled: windowActions.navigationEnabled && player.seekable && !root.showGuide && !root.showChannels
             && !(root.activeFocusItem instanceof Slider)
-        onActivated: { player.skip(30000); overlayVisibility.reveal(); }
+        onActivated: { player.skip(recordingSeekSteps.forwardMilliseconds); overlayVisibility.reveal(); }
     }
     function chooseConnectedChannel() {
         player.guide_open(false);

@@ -6,6 +6,9 @@ use std::{
     time::{Duration, Instant},
 };
 
+const POSITION_SAMPLE_INTERVAL: Duration = Duration::from_millis(200);
+const SEEK_TIMEOUT: Duration = Duration::from_secs(10);
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Resume {
     Playing,
@@ -163,7 +166,7 @@ impl Controller {
     }
 
     fn sample(&mut self, pipeline: &gst::Element) {
-        self.next_sample = Instant::now() + Duration::from_millis(200);
+        self.next_sample = Instant::now() + POSITION_SAMPLE_INTERVAL;
         let duration = pipeline.query_duration::<gst::ClockTime>();
         let mut query = gst::query::Seeking::new(gst::Format::Time);
         let range = if pipeline.query(&mut query) {
@@ -248,7 +251,7 @@ impl Controller {
             target,
             resume,
             next: None,
-            deadline: Instant::now() + Duration::from_secs(10),
+            deadline: Instant::now() + SEEK_TIMEOUT,
         });
         pipeline.set_state(match resume {
             Resume::Playing => gst::State::Playing,

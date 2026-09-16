@@ -25,6 +25,8 @@ Item {
     signal fullscreenRequested
     signal sidePanelRequested
 
+    RecordingSeekSteps { id: recordingSeekSteps }
+
     component Action: IconAction {
         flat: true
         implicitWidth: root.buttonSize
@@ -78,9 +80,9 @@ Item {
             visible: root.backend.recording
             enabled: root.backend.seekable
             iconSource: root.iconDirectory + "rotate-ccw.svg"
-            iconLabel: "10"
+            iconLabel: String(recordingSeekSteps.backwardSeconds)
             tip: qsTranslate("Viewer", "Back 10 seconds")
-            onClicked: root.backend.skip(-10000)
+            onClicked: root.backend.skip(recordingSeekSteps.backwardMilliseconds)
         }
         Action {
             objectName: "playStopButton"
@@ -94,9 +96,9 @@ Item {
             visible: root.backend.recording
             enabled: root.backend.seekable
             iconSource: root.iconDirectory + "rotate-cw.svg"
-            iconLabel: "30"
+            iconLabel: String(recordingSeekSteps.forwardSeconds)
             tip: qsTranslate("Viewer", "Forward 30 seconds")
-            onClicked: root.backend.skip(30000)
+            onClicked: root.backend.skip(recordingSeekSteps.forwardMilliseconds)
         }
         Action {
             objectName: "postCommentButton"

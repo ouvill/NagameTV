@@ -1,7 +1,24 @@
 //! Bounded, CRC-checked descriptors. ARIB B10 Part 2, SI tables and descriptors.
 use super::Program;
 use crate::transport::wire::{ParseError, crc32_mpeg};
+use gstreamer_mpegts::ffi;
 use std::collections::BTreeMap;
+
+// ARIB STD-B10 SI table IDs and descriptor tags are separate namespaces.
+// These IDs are shared with DVB. Use the existing library definitions, narrowed
+// from C enum integers to their one-byte wire representation (no native calls).
+pub(super) const SDT_ACTUAL_TABLE_ID: u8 =
+    ffi::GST_MTS_TABLE_ID_SERVICE_DESCRIPTION_ACTUAL_TS as u8;
+pub(super) const EIT_ACTUAL_PF_TABLE_ID: u8 =
+    ffi::GST_MTS_TABLE_ID_EVENT_INFORMATION_ACTUAL_TS_PRESENT as u8;
+pub(super) const TDT_TABLE_ID: u8 = ffi::GST_MTS_TABLE_ID_TIME_DATE as u8;
+pub(super) const TOT_TABLE_ID: u8 = ffi::GST_MTS_TABLE_ID_TIME_OFFSET as u8;
+const SERVICE_DESCRIPTOR_TAG: u8 = ffi::GST_MTS_DESC_DVB_SERVICE as u8;
+const SHORT_EVENT_DESCRIPTOR_TAG: u8 = ffi::GST_MTS_DESC_DVB_SHORT_EVENT as u8;
+const EXTENDED_EVENT_DESCRIPTOR_TAG: u8 = ffi::GST_MTS_DESC_DVB_EXTENDED_EVENT as u8;
+const CONTENT_DESCRIPTOR_TAG: u8 = ffi::GST_MTS_DESC_DVB_CONTENT as u8;
+const CONTENT_ENTRY_SIZE: usize = 2;
+const JAPANESE_LANGUAGE_CODE: &[u8] = b"jpn";
 
 pub(crate) fn section_size(data: &[u8]) -> Result<usize, ParseError> {
     if data.len() < 3 {
@@ -12,12 +29,17 @@ pub(crate) fn section_size(data: &[u8]) -> Result<usize, ParseError> {
     }
     let length = usize::from(u16::from_be_bytes([data[1] & 15, data[2]]));
     let valid = match data[0] {
-        0x42 | 0x4e => {
+        SDT_ACTUAL_TABLE_ID | EIT_ACTUAL_PF_TABLE_ID => {
             data[1] & 0xc0 == 0xc0
-                && (9..=if data[0] == 0x4e { 4093 } else { 1021 }).contains(&length)
+                && (9..=if data[0] == EIT_ACTUAL_PF_TABLE_ID {
+                    4093
+                } else {
+                    1021
+                })
+                    .contains(&length)
         }
-        0x70 => data[1] & 0xc0 == 0x40 && length == 5,
-        0x73 => data[1] & 0xc0 == 0x40 && (11..=1021).contains(&length),
+        TDT_TABLE_ID => data[1] & 0xc0 == 0x40 && length == 5,
+        TOT_TABLE_ID => data[1] & 0xc0 == 0x40 && (11..=1021).contains(&length),
         _ => false,
     };
     if !valid {
@@ -26,10 +48,13 @@ pub(crate) fn section_size(data: &[u8]) -> Result<usize, ParseError> {
     Ok(length + 3)
 }
 fn checked(data: &[u8]) -> Option<&[u8]> {
-    if section_size(data).ok()? != data.len() || (data[0] != 0x70 && crc32_mpeg(data) != 0) {
+    if section_size(data).ok()? != data.len() || (data[0] != TDT_TABLE_ID && crc32_mpeg(data) != 0)
+    {
         return None;
     }
-    if matches!(data[0], 0x42 | 0x4e) && (data[5] & 0xc1 != 0xc1 || data[6] > data[7]) {
+    if matches!(data[0], SDT_ACTUAL_TABLE_ID | EIT_ACTUAL_PF_TABLE_ID)
+        && (data[5] & 0xc1 != 0xc1 || data[6] > data[7])
+    {
         return None;
     }
     Some(data)
@@ -80,7 +105,7 @@ fn string(bytes: &mut &[u8]) -> Option<String> {
 }
 pub(super) fn time_table(data: &[u8]) -> Option<i64> {
     let data = checked(data)?;
-    if data[0] == 0x73 {
+    if data[0] == TOT_TABLE_ID {
         if data[8] & 0xf0 != 0xf0 {
             return None;
         }
@@ -108,7 +133,7 @@ pub(super) fn station(data: &[u8], transport: u16, service: u16) -> Option<(u16,
             continue;
         }
         for (tag, body) in descriptors(body)? {
-            if tag == 0x48 {
+            if tag == SERVICE_DESCRIPTOR_TAG {
                 let mut bytes = body.get(1..)?;
                 let provider = string(&mut bytes)?;
                 let name = string(&mut bytes)?;
@@ -165,7 +190,7 @@ pub(super) fn event(data: &[u8], transport: u16, service: u16) -> Option<Event> 
     let mut fragments = BTreeMap::new();
     for (tag, body) in descriptors(&body[12..])? {
         match tag {
-            0x4d if body.starts_with(b"jpn") => {
+            SHORT_EVENT_DESCRIPTOR_TAG if body.starts_with(JAPANESE_LANGUAGE_CODE) => {
                 let mut body = &body[3..];
                 program.name = string(&mut body)?;
                 program.description = string(&mut body)?;
@@ -173,7 +198,7 @@ pub(super) fn event(data: &[u8], transport: u16, service: u16) -> Option<Event> 
                     return None;
                 }
             }
-            0x4e if body.get(1..4) == Some(b"jpn") => {
+            EXTENDED_EVENT_DESCRIPTOR_TAG if body.get(1..4) == Some(JAPANESE_LANGUAGE_CODE) => {
                 let number = body[0] >> 4;
                 let last = body[0] & 15;
                 if number > last {
@@ -197,8 +222,8 @@ pub(super) fn event(data: &[u8], transport: u16, service: u16) -> Option<Event> 
                     return None;
                 }
             }
-            0x54 => {
-                let (genres, remainder) = body.as_chunks::<2>();
+            CONTENT_DESCRIPTOR_TAG => {
+                let (genres, remainder) = body.as_chunks::<CONTENT_ENTRY_SIZE>();
                 if !remainder.is_empty() {
                     return None;
                 }

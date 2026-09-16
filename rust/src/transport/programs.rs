@@ -10,6 +10,10 @@ use std::collections::HashMap;
 pub(super) use syntax::section_size;
 pub(crate) use timeline::Timeline;
 
+const SDT_PID: Pid = Pid(0x11);
+const TIME_TABLE_PID: Pid = Pid(0x14);
+const EIT_PIDS: [Pid; 3] = [Pid(0x12), Pid(0x26), Pid(0x27)];
+
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Program {
@@ -111,7 +115,7 @@ impl Collector {
         if self.pcr_pid.is_none() {
             return;
         }
-        if ![0x11, 0x12, 0x14, 0x26, 0x27].contains(&packet.pid.0) {
+        if ![SDT_PID, TIME_TABLE_PID].contains(&packet.pid) && !EIT_PIDS.contains(&packet.pid) {
             return;
         }
         let assembly = self.assemblies.entry(packet.pid).or_default();
@@ -145,13 +149,13 @@ impl Collector {
             return;
         };
         let before = self.information.clone();
-        match (pid.0, data.first().copied()) {
-            (0x14, Some(0x70 | 0x73)) => {
+        match (pid, data.first().copied()) {
+            (TIME_TABLE_PID, Some(syntax::TDT_TABLE_ID | syntax::TOT_TABLE_ID)) => {
                 if let (Some(pcr), Some(time)) = (self.pcr, syntax::time_table(data)) {
                     self.information.time = Some((pcr, time));
                 }
             }
-            (0x11, Some(0x42)) => {
+            (SDT_PID, Some(syntax::SDT_ACTUAL_TABLE_ID)) => {
                 if let Some((network, provider, name)) =
                     syntax::station(data, transport, self.service)
                     && self.network.is_none_or(|old| old == network)
@@ -161,7 +165,7 @@ impl Collector {
                     self.information.provider = provider;
                 }
             }
-            (0x12 | 0x26 | 0x27, Some(0x4e)) => {
+            (pid, Some(syntax::EIT_ACTUAL_PF_TABLE_ID)) if EIT_PIDS.contains(&pid) => {
                 if let Some(event) = syntax::event(data, transport, self.service)
                     && self.network.is_none_or(|network| network == event.network)
                 {

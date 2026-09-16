@@ -1,6 +1,8 @@
 use super::{Information, Observation, Program};
 use std::collections::VecDeque;
 
+const MAX_PENDING_OBSERVATIONS: usize = 128;
+
 /// Bounded observations in this seek generation. Later reads cannot overwrite
 /// the currently presented event until their PCR reaches the video position.
 #[derive(Default)]
@@ -17,7 +19,7 @@ pub(crate) struct Presentation {
 }
 impl Timeline {
     pub fn push(&mut self, observation: Observation) {
-        if self.pending.len() < 128 {
+        if self.pending.len() < MAX_PENDING_OBSERVATIONS {
             self.pending.push_back(observation);
         }
     }
