@@ -98,6 +98,7 @@ RSSなどの資源使用量は診断JSONLに記録します。[メモリー分�
 
 - [構成と資源の所有関係](architecture.md)
 - [TS録画の再生](recording-playback.md)
+- [録画シーク・TS番組情報取得のロードマップ](recording-seek-roadmap.md)
 - [遠隔操作API・Protobufとドキュメント生成](remote-control.md)
 - [番組表](guide-calendar.md)・[EPGの更新](epg-event-stream.md)
 - [弾幕表示](danmaku.md)・[字幕描画](subtitle-rendering.md)・[音声切り替え](audio-selection.md)
