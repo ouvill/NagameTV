@@ -20,6 +20,7 @@ normal application builds. Test QObjects are generated from
 | `bash scripts/test-video-item.sh` | Video-item attachment, terminal shutdown, failed native transitions, and retained subtitle subscriptions until a successful stop | Validated X11 display and GPU; native graph stays in NULL |
 | `bash scripts/test-subtitle-outline.sh` | Six pixel-exact QPainterPath/SVG comparisons: full height, small ink/cubic curves, midline, overhang/descender, separate contours, empty path | None: QCoreApplication and in-memory QImage rasterization |
 | `bash scripts/test-pointer-activity.sh` | Duplicate installation, repeated positions, disabled items, window changes, observer deletion and event delivery after item destruction | Validated X11 display and GPU |
+| `bash scripts/test-portal-dialogs.sh` | Real Qt portal plugin on a private D-Bus session: file/folder selection, cancellation and Unicode/escaped URLs | Validated X11 display and GPU; no audio |
 | `bash scripts/test-subtitle-rendering.sh` | Existing Qt Quick Test assertions, using the Rust TestOutlineProvider and the production outline helper | Validated X11 display and GPU |
 
 The subtitle rendering command continues to accept Qt Quick Test arguments
@@ -52,12 +53,26 @@ capture of broadcast video still requires manual verification with a playing
 stream, including visible subtitles and comments.
 
 Local recording coverage in the startup suite drops a generated MPEG-2/AAC TS
-onto the production window, including its first-run setup screen. It verifies
+onto the production window, including its first-run setup screen. It also opens
+the recording picker through mode navigation, cancels without changing playback,
+then reopens and accepts a Unicode/escaped filename using the startup dialog policy. It verifies
 rendered video frames, an audio track, no live program/comment association,
 stop/replay, normal EOF, file removal, cancellation and switching back to a live
 channel. The audio fixture is silent. This does not verify real broadcast
 captions or Flatpak portal access. Component tests cover the file-open actions,
 single-file URL handling and rejected input.
+GTK warnings and criticals also fail the startup suite. To check the native Linux
+fallback, run `bash scripts/test-startup.sh` in a session without a FileChooser
+portal. Production startup selects Qt Quick dialogs in this case.
+
+The portal dialog suite requires Qt's `xdgdesktopportal` platform theme,
+`dbus-run-session`, Python `dbus` and PyGObject. It starts a private D-Bus
+protocol fixture; it never replaces the user's desktop portal. The real Qt
+plugin receives accept/cancel responses from that fixture and passes file URLs
+through the ordinary QML dialogs. This checks protocol integration, not the
+appearance of GNOME/KDE's chooser or Flatpak document grants. It does not use a
+headless or software renderer as a substitute for missing display hardware.
+
 Recording inspection is asynchronous: component tests cover completion, failure
 and cancellation UI; connection tests verify input/activity coherence during
 every related Qt notification. Hardware-free worker tests control completion to

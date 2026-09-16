@@ -21,6 +21,9 @@ inline void configureQtQuickOpenGl() {
     QGuiApplication::setDesktopFileName(QStringLiteral("io.github.ouvill.litv"));
     QQuickWindow::setGraphicsApi(QSGRendererInterface::OpenGL);
 }
+inline void useQtQuickDialogs() {
+    QCoreApplication::setAttribute(Qt::AA_DontUseNativeDialogs);
+}
 inline QString playbackLogDirectory() {
 #if QT_VERSION >= QT_VERSION_CHECK(6, 7, 0)
   return QStandardPaths::writableLocation(QStandardPaths::StateLocation);

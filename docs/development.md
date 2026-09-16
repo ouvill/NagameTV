@@ -16,12 +16,16 @@
 
 - Rust / Cargo（Rust 1.98.1でビルド確認）
 - CMake 3.24以降、C/C++コンパイラー、pkg-config、libclang
-- Qt 6.8以降のQuick / Controls / Dialogs / Layouts / Shapes / EffectsとQtCore QMLモジュール、SVG画像プラグイン、翻訳用の`lrelease`
+- Qt 6.8以降のQuick / Controls / Dialogs / Layouts / Shapes / EffectsとQtCore QMLモジュール、LinuxではQt DBus、SVG画像プラグイン、翻訳用の`lrelease`
 - GStreamer 1.24以降と開発ライブラリー（`gstreamer-mpegts-1.0`を含む）
 - GStreamerの`qml6glsink`、OpenGL関連プラグイン、`tsdemux`、映像・音声デコーダー、音声出力プラグイン
 
 Ubuntuでは`lrelease`は`qt6-l10n-tools`、MPEG-TSの開発ライブラリーは`libgstreamer-plugins-bad1.0-dev`に含まれます。
 日本語UIのフォントにはNoto Sans CJK JPを使用します。字幕用ARIBフォントは同梱しています。
+Linuxのファイル・フォルダー選択はPortalを優先します。ネイティブ版で利用するには
+QtのPortalプラグイン（Ubuntuでは`qt6-xdgdesktopportal-platformtheme`）と、
+デスクトップ側の`xdg-desktop-portal`および対応バックエンドが必要です。
+起動時に利用できない場合はQt Quick製のダイアログを使います。[選択方針](platform-startup.md)
 
 リポジトリーのルートで実行します。
 

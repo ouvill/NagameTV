@@ -2,6 +2,85 @@
 use std::ffi::OsStr;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Packaging {
+    Native,
+    Flatpak,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DialogBackend {
+    Portal,
+    QtQuick,
+}
+
+/// Prepared before Qt starts; consumed after its platform theme has loaded.
+pub struct DialogSetup {
+    packaging: Packaging,
+}
+
+impl DialogSetup {
+    /// Select the portal platform theme before Qt or any worker starts.
+    ///
+    /// # Safety
+    /// No other thread may access the process environment during this call.
+    /// QGuiApplication must not have been constructed yet.
+    pub unsafe fn prepare() -> Self {
+        // Qt's portal theme delegates appearance to the desktop theme. Choosing
+        // it explicitly also enables portals outside Flatpak, without changing
+        // the X11/Wayland backend or display scaling.
+        unsafe { std::env::set_var("QT_QPA_PLATFORMTHEME", "xdgdesktopportal") };
+        Self {
+            packaging: if std::path::Path::new("/.flatpak-info").exists() {
+                Packaging::Flatpak
+            } else {
+                Packaging::Native
+            },
+        }
+    }
+
+    /// Finish before loading QML. The application borrow proves Qt is initialized.
+    pub fn finish(self, _app: &cxx_qt_lib::QGuiApplication) -> DialogBackend {
+        match self.packaging {
+            Packaging::Flatpak => {
+                // The runtime supplies Qt's portal plugin. Never disable native
+                // dialogs here: the document portal grants access outside the sandbox.
+                tracing::info!("Using desktop portal dialogs (Flatpak)");
+                DialogBackend::Portal
+            }
+            Packaging::Native => match portal_available() {
+                Ok(()) => {
+                    tracing::info!("Using desktop portal dialogs");
+                    DialogBackend::Portal
+                }
+                Err(reason) => {
+                    // Qt's portal plugin can fall back to the desktop's GTK3
+                    // dialogs. Avoid that path when portal support is unavailable.
+                    crate::player::ffi::use_qt_quick_dialogs();
+                    tracing::info!(%reason, "Desktop portal unavailable; using Qt Quick dialogs");
+                    DialogBackend::QtQuick
+                }
+            },
+        }
+    }
+}
+
+fn portal_available() -> Result<(), String> {
+    if !crate::player::ffi::portal_theme_loaded() {
+        return Err("Qt xdgdesktopportal platform theme is not loaded".into());
+    }
+    let version =
+        crate::player::ffi::portal_file_chooser_version().map_err(|error| error.to_string())?;
+    // FileChooser version 3 introduced directory selection, which is needed by
+    // the screenshot folder picker as well as the recording file picker.
+    if version < 3 {
+        return Err(format!(
+            "FileChooser portal version {version} does not support folders"
+        ));
+    }
+    Ok(())
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Policy {
     Preserve,
     XcbCompatibility,

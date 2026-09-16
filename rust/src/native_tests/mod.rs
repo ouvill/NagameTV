@@ -6,6 +6,8 @@ mod bridge;
 mod localization;
 mod outline;
 mod pointer;
+#[cfg(target_os = "linux")]
+mod portal_dialogs;
 mod startup;
 
 pub fn run() -> i32 {
@@ -25,6 +27,8 @@ pub fn run() -> i32 {
         Some("connection") => crate::player::connection_checks::run(),
         Some("startup") => startup::run(),
         Some("startup-window") => startup::run_window(),
+        #[cfg(target_os = "linux")]
+        Some("portal-dialogs") => portal_dialogs::run(),
         Some("subtitle-rendering") => {
             let mut qt_arguments = vec!["viewer-subtitle-tests".to_owned()];
             qt_arguments.extend(arguments);
@@ -43,7 +47,7 @@ pub fn run() -> i32 {
         }
         _ => {
             eprintln!(
-                "Expected --native-tests localization|missing-catalog|subtitle-outline|pointer-activity|subtitle-rendering|screenshots|connection|startup"
+                "Expected --native-tests localization|missing-catalog|subtitle-outline|pointer-activity|subtitle-rendering|screenshots|connection|startup|portal-dialogs"
             );
             2
         }

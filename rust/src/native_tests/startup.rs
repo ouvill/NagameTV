@@ -2,6 +2,7 @@
 use super::bridge::ffi;
 use crate::{features, playback, player, settings};
 use cxx_qt_lib::{QGuiApplication, QQmlApplicationEngine, QString, QUrl};
+use gstreamer::glib;
 use std::{
     io::{Read, Write},
     net::TcpListener,
@@ -14,14 +15,14 @@ use std::{
 };
 
 type TestResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
-static QML_WARNINGS: Mutex<Vec<String>> = Mutex::new(Vec::new());
+static UI_WARNINGS: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
 fn record_qt(level: u8, category: &str, message: &str) {
     if level >= 2 {
         eprintln!("Qt [{category}]: {message}");
     }
     if level >= 2 && (message.contains("qrc:/") || category.starts_with("qt.qml")) {
-        QML_WARNINGS.lock().unwrap().push(message.into());
+        UI_WARNINGS.lock().unwrap().push(message.into());
     }
 }
 
@@ -320,8 +321,8 @@ fn window(app: &QGuiApplication, preferences: &settings::Preferences) -> TestRes
     app.process_events();
     drop(engine);
     app.process_events();
-    let warnings = QML_WARNINGS.lock().unwrap();
-    assert!(warnings.is_empty(), "QML warnings: {warnings:?}");
+    let warnings = UI_WARNINGS.lock().unwrap();
+    assert!(warnings.is_empty(), "UI warnings: {warnings:?}");
     Ok(())
 }
 
@@ -339,6 +340,23 @@ fn check_recording(
         .map_err(|_| "fixture URL")?
         .to_string();
     let quoted_url = serde_json::to_string(&url)?;
+    // Exercise the real picker, not only drag-and-drop. Keep its options intact
+    // so the test also covers the production startup dialog policy.
+    let picker =
+        "Array.from(recordingInput.data).find(item => item.objectName === 'recordingPicker')";
+    evaluate(
+        engine,
+        &format!(
+            "{picker}.selectedFile = {quoted_url}; modeNavigation.modeRequested(ModeNavigation.Recording); true"
+        ),
+    )?;
+    wait_for(app, engine, &format!("{picker}.visible"))?;
+    evaluate(engine, &format!("{picker}.reject(); true"))?;
+    wait_for(app, engine, &format!("!{picker}.visible"))?;
+    assert!(evaluate(
+        engine,
+        "!player.recording_loading && !player.recording && !player.playing && modeNavigation.mode === ModeNavigation.Live"
+    )?);
     assert!(ffi::drop_file_on_root(
         engine.pin_mut(),
         &QString::from(&url),
@@ -367,6 +385,18 @@ fn check_recording(
         engine,
         "!player.playing && !player.connecting && !player.subtitles_active && player.recording"
     )?);
+    evaluate(
+        engine,
+        "modeNavigation.modeRequested(ModeNavigation.Recording); true",
+    )?;
+    wait_for(app, engine, &format!("{picker}.visible"))?;
+    evaluate(engine, &format!("{picker}.accept(); true"))?;
+    wait_for(
+        app,
+        engine,
+        "player.recording && player.playing && JSON.parse(player.video_stats()).rendered > 0",
+    )?;
+    evaluate(engine, "player.stop(); true")?;
     // Replay through the ordinary Play button, then reach a normal file EOF.
     evaluate(engine, "player.play(); true")?;
     wait_for(
@@ -463,6 +493,21 @@ fn launch_window(autoplay_override: Option<&str>) -> TestResult {
 }
 
 pub fn run_window() -> i32 {
+    // SAFETY: This is a fresh subprocess, before Qt or worker initialization.
+    #[cfg(target_os = "linux")]
+    let dialogs = unsafe { crate::platform::DialogSetup::prepare() };
+    // Native GTK dialog warnings bypass Qt's message handler. Keep them visible
+    // and fail this test if the GTK icon-surface regression returns.
+    let gtk_log = glib::log_set_handler(
+        Some("Gtk"),
+        glib::LogLevels::LEVEL_WARNING | glib::LogLevels::LEVEL_CRITICAL,
+        false,
+        false,
+        |domain, level, message| {
+            glib::log_default_handler(domain, level, Some(message));
+            UI_WARNINGS.lock().unwrap().push(format!("Gtk: {message}"));
+        },
+    );
     let result = (|| -> TestResult {
         features::PLAN
             .set(features::LaunchPlan::parse([])?)
@@ -472,9 +517,12 @@ pub fn run_window() -> i32 {
         player::ffi::configure_qt_quick_open_gl();
         let app = QGuiApplication::new();
         assert!(!app.is_null());
+        #[cfg(target_os = "linux")]
+        dialogs.finish(&app);
         let preferences = settings::Loaded::open(settings::settings_path()?)?;
         window(&app, preferences.preferences())
     })();
+    glib::log_remove_handler(Some("Gtk"), gtk_log);
     match result {
         Ok(()) => 0,
         Err(error) => {

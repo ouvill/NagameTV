@@ -72,6 +72,8 @@ QtやGStreamerを更新した際はパッケージの再ビルドと再生確認
 スクリーンショットをダイアログなしで保存できるよう、既定の保存先だけに
 `--filesystem=xdg-pictures/mirakurun-viewer:create`で書き込み・作成を許可する。
 設定画面で別の保存先を選ぶ場合はQtのフォルダーダイアログを使い、選択先へ書き込めることを確認して保存する。
+録画ファイル・保存先の選択はQtのPortal連携を使用する。ネイティブ版の
+「Portalが利用できない場合はQt Quick製ダイアログを使う」処理はFlatpakには適用しない。
 Flatpakのサブディレクトリー権限については[ファイルアクセスの仕様](https://docs.flatpak.org/en/latest/sandbox-permissions.html#filesystem-access)を参照。
 
 | 権限 | 用途 |

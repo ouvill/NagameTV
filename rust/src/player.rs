@@ -86,6 +86,16 @@ pub mod ffi {
         unsafe fn install_pointer_activity(item: *mut QQuickItem);
         #[cxx_name = "configureQtQuickOpenGl"]
         fn configure_qt_quick_open_gl();
+        #[cfg(target_os = "linux")]
+        #[cxx_name = "useQtQuickDialogs"]
+        fn use_qt_quick_dialogs();
+        include!("portal.h");
+        #[cfg(target_os = "linux")]
+        #[cxx_name = "portalThemeLoaded"]
+        fn portal_theme_loaded() -> bool;
+        #[cfg(target_os = "linux")]
+        #[cxx_name = "portalFileChooserVersion"]
+        fn portal_file_chooser_version() -> Result<u32>;
         include!("video_item.h");
         #[cxx_name = "qml6VideoItemPointer"]
         unsafe fn qml6_video_item_pointer(item: *mut QQuickItem) -> *mut u8;

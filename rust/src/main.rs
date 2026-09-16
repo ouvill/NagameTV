@@ -89,6 +89,9 @@ fn main() -> std::process::ExitCode {
 // Returning errors unwinds local ownership normally: the QML engine (and its
 // Player) is destroyed before QGuiApplication, including failed UI creation.
 fn run() -> Result<(), StartupError> {
+    // SAFETY: Still before Qt, GStreamer, diagnostics or worker initialization.
+    #[cfg(target_os = "linux")]
+    let dialogs = unsafe { platform::DialogSetup::prepare() };
     memory::configure().map_err(StartupError::Allocator)?;
     let plan =
         features::LaunchPlan::parse(std::env::args().skip(1)).map_err(StartupError::Arguments)?;
@@ -107,6 +110,8 @@ fn run() -> Result<(), StartupError> {
     if app.is_null() {
         return Err(StartupError::Application);
     }
+    #[cfg(target_os = "linux")]
+    dialogs.finish(&app);
     let _preloaded = playback::preload().map_err(StartupError::Playback)?;
     // Reverse local drop order keeps diagnostics alive through engine destruction.
     let _diagnostics = diagnostics::Lifetime::new()?;

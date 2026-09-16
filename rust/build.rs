@@ -62,6 +62,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     .file("src/comment_model.rs")
     .include_dir("src")
     .qt_module("Quick");
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("linux") {
+        builder = builder.qt_module("DBus");
+    }
     if std::env::var_os("CARGO_FEATURE_QML_TESTS").is_some() {
         builder = builder
             .qt_module("QuickTest")
