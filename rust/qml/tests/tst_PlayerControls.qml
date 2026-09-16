@@ -13,6 +13,10 @@ Item {
             id: backend
             property bool playing: false
             property bool recording: false
+            property bool media_active: playing || paused
+            property bool paused: false
+            property bool connecting: false
+            property bool seekable: recording && media_active
             property int selected: 0
             property bool audio_muted: false
             property real volume_level: 0.5
@@ -24,8 +28,10 @@ Item {
             property bool subtitles_enabled: true
             property bool subtitle_display: true
             property int saved: 0
-            function play() { playing = true; }
-            function stop() { playing = false; }
+            function play() { playing = true; paused = false; }
+            function pause() { paused = true; playing = false; }
+            function stop() { playing = false; paused = false; }
+            function skip(milliseconds) {}
             function mute(value) { audio_muted = value; }
             function volume(value) { volume_level = value; }
             function save_settings() { saved++; }
@@ -58,6 +64,7 @@ Item {
             function init() {
                 failOnWarning(/.*/);
                 backend.playing = false;
+                backend.paused = false;
                 backend.recording = false;
                 backend.comments_enabled = true;
                 backend.danmaku_enabled = false;
@@ -97,6 +104,15 @@ Item {
                 mouseClick(findChild(controls, "screenshotButton"));
                 compare(capture.count, 1);
             }
+            function test_recording_pause_resume_and_explicit_stop() {
+                backend.recording = true;
+                waitForRendering(controls);
+                const play = findChild(controls, "playStopButton");
+                mouseClick(play); compare(backend.playing, true);
+                mouseClick(play); compare(backend.paused, true); compare(backend.media_active, true);
+                mouseClick(play); compare(backend.playing, true); compare(backend.paused, false);
+                mouseClick(findChild(controls, "recordingStopButton")); compare(backend.media_active, false);
+            }
             function test_request_does_not_change_mode_before_file_selection_succeeds() {
                 const recording = findChild(navigation, "recordingModeButton");
                 mouseClick(recording);
@@ -113,25 +129,30 @@ Item {
                 compare(modes.signalArguments[1][0], ModeNavigation.Live);
             }
             function test_controls_remain_reachable_with_sidebar_at_minimum_window_width() {
-                const names = ["muteButton", "audioSelectionButton", "playerVolumeSlider",
-                    "channelsButton", "playStopButton", "postCommentButton", "screenshotButton",
-                    "subtitlesButton", "danmakuButton", "playbackSettingsButton", "fullscreenButton", "sidePanelButton"];
-                for (const width of [1392, 984, 852, 780, 779, 692, 492]) {
-                    controls.width = width;
-                    waitForRendering(controls);
-                    const boxes = names.map(name => {
-                        const item = findChild(controls, name);
-                        const p = item.mapToItem(controls, 0, 0);
-                        verify(p.x >= 0 && p.y >= 0, name + " starts within controls");
-                        verify(p.x + item.width <= width && p.y + item.height <= controls.height,
-                            name + " fits at " + width);
-                        return {name: name, x: p.x, y: p.y, w: item.width, h: item.height};
-                    });
-                    for (let i = 0; i < boxes.length; ++i) {
-                        for (let j = i + 1; j < boxes.length; ++j) {
-                            const a = boxes[i], b = boxes[j];
-                            verify(a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.h <= b.y || b.y + b.h <= a.y,
-                                a.name + " overlaps " + b.name + " at " + width + ": " + JSON.stringify([a, b]));
+                for (const recording of [false, true]) {
+                    backend.recording = recording;
+                    const names = ["muteButton", "audioSelectionButton", "playerVolumeSlider",
+                        "playStopButton", "screenshotButton", "subtitlesButton", "danmakuButton",
+                        "playbackSettingsButton", "fullscreenButton", "sidePanelButton"].concat(recording
+                            ? ["skipBackButton", "skipForwardButton", "recordingStopButton"]
+                            : ["channelsButton", "postCommentButton"]);
+                    for (const width of [1392, 984, 852, 780, 779, 692, 492]) {
+                        controls.width = width;
+                        waitForRendering(controls);
+                        const boxes = names.map(name => {
+                            const item = findChild(controls, name);
+                            const p = item.mapToItem(controls, 0, 0);
+                            verify(p.x >= 0 && p.y >= 0, name + " starts within controls");
+                            verify(p.x + item.width <= width && p.y + item.height <= controls.height,
+                                name + " fits at " + width);
+                            return {name: name, x: p.x, y: p.y, w: item.width, h: item.height};
+                        });
+                        for (let i = 0; i < boxes.length; ++i) {
+                            for (let j = i + 1; j < boxes.length; ++j) {
+                                const a = boxes[i], b = boxes[j];
+                                verify(a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.h <= b.y || b.y + b.h <= a.y,
+                                    a.name + " overlaps " + b.name + " at " + width + ": " + JSON.stringify([a, b]));
+                            }
                         }
                     }
                 }

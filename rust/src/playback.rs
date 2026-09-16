@@ -9,6 +9,7 @@ pub mod deinterlace;
 pub mod failure;
 pub mod recording;
 pub mod stats;
+pub mod timeline;
 #[cfg(feature = "video_item_tests")]
 pub(crate) mod video_item_checks;
 pub mod warnings;
@@ -22,7 +23,7 @@ type Result<T> = std::result::Result<T, Error>;
 pub enum Event {
     Idle,
     Playing,
-    Ended,
+    Ended(gst::Seqnum),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -65,6 +66,8 @@ pub enum Error {
     EndOfStream,
     #[error("{0}")]
     Recording(#[from] recording::Error),
+    #[error("{0}")]
+    Transport(#[from] timeline::Error),
     #[error("{source} ({debug:?})")]
     LiveResumeRejected {
         source: gst::glib::Error,
@@ -391,13 +394,13 @@ impl Playback {
                         failure = Some(stream_error(e));
                     }
                 }
-                gst::MessageView::Eos(_) => {
-                    event = Event::Ended;
+                gst::MessageView::Eos(message) => {
+                    event = Event::Ended(message.seqnum());
                 }
                 gst::MessageView::StateChanged(s)
                     if s.src() == Some(self.playbin.upcast_ref())
                         && s.current() == gst::State::Playing
-                        && !matches!(event, Event::Ended) =>
+                        && !matches!(event, Event::Ended(_)) =>
                 {
                     event = Event::Playing;
                 }

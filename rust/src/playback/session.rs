@@ -6,6 +6,37 @@ use crate::{channels::BroadcastService, features::subtitles};
 pub struct Session {
     playback: Option<Playback>,
     subtitles: Option<subtitles::Session>,
+    input: Input,
+}
+
+enum Input {
+    Idle,
+    Live,
+    Recording(super::timeline::Controller),
+}
+
+/// Exclusive access to a recording's own pipeline, never a live source.
+pub struct RecordingControl<'a> {
+    playback: &'a Playback,
+    controller: &'a mut super::timeline::Controller,
+}
+
+impl RecordingControl<'_> {
+    pub fn seek(self, milliseconds: f64) -> std::result::Result<(), super::timeline::Error> {
+        self.controller
+            .prepare(self.playback.element())?
+            .seek(milliseconds)
+    }
+    pub fn skip(self, milliseconds: f64) -> std::result::Result<(), super::timeline::Error> {
+        let target = self.controller.relative_target(milliseconds)?;
+        self.seek(target)
+    }
+    pub fn resume(
+        self,
+        resume: super::timeline::Resume,
+    ) -> std::result::Result<(), super::timeline::Error> {
+        self.controller.pause(self.playback.element(), resume)
+    }
 }
 
 /// Exclusive, non-cloneable evidence that this owner's previous stream stopped.
@@ -22,6 +53,7 @@ impl Session {
         Self {
             playback,
             subtitles: None,
+            input: Input::Idle,
         }
     }
     // Native stream-control methods are private to the playback module. This
@@ -31,6 +63,41 @@ impl Session {
     }
     pub fn subtitles(&self) -> Option<&subtitles::Session> {
         self.subtitles.as_ref()
+    }
+
+    pub fn recording_control(
+        &mut self,
+    ) -> std::result::Result<RecordingControl<'_>, super::timeline::Error> {
+        match (&self.playback, &mut self.input) {
+            (Some(playback), Input::Recording(controller)) => Ok(RecordingControl {
+                playback,
+                controller,
+            }),
+            _ => Err(super::timeline::Error::Unavailable),
+        }
+    }
+
+    pub fn timeline(&self) -> Option<(super::timeline::Phase, super::timeline::Snapshot)> {
+        match &self.input {
+            Input::Recording(controller) => Some((controller.phase(), controller.snapshot())),
+            Input::Idle | Input::Live => None,
+        }
+    }
+
+    pub fn poll(&mut self) -> Result<super::Event> {
+        let Some(playback) = &self.playback else {
+            return Ok(super::Event::Idle);
+        };
+        let mut event = playback.poll()?;
+        if let Input::Recording(controller) = &mut self.input {
+            if let super::Event::Ended(sequence) = event
+                && !controller.ended(sequence)?
+            {
+                event = super::Event::Idle;
+            }
+            controller.poll(playback.element())?;
+        }
+        Ok(event)
     }
 
     /// # Safety
@@ -52,6 +119,7 @@ impl Session {
         // A failed native transition cannot reach either resource release or
         // construction of Stopped. The caller retains this owner for retry.
         self.subtitles = None;
+        self.input = Input::Idle;
         Ok(Stopped(self))
     }
     pub fn shutdown(&mut self) -> Result<()> {
@@ -59,6 +127,7 @@ impl Session {
             playback.shutdown()?;
         }
         self.subtitles = None;
+        self.input = Input::Idle;
         Ok(())
     }
     pub fn shutdown_before_drop(&mut self) {
@@ -66,6 +135,7 @@ impl Session {
             playback.shutdown_before_drop();
         }
         self.subtitles = None;
+        self.input = Input::Idle;
     }
 }
 
@@ -83,6 +153,7 @@ impl Stopped<'_> {
             broadcast.map(|s| s.service_id),
             |element| subtitles::Session::start(element, broadcast),
             subtitles_enabled,
+            Input::Live,
         )
     }
 
@@ -90,12 +161,23 @@ impl Stopped<'_> {
         self,
         file: &super::recording::Recording,
         subtitles_enabled: bool,
+        programs_enabled: bool,
     ) -> Result<SubtitleStart> {
+        let playback = self.0.playback.as_ref().ok_or(Error::Unavailable)?;
+        let input = Input::Recording(super::timeline::Controller::new(&playback.sink)?);
         self.start_uri(
             file.uri(),
             Some(file.service()),
-            |element| subtitles::Session::start_recording(element, file.service()),
-            subtitles_enabled,
+            |element| {
+                subtitles::Session::start_recording(
+                    element,
+                    file.service(),
+                    subtitles_enabled,
+                    programs_enabled,
+                )
+            },
+            subtitles_enabled || programs_enabled,
+            input,
         )
     }
 
@@ -108,6 +190,7 @@ impl Stopped<'_> {
         )
             -> std::result::Result<subtitles::Session, subtitles::Error>,
         subtitles_enabled: bool,
+        input: Input,
     ) -> Result<SubtitleStart> {
         let playback = self.0.playback.as_ref().ok_or(Error::Unavailable)?;
         let subtitles = if subtitles_enabled {
@@ -121,6 +204,7 @@ impl Stopped<'_> {
         } else {
             SubtitleStart::Disabled
         };
+        self.0.input = input;
         if let Err(error) = playback.play(uri, service) {
             let failure = match self.0.stop() {
                 Ok(_) => error,
@@ -159,6 +243,7 @@ pub(super) fn check_stop_ownership() {
     let mut session = Session {
         playback: Some(playback),
         subtitles: Some(subtitles),
+        input: Input::Live,
     };
     let before = session.subtitles().expect("subtitle generation").counters();
     assert!(before.0 > 0);

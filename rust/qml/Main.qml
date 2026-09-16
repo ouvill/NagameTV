@@ -81,6 +81,30 @@ ApplicationWindow {
             settings.open();
         }
     }
+    Shortcut {
+        sequence: "Space"
+        context: Qt.WindowShortcut
+        autoRepeat: false
+        enabled: windowActions.navigationEnabled && player.recording && !root.showGuide && !root.showChannels
+        onActivated: {
+            player.playing ? player.pause() : player.play();
+            overlayVisibility.reveal();
+        }
+    }
+    Shortcut {
+        sequence: "Left"
+        context: Qt.WindowShortcut
+        enabled: windowActions.navigationEnabled && player.seekable && !root.showGuide && !root.showChannels
+            && !(root.activeFocusItem instanceof Slider)
+        onActivated: { player.skip(-10000); overlayVisibility.reveal(); }
+    }
+    Shortcut {
+        sequence: "Right"
+        context: Qt.WindowShortcut
+        enabled: windowActions.navigationEnabled && player.seekable && !root.showGuide && !root.showChannels
+            && !(root.activeFocusItem instanceof Slider)
+        onActivated: { player.skip(30000); overlayVisibility.reveal(); }
+    }
     function chooseConnectedChannel() {
         player.guide_open(false);
         root.showChannels = true;
@@ -143,13 +167,13 @@ ApplicationWindow {
         enabled: !root.closing
         playing: player.playing
         // Like main, the persistent sidebar does not pin the video controls.
-        pinned: root.showChannels || root.showGuide || windowActions.popupOpen || windowActions.editingText || playerControls.volumePressed
+        pinned: root.showChannels || root.showGuide || windowActions.popupOpen || windowActions.editingText || playerControls.volumePressed || recordingTimeline.pressed
     }
     AudioSettings {
         id: audioSettings
         windowWidth: root.width
         windowHeight: root.height
-        playing: player.playing
+        playing: player.media_active
         onRefreshRequested: {
             tracksJson = player.audio_tracks();
             errorText = player.audio_error();
@@ -201,7 +225,7 @@ ApplicationWindow {
         id: screenshot
         backend: player
         target: videoPicture
-        available: player.playing
+        available: player.media_active && !player.seeking
         enabled: !root.closing
         onSaved: {
             screenshotNotice.text = qsTranslate("Main", "Screenshot saved.");
@@ -318,7 +342,7 @@ ApplicationWindow {
         }
         Loader {
             anchors.fill: parent
-            active: !root.closing && !player.playing
+            active: !root.closing && !player.media_active
             sourceComponent: StoppedPlayback {
                 status: player.status
                 playbackError: player.playback_error
@@ -376,22 +400,24 @@ ApplicationWindow {
                 margins: 24
             }
             width: Math.max(360, surface.width - 430)
-            active: !root.closing && !player.recording
+            active: !root.closing && (!player.recording || player.current_program_data !== "null")
             visible: overlayVisibility.controlsVisible && !root.showGuide
             sourceComponent: CurrentProgram {
+                recording: player.recording
+                fallbackTitle: player.recording_name
                 programJson: player.current_program_data
                 onDetailsRequested: {
                     root.sidebarPage = ProgramSidebar.Program;
                     root.showProgram = true;
                 }
-                channelLabel: player.recording ? player.recording_name : player.selected >= 0 && player.selected < root.channelRows.length ? root.channelRows[player.selected].label : ""
+                channelLabel: player.recording ? (program && program.station || player.recording_name) : player.selected >= 0 && player.selected < root.channelRows.length ? root.channelRows[player.selected].label : ""
                 logoUrl: !player.recording && player.selected >= 0 && player.selected < root.channelRows.length ? root.channelRows[player.selected].logo : ""
             }
         }
         Label {
             anchors { left: parent.left; top: parent.top; margins: 24 }
             width: Math.max(220, surface.width - 580)
-            visible: player.recording && overlayVisibility.controlsVisible && !root.showGuide
+            visible: player.recording && player.current_program_data === "null" && overlayVisibility.controlsVisible && !root.showGuide
             text: player.recording_name
             textFormat: Text.PlainText
             color: "#f4f5f3"
@@ -472,6 +498,15 @@ ApplicationWindow {
             }
             contentItem: ColumnLayout {
                 spacing: 12
+                RecordingTimeline {
+                    id: recordingTimeline
+                    visible: player.recording
+                    Layout.fillWidth: true
+                    Layout.leftMargin: 24
+                    Layout.rightMargin: 24
+                    backend: player
+                    closing: root.closing
+                }
                 Label {
                     text: Math.round(player.program_progress * 100) + "%"
                     visible: !player.recording
@@ -674,8 +709,10 @@ ApplicationWindow {
             targetWindow: root
             programJson: player.current_program_data
             progress: player.program_progress
-            channelLabel: player.selected >= 0 && player.selected < root.channelRows.length ? root.channelRows[player.selected].label : ""
-            logoUrl: player.selected >= 0 && player.selected < root.channelRows.length ? root.channelRows[player.selected].logo : ""
+            recording: player.recording
+            fallbackTitle: player.recording_name
+            channelLabel: player.recording ? (program && program.station || player.recording_name) : player.selected >= 0 && player.selected < root.channelRows.length ? root.channelRows[player.selected].label : ""
+            logoUrl: !player.recording && player.selected >= 0 && player.selected < root.channelRows.length ? root.channelRows[player.selected].logo : ""
             onCloseRequested: root.showProgram = false
         }
     }

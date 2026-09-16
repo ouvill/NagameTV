@@ -861,7 +861,75 @@
       <source>Default: Ctrl+Enter. Enable to also send with Enter.</source>
       <translation>標準はCtrl+Enterで送信。有効にするとEnterでも送信できます。</translation>
     </message>
-  </context>
+      <message>
+      <source>Back 10 seconds</source>
+      <translation>10秒戻す</translation>
+    </message>
+    <message>
+      <source>Forward 30 seconds</source>
+      <translation>30秒送る</translation>
+    </message>
+    <message>
+      <source>Seeking…</source>
+      <translation>移動中…</translation>
+    </message>
+    <message>
+      <source>Playback position</source>
+      <translation>再生位置</translation>
+    </message>
+    <message>
+      <source>Program information from recording TS</source>
+      <translation>録画TSから取得した番組情報</translation>
+    </message>
+    <message>
+      <source>News</source>
+      <translation>ニュース・報道</translation>
+    </message>
+    <message>
+      <source>Sports</source>
+      <translation>スポーツ</translation>
+    </message>
+    <message>
+      <source>Information</source>
+      <translation>情報・ワイドショー</translation>
+    </message>
+    <message>
+      <source>Drama</source>
+      <translation>ドラマ</translation>
+    </message>
+    <message>
+      <source>Music</source>
+      <translation>音楽</translation>
+    </message>
+    <message>
+      <source>Variety</source>
+      <translation>バラエティ</translation>
+    </message>
+    <message>
+      <source>Film</source>
+      <translation>映画</translation>
+    </message>
+    <message>
+      <source>Animation</source>
+      <translation>アニメ・特撮</translation>
+    </message>
+    <message>
+      <source>Documentary</source>
+      <translation>ドキュメンタリー・教養</translation>
+    </message>
+    <message>
+      <source>Theater</source>
+      <translation>劇場・公演</translation>
+    </message>
+    <message>
+      <source>Education</source>
+      <translation>趣味・教育</translation>
+    </message>
+    <message>
+      <source>Welfare</source>
+      <translation>福祉</translation>
+    </message>
+</context>
   <context>
     <name>Settings</name>
     <message>

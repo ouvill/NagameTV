@@ -39,9 +39,7 @@ impl PlayerRust {
                 model::Playback::Connecting(live.service()),
                 live.broadcast(),
             ),
-            State::Playing(Attempt::Live(live)) => {
-                (model::Playback::Playing(live.service()), live.broadcast())
-            }
+            State::Playing(live) => (model::Playback::Playing(live.service()), live.broadcast()),
             State::StopFailed(Attempt::Live(live)) => (
                 model::Playback::StopFailed(live.service()),
                 live.broadcast(),
@@ -50,8 +48,17 @@ impl PlayerRust {
                 model::Playback::FileConnecting(file.name().to_owned()),
                 None,
             ),
-            State::Playing(Attempt::File(file)) => {
-                (model::Playback::FilePlaying(file.name().to_owned()), None)
+            State::Recording(file, phase) => {
+                use crate::playback::timeline::{Phase, Resume};
+                let name = file.name().to_owned();
+                let playback = match phase {
+                    Phase::Playing => model::Playback::FilePlaying(name),
+                    Phase::Paused => model::Playback::FilePaused(name),
+                    Phase::Seeking(Resume::Playing) => model::Playback::FileSeeking(name),
+                    Phase::Seeking(Resume::Paused) => model::Playback::FileSeekingPaused(name),
+                    Phase::Ended => model::Playback::FileEnded(name),
+                };
+                (playback, None)
             }
             State::StopFailed(Attempt::File(file)) => (
                 model::Playback::FileStopFailed(file.name().to_owned()),
@@ -273,7 +280,9 @@ impl ffi::Player {
             return Ok(());
         }
         match self.rust().stream_state {
-            stream_state::State::Connecting(_) | stream_state::State::Playing(_) => Ok(()),
+            stream_state::State::Connecting(_)
+            | stream_state::State::Playing(_)
+            | stream_state::State::Recording(_, _) => Ok(()),
             stream_state::State::Stopped(_) | stream_state::State::StopFailed(_) => {
                 Err(CommandError::Playback(self.playback_error().to_string()))
             }

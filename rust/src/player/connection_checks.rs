@@ -269,7 +269,7 @@ fn check_stream_state(player: &mut cxx::UniquePtr<ffi::Player>) -> TestResult {
         .unwrap();
     player
         .pin_mut()
-        .update_stream_state(State::Playing(attempt));
+        .update_stream_state(State::Connecting(attempt).started());
     player.pin_mut().play();
     assert!(player.playing());
     assert!(
@@ -337,7 +337,7 @@ fn check_recording_input(player: &mut cxx::UniquePtr<ffi::Player>) -> TestResult
     let service = channel.id;
     player
         .pin_mut()
-        .update_stream_state(State::Playing(attempt));
+        .update_stream_state(State::Connecting(attempt).started());
     let directory = tempfile::tempdir()?;
     let path = directory.path().join("invalid.ts");
     std::fs::write(&path, b"not a transport stream")?;
@@ -394,7 +394,41 @@ fn check_recording_notifications(player: &mut cxx::UniquePtr<ffi::Player>) -> Te
         &vec![(true, "subtitle-clock.ts".to_owned(), true, false); 3]
     );
     player.pin_mut().change_stream_state(State::started);
+    let transport = Arc::new(Mutex::new(Vec::new()));
+    let changes = transport.clone();
+    let _paused = player.pin_mut().on_paused_changed(move |p| {
+        changes.lock().unwrap().push((
+            p.playing(),
+            p.paused(),
+            p.seeking(),
+            p.ended(),
+            p.media_active(),
+        ));
+    });
+    let changes = transport.clone();
+    let _seeking = player.pin_mut().on_seeking_changed(move |p| {
+        changes.lock().unwrap().push((
+            p.playing(),
+            p.paused(),
+            p.seeking(),
+            p.ended(),
+            p.media_active(),
+        ));
+    });
+    use crate::playback::timeline::{Phase, Resume};
+    player
+        .pin_mut()
+        .change_stream_state(|state| state.transport(Phase::Seeking(Resume::Paused)));
+    assert_eq!(
+        transport.lock().unwrap().as_slice(),
+        &[(false, true, true, false, true); 2]
+    );
+    transport.lock().unwrap().clear();
     player.pin_mut().end_stream()?;
+    assert_eq!(
+        transport.lock().unwrap().as_slice(),
+        &[(false, false, false, false, false); 2]
+    );
     assert!(
         player.recording(),
         "stop retains replay target in the same state"

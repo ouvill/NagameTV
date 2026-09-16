@@ -56,6 +56,7 @@ pub(crate) struct CaptionStream {
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct ProgramMap {
     pub service: u16,
+    pub pcr_pid: Pid,
     pub captions: Vec<CaptionStream>,
 }
 
@@ -167,6 +168,7 @@ pub(crate) struct TransportPacket<'a> {
     pub payload: &'a [u8],
     pub continuity_counter: u8,
     pub discontinuity: bool,
+    pub pcr: Option<u64>,
 }
 impl<'a> TransportPacket<'a> {
     pub fn parse(bytes: &'a [u8]) -> Result<Self, ParseError> {
@@ -199,6 +201,7 @@ impl<'a> TransportPacket<'a> {
             _ => return Err(ParseError::Invalid("reserved adaptation control")),
         };
         let mut discontinuity = false;
+        let mut pcr = None;
         if has_adaptation {
             let length = usize::from(cursor.byte()?);
             let mut adaptation = Cursor::bounded(
@@ -211,7 +214,14 @@ impl<'a> TransportPacket<'a> {
                 discontinuity = flags.discontinuity();
                 // Validate flagged fields even though only discontinuity is needed.
                 if flags.pcr() {
-                    adaptation.take(6)?;
+                    let value = adaptation.take(6)?;
+                    pcr = Some(
+                        (u64::from(value[0]) << 25)
+                            | (u64::from(value[1]) << 17)
+                            | (u64::from(value[2]) << 9)
+                            | (u64::from(value[3]) << 1)
+                            | u64::from(value[4] >> 7),
+                    );
                 }
                 if flags.opcr() {
                     adaptation.take(6)?;
@@ -238,6 +248,7 @@ impl<'a> TransportPacket<'a> {
             payload: if has_payload { cursor.rest } else { &[] },
             continuity_counter: header.continuity_counter(),
             discontinuity,
+            pcr,
         })
     }
 }
@@ -363,7 +374,7 @@ impl<'a> PsiSection<'a> {
             return Err(ParseError::Invalid("not a single-section PMT"));
         }
         let mut cursor = Cursor::bounded(self.body);
-        cursor.pid()?; // PCR_PID may be the null PID.
+        let pcr_pid = cursor.pid()?; // PCR_PID may be the null PID.
         Descriptors::parse(cursor.descriptor_loop()?)?;
         let mut captions = Vec::new();
         let mut seen_pids = std::collections::HashSet::new();
@@ -394,6 +405,7 @@ impl<'a> PsiSection<'a> {
         }
         Ok(ProgramMap {
             service: self.extension,
+            pcr_pid,
             captions,
         })
     }
@@ -453,7 +465,7 @@ impl Descriptors {
 }
 
 /// ISO/IEC 13818-1 CRC-32: initial all ones, no reflection or final XOR.
-fn crc32_mpeg(bytes: &[u8]) -> u32 {
+pub(super) fn crc32_mpeg(bytes: &[u8]) -> u32 {
     const POLYNOMIAL: u32 = 0x04c1_1db7;
     bytes.iter().fold(u32::MAX, |mut crc, byte| {
         crc ^= u32::from(*byte) << 24;

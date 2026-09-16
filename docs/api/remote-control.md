@@ -180,6 +180,10 @@ A consistent projection of the player&#39;s authoritative state.
 | file_connecting | [FilePlayback](#viewer-v1-FilePlayback) |  |  |
 | file_playing | [FilePlayback](#viewer-v1-FilePlayback) |  |  |
 | file_stop_failed | [FilePlayback](#viewer-v1-FilePlayback) |  |  |
+| file_paused | [FilePlayback](#viewer-v1-FilePlayback) |  |  |
+| file_seeking | [FilePlayback](#viewer-v1-FilePlayback) |  |  |
+| file_seeking_paused | [FilePlayback](#viewer-v1-FilePlayback) |  |  |
+| file_ended | [FilePlayback](#viewer-v1-FilePlayback) |  |  |
 | volume_fraction | [double](#double) |  | Selected volume, even while muted, in the inclusive range 0.0 to 1.0. |
 | muted | [bool](#bool) |  |  |
 | subtitles | [SubtitleDisplay](#viewer-v1-SubtitleDisplay) |  |  |
@@ -418,7 +422,7 @@ reconcile using GetState before retrying. No command is automatically replayed.
 | GetState | [GetStateRequest](#viewer-v1-GetStateRequest) | [GetStateResponse](#viewer-v1-GetStateResponse) | Returns the most recently published state (normally within one 50 ms UI tick). |
 | WatchState | [WatchStateRequest](#viewer-v1-WatchStateRequest) | [WatchStateResponse](#viewer-v1-WatchStateResponse) stream | Sends a full state immediately, then the latest state on change. Slow readers may skip intermediate states. Reconnect explicitly; every connection starts with a fresh full state. Revisions are scoped to this server lifetime. |
 | SelectChannel | [SelectChannelRequest](#viewer-v1-SelectChannelRequest) | [SelectChannelResponse](#viewer-v1-SelectChannelResponse) | Selects a catalog ID and starts playback. Unknown IDs return NOT_FOUND. |
-| Play | [PlayRequest](#viewer-v1-PlayRequest) | [PlayResponse](#viewer-v1-PlayResponse) | Starts the selected channel or replays the locally selected recording. No selection/output returns FAILED_PRECONDITION. Does not open arbitrary files. |
+| Play | [PlayRequest](#viewer-v1-PlayRequest) | [PlayResponse](#viewer-v1-PlayResponse) | Starts the selected channel or replays the locally selected recording. Resumes a paused recording; restarts an ended recording from the beginning. No selection/output returns FAILED_PRECONDITION. Does not open arbitrary files. |
 | Stop | [StopRequest](#viewer-v1-StopRequest) | [StopResponse](#viewer-v1-StopResponse) | Stops playback and cancels pending startup autoplay. Safe to repeat. |
 | SetVolume | [SetVolumeRequest](#viewer-v1-SetVolumeRequest) | [SetVolumeResponse](#viewer-v1-SetVolumeResponse) | Sets the volume fraction and unmutes, matching the desktop volume slider. |
 | SetMuted | [SetMutedRequest](#viewer-v1-SetMutedRequest) | [SetMutedResponse](#viewer-v1-SetMutedResponse) | Sets mute explicitly. Unmuting restores the selected volume. |

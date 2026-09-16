@@ -15,7 +15,7 @@ pub(crate) use pes::CaptionDecoder;
 mod selection;
 #[cfg(test)]
 mod stream_selection_tests;
-mod transport;
+pub(crate) mod transport;
 use crate::transport::wire;
 
 use crate::channels::BroadcastService;
@@ -63,10 +63,18 @@ impl Session {
         let parser = parser_for(service)?;
         Self::with_parser(playbin, parser)
     }
-    pub fn start_recording(playbin: &gst::Element, service: u16) -> Result<Self, Error> {
-        let mut parser = transport::TransportParser::new(true);
+    pub fn start_recording(
+        playbin: &gst::Element,
+        service: u16,
+        subtitles: bool,
+        programs: bool,
+    ) -> Result<Self, Error> {
+        let mut parser = transport::TransportParser::new(subtitles);
         parser.select_service(service);
-        if !parser.decoder_available() {
+        if programs {
+            parser.enable_programs(service);
+        }
+        if subtitles && !parser.decoder_available() {
             return Err(Error::DecoderUnavailable);
         }
         Self::with_parser(playbin, parser)
@@ -92,8 +100,15 @@ impl Session {
             {
                 let ingest = source_ingest.clone();
                 let id = pad.add_probe(
-                    gst::PadProbeType::BUFFER | gst::PadProbeType::BUFFER_LIST,
+                    gst::PadProbeType::BUFFER
+                        | gst::PadProbeType::BUFFER_LIST
+                        | gst::PadProbeType::EVENT_DOWNSTREAM
+                        | gst::PadProbeType::EVENT_UPSTREAM
+                        | gst::PadProbeType::EVENT_FLUSH,
                     move |_, info| {
+                        if let Some(event) = info.event() {
+                            ingest.event(event);
+                        }
                         ingest.consume(
                             info.buffer()
                                 .map(|buffer| buffer.as_ref())
@@ -120,6 +135,10 @@ impl Session {
     pub fn poll(&self, position: Option<gst::ClockTime>) -> Result<SubtitleUpdate, Error> {
         self.ingest.check()?;
         self.clock.poll(position)
+    }
+    pub fn program(&self, position: Option<gst::ClockTime>) -> Result<(String, f64), Error> {
+        self.ingest.check()?;
+        self.clock.program(position)
     }
     pub fn pending_diagnostic(&self) -> Option<usize> {
         self.clock.pending_count()

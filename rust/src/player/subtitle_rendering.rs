@@ -28,6 +28,9 @@ impl ffi::Player {
         self.save_settings();
     }
     pub fn poll_subtitles(mut self: Pin<&mut Self>) {
+        if self.seeking() || self.ended() {
+            return;
+        }
         let update = self.rust().media.subtitles().map(|session| {
             session.poll(
                 self.rust()

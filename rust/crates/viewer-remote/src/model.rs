@@ -51,6 +51,10 @@ pub enum Playback {
     StopFailed(u64),
     FileConnecting(String),
     FilePlaying(String),
+    FilePaused(String),
+    FileSeeking(String),
+    FileSeekingPaused(String),
+    FileEnded(String),
     FileStopFailed(String),
 }
 

@@ -106,7 +106,7 @@ UnaryとServer streamingを提供する。
 
 - `ListChannels`: 現在の全局一覧。サブチャンネルを含む。
 - `SelectChannel`: 現行カタログのIDを再検証して選局・再生する。IDは接続中のMirakurunに属する。
-- `Play` / `Stop`: 選択局の再生／停止。ローカル録画を選択中はその録画の先頭からの再生／停止。停止は起動時の自動再生待ちも解除する。
+- `Play` / `Stop`: 選択局の再生／停止。ローカル録画の一時停止中は再開、終端・停止後は先頭から再生。Stopは資源を停止する。停止は起動時の自動再生待ちも解除する。
 - `SetVolume`: 0〜1の有限値。既存の音量スライダーと同じくミュートも解除する。
 - `SetMuted`: ミュートの状態を明示する。選択した音量は維持する。
 - `SetSubtitles`: 字幕表示を指定する。解析機能の許可は変更しない。同じ値の再送で字幕を消さない。
@@ -117,7 +117,10 @@ UnaryとServer streamingを提供する。
 操作後の状態を公開してから応答するため、その後の `GetState` はその操作以降の状態を返す。
 通信スレッドはQtのプロパティを読み書きしない。
 
-録画中の状態は`file_connecting`／`file_playing`／`file_stop_failed`で、表示用のファイル名を持つ。
+録画中の状態は`file_connecting`／`file_playing`／`file_paused`／`file_seeking`／
+`file_seeking_paused`／`file_ended`／`file_stop_failed`で、表示用のファイル名を持つ。
+追加したoneofフィールド16〜19を知らないクライアントは未知状態として扱う。
+シーク・一時停止の新規RPCはまだ追加していない。
 フルパスは含まない。録画中の`current_program`は不在となる。ファイルを開く操作はデスクトップUIから行い、
 APIのPlayは既に選択した録画を再生する。SelectChannelを呼ぶとライブ視聴へ切り替わる。
 

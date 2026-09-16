@@ -29,6 +29,7 @@ mod stream_state;
 mod subtitle_rendering;
 mod subtitle_status;
 mod telemetry;
+mod transport;
 
 #[cxx_qt::bridge]
 pub mod ffi {
@@ -131,6 +132,14 @@ pub mod ffi {
         #[qproperty(bool, loading, READ = loading, NOTIFY)]
         #[qproperty(bool, connecting, READ = connecting, NOTIFY)]
         #[qproperty(bool, playing, READ = playing, NOTIFY)]
+        #[qproperty(bool, media_active, READ = media_active, NOTIFY)]
+        #[qproperty(bool, paused, READ = paused, NOTIFY)]
+        #[qproperty(bool, seeking, READ = seeking, NOTIFY)]
+        #[qproperty(bool, ended, READ = ended, NOTIFY)]
+        #[qproperty(bool, seekable, READ = seekable, NOTIFY)]
+        #[qproperty(f64, position_ms, READ = position_ms, NOTIFY)]
+        #[qproperty(f64, duration_ms, READ = duration_ms, NOTIFY)]
+        #[qproperty(QString, transport_error, READ, NOTIFY)]
         #[qproperty(bool, recording, READ = recording, NOTIFY)]
         #[qproperty(QString, recording_name, READ = recording_name, NOTIFY)]
         #[qproperty(QString, file_error, READ, NOTIFY)]
@@ -201,6 +210,13 @@ pub mod ffi {
         fn loading(self: &Player) -> bool;
         fn connecting(self: &Player) -> bool;
         fn playing(self: &Player) -> bool;
+        fn media_active(self: &Player) -> bool;
+        fn paused(self: &Player) -> bool;
+        fn seeking(self: &Player) -> bool;
+        fn ended(self: &Player) -> bool;
+        fn seekable(self: &Player) -> bool;
+        fn position_ms(self: &Player) -> f64;
+        fn duration_ms(self: &Player) -> f64;
         fn recording(self: &Player) -> bool;
         fn recording_name(self: &Player) -> QString;
         fn guide_visible(self: &Player) -> bool;
@@ -233,6 +249,12 @@ pub mod ffi {
         fn select(self: Pin<&mut Player>, index: i32);
         #[qinvokable]
         fn play(self: Pin<&mut Player>);
+        #[qinvokable]
+        fn pause(self: Pin<&mut Player>) -> bool;
+        #[qinvokable]
+        fn seek_to(self: Pin<&mut Player>, milliseconds: f64) -> bool;
+        #[qinvokable]
+        fn skip(self: Pin<&mut Player>, milliseconds: f64) -> bool;
         #[qinvokable]
         fn open_recording(self: Pin<&mut Player>, file: QUrl) -> bool;
         fn recording_loading(self: &Player) -> bool;
@@ -335,6 +357,8 @@ pub struct PlayerRust {
     selected: i32,
     catalog_selection: channels::SelectionPolicy,
     stream_state: stream_state::State,
+    timeline: playback::timeline::Snapshot,
+    transport_error: QString,
     recording_loader: playback::recording::Loader,
     file_error: QString,
     subtitles_enabled: bool,

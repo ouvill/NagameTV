@@ -20,6 +20,7 @@ service PlayerService {
   // Selects a catalog ID and starts playback. Unknown IDs return NOT_FOUND.
   rpc SelectChannel(SelectChannelRequest) returns (SelectChannelResponse);
   // Starts the selected channel or replays the locally selected recording.
+  // Resumes a paused recording; restarts an ended recording from the beginning.
   // No selection/output returns FAILED_PRECONDITION. Does not open arbitrary files.
   rpc Play(PlayRequest) returns (PlayResponse);
   // Stops playback and cancels pending startup autoplay. Safe to repeat.
@@ -87,6 +88,10 @@ message PlayerState {
     FilePlayback file_connecting = 13;
     FilePlayback file_playing = 14;
     FilePlayback file_stop_failed = 15;
+    FilePlayback file_paused = 16;
+    FilePlayback file_seeking = 17;
+    FilePlayback file_seeking_paused = 18;
+    FilePlayback file_ended = 19;
   }
   // Selected volume, even while muted, in the inclusive range 0.0 to 1.0.
   double volume_fraction = 7;

@@ -20,6 +20,7 @@ pub struct TransportParser {
     caption_generation: u64,
     reset_pending: bool,
     captions: Option<CaptionDecoder>,
+    programs: Option<crate::transport::programs::Collector>,
 }
 
 impl TransportParser {
@@ -37,9 +38,16 @@ impl TransportParser {
             caption_generation: 0,
             reset_pending: false,
             captions: subtitles_enabled.then(CaptionDecoder::new),
+            programs: None,
         }
     }
 
+    pub fn enable_programs(&mut self, service: u16) {
+        self.programs = Some(crate::transport::programs::Collector::new(service));
+    }
+    pub fn take_programs(&mut self) -> Option<crate::transport::programs::Observation> {
+        self.programs.as_mut()?.take()
+    }
     pub fn select_service(&mut self, service: u16) {
         if self.service != Some(service) {
             self.service = Some(service);
@@ -55,6 +63,23 @@ impl TransportParser {
 
     pub fn decoder_available(&self) -> bool {
         self.captions.as_ref().is_some_and(|c| c.available())
+    }
+
+    /// A seek can return to the same service, PAT version and continuity count.
+    /// Keep the user's selection, but reacquire every transport dependency.
+    pub fn discontinuity(&mut self) {
+        self.bytes.clear();
+        if let Some(programs) = &mut self.programs {
+            programs.reset();
+        }
+        self.psi.clear();
+        self.pmt_pids.clear();
+        self.pat = Pat::default();
+        self.active_transport = None;
+        self.active_service = None;
+        self.continuity.clear();
+        self.subtitle_pid = None;
+        self.reset_captions();
     }
 
     pub fn take_caption_reset(&mut self) -> bool {
@@ -136,6 +161,9 @@ impl TransportParser {
         let Ok(packet) = TransportPacket::parse(bytes) else {
             return;
         };
+        if let Some(programs) = &mut self.programs {
+            programs.packet(&packet, bytes);
+        }
         let pid = packet.pid;
         let is_table = pid == Pid::PAT || self.pmt_pids.contains(&pid);
         if !is_table && (self.subtitle_pid != Some(pid) || self.captions.is_none()) {
@@ -193,6 +221,9 @@ impl TransportParser {
             let Some(programs_by_service) = self.pat.push(&section) else {
                 return;
             };
+            if let Some(programs) = &mut self.programs {
+                programs.transport(section.extension);
+            }
             // Production always specifies a service. Fixture/tool callers without
             // one choose one service deterministically, never mix multiple PMTs.
             let chosen = self
@@ -202,6 +233,11 @@ impl TransportParser {
                 .and_then(|service| programs_by_service.get(&service).copied())
                 .into_iter()
                 .collect();
+            if pmt_pids.is_empty()
+                && let Some(programs) = &mut self.programs
+            {
+                programs.unselect();
+            }
             if pmt_pids != self.pmt_pids
                 || self.active_transport != Some(section.extension)
                 || self.active_service != chosen
@@ -223,6 +259,9 @@ impl TransportParser {
                 .is_some_and(|wanted| wanted != map.service)
             {
                 return;
+            }
+            if let Some(programs) = &mut self.programs {
+                programs.pcr_pid(map.pcr_pid);
             }
             self.select_pid(select_caption(&map.captions));
         }

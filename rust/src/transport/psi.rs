@@ -5,9 +5,16 @@ use std::collections::BTreeMap;
 #[derive(Default)]
 pub(crate) struct Sections {
     pending: Option<Vec<u8>>,
+    si: bool,
 }
 
 impl Sections {
+    pub(super) fn si() -> Self {
+        Self {
+            pending: None,
+            si: true,
+        }
+    }
     #[cfg(test)]
     pub(crate) fn is_empty(&self) -> bool {
         self.pending.as_ref().is_none_or(Vec::is_empty)
@@ -41,7 +48,11 @@ impl Sections {
                 self.pending = None;
                 break;
             }
-            let size = match wire::section_size(data) {
+            let size = match if self.si {
+                super::programs::section_size(data)
+            } else {
+                wire::section_size(data)
+            } {
                 Ok(size) => size,
                 Err(wire::ParseError::Incomplete) => break,
                 Err(wire::ParseError::Invalid(_)) => {

@@ -104,6 +104,8 @@ impl Default for PlayerRust {
             selected: -1,
             catalog_selection: Default::default(),
             stream_state: Default::default(),
+            timeline: Default::default(),
+            transport_error: QString::default(),
             recording_loader: Default::default(),
             file_error: QString::default(),
             subtitles_enabled: plan.subtitles,

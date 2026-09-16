@@ -20,6 +20,7 @@ struct State {
     raw_pts: HashMap<StreamKey, VecDeque<u64>>,
     video: Option<StreamKey>,
     timeline: Timeline,
+    programs: crate::transport::programs::Timeline,
 }
 
 /// Bridges tsdemux's transport PTS to the video sink's queried stream position.
@@ -67,7 +68,6 @@ impl SubtitleClock {
             .map(|state| state.timeline.pending_count())
     }
 
-    #[cfg(test)]
     pub fn reset(&self) {
         if let Ok(mut state) = self.state() {
             // Release old stream keys and queue allocations at channel boundaries.
@@ -103,6 +103,36 @@ impl SubtitleClock {
         }
     }
 
+    pub fn push_programs(&self, observation: crate::transport::programs::Observation) {
+        if let Ok(mut state) = self.state() {
+            state.programs.push(observation);
+        }
+    }
+    pub fn program(&self, position: Option<gst::ClockTime>) -> Result<(String, f64), Error> {
+        let mut state = self.state()?;
+        let State {
+            timeline, programs, ..
+        } = &mut *state;
+        let presentation = programs.poll(position.map(|time| time.nseconds()), |pcr| {
+            timeline.map_ticks(pcr)
+        });
+        let data = presentation
+            .program
+            .map(|program| {
+                let mut value = serde_json::to_value(&program).unwrap_or(serde_json::Value::Null);
+                value["station"] = presentation.station.into();
+                value["provider"] = presentation.provider.into();
+                if !program.extended.is_empty() {
+                    value["description"] =
+                        format!("{}\n\n{}", program.description, program.extended)
+                            .trim()
+                            .into();
+                }
+                value
+            })
+            .unwrap_or(serde_json::Value::Null);
+        Ok((data.to_string(), presentation.progress))
+    }
     pub fn clear_captions(&self) {
         if let Ok(mut state) = self.state() {
             state.timeline.clear_captions();
@@ -222,7 +252,8 @@ impl SubtitleClock {
         let id = pad.add_probe(
             gst::PadProbeType::BUFFER
                 | gst::PadProbeType::BUFFER_LIST
-                | gst::PadProbeType::EVENT_DOWNSTREAM,
+                | gst::PadProbeType::EVENT_DOWNSTREAM
+                | gst::PadProbeType::EVENT_FLUSH,
             move |_, info| {
                 let Ok(mut segment) = clock.segment(&segment_state) else {
                     return gst::PadProbeReturn::Ok;
@@ -234,6 +265,10 @@ impl SubtitleClock {
                         }
                         gst::EventView::StreamStart(_) => {
                             *segment = None;
+                        }
+                        gst::EventView::FlushStart(_) => {
+                            *segment = None;
+                            clock.reset();
                         }
                         _ => {}
                     }
@@ -306,6 +341,13 @@ impl SubtitleClock {
                 pending.pop_front();
             }
             if let Some(raw_pts) = pending.pop_front() {
+                if state
+                    .timeline
+                    .map_ticks(raw_pts)
+                    .is_some_and(|old| (old - now).abs() > 500_000_000)
+                {
+                    state.programs = Default::default();
+                }
                 state.timeline.anchor(Anchor {
                     pts: raw_pts,
                     stream_ns: stream_time.nseconds(),

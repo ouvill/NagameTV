@@ -1,4 +1,5 @@
 //! Transport syntax and program discovery shared by playback and subtitles.
+pub(crate) mod programs;
 mod psi;
 pub(crate) mod wire;
 pub(crate) use psi::{Pat, Sections};

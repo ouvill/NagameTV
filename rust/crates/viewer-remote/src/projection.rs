@@ -8,9 +8,27 @@ pub(crate) fn state(state: &model::State, revision: u64) -> proto::PlayerState {
         model::Playback::Connecting(id) => Playback::Connecting(active(*id)),
         model::Playback::Playing(id) => Playback::Playing(active(*id)),
         model::Playback::StopFailed(id) => Playback::StopFailed(active(*id)),
-        model::Playback::FileConnecting(name) => Playback::FileConnecting(proto::FilePlayback { name: name.clone() }),
-        model::Playback::FilePlaying(name) => Playback::FilePlaying(proto::FilePlayback { name: name.clone() }),
-        model::Playback::FileStopFailed(name) => Playback::FileStopFailed(proto::FilePlayback { name: name.clone() }),
+        model::Playback::FileConnecting(name) => {
+            Playback::FileConnecting(proto::FilePlayback { name: name.clone() })
+        }
+        model::Playback::FilePlaying(name) => {
+            Playback::FilePlaying(proto::FilePlayback { name: name.clone() })
+        }
+        model::Playback::FilePaused(name) => {
+            Playback::FilePaused(proto::FilePlayback { name: name.clone() })
+        }
+        model::Playback::FileSeeking(name) => {
+            Playback::FileSeeking(proto::FilePlayback { name: name.clone() })
+        }
+        model::Playback::FileSeekingPaused(name) => {
+            Playback::FileSeekingPaused(proto::FilePlayback { name: name.clone() })
+        }
+        model::Playback::FileEnded(name) => {
+            Playback::FileEnded(proto::FilePlayback { name: name.clone() })
+        }
+        model::Playback::FileStopFailed(name) => {
+            Playback::FileStopFailed(proto::FilePlayback { name: name.clone() })
+        }
     };
     proto::PlayerState {
         revision,

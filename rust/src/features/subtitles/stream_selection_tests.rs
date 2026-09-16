@@ -268,3 +268,25 @@ fn changed_caption_pid_clears_already_scheduled_screens() {
     assert_eq!(clock.pending_count(), Some(0));
     assert!(matches!(clock.poll(None).unwrap(), SubtitleUpdate::Clear));
 }
+
+#[test]
+fn seeking_to_same_pat_version_reacquires_tables_and_decoder_management() {
+    let mut parser = TransportParser::new(true);
+    parser.select_service(TEST_SERVICE);
+    parser.push(&tables(false));
+    assert!(!parser.push(&caption(false, 900_000)).is_empty());
+    parser.discontinuity();
+    assert!(parser.take_caption_reset());
+    assert!(
+        parser.push(&caption(false, 900_000)).is_empty(),
+        "old PID cannot be reused before PAT/PMT"
+    );
+    parser.push(&tables(false)); // Identical versions, service, PIDs and counters.
+    assert!(!parser.push(&caption(false, 450_000)).is_empty());
+    parser.discontinuity();
+    // An incomplete packet from the previous epoch must not prefix new tables.
+    parser.push(&tables(false)[..93]);
+    parser.discontinuity();
+    parser.push(&tables(false));
+    assert!(!parser.push(&caption(false, 90_000)).is_empty());
+}

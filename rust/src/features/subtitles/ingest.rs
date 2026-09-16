@@ -7,16 +7,29 @@ use std::sync::{
 };
 
 pub(super) struct Ingest {
-    parser: Mutex<TransportParser>,
+    parser: Mutex<Input>,
     clock: SubtitleClock,
     failed: AtomicBool,
     decoded: AtomicU64,
 }
 
+struct Input {
+    parser: TransportParser,
+    flow: Flow,
+}
+
+enum Flow {
+    Reading { next_offset: Option<u64> },
+    Flushing,
+}
+
 impl Ingest {
     pub fn new(parser: TransportParser, clock: SubtitleClock) -> Self {
         Self {
-            parser: Mutex::new(parser),
+            parser: Mutex::new(Input {
+                parser,
+                flow: Flow::Reading { next_offset: None },
+            }),
             clock,
             failed: AtomicBool::new(false),
             decoded: AtomicU64::new(0),
@@ -35,11 +48,29 @@ impl Ingest {
         self.decoded.load(Ordering::Relaxed)
     }
 
+    pub fn event(&self, event: &gst::EventRef) {
+        if let Ok(mut input) = self.parser.lock() {
+            match event.view() {
+                gst::EventView::FlushStart(_) => {
+                    input.parser.discontinuity();
+                    input.flow = Flow::Flushing;
+                    self.clock.reset();
+                }
+                gst::EventView::FlushStop(_) | gst::EventView::StreamStart(_) => {
+                    input.parser.discontinuity();
+                    input.flow = Flow::Reading { next_offset: None };
+                    self.clock.reset();
+                }
+                _ => {}
+            }
+        }
+    }
+
     pub fn consume<'a>(&self, buffers: impl IntoIterator<Item = &'a gst::BufferRef>) {
         if self.check().is_err() {
             return;
         }
-        let Ok(mut parser) = self.parser.lock() else {
+        let Ok(mut input) = self.parser.lock() else {
             // Unlike the subscription ledger, partially decoded stream state
             // cannot be trusted after poisoning. Never recover or reuse it.
             // This latch publishes no other data, so Relaxed ordering suffices.
@@ -48,15 +79,33 @@ impl Ingest {
             return;
         };
         for buffer in buffers {
+            let Flow::Reading { next_offset } = input.flow else {
+                continue;
+            };
+            let offset = (buffer.offset() != u64::MAX).then_some(buffer.offset());
+            if buffer.flags().contains(gst::BufferFlags::DISCONT)
+                || next_offset
+                    .zip(offset)
+                    .is_some_and(|(expected, actual)| expected != actual)
+            {
+                input.parser.discontinuity();
+                self.clock.reset();
+            }
+            input.flow = Flow::Reading {
+                next_offset: offset.and_then(|offset| offset.checked_add(buffer.size() as u64)),
+            };
             if let Ok(bytes) = buffer.map_readable() {
                 // Bound temporary assembly even for large upstream buffers.
                 for chunk in bytes.as_slice().chunks(super::wire::TS_PACKET_SIZE) {
-                    let cues = parser.push(chunk);
-                    if parser.take_caption_reset() {
+                    let cues = input.parser.push(chunk);
+                    if input.parser.take_caption_reset() {
                         self.clock.clear_captions();
                     }
                     self.decoded.fetch_add(cues.len() as u64, Ordering::Relaxed);
                     self.clock.push(cues);
+                    if let Some(programs) = input.parser.take_programs() {
+                        self.clock.push_programs(programs);
+                    }
                 }
             }
         }

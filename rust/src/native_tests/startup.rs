@@ -411,8 +411,15 @@ fn check_recording(
     )?;
     assert!(evaluate(
         engine,
-        "!player.playback_error.length && !player.subtitles_active && player.recording"
+        "!player.playback_error.length && player.ended && player.media_active && player.recording && player.seekable"
     )?);
+    evaluate(engine, "player.play(); true")?;
+    wait_for(
+        app,
+        engine,
+        "player.playing && !player.seeking && !player.ended",
+    )?;
+    evaluate(engine, "player.stop(); true")?;
     std::fs::remove_file(&path)?;
     evaluate(engine, "player.play(); true")?;
     wait_for(
@@ -434,6 +441,79 @@ fn check_recording(
     assert!(evaluate(
         engine,
         "!player.connecting && !player.playing && !player.subtitles_active"
+    )?);
+    // Long synthetic TS: use production playbin3, GL sink, audio and Main.qml.
+    std::fs::write(
+        &path,
+        include_bytes!("../../../tests/fixtures/recording-seek.ts"),
+    )?;
+    assert!(evaluate(
+        engine,
+        &format!("recordingInput.openUrl({quoted_url})")
+    )?);
+    wait_for(
+        app,
+        engine,
+        "player.playing && player.seekable && player.duration_ms > 59000",
+    )?;
+    wait_for(
+        app,
+        engine,
+        "JSON.parse(player.current_program_data)?.eventId === 1",
+    )?;
+    assert!(evaluate(
+        engine,
+        "JSON.parse(player.current_program_data).name === '日本語 1' && JSON.parse(player.current_program_data).station === '日本語 TV'"
+    )?);
+    assert!(evaluate(
+        engine,
+        "player.pause() && player.paused && !player.playing && player.media_active"
+    )?);
+    for (target, event) in [(45000, 2), (10000, 1), (35000, 2)] {
+        assert!(evaluate(
+            engine,
+            &format!("player.seek_to({target}) && player.seeking && player.paused")
+        )?);
+        wait_for(
+            app,
+            engine,
+            &format!(
+                "!player.seeking && player.paused && Math.abs(player.position_ms - {target}) < 1500"
+            ),
+        )?;
+        wait_for(
+            app,
+            engine,
+            &format!("JSON.parse(player.current_program_data)?.eventId === {event}"),
+        )?;
+    }
+    assert!(evaluate(
+        engine,
+        "!player.seek_to(NaN) && player.paused && player.transport_error.length > 0"
+    )?);
+    assert!(evaluate(
+        engine,
+        "player.seek_to(20000) && player.seek_to(40000) && player.seek_to(15000)"
+    )?);
+    wait_for(
+        app,
+        engine,
+        "!player.seeking && player.paused && Math.abs(player.position_ms - 15000) < 1500 && !player.transport_error.length",
+    )?;
+    evaluate(engine, "player.play(); true")?;
+    wait_for(app, engine, "player.playing && !player.paused")?;
+    assert!(evaluate(engine, "player.seek_to(59000)")?);
+    wait_for(app, engine, "player.ended && !player.playing")?;
+    assert!(evaluate(engine, "player.seek_to(5000)")?);
+    wait_for(
+        app,
+        engine,
+        "player.playing && !player.seeking && !player.ended && player.position_ms < 8000",
+    )?;
+    evaluate(engine, "player.stop(); true")?;
+    assert!(evaluate(
+        engine,
+        "!player.media_active && !player.seekable && player.position_ms < 0 && !player.subtitles_active"
     )?);
     Ok(())
 }

@@ -2,6 +2,8 @@
 //! Input is caption PES payload, not MPEG-TS. Results own their data and have no
 //! UI dependency. Rendering and DRCS bitmap export are not exposed yet.
 
+pub mod text;
+
 use libaribcaption_sys as sys;
 use std::{ffi::CStr, fmt, ptr::NonNull, slice};
 

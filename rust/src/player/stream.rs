@@ -33,17 +33,54 @@ impl ffi::Player {
         mut self: Pin<&mut Self>,
         change: impl FnOnce(State) -> State,
     ) {
+        let old_program = self.current_program_data().clone();
+        let old_progress = *self.program_progress();
+        let old_subtitle = self.subtitle_data().clone();
         let before = (
             self.connecting(),
             self.playing(),
             self.recording(),
             self.recording_name(),
+            self.media_active(),
+            self.paused(),
+            self.seeking(),
+            self.ended(),
+            self.seekable(),
+            self.position_ms(),
+            self.duration_ms(),
         );
         {
             let mut this = self.as_mut().rust_mut();
             this.stream_state = change(std::mem::take(&mut this.stream_state));
+            if matches!(this.stream_state, State::Recording(_, _)) {
+                if let Some((phase, snapshot)) = this.media.timeline() {
+                    this.stream_state = std::mem::take(&mut this.stream_state).transport(phase);
+                    this.timeline = snapshot;
+                }
+            } else {
+                this.timeline = Default::default();
+            }
+            let source_changed = before.2 != this.stream_state.recording().is_some()
+                || before.3.to_string()
+                    != this.stream_state.recording().map_or("", |file| file.name());
+            if source_changed || (!before.6 && this.stream_state.seeking()) {
+                this.current_projection = Default::default();
+                this.current_program_data = QString::from("null");
+                this.program_progress = 0.0;
+                this.subtitle_data = QString::default();
+                this.subtitle_cells = 0;
+            }
         }
         // Commit input and activity together before any Qt observer reads them.
+        if old_program != *self.current_program_data() {
+            self.as_mut().current_program_data_changed();
+        }
+        if old_progress != *self.program_progress() {
+            self.as_mut().program_progress_changed();
+        }
+        if old_subtitle != *self.subtitle_data() {
+            self.as_mut().subtitle_data_changed();
+        }
         if before.0 != self.connecting() {
             self.as_mut().connecting_changed();
         }
@@ -55,6 +92,33 @@ impl ffi::Player {
         }
         if before.3 != self.recording_name() {
             self.as_mut().recording_name_changed();
+        }
+        if before.4 != self.media_active() {
+            self.as_mut().media_active_changed();
+        }
+        if before.5 != self.paused() {
+            self.as_mut().paused_changed();
+        }
+        if before.6 != self.seeking() {
+            self.as_mut().seeking_changed();
+        }
+        if before.7 != self.ended() {
+            self.as_mut().ended_changed();
+        }
+        if before.8 != self.seekable() {
+            self.as_mut().seekable_changed();
+        }
+        if before.9 != self.position_ms() {
+            self.as_mut().position_ms_changed();
+        }
+        if before.10 != self.duration_ms() {
+            self.as_mut().duration_ms_changed();
+        }
+        if self.ended() && !before.7 {
+            self.as_mut().update_status(PlaybackStatus::Finished);
+        } else if before.7 && self.media_active() {
+            let name = self.recording_name().to_string();
+            self.as_mut().update_status(PlaybackStatus::Playing(name));
         }
     }
     /// READY joins streaming callbacks before dropping their subscriptions/state.
@@ -78,6 +142,14 @@ impl ffi::Player {
         if self.recording_loading() {
             return;
         }
+        if self.paused() {
+            self.resume_recording();
+            return;
+        }
+        if self.ended() {
+            self.seek_to(0.0);
+            return;
+        }
         if let Some(file) = self.rust().stream_state.recording() {
             if self.playing() || self.connecting() {
                 return;
@@ -96,6 +168,7 @@ impl ffi::Player {
         self.start_stream(attempt);
     }
     pub(super) fn start_stream(mut self: Pin<&mut Self>, attempt: Attempt) -> bool {
+        self.as_mut().set_transport_error(QString::default());
         self.as_mut().cancel_recording_open();
         if attempt
             .service()
@@ -104,6 +177,7 @@ impl ffi::Player {
             return true;
         }
         let server = self.server().to_string();
+        let programs_enabled = *self.epg_enabled();
         let subtitles_enabled = self.rust().subtitles_enabled;
         // Keep stop failure distinct: the previous generation is still owned.
         // A successful stop grants an exclusive capability for the next start.
@@ -113,7 +187,9 @@ impl ffi::Player {
                 Attempt::Live(live) => {
                     stopped.start(&server, live.service(), live.broadcast(), subtitles_enabled)
                 }
-                Attempt::File(file) => stopped.start_file(file, subtitles_enabled),
+                Attempt::File(file) => {
+                    stopped.start_file(file, subtitles_enabled, programs_enabled)
+                }
             })
         };
         let result = match result {
@@ -135,7 +211,7 @@ impl ffi::Player {
         self.as_mut().poll_comments();
         self.as_mut().rust_mut().subtitle_cells = 0;
         self.as_mut().set_subtitle_data(QString::default());
-        let active = self.rust().media.subtitles().is_some();
+        let active = subtitles_enabled && self.rust().media.subtitles().is_some();
         self.as_mut().set_subtitles_active(active);
         self.as_mut().update_subtitle_status(if active {
             subtitle_status::Status::Parsing
@@ -192,10 +268,10 @@ impl ffi::Player {
         }
         self.as_mut().poll_recording();
         self.as_mut().poll_features();
-        let result = self.rust().media.playback().map(playback::Playback::poll);
+        let result = self.as_mut().rust_mut().media.poll();
         self.poll_audio_choice();
         match result {
-            Some(Ok(playback::Event::Playing)) => {
+            Ok(playback::Event::Playing) => {
                 if let State::Connecting(attempt) = &self.rust().stream_state {
                     let status = PlaybackStatus::Playing(attempt.name().to_owned());
                     tracing::info!(service = ?self.rust().stream_state.active_service(), "Pipeline PLAYING");
@@ -204,12 +280,16 @@ impl ffi::Player {
                     self.as_mut().update_status(status);
                 }
             }
-            Some(Ok(playback::Event::Ended)) => match self.as_mut().end_stream() {
-                Ok(()) if self.recording() => self.as_mut().update_status(PlaybackStatus::Finished),
+            Ok(playback::Event::Ended(_)) if self.recording() => {
+                self.as_mut().update_status(PlaybackStatus::Finished);
+                self.as_mut().rust_mut().subtitle_cells = 0;
+                self.as_mut().set_subtitle_data(QString::default());
+            }
+            Ok(playback::Event::Ended(_)) => match self.as_mut().end_stream() {
                 Ok(()) => self.as_mut().playback_failed(playback::Error::EndOfStream),
                 Err(error) => self.as_mut().playback_failed(error),
             },
-            Some(Err(error)) => {
+            Err(error) => {
                 let text = error.to_string();
                 tracing::error!("Playback error: {text}");
                 let retry = error
@@ -227,14 +307,15 @@ impl ffi::Player {
                     tracing::warn!("Live resume rejected; opening one fresh stream connection");
                     self.as_mut().start_stream(attempt);
                     if self.connecting() {
-                        self.update_status(PlaybackStatus::Reconnecting);
+                        self.as_mut().update_status(PlaybackStatus::Reconnecting);
                     }
                 } else {
-                    self.playback_failed(error);
+                    self.as_mut().playback_failed(error);
                 }
             }
-            Some(Ok(playback::Event::Idle)) | None => {}
+            Ok(playback::Event::Idle) => {}
         }
+        self.as_mut().change_stream_state(|state| state);
     }
     pub fn shutdown(mut self: Pin<&mut Self>) -> bool {
         self.as_mut().cancel_recording_open();

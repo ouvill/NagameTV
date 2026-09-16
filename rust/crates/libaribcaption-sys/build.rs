@@ -41,6 +41,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Let cc select the C++ runtime for the target (MSVC, Apple, GNU, etc.).
     cc::Build::new()
         .cpp(true)
+        .std("c++17")
+        .include(source.join("src"))
         .file("runtime.cpp")
         .compile("aribcaption_runtime");
     println!("cargo:rerun-if-changed=runtime.cpp");

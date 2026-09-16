@@ -1,5 +1,6 @@
 pragma ComponentBehavior: Bound
 import QtQuick
+import QtQuick.Controls
 import QtQuick.Layouts
 
 Item {
@@ -13,7 +14,7 @@ Item {
     readonly property bool volumePressed: volumeSlider.pressed
     readonly property Item settingsButton: playbackSettingsButton
     // Keep all controls reachable when the sidebar narrows the video surface.
-    readonly property bool compact: width < 780
+    readonly property bool compact: width < (backend.recording ? 1000 : 780)
     readonly property int buttonSize: compact ? 36 : 42
     implicitHeight: compact ? 96 : 54
     signal audioRequested
@@ -67,19 +68,49 @@ Item {
         spacing: 12
         Action {
             objectName: "channelsButton"
+            visible: !root.backend.recording
             iconSource: root.iconDirectory + "grid-2x2.svg"
             tip: qsTranslate("Main", "Channels")
             onClicked: root.channelsRequested()
         }
+        TextAction {
+            objectName: "skipBackButton"
+            visible: root.backend.recording
+            enabled: root.backend.seekable
+            implicitWidth: root.buttonSize
+            implicitHeight: root.buttonSize
+            text: "−10"
+            Accessible.name: qsTranslate("Viewer", "Back 10 seconds")
+            onClicked: root.backend.skip(-10000)
+        }
         Action {
             objectName: "playStopButton"
-            iconSource: root.iconDirectory + (root.backend.playing ? "square.svg" : "play-outline.svg")
-            tip: root.backend.playing ? qsTranslate("Main", "Stop") : qsTranslate("Viewer", "Play")
+            iconSource: root.iconDirectory + (root.backend.playing ? (root.backend.recording ? "pause.svg" : "square.svg") : "play-outline.svg")
+            tip: root.backend.playing ? (root.backend.recording ? qsTranslate("Viewer", "Pause") : qsTranslate("Main", "Stop")) : qsTranslate("Viewer", "Play")
             enabled: root.backend.playing || root.backend.recording || root.backend.selected >= 0
-            onClicked: root.backend.playing ? root.backend.stop() : root.backend.play()
+            onClicked: root.backend.playing ? (root.backend.recording ? root.backend.pause() : root.backend.stop()) : root.backend.play()
+        }
+        TextAction {
+            objectName: "skipForwardButton"
+            visible: root.backend.recording
+            enabled: root.backend.seekable
+            implicitWidth: root.buttonSize
+            implicitHeight: root.buttonSize
+            text: "+30"
+            Accessible.name: qsTranslate("Viewer", "Forward 30 seconds")
+            onClicked: root.backend.skip(30000)
+        }
+        Action {
+            objectName: "recordingStopButton"
+            visible: root.backend.recording
+            enabled: root.backend.media_active || root.backend.connecting
+            iconSource: root.iconDirectory + "square.svg"
+            tip: qsTranslate("Main", "Stop")
+            onClicked: root.backend.stop()
         }
         Action {
             objectName: "postCommentButton"
+            visible: !root.backend.recording
             iconSource: root.iconDirectory + "pencil.svg"
             tip: qsTranslate("Main", "Post a comment")
             enabled: root.backend.comments_enabled && !root.backend.recording

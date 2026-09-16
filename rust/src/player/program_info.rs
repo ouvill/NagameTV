@@ -13,6 +13,36 @@ impl ffi::Player {
         mut self: Pin<&mut Self>,
         service: Option<BroadcastService>,
     ) {
+        if self.recording() {
+            // Live channel/guide views remain usable during recording, but their
+            // wall clock is never fed into the recording's program timeline.
+            if Instant::now() >= self.rust().next_current_program {
+                let now = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .ok()
+                    .and_then(|d| u64::try_from(d.as_millis()).ok());
+                self.as_mut().poll_channel_programs(now);
+                self.as_mut().poll_guide_visibility(now);
+                self.as_mut().rust_mut().next_current_program =
+                    Instant::now() + Duration::from_secs(1);
+            }
+            let presentation = if self.seeking() {
+                None
+            } else {
+                self.rust().media.subtitles().and_then(|session| {
+                    let position = self
+                        .rust()
+                        .media
+                        .playback()
+                        .and_then(|playback| playback.position());
+                    session.program(position).ok()
+                })
+            };
+            let (data, progress) = presentation.unwrap_or_else(|| ("null".into(), 0.0));
+            self.as_mut().set_current_program_data(QString::from(data));
+            self.set_program_progress(progress);
+            return;
+        }
         let now = Instant::now();
         let now_ms = SystemTime::now()
             .duration_since(UNIX_EPOCH)

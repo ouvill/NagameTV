@@ -214,9 +214,11 @@ async fn state_stream_starts_with_snapshot_and_recovers_latest_on_reconnect() {
         .into_inner();
     let resumed = stream.message().await.unwrap().unwrap().state.unwrap();
     assert_eq!(resumed.revision, 3);
-    assert!(matches!(resumed.playback, Some(proto::player_state::Playback::FilePlaying(
+    assert!(
+        matches!(resumed.playback, Some(proto::player_state::Playback::FilePlaying(
         proto::FilePlayback { ref name }
-    )) if name == "録画.ts"));
+    )) if name == "録画.ts")
+    );
     assert!(
         client
             .list_channels(Request::new(proto::ListChannelsRequest {}))
@@ -454,4 +456,42 @@ async fn unauthenticated_grpc_web_unary_and_server_streaming_work_over_http1() -
     drop(response);
     session.stop().wait().await?;
     Ok(())
+}
+
+#[test]
+fn recording_transport_variants_roundtrip_without_exposing_a_path() {
+    use proto::player_state::Playback as Wire;
+    for (phase, expected) in [
+        (
+            Playback::FilePaused("sample.ts".into()),
+            Wire::FilePaused(proto::FilePlayback {
+                name: "sample.ts".into(),
+            }),
+        ),
+        (
+            Playback::FileSeeking("sample.ts".into()),
+            Wire::FileSeeking(proto::FilePlayback {
+                name: "sample.ts".into(),
+            }),
+        ),
+        (
+            Playback::FileSeekingPaused("sample.ts".into()),
+            Wire::FileSeekingPaused(proto::FilePlayback {
+                name: "sample.ts".into(),
+            }),
+        ),
+        (
+            Playback::FileEnded("sample.ts".into()),
+            Wire::FileEnded(proto::FilePlayback {
+                name: "sample.ts".into(),
+            }),
+        ),
+    ] {
+        let mut state = initial();
+        state.playback = phase;
+        let wire = projection::state(&state, 42);
+        let decoded = proto::PlayerState::decode(wire.encode_to_vec().as_slice()).unwrap();
+        assert_eq!(decoded.playback, Some(expected));
+        assert_eq!(decoded.selected_channel_id, Some(42));
+    }
 }

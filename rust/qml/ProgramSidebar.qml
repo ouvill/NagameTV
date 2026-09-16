@@ -10,6 +10,8 @@ Rectangle {
         Channels,
         Comments
     }
+    property bool recording: false
+    property string fallbackTitle: ""
     property bool danmakuEnabled: false
     property bool commentsEnabled: false
     signal danmakuRequested(bool enabled)
@@ -114,7 +116,7 @@ Rectangle {
                 Label {
                     objectName: "programTitle"
                     Layout.fillWidth: true
-                    text: root.program ? (root.program.name || qsTranslate("Viewer", "Program title unavailable")) : qsTranslate("Main", "No program information")
+                    text: root.program ? (root.program.name || root.fallbackTitle || qsTranslate("Viewer", "Program title unavailable")) : qsTranslate("Main", "No program information")
                     color: "#f4f5f3"
                     font.pixelSize: 23
                     font.bold: true
@@ -123,9 +125,18 @@ Rectangle {
                 }
                 Label {
                     Layout.fillWidth: true
-                    text: root.program ? Qt.formatDateTime(new Date(root.program.startAt), "hh:mm") + " – " + Qt.formatDateTime(new Date(root.program.startAt + root.program.duration), "hh:mm") : ""
+                    text: root.program && root.program.startAt !== null && root.program.duration !== null ? Qt.formatDateTime(new Date(root.program.startAt), root.recording ? "yyyy/MM/dd hh:mm" : "hh:mm") + " – " + Qt.formatDateTime(new Date(root.program.startAt + root.program.duration), "hh:mm") : ""
                     color: "#d4d4d3"
                     font.pixelSize: 13
+                }
+                Label {
+                    visible: root.recording && root.program && root.program.genres && root.program.genres.length > 0
+                    Layout.fillWidth: true
+                    readonly property var names: [qsTranslate("Viewer", "News"), qsTranslate("Viewer", "Sports"), qsTranslate("Viewer", "Information"), qsTranslate("Viewer", "Drama"), qsTranslate("Viewer", "Music"), qsTranslate("Viewer", "Variety"), qsTranslate("Viewer", "Film"), qsTranslate("Viewer", "Animation"), qsTranslate("Viewer", "Documentary"), qsTranslate("Viewer", "Theater"), qsTranslate("Viewer", "Education"), qsTranslate("Viewer", "Welfare")]
+                    text: visible ? root.program.genres.map(genre => names[genre[0]] || qsTranslate("Viewer", "Other")).join(" / ") : ""
+                    wrapMode: Text.Wrap
+                    color: "#b6bab6"
+                    font.pixelSize: 12
                 }
                 ProgressBar {
                     Layout.fillWidth: true
@@ -166,7 +177,7 @@ Rectangle {
                 }
                 Label {
                     Layout.fillWidth: true
-                    text: qsTranslate("Viewer", "Program information provided by Mirakurun")
+                    text: root.recording ? qsTranslate("Viewer", "Program information from recording TS") : qsTranslate("Viewer", "Program information provided by Mirakurun")
                     color: "#929497"
                     font.pixelSize: 12
                     wrapMode: Text.Wrap
