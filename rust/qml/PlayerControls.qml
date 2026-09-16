@@ -73,14 +73,13 @@ Item {
             tip: qsTranslate("Main", "Channels")
             onClicked: root.channelsRequested()
         }
-        TextAction {
+        Action {
             objectName: "skipBackButton"
             visible: root.backend.recording
             enabled: root.backend.seekable
-            implicitWidth: root.buttonSize
-            implicitHeight: root.buttonSize
-            text: "−10"
-            Accessible.name: qsTranslate("Viewer", "Back 10 seconds")
+            iconSource: root.iconDirectory + "rotate-ccw.svg"
+            iconLabel: "10"
+            tip: qsTranslate("Viewer", "Back 10 seconds")
             onClicked: root.backend.skip(-10000)
         }
         Action {
@@ -90,23 +89,14 @@ Item {
             enabled: root.backend.playing || root.backend.recording || root.backend.selected >= 0
             onClicked: root.backend.playing ? (root.backend.recording ? root.backend.pause() : root.backend.stop()) : root.backend.play()
         }
-        TextAction {
+        Action {
             objectName: "skipForwardButton"
             visible: root.backend.recording
             enabled: root.backend.seekable
-            implicitWidth: root.buttonSize
-            implicitHeight: root.buttonSize
-            text: "+30"
-            Accessible.name: qsTranslate("Viewer", "Forward 30 seconds")
+            iconSource: root.iconDirectory + "rotate-cw.svg"
+            iconLabel: "30"
+            tip: qsTranslate("Viewer", "Forward 30 seconds")
             onClicked: root.backend.skip(30000)
-        }
-        Action {
-            objectName: "recordingStopButton"
-            visible: root.backend.recording
-            enabled: root.backend.media_active || root.backend.connecting
-            iconSource: root.iconDirectory + "square.svg"
-            tip: qsTranslate("Main", "Stop")
-            onClicked: root.backend.stop()
         }
         Action {
             objectName: "postCommentButton"

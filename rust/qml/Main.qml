@@ -167,7 +167,7 @@ ApplicationWindow {
         enabled: !root.closing
         playing: player.playing
         // Like main, the persistent sidebar does not pin the video controls.
-        pinned: root.showChannels || root.showGuide || windowActions.popupOpen || windowActions.editingText || playerControls.volumePressed || recordingTimeline.pressed
+        pinned: root.showChannels || root.showGuide || windowActions.popupOpen || windowActions.editingText || playerControls.volumePressed || recordingTimeline.pressed || recordingTimeline.hovered
     }
     AudioSettings {
         id: audioSettings

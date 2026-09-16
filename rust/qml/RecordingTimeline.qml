@@ -8,6 +8,7 @@ ColumnLayout {
     required property var backend
     property bool closing: false
     readonly property bool pressed: slider.pressed
+    readonly property bool hovered: slider.enabled && seekHover.hovered
     spacing: 0
 
     function timeLabel(milliseconds) {
@@ -69,9 +70,38 @@ ColumnLayout {
         Binding {
             target: slider
             property: "value"
-            value: Math.max(0, root.backend.position_ms)
+            value: Math.max(0, Math.min(slider.to, root.backend.position_ms))
             when: !slider.pressed
             restoreMode: Binding.RestoreNone
+        }
+        HoverHandler { id: seekHover }
+        ToolTip {
+            id: preview
+            objectName: "recordingSeekPreview"
+            parent: slider
+            // Match the thumb's travel, including padding and its half-width.
+            readonly property real fraction: Math.max(0, Math.min(1,
+                (seekHover.point.position.x - slider.leftPadding - slider.handle.width / 2)
+                / Math.max(1, slider.availableWidth - slider.handle.width)))
+            readonly property real target: slider.from + (slider.to - slider.from)
+                * (slider.mirrored ? 1 - fraction : fraction)
+            visible: root.visible && root.hovered
+            text: root.timeLabel(slider.pressed ? slider.value : target)
+            x: Math.max(0, Math.min(slider.width - implicitWidth,
+                seekHover.point.position.x - implicitWidth / 2))
+            y: -implicitHeight - 6
+            padding: 9
+            contentItem: Label {
+                text: preview.text
+                color: "#f4f5f3"
+                font.pixelSize: 12
+                font.family: "monospace"
+            }
+            background: Rectangle {
+                radius: 8
+                color: "#e61b1d1b"
+                border.color: "#38ffffff"
+            }
         }
     }
 }

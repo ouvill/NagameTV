@@ -28,10 +28,11 @@ Item {
             property bool subtitles_enabled: true
             property bool subtitle_display: true
             property int saved: 0
+            property var skips: []
             function play() { playing = true; paused = false; }
             function pause() { paused = true; playing = false; }
             function stop() { playing = false; paused = false; }
-            function skip(milliseconds) {}
+            function skip(milliseconds) { skips.push(milliseconds); }
             function mute(value) { audio_muted = value; }
             function volume(value) { volume_level = value; }
             function save_settings() { saved++; }
@@ -69,6 +70,7 @@ Item {
                 backend.comments_enabled = true;
                 backend.danmaku_enabled = false;
                 backend.saved = 0;
+                backend.skips = [];
                 backend.subtitles_enabled = true;
                 backend.subtitle_display = true;
                 host.width = 1100;
@@ -104,14 +106,17 @@ Item {
                 mouseClick(findChild(controls, "screenshotButton"));
                 compare(capture.count, 1);
             }
-            function test_recording_pause_resume_and_explicit_stop() {
+            function test_recording_pause_resume_and_skips() {
                 backend.recording = true;
                 waitForRendering(controls);
                 const play = findChild(controls, "playStopButton");
                 mouseClick(play); compare(backend.playing, true);
                 mouseClick(play); compare(backend.paused, true); compare(backend.media_active, true);
                 mouseClick(play); compare(backend.playing, true); compare(backend.paused, false);
-                mouseClick(findChild(controls, "recordingStopButton")); compare(backend.media_active, false);
+                mouseClick(findChild(controls, "skipBackButton"));
+                mouseClick(findChild(controls, "skipForwardButton"));
+                compare(backend.skips, [-10000, 30000]);
+                compare(findChild(controls, "recordingStopButton"), null);
             }
             function test_request_does_not_change_mode_before_file_selection_succeeds() {
                 const recording = findChild(navigation, "recordingModeButton");
@@ -134,7 +139,7 @@ Item {
                     const names = ["muteButton", "audioSelectionButton", "playerVolumeSlider",
                         "playStopButton", "screenshotButton", "subtitlesButton", "danmakuButton",
                         "playbackSettingsButton", "fullscreenButton", "sidePanelButton"].concat(recording
-                            ? ["skipBackButton", "skipForwardButton", "recordingStopButton"]
+                            ? ["skipBackButton", "skipForwardButton"]
                             : ["channelsButton", "postCommentButton"]);
                     for (const width of [1392, 984, 852, 780, 779, 692, 492]) {
                         controls.width = width;

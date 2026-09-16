@@ -26,9 +26,45 @@ Item {
                 failOnWarning(/.*/);
                 backend.seekable = true; backend.position_ms = 5000; backend.duration_ms = 60000;
                 backend.requests = []; timeline.closing = false;
+                timeline.LayoutMirroring.enabled = false;
                 host.requestActivate();
                 tryCompare(host, "active", true);
                 waitForRendering(timeline);
+                mouseMove(host.contentItem, 5, 5);
+            }
+            function test_hover_previews_position_without_seeking() {
+                const slider = findChild(timeline, "recordingSeekSlider");
+                const preview = findChild(timeline, "recordingSeekPreview");
+                for (const sample of [[1, "0:00"], [slider.width / 2, "0:30"], [slider.width - 1, "1:00"]]) {
+                    mouseMove(slider, sample[0], slider.height / 2);
+                    tryCompare(preview, "visible", true);
+                    compare(preview.text, sample[1]);
+                    verify(preview.x >= 0 && preview.x + preview.width <= slider.width);
+                    compare(backend.position_ms, 5000);
+                    compare(backend.requests.length, 0);
+                }
+                mouseMove(host.contentItem, 5, 5);
+                tryCompare(preview, "visible", false);
+            }
+            function test_hover_tracks_duration_and_mirroring_and_hides_when_disabled() {
+                const slider = findChild(timeline, "recordingSeekSlider");
+                const preview = findChild(timeline, "recordingSeekPreview");
+                backend.duration_ms = 7200000;
+                mouseMove(slider, slider.width / 2, slider.height / 2);
+                tryCompare(preview, "visible", true);
+                compare(preview.text, "1:00:00");
+                timeline.LayoutMirroring.enabled = true;
+                timeline.LayoutMirroring.childrenInherit = true;
+                mouseMove(slider, 1, slider.height / 2);
+                compare(preview.text, "2:00:00");
+                backend.duration_ms = 912741;
+                compare(preview.text, "15:12");
+                timeline.closing = true;
+                tryCompare(preview, "visible", false);
+                timeline.closing = false;
+                backend.duration_ms = -1;
+                compare(preview.visible, false);
+                compare(backend.requests.length, 0);
             }
             function test_drag_commits_once_and_preserves_preview_during_position_updates() {
                 const slider = findChild(timeline, "recordingSeekSlider");
@@ -60,6 +96,8 @@ Item {
                 compare(slider.enabled, false);
                 compare(timeline.timeLabel(-1), "--:--");
                 compare(timeline.timeLabel(3671000), "1:01:11");
+                backend.duration_ms = 60000;
+                compare(slider.value, backend.position_ms);
             }
         }
     }

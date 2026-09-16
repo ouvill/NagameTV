@@ -5,6 +5,7 @@ ToolButton {
     id: control
     required property url iconSource
     required property string tip
+    property string iconLabel: ""
     property bool active: false
     property bool primary: false
     // Player overlays use bare icons until hover, focus, or selection.
@@ -36,6 +37,15 @@ ToolButton {
             height: 24
             sourceSize: Qt.size(24, 24)
             source: control.iconSource
+        }
+        Label {
+            anchors.centerIn: parent
+            anchors.verticalCenterOffset: -1
+            text: control.iconLabel
+            visible: text.length > 0
+            color: "#f4f5f3"
+            font.pixelSize: 8
+            font.bold: true
         }
     }
     ToolTip {
