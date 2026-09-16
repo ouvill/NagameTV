@@ -423,6 +423,75 @@ mod tests {
     }
 
     #[test]
+    fn demux_timestamp_reset_clears_old_captions_and_reanchors_new_ones() {
+        gst::init().unwrap();
+        let clock = SubtitleClock::default();
+        let key = ("tsdemux-reset".to_owned(), 0x41);
+        {
+            let mut state = clock.state().unwrap();
+            state.video = Some(key.clone());
+            state.timeline.anchor(Anchor {
+                pts: 900_000,
+                stream_ns: 2_000_000_000,
+            });
+            state
+                .raw_pts
+                .insert(key.clone(), VecDeque::from([90_000, 93_600]));
+        }
+        clock.push(vec![SubtitleCue {
+            text: "old future screen".into(),
+            clear_screen: false,
+            ..SubtitleCue::clear(11_000)
+        }]);
+        let segment = gst::FormattedSegment::<gst::ClockTime>::new();
+        let mut buffer = gst::Buffer::new();
+        buffer
+            .get_mut()
+            .unwrap()
+            .set_pts(gst::ClockTime::from_mseconds(3000));
+        buffer
+            .get_mut()
+            .unwrap()
+            .set_flags(gst::BufferFlags::DISCONT);
+        clock.observe_buffer(&key, Some(&segment), &buffer);
+        assert_eq!(clock.pending_count(), Some(0));
+        assert!(matches!(clock.poll(None).unwrap(), SubtitleUpdate::Clear));
+        clock.push(vec![SubtitleCue {
+            text: "new epoch".into(),
+            clear_screen: false,
+            ..SubtitleCue::clear(1040)
+        }]);
+        buffer
+            .get_mut()
+            .unwrap()
+            .unset_flags(gst::BufferFlags::DISCONT);
+        buffer
+            .get_mut()
+            .unwrap()
+            .set_pts(gst::ClockTime::from_mseconds(3040));
+        clock.observe_buffer(&key, Some(&segment), &buffer);
+        assert!(matches!(
+            clock
+                .poll(Some(gst::ClockTime::from_mseconds(3039)))
+                .unwrap(),
+            SubtitleUpdate::Unchanged
+        ));
+        let SubtitleUpdate::Show(cue) = clock
+            .poll(Some(gst::ClockTime::from_mseconds(3040)))
+            .unwrap()
+        else {
+            panic!("new subtitle did not recover after PTS reset");
+        };
+        assert_eq!(cue.text, "new epoch");
+        assert!(matches!(
+            clock
+                .poll(Some(gst::ClockTime::from_mseconds(5000)))
+                .unwrap(),
+            SubtitleUpdate::Unchanged
+        ));
+    }
+
+    #[test]
     fn detach_releases_clock_captures_and_disables_demux_statistics() {
         gst::init().unwrap();
         let pipeline = gst::Pipeline::new();

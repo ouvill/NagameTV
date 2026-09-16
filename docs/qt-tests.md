@@ -61,6 +61,17 @@ stop/replay, normal EOF, file removal, cancellation and switching back to a live
 channel. The audio fixture is silent. This does not verify real broadcast
 captions or Flatpak portal access. Component tests cover the file-open actions,
 single-file URL handling and rejected input.
+The suite also plays `recording-clock-reset.ts` across a PCR/PTS reset and
+requires at least 140 rendered frames out of 150, followed by normal EOF.
+
+`bash scripts/test-startup.sh recording-pid-change` runs a separate reproducer
+with the same hardware validation and isolated settings. It requires playback
+across a same-service PMT/video/audio PID change. As of 2026-09-16 it fails with
+exit code 1: playback stalls before the replacement streams appear. The timeout
+prints playback state and video/audio diagnostics. This is an unresolved failure,
+not an expected-failure assertion that counts as a pass. See the
+[recording verification record](recording-seek-verification.md#代表ケースの信頼性検証2026-09-16).
+
 GTK warnings and criticals also fail the startup suite. To check the native Linux
 fallback, run `bash scripts/test-startup.sh` in a session without a FileChooser
 portal. Production startup selects Qt Quick dialogs in this case.

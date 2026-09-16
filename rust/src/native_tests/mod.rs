@@ -27,6 +27,7 @@ pub fn run() -> i32 {
         Some("connection") => crate::player::connection_checks::run(),
         Some("startup") => startup::run(),
         Some("startup-window") => startup::run_window(),
+        Some("recording-pid-change") => startup::run_pid_change(),
         #[cfg(target_os = "linux")]
         Some("portal-dialogs") => portal_dialogs::run(),
         Some("subtitle-rendering") => {
@@ -47,7 +48,7 @@ pub fn run() -> i32 {
         }
         _ => {
             eprintln!(
-                "Expected --native-tests localization|missing-catalog|subtitle-outline|pointer-activity|subtitle-rendering|screenshots|connection|startup|portal-dialogs"
+                "Expected --native-tests localization|missing-catalog|subtitle-outline|pointer-activity|subtitle-rendering|screenshots|connection|startup|recording-pid-change|portal-dialogs"
             );
             2
         }

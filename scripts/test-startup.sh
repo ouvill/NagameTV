@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
+startup_suite=${1:-startup}
+case "$startup_suite" in
+    startup|recording-pid-change) ;;
+    *) echo "Expected startup or recording-pid-change" >&2; exit 2 ;;
+esac
 # The production Main.qml creates the real video item and audio output.
 if [[ -z ${DISPLAY:-} ]]; then
     echo "DISPLAY is missing; startup tests require an X11 display." >&2
@@ -34,4 +39,4 @@ env -u MIRAKURUN_SERVER -u MIRAKURUN_SERVICE_ID -u MIRAKURUN_AUTOPLAY \
     XDG_CONFIG_HOME="$startup_test_dir/config" XDG_STATE_HOME="$startup_test_dir/state" \
     MIRAKURUN_DIAGNOSTICS=0 MIRAKURUN_AUDIO_SINK=pulsesink \
     QT_QPA_PLATFORM=xcb QSG_RHI_BACKEND=opengl \
-    bash scripts/run-native-tests.sh startup
+    bash scripts/run-native-tests.sh "$startup_suite"

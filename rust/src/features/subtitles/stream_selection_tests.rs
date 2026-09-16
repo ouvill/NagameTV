@@ -178,6 +178,19 @@ fn caption(low_quality: bool, pts: u64) -> Vec<u8> {
         let end = data.len();
         data[end - 2..].copy_from_slice(&crc.to_be_bytes());
     }
+    caption_packet(
+        if low_quality {
+            SECONDARY_PID
+        } else {
+            PRIMARY_PID
+        },
+        &data,
+        pts,
+        0,
+    )
+}
+
+fn caption_packet(pid: u16, data: &[u8], pts: u64, counter: u8) -> Vec<u8> {
     let mut pes = vec![0, 0, 1, 0xbd];
     pes.extend_from_slice(&((data.len() + 8) as u16).to_be_bytes());
     pes.extend_from_slice(&[
@@ -191,14 +204,9 @@ fn caption(low_quality: bool, pts: u64) -> Vec<u8> {
         ((pts << 1) as u8 & 0xfe) | 1,
     ]);
     pes.extend(data);
-    packet(
-        if low_quality {
-            SECONDARY_PID
-        } else {
-            PRIMARY_PID
-        },
-        &pes,
-    )
+    let mut packet = packet(pid, &pes);
+    packet[3] |= counter & 15;
+    packet
 }
 
 #[test]
@@ -289,4 +297,170 @@ fn seeking_to_same_pat_version_reacquires_tables_and_decoder_management() {
     parser.discontinuity();
     parser.push(&tables(false));
     assert!(!parser.push(&caption(false, 90_000)).is_empty());
+}
+
+// Authored ARIB data groups: no received caption bytes. These deliberately
+// separate management/DRCS from statements, unlike the self-contained SAMPLE.
+fn caption_group(id: u8, body: &[u8]) -> Vec<u8> {
+    let mut data = vec![0x80, 0xff, 0xf0, id << 2, 0, 0];
+    data.extend((body.len() as u16).to_be_bytes());
+    data.extend(body);
+    let mut crc = 0_u16;
+    for byte in &data[3..] {
+        crc ^= u16::from(*byte) << 8;
+        for _ in 0..8 {
+            crc = if crc & 0x8000 != 0 {
+                (crc << 1) ^ 0x1021
+            } else {
+                crc << 1
+            };
+        }
+    }
+    data.extend(crc.to_be_bytes());
+    data
+}
+
+fn data_unit(parameter: u8, data: &[u8]) -> Vec<u8> {
+    let mut unit = vec![0x1f, parameter];
+    unit.extend(&(data.len() as u32).to_be_bytes()[1..]);
+    unit.extend(data);
+    unit
+}
+
+fn management(format: u8, units: &[u8]) -> Vec<u8> {
+    let mut body = vec![0, 1, 0, b'j', b'p', b'n', format << 4];
+    body.extend(&(units.len() as u32).to_be_bytes()[1..]);
+    body.extend(units);
+    caption_group(0, &body)
+}
+
+fn statement(text: &[u8]) -> Vec<u8> {
+    let unit = data_unit(0x20, text);
+    let mut body = vec![0];
+    body.extend(&(unit.len() as u32).to_be_bytes()[1..]);
+    body.extend(unit);
+    caption_group(1, &body)
+}
+
+#[test]
+fn seek_flush_discards_queued_captions_until_tables_and_management_return() {
+    use super::{SubtitleClock, SubtitleUpdate, ingest::Ingest};
+    use gstreamer as gst;
+    gst::init().unwrap();
+    let clock = SubtitleClock::default();
+    let mut parser = TransportParser::new(true);
+    parser.select_service(TEST_SERVICE);
+    let ingest = Ingest::new(parser, clock.clone());
+    let feed = |bytes: Vec<u8>| ingest.consume([gst::Buffer::from_slice(bytes).as_ref()]);
+    feed(tables(false));
+    feed(caption_packet(PRIMARY_PID, &management(10, &[]), 90_000, 0));
+    feed(caption_packet(
+        PRIMARY_PID,
+        &statement(b"\x0c\x0eOLD"),
+        900_000,
+        1,
+    ));
+    assert_eq!(clock.pending_count(), Some(1));
+    ingest.event(&gst::event::FlushStart::new());
+    // Flushing input cannot refill the queue from an in-flight old buffer.
+    feed(caption_packet(
+        PRIMARY_PID,
+        &statement(b"\x0c\x0eLATE"),
+        990_000,
+        2,
+    ));
+    assert_eq!(clock.pending_count(), Some(0));
+    assert!(matches!(clock.poll(None).unwrap(), SubtitleUpdate::Clear));
+    ingest.event(&gst::event::FlushStop::new(true));
+    feed(caption_packet(
+        PRIMARY_PID,
+        &statement(b"\x0c\x0eEARLY"),
+        90_000,
+        0,
+    ));
+    assert_eq!(clock.pending_count(), Some(0), "PAT/PMT must be reacquired");
+    feed(tables(false)); // Same versions, PIDs and counters after rewinding.
+    assert_eq!(clock.pending_count(), Some(0));
+    assert!(matches!(clock.poll(None).unwrap(), SubtitleUpdate::Clear));
+    feed(caption_packet(PRIMARY_PID, &management(8, &[]), 90_000, 0));
+    assert_eq!(
+        clock.pending_count(),
+        Some(0),
+        "management alone is not a subtitle"
+    );
+    feed(caption_packet(
+        PRIMARY_PID,
+        &statement(b"\x0c\x0eNEW"),
+        180_000,
+        1,
+    ));
+    assert_eq!(clock.pending_count(), Some(1));
+    assert_eq!(ingest.decoded(), 2, "only OLD and NEW were decoded");
+}
+
+#[test]
+fn rewind_does_not_reuse_management_or_drcs_from_the_previous_position() {
+    let mut parser = TransportParser::new(true);
+    parser.select_service(TEST_SERVICE);
+    parser.push(&tables(false));
+    // DRCS-1 code 0x21, one 2x2 monochrome glyph with an arbitrary bitmap.
+    let drcs = data_unit(0x30, &[1, 0x41, 0x21, 1, 0, 0, 2, 2, 0x90]);
+    let text = statement(b"\x0c\x1b\x28\x20\x41\x21");
+    parser.push(&caption_packet(
+        PRIMARY_PID,
+        &management(10, &drcs),
+        90_000,
+        0,
+    ));
+    let before = parser.push(&caption_packet(PRIMARY_PID, &text, 180_000, 1));
+    assert_eq!(before.len(), 1);
+    assert_eq!((before[0].plane_width, before[0].plane_height), (720, 480));
+    // Unrecognized DRCS bitmaps are not exported by the existing UI adapter.
+    // A defined bitmap has no text cell; an undefined code emits a Geta cell.
+    assert!(
+        before[0].cells.is_empty(),
+        "DRCS must exist before the seek"
+    );
+    parser.discontinuity();
+    parser.push(&tables(false));
+    // New management repeats the same data-group id. The old native decoder's
+    // duplicate-management check must not discard it after a seek.
+    parser.push(&caption_packet(PRIMARY_PID, &management(8, &[]), 90_000, 0));
+    let missing = parser.push(&caption_packet(PRIMARY_PID, &text, 180_000, 1));
+    assert_eq!(missing.len(), 1);
+    assert_eq!(
+        (missing[0].plane_width, missing[0].plane_height),
+        (960, 540)
+    );
+    assert_eq!(
+        missing[0].text, "〓",
+        "missing DRCS must not use the old glyph"
+    );
+    assert_eq!(missing[0].cells.len(), 1);
+    assert_eq!(missing[0].cells[0].text, "〓");
+    // DRCS data units can also accompany a statement; resend only that glyph.
+    let mut body = vec![0];
+    body.extend(&(drcs.len() as u32).to_be_bytes()[1..]);
+    body.extend(drcs);
+    assert!(
+        parser
+            .push(&caption_packet(
+                PRIMARY_PID,
+                &caption_group(1, &body),
+                180_000,
+                2
+            ))
+            .is_empty()
+    );
+    let recovered = parser.push(&caption_packet(PRIMARY_PID, &text, 270_000, 3));
+    assert_eq!(recovered.len(), 1);
+    assert_eq!(recovered[0].text, before[0].text);
+    assert!(
+        recovered[0].cells.is_empty(),
+        "the resent DRCS must be decoded again"
+    );
+    assert_eq!(
+        (recovered[0].plane_width, recovered[0].plane_height),
+        (960, 540)
+    );
 }

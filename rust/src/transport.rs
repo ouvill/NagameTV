@@ -3,6 +3,8 @@ pub(crate) mod programs;
 mod psi;
 pub(crate) mod wire;
 pub(crate) use psi::{Pat, Sections};
+#[cfg(test)]
+mod recovery_tests;
 use wire::{Pid, PsiSection, SYNC_BYTE, TS_PACKET_SIZE, TransportPacket};
 
 /// Choose the lowest service in the first complete, current, CRC-checked PAT.

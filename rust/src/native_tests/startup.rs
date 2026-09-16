@@ -195,7 +195,16 @@ fn check_danmaku_layout(
     Ok(())
 }
 
-fn window(app: &QGuiApplication, preferences: &settings::Preferences) -> TestResult {
+enum WindowCheck {
+    Startup,
+    PidChange,
+}
+
+fn window(
+    app: &QGuiApplication,
+    preferences: &settings::Preferences,
+    check: WindowCheck,
+) -> TestResult {
     let _preloaded = playback::preload()?;
     let mut engine = QQmlApplicationEngine::new();
     assert!(player::ffi::initialize_ui_language(
@@ -206,6 +215,17 @@ fn window(app: &QGuiApplication, preferences: &settings::Preferences) -> TestRes
         .pin_mut()
         .load(&QUrl::from("qrc:/qt/qml/MinimalViewer/qml/Main.qml"));
     assert_eq!(ffi::root_count(&engine), 1);
+    match check {
+        WindowCheck::Startup => {}
+        WindowCheck::PidChange => {
+            // Kept as an explicit reproducer: current playbin3 does not recover
+            // the replacement A/V streams. A timeout is a failure, not a pass.
+            let result = check_recording_recovery(app, &mut engine, "recording-pid-change.ts");
+            assert!(evaluate(&mut engine, "root.close(); root.closing")?);
+            app.process_events();
+            return result;
+        }
+    }
     assert!(evaluate(&mut engine, "!screenshot.canCapture")?);
     assert!(evaluate(
         &mut engine,
@@ -316,6 +336,7 @@ fn window(app: &QGuiApplication, preferences: &settings::Preferences) -> TestRes
         )?);
         check_danmaku_layout(app, &mut engine)?;
         check_recording(app, &mut engine)?;
+        check_recording_recovery(app, &mut engine, "recording-clock-reset.ts")?;
     }
     assert!(evaluate(&mut engine, "root.close(); root.closing")?);
     app.process_events();
@@ -518,6 +539,50 @@ fn check_recording(
     Ok(())
 }
 
+fn check_recording_recovery(
+    app: &QGuiApplication,
+    engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
+    name: &str,
+) -> TestResult {
+    eprintln!("Recording recovery: {name}");
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../tests/fixtures")
+        .join(name)
+        .canonicalize()?;
+    let url = url::Url::from_file_path(path).map_err(|_| "fixture URL")?;
+    assert!(evaluate(
+        engine,
+        &format!(
+            "recordingInput.openUrl({})",
+            serde_json::to_string(url.as_str())?
+        ),
+    )?);
+    wait_for(app, engine, "player.playing")?;
+    // A whole six-second file must decode both halves through production
+    // playbin3. Observe after the boundary before waiting for normal EOS.
+    if let Err(error) = wait_for(
+        app,
+        engine,
+        "JSON.parse(player.video_stats()).rendered >= 90",
+    ) {
+        let state = ffi::evaluate_root(engine.pin_mut(), &QString::from(
+                "JSON.stringify({status: player.status, error: player.playback_error, ended: player.ended, position: player.position_ms, stats: JSON.parse(player.video_stats()), audio: JSON.parse(player.audio_tracks())})",
+            ))?.value::<QString>();
+        return Err(format!("{name}: {error}; {state:?}").into());
+    }
+    assert!(evaluate(engine, "!player.playback_error.length")?);
+    wait_for(app, engine, "player.ended && !player.playing")?;
+    assert!(
+        evaluate(
+            engine,
+            "JSON.parse(player.video_stats()).rendered >= 140 && !player.playback_error.length",
+        )?,
+        "incomplete playback: {name}"
+    );
+    evaluate(engine, "player.stop(); true")?;
+    Ok(())
+}
+
 fn checks() -> TestResult {
     let server = Server::new()?;
     let path = settings::settings_path()?;
@@ -573,6 +638,14 @@ fn launch_window(autoplay_override: Option<&str>) -> TestResult {
 }
 
 pub fn run_window() -> i32 {
+    run_window_check(WindowCheck::Startup)
+}
+
+pub fn run_pid_change() -> i32 {
+    run_window_check(WindowCheck::PidChange)
+}
+
+fn run_window_check(check: WindowCheck) -> i32 {
     // SAFETY: This is a fresh subprocess, before Qt or worker initialization.
     #[cfg(target_os = "linux")]
     let dialogs = unsafe { crate::platform::DialogSetup::prepare() };
@@ -600,7 +673,7 @@ pub fn run_window() -> i32 {
         #[cfg(target_os = "linux")]
         dialogs.finish(&app);
         let preferences = settings::Loaded::open(settings::settings_path()?)?;
-        window(&app, preferences.preferences())
+        window(&app, preferences.preferences(), check)
     })();
     glib::log_remove_handler(Some("Gtk"), gtk_log);
     match result {
