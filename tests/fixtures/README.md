@@ -67,11 +67,14 @@ with adaptation-only discontinuity packets; both halves keep service ID 1.
 | `recording-clock-reset.ts` | Same PAT/PMT and PIDs; PCR/PTS/DTS restart at the original values. |
 
 The hardware-free `transport::recovery_tests` validates packet parsing, table
-CRC/version/service, video PES counts and PCR changes. The startup suite plays
-the clock-reset file through the production window and requires frames from both
-halves and normal EOF. PID changes currently fail in production playback; run
-`bash scripts/test-startup.sh recording-pid-change` as a separate failing
-reproducer. Both UI commands validate display, GPU and audio access first.
+CRC/version/service, video PES counts and PCR changes. These checks are not a
+complete MPEG-TS conformance certification. The startup suite plays both files
+through the production window and requires frames from both halves and normal
+EOF. Sink rendering counters reset at the PID transition; the test sums observed
+increments across resets. The earlier PID playback failure was a test assertion
+error, corrected on 2026-09-17. Run
+`bash scripts/test-startup.sh recording-pid-change` for the targeted regression
+check. Both UI commands validate display, GPU and audio access first.
 
 Subtitle recovery uses authored ARIB management, statement and DRCS data groups
 in `rust/src/features/subtitles/stream_selection_tests.rs`, without broadcast

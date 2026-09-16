@@ -218,8 +218,7 @@ fn window(
     match check {
         WindowCheck::Startup => {}
         WindowCheck::PidChange => {
-            // Kept as an explicit reproducer: current playbin3 does not recover
-            // the replacement A/V streams. A timeout is a failure, not a pass.
+            // Targeted regression check, also included in the startup suite.
             let result = check_recording_recovery(app, &mut engine, "recording-pid-change.ts");
             assert!(evaluate(&mut engine, "root.close(); root.closing")?);
             app.process_events();
@@ -337,6 +336,7 @@ fn window(
         check_danmaku_layout(app, &mut engine)?;
         check_recording(app, &mut engine)?;
         check_recording_recovery(app, &mut engine, "recording-clock-reset.ts")?;
+        check_recording_recovery(app, &mut engine, "recording-pid-change.ts")?;
     }
     assert!(evaluate(&mut engine, "root.close(); root.closing")?);
     app.process_events();
@@ -544,6 +544,19 @@ fn check_recording_recovery(
     engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
     name: &str,
 ) -> TestResult {
+    // Each fixture contains two halves of 75 frames. Allow a few rendering
+    // drops and a polling gap at a counter reset, but never an entire half.
+    const MIN_RENDERED_FRAMES: u64 = 140;
+    const RECOVERY_TIMEOUT: Duration = Duration::from_secs(12);
+    const SAMPLE_INTERVAL: Duration = Duration::from_millis(5);
+    #[derive(Debug, serde::Deserialize)]
+    struct Snapshot {
+        rendered: Option<u64>,
+        ended: bool,
+        playing: bool,
+        error: String,
+    }
+
     eprintln!("Recording recovery: {name}");
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../tests/fixtures")
@@ -558,27 +571,45 @@ fn check_recording_recovery(
         ),
     )?);
     wait_for(app, engine, "player.playing")?;
-    // A whole six-second file must decode both halves through production
-    // playbin3. Observe after the boundary before waiting for normal EOS.
-    if let Err(error) = wait_for(
-        app,
-        engine,
-        "JSON.parse(player.video_stats()).rendered >= 90",
-    ) {
+    let deadline = Instant::now() + RECOVERY_TIMEOUT;
+    let mut previous = 0;
+    let mut rendered = 0;
+    let mut counter_resets = 0;
+    loop {
+        app.process_events();
         let state = ffi::evaluate_root(engine.pin_mut(), &QString::from(
-                "JSON.stringify({status: player.status, error: player.playback_error, ended: player.ended, position: player.position_ms, stats: JSON.parse(player.video_stats()), audio: JSON.parse(player.audio_tracks())})",
-            ))?.value::<QString>();
-        return Err(format!("{name}: {error}; {state:?}").into());
+            "JSON.stringify({status: player.status, error: player.playback_error, ended: player.ended, playing: player.playing, position: player.position_ms, rendered: JSON.parse(player.video_stats()).rendered, audio: JSON.parse(player.audio_tracks())})",
+        ))?.value::<QString>().ok_or("missing recovery snapshot")?.to_string();
+        let snapshot: Snapshot = serde_json::from_str(&state)?;
+        if let Some(current) = snapshot.rendered {
+            // GstBaseSink counters reset when replacement streams start. Sum
+            // observed increments; the last sink snapshot is not a file total.
+            rendered += if current < previous {
+                counter_resets += 1;
+                current
+            } else {
+                current - previous
+            };
+            previous = current;
+        }
+        if !snapshot.error.is_empty() || Instant::now() >= deadline {
+            return Err(format!(
+                "{name}: recovery failed; observed {rendered} frames, {counter_resets} counter resets; {state}"
+            ).into());
+        }
+        if snapshot.ended && !snapshot.playing {
+            if rendered < MIN_RENDERED_FRAMES {
+                return Err(format!(
+                    "{name}: incomplete playback; observed {rendered} frames, {counter_resets} counter resets; {state}"
+                ).into());
+            }
+            eprintln!(
+                "{name}: normal EOF; observed {rendered} frames, {counter_resets} counter resets; {state}"
+            );
+            break;
+        }
+        thread::sleep(SAMPLE_INTERVAL);
     }
-    assert!(evaluate(engine, "!player.playback_error.length")?);
-    wait_for(app, engine, "player.ended && !player.playing")?;
-    assert!(
-        evaluate(
-            engine,
-            "JSON.parse(player.video_stats()).rendered >= 140 && !player.playback_error.length",
-        )?,
-        "incomplete playback: {name}"
-    );
     evaluate(engine, "player.stop(); true")?;
     Ok(())
 }

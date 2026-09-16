@@ -62,14 +62,18 @@ channel. The audio fixture is silent. This does not verify real broadcast
 captions or Flatpak portal access. Component tests cover the file-open actions,
 single-file URL handling and rejected input.
 The suite also plays `recording-clock-reset.ts` across a PCR/PTS reset and
-requires at least 140 rendered frames out of 150, followed by normal EOF.
+`recording-pid-change.ts` across a same-service PMT/video/audio PID change.
+Each requires at least 140 observed rendering calls out of 150 frames and normal
+EOF within 12 seconds. Sink counters can reset when streams change, so the test
+sums sampled increments across resets instead of treating the final counter as
+a file total. Sampling can miss the final increments before a reset; the threshold
+allows a small margin but cannot pass if only one 75-frame half plays.
 
-`bash scripts/test-startup.sh recording-pid-change` runs a separate reproducer
-with the same hardware validation and isolated settings. It requires playback
-across a same-service PMT/video/audio PID change. As of 2026-09-16 it fails with
-exit code 1: playback stalls before the replacement streams appear. The timeout
-prints playback state and video/audio diagnostics. This is an unresolved failure,
-not an expected-failure assertion that counts as a pass. See the
+`bash scripts/test-startup.sh recording-pid-change` runs the PID case alone
+with the same hardware validation and isolated settings. Failures print playback
+state and video/audio diagnostics. The earlier reported stall was a false test
+failure caused by reset counters, corrected on 2026-09-17. Position continuity and
+seeking across PID changes remain separate validation work. See the
 [recording verification record](recording-seek-verification.md#代表ケースの信頼性検証2026-09-16).
 
 GTK warnings and criticals also fail the startup suite. To check the native Linux

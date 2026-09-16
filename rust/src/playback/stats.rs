@@ -5,6 +5,8 @@ use gstreamer_base::{BaseSink, prelude::BaseSinkExt};
 use serde::Serialize;
 
 /// Sink rendering calls, not proof that Qt presented a new image on screen.
+/// Native counters can reset on stream changes or flushes; these are not
+/// cumulative totals for the file or playback session.
 #[derive(Debug, PartialEq, Eq)]
 pub struct FrameCounters {
     pub rendered: u64,
