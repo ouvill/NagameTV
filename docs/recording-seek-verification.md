@@ -105,6 +105,8 @@ bash scripts/test-startup.sh recording-pid-change
 素材の再生成ではSHA-256の一致を確認し、`cargo fmt --check`と`git diff --check`も成功した。
 追加の`cargo clippy --release --locked --all-targets -- -D warnings`は、今回変更していない
 `rust/src/transport/programs/syntax.rs:206`の`chunks_exact_to_as_chunks`警告1件により失敗した。
+2026-09-17に`as_chunks::<2>()`へ変更し、端数のある不正な記述子を拒否する動作を維持した。
+同じClippyコマンドを再実行し、警告なしで成功した。Rust releaseテストも178 passed / 3 ignored。
 
 PID変更の再現試験は、5秒以内に90フレーム以上が描画されることを要求する。
 前半は75フレームなので、前半だけ再生できても合格にはならない。失敗時には再生状態・位置・

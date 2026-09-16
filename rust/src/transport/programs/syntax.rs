@@ -198,12 +198,13 @@ pub(super) fn event(data: &[u8], transport: u16, service: u16) -> Option<Event> 
                 }
             }
             0x54 => {
-                if body.len() % 2 != 0 {
+                let (genres, remainder) = body.as_chunks::<2>();
+                if !remainder.is_empty() {
                     return None;
                 }
                 program
                     .genres
-                    .extend(body.chunks_exact(2).map(|v| (v[0] >> 4, v[0] & 15)));
+                    .extend(genres.iter().map(|v| (v[0] >> 4, v[0] & 15)));
             }
             _ => {}
         }
