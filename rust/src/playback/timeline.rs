@@ -50,7 +50,7 @@ impl Range {
     pub(super) fn new(start: gst::ClockTime, end: gst::ClockTime) -> Option<Self> {
         (end > start).then_some(Self { start, end })
     }
-    fn recovery_target(self) -> gst::ClockTime {
+    pub(super) fn recovery_target(self) -> gst::ClockTime {
         let preroll = gst::ClockTime::from_nseconds(super::input::SEEK_PREROLL.as_nanos() as u64);
         self.start + (preroll + RECOVERY_HEADROOM).min((self.end - self.start) / 2)
     }
@@ -195,6 +195,12 @@ impl Controller {
         self.snapshot.estimated = estimated;
     }
 
+    pub fn seek_target(&self) -> Option<gst::ClockTime> {
+        match &self.state {
+            State::Seeking(seek) => Some(seek.next.unwrap_or(seek.target)),
+            State::Playing | State::Paused | State::ExpiredPause | State::Ended => None,
+        }
+    }
     pub fn snapshot(&self) -> Snapshot {
         self.snapshot
     }
@@ -419,7 +425,24 @@ impl Controller {
 }
 
 impl Ready<'_> {
-    pub fn seek(self, milliseconds: f64) -> Result<(), Error> {
+    pub fn seek_live(mut self, milliseconds: f64, corrected: bool) -> Result<(), Error> {
+        let expired = milliseconds < self.range.start.mseconds() as f64;
+        let target = if expired {
+            self.range.recovery_target().mseconds() as f64
+        } else {
+            milliseconds
+        };
+        self.apply(target)?;
+        if corrected || expired {
+            self.controller.notice = Some(EXPIRED_NOTICE);
+        }
+        Ok(())
+    }
+
+    pub fn seek(mut self, milliseconds: f64) -> Result<(), Error> {
+        self.apply(milliseconds)
+    }
+    fn apply(&mut self, milliseconds: f64) -> Result<(), Error> {
         let target = self.range.target(milliseconds)?;
         let resume = match &mut self.controller.state {
             State::Seeking(seek) => {
@@ -443,6 +466,36 @@ impl Drop for Controller {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn rejected_live_seek_keeps_the_paused_frame_and_does_not_report_recovery() {
+        gst::init().unwrap();
+        let sink = gst::ElementFactory::make("fakesink").build().unwrap();
+        let mut controller = Controller::new(&sink).unwrap();
+        let paused = gst::ClockTime::from_seconds(1);
+        let range = Range::new(
+            gst::ClockTime::from_seconds(10),
+            gst::ClockTime::from_seconds(20),
+        )
+        .unwrap();
+        controller.state = State::ExpiredPause;
+        controller.snapshot.position = Some(paused);
+        controller.snapshot.range = Some(range);
+        // The final native event can be rejected even after a capability check.
+        // This CPU-only sink deterministically rejects it without opening output.
+        let ready = Ready {
+            controller: &mut controller,
+            pipeline: &sink,
+            range,
+        };
+        assert!(matches!(
+            ready.seek_live(paused.mseconds() as f64, true),
+            Err(Error::Rejected)
+        ));
+        assert_eq!(controller.phase(), Phase::Paused);
+        assert_eq!(controller.snapshot().position, Some(paused));
+        assert!(controller.seek_target().is_none());
+        assert!(controller.take_notice().is_none());
+    }
     #[test]
     fn forward_buffer_eviction_does_not_expire_queued_video() {
         gst::init().unwrap();

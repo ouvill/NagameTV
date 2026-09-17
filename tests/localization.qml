@@ -2,6 +2,10 @@ import QtQml
     QtObject {
       readonly property var day: new Date(2026, 8, 8, 12, 0, 0)
       readonly property string dateLabel: day.toLocaleDateString(Qt.locale(Qt.uiLanguage), qsTranslate("Main", "ddd, MMM d"))
+      property string expiredPauseLabel: qsTranslate("Viewer", "Paused outside retained history")
+      property string watchingLabel: qsTranslate("Viewer", "Watching: %1").arg("番組A")
+      property string broadcastLabel: qsTranslate("Viewer", "On air: %1").arg("番組B")
+      property string unknownProgramLabel: qsTranslate("Viewer", "Program information unavailable")
       property string historyLabel: qsTranslate("Viewer", "Outside retained history")
       property string memoryDescription: qsTranslate("Viewer", "Memory keeps rewinding quick without writing to storage. Choose a limit that leaves room for your other apps.")
       property string filesDescription: qsTranslate("Viewer", "Temporary files keep longer history with less RAM. They use storage space and continuous disk writes, and are deleted when playback stops.")

@@ -1033,6 +1033,26 @@
       <source>Actual duration varies with the broadcast and the time limit below.</source>
       <translation>実際の保持時間は放送内容や下の時間上限によって変わります。</translation>
     </message>
+    <message>
+      <source>Watching: %1</source>
+      <translation>視聴中: %1</translation>
+    </message>
+    <message>
+      <source>On air: %1</source>
+      <translation>放送中: %1</translation>
+    </message>
+    <message>
+      <source>Program information unavailable</source>
+      <translation>番組情報未取得</translation>
+    </message>
+    <message>
+      <source>Paused outside retained history</source>
+      <translation>保持範囲外で一時停止</translation>
+    </message>
+    <message>
+      <source>Program information from broadcast TS</source>
+      <translation>番組情報は放送TSから取得しています</translation>
+    </message>
 </context>
   <context>
     <name>Settings</name>

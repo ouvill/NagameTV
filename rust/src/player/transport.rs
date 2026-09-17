@@ -79,6 +79,16 @@ impl ffi::Player {
     pub fn seek_to(self: Pin<&mut Self>, milliseconds: f64) -> bool {
         self.control_transport(|media| media.transport_control()?.seek(milliseconds))
     }
+    pub fn seek_timeline(self: Pin<&mut Self>, session: QString, milliseconds: f64) -> bool {
+        self.control_transport(|media| media.seek_timeline(&session.to_string(), milliseconds))
+    }
+    pub fn timeline_preview(&self, session: QString, milliseconds: f64) -> QString {
+        QString::from(
+            self.rust()
+                .media
+                .timeline_preview(&session.to_string(), milliseconds),
+        )
+    }
     pub fn skip(self: Pin<&mut Self>, milliseconds: f64) -> bool {
         self.control_transport(|media| media.transport_control()?.skip(milliseconds))
     }
@@ -105,9 +115,11 @@ impl ffi::Player {
         if self.seeking() {
             self.as_mut().rust_mut().subtitle_cells = 0;
             self.as_mut().set_subtitle_data(QString::default());
-            self.as_mut()
-                .set_current_program_data(QString::from("null"));
-            self.as_mut().set_program_progress(0.0);
+            if self.recording() {
+                self.as_mut()
+                    .set_current_program_data(QString::from("null"));
+                self.as_mut().set_program_progress(0.0);
+            }
         }
         accepted
     }

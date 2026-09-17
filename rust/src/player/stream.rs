@@ -37,7 +37,7 @@ impl ffi::Player {
         let old_progress = *self.program_progress();
         let old_subtitle = self.subtitle_data().clone();
         let old_rate = *self.timeshift_bytes_per_second();
-        let old_boundaries = self.timeshift_program_boundaries().clone();
+        let old_live_timeline = self.live_timeline().clone();
         let before_live = (
             self.timeshift(),
             self.window_start_ms(),
@@ -63,10 +63,6 @@ impl ffi::Player {
             this.stream_state = change(std::mem::take(&mut this.stream_state));
             this.timeshift_bytes_per_second =
                 this.media.timeshift_bytes_per_second().unwrap_or_default();
-            this.timeshift_program_boundaries = QString::from(
-                serde_json::to_string(&this.media.program_boundaries_ms())
-                    .expect("integer boundaries"),
-            );
             if this.stream_state.active() {
                 if let Some((phase, snapshot)) = this.media.timeline() {
                     this.stream_state = std::mem::take(&mut this.stream_state).transport(phase);
@@ -75,17 +71,31 @@ impl ffi::Player {
             } else {
                 this.timeline = Default::default();
                 this.timeshift_bytes_per_second = 0.0;
-                this.timeshift_program_boundaries = QString::from("[]");
             }
             let source_changed = before.2 != this.stream_state.recording().is_some()
                 || before.3.to_string()
                     != this.stream_state.recording().map_or("", |file| file.name());
-            if source_changed || (!before.6 && this.stream_state.seeking()) {
+            if source_changed
+                || (old_live_timeline.to_string() != "null" && !this.stream_state.active())
+                || (!before.6
+                    && this.stream_state.seeking()
+                    && this.stream_state.recording().is_some())
+            {
                 this.current_projection = Default::default();
                 this.current_program_data = QString::from("null");
                 this.program_progress = 0.0;
                 this.subtitle_data = QString::default();
                 this.subtitle_cells = 0;
+            }
+            if this.stream_state.active()
+                && let Some(snapshot) = this.media.live_timeline()
+            {
+                let (data, progress) = snapshot.viewing_program();
+                this.current_program_data = QString::from(data);
+                this.program_progress = progress;
+                this.live_timeline = QString::from(snapshot.serialize());
+            } else {
+                this.live_timeline = QString::from("null");
             }
         }
         if before_live.0 != self.timeshift() {
@@ -104,8 +114,8 @@ impl ffi::Player {
             self.as_mut().duration_estimated_changed();
         }
         // Commit input and activity together before any Qt observer reads them.
-        if old_boundaries != *self.timeshift_program_boundaries() {
-            self.as_mut().timeshift_program_boundaries_changed();
+        if old_live_timeline != *self.live_timeline() {
+            self.as_mut().live_timeline_changed();
         }
         if old_rate != *self.timeshift_bytes_per_second() {
             self.as_mut().timeshift_bytes_per_second_changed();

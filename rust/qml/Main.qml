@@ -502,7 +502,7 @@ ApplicationWindow {
             }
             contentItem: ColumnLayout {
                 spacing: 12
-                RecordingTimeline {
+                PlaybackTimeline {
                     id: recordingTimeline
                     Layout.fillWidth: true
                     Layout.leftMargin: 24

@@ -8,6 +8,7 @@ pub mod audio_streams;
 pub mod deinterlace;
 pub mod failure;
 pub mod input;
+pub(crate) mod live_timeline;
 pub mod recording;
 pub mod stats;
 pub mod timeline;

@@ -106,7 +106,7 @@ impl Default for PlayerRust {
             stream_state: Default::default(),
             timeline: Default::default(),
             timeshift_bytes_per_second: 0.0,
-            timeshift_program_boundaries: QString::from("[]"),
+            live_timeline: QString::from("null"),
             transport_error: QString::default(),
             recording_loader: Default::default(),
             file_error: QString::default(),

@@ -14,7 +14,13 @@ enum Input {
     Active {
         source: super::input::Input,
         controller: Box<super::timeline::Controller>,
+        projection: Projection,
     },
+}
+
+enum Projection {
+    Recording,
+    Live(Box<super::live_timeline::Presenter>),
 }
 
 /// Exclusive access to this session's playback cursor; reception has a separate owner.
@@ -103,10 +109,64 @@ impl Session {
             Input::Idle => None,
         }
     }
-    pub fn program_boundaries_ms(&self) -> Vec<i64> {
+    pub fn live_timeline(&mut self) -> Option<super::live_timeline::Snapshot> {
+        match &mut self.input {
+            Input::Active {
+                source,
+                controller,
+                projection: Projection::Live(presenter),
+            } => source.live_timeline(
+                presenter,
+                controller.phase(),
+                controller.snapshot().position,
+                controller.seek_target(),
+            ),
+            Input::Active {
+                projection: Projection::Recording,
+                ..
+            }
+            | Input::Idle => None,
+        }
+    }
+    pub fn timeline_preview(&self, session: &str, milliseconds: f64) -> String {
         match &self.input {
-            Input::Active { source, .. } => source.program_boundaries_ms(),
-            Input::Idle => Vec::new(),
+            Input::Active {
+                projection: Projection::Live(presenter),
+                ..
+            } => presenter.preview(session, milliseconds),
+            Input::Active {
+                projection: Projection::Recording,
+                ..
+            }
+            | Input::Idle => "null".into(),
+        }
+    }
+    pub fn seek_timeline(
+        &mut self,
+        session: &str,
+        milliseconds: f64,
+    ) -> std::result::Result<(), super::timeline::Error> {
+        let playback = self
+            .playback
+            .as_ref()
+            .ok_or(super::timeline::Error::Unavailable)?;
+        match &mut self.input {
+            Input::Active {
+                source,
+                controller,
+                projection: Projection::Live(presenter),
+            } => {
+                if !presenter.owns(session) {
+                    return Err(super::timeline::Error::Unavailable);
+                }
+                let target = source.live_seek_target(milliseconds)?;
+                target.seek(controller.prepare(playback.element())?)
+            }
+            Input::Idle
+            | Input::Active {
+                projection: Projection::Recording,
+                ..
+            } => Err(super::timeline::Error::Unavailable),
         }
     }
 
@@ -118,7 +178,10 @@ impl Session {
             source.check()?;
         }
         let mut event = playback.poll()?;
-        if let Input::Active { controller, source } = &mut self.input {
+        if let Input::Active {
+            controller, source, ..
+        } = &mut self.input
+        {
             controller.set_estimated(source.duration_estimated());
             if let super::Event::Ended(sequence) = event
                 && !controller.ended(sequence)?
@@ -208,6 +271,7 @@ impl Stopped<'_> {
                 programs_enabled,
             )?,
             controller: Box::new(super::timeline::Controller::new(&playback.sink)?),
+            projection: Projection::Live(Box::new(super::live_timeline::Presenter::new())),
         };
         self.start_uri(
             "appsrc://",
@@ -233,6 +297,7 @@ impl Stopped<'_> {
                 programs_enabled,
             )?,
             controller: Box::new(super::timeline::Controller::new(&playback.sink)?),
+            projection: Projection::Recording,
         };
         self.start_uri(
             "appsrc://",

@@ -156,20 +156,58 @@ impl Input {
             Shared::File(_) => None,
         }
     }
-    pub fn program_boundaries_ms(&self) -> Vec<i64> {
+    pub fn live_timeline(
+        &self,
+        presenter: &mut super::super::live_timeline::Presenter,
+        phase: super::super::timeline::Phase,
+        position: Option<gst::ClockTime>,
+        target: Option<gst::ClockTime>,
+    ) -> Option<super::super::live_timeline::Snapshot> {
+        let Shared::Live(shared) = &self.shared else {
+            return None;
+        };
+        let store = shared.lock().ok()?;
+        let start = store
+            .index
+            .entries()
+            .front()
+            .map_or(0, |anchor| anchor.time_ns);
+        let end = store.index.end_ns().unwrap_or(0);
+        Some(presenter.project(
+            &store.history,
+            start,
+            end,
+            self.retention?.storage() != Retention::Off,
+            super::super::live_timeline::Reading {
+                phase,
+                position_ns: position.map(|time| time.nseconds()),
+                target_ns: target.map(|time| time.nseconds()),
+            },
+        ))
+    }
+    pub fn live_seek_target(
+        &self,
+        milliseconds: f64,
+    ) -> Result<super::super::live_timeline::SeekTarget, super::super::timeline::Error> {
+        use super::super::timeline::Error;
         if self
             .retention
             .is_none_or(|policy| policy.storage() == Retention::Off)
         {
-            return Vec::new();
+            return Err(Error::Unavailable);
         }
-        match &self.shared {
-            Shared::Live(store) => store
-                .lock()
-                .map(|store| store.index.program_boundaries_ms())
-                .unwrap_or_default(),
-            Shared::File(_) => Vec::new(),
-        }
+        let Shared::Live(shared) = &self.shared else {
+            return Err(Error::Unavailable);
+        };
+        let store = shared.lock().map_err(|_| Error::Unavailable)?;
+        let start = store
+            .index
+            .entries()
+            .front()
+            .ok_or(Error::Unavailable)?
+            .time_ns;
+        let end = store.index.end_ns().ok_or(Error::Unavailable)?;
+        store.history.seek_target(start, end, milliseconds)
     }
     pub fn take_expired(&self) -> bool {
         self.feedback.take_expired()

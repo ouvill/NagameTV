@@ -241,3 +241,17 @@ Rust102件成功・3件ignored、全ターゲットClippy、書式検査、リ�
 証跡はGit対象外のbenchmark/startup-preload-owner/にbefore.log、failure.log、
 finalization-summary.json、success.logと専用stateを保存した。実GPUの
 長時間観測2プロセスは停止・再起動していない。Player生成後のQML失敗は別途未確認。
+
+
+## ライブの表示モデル（2026-09-17）
+
+受信側の番組履歴と、表示中の映像の情報を `playback/live_timeline.rs` で分ける。
+`Store` はPCR受信に合わせて番組・時計の対応を集約し、`Session` が所有する `Presenter` は
+保持軸、放送進捗、視聴位置、停止中の情報一件を投影する。番組履歴を探すために
+GUIの更新ごとに全PCR索引を走査しない。
+
+`Player.live_timeline` は完成したJSONスナップショットを一括通知する。
+視聴中の詳細を示す既存の `current_program_data` / `program_progress` も同じ更新で確定する。
+`LiveTimeline.qml` は描画と操作座標を担当し、セッション付きの移動要求をRustへ返す。
+録画は `RecordingTimeline.qml` と既存の録画用モデルを使う。
+仕様・上限・確認項目は [ライブのシークバー](live-timeline-design.md) を参照。

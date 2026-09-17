@@ -25,6 +25,8 @@ const LIVE_EDGE_TOLERANCE: Duration = Duration::from_millis(2500);
 const MEMORY_MIB: i32 = 16;
 const FILESYSTEM_MIB: i32 = 64;
 const RETENTION_MINUTES: i32 = 1;
+const OBSERVER: &str =
+    "root.contentItem.children.find(child => child.objectName === 'liveTimelineObserver')";
 const RECOVERY_OBSERVATION: Duration = Duration::from_secs(4);
 
 #[derive(Clone, Copy)]
@@ -142,6 +144,12 @@ pub(super) fn run(
     app: &QGuiApplication,
     engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
 ) -> TestResult {
+    let observer_source =
+        serde_json::to_string(include_str!("../../../tests/live-timeline-observer.qml"))?;
+    assert!(evaluate(
+        engine,
+        &format!("Qt.createQmlObject({observer_source}, root.contentItem).backend = player; true")
+    )?);
     let server = Server::new(Traffic::Broadcast)?;
     assert!(evaluate(
         engine,
@@ -184,8 +192,27 @@ pub(super) fn run(
             )?;
             return Err(format!("{error}: {state:?}").into());
         }
+        wait_for(
+            app,
+            engine,
+            "JSON.parse(player.live_timeline).live.program !== null",
+        )?;
+        assert!(evaluate(
+            engine,
+            &format!("{OBSERVER}.failure.length === 0")
+        )?);
+        assert!(evaluate(
+            engine,
+            &format!(
+                "!{OBSERVER}.previousSession.length || !player.seek_timeline({OBSERVER}.previousSession, 0)"
+            )
+        )?);
         assert!(evaluate(engine, "player.pause()")?);
         wait_for(app, engine, "player.paused && !player.seeking")?;
+        assert!(evaluate(
+            engine,
+            &format!("{OBSERVER}.saved = JSON.parse(player.live_timeline); true")
+        )?);
         let before = super::bridge::ffi::evaluate_root(
             engine.pin_mut(),
             &cxx_qt_lib::QString::from("player.duration_ms"),
@@ -202,7 +229,16 @@ pub(super) fn run(
         )?;
         assert!(evaluate(
             engine,
-            &format!("player.seek_to({})", REWIND_TARGET.as_millis())
+            &format!(
+                "JSON.parse(player.live_timeline).axis.start === {OBSERVER}.saved.axis.start && JSON.parse(player.live_timeline).axis.end === {OBSERVER}.saved.axis.end && JSON.parse(player.live_timeline).viewing.position === {OBSERVER}.saved.viewing.position && JSON.parse(player.live_timeline).live.position > {OBSERVER}.saved.live.position"
+            )
+        )?);
+        assert!(evaluate(
+            engine,
+            &format!(
+                "player.seek_timeline(JSON.parse(player.live_timeline).session, {})",
+                REWIND_TARGET.as_millis()
+            )
         )?);
         wait_for(
             app,
@@ -213,6 +249,14 @@ pub(super) fn run(
                 SEEK_TOLERANCE.as_millis()
             ),
         )?;
+        assert!(evaluate(
+            engine,
+            &format!("{OBSERVER}.failure.length === 0 && {OBSERVER}.notifications > 0")
+        )?);
+        assert!(evaluate(
+            engine,
+            "JSON.parse(player.live_timeline).viewing.program !== null && JSON.parse(player.live_timeline).seekTarget === null"
+        )?);
         assert!(evaluate(engine, "player.return_to_live()")?);
         wait_for(
             app,
@@ -224,7 +268,11 @@ pub(super) fn run(
         )?;
         assert!(evaluate(
             engine,
-            "player.stop(); !player.timeshift && !player.media_active && player.timeshift_bytes_per_second === 0"
+            &format!("{OBSERVER}.previousSession = JSON.parse(player.live_timeline).session; true")
+        )?);
+        assert!(evaluate(
+            engine,
+            "player.stop(); player.live_timeline === 'null' && !player.timeshift && !player.media_active && player.timeshift_bytes_per_second === 0"
         )?);
         if backend == "filesystem" {
             let cache = std::path::PathBuf::from(
@@ -310,12 +358,27 @@ pub(super) fn run(
             engine,
             "player.playing && player.seekable && player.position_ms > 0",
         )?;
+        wait_for(
+            app,
+            engine,
+            "JSON.parse(player.live_timeline).viewing !== null && JSON.parse(player.live_timeline).viewing.program !== null",
+        )?;
         assert!(evaluate(engine, "player.pause()")?);
+        assert!(evaluate(
+            engine,
+            &format!("{OBSERVER}.saved = JSON.parse(player.live_timeline); true")
+        )?);
         wait_for(
             app,
             engine,
             "player.paused && !player.seeking && player.position_ms < player.window_start_ms",
         )?;
+        assert!(evaluate(
+            engine,
+            &format!(
+                "JSON.parse(player.live_timeline).axis.start === {OBSERVER}.saved.axis.start && JSON.parse(player.live_timeline).axis.end === {OBSERVER}.saved.axis.end && JSON.parse(player.live_timeline).viewing.position === {OBSERVER}.saved.viewing.position && JSON.stringify(JSON.parse(player.live_timeline).viewing.program) === JSON.stringify({OBSERVER}.saved.viewing.program) && JSON.parse(player.live_timeline).viewing.availability === 'expired' && {OBSERVER}.failure.length === 0"
+            )
+        )?);
         assert!(evaluate(engine, "player.play(); true")?);
         wait_for(
             app,
@@ -332,6 +395,11 @@ pub(super) fn run(
             "Timeshift {storage}: expired pause resumed and continued under capacity pressure"
         );
     }
+    assert!(evaluate(
+        engine,
+        &format!("{OBSERVER}.failure.length === 0")
+    )?);
+    evaluate(engine, &format!("{OBSERVER}.destroy(); true"))?;
     Ok(())
 }
 

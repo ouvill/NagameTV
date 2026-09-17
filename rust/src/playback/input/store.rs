@@ -52,6 +52,7 @@ pub(super) struct Store {
     byte_limit: u64,
     time_limit: Duration,
     pub index: Index,
+    pub history: super::super::live_timeline::History,
     pub status: Status,
 }
 impl Store {
@@ -74,6 +75,7 @@ impl Store {
             byte_limit,
             time_limit,
             index: Index::new(service, programs),
+            history: Default::default(),
             status: Status::Receiving,
         })
     }
@@ -139,8 +141,17 @@ impl Store {
                 .iter()
                 .enumerate()
             {
-                self.index
-                    .packet(self.end + (number * super::TS_PACKET_SIZE) as u64, packet);
+                if let Some(anchor) = self
+                    .index
+                    .packet(self.end + (number * super::TS_PACKET_SIZE) as u64, packet)
+                {
+                    self.history.observe(
+                        anchor.epoch,
+                        anchor.time_ns,
+                        self.index.end_ns().unwrap_or(anchor.time_ns),
+                        anchor.observation(),
+                    );
+                }
             }
             segment.size += count;
             segment.end_ns = self.index.end_ns().unwrap_or_default();
@@ -177,6 +188,12 @@ impl Store {
             self.boundaries.pop_front();
         }
         self.index.expire_time(earliest);
+        if let Some(first) = self.index.entries().front() {
+            self.history.expire(first.time_ns);
+        }
+        if let Some(end) = self.index.end_ns() {
+            self.history.advance_end(end);
+        }
         Ok(())
     }
     pub fn start(&self) -> u64 {
@@ -352,5 +369,60 @@ mod failure_tests {
         assert_eq!(store.end, end);
         assert_eq!(store.index.end_ns(), duration);
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod timeline_tests {
+    use super::*;
+    use crate::playback::{
+        live_timeline::{Presenter, Reading},
+        timeline::Phase,
+    };
+    #[test]
+    fn received_fixture_populates_catalog_without_scanning_pcr_entries() {
+        let fixture = include_bytes!("../../../../tests/fixtures/recording-seek.ts");
+        let mut store = Store::new(Retention::Memory, 1, true).unwrap();
+        store.append(fixture).unwrap();
+        let end = store.index.end_ns().unwrap();
+        let mut presenter = Presenter::new();
+        let position = Duration::from_secs(10);
+        let snapshot = presenter.project(
+            &store.history,
+            0,
+            end,
+            true,
+            Reading {
+                phase: Phase::Playing,
+                position_ns: Some(position.as_nanos() as u64),
+                target_ns: None,
+            },
+        );
+        let value: serde_json::Value = serde_json::from_str(&snapshot.serialize()).unwrap();
+        assert!(value["live"]["program"].is_object());
+        assert!(value["viewing"]["program"].is_object());
+        // The fixture advertises the following event; the last presentation
+        // timestamps reach its boundary as well as the two current events.
+        const ADVERTISED_EVENTS: usize = 3;
+        assert_eq!(
+            value["programs"].as_array().unwrap().len(),
+            ADVERTISED_EVENTS,
+            "{value}"
+        );
+        for (index, program) in value["programs"].as_array().unwrap().iter().enumerate() {
+            assert!(
+                program["id"]
+                    .as_str()
+                    .unwrap()
+                    .ends_with(&format!(":{}", index + 1)),
+                "{value}"
+            );
+        }
+        const CHANGE_MS: i64 = 30_000;
+        const CLOCK_PRECISION_MS: i64 = 1_500;
+        assert!(
+            (value["programs"][1]["start"].as_i64().unwrap() - CHANGE_MS).abs()
+                <= CLOCK_PRECISION_MS
+        );
     }
 }

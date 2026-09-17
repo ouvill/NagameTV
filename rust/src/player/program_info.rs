@@ -13,7 +13,7 @@ impl ffi::Player {
         mut self: Pin<&mut Self>,
         service: Option<BroadcastService>,
     ) {
-        if self.recording() || self.timeshift() {
+        if self.recording() || self.media_active() {
             // Live channel/guide views remain usable during recording, but their
             // wall clock is never fed into the recording's program timeline.
             if Instant::now() >= self.rust().next_current_program {
@@ -25,6 +25,10 @@ impl ffi::Player {
                 self.as_mut().poll_guide_visibility(now);
                 self.as_mut().rust_mut().next_current_program =
                     Instant::now() + Duration::from_secs(1);
+            }
+            // The receive-time live snapshot commits both viewing properties atomically.
+            if !self.recording() {
+                return;
             }
             let presentation = if self.seeking() {
                 None

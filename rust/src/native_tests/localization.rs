@@ -136,6 +136,13 @@ pub fn run(missing_catalog: bool) -> i32 {
     assert_eq!(property(&engine, "day"), day);
     assert_eq!(text(&engine, "historyLabel"), qs("保持範囲外"));
     assert_eq!(
+        text(&engine, "expiredPauseLabel"),
+        qs("保持範囲外で一時停止")
+    );
+    assert_eq!(text(&engine, "watchingLabel"), qs("視聴中: 番組A"));
+    assert_eq!(text(&engine, "broadcastLabel"), qs("放送中: 番組B"));
+    assert_eq!(text(&engine, "unknownProgramLabel"), qs("番組情報未取得"));
+    assert_eq!(
         text(&engine, "historyEstimate"),
         qs("約1分30秒 保持できます")
     );

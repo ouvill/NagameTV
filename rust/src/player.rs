@@ -147,7 +147,7 @@ pub mod ffi {
         #[qproperty(QString, timeshift_storage, READ = timeshift_storage, NOTIFY)]
         #[qproperty(QString, timeshift_limits, READ = timeshift_limits, NOTIFY)]
         #[qproperty(f64, timeshift_bytes_per_second, READ, NOTIFY)]
-        #[qproperty(QString, timeshift_program_boundaries, READ, NOTIFY)]
+        #[qproperty(QString, live_timeline, READ, NOTIFY)]
         #[qproperty(QString, transport_error, READ, NOTIFY)]
         #[qproperty(bool, recording, READ = recording, NOTIFY)]
         #[qproperty(QString, recording_name, READ = recording_name, NOTIFY)]
@@ -282,6 +282,10 @@ pub mod ffi {
         #[qinvokable]
         fn seek_to(self: Pin<&mut Player>, milliseconds: f64) -> bool;
         #[qinvokable]
+        fn seek_timeline(self: Pin<&mut Player>, session: QString, milliseconds: f64) -> bool;
+        #[qinvokable]
+        fn timeline_preview(self: &Player, session: QString, milliseconds: f64) -> QString;
+        #[qinvokable]
         fn skip(self: Pin<&mut Player>, milliseconds: f64) -> bool;
         #[qinvokable]
         fn open_recording(self: Pin<&mut Player>, file: QUrl) -> bool;
@@ -387,7 +391,7 @@ pub struct PlayerRust {
     stream_state: stream_state::State,
     timeline: playback::timeline::Snapshot,
     timeshift_bytes_per_second: f64,
-    timeshift_program_boundaries: QString,
+    live_timeline: QString,
     transport_error: QString,
     recording_loader: playback::recording::Loader,
     file_error: QString,

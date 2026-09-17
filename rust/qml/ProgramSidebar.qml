@@ -177,7 +177,9 @@ Rectangle {
                 }
                 Label {
                     Layout.fillWidth: true
-                    text: root.recording ? qsTranslate("Viewer", "Program information from recording TS") : qsTranslate("Viewer", "Program information provided by Mirakurun")
+                    text: root.recording ? qsTranslate("Viewer", "Program information from recording TS")
+                        : root.program && root.program.source === "broadcast_ts" ? qsTranslate("Viewer", "Program information from broadcast TS")
+                        : qsTranslate("Viewer", "Program information provided by Mirakurun")
                     color: "#929497"
                     font.pixelSize: 12
                     wrapMode: Text.Wrap
