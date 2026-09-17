@@ -6,6 +6,8 @@ mod psi;
 pub(crate) mod wire;
 pub(crate) use psi::{Pat, Sections};
 #[cfg(test)]
+mod caption_transition_tests;
+#[cfg(test)]
 mod recovery_tests;
 use wire::{Pid, PsiSection, SYNC_BYTE, TS_PACKET_SIZE, TransportPacket};
 
