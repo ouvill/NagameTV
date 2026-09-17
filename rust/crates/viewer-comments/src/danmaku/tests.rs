@@ -1,6 +1,9 @@
 use super::*;
 fn engine(height: f64) -> Engine {
     let mut engine = Engine::default();
+    engine.set_presentation(
+        Presentation::new(DisplayMode::Scroll, PlacementMode::Collision).unwrap(),
+    );
     assert_eq!(
         engine.configure(
             Viewport {
@@ -415,15 +418,28 @@ fn timeline_sort_seek_pause_replacement_and_validation() -> Result<(), LoadError
     e.seek(Duration::from_secs(3));
     e.set_position(Duration::from_millis(3010));
     e.set_paused(true);
-    assert_eq!(e.next_due().expect("restored in flight").comment.text.as_ref(), "first");
+    assert_eq!(
+        e.next_due()
+            .expect("restored in flight")
+            .comment
+            .text
+            .as_ref(),
+        "first"
+    );
     let later = e.next_due().expect("later");
     assert_eq!(later.comment.position, Position::Top);
     assert_eq!(later.comment.color.rgb(), 0x123abc);
-    assert_eq!(e.next_due().expect("same time").comment.text.as_ref(), "same");
+    assert_eq!(
+        e.next_due().expect("same time").comment.text.as_ref(),
+        "same"
+    );
     e.set_paused(false);
     assert!(e.set_position(Duration::ZERO));
     e.set_position(Duration::from_secs(2));
-    assert_eq!(e.next_due().expect("rewound").comment.text.as_ref(), "first");
+    assert_eq!(
+        e.next_due().expect("rewound").comment.text.as_ref(),
+        "first"
+    );
     e.seek(Duration::from_secs(100));
     assert!(e.next_due().is_none());
     for input in [
@@ -470,7 +486,10 @@ fn hidden_timeline_keeps_cursor_but_no_pending_or_visible_objects() -> Result<()
     assert_eq!(e.active_count(), 0);
     e.set_visible(true);
     e.set_position(Duration::from_secs(4));
-    assert_eq!(e.next_due().expect("new comment").comment.text.as_ref(), "visible");
+    assert_eq!(
+        e.next_due().expect("new comment").comment.text.as_ref(),
+        "visible"
+    );
     Ok(())
 }
 
@@ -624,6 +643,7 @@ fn new_rows_during_animation_and_rapid_reversal_never_overflow() {
 #[test]
 fn small_view_with_large_text_keeps_old_rows_and_rejects_new_when_ui_fills_space() {
     let mut e = Engine::default();
+    e.set_presentation(Presentation::new(DisplayMode::Scroll, PlacementMode::Collision).unwrap());
     let viewport = Viewport {
         width: 400.,
         height: 240.,
@@ -707,7 +727,10 @@ fn restored_motion_matches_normal_playback_and_old_measurement_tokens_are_reject
 #[test]
 fn overlapping_fetches_keep_active_ids_and_late_comments_start_midflight() {
     let first = parse_timeline(r#"[{"id":"one","time":1,"text":"first"}]"#).unwrap();
-    let both = parse_timeline(r#"[{"id":"one","time":1,"text":"first"},{"id":"two","time":2,"text":"late"}]"#).unwrap();
+    let both = parse_timeline(
+        r#"[{"id":"one","time":1,"text":"first"},{"id":"two","time":2,"text":"late"}]"#,
+    )
+    .unwrap();
     let mut e = engine(480.);
     e.load(first);
     e.seek(Duration::from_secs(3));
@@ -721,7 +744,9 @@ fn overlapping_fetches_keep_active_ids_and_late_comments_start_midflight() {
     assert_eq!(e.active_count(), 2);
     for lane in &e.lanes[0] {
         for (index, entry) in lane.iter().enumerate() {
-            for other in lane.iter().skip(index + 1) { assert!(entry.separate_from(other, e.clock)); }
+            for other in lane.iter().skip(index + 1) {
+                assert!(entry.separate_from(other, e.clock));
+            }
         }
     }
 }

@@ -50,6 +50,12 @@ pub mod ffi {
             own: bool,
         ) -> bool;
         #[qinvokable]
+        fn set_presentation(
+            self: Pin<&mut DanmakuController>,
+            display: QString,
+            placement: QString,
+        ) -> bool;
+        #[qinvokable]
         fn measured(self: Pin<&mut DanmakuController>, token: u32, width: f64);
         #[qinvokable]
         fn remeasured(self: Pin<&mut DanmakuController>, round: u32, token: u32, width: f64);
@@ -77,7 +83,14 @@ pub mod ffi {
             reset: bool,
         ) -> bool;
         #[qsignal]
-        fn positioned(self: Pin<&mut DanmakuController>, token: u32, x: f64);
+        fn positioned(
+            self: Pin<&mut DanmakuController>,
+            token: u32,
+            x: f64,
+            y: f64,
+            rotation: f64,
+            opacity: f64,
+        );
         #[qsignal]
         fn measure_requested(
             self: Pin<&mut DanmakuController>,
@@ -98,6 +111,8 @@ pub mod ffi {
             y: f64,
             duration: i32,
             own: bool,
+            rotation: f64,
+            opacity: f64,
         );
         #[qsignal]
         fn removed(self: Pin<&mut DanmakuController>, token: u32);
@@ -212,6 +227,7 @@ impl ffi::DanmakuController {
         for token in expired {
             self.as_mut().removed(token.value());
         }
+        self.as_mut().publish_positions();
         self.publish();
     }
     pub fn configure(
@@ -252,8 +268,37 @@ impl ffi::DanmakuController {
             }
             Some(ConfigurationChange::Preserved) | None => {}
         }
+        self.as_mut().publish_positions();
         self.publish();
         accepted
+    }
+    pub fn set_presentation(
+        mut self: Pin<&mut Self>,
+        display: QString,
+        placement: QString,
+    ) -> bool {
+        let (Some(display), Some(placement)) = (
+            danmaku_core::DisplayMode::parse(&display.to_string()),
+            danmaku_core::PlacementMode::parse(&placement.to_string()),
+        ) else {
+            return false;
+        };
+        let Some(presentation) = danmaku_core::Presentation::new(display, placement) else {
+            return false;
+        };
+        if self
+            .as_mut()
+            .rust_mut()
+            .engine
+            .set_presentation(presentation)
+        {
+            self.as_mut().rust_mut().last_tick = Instant::now();
+            self.as_mut().cleared();
+            self.as_mut().drain_due();
+            self.as_mut().publish_positions();
+            self.publish();
+        }
+        true
     }
     pub fn remeasured(mut self: Pin<&mut Self>, round: u32, token: u32, width: f64) {
         let updates = self
@@ -311,10 +356,13 @@ impl ffi::DanmakuController {
         if let Some(spawn) = spawn {
             self.as_mut().spawned(
                 spawn.id.value(),
-                match spawn.comment.position {
-                    Position::Right => 0,
-                    Position::Top => 1,
-                    Position::Bottom => 2,
+                match spawn.display {
+                    danmaku_core::DisplayMode::Pop => 3,
+                    danmaku_core::DisplayMode::Scroll => match spawn.comment.position {
+                        Position::Right => 0,
+                        Position::Top => 1,
+                        Position::Bottom => 2,
+                    },
                 },
                 QString::from(spawn.comment.text.as_ref()),
                 QString::from(format!("#{:06x}", spawn.comment.color.rgb())),
@@ -324,6 +372,8 @@ impl ffi::DanmakuController {
                 spawn.y,
                 spawn.lifetime.as_millis() as i32,
                 spawn.comment.own,
+                spawn.rotation,
+                spawn.opacity,
             );
         }
         self.publish();
@@ -393,11 +443,15 @@ impl ffi::DanmakuController {
         true
     }
     fn publish_positions(mut self: Pin<&mut Self>) {
-        if self.rust().engine.media_driven() {
-            let positions = self.rust().engine.positions();
-            for (id, x) in positions {
-                self.as_mut().positioned(id.value(), x);
-            }
+        let visuals = self.rust().engine.visuals();
+        for (id, visual) in visuals {
+            self.as_mut().positioned(
+                id.value(),
+                visual.x,
+                visual.y,
+                visual.rotation,
+                visual.opacity,
+            );
         }
     }
     pub fn update_timeline(

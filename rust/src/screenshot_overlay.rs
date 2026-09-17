@@ -23,6 +23,7 @@ mod ffi {
         type QString = cxx_qt_lib::QString;
         fn paintImage(image: &mut QImage, overlay: &Overlay);
         fn transform(painter: Pin<&mut QPainter>, x: f64, y: f64, sx: f64, sy: f64);
+        fn rotate(painter: Pin<&mut QPainter>, x: f64, y: f64, degrees: f64);
         fn clip(painter: Pin<&mut QPainter>, x: f64, y: f64, width: f64, height: f64);
         fn rectangle(
             painter: Pin<&mut QPainter>,
@@ -77,11 +78,13 @@ enum Command {
         width: f64,
         height: f64,
         color: String,
+        pose: Option<Pose>,
     },
     Text(Text),
 }
 #[derive(Debug, Deserialize)]
 struct Text {
+    pose: Option<Pose>,
     x: f64,
     y: f64,
     width: f64,
@@ -100,6 +103,17 @@ struct Text {
     shadow: Option<Shadow>,
     wrap: bool,
     center: bool,
+}
+#[derive(Debug, Deserialize)]
+struct Pose {
+    x: f64,
+    y: f64,
+    degrees: f64,
+}
+impl Pose {
+    fn apply(&self, painter: Pin<&mut QPainter>) {
+        ffi::rotate(painter, self.x, self.y, self.degrees);
+    }
 }
 #[derive(Debug, Deserialize)]
 struct Shadow {
@@ -164,8 +178,14 @@ impl Overlay {
                         width,
                         height,
                         color,
+                        pose,
                     } => {
-                        ffi::rectangle(painter.as_mut(), *x, *y, *width, *height, &color_of(color))
+                        painter.as_mut().save();
+                        if let Some(pose) = pose {
+                            pose.apply(painter.as_mut());
+                        }
+                        ffi::rectangle(painter.as_mut(), *x, *y, *width, *height, &color_of(color));
+                        painter.as_mut().restore();
                     }
                     Command::Text(text) => text.paint(painter.as_mut()),
                 }
@@ -193,6 +213,9 @@ impl Text {
             self.center,
         );
         painter.as_mut().save();
+        if let Some(pose) = &self.pose {
+            pose.apply(painter.as_mut());
+        }
         painter.as_mut().set_opacity(self.opacity.clamp(0.0, 1.0));
         ffi::transform(
             painter.as_mut(),
@@ -236,6 +259,23 @@ pub fn compose(image: QImage, width: u32, height: u32, overlay: &Overlay) -> Res
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn rotation_uses_the_captured_center_and_keeps_layer_clipping() {
+        let overlay = Overlay::parse(
+            r##"{"width":100,"height":100,"layers":[
+            {"x":0,"y":0,"width":55,"height":100,"commands":[
+                {"kind":"rect","x":30,"y":45,"width":40,"height":10,"color":"#ff0000",
+                 "pose":{"x":50,"y":50,"degrees":90}}]}]}"##,
+        )
+        .unwrap();
+        let mut image =
+            QImage::from_width_height_and_format(100, 100, cxx_qt_lib::QImageFormat::Format_RGB32);
+        image.fill(&QColor::from_rgb(0, 0, 0));
+        let image = compose(image, 100, 100, &overlay).unwrap();
+        assert_eq!(image.pixel_color(50, 35), QColor::from_rgb(255, 0, 0));
+        assert_eq!(image.pixel_color(35, 50), QColor::from_rgb(0, 0, 0));
+        assert_eq!(image.pixel_color(56, 50), QColor::from_rgb(0, 0, 0));
+    }
     #[test]
     fn overlay_maps_from_letterboxed_video_area_and_clips() {
         let overlay = Overlay::parse(

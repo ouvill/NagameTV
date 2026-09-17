@@ -191,6 +191,10 @@ ApplicationWindow {
         onTimeshiftSettingsRequested: { settings.open(); settings.page = SettingsPanel.Timeshift; }
         toggleButton: playerControls.settingsButton
         commentsEnabled: player.comments_enabled
+        displayMode: player.comment_display
+        placementMode: player.comment_placement
+        evaluationCollision: player.evaluation_collision_layout
+        onPresentationRequested: function(display, placement) { player.configure_comment_presentation(display, placement); }
         danmakuEnabled: player.danmaku_enabled
         textSize: player.comment_font_size
         textOpacity: player.comment_opacity
@@ -292,11 +296,20 @@ ApplicationWindow {
                 id: video
                 anchors.fill: parent
             }
+            VideoCommentBounds {
+                id: commentBounds
+                viewportWidth: video.width
+                viewportHeight: video.height
+                aspectRatio: player.video_aspect_ratio
+                evaluationWide: player.evaluation_wide_comments
+            }
             Loader {
                 id: danmaku
-                anchors.centerIn: video
-                width: video.width
-                height: Math.min(video.height, width * 9 / 16)
+                x: commentBounds.x
+                y: commentBounds.y
+                width: commentBounds.width
+                height: commentBounds.height
+                clip: true
                 active: !root.closing && player.comments_enabled && player.danmaku_enabled && player.media_active
                 sourceComponent: DanmakuOverlay {
                     id: playbackComments
@@ -316,6 +329,8 @@ ApplicationWindow {
                     }
                     onTimelineJsonChanged: syncTimeline()
                     Component.onCompleted: { configure(); replayReady = true; syncTimeline(); }
+                    displayMode: player.comment_display
+                    placementMode: player.comment_placement
                     fontSize: player.comment_font_size
                     textOpacity: player.comment_opacity
                     speed: player.comment_speed
@@ -668,6 +683,20 @@ ApplicationWindow {
         open: root.showProgram
         shuttingDown: root.closing
         sourceComponent: ProgramSidebar {
+            evaluationCommentList: player.evaluation_comment_list
+            evaluationCollision: player.evaluation_collision_layout
+            displayMode: player.comment_display
+            placementMode: player.comment_placement
+            textSize: player.comment_font_size
+            textOpacity: player.comment_opacity
+            speed: player.comment_speed
+            shadowEnabled: player.comment_shadow_enabled
+            onPresentationRequested: function(display, placement) { player.configure_comment_presentation(display, placement); }
+            onAdjusted: function(size, opacity, speed) {
+                player.configure_danmaku(player.danmaku_enabled, size, opacity, speed);
+                player.save_settings();
+            }
+            onShadowRequested: function(enabled) { player.configure_comment_shadow(enabled); }
             danmakuEnabled: player.danmaku_enabled
             commentsEnabled: player.comments_enabled
             onDanmakuRequested: function (enabled) {

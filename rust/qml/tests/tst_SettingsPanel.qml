@@ -69,6 +69,10 @@ TestCase {
         property bool danmaku_enabled: false
         property real comment_font_size: 21
         property real comment_opacity: 1
+        property string comment_display: "scroll"
+        property string comment_placement: "sequential"
+        property bool evaluation_collision_layout: false
+        function configure_comment_presentation(display, placement) { comment_display = display; comment_placement = placement; return true; }
         property real comment_speed: 1
         property bool comment_shadow_enabled: true
         function configure_comment_shadow(value) { comment_shadow_enabled = value; }

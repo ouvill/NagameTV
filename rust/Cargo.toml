@@ -5,6 +5,13 @@ edition = "2024"
 build = "build.rs"
 
 [features]
+# Local comparison only, never enabled by distribution builds. See
+# docs/comment-display-redesign.md for patent references and estimated terms.
+evaluation-comment-list = []
+evaluation-wide-comments = []
+evaluation-collision-layout = ["viewer-comments/evaluation-collision-layout"]
+evaluation-legacy-comments = ["evaluation-comment-list", "evaluation-wide-comments", "evaluation-collision-layout"]
+distribution = []
 # Builds a runner for QML tests using the real statically linked Rust types.
 qml_tests = []
 # Main-thread Qt/GStreamer integration checks, implemented in Rust.

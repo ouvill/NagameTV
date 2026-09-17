@@ -4,6 +4,68 @@ use cxx_qt_lib::QString;
 use std::pin::Pin;
 
 impl ffi::Player {
+    pub fn comment_display(&self) -> QString {
+        self.rust()
+            .preferences
+            .preferences()
+            .comment_presentation
+            .display()
+            .as_str()
+            .into()
+    }
+    pub fn comment_placement(&self) -> QString {
+        self.rust()
+            .preferences
+            .preferences()
+            .comment_presentation
+            .placement()
+            .as_str()
+            .into()
+    }
+    // Avoid simultaneous list + moving overlay: JP7080382 / JP7277651 / JP7153786,
+    // estimated expiry 2027-03-02. Registry status unverified; no automatic
+    // date-based reactivation. These compile-time overrides are evaluation only.
+    pub fn evaluation_comment_list(&self) -> bool {
+        cfg!(feature = "evaluation-comment-list")
+    }
+    // Keep comments inside the actual picture: JP4734471, estimated expiry
+    // 2026-12-11 (registry status unverified), including letter/pillarboxing.
+    pub fn evaluation_wide_comments(&self) -> bool {
+        cfg!(feature = "evaluation-wide-comments")
+    }
+    // Pairwise collision/catch-up: JP4695583 (2026-12-11), JP6526304 / JP7178462
+    // (2027-03-02), all estimated expiry dates, not verified legal status.
+    pub fn evaluation_collision_layout(&self) -> bool {
+        cfg!(feature = "evaluation-collision-layout")
+    }
+    pub fn configure_comment_presentation(
+        mut self: Pin<&mut Self>,
+        display: QString,
+        placement: QString,
+    ) -> bool {
+        use viewer_comments::danmaku::{DisplayMode, PlacementMode, Presentation};
+        let (Some(display), Some(placement)) = (
+            DisplayMode::parse(&display.to_string()),
+            PlacementMode::parse(&placement.to_string()),
+        ) else {
+            return false;
+        };
+        let Some(value) = Presentation::new(display, placement) else {
+            return false;
+        };
+        if value == self.rust().preferences.preferences().comment_presentation {
+            return true;
+        }
+        self.as_mut()
+            .rust_mut()
+            .preferences
+            .change(crate::settings::Change::CommentPresentation(value));
+        self.as_mut().comment_display_changed();
+        self.as_mut().comment_placement_changed();
+        self.save_settings();
+        true
+    }
+
     pub fn commentary_position(&self) -> f64 {
         if self.seeking() || !self.media_active() {
             return -1.;

@@ -436,6 +436,14 @@ Popup {
                             }
                         }
                         Heading { Layout.topMargin: 20; text: qsTranslate("Settings", "Comment appearance") }
+                        CommentPresentation {
+                            Layout.fillWidth: true
+                            enabled: root.backend.comments_enabled
+                            displayMode: root.backend.comment_display
+                            placementMode: root.backend.comment_placement
+                            evaluationCollision: root.backend.evaluation_collision_layout
+                            onSelected: function(display, placement) { root.backend.configure_comment_presentation(display, placement); }
+                        }
                         ColumnLayout {
                             Layout.fillWidth: true
                             enabled: root.backend.comments_enabled === true
@@ -459,7 +467,7 @@ Popup {
                             SettingsSlider {
                                 objectName: "commentSpeed"
                                 Layout.fillWidth: true
-                                text: qsTranslate("Settings", "Scroll speed")
+                                text: qsTranslate("Main", "Speed")
                                 valueText: value.toFixed(1) + "×"
                                 from: 0.5; to: 2; stepSize: 0.1; value: root.backend.comment_speed
                                 onMoved: function(value) { root.backend.configure_danmaku(root.backend.danmaku_enabled, root.backend.comment_font_size, root.backend.comment_opacity, value); }

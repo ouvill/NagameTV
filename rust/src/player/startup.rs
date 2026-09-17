@@ -118,6 +118,7 @@ impl Default for PlayerRust {
             comment_font_size: preferences.preferences().comment_font_size.into(),
             comment_opacity: preferences.preferences().comment_opacity.into(),
             comment_speed: preferences.preferences().comment_speed.into(),
+            video_aspect_ratio: 0.0,
             comment_shadow_enabled: preferences.preferences().comment_shadow_enabled,
             comment_program_title: QString::default(),
             comment_model: crate::comment_model::ffi::make_comment_model(),

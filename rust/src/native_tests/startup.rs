@@ -144,15 +144,19 @@ fn check_danmaku_layout(
     // needing a successful broadcast stream from the HTTP failure fixture.
     evaluate(
         engine,
-        "root.showProgram = false; root.width = 1280; root.height = 720; danmaku.active = true; true",
+        "root.showProgram = false; root.width = 1280; root.height = 720; commentBounds.aspectRatio = 16/9; danmaku.active = true; true",
     )?;
     wait_for(app, engine, "danmaku.item !== null")?;
     assert!(evaluate(
         engine,
         r#"
-        danmaku.item.receive("resize flow", "right", 16777215);
-        danmaku.item.receive("resize fixed", "top", 16777215);
+        danmaku.item.replayReady = false;
+        danmaku.item.playbackClock = null;
         danmaku.item.paused = true;
+        danmaku.item.controller.load_timeline(JSON.stringify([
+            {time: 0, text: "resize flow"}, {time: 0.5, text: "resize fixed", type: "top"}
+        ]));
+        danmaku.item.controller.seek(1);
         danmaku.item.activeCount === 2
     "#
     )?);
@@ -194,7 +198,28 @@ fn check_danmaku_layout(
             )
         )?);
     }
-    evaluate(engine, "danmaku.active = false; true")?;
+    assert!(evaluate(
+        engine,
+        r#"
+        player.configure_comment_presentation("pop", "random");
+        root.showProgram = true; root.sidebarPage = ProgramSidebar.Comments;
+        commentBounds.aspectRatio = 4/3;
+        danmaku.item.controller.seek(2);
+        danmaku.width === Math.floor(Math.min(video.width, video.height * 4/3))
+            && danmaku.x === Math.floor((video.width - danmaku.width)/2)
+            && danmaku.item.activeCount === 2
+            && Array.from(danmaku.item.visuals.values()).every(e => Math.abs(e.rotation) <= 20)
+    "#
+    )?);
+    wait_for(
+        app,
+        engine,
+        "sidebar.item !== null && sidebar.item.showCommentControls === !player.evaluation_comment_list",
+    )?;
+    evaluate(
+        engine,
+        "player.configure_comment_presentation('scroll','sequential'); danmaku.active = false; commentBounds.aspectRatio = Qt.binding(() => player.video_aspect_ratio); true",
+    )?;
     Ok(())
 }
 

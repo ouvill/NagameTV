@@ -78,6 +78,12 @@ Item {
                 onDanmakuRequested: function(value) { backend.setDanmaku(value); }
             }
             SignalSpy { id: statsRequests; target: playback; signalName: "statsRequested" }
+            function revealPlaybackControl(control) {
+                const flickable = playback.contentItem.contentItem;
+                const point = control.mapToItem(flickable.contentItem, 0, 0);
+                flickable.contentY = Math.max(0, Math.min(point.y - 10, flickable.contentHeight - flickable.height));
+                waitForRendering(playback.contentItem);
+            }
             function playbackToggle() { return findChild(playback.contentItem, "playbackDanmakuToggle"); }
             function sidebarToggle() { return findChild(sidebar, "sidebarDanmakuToggle"); }
             function verifyState(value, requests) {
@@ -136,6 +142,7 @@ Item {
                 playback.open();
                 tryCompare(playback, "opened", true);
                 const stats = findChild(playback.contentItem, "playbackStatsToggle");
+                revealPlaybackControl(stats);
                 mouseClick(stats);
                 compare(backend.stats, true);
                 compare(statsRequests.count, 1);
@@ -150,18 +157,21 @@ Item {
                 playback.open();
                 tryCompare(playback, "opened", true);
                 const shadow = findChild(playback.contentItem, "playbackShadowToggle");
+                revealPlaybackControl(shadow);
                 mouseClick(shadow);
                 compare(backend.shadow, false);
                 compare(playback.opened, true);
                 backend.shadow = true;
                 compare(shadow.checked, true);
                 const size = findChild(playback.contentItem, "danmakuTextSize");
+                revealPlaybackControl(size);
                 size.forceActiveFocus();
                 for (let value = 21; value < 72; ++value)
                     keyClick(Qt.Key_Right);
                 compare(backend.size, 72);
                 compare(playback.opened, true);
                 backend.enabled = false;
+                revealPlaybackControl(shadow);
                 mouseClick(shadow);
                 compare(backend.shadow, true);
             }

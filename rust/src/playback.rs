@@ -183,6 +183,20 @@ impl Playback {
             self.mode.label(),
         )
     }
+    pub fn video_aspect_ratio(&self) -> Option<f64> {
+        if !matches!(
+            self.sink.current_state(),
+            gst::State::Paused | gst::State::Playing
+        ) {
+            return None;
+        }
+        let caps = self.sink.static_pad("sink")?.current_caps()?;
+        let info = gstreamer_video::VideoInfo::from_caps(&caps).ok()?;
+        let par = info.par();
+        let ratio = f64::from(info.width()) * f64::from(par.numer())
+            / (f64::from(info.height()) * f64::from(par.denom()));
+        (ratio.is_finite() && ratio > 0.0).then_some(ratio)
+    }
     pub fn position(&self) -> Option<gst::ClockTime> {
         self.sink.query_position::<gst::ClockTime>()
     }

@@ -251,7 +251,7 @@ pub(super) fn run(
     evaluate(
         engine,
         &format!(
-            "captions.item.captionJson = {}; danmaku.item.replayReady=false; danmaku.item.playbackClock=null; danmaku.item.controller.reset(); danmaku.item.paused=false; player.configure_danmaku(true,48,1,1); danmaku.item.receive('COMMENT', 'top', 16711680) && danmaku.item.receive('FLOW', 'right', 255)",
+            "captions.item.captionJson = {}; danmaku.item.replayReady=false; danmaku.item.playbackClock=null; danmaku.item.controller.reset(); danmaku.item.paused=false; player.configure_danmaku(true,48,1,1); danmaku.item.controller.load_timeline(JSON.stringify([{{time:0,text:'COMMENT',type:'top',color:16711680}},{{time:0.5,text:'FLOW',color:255}}])); danmaku.item.paused=true; danmaku.item.controller.seek(1.5)",
             serde_json::to_string(&cue.to_string())?
         ),
     )?;
@@ -314,10 +314,15 @@ pub(super) fn run(
     );
     evaluate(
         engine,
-        "captions.item.visible=true; danmaku.item.visible=true; danmaku.item.paused=false; danmaku.item.receive('COMMENT', 'top', 16711680); danmaku.item.paused=true; true",
+        "captions.item.visible=true; danmaku.item.visible=true; danmaku.item.controller.seek(1.5); danmaku.item.paused=true; true",
     )?;
     pump(app, SETTLE);
     let resized = capture(app, engine)?;
+    save(&resized, &review.join("resized-native.png"))?;
+    save(
+        &ffi::grabRoot(engine.pin_mut())?,
+        &review.join("resized-window.png"),
+    )?;
     let resized_green = colored(&resized, 1);
     let displayed = ffi::grabRoot(engine.pin_mut())?;
     let displayed_green = colored(&displayed, 1);
@@ -329,7 +334,12 @@ pub(super) fn run(
     );
     assert!(
         colored(&resized, 0).0 > 100 && colored(&resized, 0).0 < red.0,
-        "fixed UI comment font did not scale down with a larger viewport"
+        "fixed UI comment font did not scale down: before {red:?}, after {:?}, geometry {}",
+        colored(&resized, 0),
+        json(
+            engine,
+            "({w:danmaku.width,h:danmaku.height,active:danmaku.item.activeCount,labels:Array.from(danmaku.item.visuals.values()).map(e=>({x:e.x,y:e.y,w:e.width,text:e.text})),top:danmaku.item.controller.top_origin})"
+        )?
     );
     evaluate(engine, "root.showFullScreen(); true")?;
     pump(app, SETTLE);
@@ -356,6 +366,33 @@ pub(super) fn run(
             "({w:root.width,h:root.height,vw:video.width,vh:video.height})"
         )?
     );
+    evaluate(
+        engine,
+        "captions.item.visible=false; player.configure_comment_presentation('pop','random'); danmaku.item.controller.seek(2); true",
+    )?;
+    pump(app, SETTLE);
+    let fountain = capture(app, engine)?;
+    let fountain_window = ffi::grabRoot(engine.pin_mut())?;
+    save(&fountain, &review.join("fountain-native.png"))?;
+    save(&fountain_window, &review.join("fountain-window.png"))?;
+    let native_red = colored(&fountain, 0);
+    let shown_red = colored(&fountain_window, 0);
+    let factor = f64::from(SOURCE_WIDTH) / f64::from(fountain_window.width());
+    assert!(
+        native_red.0 > 100 && shown_red.0 > 100,
+        "fountain comment missing"
+    );
+    assert!(
+        (f64::from(native_red.1) - f64::from(shown_red.1) * factor).abs() < 6.0
+            && (f64::from(native_red.2) - f64::from(shown_red.2) * factor).abs() < 6.0
+            && (f64::from(native_red.3) - f64::from(shown_red.3) * factor).abs() < 6.0
+            && (f64::from(native_red.4) - f64::from(shown_red.4) * factor).abs() < 6.0,
+        "rotated comment differs between capture {native_red:?} and display {shown_red:?}"
+    );
+    evaluate(
+        engine,
+        "player.configure_comment_presentation('scroll','sequential'); true",
+    )?;
     evaluate(
         engine,
         "root.showNormal(); captions.active=false; danmaku.active=false; player.play(); true",
@@ -450,6 +487,37 @@ pub(super) fn run(
     assert_eq!((aspect.width(), aspect.height()), (768, 576));
     save(&aspect, &review.join("aspect.png"))?;
     assert!(evaluate(engine, "player.pause()")?);
+    pump(app, SETTLE);
+    assert!(evaluate(
+        engine,
+        "Math.abs(player.video_aspect_ratio-4/3)<0.001 && danmaku.width===Math.floor(Math.min(video.width,video.height*4/3))"
+    )?);
+    evaluate(engine, "danmaku.active=true; true")?;
+    wait_for(app, engine, "danmaku.item!==null")?;
+    assert!(evaluate(
+        engine,
+        "danmaku.item.replayReady=false; danmaku.item.playbackClock=null; danmaku.item.controller.reset(); danmaku.item.paused=false; danmaku.item.receive('CLIP '.repeat(60),'top',16711680); danmaku.item.paused=true; danmaku.item.activeCount===1"
+    )?);
+    // White UI text uses subpixel antialiasing and can contain red edge pixels;
+    // hide it before using red pixels to measure the comment clipping bounds.
+    evaluate(engine, "overlayVisibility.controlsVisible=false; true")?;
+    pump(app, SETTLE);
+    let clipped = ffi::grabRoot(engine.pin_mut())?;
+    save(&clipped, &review.join("pillarbox-comments-window.png"))?;
+    let edges = json(
+        engine,
+        "(function(){const p=danmaku.mapToItem(null,0,0);return {x:p.x,y:p.y,w:danmaku.width,h:danmaku.height,root:root.width};})()",
+    )?;
+    let dpr = f64::from(clipped.width()) / edges["root"].as_f64().unwrap();
+    let ink = colored(&clipped, 0);
+    assert!(
+        ink.0 > 100
+            && f64::from(ink.1) >= edges["x"].as_f64().unwrap() * dpr - 1.
+            && f64::from(ink.3)
+                <= (edges["x"].as_f64().unwrap() + edges["w"].as_f64().unwrap()) * dpr + 1.,
+        "comments spilled into pillarbox margins: {ink:?}, {edges}"
+    );
+    evaluate(engine, "danmaku.active=false; true")?;
     pump(app, SETTLE);
     let before_seek = capture(app, engine)?;
     let count = saved_files(&images)?.len();

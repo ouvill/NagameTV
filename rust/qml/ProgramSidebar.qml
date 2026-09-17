@@ -14,6 +14,21 @@ Rectangle {
     property string fallbackTitle: ""
     property bool danmakuEnabled: false
     property bool commentsEnabled: false
+    property bool evaluationCommentList: false
+    property bool evaluationCollision: false
+    property string displayMode: "scroll"
+    property string placementMode: "sequential"
+    property real textSize: 24
+    property real textOpacity: 1
+    property real speed: 1
+    property bool shadowEnabled: true
+    signal presentationRequested(string displayMode, string placementMode)
+    signal adjusted(real textSize, real textOpacity, real speed)
+    signal shadowRequested(bool enabled)
+    // JP7080382 / JP7277651 / JP7153786: avoid a simultaneous comment list and moving
+    // overlay. Estimated expiry 2027-03-02; registry status unverified. The
+    // compile-time evaluation override is provided by Player, never a setting.
+    readonly property bool showCommentControls: danmakuEnabled && !evaluationCommentList
     signal danmakuRequested(bool enabled)
     property var commentModel: null
     property string commentProgramTitle: ""
@@ -232,11 +247,49 @@ Rectangle {
         Loader {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            active: root.page === ProgramSidebar.Comments
+            objectName: "sidebarCommentList"
+            active: root.page === ProgramSidebar.Comments && !root.showCommentControls
             visible: active
             sourceComponent: CommentList {
                 commentModel: root.commentModel
                 status: root.commentStatus
+            }
+        }
+        ScrollView {
+            id: commentControls
+            objectName: "sidebarCommentControls"
+            visible: root.page === ProgramSidebar.Comments && root.showCommentControls
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            contentWidth: availableWidth
+            clip: true
+            ColumnLayout {
+                width: commentControls.availableWidth
+                enabled: root.commentsEnabled
+                spacing: 18
+                CommentPresentation {
+                    Layout.fillWidth: true
+                    displayMode: root.displayMode
+                    placementMode: root.placementMode
+                    evaluationCollision: root.evaluationCollision
+                    onSelected: function(display, placement) { root.presentationRequested(display, placement); }
+                }
+                DanmakuAdjustments {
+                    Layout.fillWidth: true
+                    textSize: root.textSize
+                    textOpacity: root.textOpacity
+                    speed: root.speed
+                    onAdjusted: function(size, opacity, speed) { root.adjusted(size, opacity, speed); }
+                }
+                RowLayout {
+                    Layout.fillWidth: true
+                    Label { text: qsTranslate("Settings", "Drop shadow"); color: "#f4f5f3"; Layout.fillWidth: true }
+                    ToggleSwitch {
+                        text: qsTranslate("Settings", "Drop shadow")
+                        checked: root.shadowEnabled
+                        onToggled: root.shadowRequested(checked)
+                    }
+                }
             }
         }
         Rectangle {

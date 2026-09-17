@@ -57,7 +57,7 @@
         }
       },
       "build-commands": [
-        "cmake -S . -B _build -G Ninja -DCMAKE_INSTALL_PREFIX=/app",
+        "cmake -S . -B _build -G Ninja -DCMAKE_INSTALL_PREFIX=/app -DMIRAKURUN_DISTRIBUTION=ON",
         "CARGO_BUILD_JOBS=\"$FLATPAK_BUILDER_N_JOBS\" cmake --build _build",
         "cmake --install _build"
       ],

@@ -3,6 +3,14 @@
 <TS version="2.1" language="ja_JP" sourcelanguage="en">
   <context>
     <name>Main</name>
+    <message><source>Comment motion</source><translation>コメントの動き</translation></message>
+    <message><source>Scroll</source><translation>横スクロール</translation></message>
+    <message><source>Fountain</source><translation>噴水</translation></message>
+    <message><source>Comment placement</source><translation>コメントの配置</translation></message>
+    <message><source>Even spread</source><translation>均等配置</translation></message>
+    <message><source>Random</source><translation>ランダム</translation></message>
+    <message><source>Legacy collision layout (evaluation)</source><translation>従来の衝突回避（評価用）</translation></message>
+
     <message>
       <source>Open screenshot folder</source>
       <translation>スクリーンショットの保存先を開く</translation>

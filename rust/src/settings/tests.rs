@@ -464,3 +464,29 @@ fn screenshot_parameters_round_trip_without_losing_other_formats()
     }
     Ok(())
 }
+
+#[test]
+fn comment_modes_roundtrip_and_old_preferences_keep_normal_defaults() {
+    use viewer_comments::danmaku::{DisplayMode, PlacementMode, Presentation};
+    let mut prefs: Preferences = toml::from_str("danmaku_enabled = true").unwrap();
+    assert_eq!(prefs.comment_presentation, Presentation::default());
+    prefs.comment_presentation =
+        Presentation::new(DisplayMode::Pop, PlacementMode::Random).unwrap();
+    let saved = toml::to_string(&prefs).unwrap();
+    assert_eq!(
+        toml::from_str::<Preferences>(&saved)
+            .unwrap()
+            .comment_presentation,
+        prefs.comment_presentation
+    );
+    let old = toml::from_str::<Preferences>(
+        "[comment_presentation]\ndisplay = 'unknown'\nplacement = 'collision'",
+    )
+    .unwrap();
+    assert_eq!(old.comment_presentation.display(), DisplayMode::Scroll);
+    #[cfg(not(feature = "evaluation-collision-layout"))]
+    assert_eq!(
+        old.comment_presentation.placement(),
+        PlacementMode::Sequential
+    );
+}

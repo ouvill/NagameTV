@@ -26,6 +26,9 @@ inline void paintImage(QImage &image, const Overlay &overlay) {
 inline void transform(QPainter &painter, double x, double y, double sx, double sy) {
     painter.translate(x, y); painter.scale(sx, sy);
 }
+inline void rotate(QPainter &painter, double x, double y, double degrees) {
+    painter.translate(x, y); painter.rotate(degrees); painter.translate(-x, -y);
+}
 inline void clip(QPainter &painter, double x, double y, double w, double h) {
     painter.setClipRect(QRectF(x, y, w, h), Qt::IntersectClip);
 }

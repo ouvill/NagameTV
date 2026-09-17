@@ -4,7 +4,7 @@ import QtTest
 import ".." as Viewer
 
 TestCase {
-    name: "DanmakuOverlay"
+    name: "DanmakuLegacyOverlay"
     when: windowShown
     visible: true
     width: 640
@@ -19,6 +19,8 @@ TestCase {
     function init() {
         overlay = createTemporaryObject(component, this);
         verify(overlay !== null);
+        if (!overlay.controller.set_presentation("scroll", "collision"))
+            skip("Legacy layout is compiled only in the evaluation build.");
     }
     function test_burst_and_clear_reuse_are_driven_by_core() {
         for (let i = 0; i < 1000; ++i)
@@ -61,7 +63,10 @@ TestCase {
         const scroll = visible[0];
         const top = visible[1];
         const bottom = visible[2];
-        compare(scroll.x, overlay.width);
+        compare(scroll.startX, overlay.width);
+        // Rust now publishes direct-reception positions on each receive/tick,
+        // so measuring the following two labels can advance the first slightly.
+        verify(scroll.x <= overlay.width && scroll.x > overlay.width - 5);
         compare(scroll.duration, 2500);
         compare(scroll.color.toString(), "#123456");
         compare(top.color.toString(), "#000000");

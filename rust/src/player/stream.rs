@@ -350,6 +350,13 @@ impl ffi::Player {
     pub fn poll(mut self: Pin<&mut Self>) {
         self.as_mut().poll_remote_commands();
         self.as_mut().poll_player();
+        let aspect = self
+            .rust()
+            .media
+            .playback()
+            .and_then(|playback| playback.video_aspect_ratio())
+            .unwrap_or(0.0);
+        self.as_mut().set_video_aspect_ratio(aspect);
         self.publish_remote();
     }
     fn poll_player(mut self: Pin<&mut Self>) {

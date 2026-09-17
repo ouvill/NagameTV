@@ -3,7 +3,7 @@ import QtTest
 import ".." as Viewer
 
 TestCase {
-    name: "DanmakuTimeline"
+    name: "DanmakuLegacyTimeline"
     when: windowShown
     visible: true
     width: 640
@@ -19,6 +19,8 @@ TestCase {
     function initTestCase() { failOnWarning(/.*/); }
     function init() {
         overlay = createTemporaryObject(overlayComponent, this);
+        if (!overlay.controller.set_presentation("scroll", "collision"))
+            skip("Legacy layout is compiled only in the evaluation build.");
         timeline = createTemporaryObject(timelineComponent, this, {overlay: overlay});
         verify(timeline !== null);
     }

@@ -5,10 +5,12 @@ import MinimalViewer
 
 Item {
     id: overlay
-    enum Placement { Scrolling, Top, Bottom }
+    enum Placement { Scrolling, Top, Bottom, Pop }
     required property real fontSize
     required property real textOpacity
     required property real speed
+    property string displayMode: "scroll"
+    property string placementMode: "sequential"
     property bool shadowEnabled: true
     property bool fullScreen: false
     property bool paused: false
@@ -23,25 +25,28 @@ Item {
     // Visual handles only. Comment data, lanes, clocks and lifetime live in Rust.
     // A Map keeps storage tied to live entries, not the highest numeric token.
     property var visuals: new Map()
-    readonly property int visualCount: flowRows.children.length + topRows.children.length + bottomRows.children.length
+    readonly property int visualCount: flowRows.children.length + topRows.children.length + bottomRows.children.length + popRows.children.length
     clip: true
     ScreenshotText { id: captureText }
     function screenshotLayer(target) {
         const origin = mapToItem(target, 0, 0);
         const commands = [];
-        for (const row of [flowRows, topRows, bottomRows]) {
+        for (const row of [flowRows, topRows, bottomRows, popRows]) {
             for (const entry of row.children) {
                 if (!entry.visible) continue;
-                const position = entry.mapToItem(overlay, 0, 0);
+                const position = row.mapToItem(overlay, entry.x, entry.y);
+                const pose = {x: position.x + entry.width / 2, y: position.y + entry.height / 2, degrees: entry.rotation};
                 if (entry.own) {
                     const color = Qt.rgba(1, 224 / 255, 102 / 255, entry.opacity).toString();
                     for (const rect of [[0, 0, entry.width, 1], [0, entry.height - 1, entry.width, 1],
                         [0, 1, 1, entry.height - 2], [entry.width - 1, 1, 1, entry.height - 2]])
                         commands.push({kind: "rect", x: position.x + rect[0], y: position.y + rect[1],
-                            width: rect[2], height: rect[3], color: color});
+                            width: rect[2], height: rect[3], color: color, pose: pose});
                 }
-                commands.push(captureText.command(entry, position.x + entry.leftPadding, position.y,
-                    1, entry.styleColor.toString(), 2, entry.captureShadow, false, false));
+                const command = captureText.command(entry, position.x + entry.leftPadding, position.y,
+                    1, entry.styleColor.toString(), 2, entry.captureShadow, false, false);
+                command.pose = pose;
+                commands.push(command);
             }
         }
         return {x: origin.x, y: origin.y, width: width, height: height, commands: commands};
@@ -66,14 +71,20 @@ Item {
         const item = visuals.get(token);
         if (item) {
             visuals.delete(token);
+            item.visible = false;
             item.destroy();
         }
     }
     function clearVisuals() {
         const old = visuals;
         visuals = new Map();
-        old.forEach(item => item.destroy());
+        // QML destruction is deferred. Hide retired labels immediately so a
+        // seek/mode change, or a capture in the same event turn, cannot include
+        // the old generation alongside its replacement.
+        old.forEach(item => { item.visible = false; item.destroy(); });
     }
+    onDisplayModeChanged: backend.set_presentation(displayMode, placementMode)
+    onPlacementModeChanged: backend.set_presentation(displayMode, placementMode)
     onWidthChanged: configure()
     onHeightChanged: configure()
     onFontSizeChanged: configure()
@@ -87,6 +98,7 @@ Item {
     onVisibleChanged: backend.set_visible(visible)
     Component.onCompleted: {
         backend.set_visible(visible);
+        backend.set_presentation(displayMode, placementMode);
         configure();
         backend.set_paused(paused);
     }
@@ -100,18 +112,19 @@ Item {
             measure.text = text;
             backend.measured(token, Math.ceil(measure.advanceWidth) + 2 + (own ? 6 : 0));
         }
-        onSpawned: function(token, kind, text, color, width, from_x, to_x, y, duration, own) {
-            const parentItem = [flowRows, topRows, bottomRows][kind];
+        onSpawned: function(token, kind, text, color, width, from_x, to_x, y, duration, own, rotation, opacity) {
+            const parentItem = [flowRows, topRows, bottomRows, popRows][kind];
             const item = label.createObject(parentItem, {
                 "text": text, "color": color, "width": width, "startX": from_x, "placement": kind,
-                "y": y, "destination": to_x, "duration": duration, "own": own
+                "y": y, "destination": to_x, "duration": duration, "own": own,
+                "rotation": rotation, "motionOpacity": opacity
             });
             if (item)
                 overlay.visuals.set(token, item);
         }
-        onPositioned: function(token, x) {
+        onPositioned: function(token, x, y, rotation, opacity) {
             const item = overlay.visuals.get(token);
-            if (item && item.placement === DanmakuOverlay.Scrolling) item.x = x;
+            if (item) { item.x = x; item.y = y; item.rotation = rotation; item.motionOpacity = opacity; }
         }
         onRemoved: function(token) { overlay.removeVisual(token); }
         onRemeasure_requested: function(round, token) {
@@ -161,6 +174,7 @@ Item {
         y: backend.bottom_origin
         Behavior on y { enabled: backend.active_count > 0; NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
     }
+    Item { id: popRows; width: overlay.width; height: overlay.height }
     Component {
         id: label
         Label {
@@ -170,25 +184,30 @@ Item {
             required property real destination
             required property int duration
             required property bool own
+            property real motionOpacity: 1
+            // Inverse-project the video rectangle onto the label's x axis.
+            // Rotated, very long text needs a wider crop, but its shadow texture
+            // must remain bounded by the viewport, never the whole string.
+            readonly property real tiltCos: Math.cos(rotation * Math.PI / 180)
+            readonly property real tiltSin: Math.sin(rotation * Math.PI / 180)
+            readonly property real shadowViewportWidth: overlay.width * Math.abs(tiltCos) + overlay.height * Math.abs(tiltSin)
+            readonly property real shadowViewportLeft: -(x + width / 2) * tiltCos - (y + height / 2) * tiltSin
+                + width / 2 + Math.min(0, overlay.width * tiltCos) + Math.min(0, overlay.height * tiltSin)
             readonly property var captureShadow: shadow.active && shadow.item
                 ? {offset: shadow.x - leftPadding, radius: shadow.item.blurRadius} : null
             function relayout(newWidth, fromX, toX, newY, remaining) {
-                motion.stop();
                 width = newWidth;
                 startX = fromX;
                 destination = toX;
                 y = newY;
                 duration = remaining;
-                x = Qt.binding(() => entry.placement === DanmakuOverlay.Scrolling ? entry.startX : (overlay.width - entry.width) / 2);
-                if (placement === DanmakuOverlay.Scrolling && !backend.media_driven)
-                    motion.start();
+                x = fromX;
             }
-            // Only scrolling labels animate x. Fixed labels retain this binding
-            // to the new viewport center when the window or sidebar resizes it.
-            x: placement === DanmakuOverlay.Scrolling ? startX : (overlay.width - width) / 2
+            // Rust owns every trajectory, for both media and direct reception.
+            x: startX
             textFormat: Text.PlainText
             wrapMode: Text.NoWrap
-            opacity: overlay.textOpacity
+            opacity: overlay.textOpacity * motionOpacity
             font: metrics.font
             renderType: Text.QtRendering
             style: Text.Outline
@@ -208,8 +227,8 @@ Item {
                 sourceComponent: DanmakuShadow {
                     text: entry.text
                     font: entry.font
-                    viewportWidth: overlay.width
-                    textX: entry.x + shadow.x
+                    viewportWidth: entry.shadowViewportWidth
+                    textX: -entry.shadowViewportLeft + shadow.x
                 }
             }
             background: Rectangle {
@@ -217,19 +236,6 @@ Item {
                 color: "transparent"
                 border.color: "#ffe066"
                 border.width: 1
-            }
-            Component.onCompleted: {
-                if (placement === DanmakuOverlay.Scrolling && !backend.media_driven)
-                    motion.start();
-            }
-            NumberAnimation {
-                id: motion
-                target: entry
-                property: "x"
-                to: entry.destination
-                duration: entry.duration
-                easing.type: Easing.Linear
-                paused: running && backend.paused
             }
         }
     }

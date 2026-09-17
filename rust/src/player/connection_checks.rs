@@ -192,6 +192,7 @@ fn checks() -> TestResult {
     check_autoplay()?;
     check_timeshift_options()?;
     check_screenshot_directory()?;
+    check_comment_presentation()?;
     super::remote_checks::run()?;
 
     // HTTP failures and non-Mirakurun responses preserve a working saved URL.
@@ -702,6 +703,72 @@ fn check_guide_state() {
     player.pin_mut().guide_day(0.0, 86_400_000.0);
     assert!(matches!(player.rust().guide, Guide::Closed));
     assert_eq!(*changes.lock().unwrap(), [true, false]);
+}
+
+fn check_comment_presentation() -> TestResult {
+    let mut player = ffi::new_player();
+    player.pin_mut().rust_mut().preferences =
+        settings::Loaded::transient(settings::Preferences::default()).activate(None, None);
+    let changes = Arc::new(Mutex::new(Vec::new()));
+    let observed = changes.clone();
+    let _display = player.pin_mut().on_comment_display_changed(move |player| {
+        observed.lock().unwrap().push((
+            player.comment_display().to_string(),
+            player.comment_placement().to_string(),
+        ));
+    });
+    let observed = changes.clone();
+    let _placement = player
+        .pin_mut()
+        .on_comment_placement_changed(move |player| {
+            observed.lock().unwrap().push((
+                player.comment_display().to_string(),
+                player.comment_placement().to_string(),
+            ));
+        });
+    assert!(
+        player
+            .pin_mut()
+            .configure_comment_presentation("pop".into(), "random".into())
+    );
+    assert_eq!(
+        *changes.lock().unwrap(),
+        [
+            ("pop".into(), "random".into()),
+            ("pop".into(), "random".into())
+        ]
+    );
+    assert!(
+        !player
+            .pin_mut()
+            .configure_comment_presentation("pop".into(), "collision".into())
+    );
+    assert!(
+        !player
+            .pin_mut()
+            .configure_comment_presentation("unknown".into(), "random".into())
+    );
+    assert_eq!(player.comment_display().to_string(), "pop");
+    assert_eq!(player.comment_placement().to_string(), "random");
+    assert!(
+        player
+            .pin_mut()
+            .configure_comment_presentation("pop".into(), "random".into())
+    );
+    assert_eq!(changes.lock().unwrap().len(), 2);
+    assert_eq!(
+        player.evaluation_collision_layout(),
+        cfg!(feature = "evaluation-collision-layout")
+    );
+    assert_eq!(
+        player.evaluation_comment_list(),
+        cfg!(feature = "evaluation-comment-list")
+    );
+    assert_eq!(
+        player.evaluation_wide_comments(),
+        cfg!(feature = "evaluation-wide-comments")
+    );
+    Ok(())
 }
 
 pub fn run() -> i32 {

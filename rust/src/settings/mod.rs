@@ -132,6 +132,7 @@ pub enum Change {
         opacity: CommentOpacity,
         speed: CommentSpeed,
     },
+    CommentPresentation(viewer_comments::danmaku::Presentation),
     CommentShadow(bool),
     CommentSendOnEnter(bool),
 }
@@ -203,6 +204,7 @@ impl Session {
                 preferences.comment_opacity = opacity;
                 preferences.comment_speed = speed;
             }
+            Change::CommentPresentation(value) => preferences.comment_presentation = value,
             Change::CommentShadow(enabled) => preferences.comment_shadow_enabled = enabled,
             Change::CommentSendOnEnter(enabled) => preferences.comment_send_on_enter = enabled,
         }

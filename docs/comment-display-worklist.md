@@ -1,0 +1,48 @@
+# コメント表示方式の変更チェックリスト
+
+作業ブランチ: `feature/comment-display-modes`。開始日: 2026-09-18。
+仕様: [コメント表示の仕様](comment-display-redesign.md)。
+
+- [x] 新規ブランチ作成、既存の調査メモを保持
+- [x] 実装前に仕様書とこのチェックリストを作成
+- [x] 評価用ビルド機能を追加し、通常ビルドから従来配置を除外
+- [x] 排他的な表示・配置方式をRustのenumで表現し、設定を保存
+- [x] 弾幕ON時はサイドバーを制御UI、OFF時は実況一覧に切り替え
+- [x] 実映像のアスペクト比・表示矩形に弾幕を制限
+- [x] 衝突判定を使わない配置方式と投入量制御を実装
+- [x] 下から飛び込み落下する放物線表示、傾き・入射角・速度のばらつきを実装
+- [x] 一時停止・シーク・リサイズ・文字サイズ変更・スクリーンショットとの整合を確認
+- [x] 関連特許・理由・予想満了日を該当コードに記載
+- [x] 設定画面・再生設定・サイドバーの操作と翻訳を整える
+- [x] 機器不要のコア・アプリ・Qt接続テスト、通常版・評価版のビルドを検証
+- [x] 専用GUI環境の資源検出・検証後、QML・製品Main.qml起動・描画を検証
+- [x] 差分をレビューし、結果・既知の制限・評価ビルド手順を記録
+
+実装と上記の検証は完了。実施した範囲と制限を以下に記録する。
+
+## 検証記録
+
+- Rustコメントコア: 通常41件、評価版62件が成功（外部実サービス試験1件は既定でignore）。
+- アプリのRustテスト: 242件成功、既存の手動試験3件はignore。
+- `scripts/test-connection.sh`: 機器不要のQt結合試験成功。表示／配置の通知時に整合した設定が読めること、不正な組み合わせの拒否を追加確認。
+- `scripts/test-startup.sh`: 製品Main.qmlの起動、再生、タイムシフト、リサイズ、表示方式変更、サイドバーの排他表示を確認。
+- CMake/Cargoとも配布用＋評価用の組み合わせを拒否。評価用CMake構成のinstallも拒否し、インストール先が作られていないことを確認。
+- コアのClippy（評価用featureを含む）は警告なし。
+- アプリの厳密なClippyは既存の `rust/src/screenshot_native.rs` 154行・179行の `collapsible_if` 2件で停止。
+  同一lintを除外した `--all-targets --features native_tests -- -D warnings -A clippy::collapsible_if` は成功。既存箇所は変更していない。
+- GUI環境は専用Weston/XwaylandとPulseAudio null sinkを起動し、NVIDIA RTX 4070 Tiの実GPU描画・音声loopbackを検証して使用。
+
+- 通常版QML: **236成功・0失敗・18skip**。skipは従来配置専用の試験。評価版QML: **256成功・0失敗・0skip**。
+- `scripts/test-startup.sh screenshot-playback`: 成功。1080p、4:3、非正方画素、横流れ・噴水の保存、回転した文字の表示位置一致、リサイズ、全画面、非表示、連写中の描画、停止を検証。
+  QMLの遅延破棄で旧コメントが一時的に残るケースを修正し、クリア／方式変更直後の保存命令にも混入しないことを確認。
+- `cmake -S . -B build -DMIRAKURUN_DISTRIBUTION=ON` と `cmake --build build`: 成功。通常版バイナリーは `build/mirakurun-viewer`。
+- `git diff --check`、変更したシェルスクリプトの構文、Flatpak JSONの構文: 成功。
+
+生成画像は `build/screenshot-review/` に保存（生成物はコミット対象外）。
+[噴水の画面](../build/screenshot-review/fountain-window.png)、
+[噴水の保存画像](../build/screenshot-review/fountain-native.png)、
+[4:3映像のクリップ](../build/screenshot-review/pillarbox-comments-window.png)で確認できる。
+
+今回、AppImage/Flatpakパッケージ自体の生成、実サービスへのコメント投稿、特許原簿の確定調査は行っていない。
+配布用フラグの拒否動作とパッケージ生成スクリプトへの反映までを検証した。
+特許との構成上の対応を減らす変更であり、非侵害の法律判断ではない。

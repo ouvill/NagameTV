@@ -2,6 +2,13 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 source scripts/gui-test-session.sh
+features=qml_tests
+if [[ ${1:-} == --evaluation-legacy-comments && $# == 1 ]]; then
+    features+=,evaluation-legacy-comments
+elif [[ $# != 0 ]]; then
+    echo "Usage: $0 [--evaluation-legacy-comments]" >&2
+    exit 2
+fi
 if [[ -z ${DISPLAY:-} ]]; then
     echo "DISPLAY is missing; QML integration tests require an X11 display." >&2
     exit 1
@@ -18,5 +25,5 @@ if [[ $renderer_info == *llvmpipe* || $renderer_info == *softpipe* || $renderer_
 fi
 printf '%s\n' "$renderer_info"
 QT_QPA_PLATFORM=xcb QSG_RHI_BACKEND=opengl CARGO_TARGET_DIR=build/cargo \
-    cargo run --manifest-path rust/Cargo.toml --release --locked --features qml_tests \
+    cargo run --manifest-path rust/Cargo.toml --release --locked --features "$features" \
     -- --qml-tests

@@ -171,6 +171,12 @@ pub mod ffi {
         #[qproperty(f64, comment_font_size, READ, NOTIFY)]
         #[qproperty(f64, comment_opacity, READ, NOTIFY)]
         #[qproperty(f64, comment_speed, READ, NOTIFY)]
+        #[qproperty(QString, comment_display, READ = comment_display, NOTIFY)]
+        #[qproperty(QString, comment_placement, READ = comment_placement, NOTIFY)]
+        #[qproperty(bool, evaluation_comment_list, READ = evaluation_comment_list, CONSTANT)]
+        #[qproperty(bool, evaluation_wide_comments, READ = evaluation_wide_comments, CONSTANT)]
+        #[qproperty(bool, evaluation_collision_layout, READ = evaluation_collision_layout, CONSTANT)]
+        #[qproperty(f64, video_aspect_ratio, READ, NOTIFY)]
         #[qproperty(bool, comment_shadow_enabled, READ, NOTIFY)]
         #[qproperty(bool, comments_allowed, READ, NOTIFY)]
         #[qproperty(QString, comment_program_title, READ, NOTIFY)]
@@ -374,6 +380,17 @@ pub mod ffi {
         ) -> bool;
         #[qinvokable]
         fn comments_open(self: Pin<&mut Player>, opened: bool);
+        #[qinvokable]
+        fn configure_comment_presentation(
+            self: Pin<&mut Player>,
+            display: QString,
+            placement: QString,
+        ) -> bool;
+        fn comment_display(self: &Player) -> QString;
+        fn comment_placement(self: &Player) -> QString;
+        fn evaluation_comment_list(self: &Player) -> bool;
+        fn evaluation_wide_comments(self: &Player) -> bool;
+        fn evaluation_collision_layout(self: &Player) -> bool;
         fn comment_model(self: &Player) -> *mut CommentModel;
         #[qinvokable]
         fn refresh_channels(self: Pin<&mut Player>, force: bool);
@@ -431,6 +448,7 @@ pub struct PlayerRust {
     comment_font_size: f64,
     comment_opacity: f64,
     comment_speed: f64,
+    video_aspect_ratio: f64,
     comment_shadow_enabled: bool,
     comment_program_title: QString,
     comment_model: cxx::UniquePtr<crate::comment_model::ffi::CommentModel>,
@@ -572,6 +590,12 @@ impl ffi::Player {
         set_comment_opacity,
         comment_opacity,
         comment_opacity_changed,
+        f64
+    );
+    property_setter!(
+        set_video_aspect_ratio,
+        video_aspect_ratio,
+        video_aspect_ratio_changed,
         f64
     );
     property_setter!(set_comment_speed, comment_speed, comment_speed_changed, f64);

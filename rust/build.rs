@@ -4,6 +4,17 @@ use cxx_qt_build::{CxxQtBuilder, QmlModule};
 mod translations;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    if cfg!(feature = "distribution")
+        && cfg!(any(
+            feature = "evaluation-comment-list",
+            feature = "evaluation-wide-comments",
+            feature = "evaluation-collision-layout"
+        ))
+    {
+        return Err(
+            "Evaluation-only comment features cannot be included in distribution builds".into(),
+        );
+    }
     let translations = translations::compile()?;
     // The source directory is the module manifest. A new production component
     // is registered and compiled without a second hand-maintained file list.
