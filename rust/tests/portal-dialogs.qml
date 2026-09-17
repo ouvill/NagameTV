@@ -16,7 +16,7 @@ Window {
         id: file
         title: "Recording portal integration test"
         fileMode: FileDialog.OpenFile
-        nameFilters: ["Transport streams (*.ts *.TS)", "All files (*)"]
+        nameFilters: ["Transport streams (*.ts *.TS *.m2ts *.M2TS)", "All files (*)"]
         onAccepted: { root.fileUrl = selectedFile; root.accepted++; }
         onRejected: root.rejected++
     }

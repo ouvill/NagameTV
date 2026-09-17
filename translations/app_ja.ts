@@ -1494,8 +1494,8 @@
         <translation>TSファイルを開く</translation>
     </message>
     <message>
-        <source>Transport streams (*.ts *.TS)</source>
-        <translation>TSファイル (*.ts *.TS)</translation>
+        <source>Transport streams (*.ts *.TS *.m2ts *.M2TS)</source>
+        <translation>TSファイル (*.ts *.TS *.m2ts *.M2TS)</translation>
     </message>
     <message>
         <source>All files (*)</source>

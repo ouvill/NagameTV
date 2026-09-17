@@ -62,7 +62,7 @@ Item {
         objectName: "recordingPicker"
         title: qsTranslate("Recording", "Open TS file")
         fileMode: FileDialogs.FileDialog.OpenFile
-        nameFilters: [qsTranslate("Recording", "Transport streams (*.ts *.TS)"), qsTranslate("Recording", "All files (*)")]
+        nameFilters: [qsTranslate("Recording", "Transport streams (*.ts *.TS *.m2ts *.M2TS)"), qsTranslate("Recording", "All files (*)")]
         onAccepted: root.openUrl(selectedFile)
     }
     Dialog {
