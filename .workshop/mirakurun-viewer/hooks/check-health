@@ -7,33 +7,63 @@ if ! ldconfig -p 2>/dev/null | grep -E 'libclang(-[0-9]+)?\.so' >/dev/null; then
   missing+=("libclang (libclang-dev)")
 fi
 
-for command in Xvfb cargo cmake gst-launch-1.0 import lld mpv ninja openbox pkg-config qtpaths6 rustc xdpyinfo xdotool; do
+for command in Xvfb cargo cmake curl desktop-file-validate eu-strip flatpak \
+  flatpak-builder flock git gst-inspect-1.0 gst-launch-1.0 import lld mpv ninja \
+  openbox pkg-config python3 qmake6 qtpaths6 rustc sha256sum xdpyinfo xdotool; do
   if ! command -v "$command" >/dev/null 2>&1; then
     missing+=("$command")
   fi
 done
 
-if ! gst-inspect-1.0 playbin3 >/dev/null 2>&1; then
-  missing+=("gstreamer:playbin3")
-fi
-if ! gst-inspect-1.0 qml6glsink >/dev/null 2>&1; then
-  missing+=("gstreamer:qml6glsink")
-fi
-if ! gst-inspect-1.0 glupload >/dev/null 2>&1; then
-  missing+=("gstreamer:glupload")
-fi
 if ! fc-match :lang=ja | grep -qi "Noto"; then
   missing+=("font:Noto-CJK")
 fi
 
-for module in Qt6Core Qt6Gui Qt6Qml Qt6Quick aribb24 gstreamer-1.0 mpv; do
+for module in Qt6Core Qt6DBus Qt6Gui Qt6Qml Qt6Quick Qt6Svg aribb24 \
+  gstreamer-1.0 gstreamer-app-1.0 gstreamer-mpegts-1.0 mpv; do
   if ! pkg-config --exists "$module"; then
     missing+=("pkg-config:$module")
   fi
 done
 
+if ! python3 -c 'import tomllib' >/dev/null 2>&1; then
+  missing+=("Python 3.11+ (tomllib)")
+fi
+if ! pkg-config --atleast-version=6.8 Qt6Core; then
+  missing+=("Qt6Core>=6.8")
+fi
+if ! pkg-config --atleast-version=1.24 gstreamer-1.0; then
+  missing+=("gstreamer-1.0>=1.24")
+fi
+# Inspect installed files instead of scanning the system plugin registry, whose
+# optional hardware plugins can probe devices during registration.
+gst_plugins_dir=$(pkg-config --variable=pluginsdir gstreamer-1.0 2>/dev/null || true)
+for plugin in app audioconvert audioparsers audioresample autodetect coreelements \
+  deinterlace libav mpegtsdemux opengl playback pulseaudio qml6 soup \
+  typefindfunctions videoconvertscale videoparsersbad volume; do
+  if [[ -z "$gst_plugins_dir" || ! -f "$gst_plugins_dir/libgst$plugin.so" ]]; then
+    missing+=("GStreamer:libgst$plugin.so")
+  fi
+done
+gst_scanner_dir=$(pkg-config --variable=pluginscannerdir gstreamer-1.0 2>/dev/null || true)
+if [[ -z "$gst_scanner_dir" || ! -x "$gst_scanner_dir/gst-plugin-scanner" ]]; then
+  missing+=("GStreamer:gst-plugin-scanner")
+fi
+
 qt_plugins_dir=$(qtpaths6 --query QT_INSTALL_PLUGINS 2>/dev/null || true)
 qt_host_bins=$(qtpaths6 --query QT_HOST_BINS 2>/dev/null || true)
+qt_host_libexecs=$(qtpaths6 --query QT_HOST_LIBEXECS 2>/dev/null || true)
+qt_qml_dir=$(qtpaths6 --query QT_INSTALL_QML 2>/dev/null || true)
+if [[ -z "$qt_host_libexecs" || ! -x "$qt_host_libexecs/qmlimportscanner" ]]; then
+  missing+=("Qt6:qmlimportscanner (qt6-declarative-dev-tools)")
+fi
+for module in QtCore QtQml QtQml/Models QtQml/WorkerScript QtQuick QtQuick/Controls \
+  QtQuick/Dialogs QtQuick/Effects QtQuick/Layouts QtQuick/Shapes QtQuick/Templates \
+  QtQuick/Window QtTest; do
+  if [[ -z "$qt_qml_dir" || ! -f "$qt_qml_dir/$module/qmldir" ]]; then
+    missing+=("QML:$module")
+  fi
+done
 if [[ -z "$qt_host_bins" || ! -x "$qt_host_bins/lrelease" ]]; then
   missing+=("Qt6:lrelease (qt6-l10n-tools)")
 fi
@@ -48,6 +78,12 @@ else
   fi
   if [[ ! -f "$qt_plugins_dir/imageformats/libqsvg.so" ]]; then
     missing+=("Qt6:imageformats-svg (qt6-svg-plugins)")
+  fi
+  if [[ ! -f "$qt_plugins_dir/platforms/libqxcb.so" ]]; then
+    missing+=("Qt6:xcb (qt6-qpa-plugins)")
+  fi
+  if [[ ! -f "$qt_plugins_dir/platformthemes/libqxdgdesktopportal.so" ]]; then
+    missing+=("Qt6:xdgdesktopportal (qt6-xdgdesktopportal-platformtheme)")
   fi
 fi
 

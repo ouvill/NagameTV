@@ -18,9 +18,10 @@ Mirakurunサーバーのテレビ放送を視聴するLinux向けアプリです
 
 ## 利用に必要なもの
 
-Flatpakが使えるLinuxのデスクトップ環境が必要です。ライブ視聴には接続可能なMirakurunサーバーも必要です。
+Linuxのデスクトップ環境が必要です。Flatpak版とAppImage版を利用できます。
+ライブ視聴には接続可能なMirakurunサーバーも必要です。
 テレビ放送の受信はMirakurun側で行うため、このアプリにはMirakurunの接続先を設定します。
-現在のFlatpak版はX11／XWaylandで動作します。
+現在のFlatpak版・AppImage版はX11／XWaylandで動作します。
 
 ## インストール
 
@@ -33,6 +34,15 @@ flatpak run io.github.ouvill.litv
 
 インストール後はアプリ一覧からも起動できます。初回は必要な実行環境も自動でダウンロードします。
 パッケージの作成方法と、更新・削除の手順は[Flatpakの手順](docs/flatpak.md)を参照してください。
+
+AppImage版は、ファイルに実行権限を付けて起動します。
+
+```sh
+chmod +x ./mirakurun-viewer-0.1.0-x86_64.AppImage
+./mirakurun-viewer-0.1.0-x86_64.AppImage
+```
+
+ビルド方法、必要な実行環境、OSの互換性条件は[AppImageの手順](docs/appimage.md)を参照してください。
 
 ## 使い方
 

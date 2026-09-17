@@ -5,10 +5,34 @@
 実装とレビューでは[コード規約](coding-conventions.md)に従い、enumとTypestateで
 状態・前提条件・操作順序を表す設計を優先します。
 
+## Canonical Workshopの開発環境
+
+[`.workshop/dev.yaml`](../.workshop/dev.yaml)はUbuntu 26.04を使用します。
+RustはWorkshopのRust SDK、ネイティブ版・AppImage・Flatpakに必要なUbuntuパッケージは
+[プロジェクトSDKのsetup-base](../.workshop/mirakurun-viewer/hooks/setup-base)で導入します。
+依存パッケージを追加するときはこの一覧と[check-health](../.workshop/mirakurun-viewer/hooks/check-health)を更新します。
+check-healthはコマンド・開発ライブラリー・QML・GStreamerプラグインファイルの存在を確認し、
+機器へアクセスせずに実行できます。画面表示・再生や機器の動作確認は別途行います。
+
+SDK定義の変更を既存のWorkshopへ反映するには、**ホスト側**のプロジェクトディレクトリーで実行します。
+
+```sh
+workshop refresh
+```
+
+起動済みコンテナー内で手動導入したパッケージだけに依存しないようにします。
+再構築時のフック実行については[WorkshopのSDK仕様](https://documentation.ubuntu.com/canonical-workshop/stable/reference/sdks/)を参照してください。
+
 ## Flatpakパッケージを作る
 
 [Flatpakのビルド手順](flatpak.md#パッケージを作る)を参照してください。
 必要なホスト側ツール、SDK、依存関係の更新方法、出力先を記載しています。
+
+## AppImageパッケージを作る
+
+ネイティブ版の開発環境で`./scripts/build-appimage.sh`を実行します。
+Linux x86_64向けのAppImageとSHA-256を`build/appimage/`へ出力します。
+必要な追加ツールとOSの互換性条件は[AppImageのビルド手順](appimage.md)を参照してください。
 
 ## ネイティブ版をビルドする
 

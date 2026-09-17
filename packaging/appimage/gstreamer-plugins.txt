@@ -1,0 +1,20 @@
+# Linux GStreamer plugin libraries required by live/recording playback.
+# Keep dynamic dependencies here: ldd cannot discover plugins loaded by name.
+app
+audioconvert
+audioparsers
+audioresample
+autodetect
+coreelements
+deinterlace
+libav
+mpegtsdemux
+opengl
+playback
+pulseaudio
+qml6
+soup
+typefindfunctions
+videoconvertscale
+videoparsersbad
+volume

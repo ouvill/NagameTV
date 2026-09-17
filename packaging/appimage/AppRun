@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Linux AppImage entry point. Resolve resources relative to the mounted/extracted
+# bundle, preserving the caller's working directory and arguments.
+app_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+export LD_LIBRARY_PATH="$app_dir/usr/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+export QT_PLUGIN_PATH="$app_dir/usr/plugins"
+export QT_QPA_PLATFORM_PLUGIN_PATH="$QT_PLUGIN_PATH/platforms"
+export QML_IMPORT_PATH="$app_dir/usr/qml"
+export QML2_IMPORT_PATH="$QML_IMPORT_PATH"
+# Match the supported Flatpak display backend; Wayland sessions need XWayland.
+export QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-xcb}"
+
+# Do not mix host GStreamer plugins or its registry with the bundled ABI.
+export GST_PLUGIN_PATH="$app_dir/usr/lib/gstreamer-1.0"
+export GST_PLUGIN_PATH_1_0="$GST_PLUGIN_PATH"
+export GST_PLUGIN_SYSTEM_PATH=
+export GST_PLUGIN_SYSTEM_PATH_1_0=
+export GST_PLUGIN_SCANNER="$app_dir/usr/libexec/gstreamer-1.0/gst-plugin-scanner"
+export GST_PLUGIN_SCANNER_1_0="$GST_PLUGIN_SCANNER"
+export GST_REGISTRY_1_0="${XDG_CACHE_HOME:-$HOME/.cache}/mirakurun-viewer/appimage/gstreamer-registry.bin"
+
+exec "$app_dir/usr/bin/mirakurun-viewer" "$@"
