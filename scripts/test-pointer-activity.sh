@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
+source scripts/gui-test-session.sh
 # This suite uses a real X11 window and OpenGL. Do not substitute a renderer when
 # the Workshop display or GPU is unavailable; report the missing resource instead.
 if [[ -z ${DISPLAY:-} ]]; then

@@ -7,9 +7,11 @@ if ! ldconfig -p 2>/dev/null | grep -E 'libclang(-[0-9]+)?\.so' >/dev/null; then
   missing+=("libclang (libclang-dev)")
 fi
 
-for command in Xvfb cargo cmake curl desktop-file-validate eu-strip flatpak \
+for command in Xvfb Xwayland cargo cmake curl dbus-daemon dbus-run-session dbus-send \
+  desktop-file-validate eu-strip flatpak glxinfo \
   flatpak-builder flock git gst-inspect-1.0 gst-launch-1.0 import lld mpv ninja \
-  openbox pkg-config python3 qmake6 qtpaths6 rustc sha256sum xdpyinfo xdotool; do
+  openbox pactl parec pkg-config pulseaudio python3 qmake6 qtpaths6 rustc \
+  sha256sum weston xdpyinfo xdotool xprop; do
   if ! command -v "$command" >/dev/null 2>&1; then
     missing+=("$command")
   fi
@@ -28,6 +30,9 @@ done
 
 if ! python3 -c 'import tomllib' >/dev/null 2>&1; then
   missing+=("Python 3.11+ (tomllib)")
+fi
+if ! python3 -c 'import dbus; import gi' >/dev/null 2>&1; then
+  missing+=("Python dbus and PyGObject (python3-dbus, python3-gi)")
 fi
 if ! pkg-config --atleast-version=6.8 Qt6Core; then
   missing+=("Qt6Core>=6.8")

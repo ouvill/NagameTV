@@ -23,3 +23,11 @@ Do not modify container configuration or silently substitute headless, software
 rendering or stub implementations for missing hardware. Favor deterministic
 failure over silent degradation. Tests documented as hardware-free must remain
 hardware-free.
+
+The checked-in [isolated GUI test environment](docs/gui-test-environment.md) is
+an explicitly configured display/audio test mode: Weston headless with real GPU
+rendering, private rootful Xwayland/Openbox and a private PulseAudio null sink.
+Public GUI test scripts start and validate it automatically. Do not connect automated tests to
+the host desktop or audio session. This mode does not validate physical monitors,
+speakers or audio device latency, and must never fall back to software rendering
+after a GPU failure.

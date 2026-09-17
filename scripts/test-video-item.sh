@@ -5,6 +5,7 @@ if (( $# != 0 )); then
     echo "Usage: scripts/test-video-item.sh (runs all Rust video item checks)" >&2
     exit 2
 fi
+source scripts/gui-test-session.sh
 # This suite loads the real Qt/GStreamer GUI plugin. Do not substitute a renderer when
 # the Workshop display or GPU is unavailable; report the missing resource instead.
 if [[ -z ${DISPLAY:-} ]]; then

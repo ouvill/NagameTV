@@ -10,6 +10,7 @@ fi
 if [[ $test_mode == ui ]]; then
     echo "Subtitle UI-only test: software OpenGL is allowed; this is not GPU validation."
 else
+    source scripts/gui-test-session.sh
     echo "Subtitle GPU rendering test: a hardware renderer is required."
 fi
 if [[ -z ${DISPLAY:-} ]]; then

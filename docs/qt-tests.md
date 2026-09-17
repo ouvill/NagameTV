@@ -11,22 +11,29 @@ normal application builds. Test QObjects are generated from
 `rust/src/native_test_bridge.rs`. Assertions and test inputs live in
 `rust/src/native_tests/`; no standalone C++ test executables are needed.
 
+GUI scripts automatically start an [isolated test session](gui-test-environment.md):
+GPU-rendered Weston headless, private rootful Xwayland/Openbox, a private D-Bus session and
+clocked virtual PulseAudio output. Every session validates the display, GPU and
+audio loopback before running its command, including suites that do not use audio.
+Host desktop/audio connections and physical audio devices are not required.
+
 | Command | Preserved coverage | Hardware |
 | --- | --- | --- |
 | `bash scripts/test-localization.sh` | Locale resolution, existing QML retranslation, date stability, dynamic snapshots, literal diagnostic arguments, 100 repeated language switches and translator ownership; a separate process removes the real catalog resource and checks failure cleanup | None: QCoreApplication and QtObject |
 | `bash scripts/test-connection.sh` | Real Player and local HTTP fixtures: pending/failed saves, empty catalogs, save failures, shutdown, coherent stream properties during Qt signals, retry allowance and guide visibility/day notification order | None: QCoreApplication and HTTP |
-| `bash scripts/test-startup.sh` | Production Main.qml in separate processes: first run, two saved startups, channel restoration, guide open/close, native playback failure and clean shutdown; QML warnings fail the test | Validated X11 display, GPU and PulseAudio output |
+| `bash scripts/test-startup.sh` | Production Main.qml in separate processes: first run, two saved startups, channel restoration, guide open/close, native playback failure and clean shutdown; QML warnings fail the test | Validated private X11 display, GPU and virtual PulseAudio output |
 | `bash scripts/test-screenshot.sh` | Real Player and item capture, instant PNG saving, overlay pixels, exclusion of sibling controls, repeated captures, Unicode/escaped folder names, cancellation and invalid folder rejection | Validated X11 display and GPU |
 | `bash scripts/test-video-item.sh` | Video-item attachment, terminal shutdown, failed native transitions, and retained subtitle subscriptions until a successful stop | Validated X11 display and GPU; native graph stays in NULL |
 | `bash scripts/test-subtitle-outline.sh` | Six pixel-exact QPainterPath/SVG comparisons: full height, small ink/cubic curves, midline, overhang/descender, separate contours, empty path | None: QCoreApplication and in-memory QImage rasterization |
 | `bash scripts/test-pointer-activity.sh` | Duplicate installation, repeated positions, disabled items, window changes, observer deletion and event delivery after item destruction | Validated X11 display and GPU |
-| `bash scripts/test-portal-dialogs.sh` | Real Qt portal plugin on a private D-Bus session: file/folder selection, cancellation and Unicode/escaped URLs | Validated X11 display and GPU; no audio |
+| `bash scripts/test-portal-dialogs.sh` | Real Qt portal plugin on a private D-Bus session: file/folder selection, cancellation and Unicode/escaped URLs | Validated X11 display and GPU; the suite itself does not use audio |
 | `bash scripts/test-subtitle-rendering.sh` | Existing Qt Quick Test assertions, using the Rust TestOutlineProvider and the production outline helper | Validated X11 display and GPU |
 
 The subtitle rendering command continues to accept Qt Quick Test arguments
 after its optional `--ui-only` flag. The other suites run all Rust assertions;
 they do not accept QtTest function filters. `--ui-only` remains an explicit
-software-rendering choice, never a fallback after a hardware check fails.
+software-rendering choice using a separately provisioned test display; it does
+not automatically start an isolated session or fall back after a GPU check fails.
 
 Build without accessing hardware:
 
@@ -94,8 +101,8 @@ The portal dialog suite requires Qt's `xdgdesktopportal` platform theme,
 protocol fixture; it never replaces the user's desktop portal. The real Qt
 plugin receives accept/cancel responses from that fixture and passes file URLs
 through the ordinary QML dialogs. This checks protocol integration, not the
-appearance of GNOME/KDE's chooser or Flatpak document grants. It does not use a
-headless or software renderer as a substitute for missing display hardware.
+appearance of GNOME/KDE's chooser or Flatpak document grants. Its private display
+is explicitly configured for GPU rendering; a failed GPU check stops execution.
 
 Recording inspection is asynchronous: component tests cover completion, failure
 and cancellation UI; connection tests verify input/activity coherence during
@@ -133,7 +140,7 @@ stale disk-session cleanup, sequential discontinuities and paused boundary seeks
 recording. It checks output progress through 28 seconds (six seconds without new
 rendering fails), paused seeks to 20 and 10 seconds, and a seek to 80% for files
 longer than one minute. It logs the provisional duration and audio selection.
-This uses the same real hardware checks; it is not a full-file playback or audible
+This uses the same GPU and virtual audio checks; it is not a full-file playback or audible
 quality test. The timeshift suite also opens the production settings page, applies
 custom budgets, and enables/disables retention during playback and pause.
 Connection tests verify atomic budget notifications, rejected invalid values and

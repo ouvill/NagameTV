@@ -1,18 +1,13 @@
 name: gui
-title: GUI integration
+title: GPU access for isolated GUI tests
 base: ubuntu@26.04
-version: "0.1"
-summary: Host desktop, GPU, and audio access
+version: "0.2"
+summary: GPU access without the host desktop or audio session
 description: |
-  Exposes the host desktop session, GPU devices, and PulseAudio service to the
-  workshop.
+  Exposes GPU devices to the workshop. GUI tests start their own display and
+  virtual audio servers inside the workshop.
 license: MIT
 
 plugs:
-  desktop:
-    interface: desktop
   gpu:
     interface: gpu
-  pulse:
-    interface: tunnel
-    endpoint: localhost:4713

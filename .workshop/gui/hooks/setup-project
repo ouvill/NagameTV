@@ -1,11 +1,10 @@
 #!/bin/sh
 set -eu
 
-pulse_server='export PULSE_SERVER=tcp:127.0.0.1:4713'
-
+# Remove only the export installed by the previous version of this SDK.
+# Each test session now supplies its own private PulseAudio endpoint.
 for profile_path in "$HOME/.profile" "$HOME/.bashrc"; do
-  if ! grep --fixed-strings --line-regexp --quiet \
-    "$pulse_server" "$profile_path" 2>/dev/null; then
-    printf '\n%s\n' "$pulse_server" >>"$profile_path"
+  if [ -f "$profile_path" ]; then
+    sed -i '\|^export PULSE_SERVER=tcp:127\.0\.0\.1:4713$|d' "$profile_path"
   fi
 done

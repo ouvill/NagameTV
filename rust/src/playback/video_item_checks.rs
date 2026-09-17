@@ -72,7 +72,7 @@ pub(crate) unsafe fn check(
             Err(Error::OutputShutDown)
         ));
         assert!(matches!(
-            playback.play("http://unused.invalid", 1, None),
+            playback.play("http://unused.invalid", None),
             Err(Error::OutputNotReady)
         ));
     }
@@ -83,7 +83,7 @@ pub(crate) unsafe fn check(
     assert_eq!(playback.sink.current_state(), gst::State::Null);
     assert!(playback.sink.property::<*mut c_void>("widget").is_null());
     assert!(matches!(
-        playback.play("http://unused.invalid", 1, None),
+        playback.play("http://unused.invalid", None),
         Err(Error::OutputNotReady)
     ));
     // NULL is terminal for this graph (see stop_stream's pad ownership rule).

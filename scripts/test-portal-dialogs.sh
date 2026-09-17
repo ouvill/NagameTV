@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
+source scripts/gui-test-session.sh
 # Linux only: exercise Qt's real portal plugin over a private D-Bus session.
 if [[ -z ${DISPLAY:-} ]]; then
     echo "DISPLAY is missing; portal dialog tests require an X11 display." >&2

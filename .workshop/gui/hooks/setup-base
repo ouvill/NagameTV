@@ -1,5 +1,0 @@
-#!/bin/sh
-set -eu
-
-apt-get update
-apt-get install --yes --no-install-recommends pulseaudio-utils

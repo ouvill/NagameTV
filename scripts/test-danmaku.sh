@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
+source scripts/gui-test-session.sh
 if [[ -z ${DISPLAY:-} ]]; then
     echo "DISPLAY is missing; QML integration tests require an X11 display." >&2
     exit 1

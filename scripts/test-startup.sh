@@ -13,6 +13,7 @@ case "$startup_suite" in
         fi ;;
     *) echo "Expected startup, timeshift, recording-pid-change, recording-audit or recording-probe" >&2; exit 2 ;;
 esac
+source scripts/gui-test-session.sh
 # The production Main.qml creates the real video item and audio output.
 if [[ -z ${DISPLAY:-} ]]; then
     echo "DISPLAY is missing; startup tests require an X11 display." >&2
@@ -23,7 +24,7 @@ if [[ ! -e /dev/nvidiactl ]] && ! compgen -G '/dev/dri/renderD*' >/dev/null; the
     exit 1
 fi
 if [[ -z ${PULSE_SERVER:-} && ! -S ${XDG_RUNTIME_DIR:-/nonexistent}/pulse/native ]]; then
-    echo "No PulseAudio endpoint is available; startup tests require real audio output." >&2
+    echo "No PulseAudio endpoint is available; startup tests require the validated virtual output." >&2
     exit 1
 fi
 xdpyinfo -display "$DISPLAY" >/dev/null
@@ -36,7 +37,7 @@ fi
 pactl info >/dev/null
 audio_sinks=$(pactl list short sinks)
 if [[ -z $audio_sinks ]]; then
-    echo "No PulseAudio sinks are available; startup tests require real audio output." >&2
+    echo "No PulseAudio sinks are available; startup tests require the validated virtual output." >&2
     exit 1
 fi
 startup_test_dir=$(mktemp -d)
