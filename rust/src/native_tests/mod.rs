@@ -9,6 +9,7 @@ mod pointer;
 #[cfg(target_os = "linux")]
 mod portal_dialogs;
 mod recording_audit;
+mod screenshots;
 mod startup;
 mod timeshift;
 
@@ -48,6 +49,7 @@ pub fn run() -> i32 {
         Some("startup") => startup::run(),
         Some("startup-window") => startup::run_window(),
         Some("timeshift") => startup::run_timeshift(),
+        Some("screenshot-playback") => startup::run_screenshots(),
         Some("recording-pid-change") => startup::run_pid_change(),
         #[cfg(target_os = "linux")]
         Some("portal-dialogs") => portal_dialogs::run(),
@@ -69,7 +71,7 @@ pub fn run() -> i32 {
         }
         _ => {
             eprintln!(
-                "Expected --native-tests localization|missing-catalog|subtitle-outline|pointer-activity|subtitle-rendering|screenshots|connection|startup|recording-pid-change|recording-audit PATH|portal-dialogs"
+                "Expected --native-tests localization|missing-catalog|subtitle-outline|pointer-activity|subtitle-rendering|screenshots|connection|startup|screenshot-playback|recording-pid-change|recording-audit PATH|portal-dialogs"
             );
             2
         }

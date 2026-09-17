@@ -40,6 +40,19 @@ TestCase {
         function refresh_remote_addresses() {}
         property string screenshot_directory: "/pictures/mirakurun-viewer"
         property string screenshot_error: ""
+        property string screenshot_format: "png"
+        property string screenshot_options: JSON.stringify({png_compression: 6, jpg_quality: 90,
+            webp_quality: 90, webp_mode: "lossy", ranges: {
+                png: {min: 0, max: 9}, jpg: {min: 1, max: 100}, webp: {min: 1, max: 99}}})
+        function configure_screenshot_format(value) { screenshot_format = value; return true; }
+        function configure_screenshot_options(format, value, lossless) {
+            const options = JSON.parse(screenshot_options);
+            if (format === "png") options.png_compression = value;
+            else if (format === "jpg") options.jpg_quality = value;
+            else { options.webp_quality = value; options.webp_mode = lossless ? "lossless" : "lossy"; }
+            screenshot_options = JSON.stringify(options);
+            return true;
+        }
         property int screenshotFolderRequests: 0
         function screenshot_directory_url() { return "file://" + screenshot_directory; }
         function configure_screenshot_directory(value) { screenshot_directory = value.toString().replace(/^file:\/\//, ""); return true; }
@@ -116,6 +129,10 @@ TestCase {
         remoteRequests.clear();
         backend.screenshot_directory = "/pictures/mirakurun-viewer";
         backend.screenshot_error = "";
+        backend.screenshot_format = "png";
+        backend.configure_screenshot_options("png", 6, false);
+        backend.configure_screenshot_options("jpg", 90, false);
+        backend.configure_screenshot_options("webp", 90, false);
         backend.screenshotFolderRequests = 0;
         backend.comments_enabled = false;
         backend.comments_allowed = true;
@@ -324,6 +341,48 @@ TestCase {
         compare(connections.count, 0);
         selectPage(SettingsPanel.Diagnostics);
         compare(subtitles.visible, false);
+    }
+    function test_screenshot_formats_are_exclusive_and_keyboard_accessible() {
+        selectPage(SettingsPanel.Display);
+        const png = findChild(panel.contentItem, "screenshotFormat_png");
+        const jpg = findChild(panel.contentItem, "screenshotFormat_jpg");
+        const webp = findChild(panel.contentItem, "screenshotFormat_webp");
+        verify(png.checked); verify(!jpg.checked); verify(!webp.checked);
+        for (const key of ["jpg", "webp", "png"]) {
+            const option = findChild(panel.contentItem, "screenshotFormat_" + key);
+            option.forceActiveFocus();
+            keyClick(Qt.Key_Space);
+            compare(backend.screenshot_format, key);
+            compare(png.checked, key === "png");
+            compare(jpg.checked, key === "jpg");
+            compare(webp.checked, key === "webp");
+            verify(findChild(panel.contentItem, "screenshotFormatDescription").text.length > 0);
+            verify(option.contentItem.height > 0);
+        }
+        backend.screenshot_format = "webp";
+        verify(webp.checked); verify(!png.checked);
+    }
+    function test_screenshot_parameters_preserve_each_format_and_lossless_hides_quality() {
+        selectPage(SettingsPanel.Display);
+        const number = findChild(panel.contentItem, "screenshotParameterNumber");
+        const slider = findChild(panel.contentItem, "screenshotParameterSlider");
+        const lossless = findChild(panel.contentItem, "screenshotWebpLossless");
+        compare(number.value, 6); compare(number.from, 0); compare(number.to, 9);
+        number.forceActiveFocus(); keyClick(Qt.Key_Up);
+        compare(JSON.parse(backend.screenshot_options).png_compression, 7);
+        compare(slider.value, 7);
+        backend.configure_screenshot_format("jpg");
+        compare(number.value, 90); compare(number.to, 100);
+        number.forceActiveFocus(); keyClick(Qt.Key_Down);
+        backend.configure_screenshot_format("webp");
+        compare(number.value, 90); compare(number.to, 99);
+        lossless.forceActiveFocus(); keyClick(Qt.Key_Space);
+        compare(JSON.parse(backend.screenshot_options).webp_mode, "lossless");
+        verify(!number.visible); verify(!slider.visible);
+        keyClick(Qt.Key_Space);
+        verify(number.visible); compare(number.value, 90);
+        backend.configure_screenshot_format("jpg"); compare(number.value, 89);
+        backend.configure_screenshot_format("png"); compare(number.value, 7);
     }
     function test_screenshot_folder_controls_follow_setting_and_show_errors() {
         selectPage(SettingsPanel.Display);

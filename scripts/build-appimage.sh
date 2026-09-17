@@ -46,7 +46,7 @@ while IFS= read -r plugin; do
   gst_plugins+=("$plugin_path")
 done < "$project_dir/packaging/appimage/gstreamer-plugins.txt"
 qt_plugins_dir=$("$QMAKE" -query QT_INSTALL_PLUGINS)
-for plugin in platforms/libqxcb.so imageformats/libqsvg.so; do
+for plugin in platforms/libqxcb.so imageformats/libqsvg.so imageformats/libqjpeg.so imageformats/libqwebp.so; do
   [[ -f $qt_plugins_dir/$plugin ]] || fail "Required Qt plugin not found: $qt_plugins_dir/$plugin"
 done
 
@@ -108,6 +108,11 @@ export PATH="$tools_dir:$PATH"
   --icon-file "$project_dir/packaging/linux/$app_id.svg" \
   --custom-apprun "$project_dir/packaging/appimage/AppRun" --plugin qt
 
+# Do not ship a format choice without its runtime encoder. linuxdeploy-qt
+# collects the installed imageformats plugins and their ELF dependencies.
+for codec in jpeg webp; do
+  [[ -n $(find "$app_dir/usr" -name "libq$codec.so" -print -quit) ]] || fail "Missing bundled Qt $codec encoder"
+done
 desktop-file-validate "$app_dir/$app_id.desktop"
 export ARCH=x86_64
 export LDAI_VERSION="$app_version"

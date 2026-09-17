@@ -57,8 +57,16 @@ pub mod ffi {
         include!("qt_helpers.h");
         #[cxx_name = "picturesDirectory"]
         fn pictures_directory() -> QString;
-        #[cxx_name = "saveScreenshotPng"]
-        fn save_screenshot_png(image: &QImage, path: &QString) -> bool;
+        #[cxx_name = "shareScreenshotImage"]
+        fn share_screenshot_image(image: &QImage) -> QImage;
+        #[cxx_name = "saveScreenshotImage"]
+        fn save_screenshot_image(
+            image: &QImage,
+            path: &QString,
+            format: &QString,
+            quality: i32,
+            compression: i32,
+        ) -> bool;
         #[cxx_name = "playbackLogDirectory"]
         fn playback_log_directory() -> QString;
         #[cxx_name = "openLocalDirectory"]
@@ -117,6 +125,9 @@ pub mod ffi {
         #[qproperty(bool, remote_session_only, READ = remote_session_only, NOTIFY)]
         #[qproperty(QString, screenshot_directory, READ = screenshot_directory, NOTIFY)]
         #[qproperty(QString, screenshot_error, READ, NOTIFY)]
+        #[qproperty(QString, screenshot_format, READ = screenshot_format, NOTIFY)]
+        #[qproperty(QString, screenshot_options, READ = screenshot_options, NOTIFY)]
+        #[qproperty(bool, screenshot_busy, READ = screenshot_busy, NOTIFY)]
         #[qproperty(QString, server, READ, NOTIFY)]
         #[qproperty(bool, server_configured, READ = server_configured, NOTIFY)]
         #[qproperty(QString, status, READ, NOTIFY)]
@@ -216,7 +227,29 @@ pub mod ffi {
         #[qinvokable]
         fn open_screenshot_directory(self: Pin<&mut Player>) -> bool;
         #[qinvokable]
-        fn save_screenshot(self: Pin<&mut Player>, image: &QImage) -> QUrl;
+        fn open_screenshot_file_directory(self: Pin<&mut Player>, file: QUrl) -> bool;
+        #[qinvokable]
+        fn save_screenshot(self: Pin<&mut Player>, image: &QImage) -> bool;
+        #[qinvokable]
+        fn capture_screenshot(self: Pin<&mut Player>) -> bool;
+        #[qinvokable]
+        fn stage_screenshot(self: &Player, overlay: QString);
+        fn screenshot_format(self: &Player) -> QString;
+        fn screenshot_options(self: &Player) -> QString;
+        fn screenshot_busy(self: &Player) -> bool;
+        #[qinvokable]
+        fn configure_screenshot_format(self: Pin<&mut Player>, format: QString) -> bool;
+        #[qinvokable]
+        fn configure_screenshot_options(
+            self: Pin<&mut Player>,
+            format: QString,
+            value: i32,
+            lossless: bool,
+        ) -> bool;
+        #[qinvokable]
+        fn poll_screenshot(self: Pin<&mut Player>);
+        #[qsignal]
+        fn screenshot_finished(self: Pin<&mut Player>, file: QUrl);
         fn server_configured(self: &Player) -> bool;
         fn loading(self: &Player) -> bool;
         fn connecting(self: &Player) -> bool;
@@ -434,6 +467,7 @@ pub struct PlayerRust {
     audio_output: playback::audio_output::Output,
     settings_error: QString,
     screenshot_error: QString,
+    screenshot_saves: crate::screenshots::Queue,
     preferences: settings::Session,
     autoplay_pending: bool,
     epg: ProgramInfo,
@@ -687,6 +721,7 @@ impl Drop for PlayerRust {
         self.epg_events.configure(None);
         // The media owner enforces native shutdown before subtitle destruction,
         // including when QML construction failed before onClosing could run.
+        self.screenshot_saves.finish();
         self.media.shutdown_before_drop();
         self.epg.configure(None);
     }

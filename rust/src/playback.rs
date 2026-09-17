@@ -164,9 +164,13 @@ pub struct Playback {
     requested_uri: RefCell<Option<String>>,
     warnings: Cell<warnings::Counts>,
     program_number: Arc<std::sync::atomic::AtomicI32>,
+    presentation: crate::screenshots::native::Presentation,
 }
 
 impl Playback {
+    pub fn presentation(&self) -> &crate::screenshots::native::Presentation {
+        &self.presentation
+    }
     fn element(&self) -> &gst::Element {
         &self.playbin
     }
@@ -193,6 +197,8 @@ impl Playback {
         let sink = gst::ElementFactory::make("qml6glsink")
             .property("enable-last-sample", false)
             .build()?;
+        let presentation = crate::screenshots::native::Presentation::default();
+        presentation.install(&sink.static_pad("sink").ok_or(Error::MissingSinkPad)?);
         let input = gst::ElementFactory::make("videoconvert").build()?;
         let mode = deinterlace::Mode::from_environment()?;
         let deinterlace = mode.build()?;
@@ -281,6 +287,7 @@ impl Playback {
             requested_uri: RefCell::new(None),
             warnings: Cell::default(),
             program_number,
+            presentation,
         })
     }
 
@@ -314,6 +321,14 @@ impl Playback {
         // without processing events or retaining a Rust pointer to the item.
         self.sink
             .set_property("widget", widget.cast::<std::ffi::c_void>());
+        // SAFETY: the same live GUI item validated above. Connections own an
+        // Arc-backed observer and are disconnected with the item's lifetime.
+        unsafe {
+            crate::screenshots::native::ffi::observePresentation(
+                item,
+                self.presentation.observer(),
+            );
+        }
         self.video_output = VideoOutputState::Attached;
         Ok(())
     }
@@ -352,6 +367,7 @@ impl Playback {
             _ => stop_stream(&self.playbin)?,
         }
         *self.requested_uri.borrow_mut() = None;
+        self.presentation.clear();
         *self.audio_streams.borrow_mut() = audio_streams::Streams::default();
         self.routing.reset();
         *self.audio_intent.borrow_mut() = None;

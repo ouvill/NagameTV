@@ -362,7 +362,7 @@ Popup {
                         }
                         Heading { Layout.topMargin: 20; text: qsTranslate("Settings", "Screenshots") }
                         Detail {
-                            text: qsTranslate("Settings", "Save instantly to this folder when you press the camera button or Ctrl + S.")
+                            text: qsTranslate("Settings", "Save a screenshot to this folder with the camera button or Ctrl + S.")
                         }
                         Detail {
                             objectName: "screenshotDirectoryPath"
@@ -394,6 +394,11 @@ Popup {
                         }
                         Detail {
                             text: qsTranslate("Settings", "By default, screenshots are saved in the app's folder inside Pictures.")
+                        }
+                        Heading { Layout.topMargin: 8; text: qsTranslate("Settings", "Image format") }
+                        ScreenshotFormatChoice {
+                            Layout.fillWidth: true
+                            backend: root.backend
                         }
                         Notice {
                             objectName: "screenshotFolderError"

@@ -5,6 +5,7 @@
 #include "pointer_activity.h"
 #include <QtCore/QFile>
 #include <QtCore/QMimeData>
+#include <QtCore/QElapsedTimer>
 #include <QtGui/QDragEnterEvent>
 #include <QtGui/QDropEvent>
 #include <QtGui/QImage>
@@ -14,6 +15,47 @@
 #include <QtQml/QQmlExpression>
 #include <memory>
 #include <stdexcept>
+#include <mutex>
+#include <vector>
+
+inline QImage grabRoot(QQmlApplicationEngine &engine) {
+    const auto roots = engine.rootObjects();
+    auto *window = roots.isEmpty() ? nullptr : qobject_cast<QQuickWindow *>(roots.first());
+    if (!window) throw std::runtime_error("QQuickWindow is missing");
+    return window->grabWindow();
+}
+// This object lives only in the native test runner. Observe frameSwapped on
+// the render thread; GUI polling must not distort the measured intervals.
+class FrameTimes : public QObject {
+    struct State {
+        std::mutex mutex;
+        QElapsedTimer clock;
+        std::vector<double> intervals;
+    };
+    std::shared_ptr<State> state = std::make_shared<State>();
+public:
+    explicit FrameTimes(QQuickWindow *window) {
+        QObject::connect(window, &QQuickWindow::frameSwapped, this, [state = state] {
+            std::lock_guard lock(state->mutex);
+            constexpr size_t MaxSamples = 4096;
+            if (state->clock.isValid() && state->intervals.size() < MaxSamples)
+                state->intervals.push_back(double(state->clock.nsecsElapsed()) / 1000000.0);
+            state->clock.start();
+        }, Qt::DirectConnection);
+    }
+    QString samples() const {
+        std::lock_guard lock(state->mutex);
+        QStringList values;
+        for (auto value : state->intervals) values.append(QString::number(value));
+        return "[" + values.join(',') + "]";
+    }
+};
+inline std::unique_ptr<FrameTimes> watchFrames(const QQmlApplicationEngine &engine) {
+    const auto roots = engine.rootObjects();
+    auto *window = roots.isEmpty() ? nullptr : qobject_cast<QQuickWindow *>(roots.first());
+    if (!window) throw std::runtime_error("QQuickWindow is missing");
+    return std::make_unique<FrameTimes>(window);
+}
 
 inline void disableTranslationCatalog() { Q_CLEANUP_RESOURCE(translations_qrc); }
 inline void enableTranslationCatalog() { Q_INIT_RESOURCE(translations_qrc); }

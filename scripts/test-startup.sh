@@ -3,7 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 startup_suite=${1:-startup}
 case "$startup_suite" in
-    startup|recording-pid-change|timeshift)
+    startup|recording-pid-change|timeshift|screenshot-playback)
         if (( $# > 1 )); then
             echo "This suite does not accept a fixture path" >&2; exit 2
         fi ;;
@@ -11,7 +11,7 @@ case "$startup_suite" in
         if (( $# != 2 )) || [[ ! -f $2 ]]; then
             echo "Expected recording-audit or recording-probe followed by a TS path" >&2; exit 2
         fi ;;
-    *) echo "Expected startup, timeshift, recording-pid-change, recording-audit or recording-probe" >&2; exit 2 ;;
+    *) echo "Expected startup, timeshift, screenshot-playback, recording-pid-change, recording-audit or recording-probe" >&2; exit 2 ;;
 esac
 source scripts/gui-test-session.sh
 # The production Main.qml creates the real video item and audio output.

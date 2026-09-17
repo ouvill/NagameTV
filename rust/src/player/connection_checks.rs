@@ -563,25 +563,115 @@ fn check_screenshot_directory() -> TestResult {
     assert!(!player.screenshot_error().is_empty());
     let mut image = QImage::from_width_height_and_format(8, 6, QImageFormat::Format_RGB32);
     image.fill(&QColor::from_rgb(255, 0, 0));
-    let saved = player
+    let finished = Arc::new(Mutex::new(Vec::new()));
+    let results = finished.clone();
+    let _finished = player
         .pin_mut()
-        .save_screenshot(&image)
-        .to_local_file()
-        .expect("saved local image");
-    let bytes = std::fs::read(saved.to_string())?;
-    let decoded = QImage::from_data(&bytes, Some("PNG")).expect("PNG image");
-    assert_eq!(decoded.size(), image.size());
-    assert!(player.screenshot_error().is_empty());
-    // Losing the destination after configuration reports an error and permits
-    // recovery without changing the saved folder or overwriting existing files.
-    std::fs::remove_file(saved.to_string())?;
+        .on_screenshot_finished(move |player, file| {
+            assert_eq!(file.is_empty(), !player.screenshot_error().is_empty());
+            results.lock().unwrap().push(file.clone());
+        });
+    let formats = Arc::new(Mutex::new(Vec::new()));
+    let changes = formats.clone();
+    let _format = player
+        .pin_mut()
+        .on_screenshot_format_changed(move |player| {
+            assert_eq!(
+                player.screenshot_format().to_string(),
+                player
+                    .rust()
+                    .preferences
+                    .preferences()
+                    .screenshot_format
+                    .key()
+            );
+            changes
+                .lock()
+                .unwrap()
+                .push(player.screenshot_format().to_string());
+        });
+    let save = |player: &mut cxx::UniquePtr<ffi::Player>| {
+        assert!(player.pin_mut().save_screenshot(&image));
+        assert!(player.screenshot_busy());
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while player.screenshot_busy() {
+            assert!(
+                Instant::now() < deadline,
+                "screenshot worker did not finish"
+            );
+            player.pin_mut().poll_screenshot();
+            thread::sleep(Duration::from_millis(1));
+        }
+        finished.lock().unwrap().pop().expect("completion signal")
+    };
+    assert_eq!(player.screenshot_format().to_string(), "png");
+    for format in ["png", "jpg", "webp"] {
+        assert!(
+            player
+                .pin_mut()
+                .configure_screenshot_format(QString::from(format))
+        );
+        let saved = save(&mut player)
+            .to_local_file()
+            .expect("saved local image");
+        let bytes = std::fs::read(saved.to_string())?;
+        let decoded = QImage::from_data(&bytes, Some(format)).expect("encoded image");
+        assert_eq!(decoded.size(), image.size());
+        assert!(saved.to_string().ends_with(&format!(".{format}")));
+        assert!(player.screenshot_error().is_empty());
+        std::fs::remove_file(saved.to_string())?;
+    }
+    assert_eq!(*formats.lock().unwrap(), ["jpg", "webp"]);
+    let option_changes = Arc::new(Mutex::new(0));
+    let observed = option_changes.clone();
+    let _options = player
+        .pin_mut()
+        .on_screenshot_options_changed(move |player| {
+            let exposed: serde_json::Value =
+                serde_json::from_str(&player.screenshot_options().to_string()).unwrap();
+            let current = player.rust().preferences.preferences().screenshot_options;
+            assert_eq!(exposed["png_compression"], current.png_compression.value());
+            assert_eq!(exposed["jpg_quality"], current.jpg_quality.value());
+            assert_eq!(exposed["webp_quality"], current.webp_quality.value());
+            *observed.lock().unwrap() += 1;
+        });
+    for (format, value, lossless) in [("png", 3, false), ("jpg", 82, false), ("webp", 76, true)] {
+        assert!(player.pin_mut().configure_screenshot_options(
+            QString::from(format),
+            value,
+            lossless
+        ));
+    }
+    let previous = player.screenshot_options();
+    assert!(
+        !player
+            .pin_mut()
+            .configure_screenshot_options(QString::from("png"), 10, false)
+    );
+    assert!(
+        !player
+            .pin_mut()
+            .configure_screenshot_options(QString::from("webp"), 100, false)
+    );
+    assert_eq!(player.screenshot_options(), previous);
+    assert_eq!(*option_changes.lock().unwrap(), 3);
+    assert!(
+        !player
+            .pin_mut()
+            .configure_screenshot_format(QString::from("gif"))
+    );
+    restored.pin_mut().rust_mut().preferences =
+        settings::Loaded::open(temporary.path().join("settings.toml"))?.activate(None, None);
+    assert_eq!(restored.screenshot_format().to_string(), "webp");
+    assert_eq!(restored.screenshot_options(), player.screenshot_options());
+    // Losing the destination reports an error; the next request can recover.
     std::fs::remove_dir(&directory)?;
     std::fs::write(&directory, b"keep")?;
-    assert!(player.pin_mut().save_screenshot(&image).is_empty());
+    assert!(save(&mut player).is_empty());
     assert!(!player.screenshot_error().is_empty());
     assert_eq!(std::fs::read(&directory)?, b"keep");
     std::fs::remove_file(&directory)?;
-    assert!(!player.pin_mut().save_screenshot(&image).is_empty());
+    assert!(!save(&mut player).is_empty());
     assert!(player.screenshot_error().is_empty());
     Ok(())
 }

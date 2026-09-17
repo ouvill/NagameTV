@@ -44,11 +44,12 @@ Linux x86_64向けのAppImageとSHA-256を`build/appimage/`へ出力します。
 
 - Rust / Cargo（Rust 1.98.1でビルド確認）
 - CMake 3.24以降、C/C++コンパイラー、pkg-config、libclang
-- Qt 6.8以降のQuick / Controls / Dialogs / Layouts / Shapes / EffectsとQtCore QMLモジュール、LinuxではQt DBus、SVG画像プラグイン、翻訳用の`lrelease`
+- Qt 6.8以降のQuick / Controls / Dialogs / Layouts / Shapes / EffectsとQtCore QMLモジュール、LinuxではQt DBus、SVG・JPEG・WebP画像プラグイン、翻訳用の`lrelease`
 - GStreamer 1.24以降と開発ライブラリー（`gstreamer-mpegts-1.0`を含む）
 - GStreamerの`qml6glsink`、OpenGL関連プラグイン、`tsdemux`、映像・音声デコーダー、音声出力プラグイン
 
 Ubuntuでは`lrelease`は`qt6-l10n-tools`、MPEG-TSの開発ライブラリーは`libgstreamer-plugins-bad1.0-dev`に含まれます。
+WebP画像の保存には`qt6-image-formats-plugins`が必要です。
 日本語UIのフォントにはNoto Sans CJK JPを使用します。字幕用ARIBフォントは同梱しています。
 Linuxのファイル・フォルダー選択はPortalを優先します。ネイティブ版で利用するには
 QtのPortalプラグイン（Ubuntuでは`qt6-xdgdesktopportal-platformtheme`）と、
@@ -104,8 +105,12 @@ bash scripts/test-startup.sh
 専用画面・実GPU・仮想音声を起動して検証した後、製品の`Main.qml`を読み込み、初回・設定済み起動・
 番組表の開閉・再生エラー・終了を確認します。設定先は一時ディレクトリーです。
 画面部品を変更した場合は、その部品のQMLテストも実行してください。
-スクリーンショットの撮影・保存・キャンセル試験は`bash scripts/test-screenshot.sh`で実行します。
+スクリーンショットの連写・保存・設定変更の試験は`bash scripts/test-screenshot.sh`で実行します。
 この試験も専用セッションを自動起動し、画像を一時ディレクトリーに保存して終了時に削除します。
+元映像の取得・字幕／コメント合成・連写中の描画は
+`bash scripts/test-startup.sh screenshot-playback`で製品の画面を使って検証します。
+フレーム番号入りの合成映像をCPUで生成するため、GStreamerの`timeoverlay`と`avenc_mpeg2video`も必要です。
+比較画像と計測値は`build/screenshot-review/`へ出力します。
 
 製品のQMLコンポーネントは`rust/qml/`直下に置きます。`rust/build.rs`がこのディレクトリーの
 `.qml`ファイルを列挙して登録するため、ファイル一覧の追記は不要です。

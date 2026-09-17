@@ -3,10 +3,15 @@ mod comment_style;
 mod language;
 mod model;
 mod screenshot_directory;
+mod screenshot_format;
 pub use comment_style::{CommentFontSize, CommentOpacity, CommentSpeed};
 pub use language::Language;
 pub use model::{Preferences, Volume, autoplay_requested};
 pub use screenshot_directory::ScreenshotDirectory;
+pub use screenshot_format::{
+    Encoding as ScreenshotEncoding, JpgQuality, PngCompression, ScreenshotFormat,
+    ScreenshotOptions, WebpMode, WebpQuality,
+};
 use std::{
     fs,
     io::{self, Read, Write},
@@ -116,6 +121,8 @@ pub enum Change {
     Timeshift(crate::playback::input::Retention),
     TimeshiftLimits(crate::playback::input::Limits),
     ScreenshotDirectory(ScreenshotDirectory),
+    ScreenshotFormat(ScreenshotFormat),
+    ScreenshotOptions(ScreenshotOptions),
     Volume(Volume),
     SubtitleDisplay(bool),
     Comments(bool),
@@ -180,6 +187,8 @@ impl Session {
             Change::Timeshift(retention) => preferences.timeshift = retention,
             Change::TimeshiftLimits(limits) => preferences.timeshift_limits = limits,
             Change::ScreenshotDirectory(directory) => preferences.screenshot_directory = directory,
+            Change::ScreenshotFormat(format) => preferences.screenshot_format = format,
+            Change::ScreenshotOptions(options) => preferences.screenshot_options = options,
             Change::Volume(volume) => preferences.volume = volume,
             Change::SubtitleDisplay(display) => preferences.show_subtitles = display,
             Change::Comments(enabled) => preferences.comments_enabled = enabled,

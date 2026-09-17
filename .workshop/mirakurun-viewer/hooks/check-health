@@ -84,6 +84,9 @@ else
   if [[ ! -f "$qt_plugins_dir/imageformats/libqsvg.so" ]]; then
     missing+=("Qt6:imageformats-svg (qt6-svg-plugins)")
   fi
+  if [[ ! -f "$qt_plugins_dir/imageformats/libqwebp.so" ]]; then
+    missing+=("Qt6:imageformats-webp (qt6-image-formats-plugins)")
+  fi
   if [[ ! -f "$qt_plugins_dir/platforms/libqxcb.so" ]]; then
     missing+=("Qt6:xcb (qt6-qpa-plugins)")
   fi

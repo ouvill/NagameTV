@@ -10,11 +10,19 @@
 #include <QtGui/QDesktopServices>
 #include <QtGui/QGuiApplication>
 #include <QtGui/QImage>
+#include <QtGui/QImageWriter>
 inline QString picturesDirectory() {
   return QStandardPaths::writableLocation(QStandardPaths::PicturesLocation);
 }
-inline bool saveScreenshotPng(const QImage &image, const QString &path) {
-  return image.save(path, "PNG");
+// QImage's copy constructor shares immutable pixels. cxx-qt-lib's Clone makes
+// a full pixel copy, which would unnecessarily hold up the UI for large captures.
+inline QImage shareScreenshotImage(const QImage &image) { return image; }
+inline bool saveScreenshotImage(const QImage &image, const QString &path,
+                                const QString &format, int quality, int compression) {
+  QImageWriter writer(path, format.toLatin1());
+  writer.setQuality(quality);
+  if (compression >= 0) writer.setCompression(compression);
+  return writer.write(image);
 }
 inline void configureQtQuickOpenGl() {
     QCoreApplication::setApplicationName(QStringLiteral("mirakurun-viewer"));

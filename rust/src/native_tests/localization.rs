@@ -111,6 +111,16 @@ pub fn run(missing_catalog: bool) -> i32 {
     assert!(metric(false).to_string().ends_with("停止待ち いいえ"));
     assert_eq!(tr("Programs: %1").arg(&qs("13000")), qs("13000 番組"));
     assert_eq!(tr("Waiting to reconnect"), qs("再接続待ち"));
+    // Capture failures originate in Player, so they need the Backend context
+    // even if an older QML capture component used the same English message.
+    assert_eq!(
+        tr("Could not capture the picture. Try again while the video is playing."),
+        qs("映像を撮影できませんでした。再生中にもう一度お試しください。")
+    );
+    assert_eq!(
+        tr("Too many screenshots are waiting to save. Try again shortly."),
+        qs("保存待ちのスクリーンショットが多いため、少し待ってから撮影してください。")
+    );
     assert_eq!(
         text(&engine, "failureLabel"),
         translate_backend(&text(&engine, "failureSource"))

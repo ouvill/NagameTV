@@ -202,6 +202,7 @@ enum WindowCheck {
     Startup,
     PidChange,
     Timeshift,
+    Screenshots,
     RecordingAudit(std::path::PathBuf),
     RecordingProbe(std::path::PathBuf),
 }
@@ -223,6 +224,11 @@ fn window(
     assert_eq!(ffi::root_count(&engine), 1);
     match check {
         WindowCheck::Startup => {}
+        WindowCheck::Screenshots => {
+            let result = super::screenshots::run(app, &mut engine);
+            evaluate(&mut engine, "player.stop(); root.close(); true")?;
+            return result;
+        }
         WindowCheck::Timeshift => {
             let result = super::timeshift::run(app, &mut engine);
             assert!(evaluate(&mut engine, "root.close(); root.closing")?);
@@ -416,6 +422,45 @@ fn check_recording(
         engine,
         "player.recording && player.recording_name === '録画 #100%.ts' && modeNavigation.mode === ModeNavigation.Recording && !setup.visible && player.current_program_data === 'null' && !player.comment_post_available && !danmaku.active && player.subtitles_active"
     )?);
+    // Capture a real playing video through Main.qml, then confirm the render
+    // counter advances. Accepted saves must leave the transport actions enabled.
+    let capture_directory =
+        url::Url::from_directory_path(directory.path()).map_err(|_| "capture directory URL")?;
+    let quoted_directory = serde_json::to_string(capture_directory.as_str())?;
+    assert!(evaluate(
+        engine,
+        &format!("player.configure_screenshot_directory({quoted_directory})")
+    )?);
+    let rendered_before: u64 = ffi::evaluate_root(
+        engine.pin_mut(),
+        &QString::from("String(JSON.parse(player.video_stats()).rendered)"),
+    )?
+    .value::<QString>()
+    .ok_or("rendered counter")?
+    .to_string()
+    .parse()?;
+    assert!(evaluate(
+        engine,
+        "screenshot.canCapture && (screenshot.capture(), screenshot.busy && windowActions.enabled)"
+    )?);
+    wait_for(app, engine, "!screenshot.busy")?;
+    assert!(evaluate(
+        engine,
+        "player.screenshot_error.length === 0 && player.playing && windowActions.enabled && screenshotNotice.visible && screenshotNotice.kind === ScreenshotNotice.Saved"
+    )?);
+    assert!(
+        std::fs::read_dir(directory.path())?
+            .filter_map(Result::ok)
+            .any(|entry| entry
+                .path()
+                .extension()
+                .is_some_and(|extension| extension == "png"))
+    );
+    wait_for(
+        app,
+        engine,
+        &format!("JSON.parse(player.video_stats()).rendered > {rendered_before}"),
+    )?;
     // Invalid input and a multiple-file drop must leave the current stream intact.
     assert!(evaluate(
         engine,
@@ -698,6 +743,9 @@ pub fn run_window() -> i32 {
 
 pub fn run_timeshift() -> i32 {
     run_window_check(WindowCheck::Timeshift)
+}
+pub fn run_screenshots() -> i32 {
+    run_window_check(WindowCheck::Screenshots)
 }
 
 pub fn run_pid_change() -> i32 {

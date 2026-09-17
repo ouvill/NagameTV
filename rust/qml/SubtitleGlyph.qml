@@ -11,6 +11,8 @@ Label {
     required property real scaleX
     required property real scaleY
     readonly property real outlineRadius: font.pixelSize * 0.06
+    readonly property real captureScaleX: implicitWidth > 0
+        ? Math.min(1, cell.glyphWidth * scaleX / implicitWidth) : 1
     text: cell.text
     textFormat: Text.PlainText
     color: cell.foreground
@@ -47,7 +49,6 @@ Label {
     transform: Scale {
         origin.x: glyph.width / 2
         origin.y: glyph.height / 2
-        xScale: glyph.implicitWidth > 0
-            ? Math.min(1, glyph.cell.glyphWidth * glyph.scaleX / glyph.implicitWidth) : 1
+        xScale: glyph.captureScaleX
     }
 }

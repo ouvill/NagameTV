@@ -154,6 +154,7 @@ impl Default for PlayerRust {
             audio_output,
             settings_error: QString::from(settings_error),
             screenshot_error: QString::default(),
+            screenshot_saves: Default::default(),
             preferences,
             autoplay_pending,
             epg: ProgramInfo::default(),

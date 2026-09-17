@@ -4,6 +4,14 @@
   <context>
     <name>Main</name>
     <message>
+      <source>Open screenshot folder</source>
+      <translation>スクリーンショットの保存先を開く</translation>
+    </message>
+    <message>
+      <source>Saving screenshot…</source>
+      <translation>スクリーンショットを保存中…</translation>
+    </message>
+    <message>
       <source>Hide danmaku</source>
       <translation>弾幕を非表示</translation>
     </message>
@@ -18,10 +26,6 @@
     <message>
       <source>Screenshot saved.</source>
       <translation>スクリーンショットを保存しました。</translation>
-    </message>
-    <message>
-      <source>Could not capture the picture. Try again while the video is playing.</source>
-      <translation>映像を撮影できませんでした。再生中にもう一度お試しください。</translation>
     </message>
     <message>
       <source>Audio %1</source>
@@ -331,9 +335,17 @@
       <source>This broadcast has one audio option.</source>
       <translation>この放送の音声は1種類です。</translation>
     </message>
-  </context>
+      <message>
+        <source>%1 screenshots saved.</source>
+        <translation>スクリーンショットを%1枚保存しました</translation>
+    </message>
+</context>
   <context>
     <name>Backend</name>
+    <message>
+      <source>Could not capture the picture. Try again while the video is playing.</source>
+      <translation>映像を撮影できませんでした。再生中にもう一度お試しください。</translation>
+    </message>
     <message>
       <source>Could not access the screenshot folder. Choose a writable folder in Settings.</source>
       <translation>スクリーンショットの保存先に書き込めません。設定画面で書き込み可能なフォルダーを選んでください。</translation>
@@ -343,8 +355,8 @@
       <translation>スクリーンショットフォルダーを開けませんでした。</translation>
     </message>
     <message>
-      <source>Could not save the captured image as PNG. Try capturing again.</source>
-      <translation>撮影した画像をPNGで保存できませんでした。もう一度撮影してください。</translation>
+      <source>Could not save the captured image. Try again or choose another format in Settings.</source>
+      <translation>撮影した画像を保存できませんでした。再度撮影するか、設定画面で別の保存形式を選んでください。</translation>
     </message>
     <message>
       <source>Select a channel to receive live comments.</source>
@@ -645,6 +657,10 @@
     <message>
         <source>Could not play this TS file. Check that it is readable and contains supported video and audio.</source>
         <translation>このTSファイルを再生できませんでした。読み取り可能で、対応する映像・音声が含まれているか確認してください。</translation>
+    </message>
+    <message>
+        <source>Too many screenshots are waiting to save. Try again shortly.</source>
+        <translation>保存待ちのスクリーンショットが多いため、少し待ってから撮影してください。</translation>
     </message>
 </context>
   <context>
@@ -1057,6 +1073,26 @@
   <context>
     <name>Settings</name>
     <message>
+      <source>Image format</source>
+      <translation>保存形式</translation>
+    </message>
+    <message>
+      <source>Default</source>
+      <translation>標準</translation>
+    </message>
+    <message>
+      <source>Saves without losing image quality. Files are larger.</source>
+      <translation>画質を落とさずに保存します。ファイルサイズは大きくなります。</translation>
+    </message>
+    <message>
+      <source>Reduces file size with some loss of image quality. Supported by most apps.</source>
+      <translation>ファイルサイズを小さくできますが、画質は少し落ちます。多くのアプリで開けます。</translation>
+    </message>
+    <message>
+      <source>Reduces file size with some loss of image quality. Some apps cannot open WebP files.</source>
+      <translation>ファイルサイズを小さくできますが、画質は少し落ちます。対応していないアプリもあります。</translation>
+    </message>
+    <message>
       <source>Apply</source>
       <translation>適用</translation>
     </message>
@@ -1069,8 +1105,8 @@
       <translation>スクリーンショット</translation>
     </message>
     <message>
-      <source>Save instantly to this folder when you press the camera button or Ctrl + S.</source>
-      <translation>カメラボタンまたはCtrl + Sを押すと、このフォルダーにすぐ保存します。</translation>
+      <source>Save a screenshot to this folder with the camera button or Ctrl + S.</source>
+      <translation>撮影ボタンまたは Ctrl + S で、このフォルダーにスクリーンショットを保存します。</translation>
     </message>
     <message>
       <source>Change folder</source>
@@ -1356,7 +1392,43 @@
       <source>Could not read program information</source>
       <translation>番組情報を読み取れませんでした</translation>
     </message>
-  </context>
+      <message>
+        <source>Compression level</source>
+        <translation>圧縮レベル</translation>
+    </message>
+    <message>
+        <source>Image quality</source>
+        <translation>画質</translation>
+    </message>
+    <message>
+        <source>Saves video, subtitles and comments without losing image quality. Files tend to be larger.</source>
+        <translation>映像や字幕、コメントを画質を落とさずに保存します。ファイルサイズは大きめになります。</translation>
+    </message>
+    <message>
+        <source>Saves smaller files. The edges of subtitles and comments may look blurred.</source>
+        <translation>ファイルサイズを抑えて保存します。字幕やコメントの輪郭がにじむことがあります。</translation>
+    </message>
+    <message>
+        <source>Often saves smaller files than JPG at similar image quality. Lossless saving is also available.</source>
+        <translation>JPGと同程度の画質なら、ファイルサイズをさらに抑えられる傾向があります。画質を落とさない保存も選べます。</translation>
+    </message>
+    <message>
+        <source>Save without losing image quality</source>
+        <translation>画質を落とさずに保存</translation>
+    </message>
+    <message>
+        <source>Prevents image quality loss from compression.</source>
+        <translation>オンにすると、圧縮による画質の劣化をなくします。</translation>
+    </message>
+    <message>
+        <source>Higher values spend more time saving to reduce file size. Image quality stays the same.</source>
+        <translation>値を大きくすると、ファイルサイズを抑えるために保存に時間をかけます。画質は変わりません。</translation>
+    </message>
+    <message>
+        <source>Higher values improve image quality and increase file size.</source>
+        <translation>値を大きくすると画質がよくなり、ファイルサイズも大きくなります。</translation>
+    </message>
+</context>
   <context>
     <name>Connection</name>
     <message>

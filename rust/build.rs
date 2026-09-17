@@ -30,6 +30,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     .qrc(&translations)
     .qrc_resources([
         "../assets/icons/camera.svg",
+        "../assets/icons/folder-open.svg",
         "../assets/icons/info.svg",
         "../assets/icons/send.svg",
         "../assets/icons/pencil.svg",
@@ -61,6 +62,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "../assets/fonts/LICENSE-Rounded-Mplus-1m-for-ARIB.txt",
     ])
     .file("src/player.rs")
+    .file("src/screenshot_native.rs")
+    .file("src/screenshot_overlay.rs")
     .file("src/danmaku.rs")
     .file("src/comment_model.rs")
     .include_dir("src")

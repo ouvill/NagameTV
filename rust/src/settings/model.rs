@@ -1,5 +1,8 @@
 //! Preferences and normalization without filesystem, Qt or playback dependencies.
-use super::{CommentFontSize, CommentOpacity, CommentSpeed, Language, ScreenshotDirectory};
+use super::{
+    CommentFontSize, CommentOpacity, CommentSpeed, Language, ScreenshotDirectory, ScreenshotFormat,
+    ScreenshotOptions,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -53,6 +56,8 @@ pub struct Preferences {
     pub timeshift: crate::playback::input::Retention,
     pub timeshift_limits: crate::playback::input::Limits,
     pub screenshot_directory: ScreenshotDirectory,
+    pub screenshot_format: ScreenshotFormat,
+    pub screenshot_options: ScreenshotOptions,
     pub volume: Volume,
     // Keep the existing on-disk key, now solely a viewer's display preference.
     // Subtitle processing and EPG availability are selected by LaunchPlan.
@@ -80,6 +85,8 @@ impl Default for Preferences {
             timeshift: Default::default(),
             timeshift_limits: Default::default(),
             screenshot_directory: ScreenshotDirectory::default(),
+            screenshot_format: ScreenshotFormat::default(),
+            screenshot_options: ScreenshotOptions::default(),
             volume: Volume::default(),
             show_subtitles: false,
             // main receives history independently of the scrolling overlay.

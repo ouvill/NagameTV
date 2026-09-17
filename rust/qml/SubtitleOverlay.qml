@@ -10,6 +10,24 @@ Item {
     readonly property var cue: captionJson.length ? JSON.parse(captionJson) : null
     readonly property var cells: cue ? cue.cells : []
     clip: true
+    ScreenshotText { id: captureText }
+    function screenshotLayer(target) {
+        const origin = mapToItem(target, 0, 0);
+        const commands = [];
+        for (let i = 0; i < captionCells.count; ++i) {
+            const cell = captionCells.itemAt(i);
+            if (!cell || !cell.visible) continue;
+            commands.push({kind: "rect", x: cell.x, y: cell.y, width: cell.width, height: cell.height, color: cell.color.toString()});
+            const glyph = cell.captureGlyph;
+            commands.push(captureText.command(glyph, cell.x + glyph.x, cell.y + glyph.y,
+                glyph.captureScaleX, glyph.cell.stroke, glyph.cell.stroked ? glyph.outlineRadius * 2 : 0,
+                null, false, false));
+        }
+        if (plainCaption.visible && plainCaption.text.length)
+            commands.push(captureText.command(plainCaption, plainCaption.x, plainCaption.y, 1,
+                plainCaption.styleColor.toString(), 2, null, true, true));
+        return {x: origin.x, y: origin.y, width: width, height: height, commands: commands};
+    }
     FontLoader {
         id: subtitleFont
         objectName: "subtitleFont"
@@ -17,10 +35,12 @@ Item {
         onStatusChanged: if (status === FontLoader.Error) console.warn("Subtitle font could not be loaded:", source)
     }
     Repeater {
+        id: captionCells
         objectName: "captionCells"
         model: overlay.cells
         delegate: Rectangle {
             id: cell
+            readonly property alias captureGlyph: renderedGlyph
             required property var modelData
             readonly property real sx: overlay.width / Math.max(1, overlay.cue.planeWidth)
             readonly property real sy: overlay.height / Math.max(1, overlay.cue.planeHeight)
@@ -29,6 +49,7 @@ Item {
             height: Math.max(1, modelData.height * sy)
             color: modelData.background
             SubtitleGlyph {
+                id: renderedGlyph
                 objectName: "subtitleGlyph"
                 anchors.centerIn: parent
                 cell: parent.modelData
@@ -40,6 +61,7 @@ Item {
         }
     }
     Label {
+        id: plainCaption
         objectName: "plainCaption"
         visible: overlay.cells.length === 0
         anchors.horizontalCenter: parent.horizontalCenter

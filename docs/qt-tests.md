@@ -22,7 +22,8 @@ Host desktop/audio connections and physical audio devices are not required.
 | `bash scripts/test-localization.sh` | Locale resolution, existing QML retranslation, date stability, dynamic snapshots, literal diagnostic arguments, 100 repeated language switches and translator ownership; a separate process removes the real catalog resource and checks failure cleanup | None: QCoreApplication and QtObject |
 | `bash scripts/test-connection.sh` | Real Player and local HTTP fixtures: pending/failed saves, empty catalogs, save failures, shutdown, coherent stream properties during Qt signals, retry allowance and guide visibility/day notification order | None: QCoreApplication and HTTP |
 | `bash scripts/test-startup.sh` | Production Main.qml in separate processes: first run, two saved startups, channel restoration, guide open/close, native playback failure and clean shutdown; QML warnings fail the test | Validated private X11 display, GPU and virtual PulseAudio output |
-| `bash scripts/test-screenshot.sh` | Real Player and item capture, instant PNG saving, overlay pixels, exclusion of sibling controls, repeated captures, Unicode/escaped folder names, cancellation and invalid folder rejection | Validated X11 display and GPU |
+| `bash scripts/test-screenshot.sh` | Real Player, parallel PNG/JPG/WebP saving, immutable images/settings, accepted saves surviving UI unavailability, Unicode/escaped folders and failure recovery | Validated X11 display and GPU |
+| `bash scripts/test-startup.sh screenshot-playback` | Production Main.qml, native 1080p numbered frames, captions and comments, visibility, resize/fullscreen, pixel aspect ratio, burst capture, seek/stop and frame interval measurements | Validated private X11 display, GPU and virtual PulseAudio output |
 | `bash scripts/test-video-item.sh` | Video-item attachment, terminal shutdown, failed native transitions, and retained subtitle subscriptions until a successful stop | Validated X11 display and GPU; native graph stays in NULL |
 | `bash scripts/test-subtitle-outline.sh` | Six pixel-exact QPainterPath/SVG comparisons: full height, small ink/cubic curves, midline, overhang/descender, separate contours, empty path | None: QCoreApplication and in-memory QImage rasterization |
 | `bash scripts/test-pointer-activity.sh` | Duplicate installation, repeated positions, disabled items, window changes, observer deletion and event delivery after item destruction | Validated X11 display and GPU |
@@ -55,9 +56,18 @@ The startup suite also covers persisted autoplay and both directions of the
 environment override, using the restored channel. Screenshot tests copy their
 fixture and production component into a temporary directory and run the native
 test runner with the real Player; saved images are removed at exit. They use a
-rendered rectangle and child overlay to verify the capture contract. Successful
-capture of broadcast video still requires manual verification with a playing
-stream, including visible subtitles and comments.
+rendered rectangle as a fixed image input for the queue tests. The production
+capture path is independently exercised by `test-startup.sh screenshot-playback`:
+a CPU-generated, numbered MPEG-2 video is played through the real GL sink and
+compared to Qt's displayed frame. It checks authored subtitle/comment overlays,
+clipping, hidden layers, frozen burst captures, resize/fullscreen and 4:3/non-square
+pixels. The test records frameSwapped intervals on the render thread, request
+latency, save completion, file sizes and Linux CPU/RSS observations in
+`build/screenshot-review/metrics.json`. Review images are written alongside it;
+its TS input and saved test images use temporary directories. Run separately
+from builds or other GPU tests when comparing performance. `QT_SCALE_FACTOR=1.5`
+with the same public command covers high-DPI rendering. These synthetic tests do
+not verify a real tuner, broadcast-specific font rendering or physical display latency.
 
 Local recording coverage in the startup suite drops a generated MPEG-2/AAC TS
 onto the production window, including its first-run setup screen. It also opens
@@ -110,9 +120,11 @@ every related Qt notification. Hardware-free worker tests control completion to
 check that cancelled and superseded results cannot start playback, and that a
 replacement never overlaps its predecessor's filesystem worker.
 
-Hardware-free Rust tests verify screenshot directory serialization, atomic PNG
-publication, filename collisions and cleanup. Connection tests also verify the
-real Qt properties, folder persistence, PNG saving and recovery after the folder
+Hardware-free Rust tests verify screenshot directory serialization, atomic PNG/JPG/WebP
+publication, filename collisions, encoding parameters, lossless pixels, queue bounds,
+reverse completion order, partial failure and cleanup. Presentation tests distinguish
+synchronized from presented frames and reject buffers from an old seek generation. Connection tests also verify the
+real Qt properties, folder/format persistence, asynchronous saving and recovery after the folder
 becomes inaccessible. These checks only rasterize in-memory QImages and use
 temporary files; they do not create a display or use a GPU.
 

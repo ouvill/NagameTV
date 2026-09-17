@@ -408,3 +408,59 @@ fn comment_shadow_and_large_font_survive_settings_reload() -> Result<(), Box<dyn
 fn open(path: std::path::PathBuf) -> Result<Session, Error> {
     Loaded::open(path).map(|loaded| loaded.activate(None, None))
 }
+
+#[test]
+fn screenshot_format_defaults_and_selections_survive_restart()
+-> Result<(), Box<dyn std::error::Error>> {
+    let temporary = tempfile::tempdir()?;
+    let path = temporary.path().join("settings.toml");
+    fs::write(&path, "autoplay = true\n")?;
+    let mut session = open(path.clone())?;
+    assert_eq!(
+        session.preferences().screenshot_format,
+        ScreenshotFormat::Png
+    );
+    for format in [
+        ScreenshotFormat::Jpg,
+        ScreenshotFormat::Webp,
+        ScreenshotFormat::Png,
+    ] {
+        session.change(Change::ScreenshotFormat(format));
+        session.flush()?;
+        assert_eq!(open(path.clone())?.preferences().screenshot_format, format);
+        assert!(open(path.clone())?.preferences().autoplay);
+    }
+    assert!(ScreenshotFormat::from_key("gif").is_none());
+    assert!(toml::from_str::<Preferences>("screenshot_format = 'gif'").is_err());
+    Ok(())
+}
+
+#[test]
+fn screenshot_parameters_round_trip_without_losing_other_formats()
+-> Result<(), Box<dyn std::error::Error>> {
+    let defaults: Preferences = toml::from_str("screenshot_format = \"png\"")?;
+    assert_eq!(defaults.screenshot_options, ScreenshotOptions::default());
+    let preferences = Preferences {
+        screenshot_format: ScreenshotFormat::Webp,
+        screenshot_options: ScreenshotOptions {
+            png_compression: 0.try_into()?,
+            jpg_quality: 73.try_into()?,
+            webp_quality: 99.try_into()?,
+            webp_mode: WebpMode::Lossless,
+        },
+        ..Default::default()
+    };
+    let text = toml::to_string(&preferences)?;
+    assert_eq!(toml::from_str::<Preferences>(&text)?, preferences);
+    for invalid in [
+        "png_compression = 10",
+        "jpg_quality = 0",
+        "webp_quality = 100",
+        "webp_mode = 'other'",
+    ] {
+        assert!(
+            toml::from_str::<Preferences>(&format!("[screenshot_options]\n{invalid}")).is_err()
+        );
+    }
+    Ok(())
+}

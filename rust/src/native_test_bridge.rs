@@ -34,6 +34,10 @@ pub mod ffi {
         fn resolveUiLanguage(preference: &QString, system: &QString) -> QString;
 
         include!("native_tests/qt_test_api.h");
+        fn grabRoot(engine: Pin<&mut QQmlApplicationEngine>) -> Result<QImage>;
+        type FrameTimes;
+        fn watchFrames(engine: &QQmlApplicationEngine) -> Result<UniquePtr<FrameTimes>>;
+        fn samples(self: &FrameTimes) -> QString;
         #[rust_name = "disable_catalog"]
         fn disableTranslationCatalog();
         #[rust_name = "enable_catalog"]

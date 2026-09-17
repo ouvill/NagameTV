@@ -210,7 +210,7 @@ ApplicationWindow {
     WindowActions {
         id: windowActions
         targetWindow: root
-        enabled: !root.closing && !screenshot.busy
+        enabled: !root.closing
         guideEnabled: player.epg_enabled
         screenshotEnabled: screenshot.canCapture && !root.showGuide && !root.showChannels
         onScreenshotRequested: screenshot.capture()
@@ -231,13 +231,19 @@ ApplicationWindow {
         target: videoPicture
         available: player.media_active && !player.seeking
         enabled: !root.closing
-        onSaved: {
-            screenshotNotice.text = qsTranslate("Main", "Screenshot saved.");
-            screenshotNoticeTimer.restart();
-        }
-        onFailed: function(message) {
-            screenshotNotice.text = message;
-            screenshotNoticeTimer.restart();
+        onSaved: function(file) { screenshotNotice.showSaved(file); }
+        onFailed: function(message) { screenshotNotice.showFailure(message); }
+    }
+    Connections {
+        target: root
+        function onAfterAnimating() {
+            if (root.closing || !player.media_active || video.width <= 0 || video.height <= 0) return;
+            const layers = [];
+            if (danmaku.active && danmaku.item && danmaku.visible && danmaku.item.visible)
+                layers.push(danmaku.item.screenshotLayer(video));
+            if (captions.active && captions.item && captions.visible && captions.item.visible)
+                layers.push(captions.item.screenshotLayer(video));
+            player.stage_screenshot(JSON.stringify({width: video.width, height: video.height, layers: layers}));
         }
     }
     Timer {
@@ -328,6 +334,7 @@ ApplicationWindow {
             }
             Loader {
                 // Match a 16:9 broadcast's letterboxed video area.
+                id: captions
                 anchors.centerIn: parent
                 width: Math.min(parent.width, parent.height * 16 / 9)
                 height: width * 9 / 16
@@ -542,22 +549,17 @@ ApplicationWindow {
                 }
             }
         }
-        Label {
+        ScreenshotNotice {
             id: screenshotNotice
             objectName: "screenshotNotice"
             anchors { horizontalCenter: parent.horizontalCenter; top: parent.top; topMargin: 90 }
             width: Math.min(560, parent.width - 48)
-            padding: 14
-            visible: screenshotNoticeTimer.running
-            textFormat: Text.PlainText
-            wrapMode: Text.Wrap
-            horizontalAlignment: Text.AlignHCenter
-            color: "#f4f5f3"
-            font.pixelSize: 14
             z: 8
-            background: Rectangle { color: "#f21a1c1a"; radius: 10; border.color: "#42ffffff" }
+            onOpenFolderRequested: function(file) {
+                if (player.open_screenshot_file_directory(file)) dismiss();
+                else showFailure(player.screenshot_error);
+            }
         }
-        Timer { id: screenshotNoticeTimer; interval: 6000 }
         CommentComposer {
             id: composer
             anchors { horizontalCenter: parent.horizontalCenter; bottom: parent.bottom; bottomMargin: 16 }

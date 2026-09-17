@@ -25,6 +25,27 @@ Item {
     property var visuals: new Map()
     readonly property int visualCount: flowRows.children.length + topRows.children.length + bottomRows.children.length
     clip: true
+    ScreenshotText { id: captureText }
+    function screenshotLayer(target) {
+        const origin = mapToItem(target, 0, 0);
+        const commands = [];
+        for (const row of [flowRows, topRows, bottomRows]) {
+            for (const entry of row.children) {
+                if (!entry.visible) continue;
+                const position = entry.mapToItem(overlay, 0, 0);
+                if (entry.own) {
+                    const color = Qt.rgba(1, 224 / 255, 102 / 255, entry.opacity).toString();
+                    for (const rect of [[0, 0, entry.width, 1], [0, entry.height - 1, entry.width, 1],
+                        [0, 1, 1, entry.height - 2], [entry.width - 1, 1, 1, entry.height - 2]])
+                        commands.push({kind: "rect", x: position.x + rect[0], y: position.y + rect[1],
+                            width: rect[2], height: rect[3], color: color});
+                }
+                commands.push(captureText.command(entry, position.x + entry.leftPadding, position.y,
+                    1, entry.styleColor.toString(), 2, entry.captureShadow, false, false));
+            }
+        }
+        return {x: origin.x, y: origin.y, width: width, height: height, commands: commands};
+    }
 
     FontMetrics {
         id: metrics
@@ -149,6 +170,8 @@ Item {
             required property real destination
             required property int duration
             required property bool own
+            readonly property var captureShadow: shadow.active && shadow.item
+                ? {offset: shadow.x - leftPadding, radius: shadow.item.blurRadius} : null
             function relayout(newWidth, fromX, toX, newY, remaining) {
                 motion.stop();
                 width = newWidth;

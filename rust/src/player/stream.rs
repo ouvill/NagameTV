@@ -418,6 +418,9 @@ impl ffi::Player {
     }
     pub fn shutdown(mut self: Pin<&mut Self>) -> bool {
         self.as_mut().cancel_recording_open();
+        // Retained native screenshot buffers may still need the GL context for
+        // readback. Complete accepted work before stopping that context.
+        self.as_mut().rust_mut().screenshot_saves.finish();
         let result = self.as_mut().rust_mut().media.shutdown();
         if let Err(error) = result {
             tracing::error!("Playback shutdown failed; keeping the window alive: {error}");
