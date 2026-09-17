@@ -146,6 +146,8 @@ pub mod ffi {
         #[qproperty(f64, live_delay_ms, READ = live_delay_ms, NOTIFY)]
         #[qproperty(QString, timeshift_storage, READ = timeshift_storage, NOTIFY)]
         #[qproperty(QString, timeshift_limits, READ = timeshift_limits, NOTIFY)]
+        #[qproperty(f64, timeshift_bytes_per_second, READ, NOTIFY)]
+        #[qproperty(QString, timeshift_program_boundaries, READ, NOTIFY)]
         #[qproperty(QString, transport_error, READ, NOTIFY)]
         #[qproperty(bool, recording, READ = recording, NOTIFY)]
         #[qproperty(QString, recording_name, READ = recording_name, NOTIFY)]
@@ -384,6 +386,8 @@ pub struct PlayerRust {
     catalog_selection: channels::SelectionPolicy,
     stream_state: stream_state::State,
     timeline: playback::timeline::Snapshot,
+    timeshift_bytes_per_second: f64,
+    timeshift_program_boundaries: QString,
     transport_error: QString,
     recording_loader: playback::recording::Loader,
     file_error: QString,

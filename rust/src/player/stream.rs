@@ -36,6 +36,8 @@ impl ffi::Player {
         let old_program = self.current_program_data().clone();
         let old_progress = *self.program_progress();
         let old_subtitle = self.subtitle_data().clone();
+        let old_rate = *self.timeshift_bytes_per_second();
+        let old_boundaries = self.timeshift_program_boundaries().clone();
         let before_live = (
             self.timeshift(),
             self.window_start_ms(),
@@ -59,6 +61,12 @@ impl ffi::Player {
         {
             let mut this = self.as_mut().rust_mut();
             this.stream_state = change(std::mem::take(&mut this.stream_state));
+            this.timeshift_bytes_per_second =
+                this.media.timeshift_bytes_per_second().unwrap_or_default();
+            this.timeshift_program_boundaries = QString::from(
+                serde_json::to_string(&this.media.program_boundaries_ms())
+                    .expect("integer boundaries"),
+            );
             if this.stream_state.active() {
                 if let Some((phase, snapshot)) = this.media.timeline() {
                     this.stream_state = std::mem::take(&mut this.stream_state).transport(phase);
@@ -66,6 +74,8 @@ impl ffi::Player {
                 }
             } else {
                 this.timeline = Default::default();
+                this.timeshift_bytes_per_second = 0.0;
+                this.timeshift_program_boundaries = QString::from("[]");
             }
             let source_changed = before.2 != this.stream_state.recording().is_some()
                 || before.3.to_string()
@@ -94,6 +104,12 @@ impl ffi::Player {
             self.as_mut().duration_estimated_changed();
         }
         // Commit input and activity together before any Qt observer reads them.
+        if old_boundaries != *self.timeshift_program_boundaries() {
+            self.as_mut().timeshift_program_boundaries_changed();
+        }
+        if old_rate != *self.timeshift_bytes_per_second() {
+            self.as_mut().timeshift_bytes_per_second_changed();
+        }
         if old_program != *self.current_program_data() {
             self.as_mut().current_program_data_changed();
         }

@@ -97,6 +97,18 @@ impl Session {
             Input::Idle => None,
         }
     }
+    pub fn timeshift_bytes_per_second(&self) -> Option<f64> {
+        match &self.input {
+            Input::Active { source, .. } => source.bytes_per_second(),
+            Input::Idle => None,
+        }
+    }
+    pub fn program_boundaries_ms(&self) -> Vec<i64> {
+        match &self.input {
+            Input::Active { source, .. } => source.program_boundaries_ms(),
+            Input::Idle => Vec::new(),
+        }
+    }
 
     pub fn poll(&mut self) -> Result<super::Event> {
         let Some(playback) = &self.playback else {
@@ -114,11 +126,8 @@ impl Session {
                 event = super::Event::Idle;
             }
             controller.poll(playback.element())?;
-            if let Input::Active { source, controller } = &mut self.input
-                && source.is_live()
-                && let Some((start, end)) = source.window()
-            {
-                controller.retained(playback.element(), start, end, source.take_expired())?;
+            if let Some(window) = source.live_window() {
+                controller.retained(playback.element(), window, source.take_expired())?;
             }
         }
         Ok(event)

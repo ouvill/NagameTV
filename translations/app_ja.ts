@@ -989,6 +989,50 @@
       <source>Applying changes returns live playback to the live edge and clears its previous history.</source>
       <translation>設定を適用するとライブの最新位置へ戻り、それまでの保持データを破棄します。</translation>
     </message>
+    <message>
+      <source>Outside retained history</source>
+      <translation>保持範囲外</translation>
+    </message>
+    <message>
+      <source>%1% of program</source>
+      <translation>番組の進捗 %1%</translation>
+    </message>
+    <message>
+      <source>Memory keeps rewinding quick without writing to storage. Choose a limit that leaves room for your other apps.</source>
+      <translation>ストレージへの書き込みがなく、素早く巻き戻せます。他のアプリに必要なメモリーを残して上限を設定してください。</translation>
+    </message>
+    <message>
+      <source>Temporary files keep longer history with less RAM. They use storage space and continuous disk writes, and are deleted when playback stops.</source>
+      <translation>メモリーの使用を抑え、長時間保持できます。ストレージの空き容量を使い、継続して書き込みます。一時ファイルは再生停止時に削除されます。</translation>
+    </message>
+    <message>
+      <source>Maximum TS memory</source>
+      <translation>メモリーの上限</translation>
+    </message>
+    <message>
+      <source>Maximum temporary files</source>
+      <translation>一時ファイルの容量上限</translation>
+    </message>
+    <message>
+      <source>%1 min %2 sec</source>
+      <translation>%1分%2秒</translation>
+    </message>
+    <message>
+      <source>About %1 of history</source>
+      <translation>約%1 保持できます</translation>
+    </message>
+    <message>
+      <source>Estimated from the current broadcast.</source>
+      <translation>現在の放送の受信量から算出しています。</translation>
+    </message>
+    <message>
+      <source>Estimate assumes %1 Mbps until a broadcast is playing.</source>
+      <translation>視聴前の目安は %1 Mbps を仮定しています。</translation>
+    </message>
+    <message>
+      <source>Actual duration varies with the broadcast and the time limit below.</source>
+      <translation>実際の保持時間は放送内容や下の時間上限によって変わります。</translation>
+    </message>
 </context>
   <context>
     <name>Settings</name>

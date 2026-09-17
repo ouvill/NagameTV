@@ -5,10 +5,26 @@ use gstreamer::{self as gst, prelude::*};
 use gstreamer_app::{AppSrc, AppSrcCallbacks, AppStreamType};
 use std::sync::atomic::AtomicU64;
 
-#[derive(Default)]
 pub(super) struct Feedback {
     pub failure: Mutex<Option<String>>,
-    expired: AtomicBool,
+    generation: AtomicU64,
+    expired: AtomicU64,
+}
+const NO_EXPIRED_GENERATION: u64 = u64::MAX;
+impl Default for Feedback {
+    fn default() -> Self {
+        Self {
+            failure: Mutex::default(),
+            generation: AtomicU64::new(0),
+            expired: AtomicU64::new(NO_EXPIRED_GENERATION),
+        }
+    }
+}
+impl Feedback {
+    pub(super) fn take_expired(&self) -> bool {
+        self.expired.swap(NO_EXPIRED_GENERATION, Ordering::AcqRel)
+            == self.generation.load(Ordering::Acquire)
+    }
 }
 
 const SOURCE_QUEUE_BYTES: u64 = (READ_BYTES * 2) as u64;
@@ -134,18 +150,41 @@ impl Input {
             Shared::Live(_) => false,
         }
     }
-    pub fn is_live(&self) -> bool {
-        self.retention.is_some()
+    pub fn bytes_per_second(&self) -> Option<f64> {
+        match &self.shared {
+            Shared::Live(store) => store.lock().ok()?.index.bytes_per_second(),
+            Shared::File(_) => None,
+        }
+    }
+    pub fn program_boundaries_ms(&self) -> Vec<i64> {
+        if self
+            .retention
+            .is_none_or(|policy| policy.storage() == Retention::Off)
+        {
+            return Vec::new();
+        }
+        match &self.shared {
+            Shared::Live(store) => store
+                .lock()
+                .map(|store| store.index.program_boundaries_ms())
+                .unwrap_or_default(),
+            Shared::File(_) => Vec::new(),
+        }
     }
     pub fn take_expired(&self) -> bool {
-        self.feedback.expired.swap(false, Ordering::AcqRel)
+        self.feedback.take_expired()
     }
-    pub fn window(&self) -> Option<(gst::ClockTime, gst::ClockTime)> {
-        self.shared.window().ok().flatten().map(|window| {
-            (
-                gst::ClockTime::from_nseconds(window.start),
-                gst::ClockTime::from_nseconds(window.end),
-            )
+    pub fn live_window(&self) -> Option<super::super::timeline::LiveWindow> {
+        use super::super::timeline::{LiveWindow, Range};
+        let policy = self.retention?;
+        let window = self.shared.window().ok()??;
+        let range = Range::new(
+            gst::ClockTime::from_nseconds(window.start),
+            gst::ClockTime::from_nseconds(window.end),
+        )?;
+        Some(match policy.storage() {
+            Retention::Off => LiveWindow::ForwardBuffer(range),
+            Retention::Memory | Retention::Filesystem => LiveWindow::History(range),
         })
     }
 }
@@ -189,9 +228,8 @@ pub(super) fn configure(
     let requests = Arc::new(Mutex::new(None));
     let seeking = requests.clone();
     let sequence = Arc::new(Mutex::new(None::<gst::Seqnum>));
-    let generation = Arc::new(AtomicU64::new(0));
     let requested = sequence.clone();
-    let epoch = generation.clone();
+    let epoch = feedback.clone();
     if let Some(pad) = source.static_pad("src") {
         let probe = pad.add_probe(
             gst::PadProbeType::EVENT_UPSTREAM
@@ -201,7 +239,7 @@ pub(super) fn configure(
                 if let Some(event) = info.event_mut() {
                     match event.view() {
                         gst::EventView::Seek(_) => {
-                            epoch.fetch_add(1, Ordering::AcqRel);
+                            epoch.generation.fetch_add(1, Ordering::AcqRel);
                             if let Ok(mut sequence) = requested.lock() {
                                 *sequence = Some(event.seqnum());
                             }
@@ -278,9 +316,9 @@ pub(super) fn configure(
                 result.is_ok()
             })
             .need_data(move |source, _| {
-                let current = generation.load(Ordering::Acquire);
+                let current = feedback.generation.load(Ordering::Acquire);
                 while !interrupted.load(Ordering::Acquire)
-                    && current == generation.load(Ordering::Acquire)
+                    && current == feedback.generation.load(Ordering::Acquire)
                 {
                     let result =
                         reader
@@ -295,11 +333,11 @@ pub(super) fn configure(
                                 }
                                 reader.next_with_cancel(|| {
                                     interrupted.load(Ordering::Acquire)
-                                        || current != generation.load(Ordering::Acquire)
+                                        || current != feedback.generation.load(Ordering::Acquire)
                                 })
                             });
                     if interrupted.load(Ordering::Acquire)
-                        || current != generation.load(Ordering::Acquire)
+                        || current != feedback.generation.load(Ordering::Acquire)
                     {
                         return;
                     }
@@ -319,13 +357,16 @@ pub(super) fn configure(
                             }
                             writable.set_dts(gst::ClockTime::from_nseconds(time_ns));
                             writable.set_pts(gst::ClockTime::from_nseconds(time_ns));
-                            if current == generation.load(Ordering::Acquire) {
+                            if current == feedback.generation.load(Ordering::Acquire) {
                                 let _ = source.push_buffer(buffer);
                             }
                             return;
                         }
-                        Ok(Output::Expired) => {
-                            feedback.expired.store(true, Ordering::Release);
+                        Ok(Output::Expired) | Err(Error::Expired) => {
+                            // A delayed seek may expire before the reader accepts
+                            // it. Recover in this generation, never fail playback or
+                            // carry an old reader's feedback into a new seek.
+                            feedback.expired.store(current, Ordering::Release);
                             std::thread::sleep(INPUT_WAIT);
                         }
                         Ok(Output::Awaiting) => {
@@ -349,4 +390,24 @@ pub(super) fn configure(
             })
             .build(),
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn expired_feedback_cannot_cross_a_seek_generation() {
+        let feedback = Feedback::default();
+        assert!(!feedback.take_expired());
+        let old = feedback.generation.load(Ordering::Acquire);
+        feedback.expired.store(old, Ordering::Release);
+        assert!(feedback.take_expired());
+        assert!(!feedback.take_expired());
+        let next = feedback.generation.fetch_add(1, Ordering::AcqRel) + 1;
+        // The previous streaming callback can publish just after the GUI seeks.
+        feedback.expired.store(old, Ordering::Release);
+        assert!(!feedback.take_expired());
+        feedback.expired.store(next, Ordering::Release);
+        assert!(feedback.take_expired());
+    }
 }

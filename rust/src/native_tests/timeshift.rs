@@ -9,7 +9,7 @@ use std::{
         atomic::{AtomicBool, Ordering},
     },
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 const ACCEPT_POLL: Duration = Duration::from_millis(10);
@@ -25,6 +25,13 @@ const LIVE_EDGE_TOLERANCE: Duration = Duration::from_millis(2500);
 const MEMORY_MIB: i32 = 16;
 const FILESYSTEM_MIB: i32 = 64;
 const RETENTION_MINUTES: i32 = 1;
+const RECOVERY_OBSERVATION: Duration = Duration::from_secs(4);
+
+#[derive(Clone, Copy)]
+enum Traffic {
+    Broadcast,
+    CapacityPressure,
+}
 
 struct Server {
     url: String,
@@ -32,7 +39,7 @@ struct Server {
     worker: Option<thread::JoinHandle<()>>,
 }
 impl Server {
-    fn new() -> std::io::Result<Self> {
+    fn new(traffic: Traffic) -> std::io::Result<Self> {
         let listener = TcpListener::bind("127.0.0.1:0")?;
         listener.set_nonblocking(true)?;
         let url = format!("http://{}", listener.local_addr()?);
@@ -45,7 +52,7 @@ impl Server {
                     Ok((socket, _)) => {
                         let stopped = stopped.clone();
                         clients.push(thread::spawn(move || {
-                            let _ = serve(socket, &stopped);
+                            let _ = serve(socket, &stopped, traffic);
                         }));
                     }
                     Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
@@ -73,7 +80,7 @@ impl Drop for Server {
         }
     }
 }
-fn serve(mut socket: TcpStream, stopped: &AtomicBool) -> std::io::Result<()> {
+fn serve(mut socket: TcpStream, stopped: &AtomicBool, traffic: Traffic) -> std::io::Result<()> {
     const MAX_HEADER_BYTES: usize = 8 * 1024;
     socket.set_read_timeout(Some(NETWORK_TIMEOUT))?;
     socket.set_write_timeout(Some(NETWORK_TIMEOUT))?;
@@ -87,16 +94,33 @@ fn serve(mut socket: TcpStream, stopped: &AtomicBool) -> std::io::Result<()> {
         let ts = include_bytes!("../../../tests/fixtures/recording-seek.ts");
         const PACKET: usize = crate::transport::wire::TS_PACKET_SIZE;
         let chunk_size = ts.len() / FIXTURE_SECONDS / INTERVALS_PER_SECOND / PACKET * PACKET;
+        // Valid null packets raise the raw bitrate without changing decode load.
+        // 16 MiB capacity then expires in about four seconds on either store.
+        const PAD_BYTES_PER_INTERVAL: usize = 1024 * 1024;
+        const PAYLOAD_ONLY: u8 = 0x10;
+        let null_header = [
+            crate::transport::wire::SYNC_BYTE,
+            (crate::transport::wire::Pid::NULL.0 >> u8::BITS) as u8,
+            crate::transport::wire::Pid::NULL.0 as u8,
+            PAYLOAD_ONLY,
+        ];
+        let mut null_packet = [crate::transport::wire::STUFFING_BYTE; PACKET];
+        null_packet[..null_header.len()].copy_from_slice(&null_header);
+        let padding = match traffic {
+            Traffic::Broadcast => Vec::new(),
+            Traffic::CapacityPressure => null_packet.repeat(PAD_BYTES_PER_INTERVAL / PACKET),
+        };
         write!(
             socket,
             "HTTP/1.1 200 OK\r\nContent-Type: video/mp2t\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-            ts.len()
+            ts.len() + ts.len().div_ceil(chunk_size) * padding.len()
         )?;
         for chunk in ts.chunks(chunk_size) {
             if stopped.load(Ordering::Acquire) {
                 break;
             }
             socket.write_all(chunk)?;
+            socket.write_all(&padding)?;
             thread::sleep(SEND_INTERVAL);
         }
     } else {
@@ -118,7 +142,7 @@ pub(super) fn run(
     app: &QGuiApplication,
     engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
 ) -> TestResult {
-    let server = Server::new()?;
+    let server = Server::new(Traffic::Broadcast)?;
     assert!(evaluate(
         engine,
         &format!(
@@ -148,7 +172,7 @@ pub(super) fn run(
             app,
             engine,
             &format!(
-                "player.timeshift && player.playing && player.seekable && player.duration_ms > {}",
+                "player.timeshift && player.playing && player.seekable && player.timeshift_bytes_per_second > 0 && player.duration_ms > {}",
                 MIN_SEEKABLE_HISTORY.as_millis()
             ),
         ) {
@@ -200,7 +224,7 @@ pub(super) fn run(
         )?;
         assert!(evaluate(
             engine,
-            "player.stop(); !player.timeshift && !player.media_active"
+            "player.stop(); !player.timeshift && !player.media_active && player.timeshift_bytes_per_second === 0"
         )?);
         if backend == "filesystem" {
             let cache = std::path::PathBuf::from(
@@ -232,6 +256,11 @@ pub(super) fn run(
         engine,
         "player.playing && !player.timeshift && !player.seekable && JSON.parse(player.video_stats()).rendered > 0",
     )?;
+    observe_playback(
+        app,
+        engine,
+        "!player.timeshift && !player.seekable && !player.transport_error.length",
+    )?;
     assert!(evaluate(engine, "!player.pause()")?);
     assert!(evaluate(engine, "player.configure_timeshift('memory')")?);
     wait_for(
@@ -247,9 +276,99 @@ pub(super) fn run(
         engine,
         "player.playing && !player.paused && !player.timeshift && !player.seekable",
     )?;
+    observe_playback(
+        app,
+        engine,
+        "!player.timeshift && !player.seekable && !player.transport_error.length",
+    )?;
     evaluate(engine, "player.stop(); true")?;
     eprintln!(
         "Timeshift disabled: common live input plays and rejects pause; enable/disable applies during live playback and pause"
+    );
+    let pressure = Server::new(Traffic::CapacityPressure)?;
+    evaluate(
+        engine,
+        &format!(
+            "player.connect_server({})",
+            serde_json::to_string(&pressure.url)?
+        ),
+    )?;
+    wait_for(
+        app,
+        engine,
+        "player.server_configured && !player.loading && player.selected >= 0",
+    )?;
+    for storage in ["memory", "filesystem"] {
+        evaluate(
+            engine,
+            &format!(
+                "player.configure_timeshift_options('{storage}', {MEMORY_MIB}, {MEMORY_MIB}, {RETENTION_MINUTES}); player.select(0); player.play(); true"
+            ),
+        )?;
+        wait_for(
+            app,
+            engine,
+            "player.playing && player.seekable && player.position_ms > 0",
+        )?;
+        assert!(evaluate(engine, "player.pause()")?);
+        wait_for(
+            app,
+            engine,
+            "player.paused && !player.seeking && player.position_ms < player.window_start_ms",
+        )?;
+        assert!(evaluate(engine, "player.play(); true")?);
+        wait_for(
+            app,
+            engine,
+            "player.playing && !player.paused && !player.seeking && player.position_ms > player.window_start_ms",
+        )?;
+        observe_playback(
+            app,
+            engine,
+            "player.timeshift && player.position_ms >= player.window_start_ms",
+        )?;
+        evaluate(engine, "player.stop(); true")?;
+        eprintln!(
+            "Timeshift {storage}: expired pause resumed and continued under capacity pressure"
+        );
+    }
+    Ok(())
+}
+
+fn observe_playback(
+    app: &QGuiApplication,
+    engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
+    condition: &str,
+) -> TestResult {
+    let position = super::bridge::ffi::evaluate_root(
+        engine.pin_mut(),
+        &cxx_qt_lib::QString::from("player.position_ms"),
+    )?
+    .value::<f64>()
+    .ok_or("position")?;
+    let until = Instant::now() + RECOVERY_OBSERVATION;
+    while Instant::now() < until {
+        app.process_events();
+        assert!(
+            evaluate(
+                engine,
+                &format!(
+                    "player.playing && !player.paused && !player.seeking && !player.playback_error.length && ({condition})"
+                )
+            )?,
+            "unexpected recovery during playback: {condition}"
+        );
+        thread::sleep(ACCEPT_POLL);
+    }
+    assert!(
+        evaluate(
+            engine,
+            &format!(
+                "player.position_ms > {}",
+                position + PAUSE_RECEIVE_GROWTH.as_millis() as f64
+            )
+        )?,
+        "video must advance after recovery"
     );
     Ok(())
 }

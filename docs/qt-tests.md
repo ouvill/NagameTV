@@ -138,3 +138,22 @@ quality test. The timeshift suite also opens the production settings page, appli
 custom budgets, and enables/disables retention during playback and pause.
 Connection tests verify atomic budget notifications, rejected invalid values and
 persistence without using display or audio hardware.
+
+The timeshift settings component also checks mutually exclusive capacity controls,
+retention estimates from received bytes and the time limit, storage changes that
+preserve both budgets, and numeric keyboard entry. Timeline component tests cover
+the shared program/history axis, non-seekable future and expired portions, retained
+data preceding the current program, and progress with retention disabled. CPU Rust
+tests cover TS clock-to-program axis mapping and bitrate measurement across clock
+resets. Subtitle clock tests reproduce replacement-video pad addition before old
+pad removal without starting a decoder or using any output device.
+
+Timeshift regressions additionally keep normal playback running beyond the disabled
+forward buffer's lifetime, including disabling while paused. Valid null packets
+raise the fixture bitrate so 16 MiB memory/filesystem budgets expire during pause;
+resuming must then advance for four seconds without entering another seek. The CPU
+test continues receiving after recovery and rejects stale expiry feedback from a
+previous seek generation. Timeline tests check exact vertical centers at rest and
+on hover, program boundary placement/RTL and removal outside the retained window.
+Localization tests switch the actual compiled catalog between Japanese and English
+for the history tooltip, storage descriptions and duration estimate.

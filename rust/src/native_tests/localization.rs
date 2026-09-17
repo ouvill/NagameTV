@@ -134,6 +134,23 @@ pub fn run(missing_catalog: bool) -> i32 {
     );
     assert_eq!(text(&engine, "dateLabel"), qs("9/8（火）"));
     assert_eq!(property(&engine, "day"), day);
+    assert_eq!(text(&engine, "historyLabel"), qs("保持範囲外"));
+    assert_eq!(
+        text(&engine, "historyEstimate"),
+        qs("約1分30秒 保持できます")
+    );
+    assert_eq!(
+        text(&engine, "memoryDescription"),
+        qs(
+            "ストレージへの書き込みがなく、素早く巻き戻せます。他のアプリに必要なメモリーを残して上限を設定してください。"
+        )
+    );
+    assert_eq!(
+        text(&engine, "filesDescription"),
+        qs(
+            "メモリーの使用を抑え、長時間保持できます。ストレージの空き容量を使い、継続して書き込みます。一時ファイルは再生停止時に削除されます。"
+        )
+    );
     assert_eq!(text(&engine, "heading"), qs("動画統計"));
     assert_eq!(text(&engine, "closeLabel"), qs("閉じる"));
     assert_eq!(text(&engine, "emptyChannels"), qs("該当するチャンネルなし"));
@@ -141,6 +158,14 @@ pub fn run(missing_catalog: bool) -> i32 {
     assert_eq!(apply_ui_language(&qs("en")), qs("en"));
     assert!(metric(true).to_string().ends_with("stopping Yes"));
     assert_eq!(text(&engine, "heading"), qs("Stats for nerds"));
+    assert_eq!(
+        text(&engine, "historyLabel"),
+        qs("Outside retained history")
+    );
+    assert_eq!(
+        text(&engine, "historyEstimate"),
+        qs("About 1 min 30 sec of history")
+    );
     assert_eq!(text(&engine, "dateLabel"), qs("Tue, Sep 8"));
     assert_eq!(text(&engine, "stateLabel"), qs("Paused"));
     assert_eq!(tr("Waiting to reconnect"), qs("Waiting to reconnect"));

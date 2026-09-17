@@ -26,7 +26,7 @@ pub use store::Retention;
 use store::{READ_BYTES, ReadResult, Status, Store};
 
 const PACKETS_PER_READ: usize = READ_BYTES / TS_PACKET_SIZE;
-const SEEK_PREROLL: Duration = Duration::from_secs(3);
+pub(super) const SEEK_PREROLL: Duration = Duration::from_secs(3);
 const RECEIVE_TIMEOUT: Duration = Duration::from_secs(15);
 const RECONNECT_DELAY: Duration = Duration::from_secs(1);
 const MAX_RECONNECTS: usize = 3;
@@ -135,7 +135,13 @@ impl Shared {
             if target < first.time_ns || target >= end {
                 return Err(Error::Expired);
             }
-            let preroll = target.saturating_sub(SEEK_PREROLL.as_nanos() as u64);
+            // Live eviction continues during preroll. On a short window leave
+            // half the distance to the oldest data available to the receiver.
+            let preroll_ns = match self {
+                Self::File(_) => SEEK_PREROLL.as_nanos() as u64,
+                Self::Live(_) => (SEEK_PREROLL.as_nanos() as u64).min((target - first.time_ns) / 2),
+            };
+            let preroll = target.saturating_sub(preroll_ns);
             let anchor = index
                 .entries()
                 .iter()

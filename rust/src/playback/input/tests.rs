@@ -247,7 +247,7 @@ fn stopping_detaches_reader_even_when_playbin_keeps_its_appsrc()
 }
 
 #[test]
-fn expired_pause_discards_history_and_jumps_to_retained_start_only_on_resume()
+fn expired_pause_keeps_its_frame_then_resumes_inside_history()
 -> Result<(), Box<dyn std::error::Error>> {
     gst::init()?;
     let bytes = include_bytes!("../../../../tests/fixtures/recording-seek.ts");
@@ -293,6 +293,7 @@ fn expired_pause_discards_history_and_jumps_to_retained_start_only_on_resume()
     }
     let stop = Stop(pipeline.clone(), interrupted.clone());
     let scope = crate::features::subscriptions::Subscriptions::default();
+    let feedback = Arc::new(source::Feedback::default());
     source::configure(
         &pipeline
             .by_name("source")
@@ -301,7 +302,7 @@ fn expired_pause_discards_history_and_jumps_to_retained_start_only_on_resume()
             .map_err(|_| "appsrc")?,
         Arc::new(Mutex::new(reader)),
         interrupted,
-        Arc::new(source::Feedback::default()),
+        feedback.clone(),
         &scope,
         true,
     );
@@ -326,8 +327,13 @@ fn expired_pause_discards_history_and_jumps_to_retained_start_only_on_resume()
     let window = shared.window()?.ok_or("window")?;
     controller.retained(
         pipeline.upcast_ref(),
-        gst::ClockTime::from_nseconds(window.start),
-        gst::ClockTime::from_nseconds(window.end),
+        super::super::timeline::LiveWindow::History(
+            super::super::timeline::Range::new(
+                gst::ClockTime::from_nseconds(window.start),
+                gst::ClockTime::from_nseconds(window.end),
+            )
+            .unwrap(),
+        ),
         true,
     )?;
     assert_eq!(controller.phase(), super::super::timeline::Phase::Paused);
@@ -355,6 +361,42 @@ fn expired_pause_discards_history_and_jumps_to_retained_start_only_on_resume()
     assert_eq!(controller.phase(), super::super::timeline::Phase::Playing);
     assert!(controller.snapshot().position.ok_or("position")?.nseconds() >= window.start);
     assert!(controller.take_notice().is_some());
+    // Keep receiving at broadcast speed after resume. A point on the oldest
+    // edge used to expire repeatedly while its replacement seek was prerolling.
+    const FOLLOWUP_SECONDS: u64 = 3;
+    let resumed = Instant::now();
+    let mut received_until = advanced_end;
+    let mut previous_position = controller.snapshot().position.ok_or("position")?;
+    while resumed.elapsed() < Duration::from_secs(FOLLOWUP_SECONDS) {
+        let next = offset_at(10 + resumed.elapsed().as_secs());
+        if next > received_until {
+            store.lock().unwrap().append(&bytes[received_until..next])?;
+            received_until = next;
+        }
+        controller.poll(pipeline.upcast_ref())?;
+        let window = shared.window()?.ok_or("window")?;
+        controller.retained(
+            pipeline.upcast_ref(),
+            super::super::timeline::LiveWindow::History(
+                super::super::timeline::Range::new(
+                    gst::ClockTime::from_nseconds(window.start),
+                    gst::ClockTime::from_nseconds(window.end),
+                )
+                .unwrap(),
+            ),
+            feedback.take_expired(),
+        )?;
+        assert_eq!(
+            controller.phase(),
+            super::super::timeline::Phase::Playing,
+            "resume must not enter a repeated recovery seek"
+        );
+        let position = controller.snapshot().position.ok_or("playing position")?;
+        assert!(position >= previous_position);
+        previous_position = position;
+        assert!(controller.take_notice().is_none());
+        std::thread::sleep(TEST_POLL);
+    }
     drop(stop);
     scope.close();
     Ok(())

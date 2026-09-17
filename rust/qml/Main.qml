@@ -504,43 +504,12 @@ ApplicationWindow {
                 spacing: 12
                 RecordingTimeline {
                     id: recordingTimeline
-                    visible: player.recording || player.timeshift
                     Layout.fillWidth: true
                     Layout.leftMargin: 24
                     Layout.rightMargin: 24
                     backend: player
                     closing: root.closing
                 }
-                Label {
-                    text: Math.round(player.program_progress * 100) + "%"
-                    visible: !player.recording
-                    color: "#b6bab6"
-                    font.pixelSize: 11
-                    Layout.leftMargin: 24
-                }
-                ProgressBar {
-                    visible: !player.recording
-                    Layout.fillWidth: true
-                    Layout.leftMargin: 24
-                    Layout.rightMargin: 24
-                    Layout.preferredHeight: 4
-                    from: 0
-                    to: 1
-                    value: player.program_progress
-                    background: Rectangle {
-                        color: "#42ffffff"
-                        radius: 2
-                    }
-                    contentItem: Item {
-                        Rectangle {
-                            width: parent.width * player.program_progress
-                            height: 3
-                            radius: 2
-                            color: "#e1e1df"
-                        }
-                    }
-                }
-
                 PlayerControls {
                     id: playerControls
                     Layout.fillWidth: true

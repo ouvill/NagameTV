@@ -8,6 +8,15 @@ use std::{
 
 const POSITION_SAMPLE_INTERVAL: Duration = Duration::from_millis(200);
 const SEEK_TIMEOUT: Duration = Duration::from_secs(10);
+const RECOVERY_HEADROOM: gst::ClockTime = gst::ClockTime::from_seconds(2);
+const EXPIRED_NOTICE: &str = "保持期限を過ぎたため、再生位置を余裕のある保持範囲内へ移動しました";
+
+/// Forward buffering does not constrain frames already queued by the decoder.
+/// Only retained history is a user-visible playback window.
+pub(super) enum LiveWindow {
+    ForwardBuffer(Range),
+    History(Range),
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Resume {
@@ -38,6 +47,13 @@ pub struct Range {
 }
 
 impl Range {
+    pub(super) fn new(start: gst::ClockTime, end: gst::ClockTime) -> Option<Self> {
+        (end > start).then_some(Self { start, end })
+    }
+    fn recovery_target(self) -> gst::ClockTime {
+        let preroll = gst::ClockTime::from_nseconds(super::input::SEEK_PREROLL.as_nanos() as u64);
+        self.start + (preroll + RECOVERY_HEADROOM).min((self.end - self.start) / 2)
+    }
     pub fn start(self) -> gst::ClockTime {
         self.start
     }
@@ -213,41 +229,43 @@ impl Controller {
     pub fn retained(
         &mut self,
         pipeline: &gst::Element,
-        start: gst::ClockTime,
-        end: gst::ClockTime,
+        window: LiveWindow,
         expired: bool,
     ) -> Result<(), Error> {
-        self.snapshot.range = (end > start).then_some(Range { start, end });
-        self.snapshot.duration = Some(end);
-        if matches!(self.state, State::Paused | State::ExpiredPause)
-            && (expired
-                || self
-                    .snapshot
-                    .position
-                    .is_some_and(|position| position < start))
-        {
+        let (range, history) = match window {
+            LiveWindow::ForwardBuffer(range) => (range, None),
+            LiveWindow::History(range) => (range, Some(range)),
+        };
+        self.snapshot.range = history;
+        self.snapshot.duration = history.map(|range| range.end);
+        let behind = history.is_some()
+            && self
+                .snapshot
+                .position
+                .is_some_and(|position| position < range.start);
+        if matches!(self.state, State::Paused | State::ExpiredPause) && (expired || behind) {
             // Keep the paused frame. Do not keep decoding/seek at every eviction;
-            // resume will flush the old queue and choose the then-current start.
+            // resume will flush the old queue and choose a safe interior point.
             self.state = State::ExpiredPause;
             return Ok(());
         }
-        if expired
-            || (self
-                .snapshot
-                .position
-                .is_some_and(|position| position < start)
-                && !matches!(self.state, State::Seeking(_)))
-        {
+        if expired || (behind && !matches!(self.state, State::Seeking(_))) {
+            let recovery = range.recovery_target();
             let (target, resume) = match &self.state {
-                State::Paused | State::ExpiredPause => (start, Resume::Paused),
-                State::Playing | State::Ended => (start, Resume::Playing),
-                State::Seeking(seek) => (seek.next.unwrap_or(seek.target).max(start), seek.resume),
+                State::Paused | State::ExpiredPause => (recovery, Resume::Paused),
+                State::Playing | State::Ended => (recovery, Resume::Playing),
+                State::Seeking(seek) => {
+                    (seek.next.unwrap_or(seek.target).max(recovery), seek.resume)
+                }
             };
             self.start_seek(pipeline, target, resume)?;
-            self.notice = Some("保持期限を過ぎたため、再生位置を保持範囲の先頭へ移動しました");
+            if history.is_some() {
+                self.notice = Some(EXPIRED_NOTICE);
+            }
             tracing::info!(
-                start = start.mseconds(),
-                "Paused TS position expired; moved to retained start"
+                start = range.start.mseconds(),
+                target = target.mseconds(),
+                "TS cursor expired; recovering inside available history"
             );
         }
         Ok(())
@@ -274,9 +292,13 @@ impl Controller {
         if matches!(self.state, State::ExpiredPause) {
             if resume == Resume::Playing {
                 self.sample(pipeline);
-                let target = self.snapshot.range.ok_or(Error::Unavailable)?.start;
+                let target = self
+                    .snapshot
+                    .range
+                    .ok_or(Error::Unavailable)?
+                    .recovery_target();
                 self.start_seek(pipeline, target, resume)?;
-                self.notice = Some("保持期限を過ぎたため、再生位置を保持範囲の先頭へ移動しました");
+                self.notice = Some(EXPIRED_NOTICE);
             }
             return Ok(());
         }
@@ -421,6 +443,44 @@ impl Drop for Controller {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn forward_buffer_eviction_does_not_expire_queued_video() {
+        gst::init().unwrap();
+        let sink = gst::ElementFactory::make("fakesink").build().unwrap();
+        let mut controller = Controller::new(&sink).unwrap();
+        controller.snapshot.position = Some(gst::ClockTime::ZERO);
+        const BUFFER_SECONDS: u64 = 2;
+        const EVICTIONS: u64 = 60;
+        for start in 1..=EVICTIONS {
+            controller
+                .retained(
+                    &sink,
+                    LiveWindow::ForwardBuffer(
+                        Range::new(
+                            gst::ClockTime::from_seconds(start),
+                            gst::ClockTime::from_seconds(start + BUFFER_SECONDS),
+                        )
+                        .unwrap(),
+                    ),
+                    false,
+                )
+                .unwrap();
+            assert_eq!(controller.phase(), Phase::Playing);
+            assert!(controller.snapshot().range.is_none());
+            assert!(controller.take_notice().is_none());
+        }
+    }
+
+    #[test]
+    fn recovery_leaves_preroll_and_eviction_headroom_or_uses_short_window_midpoint() {
+        let start = gst::ClockTime::from_seconds(30);
+        let long = Range::new(start, start + gst::ClockTime::from_seconds(60)).unwrap();
+        let preroll =
+            gst::ClockTime::from_nseconds(super::super::input::SEEK_PREROLL.as_nanos() as u64);
+        assert_eq!(long.recovery_target(), start + preroll + RECOVERY_HEADROOM);
+        let short = Range::new(start, start + RECOVERY_HEADROOM).unwrap();
+        assert_eq!(short.recovery_target(), start + RECOVERY_HEADROOM / 2);
+    }
     #[test]
     fn positions_are_validated_before_conversion_and_clamped_inside_eos() {
         let range = Range {

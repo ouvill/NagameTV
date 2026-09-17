@@ -5,7 +5,7 @@ use crate::transport::{
     wire::{Pid, PsiSection, STUFFING_BYTE, SYNC_BYTE, TS_PACKET_SIZE, TransportPacket},
 };
 use std::{
-    collections::{BTreeMap, VecDeque},
+    collections::{BTreeMap, BTreeSet, VecDeque},
     sync::Arc,
 };
 
@@ -22,6 +22,9 @@ const PAYLOAD_ONLY: u8 = 0x10;
 const PID_HIGH_MASK: u8 = 0x1f;
 const CONTINUITY_MASK: u8 = 0x0f;
 const NANOSECONDS_PER_SECOND: u64 = 1_000_000_000;
+const NANOSECONDS_PER_MILLISECOND: i128 = 1_000_000;
+const RATE_WINDOW_NS: u64 = 30 * NANOSECONDS_PER_SECOND;
+const MIN_RATE_SPAN_NS: u64 = NANOSECONDS_PER_SECOND;
 
 #[derive(Clone, Debug)]
 pub(super) struct Anchor {
@@ -137,6 +140,18 @@ impl Index {
     }
     pub fn entries(&self) -> &VecDeque<Anchor> {
         &self.entries
+    }
+    pub fn bytes_per_second(&self) -> Option<f64> {
+        let last = self.entries.back()?;
+        let first = self.entries.iter().find(|entry| {
+            entry.epoch == last.epoch
+                && entry.time_ns >= last.time_ns.saturating_sub(RATE_WINDOW_NS)
+        })?;
+        let span = last.time_ns.checked_sub(first.time_ns)?;
+        (span >= MIN_RATE_SPAN_NS).then(|| {
+            last.offset.saturating_sub(first.offset) as f64 * NANOSECONDS_PER_SECOND as f64
+                / span as f64
+        })
     }
     pub fn clear_entries(&mut self) {
         self.entries.clear();
@@ -329,6 +344,77 @@ impl Index {
             .program(position_ns)
     }
 
+    /// Derive markers from the bounded retained SI snapshots, independently of
+    /// the playhead. Use the newest schedule/clock for each event; adjoining
+    /// events share one UTC boundary. Never project a schedule across PCR epochs.
+    pub fn program_boundaries_ms(&self) -> Vec<i64> {
+        if self.collector.is_none() {
+            return Vec::new();
+        }
+        let Some(end) = self.end_ns() else {
+            return Vec::new();
+        };
+        let mut epochs = BTreeMap::<u64, (u64, u64)>::new();
+        for anchor in &self.entries {
+            epochs
+                .entry(anchor.epoch)
+                .and_modify(|range| range.1 = anchor.time_ns)
+                .or_insert((anchor.time_ns, anchor.time_ns));
+        }
+        if let Some(mut entry) = epochs.last_entry() {
+            entry.get_mut().1 = end;
+        }
+        let mut seen = BTreeSet::new();
+        let mut boundaries = BTreeMap::new();
+        let mut previous = None;
+        for anchor in self.entries.iter().rev() {
+            let Some(observation) = &anchor.programs else {
+                continue;
+            };
+            if previous.is_some_and(|(epoch, snapshot)| {
+                epoch == anchor.epoch && Arc::ptr_eq(snapshot, observation)
+            }) {
+                continue;
+            }
+            previous = Some((anchor.epoch, observation));
+            let info = &observation.information;
+            let Some((clock_ns, unix_ms)) = info.time else {
+                continue;
+            };
+            let (epoch_start, epoch_end) = epochs[&anchor.epoch];
+            for program in info.current.iter().chain(info.next.iter()) {
+                let Some((start, duration)) = program.start_at.zip(program.duration) else {
+                    continue;
+                };
+                if duration == 0
+                    || !seen.insert((
+                        anchor.epoch,
+                        program.network_id,
+                        program.transport_stream_id,
+                        program.service_id,
+                        program.event_id,
+                    ))
+                {
+                    continue;
+                }
+                for utc in [i128::from(start), i128::from(start) + i128::from(duration)] {
+                    let mapped = i128::from(clock_ns)
+                        + (utc - i128::from(unix_ms)) * NANOSECONDS_PER_MILLISECOND;
+                    if mapped > i128::from(epoch_start)
+                        && mapped < i128::from(epoch_end)
+                        && let Ok(ms) = i64::try_from(mapped / NANOSECONDS_PER_MILLISECOND)
+                    {
+                        boundaries.entry((anchor.epoch, utc)).or_insert(ms);
+                    }
+                }
+            }
+        }
+        let mut result: Vec<_> = boundaries.into_values().collect();
+        result.sort_unstable();
+        result.dedup();
+        result
+    }
+
     pub fn compact_file(&mut self) {
         if self.entries.len() > MAX_FILE_ENTRIES || self.metadata_bytes > MAX_METADATA_BYTES {
             let mut position = 0;
@@ -377,4 +463,75 @@ fn packetize(pid: Pid, section: &[u8]) -> Vec<u8> {
 fn ticks_to_ns(ticks: u64) -> u64 {
     (u128::from(ticks) * u128::from(NANOSECONDS_PER_SECOND) / u128::from(PCR_HZ))
         .min(u128::from(u64::MAX)) as u64
+}
+
+#[cfg(test)]
+mod rate_tests {
+    use super::*;
+    const BYTES_PER_SECOND: u64 = 2_000_000;
+    fn anchor(seconds: u64, epoch: u64) -> Anchor {
+        Anchor {
+            offset: seconds * BYTES_PER_SECOND,
+            time_ns: seconds * NANOSECONDS_PER_SECOND,
+            epoch,
+            bootstrap: Arc::default(),
+            pcr: seconds * PCR_HZ,
+            programs: None,
+        }
+    }
+    #[test]
+    fn rate_uses_recent_bytes_and_waits_for_a_new_clock_epoch() {
+        let mut index = Index::new(0, false);
+        assert_eq!(index.bytes_per_second(), None);
+        let history_seconds = 60;
+        index.entries = (0..=history_seconds).map(|s| anchor(s, 0)).collect();
+        // Old, higher-rate data must not affect the recent 30-second estimate.
+        index.entries.front_mut().unwrap().offset = 0;
+        for entry in index.entries.iter_mut().skip(1) {
+            entry.offset += BYTES_PER_SECOND * history_seconds;
+        }
+        assert_eq!(index.bytes_per_second(), Some(BYTES_PER_SECOND as f64));
+        index.entries.push_back(anchor(history_seconds + 1, 1));
+        assert_eq!(index.bytes_per_second(), None);
+        index.entries.push_back(anchor(history_seconds + 2, 1));
+        assert_eq!(index.bytes_per_second(), Some(BYTES_PER_SECOND as f64));
+        index.clear_entries();
+        assert_eq!(index.bytes_per_second(), None);
+    }
+
+    #[test]
+    fn retained_si_provides_one_shared_program_boundary_and_discards_expired_markers() {
+        let fixture = include_bytes!("../../../../tests/fixtures/recording-seek.ts");
+        let mut index = Index::new(1, true);
+        for (number, packet) in fixture.as_chunks::<TS_PACKET_SIZE>().0.iter().enumerate() {
+            index.packet((number * TS_PACKET_SIZE) as u64, packet);
+        }
+        const CHANGE_MS: i64 = 30_000;
+        const BROADCAST_CLOCK_TOLERANCE_MS: i64 = 1_000;
+        let markers = index.program_boundaries_ms();
+        assert_eq!(
+            markers
+                .iter()
+                .filter(|ms| (**ms - CHANGE_MS).abs() <= BROADCAST_CLOCK_TOLERANCE_MS)
+                .count(),
+            1,
+            "shared start/end and repeated SI: {markers:?}"
+        );
+        assert!(markers.windows(2).all(|pair| pair[0] < pair[1]));
+        let after_boundary =
+            (CHANGE_MS + BROADCAST_CLOCK_TOLERANCE_MS) as u64 * NANOSECONDS_PER_MILLISECOND as u64;
+        index.expire_time(after_boundary);
+        assert!(
+            index
+                .program_boundaries_ms()
+                .iter()
+                .all(|ms| *ms > CHANGE_MS + BROADCAST_CLOCK_TOLERANCE_MS)
+        );
+        for anchor in &mut index.entries {
+            if let Some(observation) = &mut anchor.programs {
+                Arc::make_mut(observation).information.time = None;
+            }
+        }
+        assert!(index.program_boundaries_ms().is_empty());
+    }
 }

@@ -13,6 +13,10 @@ use std::sync::{
 
 type StreamKey = (String, u32);
 type Segment = Option<gst::FormattedSegment<gst::ClockTime>>;
+const MAX_TIMESTAMP_STREAMS: usize = 64;
+const MAX_PENDING_PES: usize = 256;
+const PTS_MATCH_TOLERANCE_NS: i128 = 5_000_000;
+const CLOCK_RESET_THRESHOLD_NS: i128 = 500_000_000;
 
 #[derive(Default)]
 struct State {
@@ -142,9 +146,11 @@ impl SubtitleClock {
                         }
                         let key = (source.name().to_string(), pid);
                         // Bound streams and pending PES even for malformed input.
-                        if state.raw_pts.len() < 64 || state.raw_pts.contains_key(&key) {
+                        if state.raw_pts.len() < MAX_TIMESTAMP_STREAMS
+                            || state.raw_pts.contains_key(&key)
+                        {
                             let pending = state.raw_pts.entry(key).or_default();
-                            if pending.len() == 256 {
+                            if pending.len() == MAX_PENDING_PES {
                                 pending.pop_front();
                             }
                             pending.push_back(pts);
@@ -202,17 +208,15 @@ impl SubtitleClock {
                 };
                 let key = (demux.name().to_string(), pid);
                 if let Ok(mut state) = clock.state() {
-                    if state
-                        .video
-                        .as_ref()
-                        .is_some_and(|current| current.0 == key.0 && current != &key)
-                    {
-                        return;
+                    if state.video.is_none() {
+                        state.video = Some(key.clone());
                     }
-                    state.video = Some(key.clone());
                 } else {
                     return;
                 }
+                // tsdemux may add the replacement before removing the old pad.
+                // Observe every candidate now; observe_buffer keeps the current
+                // video authoritative until removal makes a replacement eligible.
                 clock.attach_video_pad(pad, key, &pads);
             });
             registrations.signal(element, added);
@@ -278,6 +282,9 @@ impl SubtitleClock {
                 state.video = Some(key.clone());
             }
             if state.video.as_ref() != Some(key) {
+                // This PES was observed, even though its video is not selected.
+                // Keeping its timestamp would shift the replacement's anchor.
+                state.raw_pts.get_mut(key).and_then(VecDeque::pop_front);
                 return;
             }
             let Some(stream_time) = segment.and_then(|segment| segment.to_stream_time(pts)) else {
@@ -293,7 +300,7 @@ impl SubtitleClock {
                     state
                         .timeline
                         .map_ticks(*raw)
-                        .is_some_and(|mapped| (mapped - now).abs() < 5_000_000)
+                        .is_some_and(|mapped| (mapped - now).abs() < PTS_MATCH_TOLERANCE_NS)
                 })
             });
             let first = state
@@ -319,7 +326,7 @@ impl SubtitleClock {
                 if state
                     .timeline
                     .map_ticks(raw_pts)
-                    .is_some_and(|old| (old - now).abs() > 500_000_000)
+                    .is_some_and(|old| (old - now).abs() > CLOCK_RESET_THRESHOLD_NS)
                 {
                     state.programs = Default::default();
                 }
@@ -395,6 +402,80 @@ mod tests {
         fn drop(&mut self) {
             let _ = self.0.set_state(gst::State::Null);
         }
+    }
+
+    #[test]
+    fn replacement_video_added_before_old_removal_keeps_subtitles_synchronized() {
+        gst::init().unwrap();
+        const OLD_PID: u32 = 0x41;
+        const NEW_PID: u32 = 0x141;
+        const PTS_TICKS_PER_MS: u64 = 90;
+        const FIRST_PTS_MS: u64 = 1000;
+        const NEXT_PTS_MS: u64 = 1040;
+        const VIDEO_POSITION_MS: u64 = 3040;
+        let pipeline = gst::Pipeline::new();
+        let clock = SubtitleClock::default();
+        let scope = clock.attach(pipeline.upcast_ref());
+        let demux = gst::ElementFactory::make("tsdemux").build().unwrap();
+        pipeline.add(&demux).unwrap();
+        let add_video = |generation, pid| {
+            let pad = gst::Pad::builder(gst::PadDirection::Src)
+                .name(format!("video_{generation}_{pid:04x}"))
+                .build();
+            pad.set_active(true).unwrap();
+            demux.add_pad(&pad).unwrap();
+            pad.push_event(gst::event::StreamStart::new(pad.name().as_str()));
+            pad.push_event(gst::event::Segment::new(&gst::FormattedSegment::<
+                gst::ClockTime,
+            >::new()));
+            pad
+        };
+        let old = add_video(0, OLD_PID);
+        let new = add_video(1, NEW_PID);
+        let old_key = (demux.name().to_string(), OLD_PID);
+        let new_key = (demux.name().to_string(), NEW_PID);
+        let push_video = |pts_ms, position_ms| {
+            clock
+                .state()
+                .unwrap()
+                .raw_pts
+                .entry(new_key.clone())
+                .or_default()
+                .push_back(pts_ms * PTS_TICKS_PER_MS);
+            let mut buffer = gst::Buffer::new();
+            buffer
+                .get_mut()
+                .unwrap()
+                .set_pts(gst::ClockTime::from_mseconds(position_ms));
+            // Source pad probes run without downstream decoding or hardware.
+            assert_eq!(new.push(buffer), Err(gst::FlowError::NotLinked));
+        };
+        push_video(FIRST_PTS_MS, VIDEO_POSITION_MS);
+        assert_eq!(clock.state().unwrap().video.as_ref(), Some(&old_key));
+        demux.remove_pad(&old).unwrap();
+        push_video(NEXT_PTS_MS, VIDEO_POSITION_MS);
+        assert_eq!(clock.state().unwrap().video.as_ref(), Some(&new_key));
+        clock.poll(None).unwrap(); // Consume the clear from removing the old pad.
+        clock.push(vec![SubtitleCue {
+            text: "replacement video".into(),
+            clear_screen: false,
+            ..SubtitleCue::clear(NEXT_PTS_MS as i64)
+        }]);
+        assert!(matches!(
+            clock
+                .poll(Some(gst::ClockTime::from_mseconds(VIDEO_POSITION_MS - 1)))
+                .unwrap(),
+            SubtitleUpdate::Unchanged
+        ));
+        assert!(matches!(
+            clock
+                .poll(Some(gst::ClockTime::from_mseconds(VIDEO_POSITION_MS)))
+                .unwrap(),
+            SubtitleUpdate::Show(_)
+        ));
+        scope.close();
+        pipeline.bus().unwrap().unset_sync_handler();
+        demux.remove_pad(&new).unwrap();
     }
 
     #[test]

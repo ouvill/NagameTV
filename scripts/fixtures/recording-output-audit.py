@@ -19,6 +19,7 @@ DEADLINE_SECONDS = 12
 BUS_POLL_MS = 100
 SECONDS_DECIMAL_PLACES = 3
 CPU_DECODERS = ("avdec_mpeg2video", "avdec_aac")
+MAX_STREAM_CHANGES = 128
 PLAY_FLAGS = "video+audio+soft-volume+buffering+native-video"
 
 
@@ -26,6 +27,19 @@ def audit(path, paced):
     player = Gst.ElementFactory.make("playbin3")
     if player is None:
         raise RuntimeError("playbin3 is required")
+    changes = []
+    def element_added(_bin, _subbin, element):
+        factory = element.get_factory()
+        if factory is None or factory.get_name() != "tsdemux":
+            return
+        def changed(_demux, pad, action):
+            if len(changes) < MAX_STREAM_CHANGES:
+                caps = pad.get_current_caps()
+                changes.append({"action": action, "pad": pad.get_name(),
+                                "caps": caps.to_string() if caps else None})
+        element.connect("pad-added", changed, "added")
+        element.connect("pad-removed", changed, "removed")
+    player.connect("deep-element-added", element_added)
     sinks = {}
     streams = {}
     for medium in ("video", "audio"):
@@ -54,7 +68,7 @@ def audit(path, paced):
     Gst.util_set_object_arg(player, "flags", PLAY_FLAGS)
     player.props.uri = path.resolve(strict=True).as_uri()
     started = time.monotonic()
-    result = {"file": str(path), "paced": paced, "eos": False}
+    result = {"file": str(path), "paced": paced, "eos": False, "gstreamer": Gst.version_string()}
     try:
         if player.set_state(Gst.State.PLAYING) == Gst.StateChangeReturn.FAILURE:
             raise RuntimeError("playback startup failed")
@@ -80,6 +94,7 @@ def audit(path, paced):
     finally:
         # Stop streaming before copying probe counts or leaving on an error.
         player.set_state(Gst.State.NULL)
+    result["stream_changes"] = changes
     result["buffers_by_stream"] = {
         medium: state["counts"] for medium, state in streams.items()
     }
