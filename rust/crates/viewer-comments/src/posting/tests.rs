@@ -142,6 +142,8 @@ fn echo_matching_expires_and_cannot_cross_channel_changes() {
         text: "my comment".into(),
         origin: Origin::Nx,
         phase: Phase::Live,
+        timestamp_micros: None,
+        source_id: None,
         unix_seconds: 0,
         style: Style::default(),
     };

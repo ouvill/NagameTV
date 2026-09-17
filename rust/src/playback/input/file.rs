@@ -6,8 +6,6 @@ const PROBE_BYTES: usize = 2 * 1024 * 1024;
 const MAX_SEARCH_PROBES: usize = 12;
 const MAX_SEARCH_PREROLL: Duration = Duration::from_secs(8);
 const MAX_CONTINUOUS_SPAN: Duration = Duration::from_secs(24 * 60 * 60);
-pub(super) const MAX_SEEK_OBSERVATIONS: usize = 16;
-pub(super) const MAX_SEEK_METADATA_BYTES: usize = 1024 * 1024;
 
 pub(super) struct Priority(Arc<AtomicBool>);
 impl Priority {
@@ -248,7 +246,7 @@ mod tests {
         assert!(anchor.time_ns <= desired);
         assert!(desired - anchor.time_ns <= MAX_SEARCH_PREROLL.as_nanos() as u64);
         assert!(source.read_bytes < source.data.get_ref().len());
-        assert!(anchor.program(TARGET.as_nanos() as u64).is_some());
+        assert!(anchor.observation().is_some());
         source.read_bytes = 0;
         let checks = Cell::new(0);
         let result = survey.locate(&mut source, framing, 1, TARGET.as_nanos() as u64, || {

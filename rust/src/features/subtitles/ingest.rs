@@ -103,9 +103,6 @@ impl Ingest {
                     }
                     self.decoded.fetch_add(cues.len() as u64, Ordering::Relaxed);
                     self.clock.push(cues);
-                    if let Some(programs) = input.parser.take_programs() {
-                        self.clock.push_programs(programs);
-                    }
                 }
             }
         }

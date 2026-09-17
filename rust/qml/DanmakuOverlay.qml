@@ -12,6 +12,7 @@ Item {
     property bool shadowEnabled: true
     property bool fullScreen: false
     property bool paused: false
+    property var playbackClock: null
     property bool titleOverlapsVideo: false
     property real titleBottomInVideo: 0
     property bool controlsOverlapVideo: false
@@ -87,6 +88,10 @@ Item {
             if (item)
                 overlay.visuals.set(token, item);
         }
+        onPositioned: function(token, x) {
+            const item = overlay.visuals.get(token);
+            if (item && item.placement === DanmakuOverlay.Scrolling) item.x = x;
+        }
         onRemoved: function(token) { overlay.removeVisual(token); }
         onRemeasure_requested: function(round, token) {
             const item = overlay.visuals.get(token);
@@ -104,11 +109,16 @@ Item {
         }
         onCleared: overlay.clearVisuals()
     }
-    // A render-frame notification, not a scheduler: Rust reads its own monotonic
-    // clock and expires entries. No timer or callbacks run when the view is idle.
+    // Rust advances from the media clock in playback mode and a monotonic clock
+    // in direct reception mode. Playback keeps checking for upcoming comments.
     FrameAnimation {
-        running: overlay.visible && backend.active_count > 0 && !backend.paused
-        onTriggered: backend.tick()
+        running: overlay.visible && (backend.active_count > 0 || backend.media_driven) && !backend.paused
+        onTriggered: {
+            if (backend.media_driven && overlay.playbackClock) {
+                const position = overlay.playbackClock.commentary_position();
+                if (position >= 0) backend.advance(position);
+            } else backend.tick();
+        }
     }
     // All labels of a kind share one animated origin. A newly created label
     // therefore follows the same vertical transition as existing comments.
@@ -147,7 +157,7 @@ Item {
                 y = newY;
                 duration = remaining;
                 x = Qt.binding(() => entry.placement === DanmakuOverlay.Scrolling ? entry.startX : (overlay.width - entry.width) / 2);
-                if (placement === DanmakuOverlay.Scrolling)
+                if (placement === DanmakuOverlay.Scrolling && !backend.media_driven)
                     motion.start();
             }
             // Only scrolling labels animate x. Fixed labels retain this binding
@@ -186,7 +196,7 @@ Item {
                 border.width: 1
             }
             Component.onCompleted: {
-                if (placement === DanmakuOverlay.Scrolling)
+                if (placement === DanmakuOverlay.Scrolling && !backend.media_driven)
                     motion.start();
             }
             NumberAnimation {

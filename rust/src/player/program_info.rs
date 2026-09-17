@@ -26,25 +26,10 @@ impl ffi::Player {
                 self.as_mut().rust_mut().next_current_program =
                     Instant::now() + Duration::from_secs(1);
             }
-            // The receive-time live snapshot commits both viewing properties atomically.
-            if !self.recording() {
-                return;
-            }
-            let presentation = if self.seeking() {
-                None
-            } else {
-                let position = self
-                    .rust()
-                    .media
-                    .playback()
-                    .and_then(|playback| playback.position());
-                self.rust().media.program(position)
-            };
-            let (data, progress) = presentation.unwrap_or_else(|| ("null".into(), 0.0));
-            self.as_mut().set_current_program_data(QString::from(data));
-            self.set_program_progress(progress);
+            // Stream state publishes position, TS metadata and progress together.
             return;
         }
+
         let now = Instant::now();
         let now_ms = SystemTime::now()
             .duration_since(UNIX_EPOCH)

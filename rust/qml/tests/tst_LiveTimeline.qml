@@ -95,6 +95,41 @@ Item {
                 mouseClick(findChild(timeline, "returnToLiveButton"));
                 compare(backend.liveRequests, 1);
             }
+            function test_joining_mid_program_keeps_full_axis_and_only_retained_part_seekable() {
+                // Join at 20:36 during a 20:15–20:42 program; LIVE is 20:38.
+                const data = sample();
+                const programStart = -21 * minuteMs;
+                const programEnd = 6 * minuteMs;
+                const livePosition = 2 * minuteMs;
+                data.axis = {start: programStart, end: programEnd, clock: "broadcast",
+                    startUtc: new Date(2026, 8, 17, 20, 15).getTime(),
+                    endUtc: new Date(2026, 8, 17, 20, 42).getTime()};
+                data.available = [{start: 0, end: livePosition}];
+                data.live = {position: livePosition, utc: data.axis.startUtc + 23 * minuteMs,
+                    program: {id: "A", title: "Program A", span: {start: programStart, end: programEnd}, progress: 23 / 27}};
+                data.viewing = {position: livePosition, utc: data.live.utc, availability: "available", offscreen: false,
+                    program: {id: "A", title: "Program A", elapsed: 23 * minuteMs, duration: 27 * minuteMs}};
+                data.programs = [{id: "A", title: "Program A", start: programStart, end: programEnd}];
+                data.boundaries = [];
+                publish(data);
+                const slider = findChild(timeline, "liveSeekSlider");
+                const track = findChild(timeline, "programTrack");
+                const progress = findChild(timeline, "programProgressFill");
+                const retained = findChild(timeline, "retainedRanges").itemAt(0);
+                const playhead = findChild(timeline, "livePlayhead");
+                compare(slider.from, programStart); compare(slider.to, programEnd);
+                fuzzyCompare(progress.x / track.width, 0, 0.001);
+                fuzzyCompare(progress.width / track.width, 23 / 27, 0.001);
+                fuzzyCompare(retained.x / track.width, 21 / 27, 0.001);
+                fuzzyCompare(retained.width / track.width, 2 / 27, 0.001);
+                fuzzyCompare((playhead.x + playhead.width / 2) / track.width, 23 / 27, 0.001);
+                mouseClick(slider, slider.width * 5 / 27, slider.height / 2);
+                mouseClick(slider, slider.width * 26 / 27, slider.height / 2);
+                compare(backend.requests.length, 0);
+                mouseClick(slider, slider.width * 22 / 27, slider.height / 2);
+                compare(backend.requests.length, 1);
+                verify(backend.requests[0].value >= 0 && backend.requests[0].value < livePosition);
+            }
             function test_drag_freezes_axis_and_sends_expired_target_for_backend_revalidation() {
                 const slider = findChild(timeline, "liveSeekSlider");
                 mousePress(slider, slider.width / 4, slider.height / 2);

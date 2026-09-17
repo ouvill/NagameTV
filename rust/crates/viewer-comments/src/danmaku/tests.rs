@@ -409,22 +409,21 @@ fn timeline_sort_seek_pause_replacement_and_validation() -> Result<(), LoadError
     )?;
     e.load(data);
     e.set_position(Duration::from_secs(1));
-    assert!(e.next_due().is_none());
+    assert_eq!(e.next_due().expect("first").comment.text.as_ref(), "first");
     e.set_position(Duration::from_millis(1010));
-    assert_eq!(e.next_due().expect("first").text.as_ref(), "first");
     assert!(e.next_due().is_none());
     e.seek(Duration::from_secs(3));
     e.set_position(Duration::from_millis(3010));
     e.set_paused(true);
-    assert!(e.next_due().is_none());
-    e.set_paused(false);
+    assert_eq!(e.next_due().expect("restored in flight").comment.text.as_ref(), "first");
     let later = e.next_due().expect("later");
-    assert_eq!(later.position, Position::Top);
-    assert_eq!(later.color.rgb(), 0x123abc);
-    assert_eq!(e.next_due().expect("same time").text.as_ref(), "same");
+    assert_eq!(later.comment.position, Position::Top);
+    assert_eq!(later.comment.color.rgb(), 0x123abc);
+    assert_eq!(e.next_due().expect("same time").comment.text.as_ref(), "same");
+    e.set_paused(false);
     assert!(e.set_position(Duration::ZERO));
     e.set_position(Duration::from_secs(2));
-    assert_eq!(e.next_due().expect("rewound").text.as_ref(), "first");
+    assert_eq!(e.next_due().expect("rewound").comment.text.as_ref(), "first");
     e.seek(Duration::from_secs(100));
     assert!(e.next_due().is_none());
     for input in [
@@ -466,12 +465,12 @@ fn hidden_timeline_keeps_cursor_but_no_pending_or_visible_objects() -> Result<()
     e.set_visible(false);
     e.set_position(Duration::from_secs(2));
     let comment = e.next_due().expect("due hidden comment");
-    assert!(e.prepare(comment).is_none());
+    assert!(e.prepare_timed(comment).is_none());
     assert!(e.pending.is_none());
     assert_eq!(e.active_count(), 0);
     e.set_visible(true);
     e.set_position(Duration::from_secs(4));
-    assert_eq!(e.next_due().expect("new comment").text.as_ref(), "visible");
+    assert_eq!(e.next_due().expect("new comment").comment.text.as_ref(), "visible");
     Ok(())
 }
 
@@ -651,4 +650,78 @@ fn small_view_with_large_text_keeps_old_rows_and_rejects_new_when_ui_fills_space
     assert_eq!(e.active_count(), count);
     assert!(spawn(&mut e, Position::Top, 100.).is_none());
     assert_rows_stay_in_frame(&e);
+}
+
+fn due_spawn(e: &mut Engine, width: f64) -> Option<Spawn> {
+    let record = e.next_due()?;
+    let measured = e.prepare_timed(record)?;
+    e.measured(measured.id.value(), width)
+}
+#[test]
+fn paused_seek_restores_scroll_and_fixed_positions_with_remaining_lifetimes() {
+    let mut e = engine(480.);
+    e.load(parse_timeline(r#"[{"time":1,"text":"scroll"},{"time":1,"text":"top","type":"top"},{"time":1,"text":"bottom","type":"bottom"}]"#).unwrap());
+    e.set_paused(true);
+    e.seek(Duration::from_secs(3));
+    let scroll = due_spawn(&mut e, 100.).unwrap();
+    assert_eq!(scroll.from_x, 640. - (640. + 100.) * 2. / 5.);
+    assert_eq!(scroll.to_x, -100.);
+    assert_eq!(scroll.lifetime, Duration::from_secs(3));
+    for _ in 0..2 {
+        let fixed = due_spawn(&mut e, 100.).unwrap();
+        assert_eq!(fixed.from_x, 270.);
+        assert_eq!(fixed.lifetime, Duration::from_secs(2));
+    }
+    let before = e.positions();
+    assert!(e.advance_wall(Duration::from_secs(60)).is_empty());
+    assert_eq!(e.positions(), before);
+    e.set_paused(false);
+    assert!(e.next_due().is_none());
+    e.set_position(Duration::from_secs(5));
+    assert_eq!(e.advance_wall(Duration::ZERO).len(), 2);
+    e.set_position(Duration::from_secs(6));
+    assert_eq!(e.advance_wall(Duration::ZERO), vec![scroll.id]);
+    e.seek(Duration::from_secs(6));
+    assert!(due_spawn(&mut e, 100.).is_none());
+}
+#[test]
+fn restored_motion_matches_normal_playback_and_old_measurement_tokens_are_rejected() {
+    let records = parse_timeline(r#"[{"time":1,"text":"moving"}]"#).unwrap();
+    let mut normal = engine(480.);
+    normal.load(records.clone());
+    normal.set_position(Duration::from_secs(1));
+    due_spawn(&mut normal, 200.).unwrap();
+    normal.set_position(Duration::from_millis(3500));
+    let normal_x = normal.positions()[0].1;
+    let mut restored = engine(480.);
+    restored.load(records);
+    restored.seek(Duration::from_millis(3500));
+    let pending = restored.next_due().unwrap();
+    let stale = restored.prepare_timed(pending).unwrap();
+    restored.seek(Duration::from_millis(3500));
+    let spawn = due_spawn(&mut restored, 200.).unwrap();
+    assert_eq!(spawn.from_x, normal_x);
+    assert_eq!(spawn.lifetime, Duration::from_millis(2500));
+    assert!(restored.measured(stale.id.value(), 200.).is_none());
+}
+#[test]
+fn overlapping_fetches_keep_active_ids_and_late_comments_start_midflight() {
+    let first = parse_timeline(r#"[{"id":"one","time":1,"text":"first"}]"#).unwrap();
+    let both = parse_timeline(r#"[{"id":"one","time":1,"text":"first"},{"id":"two","time":2,"text":"late"}]"#).unwrap();
+    let mut e = engine(480.);
+    e.load(first);
+    e.seek(Duration::from_secs(3));
+    let first = due_spawn(&mut e, 100.).unwrap();
+    e.replace(both.clone());
+    let late = due_spawn(&mut e, 200.).unwrap();
+    assert_eq!(late.lifetime, Duration::from_secs(4));
+    assert!(e.positions().iter().any(|(id, _)| *id == first.id));
+    e.replace(both);
+    assert!(e.next_due().is_none());
+    assert_eq!(e.active_count(), 2);
+    for lane in &e.lanes[0] {
+        for (index, entry) in lane.iter().enumerate() {
+            for other in lane.iter().skip(index + 1) { assert!(entry.separate_from(other, e.clock)); }
+        }
+    }
 }

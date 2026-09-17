@@ -53,7 +53,7 @@ struct FileIndex {
     index: Index,
     status: Status,
     survey: Option<file::Survey>,
-    probes: VecDeque<Anchor>,
+    metadata_scan: Option<(Index, Anchor)>,
     priority: Arc<AtomicBool>,
 }
 enum Shared {
@@ -221,7 +221,7 @@ impl Reader {
     }
     fn apply(&mut self, anchor: Anchor) -> Result<(), Error> {
         self.filter = tsreadex::Filter::new(self.service)?;
-        self.clock = Index::new(self.service, false);
+        self.clock = self.clock.reader();
         self.clock.seed(&anchor);
         self.bootstrap = (*anchor.bootstrap).clone();
         for packet in self.bootstrap.as_chunks::<TS_PACKET_SIZE>().0 {
@@ -231,6 +231,14 @@ impl Reader {
         self.time_ns = anchor.time_ns;
         self.epoch = anchor.epoch;
         self.pending.clear();
+        // Continue SI acquisition independently of a paused decoder. The scan
+        // owns another catalog cursor and can be replaced by the next seek.
+        if self.clock.metadata_enabled()
+            && let Shared::File(shared) = &self.shared
+        {
+            shared.lock().map_err(|_| Error::Poisoned)?.metadata_scan =
+                Some((self.clock.reader(), anchor));
+        }
         Ok(())
     }
     #[cfg(test)]
@@ -240,7 +248,10 @@ impl Reader {
     fn next_with_cancel(&mut self, cancelled: impl Fn() -> bool) -> Result<Output, Error> {
         if let Some(seek) = self.pending_seek.take() {
             let anchor = match seek {
-                SeekAnchor::Indexed(anchor) => anchor,
+                SeekAnchor::Indexed(anchor) => {
+                    self.clock.indexed();
+                    anchor
+                }
                 SeekAnchor::Search { target, survey } => {
                     let _priority = if let Shared::File(shared) = &self.shared {
                         Some(file::Priority::new(
@@ -254,16 +265,7 @@ impl Reader {
                     };
                     let anchor =
                         survey.locate(file, self.framing, self.service, target, &cancelled)?;
-                    if let Shared::File(shared) = &self.shared {
-                        let mut state = shared.lock().map_err(|_| Error::Poisoned)?;
-                        state.probes.push_back(anchor.clone());
-                        while state.probes.len() > file::MAX_SEEK_OBSERVATIONS
-                            || state.probes.iter().map(Anchor::charge).sum::<usize>()
-                                > file::MAX_SEEK_METADATA_BYTES
-                        {
-                            state.probes.pop_front();
-                        }
-                    }
+                    self.clock.provisional();
                     anchor
                 }
             };
@@ -385,7 +387,7 @@ fn file_reader(path: &Path, service: u16, programs: bool) -> Result<(Reader, Wor
         index: Index::new(service, programs),
         status: Status::Receiving,
         survey: None,
-        probes: VecDeque::new(),
+        metadata_scan: None,
         priority: Arc::new(AtomicBool::new(false)),
     }));
     let cancellation = Cancellation(Arc::new(AtomicBool::new(false)));
@@ -413,6 +415,22 @@ fn file_reader(path: &Path, service: u16, programs: bool) -> Result<(Reader, Wor
                         std::thread::sleep(INPUT_WAIT);
                         continue;
                     }
+                    let metadata_scan = indexed
+                        .lock()
+                        .map_err(|_| Error::Poisoned)?
+                        .metadata_scan
+                        .take();
+                    if let Some((mut metadata, anchor)) = metadata_scan {
+                        scan_metadata(
+                            &mut scan,
+                            framing,
+                            &indexed,
+                            &cancelled,
+                            &mut metadata,
+                            &anchor,
+                        )?;
+                        scan.seek(SeekFrom::Start(offset))?;
+                    }
                     let bytes = read_block(&mut scan, framing.stride() * PACKETS_PER_READ)?;
                     if bytes.is_empty() {
                         break;
@@ -427,7 +445,7 @@ fn file_reader(path: &Path, service: u16, programs: bool) -> Result<(Reader, Wor
                         .is_some_and(|survey| !survey.agrees_with(&state.index))
                     {
                         state.survey = None;
-                        state.probes.clear();
+                        state.index.clear_provisional();
                     }
                     offset += bytes.len() as u64;
                     state.index.compact_file();
@@ -445,6 +463,7 @@ fn file_reader(path: &Path, service: u16, programs: bool) -> Result<(Reader, Wor
                 };
             }
         })?;
+    let clock = shared.lock().map_err(|_| Error::Poisoned)?.index.reader();
     let shared = Shared::File(shared);
     let reader = Reader {
         source: ReaderSource::File(file),
@@ -453,7 +472,7 @@ fn file_reader(path: &Path, service: u16, programs: bool) -> Result<(Reader, Wor
         framing,
         service,
         filter: tsreadex::Filter::new(service)?,
-        clock: Index::new(service, false),
+        clock,
         bootstrap: Vec::new(),
         time_ns: 0,
         epoch: 0,
@@ -461,6 +480,57 @@ fn file_reader(path: &Path, service: u16, programs: bool) -> Result<(Reader, Wor
         pending_seek: None,
     };
     Ok((reader, Worker::File(cancellation)))
+}
+
+// Bounded lookahead covers sparse EIT/TOT even when output is paused after seek.
+// A metadata read failure must not terminate the independent playback index.
+fn scan_metadata(
+    file: &mut File,
+    framing: Framing,
+    shared: &Mutex<FileIndex>,
+    cancelled: &AtomicBool,
+    index: &mut Index,
+    anchor: &Anchor,
+) -> Result<(), Error> {
+    const MAX_SCAN_BYTES: u64 = 64 * 1024 * 1024;
+    const MAX_SCAN_NS: u64 = 30_000_000_000;
+    index.seed(anchor);
+    for packet in anchor.bootstrap.as_chunks::<TS_PACKET_SIZE>().0 {
+        index.packet(anchor.offset, packet);
+    }
+    if file.seek(SeekFrom::Start(anchor.offset)).is_err() {
+        return Ok(());
+    }
+    let mut offset = anchor.offset;
+    while offset.saturating_sub(anchor.offset) < MAX_SCAN_BYTES
+        && !cancelled.load(Ordering::Acquire)
+    {
+        if shared
+            .lock()
+            .map_err(|_| Error::Poisoned)?
+            .metadata_scan
+            .is_some()
+        {
+            break;
+        }
+        let bytes = match read_block(file, framing.stride() * PACKETS_PER_READ) {
+            Ok(bytes) if !bytes.is_empty() => bytes,
+            Ok(_) | Err(_) => break,
+        };
+        for (within, packet) in framing.packets(&bytes) {
+            index.packet(offset + within, packet);
+        }
+        offset += bytes.len() as u64;
+        index.clear_entries();
+        if index
+            .end_ns()
+            .is_some_and(|end| end >= anchor.time_ns.saturating_add(MAX_SCAN_NS))
+        {
+            break;
+        }
+        std::thread::sleep(FILE_SCAN_YIELD);
+    }
+    Ok(())
 }
 
 fn live_reader(

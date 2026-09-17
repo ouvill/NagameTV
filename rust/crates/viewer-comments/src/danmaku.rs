@@ -293,6 +293,7 @@ pub struct Measurement {
 }
 #[derive(Clone, Debug)]
 pub struct TimedComment {
+    pub id: Box<str>,
     pub time: Duration,
     pub comment: Comment,
 }
@@ -305,6 +306,15 @@ pub enum LoadError {
     Invalid,
 }
 
+#[derive(Default)]
+enum Timebase { #[default] Wall, Media }
+#[derive(Default)]
+enum CursorMode { #[default] Playing, Restoring }
+enum Start { Now, At(Duration) }
+struct Pending { id: Id, comment: Comment, start: Start }
+/// Longest supported scrolling lifetime: fullscreen, at half speed.
+pub const MAX_LIFETIME: Duration = Duration::from_secs(16);
+
 /// All persistent comment data, lane occupancy, pending measurement and clocks
 /// have one owner. Lane storage is lazy: unused rows allocate nothing.
 #[derive(Default)]
@@ -316,7 +326,10 @@ pub struct Engine {
     paused: bool,
     hidden: bool,
     serial: u32,
-    pending: Option<(Id, Comment)>,
+    pending: Option<Pending>,
+    timebase: Timebase,
+    cursor_mode: CursorMode,
+    delivered: HashMap<Box<str>, Duration>,
     layout: LayoutState,
     lanes: [Vec<Vec<Active>>; 3],
     active: usize,
@@ -466,13 +479,15 @@ impl Engine {
     pub fn reset(&mut self) {
         self.clear();
         self.timeline = Vec::new();
+        self.delivered.clear();
+        self.timebase = Timebase::Wall;
         self.next = 0;
     }
     pub fn advance_wall(&mut self, elapsed: Duration) -> Vec<Id> {
         if self.paused {
             return Vec::new();
         }
-        self.clock = self.clock.saturating_add(elapsed);
+        if matches!(self.timebase, Timebase::Wall) { self.clock = self.clock.saturating_add(elapsed); }
         let mut expired = Vec::new();
         for lanes in &mut self.lanes {
             for lane in lanes {
@@ -554,9 +569,19 @@ impl Engine {
         let first = first.max(0.) as usize;
         first..(end.max(0.) as usize).max(first)
     }
+    pub fn media_driven(&self) -> bool { matches!(self.timebase, Timebase::Media) }
+    pub fn positions(&self) -> Vec<(Id, f64)> {
+        self.lanes.iter().flatten().flatten().map(|entry| (entry.id, entry.x(self.clock, self.viewport.width))).collect()
+    }
+    pub fn prepare_timed(&mut self, record: TimedComment) -> Option<Measurement> {
+        self.prepare_at(record.comment, Start::At(record.time))
+    }
     pub fn prepare(&mut self, comment: Comment) -> Option<Measurement> {
+        self.prepare_at(comment, Start::Now)
+    }
+    fn prepare_at(&mut self, comment: Comment, start: Start) -> Option<Measurement> {
         if self.hidden
-            || self.paused
+            || (self.paused && matches!(start, Start::Now))
             || self.lane_count() == 0
             || self.viewport.width <= 0.
             || matches!(self.layout, LayoutState::Measuring(_))
@@ -566,15 +591,15 @@ impl Engine {
         self.serial = self.serial.checked_add(1)?; // Never reuse a stale UI token.
         let id = Id(self.serial);
         let text = comment.text.clone();
-        self.pending = Some((id, comment)); // At most one outstanding measurement.
+        self.pending = Some(Pending { id, comment, start }); // At most one outstanding measurement.
         Some(Measurement { id, text })
     }
     pub fn measured(&mut self, token: u32, width: f64) -> Option<Spawn> {
-        if self.pending.as_ref()?.0.value() != token {
+        if self.pending.as_ref()?.id.value() != token {
             return None;
         }
-        let (id, comment) = self.pending.take()?;
-        if !width.is_finite() || width <= 0. || self.paused || self.viewport.width <= 0. {
+        let Pending { id, comment, start } = self.pending.take()?;
+        if !width.is_finite() || width <= 0. || (self.paused && matches!(start, Start::Now)) || self.viewport.width <= 0. {
             return None;
         }
         let seconds = match (comment.position, self.viewport.full_screen) {
@@ -583,41 +608,38 @@ impl Engine {
             (_, false) => 4.,
             (_, true) => 6.,
         } / self.speed.unwrap_or(1.);
-        let lifetime = Duration::from_secs_f64(seconds);
+        let age = match start { Start::Now => Duration::ZERO, Start::At(start) => self.position.checked_sub(start)? };
+        let lifetime = Duration::from_secs_f64(seconds).checked_sub(age).filter(|lifetime| !lifetime.is_zero())?;
+        let from_x = if comment.position == Position::Right {
+            self.viewport.width - (self.viewport.width + width) * age.as_secs_f64() / seconds
+        } else { (self.viewport.width - width) / 2. };
         let velocity = (self.viewport.width + width) / seconds;
         if !velocity.is_finite() {
             return None;
         }
+        let active = Active {
+            id, width,
+            motion: match comment.position {
+                Position::Right => Motion::Scrolling { from_x, velocity, born: self.clock },
+                Position::Top | Position::Bottom => Motion::Fixed,
+            },
+            expires: self.clock.saturating_add(lifetime),
+        };
         let kind = kind(comment.position);
         let range = self.admission_rows(kind);
         let (first, limit) = (range.start, range.end);
         let lanes = &mut self.lanes[kind];
         let lane = (first..limit.min(lanes.len().max(first) + 1)).find(|&index| {
-            lanes.get(index).is_none_or(|entries| {
-                entries
-                    .iter()
-                    .all(|entry| entry.admits(self.viewport.width, velocity, self.clock))
-            })
+            lanes.get(index).is_none_or(|entries| entries.iter().all(|entry| match start {
+                Start::Now => entry.admits(from_x, velocity, self.clock),
+                Start::At(_) => active.separate_from(entry, self.clock),
+            }))
         })?;
-        if lane >= lanes.len() {
-            lanes.resize_with(lane + 1, Vec::new);
-        }
-        lanes[lane].push(Active {
-            id,
-            width,
-            motion: match comment.position {
-                Position::Right => Motion::Scrolling {
-                    from_x: self.viewport.width,
-                    velocity,
-                    born: self.clock,
-                },
-                Position::Top | Position::Bottom => Motion::Fixed,
-            },
-            expires: self.clock.saturating_add(lifetime),
-        });
+        if lane >= lanes.len() { lanes.resize_with(lane + 1, Vec::new); }
+        lanes[lane].push(active);
         self.active += 1;
         let (from_x, to_x) = if comment.position == Position::Right {
-            (self.viewport.width, -width)
+            (from_x, -width)
         } else {
             let x = (self.viewport.width - width) / 2.;
             (x, x)
@@ -637,39 +659,54 @@ impl Engine {
             lifetime,
         })
     }
-    pub fn load(&mut self, mut records: Vec<TimedComment>) {
+    pub fn load(&mut self, records: Vec<TimedComment>) {
+        self.timebase = Timebase::Media;
+        self.timeline = records;
+        self.timeline.sort_by_key(|record| record.time);
+        self.seek(self.position);
+    }
+    /// Refresh a bounded window without restarting surviving labels. Newly
+    /// acquired comments may already be partway across the screen.
+    pub fn replace(&mut self, mut records: Vec<TimedComment>) {
+        self.timebase = Timebase::Media;
         records.sort_by_key(|record| record.time);
         self.timeline = records;
-        self.seek(self.position);
+        let earliest = self.position.saturating_sub(MAX_LIFETIME);
+        self.delivered.retain(|_, time| *time >= earliest);
+        self.next = self.timeline.partition_point(|record| record.time < earliest);
+        self.cursor_mode = CursorMode::Restoring;
     }
     pub fn seek(&mut self, position: Duration) {
         self.clear();
+        self.delivered.clear();
         self.position = position;
-        self.next = self
-            .timeline
-            .partition_point(|record| record.time < position);
+        self.clock = position;
+        self.next = self.timeline.partition_point(|record| record.time < position.saturating_sub(MAX_LIFETIME));
+        self.cursor_mode = CursorMode::Restoring;
     }
     /// Returns true on a backwards discontinuity; the view must clear too.
     pub fn set_position(&mut self, position: Duration) -> bool {
         let backwards = position < self.position;
-        if backwards {
-            self.seek(position);
-        } else {
+        if backwards { self.seek(position); } else {
             self.position = position;
+            if self.media_driven() { self.clock = position; }
         }
         backwards
     }
-    pub fn next_due(&mut self) -> Option<Comment> {
-        if self.paused {
-            return None;
+    pub fn next_due(&mut self) -> Option<TimedComment> {
+        if self.paused && matches!(self.cursor_mode, CursorMode::Playing) { return None; }
+        loop {
+            let Some(record) = self.timeline.get(self.next).filter(|record| record.time <= self.position) else {
+                self.cursor_mode = CursorMode::Playing;
+                return None;
+            };
+            self.next += 1;
+            if self.position.saturating_sub(record.time) >= MAX_LIFETIME || self.delivered.contains_key(&record.id) { continue; }
+            self.delivered.insert(record.id.clone(), record.time);
+            return Some(record.clone());
         }
-        let record = self.timeline.get(self.next)?;
-        if record.time >= self.position {
-            return None;
-        }
-        self.next += 1;
-        Some(record.comment.clone())
     }
+
 }
 
 pub fn seconds(value: f64) -> Option<Duration> {
@@ -699,16 +736,22 @@ pub fn parse_timeline(json: &str) -> Result<Vec<TimedComment>, LoadError> {
     }
     #[derive(Deserialize)]
     struct Record {
+        id: Option<String>,
         time: f64,
         text: String,
         #[serde(rename = "type")]
         kind: Option<Kind>,
         color: Option<Rgb>,
+        #[serde(default)]
+        own: bool,
     }
+    if json.len() > crate::archive::MAX_RESPONSE_BYTES { return Err(LoadError::Invalid); }
     let records: Vec<Record> = serde_json::from_str(json)?;
+    if records.len() > crate::archive::MAX_COMMENTS { return Err(LoadError::Invalid); }
     records
         .into_iter()
-        .map(|r| {
+        .enumerate()
+        .map(|(index, r)| {
             let time = seconds(r.time).ok_or(LoadError::Invalid)?;
             let kind = match r.kind {
                 None => Position::Right,
@@ -730,8 +773,9 @@ pub fn parse_timeline(json: &str) -> Result<Vec<TimedComment>, LoadError> {
                 }
             };
             Ok(TimedComment {
+                id: r.id.unwrap_or_else(|| format!("{index}:{}", r.time)).into_boxed_str(),
                 time,
-                comment: Comment::new(&r.text, kind, color).ok_or(LoadError::Invalid)?,
+                comment: { let mut comment = Comment::new(&r.text, kind, color).ok_or(LoadError::Invalid)?; comment.own = r.own; comment },
             })
         })
         .collect()

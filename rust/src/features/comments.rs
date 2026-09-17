@@ -1,6 +1,7 @@
 //! Playback-independent commentary selection and reception.
 pub mod activity;
 mod mapping;
+pub(crate) mod replay;
 use crate::{channels::Channel, services::Network};
 use viewer_comments::{
     Comment,

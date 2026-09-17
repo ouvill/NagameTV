@@ -4,6 +4,17 @@ use cxx_qt_lib::QString;
 use std::pin::Pin;
 
 impl ffi::Player {
+    pub fn commentary_position(&self) -> f64 {
+        if self.seeking() || !self.media_active() {
+            return -1.;
+        }
+        self.rust()
+            .media
+            .playback()
+            .and_then(|playback| playback.position())
+            .map_or(-1., |position| position.nseconds() as f64 / 1_000_000_000.)
+    }
+
     pub fn configure_comment_shadow(mut self: Pin<&mut Self>, enabled: bool) {
         self.as_mut()
             .rust_mut()
@@ -68,12 +79,11 @@ impl ffi::Player {
 
     pub(super) fn poll_comments(mut self: Pin<&mut Self>) {
         self.as_mut().poll_activity();
-        const LIVE_COMMENT_DELAY_LIMIT_MS: f64 = 3_000.0;
-        let delayed = self.timeshift()
-            && (self.paused()
-                || self.seeking()
-                || self.live_delay_ms() > LIVE_COMMENT_DELAY_LIMIT_MS);
-        let (reset, comments, show_live) = {
+        let seeking = self.seeking();
+        let earliest = self
+            .timeshift()
+            .then(|| gstreamer::ClockTime::from_mseconds(self.window_start_ms().max(0.) as u64));
+        let (reset, comments, timeline) = {
             let mut this = self.as_mut().rust_mut();
             let this = &mut *this;
             let channel = usize::try_from(this.selected)
@@ -91,18 +101,74 @@ impl ffi::Player {
                 },
                 None => Vec::new(),
             };
-            (
-                reset,
-                comments,
-                this.stream_state.playing() && this.danmaku_enabled && !delayed,
-            )
+            let context = if this.comments_enabled
+                && (this.stream_state.active() || this.stream_state.connecting())
+            {
+                this.media.source_identity().map(|source| {
+                    let position = this
+                        .media
+                        .playback()
+                        .and_then(|playback| playback.position());
+                    let view = position
+                        .map(|position| this.media.metadata(position))
+                        .unwrap_or_default();
+                    let earliest_utc = earliest.and_then(|position| {
+                        this.media
+                            .metadata(position)
+                            .clock?
+                            .utc(position.nseconds())
+                    });
+                    crate::features::comments::replay::Context {
+                        source,
+                        service: view
+                            .service
+                            .or_else(|| channel.and_then(|channel| channel.broadcast)),
+                        position: position.map(|position| position.nseconds()),
+                        clock: view.clock,
+                        earliest_utc,
+                    }
+                })
+            } else {
+                None
+            };
+            let now = std::time::Instant::now();
+            let received = comments
+                .iter()
+                .map(|comment| {
+                    (
+                        comment.clone(),
+                        this.comments.posting.is_own_comment(comment, now),
+                    )
+                })
+                .collect();
+            let wall_ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .ok()
+                .and_then(|time| i64::try_from(time.as_millis()).ok())
+                .unwrap_or(0);
+            this.comment_replay.update(
+                this.network.as_ref(),
+                context,
+                seeking && this.comments_enabled,
+                received,
+                now,
+                wall_ms,
+            );
+            let timeline = format!(
+                "{{\"generation\":{},\"comments\":{}}}",
+                this.comment_replay.generation,
+                if this.comment_replay.data.is_empty() {
+                    "[]"
+                } else {
+                    &this.comment_replay.data
+                }
+            );
+            (reset, comments, QString::from(timeline))
         };
-        // Build only newly received live signals, before moving history into its model.
-        let live = project_live_comments(
-            &comments,
-            show_live,
-            &mut self.as_mut().rust_mut().comments.posting,
-        );
+        if *self.comment_timeline() != timeline {
+            self.as_mut().rust_mut().comment_timeline = timeline;
+            self.as_mut().comment_timeline_changed();
+        }
         if reset {
             self.as_mut().clear_comment_history();
             self.as_mut().set_comment_draft(QString::default());
@@ -119,9 +185,6 @@ impl ffi::Player {
         self.as_mut().set_comment_program_title(title);
         self.as_mut().refresh_comment_status();
         self.as_mut().poll_comment_posting();
-        for (text, position, color, own) in live {
-            self.as_mut().comment_received(text, position, color, own);
-        }
     }
     fn history_model(self: Pin<&mut Self>) -> Pin<&mut crate::comment_model::ffi::CommentModel> {
         let model = self.comment_model();
@@ -159,60 +222,5 @@ impl ffi::Player {
             }
             None => {}
         }
-    }
-}
-
-fn project_live_comments(
-    comments: &[viewer_comments::Comment],
-    enabled: bool,
-    posting: &mut viewer_comments::posting::Controller,
-) -> Vec<(QString, QString, u32, bool)> {
-    comments
-        .iter()
-        .filter(|c| enabled && c.phase == viewer_comments::Phase::Live)
-        .map(|c| {
-            (
-                QString::from(c.text.as_ref()),
-                QString::from(c.style.position.as_str()),
-                c.style.color,
-                posting.is_own_comment(c, std::time::Instant::now()),
-            )
-        })
-        .collect()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn only_live_comments_are_sent_to_enabled_danmaku() {
-        use viewer_comments::{Comment, Origin, Phase, Position, Style};
-        let comments: Vec<_> = [Phase::History, Phase::Live]
-            .into_iter()
-            .map(|phase| Comment {
-                identity: None,
-                text: "same text".into(),
-                unix_seconds: 0,
-                origin: Origin::Nx,
-                phase,
-                style: Style {
-                    position: Position::Top,
-                    color: 0xff0000,
-                },
-            })
-            .collect();
-        let mut posting = viewer_comments::posting::Controller::default();
-        let live = project_live_comments(&comments, true, &mut posting);
-        assert_eq!(live.len(), 1);
-        assert_eq!(
-            live[0],
-            (
-                QString::from("same text"),
-                QString::from("top"),
-                0xff0000,
-                false
-            )
-        );
-        assert!(project_live_comments(&comments, false, &mut posting).is_empty());
     }
 }

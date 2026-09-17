@@ -28,6 +28,7 @@ const RETENTION_MINUTES: i32 = 1;
 const OBSERVER: &str =
     "root.contentItem.children.find(child => child.objectName === 'liveTimelineObserver')";
 const RECOVERY_OBSERVATION: Duration = Duration::from_secs(4);
+const LIVE_METADATA_READY: &str = "player.program_status === 'available' && JSON.parse(player.current_program_data) !== null && JSON.parse(player.live_timeline).viewing.utc !== null";
 
 #[derive(Clone, Copy)]
 enum Traffic {
@@ -302,12 +303,16 @@ pub(super) fn run(
     wait_for(
         app,
         engine,
-        "player.playing && !player.timeshift && !player.seekable && JSON.parse(player.video_stats()).rendered > 0",
+        &format!(
+            "player.playing && !player.timeshift && !player.seekable && JSON.parse(player.video_stats()).rendered > 0 && ({LIVE_METADATA_READY})"
+        ),
     )?;
     observe_playback(
         app,
         engine,
-        "!player.timeshift && !player.seekable && !player.transport_error.length",
+        &format!(
+            "!player.timeshift && !player.seekable && !player.transport_error.length && ({LIVE_METADATA_READY})"
+        ),
     )?;
     assert!(evaluate(engine, "!player.pause()")?);
     assert!(evaluate(engine, "player.configure_timeshift('memory')")?);
@@ -322,16 +327,20 @@ pub(super) fn run(
     wait_for(
         app,
         engine,
-        "player.playing && !player.paused && !player.timeshift && !player.seekable",
+        &format!(
+            "player.playing && !player.paused && !player.timeshift && !player.seekable && ({LIVE_METADATA_READY})"
+        ),
     )?;
     observe_playback(
         app,
         engine,
-        "!player.timeshift && !player.seekable && !player.transport_error.length",
+        &format!(
+            "!player.timeshift && !player.seekable && !player.transport_error.length && ({LIVE_METADATA_READY})"
+        ),
     )?;
     evaluate(engine, "player.stop(); true")?;
     eprintln!(
-        "Timeshift disabled: common live input plays and rejects pause; enable/disable applies during live playback and pause"
+        "Timeshift disabled: playback and program/broadcast clock stay available; pause is rejected; enable/disable applies during playback and pause"
     );
     let pressure = Server::new(Traffic::CapacityPressure)?;
     evaluate(

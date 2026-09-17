@@ -106,7 +106,9 @@ fn raw_program_index_follows_playhead_and_survives_backwards_seek()
     let early = index.program(EARLY_NS).ok_or("early program")?;
     let late = index.program(LATE_NS).ok_or("late program")?;
     assert_ne!(early.0, late.0);
+    index.clear_entries();
     assert_eq!(index.program(EARLY_NS), Some(early));
+    assert_eq!(index.program(LATE_NS), Some(late));
     Ok(())
 }
 

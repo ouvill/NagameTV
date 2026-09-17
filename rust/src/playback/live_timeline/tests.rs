@@ -31,7 +31,7 @@ fn observe(history: &mut History, epoch: u64, position: i64, utc: i64, event: Op
         Some(&Arc::new(Observation {
             pcr: ns(position),
             information: Information {
-                current: event,
+                current: event.into(),
                 time: Some((ns(position), utc)),
                 ..Default::default()
             },
@@ -55,7 +55,7 @@ fn three_programs() -> History {
 }
 fn project(
     presenter: &mut Presenter,
-    history: &History,
+    history: &mut History,
     start: i64,
     end: i64,
     phase: Phase,
@@ -74,12 +74,75 @@ fn project(
     )
 }
 #[test]
+fn fractional_retention_start_keeps_the_full_program_axis() {
+    const PROGRAM_MINUTES: i64 = 27;
+    const RETAINED_MINUTES: i64 = 21;
+    const LIVE_MINUTES: i64 = 23;
+    const PCR_FRACTION_NS: u64 = 333_333;
+    let start = ns(RETAINED_MINUTES * MINUTE_MS) + PCR_FRACTION_NS;
+    let end = ns(LIVE_MINUTES * MINUTE_MS) + PCR_FRACTION_NS;
+    let mut event = program(1, 0);
+    event.duration = Some((PROGRAM_MINUTES * MINUTE_MS) as u64);
+    let mut history = History::default();
+    history.observe(
+        EPOCH,
+        start,
+        start + ns(SECOND_MS),
+        Some(&Arc::new(Observation {
+            pcr: start,
+            information: Information {
+                current: Some(event).into(),
+                time: Some((start, BROADCAST_START_MS + RETAINED_MINUTES * MINUTE_MS)),
+                ..Default::default()
+            },
+        })),
+    );
+    history.advance_end(end);
+    history.expire(start);
+    assert!(history.metadata(start).program.is_some());
+    let mut presenter = Presenter::new();
+    let snapshot = presenter.project(
+        &mut history,
+        start,
+        end,
+        true,
+        Reading {
+            phase: Phase::Paused,
+            position_ns: Some(start),
+            target_ns: None,
+        },
+    );
+    assert_eq!(
+        (snapshot.axis.start.0, snapshot.axis.end.0),
+        (0, PROGRAM_MINUTES * MINUTE_MS)
+    );
+    assert_eq!(snapshot.axis.start_utc, Some(UtcMs(BROADCAST_START_MS)));
+    assert_eq!(
+        snapshot.axis.end_utc,
+        Some(UtcMs(BROADCAST_START_MS + PROGRAM_MINUTES * MINUTE_MS))
+    );
+    assert_eq!(
+        snapshot.available,
+        [Span {
+            start: MediaMs(RETAINED_MINUTES * MINUTE_MS),
+            end: MediaMs(LIVE_MINUTES * MINUTE_MS),
+        }]
+    );
+    let viewing = snapshot.viewing.unwrap();
+    assert_eq!(viewing.program.unwrap().title, "番組1");
+    assert_eq!(
+        viewing.utc,
+        Some(UtcMs(BROADCAST_START_MS + RETAINED_MINUTES * MINUTE_MS))
+    );
+}
+
+#[test]
 fn three_program_axis_and_broadcast_progress_do_not_follow_the_playhead() {
-    let history = three_programs();
+    let mut history = three_programs();
     let mut presenter = Presenter::new();
     let old = project(
         &mut presenter,
-        &history,
+        &mut history,
         10 * MINUTE_MS,
         75 * MINUTE_MS,
         Phase::Playing,
@@ -106,7 +169,7 @@ fn three_program_axis_and_broadcast_progress_do_not_follow_the_playhead() {
     assert!((old.live.program.as_ref().unwrap().progress - 0.5).abs() < 0.001);
     let new = project(
         &mut presenter,
-        &history,
+        &mut history,
         10 * MINUTE_MS,
         75 * MINUTE_MS,
         Phase::Playing,
@@ -117,12 +180,12 @@ fn three_program_axis_and_broadcast_progress_do_not_follow_the_playhead() {
     assert_eq!(new.viewing.unwrap().program.unwrap().title, "番組2");
 }
 #[test]
-fn partial_expiry_keeps_axis_and_full_eviction_keeps_only_the_paused_description() {
+fn partial_expiry_keeps_axis_and_metadata_outlives_the_expired_paused_ts() {
     let mut history = three_programs();
     let mut presenter = Presenter::new();
     let paused = project(
         &mut presenter,
-        &history,
+        &mut history,
         10 * MINUTE_MS,
         75 * MINUTE_MS,
         Phase::Paused,
@@ -131,7 +194,7 @@ fn partial_expiry_keeps_axis_and_full_eviction_keeps_only_the_paused_description
     history.expire(ns(25 * MINUTE_MS));
     let expired = project(
         &mut presenter,
-        &history,
+        &mut history,
         25 * MINUTE_MS,
         75 * MINUTE_MS,
         Phase::Paused,
@@ -149,7 +212,7 @@ fn partial_expiry_keeps_axis_and_full_eviction_keeps_only_the_paused_description
     history.expire(ns(35 * MINUTE_MS));
     let outside = project(
         &mut presenter,
-        &history,
+        &mut history,
         35 * MINUTE_MS,
         75 * MINUTE_MS,
         Phase::Paused,
@@ -161,15 +224,23 @@ fn partial_expiry_keeps_axis_and_full_eviction_keeps_only_the_paused_description
     assert_eq!(view.position.0, 20 * MINUTE_MS);
     assert_eq!(view.program.unwrap().title, "番組1");
     assert_eq!(outside.programs.len(), 2);
-    assert!(history.selection(MediaMs(20 * MINUTE_MS)).is_none());
+    assert!(history.selection(ns(20 * MINUTE_MS)).is_some());
+    assert!(
+        history
+            .retained(Some(Span {
+                start: MediaMs(20 * MINUTE_MS),
+                end: MediaMs(21 * MINUTE_MS),
+            }))
+            .is_empty()
+    );
 }
 #[test]
 fn seek_target_does_not_replace_presented_frame_until_output_is_confirmed() {
-    let history = three_programs();
+    let mut history = three_programs();
     let mut presenter = Presenter::new();
     let before = project(
         &mut presenter,
-        &history,
+        &mut history,
         10 * MINUTE_MS,
         75 * MINUTE_MS,
         Phase::Paused,
@@ -177,7 +248,7 @@ fn seek_target_does_not_replace_presented_frame_until_output_is_confirmed() {
     );
     let target = 65 * MINUTE_MS;
     let seeking = presenter.project(
-        &history,
+        &mut history,
         ns(10 * MINUTE_MS),
         ns(75 * MINUTE_MS),
         true,
@@ -192,7 +263,7 @@ fn seek_target_does_not_replace_presented_frame_until_output_is_confirmed() {
     assert_eq!(seeking.seek_target, Some(MediaMs(target)));
     let completed = project(
         &mut presenter,
-        &history,
+        &mut history,
         10 * MINUTE_MS,
         75 * MINUTE_MS,
         Phase::Paused,
@@ -212,7 +283,14 @@ fn missing_si_preserves_known_schedule_but_does_not_extend_an_ended_show() {
         Some(program(1, 0)),
     );
     let mut presenter = Presenter::new();
-    let initial = project(&mut presenter, &history, 0, SECOND_MS, Phase::Playing, 0);
+    let initial = project(
+        &mut presenter,
+        &mut history,
+        0,
+        SECOND_MS,
+        Phase::Playing,
+        0,
+    );
     let halfway = SHOW_MS / 2;
     observe(
         &mut history,
@@ -223,7 +301,7 @@ fn missing_si_preserves_known_schedule_but_does_not_extend_an_ended_show() {
     );
     let missing = project(
         &mut presenter,
-        &history,
+        &mut history,
         0,
         halfway,
         Phase::Playing,
@@ -233,7 +311,14 @@ fn missing_si_preserves_known_schedule_but_does_not_extend_an_ended_show() {
     assert_eq!(missing.live.program.unwrap().title, "番組1");
     let after = SHOW_MS + SECOND_MS;
     history.advance_end(ns(after));
-    let ended = project(&mut presenter, &history, 0, after, Phase::Playing, halfway);
+    let ended = project(
+        &mut presenter,
+        &mut history,
+        0,
+        after,
+        Phase::Playing,
+        halfway,
+    );
     assert!(ended.live.program.is_none());
     assert_eq!(ended.axis.start.0, 0);
     assert_eq!(ended.axis.end.0, after);
@@ -260,7 +345,14 @@ fn schedule_changes_update_existing_event_and_preserve_media_coordinates() {
         Some(extended),
     );
     let mut presenter = Presenter::new();
-    let snapshot = project(&mut presenter, &history, 0, MINUTE_MS, Phase::Playing, 0);
+    let snapshot = project(
+        &mut presenter,
+        &mut history,
+        0,
+        MINUTE_MS,
+        Phase::Playing,
+        0,
+    );
     assert_eq!(snapshot.programs.len(), 1);
     assert_eq!(snapshot.axis.end.0, 40 * MINUTE_MS);
     let shifted = program(1, -MINUTE_MS);
@@ -273,7 +365,7 @@ fn schedule_changes_update_existing_event_and_preserve_media_coordinates() {
     );
     let changed = project(
         &mut presenter,
-        &history,
+        &mut history,
         0,
         2 * MINUTE_MS,
         Phase::Playing,
@@ -287,7 +379,14 @@ fn missing_clock_disabled_history_and_clock_acquisition_are_explicit() {
     let mut history = History::default();
     history.observe(EPOCH, 0, ns(MINUTE_MS), None);
     let mut presenter = Presenter::new();
-    let elapsed = project(&mut presenter, &history, 0, MINUTE_MS, Phase::Playing, 0);
+    let elapsed = project(
+        &mut presenter,
+        &mut history,
+        0,
+        MINUTE_MS,
+        Phase::Playing,
+        0,
+    );
     assert_eq!(elapsed.axis.clock, ClockMode::Elapsed);
     assert!(!elapsed.available.is_empty());
     observe(
@@ -298,7 +397,7 @@ fn missing_clock_disabled_history_and_clock_acquisition_are_explicit() {
         Some(program(1, 0)),
     );
     let disabled = presenter.project(
-        &history,
+        &mut history,
         0,
         ns(MINUTE_MS),
         false,
@@ -340,7 +439,7 @@ fn reconnect_gaps_and_clock_jumps_do_not_create_seekable_missing_time() {
     let mut presenter = Presenter::new();
     let snapshot = project(
         &mut presenter,
-        &history,
+        &mut history,
         0,
         20 * MINUTE_MS,
         Phase::Playing,
@@ -370,15 +469,23 @@ fn reconnect_gaps_and_clock_jumps_do_not_create_seekable_missing_time() {
         utc_after_gap + SHOW_MS,
         Some(program(3, 2 * SHOW_MS)),
     );
+    assert_eq!(history.epochs.len(), 2, "one outlier is not a new clock");
+    observe(
+        &mut history,
+        EPOCH + 1,
+        22 * MINUTE_MS,
+        utc_after_gap + SHOW_MS + MINUTE_MS,
+        Some(program(3, 2 * SHOW_MS)),
+    );
     assert_eq!(
         history.epochs.len(),
         3,
-        "UTC correction also splits the mapping"
+        "a confirmed UTC correction splits the mapping"
     );
 }
 #[test]
 fn expired_drag_uses_recovery_headroom_and_stale_session_preview_is_rejected() {
-    let history = three_programs();
+    let mut history = three_programs();
     let start = 35 * MINUTE_MS;
     let target = history
         .seek_target(ns(start), ns(75 * MINUTE_MS), (20 * MINUTE_MS) as f64)
@@ -387,7 +494,7 @@ fn expired_drag_uses_recovery_headroom_and_stale_session_preview_is_rejected() {
     assert_eq!(target.milliseconds, (start + expected_headroom) as f64);
     assert!(history.seek_target(0, ns(SHOW_MS), f64::NAN).is_err());
     let mut old = Presenter::new();
-    let snapshot = project(&mut old, &history, 0, 75 * MINUTE_MS, Phase::Playing, 0);
+    let snapshot = project(&mut old, &mut history, 0, 75 * MINUTE_MS, Phase::Playing, 0);
     let new = Presenter::new();
     assert!(!new.owns(&snapshot.session));
     assert_eq!(new.preview(&snapshot.session, 0.0), "null");
@@ -417,14 +524,14 @@ fn catalog_limits_do_not_reduce_available_ts_and_revisions_change_only_with_cont
     );
     assert!(history.epochs[0].records.is_empty());
     let mut presenter = Presenter::new();
-    let first = project(&mut presenter, &history, 0, SHOW_MS, Phase::Playing, 0);
+    let first = project(&mut presenter, &mut history, 0, SHOW_MS, Phase::Playing, 0);
     assert_eq!(first.available[0].start.0, 0);
     assert_eq!(first.available[0].end.0, SHOW_MS);
-    let same = project(&mut presenter, &history, 0, SHOW_MS, Phase::Playing, 0);
+    let same = project(&mut presenter, &mut history, 0, SHOW_MS, Phase::Playing, 0);
     assert_eq!(same.revision, first.revision);
     let advanced = project(
         &mut presenter,
-        &history,
+        &mut history,
         0,
         SHOW_MS,
         Phase::Playing,
@@ -447,7 +554,7 @@ fn clock_catalog_limit_keeps_older_bytes_seekable_as_unknown_programs() {
         );
     }
     assert_eq!(history.epochs.len(), MAX_EPOCHS);
-    assert!(history.selection(MediaMs(0)).is_none());
+    assert!(history.selection(ns(0)).is_none());
     let target = history
         .seek_target(0, ns(MAX_EPOCHS as i64 * SECOND_MS), 0.0)
         .unwrap();
@@ -460,7 +567,7 @@ fn old_broadcast_clock_is_not_reused_after_pcr_epoch_change() {
     let observation = Arc::new(Observation {
         pcr: 0,
         information: Information {
-            current: Some(program(1, 0)),
+            current: Some(program(1, 0)).into(),
             time: Some((0, BROADCAST_START_MS)),
             ..Default::default()
         },
@@ -472,7 +579,7 @@ fn old_broadcast_clock_is_not_reused_after_pcr_epoch_change() {
         ns(2 * SECOND_MS),
         Some(&observation),
     );
-    assert!(history.utc(MediaMs(SECOND_MS)).is_none());
+    assert!(history.utc(ns(SECOND_MS)).is_none());
     assert!(history.epochs.back().unwrap().clock.is_none());
     observe(
         &mut history,
@@ -482,18 +589,18 @@ fn old_broadcast_clock_is_not_reused_after_pcr_epoch_change() {
         Some(program(2, SHOW_MS)),
     );
     assert_eq!(
-        history.utc(MediaMs(2 * SECOND_MS)),
+        history.utc(ns(2 * SECOND_MS)),
         Some(UtcMs(BROADCAST_START_MS + SHOW_MS))
     );
 }
 
 #[test]
 fn broadcast_program_changes_while_the_viewer_stays_in_a_past_program() {
-    let history = three_programs();
+    let mut history = three_programs();
     let mut presenter = Presenter::new();
     let before = project(
         &mut presenter,
-        &history,
+        &mut history,
         10 * MINUTE_MS,
         50 * MINUTE_MS,
         Phase::Playing,
@@ -501,7 +608,7 @@ fn broadcast_program_changes_while_the_viewer_stays_in_a_past_program() {
     );
     let after = project(
         &mut presenter,
-        &history,
+        &mut history,
         10 * MINUTE_MS,
         75 * MINUTE_MS,
         Phase::Playing,
@@ -519,7 +626,7 @@ fn no_clock_following_event_does_not_overwrite_older_presented_program() {
     let first = Arc::new(Observation {
         pcr: 0,
         information: Information {
-            current: Some(program(1, 0)),
+            current: Some(program(1, 0)).into(),
             next: Some(program(2, SHOW_MS)),
             ..Default::default()
         },
@@ -528,14 +635,11 @@ fn no_clock_following_event_does_not_overwrite_older_presented_program() {
     let second = Arc::new(Observation {
         pcr: ns(SHOW_MS),
         information: Information {
-            current: Some(program(2, SHOW_MS)),
+            current: Some(program(2, SHOW_MS)).into(),
             ..Default::default()
         },
     });
     history.observe(EPOCH, ns(SHOW_MS), ns(SHOW_MS + SECOND_MS), Some(&second));
-    assert_eq!(
-        history.selection(MediaMs(SHOW_MS / 2)).unwrap().title,
-        "番組1"
-    );
-    assert_eq!(history.selection(MediaMs(SHOW_MS)).unwrap().title, "番組2");
+    assert_eq!(history.selection(ns(SHOW_MS / 2)).unwrap().title, "番組1");
+    assert_eq!(history.selection(ns(SHOW_MS)).unwrap().title, "番組2");
 }

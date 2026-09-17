@@ -67,13 +67,9 @@ impl Session {
         playbin: &gst::Element,
         service: u16,
         subtitles: bool,
-        programs: bool,
     ) -> Result<Self, Error> {
         let mut parser = transport::TransportParser::new(subtitles);
         parser.select_service(service);
-        if programs {
-            parser.enable_programs(service);
-        }
         if subtitles && !parser.decoder_available() {
             return Err(Error::DecoderUnavailable);
         }

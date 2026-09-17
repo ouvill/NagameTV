@@ -30,6 +30,7 @@ impl Feedback {
 const SOURCE_QUEUE_BYTES: u64 = (READ_BYTES * 2) as u64;
 
 pub(in crate::playback) struct Input {
+    identity: u64,
     shared: Shared,
     worker: Worker,
     subscriptions: Subscriptions,
@@ -97,7 +98,9 @@ impl Input {
             None
         });
         subscriptions.signal(playbin, id);
+        static NEXT_SOURCE: AtomicU64 = AtomicU64::new(1);
         Self {
+            identity: NEXT_SOURCE.fetch_add(1, Ordering::Relaxed),
             shared,
             worker,
             subscriptions,
@@ -117,22 +120,33 @@ impl Input {
         self.shared.window()?;
         Ok(())
     }
-    pub fn program(&self, position_ns: u64) -> Option<(String, f64)> {
+    pub fn identity(&self) -> u64 {
+        self.identity
+    }
+    pub fn metadata(&self, position_ns: u64) -> crate::transport::programs::catalog::View {
         match &self.shared {
-            Shared::File(shared) => {
-                let state = shared.lock().ok()?;
-                if state.index.end_ns().is_some_and(|end| position_ns <= end) {
-                    state.index.program(position_ns)
-                } else {
-                    state
-                        .probes
-                        .iter()
-                        .filter(|anchor| anchor.time_ns <= position_ns)
-                        .max_by_key(|anchor| anchor.time_ns)?
-                        .program(position_ns)
-                }
-            }
-            Shared::Live(shared) => shared.lock().ok()?.index.program(position_ns),
+            Shared::File(shared) => shared
+                .lock()
+                .map(|state| {
+                    let mut view = state.index.view(position_ns);
+                    if view.status == crate::transport::programs::catalog::Status::Pending {
+                        view.status = match &state.status {
+                            Status::Ended => {
+                                crate::transport::programs::catalog::Status::Unavailable
+                            }
+                            Status::Failed(_) => {
+                                crate::transport::programs::catalog::Status::Failed
+                            }
+                            Status::Receiving => view.status,
+                        };
+                    }
+                    view
+                })
+                .unwrap_or_default(),
+            Shared::Live(shared) => shared
+                .lock()
+                .map(|state| state.index.view(position_ns))
+                .unwrap_or_default(),
         }
     }
     #[cfg(test)]
@@ -166,7 +180,7 @@ impl Input {
         let Shared::Live(shared) = &self.shared else {
             return None;
         };
-        let store = shared.lock().ok()?;
+        let mut store = shared.lock().ok()?;
         let start = store
             .index
             .entries()
@@ -174,7 +188,7 @@ impl Input {
             .map_or(0, |anchor| anchor.time_ns);
         let end = store.index.end_ns().unwrap_or(0);
         Some(presenter.project(
-            &store.history,
+            &mut store.history,
             start,
             end,
             self.retention?.storage() != Retention::Off,

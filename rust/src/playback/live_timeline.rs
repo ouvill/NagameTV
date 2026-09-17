@@ -1,12 +1,13 @@
 //! Receive-time program history and one atomic live timeline projection.
 //! Media coordinates are monotonic TS time, never UTC seek offsets.
 use super::timeline::{Phase, Resume};
+use crate::transport::programs::catalog::{Accuracy, Catalog, ScanCursor, ScanPoint, View};
 use crate::transport::programs::{Observation, Program};
 use serde::Serialize;
 use std::{
     collections::VecDeque,
     sync::{
-        Arc,
+        Arc, Mutex,
         atomic::{AtomicU64, Ordering},
     },
 };
@@ -17,6 +18,9 @@ const MAX_EPOCHS: usize = 128;
 const MAX_PROGRAMS: usize = 512;
 const MAX_PROGRAM_BYTES: usize = 1024 * 1024;
 const MIN_AXIS_MS: i64 = 1_000;
+// Broadcast-clock consumers also restore comments already moving across the
+// screen. Preserve their original timestamp-to-media mapping before the cursor.
+const METADATA_LOOKBACK_NS: u64 = viewer_comments::danmaku::MAX_LIFETIME.as_nanos() as u64;
 static NEXT_SESSION: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize)]
@@ -58,7 +62,7 @@ impl Clock {
 }
 enum Announcement {
     Following,
-    Current { first_seen: MediaMs },
+    Current,
 }
 struct Record {
     program: Program,
@@ -116,31 +120,45 @@ struct Epoch {
     clock: Option<Clock>,
     records: VecDeque<Record>,
 }
-impl Epoch {
-    fn record(&self, position: MediaMs) -> Option<&Record> {
-        self.records
-            .iter()
-            .rev()
-            .find(|record| match record.span(self.clock) {
-                Some(span) => span.contains(position),
-                None => match record.announcement {
-                    Announcement::Following => false,
-                    Announcement::Current { first_seen } => first_seen <= position,
-                },
-            })
+
+enum Acquisition {
+    Local(ScanCursor),
+    Shared,
+}
+impl Default for Acquisition {
+    fn default() -> Self {
+        Self::Local(ScanCursor::default())
     }
 }
-
 #[derive(Default)]
 pub(super) struct History {
+    catalog: Arc<Mutex<Catalog>>,
+    acquisition: Acquisition,
     epochs: VecDeque<Epoch>,
-    // Independent of the smaller SI/clock catalog. Each disjoint span requires
-    // a retained PCR anchor; Store expires both using the bounded TS index.
+    // Each disjoint seekable span requires a retained PCR anchor. SI and clocks
+    // also cover queued output, independently of the raw TS retention boundary.
     coverage: VecDeque<Span>,
+    // Decoded frames may outlive the raw forward buffer. The presenter advances
+    // this boundary only from its output-confirmed view, including during seek.
+    // None keeps metadata until the first frame; catalog budgets still apply.
+    presented_position_ns: Option<u64>,
     observed: Option<Arc<Observation>>,
     serial: u64,
 }
 impl History {
+    pub fn from_catalog(catalog: Arc<Mutex<Catalog>>) -> Self {
+        Self {
+            catalog,
+            acquisition: Acquisition::Shared,
+            ..Default::default()
+        }
+    }
+    pub fn metadata(&self, position: u64) -> View {
+        self.catalog
+            .lock()
+            .map(|catalog| catalog.view(position))
+            .unwrap_or_default()
+    }
     /// Called at reception, not from a UI tick or from the playback reader.
     pub fn observe(
         &mut self,
@@ -151,10 +169,26 @@ impl History {
     ) {
         let position = MediaMs::from_ns(time_ns);
         let end = MediaMs::from_ns(end_ns).max(MediaMs(position.0 + 1));
-        let mut clock = observation
-            .and_then(|o| o.information.time)
-            .map(|(ns, utc)| Clock {
-                media: MediaMs::from_ns(ns),
+        if let Acquisition::Local(cursor) = &mut self.acquisition
+            && let Ok(mut catalog) = self.catalog.lock()
+        {
+            catalog.observe(
+                cursor,
+                ScanPoint {
+                    accuracy: Accuracy::Indexed,
+                    epoch,
+                    offset: time_ns,
+                    position: time_ns,
+                    end: end_ns,
+                    observation: observation.map(Arc::as_ref),
+                },
+            );
+        }
+        let reading = self.metadata(time_ns).clock;
+        let mut clock = reading
+            .and_then(|clock| clock.utc(time_ns))
+            .map(|utc| Clock {
+                media: position,
                 utc: UtcMs(utc),
             });
         let changed = match (&self.observed, observation) {
@@ -196,15 +230,24 @@ impl History {
                     }))
         });
         if discontinuity {
+            let boundary = if new_pcr_epoch {
+                position
+            } else {
+                reading
+                    .map(|reading| MediaMs::from_ns(reading.range().0))
+                    .unwrap_or(position)
+                    .max(epoch_start)
+                    .min(position)
+            };
             if let Some(last) = self.epochs.back_mut() {
-                last.span.end = last.span.end.min(position);
+                last.span.end = last.span.end.min(boundary);
             }
             self.serial += 1;
             self.epochs.push_back(Epoch {
                 pcr_epoch: epoch,
                 serial: self.serial,
                 span: Span {
-                    start: position,
+                    start: boundary,
                     end,
                 },
                 clock,
@@ -233,9 +276,7 @@ impl History {
                     previous.station.clone_from(&info.station);
                     previous.provider.clone_from(&info.provider);
                     if current && matches!(previous.announcement, Announcement::Following) {
-                        previous.announcement = Announcement::Current {
-                            first_seen: position,
-                        };
+                        previous.announcement = Announcement::Current;
                     }
                 } else {
                     last.records.push_back(Record {
@@ -243,9 +284,7 @@ impl History {
                         station: info.station.clone(),
                         provider: info.provider.clone(),
                         announcement: if current {
-                            Announcement::Current {
-                                first_seen: position,
-                            }
+                            Announcement::Current
                         } else {
                             Announcement::Following
                         },
@@ -280,6 +319,11 @@ impl History {
         }
     }
     pub fn advance_end(&mut self, end_ns: u64) {
+        if let Acquisition::Local(cursor) = &self.acquisition
+            && let Ok(mut catalog) = self.catalog.lock()
+        {
+            catalog.extend(cursor, end_ns);
+        }
         if let Some(last) = self.coverage.back_mut() {
             last.end = MediaMs::from_ns(end_ns).max(last.end);
         }
@@ -295,6 +339,15 @@ impl History {
         if let Some(first) = self.coverage.front_mut() {
             first.start = first.start.max(start);
         }
+        // Availability follows TS retention. SI/clock lifetime also covers
+        // queued output, so a short forward buffer cannot erase its metadata.
+        let metadata_start_ns = start_ns
+            .min(self.presented_position_ns.unwrap_or(0))
+            .saturating_sub(METADATA_LOOKBACK_NS);
+        if let Ok(mut catalog) = self.catalog.lock() {
+            catalog.expire(metadata_start_ns);
+        }
+        let start = MediaMs::from_ns(metadata_start_ns);
         while self.epochs.len() > 1 && self.epochs.front().is_some_and(|e| e.span.end <= start) {
             self.epochs.pop_front();
         }
@@ -354,12 +407,30 @@ impl History {
             .rev()
             .find(|epoch| epoch.span.contains(position))
     }
-    fn utc(&self, position: MediaMs) -> Option<UtcMs> {
-        self.epoch(position)?.clock.map(|clock| clock.utc(position))
+    fn utc(&self, position_ns: u64) -> Option<UtcMs> {
+        self.metadata(position_ns)
+            .clock?
+            .utc(position_ns)
+            .map(UtcMs)
     }
-    fn selection(&self, position: MediaMs) -> Option<Selection> {
+    fn selection(&self, position_ns: u64) -> Option<Selection> {
+        let position = MediaMs::from_ns(position_ns);
         let epoch = self.epoch(position)?;
-        Selection::new(epoch, epoch.record(position)?, position)
+        let view = self.metadata(position_ns);
+        let clock = view
+            .clock
+            .and_then(|clock| clock.utc(position_ns))
+            .map(|utc| Clock {
+                media: position,
+                utc: UtcMs(utc),
+            });
+        let record = Record {
+            program: view.program?,
+            station: view.station,
+            provider: view.provider,
+            announcement: Announcement::Current,
+        };
+        Selection::new(epoch.serial, clock, &record, position)
     }
     fn retained(&self, range: Option<Span>) -> Vec<Span> {
         let Some(range) = range else {
@@ -388,13 +459,14 @@ struct Selection {
     data: serde_json::Value,
 }
 impl Selection {
-    fn new(epoch: &Epoch, record: &Record, position: MediaMs) -> Option<Self> {
+    fn new(epoch: u64, clock: Option<Clock>, record: &Record, position: MediaMs) -> Option<Self> {
         let program = &record.program;
-        let span = record.span(epoch.clock);
+        let span = record.span(clock);
         let elapsed =
             span.map(|span| (position.0 - span.start.0).clamp(0, span.end.0 - span.start.0));
         let duration = span.map(|span| span.end.0 - span.start.0);
         let mut data = serde_json::to_value(program).ok()?;
+        data["progressKnown"] = span.is_some().into();
         data["source"] = "broadcast_ts".into();
         data["station"] = record.station.clone().into();
         data["provider"] = record.provider.clone().into();
@@ -406,7 +478,7 @@ impl Selection {
                 .into();
         }
         Some(Self {
-            id: record.id(epoch.serial),
+            id: record.id(epoch),
             title: program.name.clone(),
             span,
             elapsed,
@@ -459,8 +531,13 @@ enum PlaybackState {
 #[derive(Clone, Debug, PartialEq, Serialize)]
 struct Viewing {
     position: MediaMs,
+    // Catalog bounds retain PCR precision. Never reconstruct lookup positions
+    // from the rounded milliseconds published to QML, especially at expiry.
+    #[serde(skip)]
+    position_ns: u64,
     utc: Option<UtcMs>,
     program: Option<Selection>,
+    program_status: crate::transport::programs::catalog::Status,
     availability: Availability,
     offscreen: bool,
 }
@@ -488,6 +565,12 @@ pub(crate) struct Snapshot {
     clocks: Vec<(Span, Clock)>,
 }
 impl Snapshot {
+    pub fn program_status(&self) -> crate::transport::programs::catalog::Status {
+        self.viewing.as_ref().map_or(
+            crate::transport::programs::catalog::Status::Pending,
+            |viewing| viewing.program_status,
+        )
+    }
     pub fn viewing_program(&self) -> (String, f64) {
         self.viewing
             .as_ref()
@@ -496,6 +579,25 @@ impl Snapshot {
                 || ("null".into(), 0.0),
                 |program| (program.data.to_string(), program.progress),
             )
+    }
+    pub fn supplement(&mut self, enrich: impl Fn(&mut serde_json::Value)) {
+        for selection in self
+            .viewing
+            .iter_mut()
+            .filter_map(|viewing| viewing.program.as_mut())
+            .chain(self.live.program.iter_mut())
+        {
+            enrich(&mut selection.data);
+            selection.title = selection.data["name"].as_str().unwrap_or_default().into();
+        }
+    }
+    pub fn disable_programs(&mut self) {
+        if let Some(viewing) = &mut self.viewing {
+            viewing.program = None;
+        }
+        self.live.program = None;
+        self.programs.clear();
+        self.boundaries.clear();
     }
     pub fn serialize(&self) -> String {
         serde_json::to_string(self).expect("finite timeline projection")
@@ -541,7 +643,7 @@ impl Presenter {
     }
     pub fn project(
         &mut self,
-        history: &History,
+        history: &mut History,
         start_ns: u64,
         end_ns: u64,
         enabled: bool,
@@ -549,16 +651,18 @@ impl Presenter {
     ) -> Snapshot {
         let start = MediaMs::from_ns(start_ns);
         let edge = MediaMs::from_ns(end_ns);
-        let live_position = MediaMs((edge.0 - 1).max(0));
+        let live_position_ns = end_ns.saturating_sub(NS_PER_MS);
+        let live_position = MediaMs::from_ns(live_position_ns);
         let live = Live {
             position: edge,
-            utc: history.utc(live_position).map(|utc| UtcMs(utc.0 + 1)),
-            program: history.selection(live_position),
+            utc: history.utc(live_position_ns).map(|utc| UtcMs(utc.0 + 1)),
+            program: history.selection(live_position_ns),
         };
         let available = history.retained(enabled.then_some(Span { start, end: edge }));
-        let oldest = if enabled { start } else { live_position };
+        let oldest_ns = if enabled { start_ns } else { live_position_ns };
+        let oldest = MediaMs::from_ns(oldest_ns);
         let left = history
-            .selection(oldest)
+            .selection(oldest_ns)
             .and_then(|selection| selection.span)
             .map_or(oldest, |span| span.start);
         let previous_end = self
@@ -603,18 +707,30 @@ impl Presenter {
         let mut viewing = if frozen && previous_view.is_some() {
             previous_view.cloned()
         } else {
-            reading
-                .position_ns
-                .map(MediaMs::from_ns)
-                .map(|position| Viewing {
-                    position,
-                    utc: history.utc(position),
-                    program: history.selection(position),
-                    availability: Availability::Unavailable,
-                    offscreen: false,
-                })
+            reading.position_ns.map(|position_ns| Viewing {
+                position: MediaMs::from_ns(position_ns),
+                position_ns,
+                utc: history.utc(position_ns),
+                program: history.selection(position_ns),
+                program_status: history.metadata(position_ns).status,
+                availability: Availability::Unavailable,
+                offscreen: false,
+            })
         };
         if let Some(viewing) = &mut viewing {
+            if state != PlaybackState::Seeking
+                && viewing.position_ns >= start_ns
+                && viewing.position_ns < end_ns
+            {
+                let metadata = history.metadata(viewing.position_ns);
+                if metadata.status != crate::transport::programs::catalog::Status::Pending
+                    || viewing.program.is_none()
+                {
+                    viewing.program = history.selection(viewing.position_ns);
+                    viewing.program_status = metadata.status;
+                }
+                viewing.utc = history.utc(viewing.position_ns);
+            }
             viewing.availability = if !enabled {
                 Availability::Disabled
             } else if available.iter().any(|span| span.contains(viewing.position)) {
@@ -706,6 +822,9 @@ impl Presenter {
         };
         if self.previous.as_ref() != Some(&snapshot) {
             snapshot.revision += 1;
+        }
+        if let Some(viewing) = &snapshot.viewing {
+            history.presented_position_ns = Some(viewing.position_ns);
         }
         self.previous = Some(snapshot.clone());
         snapshot

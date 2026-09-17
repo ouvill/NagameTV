@@ -42,9 +42,11 @@ impl TransportParser {
         }
     }
 
+    #[cfg(test)]
     pub fn enable_programs(&mut self, service: u16) {
         self.programs = Some(crate::transport::programs::Collector::new(service));
     }
+    #[cfg(test)]
     pub fn take_programs(&mut self) -> Option<crate::transport::programs::Observation> {
         self.programs.as_mut()?.take()
     }

@@ -155,7 +155,7 @@ impl Style {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct Comment {
     #[serde(skip)]
     pub identity: Option<CommentIdentity>,
@@ -163,6 +163,10 @@ pub struct Comment {
     pub origin: Origin,
     pub phase: Phase,
     pub unix_seconds: u64,
+    #[serde(skip)]
+    pub timestamp_micros: Option<u64>,
+    #[serde(skip)]
+    pub source_id: Option<(u64, u64)>,
     pub style: Style,
 }
 
@@ -232,10 +236,24 @@ struct Chat<'a> {
     content: Cow<'a, str>,
     #[serde(default, borrow)]
     user_id: Cow<'a, str>,
-    #[serde(default)]
-    date: u64,
+    #[serde(default, deserialize_with = "timestamp")]
+    date: Option<u64>,
+    #[serde(default, deserialize_with = "timestamp")]
+    date_usec: Option<u64>,
+    #[serde(default, deserialize_with = "optional_id")]
+    no: Option<u64>,
     #[serde(default, borrow)]
     mail: Cow<'a, str>,
+}
+
+fn timestamp<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Option<u64>, D::Error> {
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Number { Integer(u64), Text(String) }
+    Option::<Number>::deserialize(deserializer)?.map(|value| match value {
+        Number::Integer(value) => Ok(value),
+        Number::Text(value) => value.parse().map_err(serde::de::Error::custom),
+    }).transpose()
 }
 
 impl Decoder {
@@ -276,7 +294,11 @@ impl Decoder {
             text: chat.content.into_owned().into_boxed_str(),
             origin,
             phase: self.phase,
-            unix_seconds: chat.date,
+            unix_seconds: chat.date.unwrap_or(0),
+            timestamp_micros: chat.date.and_then(|seconds| seconds.checked_mul(1_000_000))
+                .zip(chat.date_usec.or(Some(0)).filter(|micros| *micros < 1_000_000))
+                .and_then(|(seconds, micros)| seconds.checked_add(micros)),
+            source_id: chat.thread.zip(chat.no),
             style: Style::from_mail(&chat.mail),
         }))
     }

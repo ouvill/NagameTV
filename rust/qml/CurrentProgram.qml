@@ -4,6 +4,7 @@ import QtQuick.Controls
 
 Column {
     id: root
+    property string programStatus: "unavailable"
     required property string programJson
     property bool recording: false
     property string fallbackTitle: ""
@@ -34,7 +35,7 @@ Column {
         objectName: "currentProgramButton"
         width: parent.width
         implicitHeight: contentItem.implicitHeight
-        text: root.program ? (root.program.name || root.fallbackTitle || qsTranslate("Viewer", "Program title unavailable")) : qsTranslate("Main", "No program information")
+        text: root.program ? (root.program.name || root.fallbackTitle || qsTranslate("Viewer", "Program title unavailable")) : root.programStatus === "pending" ? qsTranslate("Viewer", "Acquiring program information…") : root.programStatus === "failed" ? qsTranslate("Viewer", "Could not read program information") : qsTranslate("Main", "No program information")
         enabled: root.program !== null
         onClicked: root.detailsRequested()
         background: Rectangle {

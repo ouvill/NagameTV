@@ -67,6 +67,8 @@ impl Store {
             Retention::Filesystem => Storage::Filesystem(super::filesystem::Directory::new()?),
         };
         let (byte_limit, time_limit) = policy.budget();
+        let index = Index::new(service, programs);
+        let history = super::super::live_timeline::History::from_catalog(index.catalog());
         Ok(Self {
             storage,
             segments: VecDeque::new(),
@@ -74,8 +76,8 @@ impl Store {
             end: 0,
             byte_limit,
             time_limit,
-            index: Index::new(service, programs),
-            history: Default::default(),
+            index,
+            history,
             status: Status::Receiving,
         })
     }
@@ -380,6 +382,57 @@ mod timeline_tests {
         timeline::Phase,
     };
     #[test]
+    fn disabled_timeshift_keeps_metadata_until_decoded_output_passes_it() {
+        let fixture = include_bytes!("../../../../tests/fixtures/recording-seek.ts");
+        let mut store = Store::new(Retention::Off, 1, true).unwrap();
+        store.append(fixture).unwrap();
+        let start = store.index.entries().front().unwrap().time_ns;
+        let end = store.index.end_ns().unwrap();
+        let mut presenter = Presenter::new();
+        // Decoded frames can outlive the two-second raw forward buffer. Cross
+        // an EIT event boundary while both positions precede its retained TS.
+        const FIRST_EVENT_SECONDS: u64 = 10;
+        const SECOND_EVENT_SECONDS: u64 = 31;
+        const IN_FLIGHT_COMMENT_AGE: Duration = Duration::from_secs(5);
+        for (seconds, event_id) in [(FIRST_EVENT_SECONDS, 1), (SECOND_EVENT_SECONDS, 2)] {
+            let position = Duration::from_secs(seconds).as_nanos() as u64;
+            assert!(position < start);
+            let snapshot = presenter.project(
+                &mut store.history,
+                start,
+                end,
+                false,
+                Reading {
+                    phase: Phase::Playing,
+                    position_ns: Some(position),
+                    target_ns: None,
+                },
+            );
+            let value: serde_json::Value = serde_json::from_str(&snapshot.serialize()).unwrap();
+            assert_eq!(value["viewing"]["program_status"], "available", "{value}");
+            assert_eq!(value["viewing"]["program"]["data"]["eventId"], event_id);
+            assert!(value["viewing"]["utc"].is_number());
+            assert_eq!(value["available"], serde_json::json!([]));
+            assert!(store.index.view(position).clock.is_some());
+            // The next receive cycle must preserve this displayed position.
+            store.append(&[]).unwrap();
+            assert!(store.index.view(position).program.is_some());
+            let comment_position = position - IN_FLIGHT_COMMENT_AGE.as_nanos() as u64;
+            assert!(
+                store
+                    .index
+                    .view(position)
+                    .clock
+                    .unwrap()
+                    .utc(comment_position)
+                    .is_some()
+            );
+        }
+        let first = Duration::from_secs(FIRST_EVENT_SECONDS).as_nanos() as u64;
+        assert!(store.index.view(first).program.is_none());
+        assert!(matches!(store.read(0).unwrap(), ReadResult::Expired));
+    }
+    #[test]
     fn received_fixture_populates_catalog_without_scanning_pcr_entries() {
         let fixture = include_bytes!("../../../../tests/fixtures/recording-seek.ts");
         let mut store = Store::new(Retention::Memory, 1, true).unwrap();
@@ -388,7 +441,7 @@ mod timeline_tests {
         let mut presenter = Presenter::new();
         let position = Duration::from_secs(10);
         let snapshot = presenter.project(
-            &store.history,
+            &mut store.history,
             0,
             end,
             true,

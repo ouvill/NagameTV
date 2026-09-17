@@ -16,7 +16,6 @@ type Segment = Option<gst::FormattedSegment<gst::ClockTime>>;
 const MAX_TIMESTAMP_STREAMS: usize = 64;
 const MAX_PENDING_PES: usize = 256;
 const PTS_MATCH_TOLERANCE_NS: i128 = 5_000_000;
-const CLOCK_RESET_THRESHOLD_NS: i128 = 500_000_000;
 
 #[derive(Default)]
 struct State {
@@ -24,7 +23,6 @@ struct State {
     raw_pts: HashMap<StreamKey, VecDeque<u64>>,
     video: Option<StreamKey>,
     timeline: Timeline,
-    programs: crate::transport::programs::Timeline,
 }
 
 /// Bridges tsdemux's transport PTS to the video sink's queried stream position.
@@ -107,11 +105,6 @@ impl SubtitleClock {
         }
     }
 
-    pub fn push_programs(&self, observation: crate::transport::programs::Observation) {
-        if let Ok(mut state) = self.state() {
-            state.programs.push(observation);
-        }
-    }
     pub fn clear_captions(&self) {
         if let Ok(mut state) = self.state() {
             state.timeline.clear_captions();
@@ -323,13 +316,6 @@ impl SubtitleClock {
                 pending.pop_front();
             }
             if let Some(raw_pts) = pending.pop_front() {
-                if state
-                    .timeline
-                    .map_ticks(raw_pts)
-                    .is_some_and(|old| (old - now).abs() > CLOCK_RESET_THRESHOLD_NS)
-                {
-                    state.programs = Default::default();
-                }
                 state.timeline.anchor(Anchor {
                     pts: raw_pts,
                     stream_ns: stream_time.nseconds(),

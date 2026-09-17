@@ -654,3 +654,24 @@ fn validates_captured_server_catalog_and_guide() -> Result<(), Box<dyn std::erro
     );
     Ok(())
 }
+
+#[test]
+fn epg_enrichment_requires_service_event_and_start_and_keeps_ts_fields() {
+    let feature = ProgramInfo { snapshot: parse(br#"[{"id":1,"eventId":7,"networkId":4,"serviceId":101,"startAt":1000,"duration":60000,"name":"EPG title","description":"EPG detail"}]"#).unwrap(), ..Default::default() };
+    let ts = serde_json::json!({"eventId":7,"networkId":4,"serviceId":101,"startAt":1000,"name":"TS title","description":"","source":"broadcast_ts"});
+    let mut matched = ts.clone();
+    feature.supplement_data(&mut matched);
+    assert_eq!(matched["name"], "TS title");
+    assert_eq!(matched["description"], "EPG detail");
+    for (key, value) in [
+        ("eventId", 8),
+        ("networkId", 5),
+        ("serviceId", 102),
+        ("startAt", 1001),
+    ] {
+        let mut mismatched = ts.clone();
+        mismatched[key] = value.into();
+        feature.supplement_data(&mut mismatched);
+        assert_eq!(mismatched["description"], "");
+    }
+}

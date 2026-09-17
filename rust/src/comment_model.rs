@@ -234,6 +234,8 @@ impl ffi::CommentModel {
         self.append(vec![Comment {
             identity: None,
             text: text.to_string().into_boxed_str(),
+            timestamp_micros: None,
+            source_id: None,
             unix_seconds,
             origin: if source_nico {
                 Origin::Niconico
@@ -261,6 +263,8 @@ impl ffi::CommentModel {
                 .map(|i| Comment {
                     identity: None,
                     text: format!("comment {i}").into_boxed_str(),
+                    timestamp_micros: None,
+                    source_id: None,
                     unix_seconds: i as u64,
                     origin: Origin::Nx,
                     phase: viewer_comments::Phase::History,
@@ -279,6 +283,8 @@ mod tests {
             .map(|i| Comment {
                 identity: None,
                 text: format!("<b>{i}</b>\n日本語").into_boxed_str(),
+                timestamp_micros: None,
+                source_id: None,
                 unix_seconds: i as u64,
                 origin: if i % 2 == 0 {
                     Origin::Nx

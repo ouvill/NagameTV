@@ -1,12 +1,13 @@
 //! Sparse raw-byte/PCR index. Every entry owns the tables needed to start there.
-use crate::transport::programs::{Collector, Observation, Timeline};
+use crate::transport::programs::catalog::{Accuracy, Catalog, ScanCursor, ScanPoint, View};
+use crate::transport::programs::{Collector, Observation};
 use crate::transport::{
     Pat, Sections,
     wire::{Pid, PsiSection, STUFFING_BYTE, SYNC_BYTE, TS_PACKET_SIZE, TransportPacket},
 };
 use std::{
     collections::{BTreeMap, VecDeque},
-    sync::Arc,
+    sync::{Arc, Mutex},
 };
 
 const PCR_HZ: u64 = 90_000;
@@ -60,16 +61,6 @@ impl Anchor {
         }
         anchor
     }
-    pub fn program(&self, position_ns: u64) -> Option<(String, f64)> {
-        let observation = self.programs.as_ref()?;
-        let mut timeline = Timeline::default();
-        timeline.push((**observation).clone());
-        Some(
-            timeline
-                .poll(Some(position_ns), |ns| Some(i128::from(ns)))
-                .serialize(),
-        )
-    }
     pub fn charge(&self) -> usize {
         // Count shared snapshots for every anchor as a conservative upper bound.
         std::mem::size_of::<Self>()
@@ -95,6 +86,9 @@ impl Anchor {
 }
 
 pub(super) struct Index {
+    catalog: Arc<Mutex<Catalog>>,
+    cursor: ScanCursor,
+    accuracy: Accuracy,
     service: u16,
     collector: Option<Collector>,
     programs: Option<Arc<Observation>>,
@@ -119,6 +113,9 @@ pub(super) struct Index {
 impl Index {
     pub fn new(service: u16, programs: bool) -> Self {
         Self {
+            catalog: Arc::default(),
+            cursor: ScanCursor::default(),
+            accuracy: Accuracy::Indexed,
             service,
             collector: programs.then(|| Collector::new(service)),
             programs: None,
@@ -140,6 +137,35 @@ impl Index {
             entries: VecDeque::new(),
             metadata_bytes: 0,
         }
+    }
+    pub fn catalog(&self) -> Arc<Mutex<Catalog>> {
+        self.catalog.clone()
+    }
+    pub fn reader(&self) -> Self {
+        let mut reader = Self::new(self.service, self.collector.is_some());
+        reader.catalog = self.catalog.clone();
+        reader.accuracy = self.accuracy;
+        reader
+    }
+    pub fn metadata_enabled(&self) -> bool {
+        self.collector.is_some()
+    }
+    pub fn indexed(&mut self) {
+        self.accuracy = Accuracy::Indexed;
+    }
+    pub fn provisional(&mut self) {
+        self.accuracy = Accuracy::Provisional;
+    }
+    pub fn clear_provisional(&self) {
+        if let Ok(mut catalog) = self.catalog.lock() {
+            catalog.clear_provisional();
+        }
+    }
+    pub fn view(&self, position: u64) -> View {
+        self.catalog
+            .lock()
+            .map(|catalog| catalog.view(position))
+            .unwrap_or_default()
     }
     pub fn entries(&self) -> &VecDeque<Anchor> {
         &self.entries
@@ -185,6 +211,44 @@ impl Index {
                 as u64,
         ));
         self.epoch = anchor.epoch;
+        let known_utc = self.catalog.lock().ok().and_then(|catalog| {
+            catalog
+                .view(anchor.time_ns)
+                .clock
+                .filter(|clock| clock.epoch == anchor.epoch)?
+                .utc(anchor.time_ns)
+        });
+        self.programs = anchor.programs.as_ref().map(|observation| {
+            let mut observation = (**observation).clone();
+            observation.information.time = observation.information.time.map(|(position, utc)| {
+                let utc = i128::from(utc)
+                    + (i128::from(anchor.time_ns) - i128::from(position)) / 1_000_000;
+                (
+                    anchor.time_ns,
+                    utc.clamp(i128::from(i64::MIN), i128::from(i64::MAX)) as i64,
+                )
+            });
+            if let Some(utc) = known_utc {
+                observation.information.time = Some((anchor.time_ns, utc));
+            }
+            observation.pcr = anchor.time_ns;
+            Arc::new(observation)
+        });
+        if self.collector.is_some()
+            && let Ok(mut catalog) = self.catalog.lock()
+        {
+            catalog.observe(
+                &mut self.cursor,
+                ScanPoint {
+                    accuracy: self.accuracy,
+                    epoch: self.epoch,
+                    offset: anchor.offset,
+                    position: anchor.time_ns,
+                    end: anchor.time_ns.saturating_add(ticks_to_ns(self.step)),
+                    observation: self.programs.as_deref(),
+                },
+            );
+        }
     }
     pub fn discontinuity(&mut self) {
         self.epoch += 1;
@@ -273,7 +337,37 @@ impl Index {
                     .filter(|step| *step > 0 && *step < PCR_HZ)
                     .unwrap_or(self.step);
                 self.presentation_end = self.presentation_end.max(ticks_to_ns(mapped + step));
+                if let Ok(mut catalog) = self.catalog.lock() {
+                    catalog.extend(&self.cursor, self.presentation_end);
+                }
             }
+        }
+        if Some(packet.pid) == self.pcr_pid
+            && !self.tables.is_empty()
+            && let Some(pcr) = packet.pcr
+        {
+            let ticks = match self.clock {
+                None => 0,
+                Some((previous, time)) => {
+                    let delta = (pcr + PCR_WRAP - previous) % PCR_WRAP;
+                    if delta > DISCONTINUITY_TICKS || packet.discontinuity {
+                        self.epoch += 1;
+                        self.programs = None;
+                        self.presentation_end = 0;
+                        self.last_pts.clear();
+                        if let Some(collector) = &mut self.collector {
+                            collector.reset_clock();
+                        }
+                        time + self.step
+                    } else {
+                        if delta != 0 {
+                            self.step = delta;
+                        }
+                        time + delta
+                    }
+                }
+            };
+            self.clock = Some((pcr, ticks));
         }
         if let Some(collector) = &mut self.collector
             && let Ok(bytes) = bytes.try_into()
@@ -304,22 +398,7 @@ impl Index {
             return None;
         }
         let pcr = packet.pcr?;
-        let ticks = match self.clock {
-            None => 0,
-            Some((previous, time)) => {
-                let delta = (pcr + PCR_WRAP - previous) % PCR_WRAP;
-                if delta > DISCONTINUITY_TICKS || packet.discontinuity {
-                    self.epoch += 1;
-                    time + self.step
-                } else {
-                    if delta != 0 {
-                        self.step = delta;
-                    }
-                    time + delta
-                }
-            }
-        };
-        self.clock = Some((pcr, ticks));
+        let (_, ticks) = self.clock?;
         let anchor = Anchor {
             offset,
             time_ns: ticks_to_ns(ticks),
@@ -337,14 +416,28 @@ impl Index {
             self.metadata_bytes += anchor.charge();
             self.entries.push_back(anchor.clone());
         }
+        let end = self.end_ns().unwrap_or(anchor.time_ns);
+        if self.collector.is_some()
+            && let Ok(mut catalog) = self.catalog.lock()
+        {
+            catalog.observe(
+                &mut self.cursor,
+                ScanPoint {
+                    accuracy: self.accuracy,
+                    epoch: self.epoch,
+                    offset,
+                    position: anchor.time_ns,
+                    end,
+                    observation: self.programs.as_deref(),
+                },
+            );
+        }
         Some(anchor)
     }
+    #[cfg(test)]
     pub fn program(&self, position_ns: u64) -> Option<(String, f64)> {
-        self.entries
-            .iter()
-            .rev()
-            .find(|entry| entry.time_ns <= position_ns)?
-            .program(position_ns)
+        let view = self.view(position_ns);
+        Some(view.presentation(position_ns))
     }
 
     pub fn compact_file(&mut self) {
@@ -429,5 +522,37 @@ mod rate_tests {
         assert_eq!(index.bytes_per_second(), Some(BYTES_PER_SECOND as f64));
         index.clear_entries();
         assert_eq!(index.bytes_per_second(), None);
+    }
+}
+
+#[cfg(test)]
+mod catalog_seed_tests {
+    use super::*;
+    #[test]
+    fn seek_seed_uses_accepted_clock_instead_of_an_unconfirmed_tot_outlier() {
+        let mut index = Index::new(1, true);
+        let bytes = include_bytes!("../../../../tests/fixtures/recording-seek.ts");
+        for (number, packet) in bytes.as_chunks::<TS_PACKET_SIZE>().0.iter().enumerate() {
+            index.packet((number * TS_PACKET_SIZE) as u64, packet);
+        }
+        let mut anchor = index.entries().back().unwrap().clone();
+        let before = index
+            .view(anchor.time_ns)
+            .clock
+            .unwrap()
+            .utc(anchor.time_ns)
+            .unwrap();
+        let observation = Arc::make_mut(anchor.programs.as_mut().unwrap());
+        observation.information.time = Some((anchor.time_ns, before + 3_600_000));
+        let mut reader = index.reader();
+        reader.seed(&anchor);
+        assert_eq!(
+            reader
+                .view(anchor.time_ns)
+                .clock
+                .unwrap()
+                .utc(anchor.time_ns),
+            Some(before)
+        );
     }
 }

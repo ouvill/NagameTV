@@ -1,6 +1,6 @@
-//! Recording-only ARIB STD-B10 SI. No Mirakurun IDs, wall-clock queries or file-name guesses.
+//! ARIB STD-B10 SI shared by recording, live and time-shift playback.
+pub(crate) mod catalog;
 mod syntax;
-mod timeline;
 use super::{
     Sections,
     wire::{Pid, TS_PACKET_SIZE, TransportPacket, same_payload_packet},
@@ -8,7 +8,6 @@ use super::{
 use serde::Serialize;
 use std::collections::HashMap;
 pub(super) use syntax::section_size;
-pub(crate) use timeline::Timeline;
 
 const SDT_PID: Pid = Pid(0x11);
 const TIME_TABLE_PID: Pid = Pid(0x14);
@@ -29,13 +28,46 @@ pub(crate) struct Program {
     pub genres: Vec<(u8, u8)>,
 }
 
+/// No section received is not an empty, valid present section.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub(crate) enum Present {
+    #[default]
+    Unknown,
+    Empty,
+    Event(Program),
+}
+impl Present {
+    pub fn as_ref(&self) -> Option<&Program> {
+        match self {
+            Self::Event(program) => Some(program),
+            Self::Unknown | Self::Empty => None,
+        }
+    }
+    pub fn iter(&self) -> impl Iterator<Item = &Program> {
+        self.as_ref().into_iter()
+    }
+    #[cfg(test)]
+    pub fn is_none(&self) -> bool {
+        self.as_ref().is_none()
+    }
+}
+impl From<Option<Program>> for Present {
+    fn from(program: Option<Program>) -> Self {
+        match program {
+            Some(program) => Self::Event(program),
+            None => Self::Empty,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq)]
 pub(crate) struct Information {
     pub station: String,
     pub provider: String,
-    pub current: Option<Program>,
+    pub current: Present,
     pub next: Option<Program>,
     pub time: Option<(u64, i64)>, // PCR ticks, UTC epoch milliseconds (wire time is JST).
+    pub service: Option<crate::channels::BroadcastService>,
 }
 #[derive(Clone, Debug)]
 pub(crate) struct Observation {
@@ -98,8 +130,13 @@ impl Collector {
         if self.pcr_pid != Some(pid) {
             self.pcr_pid = Some(pid);
             self.pcr = None;
-            self.information.time = None;
         }
+    }
+    pub fn reset_clock(&mut self) {
+        self.information = Information::default();
+        self.pcr = None;
+        self.changed = true;
+        self.assemblies.clear();
     }
     pub fn packet(&mut self, packet: &TransportPacket<'_>, bytes: &[u8; TS_PACKET_SIZE]) {
         if self.pcr_pid == Some(packet.pid) {
@@ -161,6 +198,10 @@ impl Collector {
                     && self.network.is_none_or(|old| old == network)
                 {
                     self.network = Some(network);
+                    self.information.service = Some(crate::channels::BroadcastService {
+                        network_id: network,
+                        service_id: self.service,
+                    });
                     self.information.station = name;
                     self.information.provider = provider;
                 }
@@ -170,9 +211,13 @@ impl Collector {
                     && self.network.is_none_or(|network| network == event.network)
                 {
                     self.network = Some(event.network);
+                    self.information.service = Some(crate::channels::BroadcastService {
+                        network_id: event.network,
+                        service_id: self.service,
+                    });
                     let slot = usize::from(event.number);
                     if slot == 0 {
-                        self.information.current = event.program;
+                        self.information.current = event.program.into();
                     } else {
                         self.information.next = event.program;
                     }

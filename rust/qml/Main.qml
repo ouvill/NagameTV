@@ -291,8 +291,25 @@ ApplicationWindow {
                 anchors.centerIn: video
                 width: video.width
                 height: Math.min(video.height, width * 9 / 16)
-                active: !root.closing && !player.recording && player.comments_enabled && player.danmaku_enabled && player.playing
+                active: !root.closing && player.comments_enabled && player.danmaku_enabled && player.media_active
                 sourceComponent: DanmakuOverlay {
+                    id: playbackComments
+                    playbackClock: player
+                    paused: player.paused || player.seeking || player.ended
+                    property string timelineJson: player.comment_timeline
+                    property var replayGeneration: null
+                    property bool replayReady: false
+                    function syncTimeline() {
+                        if (!replayReady) return;
+                        const snapshot = JSON.parse(timelineJson);
+                        const position = player.commentary_position();
+                        if (!snapshot || position < 0) return;
+                        const reset = replayGeneration !== snapshot.generation;
+                        if (controller.update_timeline(JSON.stringify(snapshot.comments), position, reset))
+                            replayGeneration = snapshot.generation;
+                    }
+                    onTimelineJsonChanged: syncTimeline()
+                    Component.onCompleted: { configure(); replayReady = true; syncTimeline(); }
                     fontSize: player.comment_font_size
                     textOpacity: player.comment_opacity
                     speed: player.comment_speed
@@ -307,15 +324,6 @@ ApplicationWindow {
                         && surface.height > videoPicture.y + danmaku.y
                     controlsTopInVideo: (composer.visible
                         ? composer.y + composer.height - composer.occupiedHeight : bottomPanel.y) - videoPicture.y - danmaku.y
-                }
-            }
-            Connections {
-                target: player
-                function onSelectedChanged() { if (danmaku.item) danmaku.item.clearComments(); }
-                function onServerChanged() { if (danmaku.item) danmaku.item.clearComments(); }
-                function onCommentReceived(text, position, color, own) {
-                    if (danmaku.item)
-                        danmaku.item.receive(text, position, color, own);
                 }
             }
             Loader {
@@ -410,6 +418,7 @@ ApplicationWindow {
                 recording: player.recording
                 fallbackTitle: player.recording_name
                 programJson: player.current_program_data
+                programStatus: player.program_status
                 onDetailsRequested: {
                     root.sidebarPage = ProgramSidebar.Program;
                     root.showProgram = true;
@@ -681,6 +690,7 @@ ApplicationWindow {
             }
             targetWindow: root
             programJson: player.current_program_data
+            programStatus: player.program_status
             progress: player.program_progress
             recording: player.recording
             fallbackTitle: player.recording_name

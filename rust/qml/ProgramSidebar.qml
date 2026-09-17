@@ -27,6 +27,7 @@ Rectangle {
     property real now: 0
     signal pageRequested(int page)
     signal selectRequested(int index)
+    property string programStatus: "unavailable"
     required property string programJson
     required property Window targetWindow
     property url iconDirectory: "qrc:/qt/qml/MinimalViewer/assets/icons/"
@@ -116,7 +117,7 @@ Rectangle {
                 Label {
                     objectName: "programTitle"
                     Layout.fillWidth: true
-                    text: root.program ? (root.program.name || root.fallbackTitle || qsTranslate("Viewer", "Program title unavailable")) : qsTranslate("Main", "No program information")
+                    text: root.program ? (root.program.name || root.fallbackTitle || qsTranslate("Viewer", "Program title unavailable")) : root.programStatus === "pending" ? qsTranslate("Viewer", "Acquiring program information…") : root.programStatus === "failed" ? qsTranslate("Viewer", "Could not read program information") : qsTranslate("Main", "No program information")
                     color: "#f4f5f3"
                     font.pixelSize: 23
                     font.bold: true
@@ -140,6 +141,7 @@ Rectangle {
                 }
                 ProgressBar {
                     Layout.fillWidth: true
+                    visible: root.program && root.program.progressKnown !== false
                     value: root.progress
                     background: Rectangle {
                         implicitHeight: 3

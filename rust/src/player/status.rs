@@ -16,6 +16,22 @@ pub(super) fn with_detail(source: &'static str, detail: impl std::fmt::Display) 
 
 impl ffi::Player {
     pub(super) fn refresh_comment_status(mut self: Pin<&mut Self>) {
+        if self.media_active() && *self.comments_enabled() {
+            use crate::features::comments::replay::Status;
+            let text = match self.rust().comment_replay.status {
+                Status::Disabled => tr("Disabled"),
+                Status::WaitingService => tr("Identifying the broadcast service…"),
+                Status::WaitingClock => tr("Waiting for broadcast time…"),
+                Status::Unsupported => tr("Comments are unavailable for this channel"),
+                Status::Seeking => tr("Seeking comments…"),
+                Status::Loading | Status::Pending => tr("Fetching past comments…"),
+                Status::Ready => tr("Comments synchronized to playback"),
+                Status::Empty => tr("No archived comments in this interval"),
+                Status::Failed => tr("Could not fetch past comments. Retrying…"),
+            };
+            self.set_comment_status(text);
+            return;
+        }
         let text = match self.rust().comments.status(self.rust().comments_enabled) {
             PresentationStatus::Disabled => tr("Disabled"),
             PresentationStatus::WaitingForChannel => {

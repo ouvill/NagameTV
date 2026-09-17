@@ -25,7 +25,7 @@ TestCase {
     function test_rust_schedule_and_seek_render_in_qml() {
         verify(timeline.load(JSON.stringify([{time: 3, text: "later", type: "top"}, {time: 1, text: "first"}, {time: 3, text: "same time", type: "bottom"}])));
         timeline.position = 1;
-        compare(overlay.activeCount, 0);
+        compare(overlay.activeCount, 1);
         timeline.position = 1.01;
         compare(overlay.activeCount, 1);
         compare(entries()[0].text, "first");
@@ -33,10 +33,11 @@ TestCase {
         compare(overlay.activeCount, 1);
         timeline.seek(3);
         timeline.position = 3;
-        compare(overlay.activeCount, 0);
+        compare(overlay.activeCount, 3);
+        compare(entries()[0].text, "first");
         timeline.position = 3.01;
-        compare(overlay.activeCount, 2);
-        compare(entries()[0].text, "later");
+        compare(overlay.activeCount, 3);
+        compare(entries()[1].text, "later");
         timeline.position = 0;
         compare(overlay.activeCount, 0);
         timeline.position = 1.01;
@@ -49,7 +50,7 @@ TestCase {
         verify(timeline.load('[{"time":0,"text":"zero"}]'));
         timeline.playing = false;
         timeline.position = 0.1;
-        compare(overlay.activeCount, 0);
+        compare(overlay.activeCount, 1);
         timeline.playing = true;
         compare(entries()[0].text, "zero");
         verify(!timeline.load('[{"time":-1,"text":"invalid"}]'));
@@ -73,6 +74,24 @@ TestCase {
         timeline.position = 4;
         compare(overlay.activeCount, 1);
         compare(entries()[0].text, "visible");
+    }
+
+    function test_paused_seek_restores_horizontal_offset_and_freezes_it() {
+        verify(timeline.load('[{"time":1,"text":"restore"}]'));
+        timeline.playing = false;
+        timeline.seek(3);
+        compare(overlay.activeCount, 1);
+        const entry = entries()[0];
+        const expected = overlay.width - (overlay.width + entry.width) * 2 / 5;
+        verify(Math.abs(entry.x - expected) < 0.1);
+        compare(entry.duration, 3000);
+        wait(100);
+        verify(Math.abs(entry.x - expected) < 0.1);
+        timeline.playing = true;
+        timeline.position = 4;
+        verify(entry.x < expected);
+        timeline.position = 6;
+        compare(overlay.activeCount, 0);
     }
 
 }

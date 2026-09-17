@@ -260,6 +260,37 @@ impl ProgramInfo {
     ) -> Result<Option<String>, serde_json::Error> {
         projection.update(&self.snapshot, self.revision, channels, now)
     }
+    /// Only fill missing fields of an exactly matched TS event.
+    pub(crate) fn supplement_data(&self, data: &mut serde_json::Value) {
+        let identity = || {
+            Some((
+                BroadcastService {
+                    network_id: u16::try_from(data["networkId"].as_u64()?).ok()?,
+                    service_id: u16::try_from(data["serviceId"].as_u64()?).ok()?,
+                },
+                u16::try_from(data["eventId"].as_u64()?).ok()?,
+                data["startAt"].as_u64()?,
+            ))
+        };
+        let Some((service, event, start)) = identity() else {
+            return;
+        };
+        let Some(epg) = self
+            .snapshot
+            .current(Some(service), start)
+            .filter(|epg| epg.event_id == Some(event) && epg.start_at == start)
+        else {
+            return;
+        };
+        for (key, value) in [("name", &epg.name), ("description", &epg.description)] {
+            if data[key].as_str().is_none_or(str::is_empty)
+                && let Some(value) = value
+            {
+                data[key] = value.clone().into();
+                data["fieldSources"][key] = "mirakurun_epg".into();
+            }
+        }
+    }
     pub fn current_presentation(
         &self,
         projection: &mut presentation::Projection,

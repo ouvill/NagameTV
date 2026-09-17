@@ -24,6 +24,7 @@ pub mod ffi {
         #[qproperty(f64, top_origin, READ, NOTIFY)]
         #[qproperty(f64, bottom_origin, READ, NOTIFY)]
         #[qproperty(bool, paused, READ, NOTIFY)]
+        #[qproperty(bool, media_driven, READ, NOTIFY)]
         #[qproperty(QString, error, READ, NOTIFY)]
         type DanmakuController = super::Controller;
         #[qinvokable]
@@ -68,6 +69,15 @@ pub mod ffi {
         fn advance(self: Pin<&mut DanmakuController>, seconds: f64) -> bool;
         #[qinvokable]
         fn seek(self: Pin<&mut DanmakuController>, seconds: f64) -> bool;
+        #[qinvokable]
+        fn update_timeline(
+            self: Pin<&mut DanmakuController>,
+            json: QString,
+            seconds: f64,
+            reset: bool,
+        ) -> bool;
+        #[qsignal]
+        fn positioned(self: Pin<&mut DanmakuController>, token: u32, x: f64);
         #[qsignal]
         fn measure_requested(
             self: Pin<&mut DanmakuController>,
@@ -118,6 +128,7 @@ pub struct Controller {
     top_origin: f64,
     bottom_origin: f64,
     paused: bool,
+    media_driven: bool,
     error: QString,
 }
 impl Default for Controller {
@@ -132,12 +143,18 @@ impl Default for Controller {
             top_origin: 0.,
             bottom_origin: 0.,
             paused: false,
+            media_driven: false,
             error: QString::default(),
         }
     }
 }
 impl ffi::DanmakuController {
     fn publish(mut self: Pin<&mut Self>) {
+        let media = self.rust().engine.media_driven();
+        if self.rust().media_driven != media {
+            self.as_mut().rust_mut().media_driven = media;
+            self.as_mut().media_driven_changed();
+        }
         let active = i32::try_from(self.rust().engine.active_count()).unwrap_or(i32::MAX);
         let lanes = i32::try_from(self.rust().engine.lane_count()).unwrap_or(i32::MAX);
         let timeline = i32::try_from(self.rust().engine.timeline_count()).unwrap_or(i32::MAX);
@@ -369,7 +386,48 @@ impl ffi::DanmakuController {
         if backwards {
             self.as_mut().cleared();
         }
+        self.as_mut().tick();
         self.as_mut().drain_due();
+        self.as_mut().publish_positions();
+        self.publish();
+        true
+    }
+    fn publish_positions(mut self: Pin<&mut Self>) {
+        if self.rust().engine.media_driven() {
+            let positions = self.rust().engine.positions();
+            for (id, x) in positions {
+                self.as_mut().positioned(id.value(), x);
+            }
+        }
+    }
+    pub fn update_timeline(
+        mut self: Pin<&mut Self>,
+        json: QString,
+        seconds: f64,
+        reset: bool,
+    ) -> bool {
+        let (Ok(records), Some(position)) = (
+            danmaku_core::parse_timeline(&json.to_string()),
+            danmaku_core::seconds(seconds),
+        ) else {
+            return false;
+        };
+        let cleared = if reset {
+            self.as_mut().rust_mut().engine.load(records);
+            self.as_mut().rust_mut().engine.seek(position);
+            true
+        } else {
+            let backwards = self.as_mut().rust_mut().engine.set_position(position);
+            self.as_mut().rust_mut().engine.replace(records);
+            backwards
+        };
+        self.as_mut().publish();
+        if cleared {
+            self.as_mut().cleared();
+        }
+        self.as_mut().tick();
+        self.as_mut().drain_due();
+        self.as_mut().publish_positions();
         self.publish();
         true
     }
@@ -379,7 +437,15 @@ impl ffi::DanmakuController {
             let Some(comment) = comment else {
                 break;
             };
-            self.as_mut().request(comment);
+            let own = comment.comment.own;
+            let request = self.as_mut().rust_mut().engine.prepare_timed(comment);
+            if let Some(request) = request {
+                self.as_mut().measure_requested(
+                    request.id.value(),
+                    QString::from(request.text.as_ref()),
+                    own,
+                );
+            }
         }
     }
     pub fn seek(mut self: Pin<&mut Self>, seconds: f64) -> bool {
@@ -388,6 +454,7 @@ impl ffi::DanmakuController {
         };
         self.as_mut().rust_mut().engine.seek(position);
         self.as_mut().cleared();
+        self.as_mut().drain_due();
         self.publish();
         true
     }

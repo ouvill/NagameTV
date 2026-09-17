@@ -35,6 +35,7 @@ impl ffi::Player {
     ) {
         let old_program = self.current_program_data().clone();
         let old_progress = *self.program_progress();
+        let old_program_status = self.program_status().clone();
         let old_subtitle = self.subtitle_data().clone();
         let old_rate = *self.timeshift_bytes_per_second();
         let old_live_timeline = self.live_timeline().clone();
@@ -77,9 +78,6 @@ impl ffi::Player {
                     != this.stream_state.recording().map_or("", |file| file.name());
             if source_changed
                 || (old_live_timeline.to_string() != "null" && !this.stream_state.active())
-                || (!before.6
-                    && this.stream_state.seeking()
-                    && this.stream_state.recording().is_some())
             {
                 this.current_projection = Default::default();
                 this.current_program_data = QString::from("null");
@@ -88,14 +86,51 @@ impl ffi::Player {
                 this.subtitle_cells = 0;
             }
             if this.stream_state.active()
-                && let Some(snapshot) = this.media.live_timeline()
+                && let Some(mut snapshot) = this.media.live_timeline()
             {
+                if this.epg_enabled {
+                    snapshot.supplement(|data| this.epg.supplement_data(data));
+                } else {
+                    snapshot.disable_programs();
+                }
                 let (data, progress) = snapshot.viewing_program();
+                this.program_status = QString::from(if !this.epg_enabled {
+                    "disabled"
+                } else if this.stream_state.seeking() {
+                    "pending"
+                } else {
+                    snapshot.program_status().as_str()
+                });
                 this.current_program_data = QString::from(data);
                 this.program_progress = progress;
                 this.live_timeline = QString::from(snapshot.serialize());
             } else {
                 this.live_timeline = QString::from("null");
+                if this.stream_state.active() {
+                    if this.stream_state.seeking() {
+                        this.program_status = QString::from("pending");
+                    } else if let Some(position) = this
+                        .media
+                        .playback()
+                        .and_then(|playback| playback.position())
+                    {
+                        let view = this.media.metadata(position);
+                        let (data, progress) = if this.epg_enabled {
+                            view.presentation(position.nseconds())
+                        } else {
+                            ("null".into(), 0.)
+                        };
+                        this.current_program_data = QString::from(data);
+                        this.program_progress = progress;
+                        this.program_status = QString::from(if !this.epg_enabled {
+                            "disabled"
+                        } else {
+                            view.status.as_str()
+                        });
+                    }
+                } else {
+                    this.program_status = QString::from("pending");
+                }
             }
         }
         if before_live.0 != self.timeshift() {
@@ -122,6 +157,9 @@ impl ffi::Player {
         }
         if old_program != *self.current_program_data() {
             self.as_mut().current_program_data_changed();
+        }
+        if old_program_status != *self.program_status() {
+            self.as_mut().program_status_changed();
         }
         if old_progress != *self.program_progress() {
             self.as_mut().program_progress_changed();
@@ -228,7 +266,7 @@ impl ffi::Player {
             return true;
         }
         let server = self.server().to_string();
-        let programs_enabled = *self.epg_enabled();
+        let programs_enabled = *self.epg_enabled() || self.rust().comments_allowed;
         let subtitles_enabled = self.rust().subtitles_enabled;
         // Keep stop failure distinct: the previous generation is still owned.
         // A successful stop grants an exclusive capability for the next start.
@@ -323,7 +361,6 @@ impl ffi::Player {
             return;
         }
         self.as_mut().poll_recording();
-        self.as_mut().poll_features();
         let result = self.as_mut().rust_mut().media.poll();
         if let Some(notice) = self.as_mut().rust_mut().media.take_notice() {
             self.as_mut().set_transport_error(QString::from(notice));
@@ -375,6 +412,9 @@ impl ffi::Player {
             Ok(playback::Event::Idle) => {}
         }
         self.as_mut().change_stream_state(|state| state);
+        // Commentary uses the output-confirmed position and phase from this
+        // tick, so a completed seek publishes its restored window before draw.
+        self.as_mut().poll_features();
     }
     pub fn shutdown(mut self: Pin<&mut Self>) -> bool {
         self.as_mut().cancel_recording_open();
@@ -390,6 +430,7 @@ impl ffi::Player {
         // Stop UI samples; the application owner retains GC logging through engine teardown.
         self.as_mut().rust_mut().diagnostic_recorder.take();
         self.as_mut().rust_mut().comments.configure(false, None);
+        self.as_mut().rust_mut().comment_replay.disable();
         self.as_mut().set_comment_draft(QString::default());
         self.as_mut().refresh_comment_posting();
         self.as_mut().clear_comment_history();

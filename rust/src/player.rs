@@ -166,6 +166,7 @@ pub mod ffi {
         #[qproperty(*mut CommentModel, comment_model, READ = comment_model, CONSTANT)]
         #[qproperty(QString, activity_data, READ, NOTIFY)]
         #[qproperty(QString, comment_status, READ, NOTIFY)]
+        #[qproperty(QString, comment_timeline, READ, NOTIFY)]
         #[qproperty(QString, comment_draft, READ, NOTIFY)]
         #[qproperty(QString, comment_post_status, READ, NOTIFY)]
         #[qproperty(QString, comment_post_target, READ, NOTIFY)]
@@ -181,6 +182,7 @@ pub mod ffi {
         #[qproperty(bool, guide_visible, READ = guide_visible, NOTIFY)]
         #[qproperty(QString, current_program_data, READ, NOTIFY)]
         #[qproperty(f64, program_progress, READ, NOTIFY)]
+        #[qproperty(QString, program_status, READ, NOTIFY)]
         #[qproperty(f64, volume_level, READ, NOTIFY)]
         #[qproperty(bool, audio_muted, READ, NOTIFY)]
         #[qproperty(QString, settings_error, READ, NOTIFY)]
@@ -306,6 +308,8 @@ pub mod ffi {
         #[qinvokable]
         fn mute(self: Pin<&mut Player>, muted: bool);
         #[qinvokable]
+        fn commentary_position(&self) -> f64;
+        #[qinvokable]
         fn poll(self: Pin<&mut Player>);
         #[qinvokable]
         fn shutdown(self: Pin<&mut Player>) -> bool;
@@ -327,15 +331,6 @@ pub mod ffi {
         fn configure_comment_send_on_enter(self: Pin<&mut Player>, enabled: bool);
         #[qinvokable]
         fn configure_comment_shadow(self: Pin<&mut Player>, enabled: bool);
-        #[qsignal]
-        #[cxx_name = "commentReceived"]
-        fn comment_received(
-            self: Pin<&mut Player>,
-            text: QString,
-            position: QString,
-            color: u32,
-            own: bool,
-        );
         #[qinvokable]
         fn configure_danmaku(
             self: Pin<&mut Player>,
@@ -416,6 +411,8 @@ pub struct PlayerRust {
     comment_post_busy: bool,
     comment_send_on_enter: bool,
     comments: crate::features::comments::Comments,
+    comment_replay: crate::features::comments::replay::Replay,
+    comment_timeline: QString,
     subtitles_active: bool,
     subtitle_display: bool,
     subtitle_data: QString,
@@ -427,6 +424,7 @@ pub struct PlayerRust {
     guide_error: Option<serde_json::Error>,
     current_program_data: QString,
     program_progress: f64,
+    program_status: QString,
     current_projection: crate::features::program_info::presentation::Projection,
     next_current_program: Instant,
     diagnostics: QString,

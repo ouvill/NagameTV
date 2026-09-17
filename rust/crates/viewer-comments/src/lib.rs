@@ -1,5 +1,6 @@
 //! NX-Jikkyo protocol and optional bounded receiver. No Qt or playback devices.
 pub mod activity;
+pub mod archive;
 #[cfg(feature = "network")]
 pub mod connection;
 #[cfg(feature = "network")]

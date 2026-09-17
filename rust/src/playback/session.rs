@@ -91,9 +91,18 @@ impl Session {
             Input::Idle => None,
         }
     }
-    pub fn program(&self, position: Option<gstreamer::ClockTime>) -> Option<(String, f64)> {
+    pub fn metadata(
+        &self,
+        position: gstreamer::ClockTime,
+    ) -> crate::transport::programs::catalog::View {
         match &self.input {
-            Input::Active { source, .. } => source.program(position?.nseconds()),
+            Input::Active { source, .. } => source.metadata(position.nseconds()),
+            Input::Idle => Default::default(),
+        }
+    }
+    pub fn source_identity(&self) -> Option<u64> {
+        match &self.input {
+            Input::Active { source, .. } => Some(source.identity()),
             Input::Idle => None,
         }
     }
@@ -303,12 +312,7 @@ impl Stopped<'_> {
             "appsrc://",
             Some(file.service()),
             |element| {
-                subtitles::Session::start_recording(
-                    element,
-                    file.service(),
-                    subtitles_enabled,
-                    false,
-                )
+                subtitles::Session::start_recording(element, file.service(), subtitles_enabled)
             },
             subtitles_enabled,
             input,
