@@ -45,6 +45,59 @@ fn default_admission_limits_bursts_without_comparing_glyphs() {
 }
 
 #[test]
+fn fullscreen_switches_keep_new_and_existing_scrolls_at_the_same_speed() {
+    let comment_width = 100.;
+    let sample_interval = Duration::from_secs(1);
+    for placement in [
+        PlacementMode::Sequential,
+        PlacementMode::Random,
+        #[cfg(feature = "evaluation-collision-layout")]
+        PlacementMode::Collision,
+    ] {
+        for viewport_width in [640., 1920.] {
+            for speed in [0.5, 1., 2.] {
+                let mut e = engine(DisplayMode::Scroll, placement);
+                e.configure(
+                    Viewport {
+                        width: viewport_width,
+                        ..e.viewport
+                    },
+                    speed,
+                )
+                .unwrap();
+                let mut previous = direct(&mut e, comment_width).unwrap();
+                e.advance_wall(sample_interval);
+                for full_screen in [true, false] {
+                    e.configure(
+                        Viewport {
+                            full_screen,
+                            ..e.viewport
+                        },
+                        speed,
+                    )
+                    .unwrap();
+                    let next = direct(&mut e, comment_width).unwrap();
+                    assert_eq!(previous.lifetime, next.lifetime);
+                    let x = |e: &Engine, id| {
+                        e.visuals()
+                            .into_iter()
+                            .find(|(token, _)| *token == id)
+                            .unwrap()
+                            .1
+                            .x
+                    };
+                    let previous_x = x(&e, previous.id);
+                    let next_x = x(&e, next.id);
+                    e.advance_wall(sample_interval);
+                    assert_eq!(previous_x - x(&e, previous.id), next_x - x(&e, next.id));
+                    previous = next;
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn width_does_not_affect_velocity_and_overlap_is_allowed() {
     let mut e = engine(DisplayMode::Scroll, PlacementMode::Sequential);
     e.configure(
@@ -68,6 +121,131 @@ fn width_does_not_affect_velocity_and_overlap_is_allowed() {
         "overlap is deliberately permitted"
     );
     assert!(first.lifetime <= MAX_LIFETIME);
+}
+
+#[test]
+fn sparse_scrolling_stays_in_the_top_few_rows_even_late_in_playback() {
+    let mut e = engine(DisplayMode::Scroll, PlacementMode::Sequential);
+    let sparse_interval = Duration::from_secs(1);
+    let top_rows = 3;
+    e.advance_wall(Duration::from_secs(47));
+    let first = direct(&mut e, 100.).unwrap();
+    assert_eq!(first.y, 0., "an isolated comment starts at the top");
+    for _ in 0..20 {
+        e.advance_wall(sparse_interval);
+        let spawn = direct(&mut e, 100.).unwrap();
+        assert!(spawn.y < top_rows as f64 * e.viewport.spacing());
+    }
+    e.advance_wall(Duration::from_secs(4));
+    assert_eq!(direct(&mut e, 100.).unwrap().y, 0.);
+}
+
+#[test]
+fn dense_scrolling_expands_then_new_comments_return_to_top_without_moving_survivors() {
+    let mut e = engine(DisplayMode::Scroll, PlacementMode::Sequential);
+    let dense_interval = Duration::from_millis(250);
+    let long_width = 2000.;
+    let mut lowest: f64 = 0.;
+    for _ in 0..20 {
+        let spawn = direct(&mut e, long_width).unwrap();
+        lowest = lowest.max(spawn.y);
+        e.advance_wall(dense_interval);
+    }
+    assert!(
+        lowest > e.viewport.height / 2.,
+        "sustained density expands downward"
+    );
+    let before = e.visuals();
+    e.advance_wall(Duration::from_secs(4));
+    let after = e.visuals();
+    assert_eq!(before.len(), after.len(), "long comments still survive");
+    for ((before_id, before), (after_id, after)) in before.iter().zip(&after) {
+        assert_eq!(before_id, after_id);
+        assert_eq!(before.y, after.y, "density never relocates a survivor");
+    }
+    assert_eq!(direct(&mut e, long_width).unwrap().y, 0.);
+}
+
+#[test]
+fn rejected_bursts_and_fixed_comments_do_not_expand_the_scrolling_band() {
+    let mut e = engine(DisplayMode::Scroll, PlacementMode::Sequential);
+    let fixed_interval = Duration::from_millis(250);
+    for _ in 0..8 {
+        let measurement = e
+            .prepare(Comment::new("fixed", Position::Top, 0xffffff).unwrap())
+            .unwrap();
+        assert!(e.measured(measurement.id.value(), 100.).is_some());
+        assert!(
+            direct(&mut e, 100.).is_none(),
+            "the fixed comment won this slot"
+        );
+        e.advance_wall(fixed_interval);
+    }
+    assert_eq!(direct(&mut e, 100.).unwrap().y, 0.);
+    for _ in 0..100 {
+        assert!(direct(&mut e, 100.).is_none());
+    }
+    e.advance_wall(Duration::from_secs(1));
+    assert!(direct(&mut e, 100.).unwrap().y < 2. * e.viewport.spacing());
+}
+
+#[test]
+fn density_band_keeps_admission_width_independent_and_respects_resized_viewport() {
+    let mut narrow = engine(DisplayMode::Scroll, PlacementMode::Sequential);
+    let mut wide = engine(DisplayMode::Scroll, PlacementMode::Sequential);
+    for _ in 0..20 {
+        let small = direct(&mut narrow, 20.).unwrap();
+        let large = direct(&mut wide, 2000.).unwrap();
+        assert_eq!(small.y, large.y, "glyph widths cannot choose the row");
+        narrow.advance_wall(Duration::from_millis(250));
+        wide.advance_wall(Duration::from_millis(250));
+    }
+    wide.configure(
+        Viewport {
+            height: 124.,
+            ..wide.viewport
+        },
+        1.,
+    )
+    .unwrap();
+    let spawn = direct(&mut wide, 2000.).unwrap();
+    assert!(spawn.y < wide.lane_count() as f64 * wide.viewport.spacing());
+}
+
+#[test]
+fn seek_restores_density_before_the_oldest_surviving_comment() {
+    let mut normal = engine(DisplayMode::Scroll, PlacementMode::Sequential);
+    let records: Vec<_> = (0..=160)
+        .map(|index| record(&index.to_string(), index as f64 / 4., Position::Right))
+        .collect();
+    normal.load(records.clone());
+    let long_width = 2000.;
+    for record in &records {
+        normal.set_position(record.time);
+        normal.advance_wall(Duration::ZERO);
+        let due = normal.next_due().unwrap();
+        timed(&mut normal, due, long_width).unwrap();
+    }
+    let target = seconds(40.125).unwrap();
+    normal.set_position(target);
+    normal.advance_wall(Duration::ZERO);
+
+    let mut restored = engine(DisplayMode::Scroll, PlacementMode::Sequential);
+    restored.load(records);
+    restored.seek(target);
+    while let Some(due) = restored.next_due() {
+        timed(&mut restored, due, long_width).unwrap();
+    }
+    let poses = |e: &Engine| {
+        let mut poses: Vec<_> = e.visuals().into_iter().map(|(_, visual)| visual).collect();
+        poses.sort_by(|a, b| a.x.total_cmp(&b.x));
+        poses
+    };
+    assert_eq!(poses(&restored), poses(&normal));
+    restored.set_paused(true);
+    let before = poses(&restored);
+    restored.advance_wall(Duration::from_secs(2));
+    assert_eq!(poses(&restored), before);
 }
 
 #[test]

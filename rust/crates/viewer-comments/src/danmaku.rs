@@ -10,7 +10,6 @@ pub use presentation::{
 };
 
 const SCROLL_SECONDS: f64 = 5.;
-const FULLSCREEN_SCROLL_SECONDS: f64 = 8.;
 const FIXED_SECONDS: f64 = 4.;
 const FULLSCREEN_FIXED_SECONDS: f64 = 6.;
 const MAX_MEASURED_WIDTH: f64 = 1_000_000.;
@@ -356,7 +355,7 @@ struct Pending {
     start: Start,
     seed: u64,
 }
-/// Longest supported scrolling lifetime: fullscreen, at half speed.
+/// Maximum retention for long scrolling comments and seek reconstruction.
 pub const MAX_LIFETIME: Duration = Duration::from_secs(16);
 
 /// All persistent comment data, lane occupancy, pending measurement and clocks
@@ -397,6 +396,17 @@ impl Engine {
             PlacementMode::Sequential | PlacementMode::Random => false,
             #[cfg(feature = "evaluation-collision-layout")]
             PlacementMode::Collision => true,
+        }
+    }
+    fn top_spread(&self) -> bool {
+        match self.presentation.placement() {
+            PlacementMode::Sequential => match self.presentation.display() {
+                DisplayMode::Scroll => true,
+                DisplayMode::Pop => false,
+            },
+            PlacementMode::Random => false,
+            #[cfg(feature = "evaluation-collision-layout")]
+            PlacementMode::Collision => false,
         }
     }
     pub fn lane_count(&self) -> usize {
@@ -761,14 +771,17 @@ impl Engine {
             return None;
         }
         let collision = self.collision_layout();
-        let sequence = if collision {
-            0
+        let (sequence, scroll_rows) = if collision {
+            (0, self.lane_count())
         } else {
             let time = match start {
                 Start::Now => self.clock,
                 Start::At(time) => time,
             };
-            self.admission.reserve(time, self.lane_count())?
+            let admitted = self
+                .admission
+                .reserve(time, self.lane_count(), comment.position)?;
+            (admitted.sequence(), admitted.scroll_rows())
         };
         let speed = self.speed.unwrap_or(1.);
         let display = self.presentation.display();
@@ -788,8 +801,7 @@ impl Engine {
             }
             DisplayMode::Scroll => {
                 let seconds = match (comment.position, self.viewport.full_screen) {
-                    (Position::Right, false) => SCROLL_SECONDS,
-                    (Position::Right, true) => FULLSCREEN_SCROLL_SECONDS,
+                    (Position::Right, _) => SCROLL_SECONDS,
                     (Position::Top | Position::Bottom, false) => FIXED_SECONDS,
                     (Position::Top | Position::Bottom, true) => FULLSCREEN_FIXED_SECONDS,
                 } / speed;
@@ -861,11 +873,13 @@ impl Engine {
         let lane = match display {
             DisplayMode::Pop => 0,
             DisplayMode::Scroll => {
-                first
-                    + self
-                        .presentation
-                        .placement()
-                        .row(sequence, seed, limit - first)
+                let available = limit - first;
+                let rows = if self.top_spread() && comment.position == Position::Right {
+                    available.min(scroll_rows)
+                } else {
+                    available
+                };
+                first + self.presentation.placement().row(sequence, seed, rows)
             }
         };
         let lanes = &mut self.lanes[kind];
@@ -933,6 +947,12 @@ impl Engine {
     }
     pub fn seek(&mut self, position: Duration) {
         self.clear();
+        if self.top_spread()
+            && let Some(through) = position.checked_sub(MAX_LIFETIME)
+        {
+            self.admission
+                .restore_density(&self.timeline, through, self.lane_count());
+        }
         self.delivered.clear();
         self.position = position;
         self.clock = position;

@@ -341,6 +341,7 @@ fn shrinking_below_occupied_height_retains_rows_until_expiration() {
 }
 #[test]
 fn formats_durations_pause_and_lifetime_are_core_owned() {
+    let double_speed_scroll_lifetime = Duration::from_millis(2500);
     let mut e = engine(480.);
     let right = spawn(&mut e, Position::Right, 100.).expect("right");
     let top = spawn(&mut e, Position::Top, 100.).expect("top");
@@ -371,7 +372,7 @@ fn formats_durations_pause_and_lifetime_are_core_owned() {
         spawn(&mut e, Position::Right, 100.)
             .expect("right")
             .lifetime,
-        Duration::from_secs(4)
+        double_speed_scroll_lifetime
     );
     assert_eq!(
         spawn(&mut e, Position::Top, 100.).expect("top").lifetime,

@@ -1,6 +1,8 @@
 //! Independent trajectories and time-based admission; no comparison of comments.
 use serde::{Deserialize, Serialize};
-use std::{collections::BTreeMap, time::Duration};
+use std::{collections::BTreeMap, ops::Bound, time::Duration};
+
+use super::{Position, TimedComment};
 
 macro_rules! choice {
     ($name:ident, $default:ident, {$($variant:ident => $wire:literal),+ $(,)?}) => {
@@ -124,27 +126,52 @@ impl From<Presentation> for PresentationWire {
 const LANES_PER_COMMENT_PER_SECOND: usize = 3;
 const MAX_COMMENTS_PER_SECOND: usize = 6;
 const NANOS_PER_SECOND: u128 = 1_000_000_000;
+const SCROLL_DENSITY_WINDOW: Duration = Duration::from_secs(3);
+
+/// Only a reserved time slot can supply a placement budget. Neither glyph
+/// measurements nor the positions/lifetimes of displayed comments enter it.
+pub(super) struct Admitted {
+    sequence: u128,
+    scroll_rows: usize,
+}
+impl Admitted {
+    pub fn sequence(&self) -> u128 {
+        self.sequence
+    }
+    pub fn scroll_rows(&self) -> usize {
+        self.scroll_rows
+    }
+}
 
 #[derive(Default)]
 pub(super) struct Admission {
-    slots: BTreeMap<u128, ()>,
+    slots: BTreeMap<u128, Position>,
 }
 impl Admission {
+    fn interval(lanes: usize) -> u128 {
+        let rate = (lanes / LANES_PER_COMMENT_PER_SECOND).clamp(1, MAX_COMMENTS_PER_SECOND);
+        NANOS_PER_SECOND / rate as u128
+    }
+
     /// A bounded temporal budget, independent of glyph widths, live comment
     /// positions and velocities. Overlap is allowed. This replaces the default
     /// pairwise adjustment described in JP4695583 / JP6526304 / JP7178462;
     /// estimated terms are documented on PlacementMode::Collision above.
-    pub fn reserve(&mut self, time: Duration, lanes: usize) -> Option<u128> {
-        let rate = (lanes / LANES_PER_COMMENT_PER_SECOND).clamp(1, MAX_COMMENTS_PER_SECOND);
+    pub fn reserve(
+        &mut self,
+        time: Duration,
+        lanes: usize,
+        position: Position,
+    ) -> Option<Admitted> {
         // Use absolute nanosecond keys so resizing does not mix different units.
-        let interval = NANOS_PER_SECOND / rate as u128;
+        let interval = Self::interval(lanes);
         let bucket = time.as_nanos() / interval;
         let start = bucket * interval;
         let end = start + interval;
         if self.slots.range(start..end).next().is_some() {
             return None;
         }
-        self.slots.insert(time.as_nanos(), ());
+        self.slots.insert(time.as_nanos(), position);
         let earliest = time.saturating_sub(super::MAX_LIFETIME).as_nanos();
         while self
             .slots
@@ -153,7 +180,33 @@ impl Admission {
         {
             self.slots.pop_first();
         }
-        Some(bucket)
+        let since = time
+            .checked_sub(SCROLL_DENSITY_WINDOW)
+            .map_or(Bound::Unbounded, |start| Bound::Excluded(start.as_nanos()));
+        let scroll_rows = self
+            .slots
+            .range((since, Bound::Included(time.as_nanos())))
+            .filter(|(_, position)| **position == Position::Right)
+            .count()
+            .max(1);
+        Some(Admitted {
+            sequence: bucket,
+            scroll_rows,
+        })
+    }
+
+    /// Seed the temporal budget before the oldest comment a seek can restore.
+    /// Include the whole first slot so a fixed comment that won that slot is
+    /// not mistaken for a subsequent scrolling comment in the same slot.
+    pub fn restore_density(&mut self, records: &[TimedComment], through: Duration, lanes: usize) {
+        let interval = Self::interval(lanes);
+        let since = through.saturating_sub(SCROLL_DENSITY_WINDOW).as_nanos();
+        let first_slot = since / interval * interval;
+        let start = records.partition_point(|record| record.time.as_nanos() < first_slot);
+        let end = records.partition_point(|record| record.time <= through);
+        for record in &records[start..end] {
+            self.reserve(record.time, lanes, record.comment.position);
+        }
     }
 }
 

@@ -82,7 +82,7 @@ TestCase {
         compare(entries()[0], scroll);
         overlay.receive("full screen", "right", 0xffffff);
         overlay.receive("fixed", "top", 0xffffff);
-        compare(entries()[3].duration, 4000);
+        compare(entries()[3].duration, scroll.duration);
         compare(entries()[4].duration, 3000);
         compare(scroll.duration, 2500);
         compare(top.duration, 2000);
