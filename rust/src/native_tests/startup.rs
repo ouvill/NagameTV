@@ -150,6 +150,7 @@ fn check_danmaku_layout(
     assert!(evaluate(
         engine,
         r#"
+        player.configure_danmaku(true, 36, player.comment_opacity, player.comment_speed);
         danmaku.item.replayReady = false;
         danmaku.item.playbackClock = null;
         danmaku.item.paused = true;
@@ -160,14 +161,27 @@ fn check_danmaku_layout(
         danmaku.item.activeCount === 2
     "#
     )?);
-    for (open, width) in [(true, 1280), (false, 1280), (true, 1100), (false, 1200)] {
+    // Base size is 36 px at a 720 px picture height. Sidebars, black bars and
+    // aspect ratios must use the fitted picture, not the enclosing window.
+    for (open, width, height, aspect, expected_font_size) in [
+        (false, 1280, 720, 16. / 9., 36),
+        (true, 1280, 720, 16. / 9., 25),
+        (false, 1280, 900, 16. / 9., 36),
+        (false, 1280, 720, 4. / 3., 36),
+        (false, 1280, 720, 2.4, 27),
+        (false, 1920, 1080, 16. / 9., 54),
+        (false, 1920, 1080, 4. / 3., 54),
+        (true, 1100, 720, 16. / 9., 21),
+        (false, 1200, 720, 16. / 9., 34),
+    ] {
         assert!(evaluate(
             engine,
             &format!(
                 r#"
             (function() {{
                 const before = Array.from(danmaku.item.visuals.values());
-                root.showProgram = {open}; root.width = {width};
+                root.showProgram = {open}; root.width = {width}; root.height = {height};
+                commentBounds.aspectRatio = {aspect};
                 const after = Array.from(danmaku.item.visuals.values());
                 return after.length === 2 && before.every((entry, i) => entry === after[i])
                     && after[1].x === (danmaku.width - after[1].width) / 2;
@@ -175,13 +189,22 @@ fn check_danmaku_layout(
         "#
             )
         )?);
+        // QQuickWindow can publish its new size before resizing its content.
         wait_for(
             app,
             engine,
-            "danmaku.item.activeCount === 2 && danmaku.item.visualCount === 2",
+            &format!(
+                r#"
+                danmaku.item.activeCount === 2 && danmaku.item.visualCount === 2
+                    && Array.from(danmaku.item.visuals.values()).every(entry =>
+                        entry.font.pixelSize === {expected_font_size}
+                        && (entry.placement !== DanmakuOverlay.Top
+                            || entry.x === (danmaku.width - entry.width) / 2))
+                "#
+            ),
         )?;
     }
-    for size in [36, 72, 14] {
+    for size in [72, 14, 36] {
         assert!(evaluate(
             engine,
             &format!(
@@ -192,7 +215,8 @@ fn check_danmaku_layout(
                 player.configure_danmaku(true, {size}, player.comment_opacity, player.comment_speed);
                 const after = Array.from(danmaku.item.visuals.values());
                 return after.length === 2 && before.every((entry, i) => entry === after[i])
-                    && after[1].font.pixelSize === {size} && after[1].width !== oldWidth;
+                    && after[1].font.pixelSize === Math.round({size} * danmaku.height / 720)
+                    && after[1].width !== oldWidth;
             }})()
         "#
             )

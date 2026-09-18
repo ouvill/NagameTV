@@ -15,6 +15,10 @@ const SAMPLE_PERIOD: Duration = Duration::from_secs(3);
 const BURST_INTERVAL: Duration = Duration::from_millis(100);
 const SOURCE_WIDTH: i32 = 1920;
 const SOURCE_HEIGHT: i32 = 1080;
+// Allow for glyph rasterization differences after normalizing to source pixels.
+const COMMENT_INK_TOLERANCE_PIXELS: f64 = 4.0;
+const OVERLAY_PRIMARY_MIN: i32 = 200;
+const OVERLAY_OTHER_MAX: i32 = 40;
 
 fn pump(app: &QGuiApplication, duration: Duration) {
     let until = Instant::now() + duration;
@@ -123,7 +127,12 @@ fn colored(image: &QImage, channel: usize) -> (usize, i32, i32, i32, i32) {
         for x in 0..image.width() {
             let color = image.pixel_color(x, y);
             let rgb = [color.red(), color.green(), color.blue()];
-            if rgb[channel] > 140 && rgb[(channel + 1) % 3] < 100 && rgb[(channel + 2) % 3] < 100 {
+            // Exclude MPEG color fringes around the white frame number while
+            // retaining the authored red/green/blue overlay glyphs.
+            if rgb[channel] > OVERLAY_PRIMARY_MIN
+                && rgb[(channel + 1) % 3] < OVERLAY_OTHER_MAX
+                && rgb[(channel + 2) % 3] < OVERLAY_OTHER_MAX
+            {
                 bounds.0 += 1;
                 bounds.1 = bounds.1.min(x);
                 bounds.2 = bounds.2.min(y);
@@ -260,10 +269,8 @@ pub(super) fn run(
     pump(app, SETTLE);
     let overlaid = capture(app, engine)?;
     save(&overlaid, &review.join("overlays.png"))?;
-    save(
-        &ffi::grabRoot(engine.pin_mut())?,
-        &review.join("overlays-window.png"),
-    )?;
+    let overlaid_window = ffi::grabRoot(engine.pin_mut())?;
+    save(&overlaid_window, &review.join("overlays-window.png"))?;
 
     let green = colored(&overlaid, 1);
     let red = colored(&overlaid, 0);
@@ -332,15 +339,6 @@ pub(super) fn run(
         (f64::from(resized_green.1) - f64::from(displayed_green.1) * factor).abs() < 5.0,
         "resized caption no longer matches displayed position at width {logical_width}"
     );
-    assert!(
-        colored(&resized, 0).0 > 100 && colored(&resized, 0).0 < red.0,
-        "fixed UI comment font did not scale down: before {red:?}, after {:?}, geometry {}",
-        colored(&resized, 0),
-        json(
-            engine,
-            "({w:danmaku.width,h:danmaku.height,active:danmaku.item.activeCount,labels:Array.from(danmaku.item.visuals.values()).map(e=>({x:e.x,y:e.y,w:e.width,text:e.text})),top:danmaku.item.controller.top_origin})"
-        )?
-    );
     evaluate(engine, "root.showFullScreen(); true")?;
     pump(app, SETTLE);
     // Entering fullscreen reveals controls. Hide the UI gradient before
@@ -353,6 +351,29 @@ pub(super) fn run(
     let displayed_full = ffi::grabRoot(engine.pin_mut())?;
     save(&full, &review.join("fullscreen-native.png"))?;
     save(&displayed_full, &review.join("fullscreen-window.png"))?;
+    // Measure rendered glyphs, not only font.pixelSize. These 16:9 pictures
+    // fill the window width even when the window contains top/bottom bars.
+    let reference_ink = [f64::from(red.3 - red.1 + 1), f64::from(red.4 - red.2 + 1)];
+    for (name, image) in [
+        ("initial window", &overlaid_window),
+        ("resized capture", &resized),
+        ("resized window", &displayed),
+        ("fullscreen capture", &full),
+        ("fullscreen window", &displayed_full),
+    ] {
+        let ink = colored(image, 0);
+        let scale = f64::from(SOURCE_WIDTH) / f64::from(image.width());
+        let normalized_ink = [
+            f64::from(ink.3 - ink.1 + 1) * scale,
+            f64::from(ink.4 - ink.2 + 1) * scale,
+        ];
+        assert!(
+            normalized_ink.iter().zip(reference_ink).all(|(actual, expected)|
+                (actual - expected).abs() <= COMMENT_INK_TOLERANCE_PIXELS),
+            "comment size relative to video changed in {name}: {normalized_ink:?}, expected {reference_ink:?}"
+        );
+        eprintln!("Comment ink normalized to 1080p ({name}): {normalized_ink:?}");
+    }
     let shown = colored(&displayed_full, 1);
     let factor = f64::from(SOURCE_WIDTH) / f64::from(displayed_full.width());
     // Compare the caption's left edge and underlined baseline. Qt Quick's

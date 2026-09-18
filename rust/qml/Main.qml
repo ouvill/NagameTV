@@ -331,7 +331,10 @@ ApplicationWindow {
                     Component.onCompleted: { configure(); replayReady = true; syncTimeline(); }
                     displayMode: player.comment_display
                     placementMode: player.comment_placement
-                    fontSize: player.comment_font_size
+                    // The saved text size is relative to a 1280 x 720 picture.
+                    // This item's height follows the fitted video, excluding bars.
+                    readonly property int referenceVideoHeight: 720
+                    fontSize: Math.max(1, Math.round(player.comment_font_size * height / referenceVideoHeight))
                     textOpacity: player.comment_opacity
                     speed: player.comment_speed
                     shadowEnabled: player.comment_shadow_enabled
