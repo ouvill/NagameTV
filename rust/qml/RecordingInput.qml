@@ -9,17 +9,17 @@ Item {
     signal started
 
     function open() { picker.open(); }
+    function openTransfer(key) {
+        if (backend.open_recording_transfer(key)) return true;
+        errorDialog.open();
+        return false;
+    }
     function openUrl(url) {
         if (backend.open_recording(url)) {
             return true;
         }
         errorDialog.open();
         return false;
-    }
-    function dropUrls(urls) {
-        if (urls.length !== 1)
-            return false;
-        return openUrl(urls[0]);
     }
     Connections {
         target: root.backend
@@ -49,13 +49,10 @@ Item {
             }
         }
     }
-    DropArea {
+    RecordingDropArea {
         anchors.fill: parent
-        onEntered: function(drag) { drag.accepted = drag.hasUrls && drag.urls.length === 1; }
-        onDropped: function(drop) {
-            if (root.dropUrls(drop.urls))
-                drop.acceptProposedAction();
-        }
+        onFileDropped: function(file) { root.openUrl(file); }
+        onTransferDropped: function(key) { root.openTransfer(key); }
     }
     FileDialogs.FileDialog {
         id: picker

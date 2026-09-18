@@ -9,6 +9,8 @@ mod pointer;
 #[cfg(target_os = "linux")]
 mod portal_dialogs;
 mod recording_audit;
+#[cfg(target_os = "linux")]
+mod recording_drop;
 mod screenshots;
 mod startup;
 mod timeshift;

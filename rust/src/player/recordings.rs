@@ -10,6 +10,23 @@ impl ffi::Player {
         self.rust().recording_loader.loading()
     }
 
+    pub fn open_recording_transfer(mut self: Pin<&mut Self>, key: QString) -> bool {
+        let request = match Request::portal_transfer(&key.to_string()) {
+            Ok(request) => request,
+            Err(error) => {
+                self.set_file_error(super::status::with_detail(
+                    "Could not open the TS file: %1",
+                    error,
+                ));
+                return false;
+            }
+        };
+        self.as_mut().rust_mut().autoplay_pending = false;
+        self.as_mut().set_file_error(QString::default());
+        self.begin_recording(request);
+        true
+    }
+
     /// True means accepted for inspection. recordingOpened reports completion.
     pub fn open_recording(mut self: Pin<&mut Self>, url: QUrl) -> bool {
         let Some(path) = url.to_local_file().filter(|path| !path.is_empty()) else {

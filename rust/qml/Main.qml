@@ -449,6 +449,7 @@ ApplicationWindow {
             onCompleted: root.chooseConnectedChannel()
             onOpenFileRequested: viewerActions.openRecording.trigger()
             onFileDropped: function(file) { recordingInput.openUrl(file); }
+            onTransferDropped: function(key) { recordingInput.openTransfer(key); }
         }
         Rectangle {
             anchors {

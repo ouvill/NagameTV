@@ -529,10 +529,12 @@ fn check_recording(
         engine,
         "!player.open_recording('https://example.invalid/recording.ts') && player.playing && player.recording && player.file_error.length > 0"
     )?);
-    assert!(evaluate(
-        engine,
-        &format!("!recordingInput.dropUrls([{quoted_url}, {quoted_url}]) && player.playing")
-    )?);
+    assert!(!ffi::drop_files_on_root(
+        engine.pin_mut(),
+        &[url.to_string(), url.to_string()],
+        &cxx_qt_lib::QPoint::new(20, 200),
+    ));
+    assert!(evaluate(engine, "player.playing")?);
     evaluate(engine, "player.stop(); true")?;
     assert!(evaluate(
         engine,

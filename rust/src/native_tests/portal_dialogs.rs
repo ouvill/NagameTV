@@ -4,7 +4,7 @@ use crate::{platform, player};
 use cxx_qt_lib::{QByteArray, QGuiApplication, QQmlApplicationEngine, QString, QUrl};
 use std::time::{Duration, Instant};
 
-fn evaluate(engine: &mut cxx::UniquePtr<QQmlApplicationEngine>, source: &str) -> bool {
+pub(super) fn evaluate(engine: &mut cxx::UniquePtr<QQmlApplicationEngine>, source: &str) -> bool {
     ffi::evaluate_root(engine.pin_mut(), &QString::from(source))
         .expect("QML expression")
         .value::<bool>()
@@ -17,7 +17,7 @@ fn selected_url(engine: &QQmlApplicationEngine, property: &str) -> QUrl {
         .expect("URL QML property")
 }
 
-fn wait_for(
+pub(super) fn wait_for(
     app: &QGuiApplication,
     engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
     source: &str,
@@ -34,6 +34,9 @@ fn wait_for(
 }
 
 pub fn run() -> i32 {
+    crate::features::PLAN
+        .set(crate::features::LaunchPlan::parse(["--features=none".into()]).unwrap())
+        .expect("test launch plan");
     let directory = std::path::PathBuf::from(
         std::env::var_os("VIEWER_PORTAL_TEST_DIR").expect("Run scripts/test-portal-dialogs.sh"),
     );
@@ -75,5 +78,6 @@ pub fn run() -> i32 {
     assert!(evaluate(&mut engine, "close(); true"));
     app.process_events();
     println!("Portal dialog checks passed: file/folder selection, cancellation and escaped URLs");
+    super::recording_drop::run(&app, &directory);
     0
 }

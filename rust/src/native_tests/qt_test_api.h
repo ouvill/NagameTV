@@ -3,6 +3,7 @@
 // Missing binding operations only. Test cases, inputs and assertions live in Rust.
 #include "localization.h"
 #include "pointer_activity.h"
+#include "rust/cxx.h"
 #include <QtCore/QFile>
 #include <QtCore/QMimeData>
 #include <QtCore/QElapsedTimer>
@@ -92,18 +93,40 @@ inline QVariant evaluateRoot(QQmlApplicationEngine &engine, const QString &sourc
     return result;
 }
 
-inline bool dropFileOnRoot(QQmlApplicationEngine &engine, const QString &url, const QPoint &position) {
+inline bool dropMimeOnRoot(QQmlApplicationEngine &engine, const QMimeData &mime, const QPoint &position) {
     const auto roots = engine.rootObjects();
     auto *window = roots.isEmpty() ? nullptr : qobject_cast<QQuickWindow *>(roots.first());
     if (!window) return false;
-    QMimeData mime;
-    mime.setUrls({QUrl(url)});
     QDragEnterEvent enter(position, Qt::CopyAction, &mime, Qt::LeftButton, Qt::NoModifier);
     QCoreApplication::sendEvent(window, &enter);
     if (!enter.isAccepted()) return false;
     QDropEvent drop(QPointF(position), Qt::CopyAction, &mime, Qt::LeftButton, Qt::NoModifier);
     QCoreApplication::sendEvent(window, &drop);
     return drop.isAccepted();
+}
+
+inline bool dropFileOnRoot(QQmlApplicationEngine &engine, const QString &url, const QPoint &position) {
+    QMimeData mime;
+    mime.setUrls({QUrl(url)});
+    return dropMimeOnRoot(engine, mime, position);
+}
+
+inline bool dropFilesOnRoot(QQmlApplicationEngine &engine, rust::Slice<const rust::String> urls,
+                            const QPoint &position) {
+    QMimeData mime;
+    QList<QUrl> files;
+    for (const auto &url : urls)
+        files.append(QUrl(QString::fromUtf8(url.data(), url.size())));
+    mime.setUrls(files);
+    return dropMimeOnRoot(engine, mime, position);
+}
+
+inline bool dropTransferOnRoot(QQmlApplicationEngine &engine, const QString &format,
+                               const QByteArray &key, const QString &hostUrl, const QPoint &position) {
+    QMimeData mime;
+    mime.setData(format, key);
+    if (!hostUrl.isEmpty()) mime.setUrls({QUrl(hostUrl)});
+    return dropMimeOnRoot(engine, mime, position);
 }
 
 // QPainter retains QPaintDevice*. Bound it to the image borrow entirely in C++.

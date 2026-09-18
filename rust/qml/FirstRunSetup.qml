@@ -10,6 +10,7 @@ Popup {
     signal completed
     signal openFileRequested
     signal fileDropped(url file)
+    signal transferDropped(string key)
     parent: Overlay.overlay
     x: 0; y: 0
     width: parent.width; height: parent.height
@@ -23,15 +24,10 @@ Popup {
     onOpened: form.focusInput()
     onClosed: form.phase = ConnectionForm.Idle
     contentItem: Item {
-        DropArea {
+        RecordingDropArea {
             anchors.fill: parent
-            onEntered: function(drag) { drag.accepted = drag.hasUrls && drag.urls.length === 1; }
-            onDropped: function(drop) {
-                if (drop.hasUrls && drop.urls.length === 1) {
-                    root.fileDropped(drop.urls[0]);
-                    drop.acceptProposedAction();
-                }
-            }
+            onFileDropped: function(file) { root.fileDropped(file); }
+            onTransferDropped: function(key) { root.transferDropped(key); }
         }
         Loader {
             anchors { left: parent.left; right: parent.right; top: parent.top }

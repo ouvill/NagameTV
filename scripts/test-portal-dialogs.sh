@@ -23,6 +23,8 @@ trap 'rm -rf "$portal_test_dir"' EXIT
 touch "$portal_test_dir/録画 #100%.ts"
 mkdir "$portal_test_dir/キャプチャ #100%"
 export VIEWER_PORTAL_TEST_DIR="$portal_test_dir"
+export XDG_CONFIG_HOME="$portal_test_dir/config" XDG_DATA_HOME="$portal_test_dir/data"
+export XDG_STATE_HOME="$portal_test_dir/state"
 export QT_QPA_PLATFORM=xcb QSG_RHI_BACKEND=opengl
 dbus-run-session -- bash -euo pipefail -c '
     python3 scripts/portal-test-service.py &

@@ -12,6 +12,7 @@ dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
 directory = Path(os.environ["VIEWER_PORTAL_TEST_DIR"])
 bus = dbus.SessionBus()
 name = dbus.service.BusName("org.freedesktop.portal.Desktop", bus)
+documents_name = dbus.service.BusName("org.freedesktop.portal.Documents", bus)
 
 
 class Request(dbus.service.Object):
@@ -62,6 +63,36 @@ class Portal(dbus.service.Object):
         return dbus.ObjectPath(path)
 
 
+class FileTransfer(dbus.service.Object):
+    def __init__(self):
+        super().__init__(bus, "/org/freedesktop/portal/documents")
+        self.used = set()
+
+    @dbus.service.method("org.freedesktop.portal.FileTransfer", in_signature="sa{sv}",
+                         out_signature="as", async_callbacks=("reply", "error"))
+    def RetrieveFiles(self, key, options, reply, error):
+        if key in self.used:
+            error(dbus.exceptions.DBusException("Transfer already consumed"))
+            return
+        self.used.add(key)
+        ts = str(directory / "録画 #100%.ts")
+        paths = {
+            "ts": [ts],
+            "m2ts": [str(directory / "録画 #100%.m2ts")],
+            "multiple": [ts, ts],
+            "empty": [],
+            "relative": ["recording.ts"],
+        }
+        if key.startswith("drop-") and key.removeprefix("drop-").isdigit():
+            paths[key] = [ts]
+        if options or key not in paths:
+            error(dbus.exceptions.DBusException("Invalid transfer"))
+            return
+        (directory / f"received-{key}").touch()
+        reply(dbus.Array(paths[key], signature="s"))
+
+
 portal = Portal()
+transfers = FileTransfer()
 (directory / "ready").touch()
 GLib.MainLoop().run()

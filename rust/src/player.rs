@@ -114,6 +114,9 @@ pub mod ffi {
         #[cfg(target_os = "linux")]
         #[cxx_name = "portalFileChooserVersion"]
         fn portal_file_chooser_version() -> Result<u32>;
+        #[cfg(target_os = "linux")]
+        #[cxx_name = "portalRetrieveRecording"]
+        fn portal_retrieve_recording(key: &QString) -> Result<QString>;
         include!("video_item.h");
         #[cxx_name = "qml6VideoItemPointer"]
         unsafe fn qml6_video_item_pointer(item: *mut QQuickItem) -> *mut u8;
@@ -343,6 +346,8 @@ pub mod ffi {
         fn skip(self: Pin<&mut Player>, milliseconds: f64) -> bool;
         #[qinvokable]
         fn open_recording(self: Pin<&mut Player>, file: QUrl) -> bool;
+        #[qinvokable]
+        fn open_recording_transfer(self: Pin<&mut Player>, key: QString) -> bool;
         fn recording_loading(self: &Player) -> bool;
         #[qsignal]
         #[cxx_name = "recordingOpened"]

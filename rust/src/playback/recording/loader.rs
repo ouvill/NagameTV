@@ -28,12 +28,36 @@ impl Request {
             purpose: Purpose::Open,
         }
     }
+    /// Resolve before acknowledging the drop: KDE retires its transfer when
+    /// the drag ends. Only the received path can enter the asynchronous loader.
+    pub fn portal_transfer(key: &str) -> Result<Self, Error> {
+        retrieve_transfer(key).map(Self::open)
+    }
     pub(super) fn replay(path: PathBuf) -> Self {
         Self {
             path,
             purpose: Purpose::Replay,
         }
     }
+}
+
+// FileTransfer belongs to the Linux document portal, not the FileChooser
+// interface. The resulting sandbox path stays with the inspected Recording.
+fn retrieve_transfer(key: &str) -> Result<PathBuf, Error> {
+    // GTK serializes its transfer key with a trailing NUL. D-Bus strings cannot
+    // contain NULs; reject embedded NULs instead of silently truncating a key.
+    let key = key.strip_suffix('\0').unwrap_or(key);
+    if key.is_empty() || key.contains('\0') {
+        return Err(Error::Portal("Invalid file transfer key".into()));
+    }
+    #[cfg(target_os = "linux")]
+    {
+        crate::player::ffi::portal_retrieve_recording(&cxx_qt_lib::QString::from(key))
+            .map(|path| PathBuf::from(path.to_string()))
+            .map_err(|error| Error::Portal(error.to_string()))
+    }
+    #[cfg(not(target_os = "linux"))]
+    Err(Error::Portal("File transfer portals require Linux".into()))
 }
 type Outcome = (Purpose, Result<Recording, Error>);
 

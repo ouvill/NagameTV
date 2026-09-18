@@ -473,6 +473,10 @@ fn check_recording_input(player: &mut cxx::UniquePtr<ffi::Player>) -> TestResult
     assert_eq!(player.rust().stream_state.active_service(), Some(service));
     assert!(!player.recording());
     assert!(!player.file_error().is_empty());
+    assert!(!player.pin_mut().open_recording_transfer(QString::default()));
+    assert!(!player.recording_loading());
+    assert!(player.playing());
+    assert_eq!(player.rust().stream_state.active_service(), Some(service));
     player.pin_mut().end_stream()?;
     Ok(())
 }

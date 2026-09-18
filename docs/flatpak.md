@@ -76,6 +76,18 @@ QtやGStreamerを更新した際はパッケージの再ビルドと再生確認
 「Portalが利用できない場合はQt Quick製ダイアログを使う」処理はFlatpakには適用しない。
 Flatpakのサブディレクトリー権限については[ファイルアクセスの仕様](https://docs.flatpak.org/en/latest/sandbox-permissions.html#filesystem-access)を参照。
 
+録画のドラッグ＆ドロップは、送信元が提供するFileTransfer Portalの転送キーを受け取り、
+ドキュメントポータルが公開したパスを読み込む。初回設定画面でも同じ処理を使う。
+GNOME/GTK系・KDE系が使用する標準MIME形式と、旧GTKのMIME形式を受け付ける。
+[KDE系の送信元](https://invent.kde.org/frameworks/kcoreaddons/-/blob/master/src/lib/io/kurlmimedata.cpp)
+はドロップ終了時に転送を閉じるため、受領通知の前にパスを取得する
+（Portalの応答待ちは最大1秒）。録画本体の検査は非同期で行い、キャンセルに対応する。
+一度に開くファイルは1件で、`.ts`と`.m2ts`に対応する。
+送信元のファイルマネージャーがPortal転送に対応せず、サンドボックス外のパスだけを渡す場合は、
+「TSファイルを開く」（Ctrl+O）から選択する。
+[FileTransfer Portalの仕様](https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.portal.FileTransfer.html)
+に従い、この方法で受け取ったファイルのアクセス権はアプリのセッション中だけ有効となる。
+
 | 権限 | 用途 |
 | --- | --- |
 | network | MirakurunとNX-Jikkyoへの接続 |

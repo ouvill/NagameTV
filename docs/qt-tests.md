@@ -27,7 +27,7 @@ Host desktop/audio connections and physical audio devices are not required.
 | `bash scripts/test-video-item.sh` | Video-item attachment, terminal shutdown, failed native transitions, and retained subtitle subscriptions until a successful stop | Validated X11 display and GPU; native graph stays in NULL |
 | `bash scripts/test-subtitle-outline.sh` | Six pixel-exact QPainterPath/SVG comparisons: full height, small ink/cubic curves, midline, overhang/descender, separate contours, empty path | None: QCoreApplication and in-memory QImage rasterization |
 | `bash scripts/test-pointer-activity.sh` | Duplicate installation, repeated positions, disabled items, window changes, observer deletion and event delivery after item destruction | Validated X11 display and GPU |
-| `bash scripts/test-portal-dialogs.sh` | Real Qt portal plugin on a private D-Bus session: file/folder selection, cancellation and Unicode/escaped URLs | Validated X11 display and GPU; the suite itself does not use audio |
+| `bash scripts/test-portal-dialogs.sh` | Real Qt portal plugin on a private D-Bus session: file/folder selection, FileTransfer TS/M2TS inspection, invalid transfers, Unicode paths and production QML drop areas including first-run setup | Validated X11 display and GPU; the suite itself does not use audio |
 | `bash scripts/test-subtitle-rendering.sh` | Existing Qt Quick Test assertions, using the Rust TestOutlineProvider and the production outline helper | Validated X11 display and GPU |
 
 The subtitle rendering command continues to accept Qt Quick Test arguments
@@ -113,6 +113,12 @@ plugin receives accept/cancel responses from that fixture and passes file URLs
 through the ordinary QML dialogs. This checks protocol integration, not the
 appearance of GNOME/KDE's chooser or Flatpak document grants. Its private display
 is explicitly configured for GPU rendering; a failed GPU check stops execution.
+The same private service exercises FileTransfer on the Documents bus name and
+path. Tests prefer transfer keys over inaccessible host URLs, accept portal-only
+drops and GTK's legacy MIME name, and reject consumed keys, empty/multiple files
+and relative paths. Transfer keys resolve before drop acknowledgement because
+KDE senders close their transfer when the drag ends. These protocol fixtures do
+not verify document FUSE mounts or a particular host file manager.
 
 Recording inspection is asynchronous: component tests cover completion, failure
 and cancellation UI; connection tests verify input/activity coherence during

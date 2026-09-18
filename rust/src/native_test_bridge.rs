@@ -70,6 +70,20 @@ pub mod ffi {
             url: &QString,
             position: &QPoint,
         ) -> bool;
+        #[rust_name = "drop_files_on_root"]
+        fn dropFilesOnRoot(
+            engine: Pin<&mut QQmlApplicationEngine>,
+            urls: &[String],
+            position: &QPoint,
+        ) -> bool;
+        #[rust_name = "drop_transfer_on_root"]
+        fn dropTransferOnRoot(
+            engine: Pin<&mut QQmlApplicationEngine>,
+            format: &QString,
+            key: &QByteArray,
+            host_url: &QString,
+            position: &QPoint,
+        ) -> bool;
         #[rust_name = "raster_path"]
         fn rasterPath(path: &QPainterPath, image: &mut QImage, offset: &QPoint);
         #[rust_name = "raster_svg"]

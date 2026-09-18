@@ -9,6 +9,7 @@
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonObject>
 #include <QtCore/QPluginLoader>
+#include <QtCore/QStringList>
 #include <QtDBus/QDBusConnection>
 #include <QtDBus/QDBusMessage>
 #include <QtDBus/QDBusReply>
@@ -45,6 +46,30 @@ inline unsigned int portalFileChooserVersion() {
     if (value.metaType().id() != QMetaType::UInt)
         throw std::runtime_error("FileChooser portal returned an invalid version");
     return value.toUInt();
+}
+
+// Resolve while the drop event is alive: KDE sends StopTransfer when the drag
+// ends. Bound the wait and do not reenter the GUI event loop. File inspection
+// remains asynchronous after receipt. The shared connection keeps grants tied
+// to the application's bus identity for the rest of its session.
+inline QString portalRetrieveRecording(const QString &key) {
+    auto message = QDBusMessage::createMethodCall(
+        QStringLiteral("org.freedesktop.portal.Documents"),
+        QStringLiteral("/org/freedesktop/portal/documents"),
+        QStringLiteral("org.freedesktop.portal.FileTransfer"), QStringLiteral("RetrieveFiles"));
+    message << key << QVariantMap();
+    constexpr int TransferTimeoutMs = 1000;
+    const QDBusReply<QStringList> reply =
+        QDBusConnection::sessionBus().call(message, QDBus::Block, TransferTimeoutMs);
+    if (!reply.isValid())
+        throw std::runtime_error(reply.error().message().toStdString());
+    const auto paths = reply.value();
+    if (paths.size() != 1)
+        throw std::runtime_error("Drop exactly one recording file");
+    const auto &path = paths.first();
+    if (!QDir::isAbsolutePath(path) || path.contains(QChar::Null))
+        throw std::runtime_error("File transfer portal returned an invalid file path");
+    return path;
 }
 #endif
 #endif

@@ -20,6 +20,8 @@ pub struct Recording {
 pub enum Error {
     #[error("Select a local TS file.")]
     NotLocal,
+    #[error("Could not receive the dropped file: {0}. Use Open TS file to select it.")]
+    Portal(String),
     #[error("Could not read the TS file: {0}")]
     Read(#[from] std::io::Error),
     #[error("No transport stream program was found in the beginning of this file.")]

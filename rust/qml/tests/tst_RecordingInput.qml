@@ -19,6 +19,7 @@ TestCase {
         property string playback_error: ""
         signal recordingOpened(bool success)
         function open_recording(url) { calls++; lastUrl = String(url); recording_loading = accept; return accept; }
+        function open_recording_transfer(key) { return open_recording(key); }
         function cancel_recording_open() { recording_loading = false; }
     }
     RecordingInput { id: input; anchors.fill: parent; backend: backend }
@@ -35,12 +36,9 @@ TestCase {
         error.close();
         tryCompare(error, "visible", false);
     }
-    function test_single_drop_preserves_url_and_multiple_drop_is_ignored() {
+    function test_open_preserves_url_and_waits_for_inspection() {
         const url = "file:///tmp/%E9%8C%B2%E7%94%BB%20%23100%25.ts";
-        verify(!input.dropUrls([]));
-        verify(!input.dropUrls([url, url]));
-        compare(backend.calls, 0);
-        verify(input.dropUrls([url]));
+        verify(input.openUrl(url));
         compare(backend.lastUrl, url);
         compare(backend.calls, 1);
         compare(started.count, 0);
@@ -56,6 +54,15 @@ TestCase {
         tryCompare(error, "opened", true);
         compare(error.contentItem.text, backend.file_error);
         compare(error.contentItem.textFormat, Text.PlainText);
+    }
+    function test_rejected_transfer_reports_error_without_starting() {
+        backend.accept = false;
+        verify(!input.openTransfer("expired-key"));
+        compare(backend.calls, 1);
+        compare(started.count, 0);
+        const error = findChild(input, "recordingOpenError");
+        tryCompare(error, "opened", true);
+        compare(error.contentItem.text, backend.file_error);
     }
     function test_async_failure_and_cancel() {
         verify(input.openUrl("file:///tmp/invalid.ts"));
