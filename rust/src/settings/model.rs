@@ -28,7 +28,7 @@ impl Volume {
 }
 impl Default for Volume {
     fn default() -> Self {
-        Self(70.0)
+        Self(100.0)
     }
 }
 impl From<f64> for Volume {
