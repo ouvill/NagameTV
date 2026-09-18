@@ -1,5 +1,25 @@
 # 音量とミュート
 
+## 再生時計の比較
+
+`NAGAMETV_PLAYBACK_CLOCK=auto|system`で、起動時の再生時計を指定できる。
+未指定または`auto`では従来どおりGStreamerが選び、音声出力の時計が候補になる。
+`system`では音声を出力したまま、映像と音声が同期する時計をGStreamerの
+SystemClockへ固定する。停止・再生・選局後も、その起動中は指定を保持する。
+設定ファイルへは保存せず、不正値は起動エラーにする。
+
+```sh
+NAGAMETV_PLAYBACK_CLOCK=auto ./build/nagametv
+NAGAMETV_PLAYBACK_CLOCK=system ./build/nagametv
+```
+
+標準エラーログの`Playback clock policy`に指定方式、再生時計の選択時の
+`Playback clock selected`に実際に選ばれた時計名を表示する。
+SystemClock指定は実機比較用で、遅延の短縮を保証する設定ではない。
+同じ局・同じ音声出力で交互に起動し、テレビとの表示差に加えて口の動きと声の同期、
+音切れ、長時間視聴後のずれ、選局・停止再開後の動作を確認する。
+専用テスト環境の仮想音声出力で得た改善は、物理スピーカーやモニターでの結果ではない。
+
 ## 音声出力の選択
 
 mainのrust/src/playback.rsと照合し、出力未指定時のPulse固定を修正した。

@@ -80,7 +80,8 @@ NAGAMETV_SERVER=http://192.168.1.100:40772 NAGAMETV_AUTOPLAY=1 ./build/nagametv
 `NAGAMETV_AUTOPLAY`は未指定なら保存済みの自動再生設定（初期値OFF）を使います。
 `0`で無効、それ以外の指定値で有効になり、この上書きは設定ファイルに保存しません。
 `NAGAMETV_DEINTERLACE=yadif|linear|off`で起動時の映像処理を指定できます。
-音声出力の選択は[音声出力](audio-output.md)を参照してください。
+`NAGAMETV_PLAYBACK_CLOCK=auto|system`で実機比較用の再生時計を指定できます。
+音声出力の選択と時計の比較方法は[音声出力](audio-output.md)を参照してください。
 
 コメント表示の方式、関連特許の調査、通常版とローカル評価版のビルドフラグは
 [コメント表示の仕様](comment-display-redesign.md)を参照してください。評価版はインストール・配布用ビルドには使えません。

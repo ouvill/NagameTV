@@ -425,6 +425,28 @@ impl Controller {
 }
 
 impl Ready<'_> {
+    pub fn return_to_live(self) -> Result<(), Error> {
+        // Use the freshly queried receive edge, not the UI's sampled duration.
+        // Reader::prepare already supplies decode preroll before this target;
+        // subtracting an additional second here leaves playback behind live.
+        let target = self
+            .range
+            .end
+            .saturating_sub(gst::ClockTime::MSECOND)
+            .max(self.range.start);
+        match &mut self.controller.state {
+            State::Seeking(seek) => {
+                self.pipeline.set_state(gst::State::Playing)?;
+                seek.next = Some(target);
+                seek.resume = Resume::Playing;
+                Ok(())
+            }
+            State::Playing | State::Paused | State::ExpiredPause | State::Ended => self
+                .controller
+                .start_seek(self.pipeline, target, Resume::Playing),
+        }
+    }
+
     pub fn seek_live(mut self, milliseconds: f64, corrected: bool) -> Result<(), Error> {
         let expired = milliseconds < self.range.start.mseconds() as f64;
         let target = if expired {
@@ -495,6 +517,55 @@ mod tests {
         assert_eq!(controller.snapshot().position, Some(paused));
         assert!(controller.seek_target().is_none());
         assert!(controller.take_notice().is_none());
+        let ready = Ready {
+            controller: &mut controller,
+            pipeline: &sink,
+            range,
+        };
+        assert!(matches!(ready.return_to_live(), Err(Error::Rejected)));
+        assert_eq!(controller.phase(), Phase::Paused);
+        assert_eq!(controller.snapshot().position, Some(paused));
+        assert!(controller.seek_target().is_none());
+    }
+
+    #[test]
+    fn return_to_live_replaces_pending_rewind_and_resumes_after_the_active_seek()
+    -> Result<(), Box<dyn std::error::Error>> {
+        gst::init()?;
+        let sink = gst::ElementFactory::make("fakesink")
+            .property("async", false)
+            .build()?;
+        let mut controller = Controller::new(&sink)?;
+        let sequence = gst::Seqnum::next();
+        controller.state = State::Seeking(Seek {
+            sequence,
+            target: gst::ClockTime::from_seconds(5),
+            resume: Resume::Paused,
+            next: Some(gst::ClockTime::from_seconds(2)),
+            deadline: Instant::now() + SEEK_TIMEOUT,
+        });
+        let latest_edge = gst::ClockTime::from_seconds(20);
+        let range = Range::new(gst::ClockTime::ZERO, latest_edge).ok_or("range")?;
+        let ready = Ready {
+            controller: &mut controller,
+            pipeline: &sink,
+            range,
+        };
+        let result = ready.return_to_live();
+        // A standalone CPU sink has no upstream source and opens no device.
+        sink.set_state(gst::State::Null)?;
+        result?;
+        let State::Seeking(seek) = &controller.state else {
+            panic!("the active seek still needs to finish");
+        };
+        assert_eq!(seek.sequence, sequence);
+        assert_eq!(seek.resume, Resume::Playing);
+        assert_eq!(
+            controller.seek_target(),
+            Some(latest_edge - gst::ClockTime::MSECOND)
+        );
+        assert!(controller.take_notice().is_none());
+        Ok(())
     }
     #[test]
     fn forward_buffer_eviction_does_not_expire_queued_video() {

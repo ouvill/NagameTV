@@ -5,6 +5,7 @@ pub mod audio_output;
 mod audio_routing;
 mod audio_sink;
 pub mod audio_streams;
+mod clock;
 pub mod deinterlace;
 pub mod failure;
 pub mod input;
@@ -40,6 +41,8 @@ pub enum Error {
     Deinterlace(#[from] deinterlace::Error),
     #[error("{0}")]
     AudioSink(#[from] audio_sink::Error),
+    #[error("{0}")]
+    Clock(#[from] clock::Error),
     #[error("GStreamer initialization failed: {0}")]
     Initialization(#[from] gst::glib::Error),
     #[error("GStreamer operation failed: {0}")]
@@ -253,7 +256,7 @@ impl Playback {
         let audio = audio_sink::Output::from_environment()?.build()?;
         let routing = audio_routing::Routing::default();
         let audio_filter = routing.filter()?;
-        let playbin = gst::ElementFactory::make("playbin3").build()?;
+        let playbin = clock::Policy::from_environment()?.build_playbin()?;
         let program_number = Arc::new(std::sync::atomic::AtomicI32::new(-1));
         let program = program_number.clone();
         playbin.connect("element-setup", false, move |values| {
@@ -418,6 +421,11 @@ impl Playback {
                 tracing::error!("Audio selection: {error}");
             }
             match message.view() {
+                gst::MessageView::NewClock(message) => {
+                    if let Some(clock) = message.clock() {
+                        tracing::info!("Playback clock selected: {}", clock.name());
+                    }
+                }
                 gst::MessageView::Warning(warning) => {
                     let mut counts = self.warnings.get();
                     counts.observe(warning);

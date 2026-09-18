@@ -179,6 +179,26 @@ impl Session {
         }
     }
 
+    pub fn return_to_live(&mut self) -> std::result::Result<(), super::timeline::Error> {
+        match (&self.playback, &mut self.input) {
+            (
+                Some(playback),
+                Input::Active {
+                    source,
+                    controller,
+                    projection: Projection::Live(_),
+                },
+            ) if matches!(
+                source.live_window(),
+                Some(super::timeline::LiveWindow::History(_))
+            ) =>
+            {
+                controller.prepare(playback.element())?.return_to_live()
+            }
+            _ => Err(super::timeline::Error::Unavailable),
+        }
+    }
+
     pub fn poll(&mut self) -> Result<super::Event> {
         let Some(playback) = &self.playback else {
             return Ok(super::Event::Idle);

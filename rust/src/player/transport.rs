@@ -31,13 +31,8 @@ impl ffi::Player {
             0.0
         }
     }
-    pub fn return_to_live(mut self: Pin<&mut Self>) -> bool {
-        const LIVE_PREROLL_MS: f64 = 1_000.0;
-        if !self.timeshift() {
-            return false;
-        }
-        let target = (self.duration_ms() - LIVE_PREROLL_MS).max(self.window_start_ms());
-        self.as_mut().seek_to(target) && self.resume_transport()
+    pub fn return_to_live(self: Pin<&mut Self>) -> bool {
+        self.control_transport(playback::Session::return_to_live)
     }
 
     pub fn media_active(&self) -> bool {

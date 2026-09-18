@@ -22,6 +22,9 @@ const PAUSE_RECEIVE_GROWTH: Duration = Duration::from_secs(1);
 const REWIND_TARGET: Duration = Duration::from_secs(1);
 const SEEK_TOLERANCE: Duration = Duration::from_millis(500);
 const LIVE_EDGE_TOLERANCE: Duration = Duration::from_millis(2500);
+// The UI's receive position can be one 250 ms fixture delivery behind. The
+// request itself must not add the old fixed one-second delay to live playback.
+const LIVE_TARGET_TOLERANCE: Duration = SEND_INTERVAL;
 const MEMORY_MIB: i32 = 16;
 const FILESYSTEM_MIB: i32 = 64;
 const RETENTION_MINUTES: i32 = 1;
@@ -202,6 +205,7 @@ pub(super) fn run(
             engine,
             &format!("{OBSERVER}.failure.length === 0")
         )?);
+        return_to_live(app, engine, backend, "already playing")?;
         assert!(evaluate(
             engine,
             &format!(
@@ -258,15 +262,7 @@ pub(super) fn run(
             engine,
             "JSON.parse(player.live_timeline).viewing.program !== null && JSON.parse(player.live_timeline).seekTarget === null"
         )?);
-        assert!(evaluate(engine, "player.return_to_live()")?);
-        wait_for(
-            app,
-            engine,
-            &format!(
-                "player.playing && !player.paused && !player.seeking && player.live_delay_ms < {}",
-                LIVE_EDGE_TOLERANCE.as_millis()
-            ),
-        )?;
+        return_to_live(app, engine, backend, "paused in history")?;
         assert!(evaluate(
             engine,
             &format!("{OBSERVER}.previousSession = JSON.parse(player.live_timeline).session; true")
@@ -409,6 +405,63 @@ pub(super) fn run(
         &format!("{OBSERVER}.failure.length === 0")
     )?);
     evaluate(engine, &format!("{OBSERVER}.destroy(); true"))?;
+    Ok(())
+}
+
+fn return_to_live(
+    app: &QGuiApplication,
+    engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
+    backend: &str,
+    context: &str,
+) -> TestResult {
+    // No event processing between the pre-click snapshot and requested target.
+    // Both ordinary playback and a paused rewind must resume at the receive edge.
+    assert!(evaluate(
+        engine,
+        &format!("{OBSERVER}.saved = JSON.parse(player.live_timeline); player.return_to_live()"),
+    )?);
+    assert!(
+        evaluate(
+            engine,
+            &format!(
+                "(function() {{ const current = JSON.parse(player.live_timeline); return current.seekTarget !== null && current.seekTarget >= {OBSERVER}.saved.live.position - {} && current.seekTarget >= {OBSERVER}.saved.viewing.position; }})()",
+                LIVE_TARGET_TOLERANCE.as_millis()
+            ),
+        )?,
+        "{backend}: live return from {context} requested an older position"
+    );
+    let before = super::bridge::ffi::evaluate_root(
+        engine.pin_mut(),
+        &cxx_qt_lib::QString::from(format!(
+            "{OBSERVER}.saved.live.position - {OBSERVER}.saved.viewing.position"
+        )),
+    )?
+    .value::<f64>()
+    .ok_or("previous live delay")?;
+    wait_for(
+        app,
+        engine,
+        &format!(
+            "player.playing && !player.paused && !player.seeking && player.live_delay_ms < {}",
+            LIVE_EDGE_TOLERANCE.as_millis()
+        ),
+    )?;
+    // Check sustained playback too; the first post-seek buffer is not proof
+    // that the cursor keeps advancing near live after decoder preroll.
+    observe_playback(
+        app,
+        engine,
+        &format!("player.live_delay_ms < {}", LIVE_EDGE_TOLERANCE.as_millis()),
+    )?;
+    let delay = super::bridge::ffi::evaluate_root(
+        engine.pin_mut(),
+        &cxx_qt_lib::QString::from("player.live_delay_ms"),
+    )?
+    .value::<f64>()
+    .ok_or("live delay")?;
+    eprintln!(
+        "Timeshift {backend}: return from {context}, receive-to-playhead gap {before:.0} -> {delay:.0} ms"
+    );
     Ok(())
 }
 
