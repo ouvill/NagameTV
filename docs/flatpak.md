@@ -2,6 +2,7 @@
 
 アプリIDは`io.github.ouvill.nagametv`、表示名は日本語で「ながめTV」、英語で「NagameTV」。
 KDE 6.10ランタイムを使い、QtとGStreamerの実行環境をホストOSから分離する。
+GitHub Actionsでの自動ビルドと配布は[CIとリリース](ci-release.md)を参照。
 
 ## インストール
 

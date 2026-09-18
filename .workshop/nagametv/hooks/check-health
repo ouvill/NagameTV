@@ -9,7 +9,7 @@ fi
 
 for command in Xvfb Xwayland cargo cmake curl dbus-daemon dbus-run-session dbus-send \
   desktop-file-validate eu-strip flatpak glxinfo \
-  flatpak-builder flock git gst-inspect-1.0 gst-launch-1.0 import lld mpv ninja \
+  flatpak-builder flock gh git gst-inspect-1.0 gst-launch-1.0 import lld mpv ninja \
   openbox pactl parec pkg-config pulseaudio python3 qmake6 qtpaths6 rustc \
   sha256sum weston xdpyinfo xdotool xprop; do
   if ! command -v "$command" >/dev/null 2>&1; then

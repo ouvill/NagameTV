@@ -1,6 +1,6 @@
 # Linux x86_64 distribution baseline. Never collect libraries from the newer
 # Workshop OS: Ubuntu 24.04 supplies glibc 2.39 and GStreamer 1.24.
-FROM ubuntu:24.04@sha256:b3cc40b72b93588182b5410f723c7aaf142363311c2aa993d8a453ddcbb3ae15
+FROM ubuntu:24.04@sha256:b3cc40b72b93588182b5410f723c7aaf142363311c2aa993d8a453ddcbb3ae15 AS appimage
 
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     build-essential ca-certificates cmake curl desktop-file-utils git \
@@ -54,3 +54,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     file libsoup-3.0-dev glib-networking \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /project
+
+# CI uses the distribution toolchain and libraries, plus the formatting tool.
+# Neither stage needs display, GPU or audio access.
+FROM appimage AS ci
+RUN rustup component add rustfmt && chmod -R a+rX /opt/rustup /opt/cargo

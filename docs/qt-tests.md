@@ -44,6 +44,9 @@ cargo build --manifest-path rust/Cargo.toml --locked --features native_tests
 
 Use the validating scripts for hardware-dependent execution.
 `scripts/run-native-tests.sh` is their common Cargo launcher.
+It defaults to the `dev` profile. Set `NAGAMETV_TEST_PROFILE=release` to use
+the release profile; CI uses this to share compilation with the distribution build.
+Only `dev` and `release` are accepted.
 
 The startup suite uses an isolated configuration and a local HTTP fixture, with
 the real Player, GStreamer pipeline and video item. The fixture returns HTTP 503

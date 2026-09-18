@@ -36,7 +36,7 @@ if [[ $build_mode == container ]]; then
   docker info >/dev/null || fail "Docker daemon is unavailable."
   [[ -z ${APPIMAGE_BUILD_DIR:-} && -z ${QMAKE:-} ]] || fail "APPIMAGE_BUILD_DIR and QMAKE are native-only options; use --native in a compatible environment."
   image_name=nagametv-appimage-ubuntu24:local
-  docker build --tag "$image_name" "$project_dir/packaging/appimage"
+  docker build --target appimage --tag "$image_name" "$project_dir/packaging/appimage"
   # Keep all compiler/Cargo caches separate from the Workshop's newer ABI.
   # No display sockets, audio sockets or hardware devices are passed through.
   exec docker run --rm --user "$(id -u):$(id -g)" \

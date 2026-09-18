@@ -18,6 +18,7 @@ apt-get install --yes --no-install-recommends \
   flatpak \
   flatpak-builder \
   fonts-noto-cjk \
+  gh \
   git \
   gstreamer1.0-libav \
   gstreamer1.0-gl \

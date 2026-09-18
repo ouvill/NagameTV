@@ -3,6 +3,7 @@
 Linux x86_64向けに、アプリ本体・Qt/QML・GStreamerの再生プラグインを
 1つの`.AppImage`にまとめる。配布用ビルドの基準は**Ubuntu 24.04 / glibc 2.39**。
 WorkshopのUbuntu 26.04とは別のDocker環境でビルドする。
+GitHub Actionsでの自動ビルドと配布は[CIとリリース](ci-release.md)を参照。
 
 ## パッケージを作る
 

@@ -1,0 +1,170 @@
+name: CI and release
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  metadata:
+    name: Release metadata
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      version: ${{ steps.metadata.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Validate versions and pinned sources
+        id: metadata
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          args=()
+          if [[ "$REF_TYPE" == tag ]]; then args+=(--tag "$REF_NAME"); fi
+          python3 scripts/check-release-metadata.py "${args[@]}" --github-output "$GITHUB_OUTPUT"
+          python3 scripts/flatpak-cargo-sources.py --check
+      - name: Test release guards
+        run: python3 scripts/test-release.py
+      - name: Validate GitHub Actions workflows
+        run: |
+          curl --fail --location --retry 3 \
+            https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz \
+            --output "$RUNNER_TEMP/actionlint.tar.gz"
+          echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  $RUNNER_TEMP/actionlint.tar.gz" | sha256sum --check
+          tar -xzf "$RUNNER_TEMP/actionlint.tar.gz" -C "$RUNNER_TEMP" actionlint
+          "$RUNNER_TEMP/actionlint" -color
+          shellcheck scripts/ci.sh scripts/create-release-draft.sh scripts/build-appimage.sh scripts/build-flatpak.sh scripts/run-native-tests.sh
+
+  appimage:
+    name: Tests and AppImage (x86_64)
+    needs: metadata
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Build the Ubuntu 24.04 test and distribution environment
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: packaging/appimage
+          target: ci
+          load: true
+          tags: nagametv-ci:local
+          cache-from: type=gha,scope=ubuntu24-ci
+          cache-to: type=gha,mode=max,scope=ubuntu24-ci
+      - name: Cache source downloads and verified packaging tools
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            build/ci/cargo-home/registry
+            build/ci/cargo-home/git
+            build/appimage/tools
+          key: sources-${{ runner.os }}-x86_64-${{ hashFiles('**/Cargo.lock', 'scripts/build-appimage.sh') }}
+          restore-keys: sources-${{ runner.os }}-x86_64-
+      - name: Run hardware-free tests
+        run: |
+          docker run --rm --user "$(id -u):$(id -g)" \
+            --mount "type=bind,src=$PWD,dst=/project" \
+            --env CARGO_HOME=/project/build/ci/cargo-home \
+            --env CARGO_TARGET_DIR=/project/build/ci/cargo \
+            --env CARGO_BUILD_JOBS=2 \
+            nagametv-ci:local bash scripts/ci.sh
+      - name: Build AppImage and validate the glibc baseline
+        run: |
+          docker run --rm --user "$(id -u):$(id -g)" \
+            --mount "type=bind,src=$PWD,dst=/project" \
+            --env CARGO_HOME=/project/build/ci/cargo-home \
+            --env APPIMAGE_BUILD_DIR=/project/build/ci \
+            --env APPIMAGE_BUILD_JOBS=2 \
+            nagametv-ci:local bash scripts/build-appimage.sh --native
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: appimage-x86_64
+          path: |
+            build/appimage/nagametv-${{ needs.metadata.outputs.version }}-x86_64.AppImage
+            build/appimage/nagametv-${{ needs.metadata.outputs.version }}-x86_64.AppImage.sha256
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+
+  flatpak:
+    name: Flatpak (x86_64)
+    needs: metadata
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - name: Install Flatpak build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends flatpak flatpak-builder elfutils dbus-daemon
+          flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: build/flatpak/state
+          key: flatpak-x86_64-${{ hashFiles('packaging/flatpak/*.json') }}-${{ github.sha }}
+          restore-keys: |
+            flatpak-x86_64-${{ hashFiles('packaging/flatpak/*.json') }}-
+            flatpak-x86_64-
+      - name: Build Flatpak bundle
+        env:
+          FLATPAK_BUILD_JOBS: '2'
+        run: dbus-run-session -- bash scripts/build-flatpak.sh
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: flatpak-x86_64
+          path: |
+            build/flatpak/nagametv-${{ needs.metadata.outputs.version }}-x86_64.flatpak
+            build/flatpak/nagametv-${{ needs.metadata.outputs.version }}-x86_64.flatpak.sha256
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+
+  release:
+    name: Draft GitHub Release
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    needs: [metadata, appimage, flatpak]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: appimage-x86_64
+          path: build/release
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: flatpak-x86_64
+          path: build/release
+      - name: Verify assets and create or update the draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: bash scripts/create-release-draft.sh "$RELEASE_TAG" build/release

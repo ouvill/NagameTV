@@ -10,6 +10,7 @@
 [`.workshop/dev.yaml`](../.workshop/dev.yaml)はUbuntu 26.04を使用します。
 ネイティブ版のRustはWorkshopのRust SDK、開発・パッケージ用のUbuntuパッケージは
 [プロジェクトSDKのsetup-base](../.workshop/nagametv/hooks/setup-base)で導入します。
+GitHub CLI（`gh`）もプロジェクトSDKに含まれます。
 配布用AppImageは別のUbuntu 24.04 Docker環境を使います。
 依存パッケージを追加するときはこの一覧と[check-health](../.workshop/nagametv/hooks/check-health)を更新します。
 check-healthはコマンド・開発ライブラリー・QML・GStreamerプラグインファイルの存在を確認し、
@@ -89,6 +90,9 @@ NAGAMETV_SERVER=http://192.168.1.100:40772 NAGAMETV_AUTOPLAY=1 ./build/nagametv
 [コメント表示の仕様](comment-display-redesign.md)を参照してください。評価版はインストール・配布用ビルドには使えません。
 
 ## テストと診断
+
+GitHub Actionsでの自動テスト・配布ビルドと、タグからGitHub Releaseの下書きを作る手順は
+[CIとリリース](ci-release.md)を参照してください。
 
 アプリのRustテスト:
 
