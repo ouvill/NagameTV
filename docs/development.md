@@ -134,6 +134,7 @@ RSSなどの資源使用量は診断JSONLに記録します。[メモリー分�
 ## 開発資料
 
 - [構成と資源の所有関係](architecture.md)
+- [ショートカットと共通操作](shortcut-actions-design.md)
 - [共通TS入力・ライブ振り返り](ts-input-implementation.md)
 - [TS録画の再生](recording-playback.md)
 - [録画シーク・TS番組情報取得のロードマップ](recording-seek-roadmap.md)

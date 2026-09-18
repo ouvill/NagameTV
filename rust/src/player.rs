@@ -1,3 +1,4 @@
+mod actions;
 mod audio_output;
 mod audio_streams;
 mod channel_programs;
@@ -33,6 +34,14 @@ mod transport;
 
 #[cxx_qt::bridge]
 pub mod ffi {
+    #[qenum(Player)]
+    enum PlaybackAction {
+        Unavailable,
+        Play,
+        Pause,
+        Stop,
+    }
+
     #[cfg(feature = "native_tests")]
     unsafe extern "C++" {
         include!("cxx-qt-lib/common.h");
@@ -143,6 +152,7 @@ pub mod ffi {
         #[qproperty(bool, loading, READ = loading, NOTIFY)]
         #[qproperty(bool, connecting, READ = connecting, NOTIFY)]
         #[qproperty(bool, playing, READ = playing, NOTIFY)]
+        #[qproperty(PlaybackAction, playback_action, READ = playback_action, NOTIFY)]
         #[qproperty(bool, media_active, READ = media_active, NOTIFY)]
         #[qproperty(bool, paused, READ = paused, NOTIFY)]
         #[qproperty(bool, seeking, READ = seeking, NOTIFY)]
@@ -260,6 +270,7 @@ pub mod ffi {
         fn loading(self: &Player) -> bool;
         fn connecting(self: &Player) -> bool;
         fn playing(self: &Player) -> bool;
+        fn playback_action(self: &Player) -> PlaybackAction;
         fn media_active(self: &Player) -> bool;
         fn paused(self: &Player) -> bool;
         fn seeking(self: &Player) -> bool;
@@ -318,6 +329,8 @@ pub mod ffi {
         fn select(self: Pin<&mut Player>, index: i32);
         #[qinvokable]
         fn play(self: Pin<&mut Player>);
+        #[qinvokable]
+        fn toggle_playback(self: Pin<&mut Player>);
         #[qinvokable]
         fn pause(self: Pin<&mut Player>) -> bool;
         #[qinvokable]
@@ -640,7 +653,16 @@ impl ffi::Player {
         channel_program_now_changed,
         f64
     );
-    property_setter!(set_selected, selected, selected_changed, i32);
+    fn set_selected(mut self: Pin<&mut Self>, value: i32) {
+        if self.rust().selected != value {
+            let before = self.playback_action();
+            self.as_mut().rust_mut().selected = value;
+            self.as_mut().selected_changed();
+            if before != self.playback_action() {
+                self.playback_action_changed();
+            }
+        }
+    }
     property_setter!(
         set_subtitles_active,
         subtitles_active,

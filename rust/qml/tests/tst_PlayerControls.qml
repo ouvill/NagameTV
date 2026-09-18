@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtTest
+import MinimalViewer 1.0
 import ".."
 
 Item {
@@ -9,44 +10,20 @@ Item {
         visible: true
         width: 1100
         height: 480
-        QtObject {
-            id: backend
-            property bool playing: false
-            property bool recording: false
-            property bool timeshift: false
-            property bool media_active: playing || paused
-            property bool paused: false
-            property bool connecting: false
-            property bool seekable: (recording || timeshift) && media_active
-            property int selected: 0
-            property bool audio_muted: false
-            property real volume_level: 0.5
-            property bool comments_enabled: true
-            property bool danmaku_enabled: false
-            property real comment_font_size: 24
-            property real comment_opacity: 0.8
-            property real comment_speed: 1.2
-            property bool subtitles_enabled: true
-            property bool subtitle_display: true
-            property int saved: 0
-            property var skips: []
-            function play() { playing = true; paused = false; }
-            function pause() { paused = true; playing = false; }
-            function stop() { playing = false; paused = false; }
-            function skip(milliseconds) { skips.push(milliseconds); }
-            function mute(value) { audio_muted = value; }
-            function volume(value) { volume_level = value; }
-            function save_settings() { saved++; }
-            function display_subtitles(value) { subtitle_display = value; }
-            function configure_danmaku(value, size, opacity, speed) { danmaku_enabled = value; }
+        ActionTestBackend { id: backend }
+        ViewerActions { id: actions; backend: backend; targetWindow: host; canCapture: true }
+        InputContext {
+            id: inputContext
+            targetWindow: host
+            playbackControls: backend.recording || backend.timeshift
         }
+        ShortcutBindings { actions: actions; inputContext: inputContext }
         PlayerControls {
             id: controls
             x: 24; y: 200
             width: host.width - 48
             height: implicitHeight
-            backend: backend
-            canCapture: true
+            actions: actions
             iconDirectory: Qt.resolvedUrl("../../../assets/icons/")
         }
         ModeNavigation {
@@ -58,13 +35,15 @@ Item {
             iconDirectory: controls.iconDirectory
         }
         SignalSpy { id: modes; target: navigation; signalName: "modeRequested" }
-        SignalSpy { id: capture; target: controls; signalName: "captureRequested" }
-        SignalSpy { id: comments; target: controls; signalName: "commentRequested" }
+        SignalSpy { id: capture; target: actions; signalName: "captureRequested" }
+        SignalSpy { id: comments; target: actions; signalName: "composerVisibilityRequested" }
         TestCase {
             name: "PlayerControls"
             when: windowShown
             function init() {
                 failOnWarning(/.*/);
+                backend.playback_action = Player.Play;
+                backend.playbackRequests = 0;
                 backend.playing = false;
                 backend.paused = false;
                 backend.recording = false; backend.timeshift = false;
@@ -76,27 +55,48 @@ Item {
                 backend.subtitle_display = true;
                 host.width = 1100;
                 controls.width = host.width - 48;
-                controls.canCapture = true;
+                actions.canCapture = true;
                 navigation.guideEnabled = true;
                 modes.clear(); capture.clear(); comments.clear();
             }
-            function test_live_timeshift_has_pause_and_skip_controls() {
-                backend.timeshift = true; backend.playing = true;
+            function test_buttons_follow_rust_action_without_deciding_playback_mode() {
                 const play = findChild(controls, "playStopButton");
-                verify(String(play.iconSource).endsWith("pause.svg"));
-                verify(findChild(controls, "skipBackButton").visible);
-                verify(findChild(controls, "skipForwardButton").visible);
+                for (const mode of [false, true]) {
+                    backend.recording = mode;
+                    for (const state of [Player.Play, Player.Pause, Player.Stop]) {
+                        backend.playback_action = state;
+                        const before = backend.playbackRequests;
+                        mouseClick(play);
+                        compare(backend.playbackRequests, before + 1);
+                        const icon = state === Player.Play ? "play-outline.svg" : state === Player.Pause ? "pause.svg" : "square.svg";
+                        verify(String(play.iconSource).endsWith(icon));
+                    }
+                }
+                backend.playback_action = Player.Unavailable;
+                const before = backend.playbackRequests;
                 mouseClick(play);
-                verify(backend.paused); verify(!backend.playing);
+                compare(backend.playbackRequests, before);
+            }
+            function test_button_and_space_share_action_and_text_focus_only_blocks_key() {
+                backend.recording = true;
+                backend.playback_action = Player.Pause;
+                host.requestActivate();
+                tryCompare(host, "active", true);
+                const play = findChild(controls, "playStopButton");
+                play.forceActiveFocus();
+                keyClick(Qt.Key_Space);
+                compare(backend.playbackRequests, 1);
                 mouseClick(play);
-                verify(backend.playing); verify(!backend.paused);
+                compare(backend.playbackRequests, 2);
+                const editor = createTemporaryQmlObject('import QtQuick.Controls; TextField {}', host.contentItem);
+                editor.forceActiveFocus();
+                keyClick(Qt.Key_Space);
+                compare(backend.playbackRequests, 2);
+                verify(play.enabled);
+                mouseClick(play);
+                compare(backend.playbackRequests, 3);
             }
             function test_actions_follow_backend_and_recording_disables_live_comments() {
-                const play = findChild(controls, "playStopButton");
-                mouseClick(play);
-                compare(backend.playing, true);
-                mouseClick(play);
-                compare(backend.playing, false);
                 const toggle = findChild(controls, "danmakuButton");
                 mouseClick(toggle);
                 compare(backend.danmaku_enabled, true);
@@ -110,25 +110,23 @@ Item {
                 mouseClick(findChild(controls, "postCommentButton"));
                 compare(backend.saved, 1);
                 compare(comments.count, 0);
-                mouseClick(play);
-                compare(backend.playing, true);
                 mouseClick(findChild(controls, "screenshotButton"));
                 compare(capture.count, 1);
-                controls.canCapture = false;
+                actions.canCapture = false;
                 mouseClick(findChild(controls, "screenshotButton"));
                 compare(capture.count, 1);
             }
-            function test_recording_pause_resume_and_skips() {
-                backend.recording = true;
-                waitForRendering(controls);
-                const play = findChild(controls, "playStopButton");
-                mouseClick(play); compare(backend.playing, true);
-                mouseClick(play); compare(backend.paused, true); compare(backend.media_active, true);
-                mouseClick(play); compare(backend.playing, true); compare(backend.paused, false);
-                mouseClick(findChild(controls, "skipBackButton"));
-                mouseClick(findChild(controls, "skipForwardButton"));
-                compare(backend.skips, [-10000, 30000]);
-                compare(findChild(controls, "recordingStopButton"), null);
+            function test_recording_and_timeshift_skip_buttons_use_shared_steps() {
+                backend.playing = true;
+                for (const recording of [false, true]) {
+                    backend.recording = recording;
+                    backend.timeshift = !recording;
+                    waitForRendering(controls);
+                    mouseClick(findChild(controls, "skipBackButton"));
+                    mouseClick(findChild(controls, "skipForwardButton"));
+                }
+                compare(backend.skips, [actions.seekSteps.backwardMilliseconds, actions.seekSteps.forwardMilliseconds,
+                    actions.seekSteps.backwardMilliseconds, actions.seekSteps.forwardMilliseconds]);
             }
             function test_request_does_not_change_mode_before_file_selection_succeeds() {
                 const recording = findChild(navigation, "recordingModeButton");

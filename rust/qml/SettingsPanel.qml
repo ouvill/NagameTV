@@ -8,6 +8,8 @@ Popup {
     id: root
     enum Page { Connection, Display, Comments, Shortcuts, Diagnostics, Remote, Timeshift }
     required property var backend
+    required property list<ShortcutBinding> shortcutEntries
+    required property CommentSubmitPolicy commentSubmitPolicy
     property Window targetWindow: null
     property bool statsVisible: false
     property int page: SettingsPanel.Connection
@@ -519,14 +521,19 @@ Popup {
                         ColumnLayout {
                             Layout.fillWidth: true
                             spacing: 0
-                            ShortcutRow { text: qsTranslate("Settings", "Send a comment"); keys: root.backend.comment_send_on_enter ? "Enter / Ctrl + Enter" : "Ctrl + Enter" }
-                            ShortcutRow { text: qsTranslate("Settings", "Toggle fullscreen"); keys: "F11" }
-                            ShortcutRow { text: qsTranslate("Settings", "Open channels"); keys: "C" }
-                            ShortcutRow { text: qsTranslate("Main", "Save screenshot"); keys: "Ctrl + S" }
-                            ShortcutRow { text: qsTranslate("Settings", "Open program guide"); keys: "G" }
-                            ShortcutRow { text: qsTranslate("Settings", "Previous channel"); keys: "Page Up" }
-                            ShortcutRow { text: qsTranslate("Settings", "Next channel"); keys: "Page Down" }
-                            ShortcutRow { text: qsTranslate("Settings", "Close a panel or leave fullscreen"); keys: "Esc" }
+                            ShortcutRow {
+                                text: qsTranslate("Settings", "Send a comment") + " · " + qsTranslate("Settings", "While entering a comment")
+                                keys: root.commentSubmitPolicy.keys
+                            }
+                            Repeater {
+                                model: root.shortcutEntries
+                                delegate: ShortcutRow {
+                                    required property ShortcutBinding modelData
+                                    objectName: "shortcutHelp_" + modelData.objectName
+                                    text: modelData.description + (modelData.condition.length ? " · " + modelData.condition : "")
+                                    keys: modelData.nativeText
+                                }
+                            }
                         }
                     }
                     ColumnLayout {

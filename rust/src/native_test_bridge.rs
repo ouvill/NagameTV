@@ -35,6 +35,7 @@ pub mod ffi {
 
         include!("native_tests/qt_test_api.h");
         fn grabRoot(engine: Pin<&mut QQmlApplicationEngine>) -> Result<QImage>;
+        fn clickRootKey(engine: Pin<&mut QQmlApplicationEngine>, sequence: &QString) -> Result<()>;
         type FrameTimes;
         fn watchFrames(engine: &QQmlApplicationEngine) -> Result<UniquePtr<FrameTimes>>;
         fn samples(self: &FrameTimes) -> QString;

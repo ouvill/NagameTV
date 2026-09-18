@@ -5,11 +5,11 @@ import QtQuick.Layouts
 
 Item {
     id: root
-    required property var backend
-    property bool closing: false
-    property bool canCapture: false
+    required property ViewerActions actions
+    readonly property var backend: actions.backend
+    readonly property bool closing: !actions.enabled
+    enabled: actions.enabled
     property bool settingsVisible: false
-    property bool sidePanelOpen: false
     property url iconDirectory: "qrc:/qt/qml/MinimalViewer/assets/icons/"
     readonly property bool volumePressed: volumeSlider.pressed
     readonly property Item settingsButton: playbackSettingsButton
@@ -18,17 +18,7 @@ Item {
     readonly property bool compact: width < (transportControls ? 1000 : 780)
     readonly property int buttonSize: compact ? 36 : 42
     implicitHeight: compact ? 96 : 54
-    signal audioRequested
-    signal channelsRequested
-    signal commentRequested
-    signal captureRequested
-    signal settingsRequested
-    signal fullscreenRequested
-    signal sidePanelRequested
-
-    RecordingSeekSteps { id: recordingSeekSteps }
-
-    component Action: IconAction {
+    component Control: IconAction {
         flat: true
         implicitWidth: root.buttonSize
         implicitHeight: root.buttonSize
@@ -40,18 +30,18 @@ Item {
         y: root.compact ? 54 : 6
         height: root.buttonSize
         spacing: 4
-        Action {
+        Control {
             objectName: "muteButton"
             iconSource: root.iconDirectory + (root.backend.audio_muted || root.backend.volume_level === 0 ? "volume-x.svg" : "volume-2.svg")
-            tip: root.backend.audio_muted ? qsTranslate("Viewer", "Unmute") : qsTranslate("Viewer", "Mute")
-            onClicked: root.backend.mute(!root.backend.audio_muted)
+            tip: action.text
+            action: root.actions.toggleMute
         }
-        Action {
+        Control {
             objectName: "audioSelectionButton"
             iconSource: root.iconDirectory + "chevron-down.svg"
-            tip: qsTranslate("Viewer", "Audio selection")
+            tip: action.text
             implicitWidth: 24
-            onClicked: root.audioRequested()
+            action: root.actions.openAudio
         }
         VolumeSlider {
             id: volumeSlider
@@ -69,45 +59,41 @@ Item {
         anchors.horizontalCenter: parent.horizontalCenter
         y: 6
         spacing: 12
-        Action {
+        Control {
             objectName: "channelsButton"
             visible: !root.backend.recording
             iconSource: root.iconDirectory + "grid-2x2.svg"
-            tip: qsTranslate("Main", "Channels")
-            onClicked: root.channelsRequested()
+            tip: action.text
+            action: root.actions.openChannels
         }
-        Action {
+        Control {
             objectName: "skipBackButton"
             visible: root.transportControls
-            enabled: root.backend.seekable
             iconSource: root.iconDirectory + "rotate-ccw.svg"
-            iconLabel: String(recordingSeekSteps.backwardSeconds)
-            tip: qsTranslate("Viewer", "Back 10 seconds")
-            onClicked: root.backend.skip(recordingSeekSteps.backwardMilliseconds)
+            iconLabel: String(root.actions.seekSteps.backwardSeconds)
+            tip: action.text
+            action: root.actions.seekBackward
         }
-        Action {
+        Control {
             objectName: "playStopButton"
-            iconSource: root.iconDirectory + (root.backend.playing ? (root.transportControls ? "pause.svg" : "square.svg") : "play-outline.svg")
-            tip: root.backend.playing ? (root.transportControls ? qsTranslate("Viewer", "Pause") : qsTranslate("Main", "Stop")) : qsTranslate("Viewer", "Play")
-            enabled: root.backend.playing || root.backend.recording || root.backend.selected >= 0
-            onClicked: root.backend.playing ? (root.transportControls ? root.backend.pause() : root.backend.stop()) : root.backend.play()
+            iconSource: root.iconDirectory + root.actions.playbackIcon
+            tip: action.text
+            action: root.actions.playbackToggle
         }
-        Action {
+        Control {
             objectName: "skipForwardButton"
             visible: root.transportControls
-            enabled: root.backend.seekable
             iconSource: root.iconDirectory + "rotate-cw.svg"
-            iconLabel: String(recordingSeekSteps.forwardSeconds)
-            tip: qsTranslate("Viewer", "Forward 30 seconds")
-            onClicked: root.backend.skip(recordingSeekSteps.forwardMilliseconds)
+            iconLabel: String(root.actions.seekSteps.forwardSeconds)
+            tip: action.text
+            action: root.actions.seekForward
         }
-        Action {
+        Control {
             objectName: "postCommentButton"
             visible: !root.backend.recording
             iconSource: root.iconDirectory + "pencil.svg"
-            tip: qsTranslate("Main", "Post a comment")
-            enabled: root.backend.comments_enabled && !root.backend.recording
-            onClicked: root.commentRequested()
+            tip: action.text
+            action: root.actions.openComposer
         }
     }
     Row {
@@ -115,46 +101,39 @@ Item {
         anchors.right: parent.right
         y: root.compact ? 54 : 6
         spacing: 6
-        Action {
+        Control {
             objectName: "screenshotButton"
             iconSource: root.iconDirectory + "camera.svg"
-            tip: qsTranslate("Main", "Save screenshot")
-            enabled: root.canCapture
-            onClicked: root.captureRequested()
+            tip: action.text
+            action: root.actions.captureScreenshot
         }
-        Action {
+        Control {
             objectName: "subtitlesButton"
             iconSource: root.iconDirectory + (root.backend.subtitle_display ? "captions.svg" : "captions-off.svg")
-            tip: root.backend.subtitle_display ? qsTranslate("Main", "Hide subtitles") : qsTranslate("Main", "Show subtitles")
+            tip: action.text
             active: root.backend.subtitles_enabled && root.backend.subtitle_display
-            enabled: root.backend.subtitles_enabled
-            onClicked: root.backend.display_subtitles(!root.backend.subtitle_display)
+            action: root.actions.toggleSubtitles
         }
-        Action {
+        Control {
             objectName: "danmakuButton"
             iconSource: root.iconDirectory + (root.backend.danmaku_enabled ? "message-square.svg" : "message-square-off.svg")
-            tip: root.backend.danmaku_enabled ? qsTranslate("Main", "Hide danmaku") : qsTranslate("Main", "Show danmaku")
+            tip: action.text
             active: enabled && root.backend.danmaku_enabled
-            enabled: root.backend.comments_enabled && !root.backend.recording
-            onClicked: {
-                root.backend.configure_danmaku(!root.backend.danmaku_enabled, root.backend.comment_font_size,
-                    root.backend.comment_opacity, root.backend.comment_speed);
-                root.backend.save_settings();
-            }
+            action: root.actions.toggleDanmaku
         }
-        Action {
+        Control {
             id: playbackSettingsButton
             objectName: "playbackSettingsButton"
             iconSource: root.iconDirectory + "settings-2.svg"
-            tip: qsTranslate("Main", "Playback settings")
+            tip: action.text
             active: root.settingsVisible
-            onClicked: root.settingsRequested()
+            action: root.actions.toggleSettings
         }
-        Action {
+        Control {
             objectName: "fullscreenButton"
             iconSource: root.iconDirectory + "maximize.svg"
-            tip: qsTranslate("Main", "Fullscreen")
-            onClicked: root.fullscreenRequested()
+            tip: action.text
+            action: root.actions.toggleFullscreen
         }
         Rectangle {
             width: 1
@@ -162,11 +141,11 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             color: "#42ffffff"
         }
-        Action {
+        Control {
             objectName: "sidePanelButton"
-            iconSource: root.iconDirectory + (root.sidePanelOpen ? "panel-right-close.svg" : "panel-right-open.svg")
-            tip: root.sidePanelOpen ? qsTranslate("Main", "Close side panel") : qsTranslate("Main", "Program information")
-            onClicked: root.sidePanelRequested()
+            iconSource: root.iconDirectory + (root.actions.programVisible ? "panel-right-close.svg" : "panel-right-open.svg")
+            tip: action.text
+            action: root.actions.toggleProgram
         }
     }
 }

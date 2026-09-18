@@ -99,7 +99,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         builder = builder.file("src/video_item_tests.rs");
     }
     if std::env::var_os("CARGO_FEATURE_NATIVE_TESTS").is_some() {
-        builder = builder.qt_module("Svg").file("src/native_test_bridge.rs");
+        builder = builder
+            .qt_module("Svg")
+            .qt_module("Test")
+            .file("src/native_test_bridge.rs");
     }
     builder.build();
     Ok(())

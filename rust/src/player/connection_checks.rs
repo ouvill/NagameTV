@@ -186,6 +186,7 @@ fn checks() -> TestResult {
     // All Qt signal observers see the complete stream state, and a duplicate
     // Play cannot replenish the one automatic retry of an active attempt.
     check_stream_state(&mut player)?;
+    check_playback_actions(&mut player)?;
     check_recording_input(&mut player)?;
     check_recording_notifications(&mut player)?;
     check_guide_state();
@@ -300,6 +301,53 @@ fn check_stream_state(player: &mut cxx::UniquePtr<ffi::Player>) -> TestResult {
     assert_eq!(
         *transport.lock().unwrap(),
         [(true, true, true, false), (false, false, false, false)]
+    );
+    Ok(())
+}
+
+fn check_playback_actions(player: &mut cxx::UniquePtr<ffi::Player>) -> TestResult {
+    use super::stream_state::{Attempt, State};
+    use crate::playback::input::Retention;
+    let selected = *player.selected();
+    let observed = Arc::new(Mutex::new(Vec::new()));
+    let changes = observed.clone();
+    let _signal = player.pin_mut().on_playback_action_changed(move |p| {
+        let expected: ffi::PlaybackAction = p
+            .rust()
+            .stream_state
+            .playback_action(*p.selected() >= 0)
+            .into();
+        assert!(p.playback_action() == expected);
+        changes
+            .lock()
+            .unwrap()
+            .push((p.playback_action().repr, p.playing()));
+    });
+    player.pin_mut().set_selected(-1);
+    assert!(player.playback_action() == ffi::PlaybackAction::Unavailable);
+    player.pin_mut().toggle_playback();
+    assert!(!player.connecting());
+    player.pin_mut().set_selected(selected);
+    assert!(player.playback_action() == ffi::PlaybackAction::Play);
+    // A previously displayed Play action must use the new state when triggered.
+    let attempt = Attempt::new(
+        &player.rust().entries[selected as usize],
+        Retention::Off.into(),
+    );
+    player
+        .pin_mut()
+        .update_stream_state(State::Connecting(attempt).started());
+    assert!(player.playback_action() == ffi::PlaybackAction::Stop);
+    player.pin_mut().toggle_playback();
+    assert!(!player.playing() && !player.connecting());
+    assert_eq!(
+        *observed.lock().unwrap(),
+        [
+            (ffi::PlaybackAction::Unavailable.repr, false),
+            (ffi::PlaybackAction::Play.repr, false),
+            (ffi::PlaybackAction::Stop.repr, true),
+            (ffi::PlaybackAction::Play.repr, false),
+        ]
     );
     Ok(())
 }

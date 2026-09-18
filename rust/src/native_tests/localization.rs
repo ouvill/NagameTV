@@ -92,6 +92,7 @@ pub fn run(missing_catalog: bool) -> i32 {
     assert_eq!(ffi::root_count(&engine), 1);
     assert_eq!(text(&engine, "heading"), qs("Stats for nerds"));
     assert_eq!(text(&engine, "stateLabel"), qs("Playing"));
+    assert_eq!(text(&engine, "playbackShortcutLabel"), qs("Play or pause"));
     let day = property(&engine, "day");
     assert_eq!(text(&engine, "dateLabel"), qs("Tue, Sep 8"));
     assert_eq!(tr("Programs: %1").arg(&qs("13000")), qs("Programs: 13000"));
@@ -148,6 +149,15 @@ pub fn run(missing_catalog: bool) -> i32 {
     assert_eq!(
         text(&engine, "expiredPauseLabel"),
         qs("保持範囲外で一時停止")
+    );
+    assert_eq!(text(&engine, "playbackShortcutLabel"), qs("再生／一時停止"));
+    assert_eq!(
+        text(&engine, "playbackShortcutCondition"),
+        qs("録画・振り返り再生中")
+    );
+    assert_eq!(
+        text(&engine, "commentShortcutCondition"),
+        qs("コメント入力中")
     );
     assert_eq!(text(&engine, "watchingLabel"), qs("視聴中: 番組A"));
     assert_eq!(text(&engine, "broadcastLabel"), qs("放送中: 番組B"));

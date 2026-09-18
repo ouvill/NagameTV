@@ -11,8 +11,10 @@ TestCase {
     visible: true
     width: 420
     height: 320
+    CommentSubmitPolicy { id: submitPolicy }
     CommentComposer {
         id: composer
+        submitPolicy: submitPolicy
         width: 340
         available: true
         iconDirectory: Qt.resolvedUrl("../../../assets/icons/")
@@ -30,7 +32,7 @@ TestCase {
         composer.visible = true;
         composer.busy = false;
         composer.available = true;
-        composer.sendOnEnter = false;
+        submitPolicy.mode = CommentSubmitPolicy.ControlEnter;
         composer.status = "";
         composer.width = 340;
         composer.draft = "実況🦀";
@@ -53,7 +55,7 @@ TestCase {
         compare(composer.draft, "実況🦀");
     }
     function test_enter_setting_shift_does_nothing_and_button_keeps_focus() {
-        composer.sendOnEnter = true;
+        submitPolicy.mode = CommentSubmitPolicy.EnterOrControlEnter;
         keyClick(Qt.Key_Return);
         compare(sent.count, 1);
         keyClick(Qt.Key_Return, Qt.ShiftModifier);
@@ -83,7 +85,7 @@ TestCase {
         compare(findChild(composer, "sendComment").enabled, false);
     }
     function test_ime_preedit_enter_and_ctrl_enter_are_not_posts() {
-        composer.sendOnEnter = true;
+        submitPolicy.mode = CommentSubmitPolicy.EnterOrControlEnter;
         verify(ime.compose("じっきょう", ""));
         tryCompare(editor(), "inputMethodComposing", true);
         compare(findChild(composer, "sendComment").enabled, false);

@@ -53,7 +53,6 @@ ApplicationWindow {
     Player {
         id: player
     }
-    RecordingSeekSteps { id: recordingSeekSteps }
     RecordingInput {
         id: recordingInput
         anchors.fill: parent
@@ -68,43 +67,12 @@ ApplicationWindow {
             root.closeCommentComposer();
         }
     }
-    Shortcut {
-        sequence: "Ctrl+O"
-        context: Qt.WindowShortcut
-        autoRepeat: false
-        enabled: !root.closing
-        onActivated: recordingInput.open()
-    }
     function openConnectionSettings() {
         if (root.setupRequired) setup.open();
         else {
             settings.page = SettingsPanel.Connection;
             settings.open();
         }
-    }
-    Shortcut {
-        sequence: "Space"
-        context: Qt.WindowShortcut
-        autoRepeat: false
-        enabled: windowActions.navigationEnabled && (player.recording || player.timeshift) && !root.showGuide && !root.showChannels
-        onActivated: {
-            player.playing ? player.pause() : player.play();
-            overlayVisibility.reveal();
-        }
-    }
-    Shortcut {
-        sequence: "Left"
-        context: Qt.WindowShortcut
-        enabled: windowActions.navigationEnabled && player.seekable && !root.showGuide && !root.showChannels
-            && !(root.activeFocusItem instanceof Slider)
-        onActivated: { player.skip(recordingSeekSteps.backwardMilliseconds); overlayVisibility.reveal(); }
-    }
-    Shortcut {
-        sequence: "Right"
-        context: Qt.WindowShortcut
-        enabled: windowActions.navigationEnabled && player.seekable && !root.showGuide && !root.showChannels
-            && !(root.activeFocusItem instanceof Slider)
-        onActivated: { player.skip(recordingSeekSteps.forwardMilliseconds); overlayVisibility.reveal(); }
     }
     function chooseConnectedChannel() {
         player.guide_open(false);
@@ -127,48 +95,22 @@ ApplicationWindow {
         case ModeNavigation.Recording:
             // Replace this destination with the recording library when available.
             // Selection/cancellation leaves the current playback mode unchanged.
-            recordingInput.open();
+            viewerActions.openRecording.trigger();
             break;
         case ModeNavigation.Guide:
-            root.toggleGuide();
+            viewerActions.toggleGuide.trigger();
             break;
         case ModeNavigation.Settings:
             settings.open();
             break;
         }
     }
-    function step(offset) {
-        overlayVisibility.reveal();
-        player.step_channel(offset);
-    }
-    function toggleGuide() {
-        overlayVisibility.reveal();
-        if (!player.epg_enabled)
-            return;
-        player.guide_open(!root.showGuide);
-    }
-    function closeTopmost() {
-        overlayVisibility.reveal();
-        // The guide covers the channel picker; close the visible layer first.
-        if (root.showGuide)
-            root.toggleGuide();
-        else if (root.showChannels)
-            root.showChannels = false;
-        else if (root.showCommentComposer)
-            root.closeCommentComposer();
-        else if (root.showStats)
-            root.showStats = false;
-        else if (root.showProgram)
-            root.showProgram = false;
-        else
-            windowActions.leaveFullscreen();
-    }
     OverlayVisibility {
         id: overlayVisibility
         enabled: !root.closing
         playing: player.playing
         // Like main, the persistent sidebar does not pin the video controls.
-        pinned: root.showChannels || root.showGuide || windowActions.popupOpen || windowActions.editingText || playerControls.volumePressed || recordingTimeline.pressed || recordingTimeline.hovered
+        pinned: root.showChannels || root.showGuide || inputContext.popupOpen || inputContext.editingText || playerControls.volumePressed || recordingTimeline.pressed || recordingTimeline.hovered
     }
     AudioSettings {
         id: audioSettings
@@ -211,23 +153,45 @@ ApplicationWindow {
             overlayVisibility.reveal();
         }
     }
-    WindowActions {
-        id: windowActions
+    ViewerActions {
+        id: viewerActions
+        backend: player
         targetWindow: root
         enabled: !root.closing
-        guideEnabled: player.epg_enabled
-        screenshotEnabled: screenshot.canCapture && !root.showGuide && !root.showChannels
-        onScreenshotRequested: screenshot.capture()
-        onFullscreenChanged: overlayVisibility.reveal()
-        onChannelsToggleRequested: {
-            overlayVisibility.reveal();
-            root.showChannels = !root.showChannels;
+        channelsVisible: root.showChannels
+        composerVisible: root.showCommentComposer
+        statsVisible: root.showStats
+        programVisible: root.showProgram
+        canCapture: screenshot.canCapture
+        onActivity: overlayVisibility.reveal()
+        onChannelsVisibilityRequested: function(visible) { root.showChannels = visible; }
+        onComposerVisibilityRequested: function(visible) {
+            if (visible) { root.showCommentComposer = true; composer.focusEditor(); }
+            else root.closeCommentComposer();
         }
-        onGuideToggleRequested: root.toggleGuide()
-        onChannelStepRequested: function (offset) {
-            root.step(offset);
-        }
-        onEscapeRequested: root.closeTopmost()
+        onStatsVisibilityRequested: function(visible) { root.showStats = visible; }
+        onProgramVisibilityRequested: function(visible) { root.showProgram = visible; }
+        onRecordingRequested: recordingInput.open()
+        onCaptureRequested: screenshot.capture()
+        onAudioRequested: audioSettings.open()
+        onSettingsRequested: playbackSettings.toggle()
+    }
+    InputContext {
+        id: inputContext
+        targetWindow: root
+        enabled: !root.closing
+        playbackControls: player.recording || player.timeshift
+        guideVisible: root.showGuide
+        channelsVisible: root.showChannels
+    }
+    ShortcutBindings {
+        id: shortcutBindings
+        actions: viewerActions
+        inputContext: inputContext
+    }
+    CommentSubmitPolicy {
+        id: commentSubmitPolicy
+        mode: player.comment_send_on_enter ? CommentSubmitPolicy.EnterOrControlEnter : CommentSubmitPolicy.ControlEnter
     }
     ScreenshotCapture {
         id: screenshot
@@ -389,14 +353,14 @@ ApplicationWindow {
                 hasChannels: root.channelRows.length > 0
                 hasServer: player.server_configured
                 loading: player.loading || player.connecting
-                onPlayRequested: player.play()
+                onPlayRequested: viewerActions.playbackToggle.trigger()
                 onChannelsRequested: {
                     if (player.playback_error.length) player.refresh_channels(true)
                     root.showChannels = true
                 }
                 onSettingsRequested: root.openConnectionSettings()
                 onReconnectRequested: player.connect_server(player.server)
-                onOpenFileRequested: recordingInput.open()
+                onOpenFileRequested: viewerActions.openRecording.trigger()
             }
         }
         WindowDragArea {
@@ -467,6 +431,8 @@ ApplicationWindow {
         }
         SettingsPanel {
             id: settings
+            shortcutEntries: shortcutBindings.entries
+            commentSubmitPolicy: commentSubmitPolicy
             targetWindow: root
             onClosed: if (!root.closing) player.save_settings()
             backend: player
@@ -481,7 +447,7 @@ ApplicationWindow {
             backend: player
             targetWindow: root
             onCompleted: root.chooseConnectedChannel()
-            onOpenFileRequested: recordingInput.open()
+            onOpenFileRequested: viewerActions.openRecording.trigger()
             onFileDropped: function(file) { recordingInput.openUrl(file); }
         }
         Rectangle {
@@ -549,21 +515,8 @@ ApplicationWindow {
                     Layout.fillWidth: true
                     Layout.leftMargin: 24
                     Layout.rightMargin: 24
-                    backend: player
-                    closing: root.closing
-                    canCapture: screenshot.canCapture
                     settingsVisible: playbackSettings.visible
-                    sidePanelOpen: root.showProgram
-                    onAudioRequested: audioSettings.open()
-                    onChannelsRequested: root.showChannels = true
-                    onCommentRequested: {
-                        root.showCommentComposer = true;
-                        composer.focusEditor();
-                    }
-                    onCaptureRequested: screenshot.capture()
-                    onSettingsRequested: { playbackSettings.toggle(); overlayVisibility.reveal(); }
-                    onFullscreenRequested: windowActions.toggleFullscreen()
-                    onSidePanelRequested: root.showProgram = !root.showProgram
+                    actions: viewerActions
                 }
             }
         }
@@ -588,7 +541,7 @@ ApplicationWindow {
             available: player.comment_post_available
             supported: player.comments_enabled && player.comment_post_target.length > 0
             busy: player.comment_post_busy
-            sendOnEnter: player.comment_send_on_enter
+            submitPolicy: commentSubmitPolicy
             onDraftEdited: function(text) { player.edit_comment_draft(text); }
             onSendRequested: player.post_comment()
         }

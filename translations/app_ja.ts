@@ -1081,6 +1081,18 @@
   <context>
     <name>Settings</name>
     <message>
+      <source>Play or pause</source>
+      <translation>再生／一時停止</translation>
+    </message>
+    <message>
+      <source>Recordings and timeshift</source>
+      <translation>録画・振り返り再生中</translation>
+    </message>
+    <message>
+      <source>While entering a comment</source>
+      <translation>コメント入力中</translation>
+    </message>
+    <message>
       <source>Image format</source>
       <translation>保存形式</translation>
     </message>

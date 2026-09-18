@@ -1,0 +1,39 @@
+import QtQuick
+import MinimalViewer 1.0
+
+// Only records commands; Rust tests own playback state transitions.
+QtObject {
+    property bool playing: false
+    property bool paused: false
+    property bool recording: false
+    property bool timeshift: false
+    property bool media_active: playing || paused
+    property bool connecting: false
+    property bool seekable: (recording || timeshift) && media_active
+    property int playback_action: Player.Play
+    property int selected: 0
+    property bool audio_muted: false
+    property real volume_level: 0.5
+    property bool comments_enabled: true
+    property bool danmaku_enabled: false
+    property real comment_font_size: 24
+    property real comment_opacity: 0.8
+    property real comment_speed: 1.2
+    property bool subtitles_enabled: true
+    property bool subtitle_display: true
+    property bool epg_enabled: true
+    property bool guide_visible: false
+    property int saved: 0
+    property int playbackRequests: 0
+    property int channelSteps: 0
+    property var skips: []
+    function toggle_playback() { playbackRequests++; }
+    function skip(milliseconds) { skips.push(milliseconds); }
+    function step_channel(offset) { channelSteps += offset; }
+    function guide_open(visible) { guide_visible = visible; }
+    function mute(value) { audio_muted = value; }
+    function volume(value) { volume_level = value; }
+    function save_settings() { saved++; }
+    function display_subtitles(value) { subtitle_display = value; }
+    function configure_danmaku(value, size, opacity, speed) { danmaku_enabled = value; }
+}

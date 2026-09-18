@@ -9,12 +9,11 @@ Rectangle {
     property bool busy: false
     property bool available: false
     property bool supported: true
-    property bool sendOnEnter: false
+    required property CommentSubmitPolicy submitPolicy
     property url iconDirectory: "qrc:/qt/qml/MinimalViewer/assets/icons/"
     readonly property int maximumLength: 1024
     readonly property real occupiedHeight: height + (feedback.visible ? feedback.height + 8 : 0)
-    readonly property string sendHint: sendOnEnter
-        ? qsTranslate("Viewer", "Enter to send") : qsTranslate("Viewer", "Ctrl+Enter to send")
+    readonly property string sendHint: submitPolicy.hint
     property bool showFeedback: false
     signal draftEdited(string text)
     signal sendRequested
@@ -83,12 +82,10 @@ Rectangle {
         }
         Keys.priority: Keys.BeforeItem
         Keys.onPressed: function(event) {
-            if (event.key !== Qt.Key_Return && event.key !== Qt.Key_Enter) return;
-            if (inputMethodComposing) return;
+            const disposition = root.submitPolicy.disposition(event, inputMethodComposing);
+            if (disposition === CommentSubmitPolicy.PassThrough) return;
             event.accepted = true;
-            const modifiers = event.modifiers & ~Qt.KeypadModifier;
-            const submit = modifiers === Qt.ControlModifier || (root.sendOnEnter && modifiers === Qt.NoModifier);
-            if (submit && !event.isAutoRepeat) root.send();
+            if (disposition === CommentSubmitPolicy.Submit) root.send();
         }
     }
     Label {

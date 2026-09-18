@@ -349,17 +349,18 @@ fn window(
         // The restored channel is now stable. Exercise danmaku before opening
         // the channel browser, whose navigation is checked separately below.
         check_danmaku_layout(app, &mut engine)?;
+        check_shortcuts(app, &mut engine)?;
         // Every way of changing guide visibility must run the same synchronization.
-        evaluate(&mut engine, "root.toggleGuide(); true")?;
+        evaluate(&mut engine, "viewerActions.toggleGuide.trigger(); true")?;
         wait_for(app, &mut engine, "root.guideVisible && root.showGuide")?;
-        evaluate(&mut engine, "root.closeTopmost(); true")?;
+        evaluate(&mut engine, "viewerActions.dismissTopmost.trigger(); true")?;
         assert!(evaluate(
             &mut engine,
             "!root.guideVisible && !root.showGuide"
         )?);
         evaluate(
             &mut engine,
-            "root.toggleGuide(); root.chooseConnectedChannel(); true",
+            "viewerActions.toggleGuide.trigger(); root.chooseConnectedChannel(); true",
         )?;
         wait_for(app, &mut engine, "!root.guideVisible && root.showChannels")?;
         // Exercise real GStreamer start/failure/stop without an external tuner.
@@ -418,6 +419,13 @@ fn window(
             "root.setupRequired && !player.server_configured && !player.loading && !player.server.length && !root.channelRows.length"
         )?);
         check_danmaku_layout(app, &mut engine)?;
+        // Comments are enabled here with an empty catalog, so shortcut coverage
+        // does not start external comment/activity requests.
+        evaluate(&mut engine, "setup.close(); true")?;
+        wait_for(app, &mut engine, "!setup.visible")?;
+        check_shortcuts(app, &mut engine)?;
+        evaluate(&mut engine, "setup.open(); true")?;
+        wait_for(app, &mut engine, "setup.opened")?;
         check_recording(app, &mut engine)?;
         check_recording_recovery(app, &mut engine, "recording-clock-reset.ts")?;
         check_recording_recovery(app, &mut engine, "recording-pid-change.ts")?;
@@ -496,12 +504,12 @@ fn check_recording(
     .parse()?;
     assert!(evaluate(
         engine,
-        "screenshot.canCapture && (screenshot.capture(), screenshot.busy && windowActions.enabled)"
+        "screenshot.canCapture && (screenshot.capture(), screenshot.busy && viewerActions.enabled)"
     )?);
     wait_for(app, engine, "!screenshot.busy")?;
     assert!(evaluate(
         engine,
-        "player.screenshot_error.length === 0 && player.playing && windowActions.enabled && screenshotNotice.visible && screenshotNotice.kind === ScreenshotNotice.Saved"
+        "player.screenshot_error.length === 0 && player.playing && viewerActions.enabled && screenshotNotice.visible && screenshotNotice.kind === ScreenshotNotice.Saved"
     )?);
     assert!(
         std::fs::read_dir(directory.path())?
@@ -610,10 +618,21 @@ fn check_recording(
         engine,
         "JSON.parse(player.current_program_data).name === '日本語 1' && JSON.parse(player.current_program_data).station === '日本語 TV'"
     )?);
-    assert!(evaluate(
+    evaluate(
         engine,
-        "player.pause() && player.paused && !player.playing && player.media_active"
-    )?);
+        "root.requestActivate(); surface.forceActiveFocus(); true",
+    )?;
+    wait_for(
+        app,
+        engine,
+        "root.active && inputContext.accepts(InputContext.Playback)",
+    )?;
+    ffi::clickRootKey(engine.pin_mut(), &QString::from("Space"))?;
+    wait_for(
+        app,
+        engine,
+        "player.paused && !player.playing && player.media_active",
+    )?;
     for (target, event) in [(45000, 2), (10000, 1), (35000, 2)] {
         assert!(evaluate(
             engine,
@@ -645,7 +664,7 @@ fn check_recording(
         engine,
         "!player.seeking && player.paused && Math.abs(player.position_ms - 15000) < 1500 && !player.transport_error.length",
     )?;
-    evaluate(engine, "player.play(); true")?;
+    evaluate(engine, "viewerActions.playbackToggle.trigger(); true")?;
     wait_for(app, engine, "player.playing && !player.paused")?;
     assert!(evaluate(engine, "player.seek_to(59000)")?);
     wait_for(app, engine, "player.ended && !player.playing")?;
@@ -660,6 +679,73 @@ fn check_recording(
         engine,
         "!player.media_active && !player.seekable && player.position_ms < 0 && !player.subtitles_active"
     )?);
+    Ok(())
+}
+
+fn check_shortcuts(
+    app: &QGuiApplication,
+    engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
+) -> TestResult {
+    evaluate(
+        engine,
+        "root.showChannels = false; root.requestActivate(); surface.forceActiveFocus(); true",
+    )?;
+    wait_for(app, engine, "root.active && inputContext.navigationEnabled")?;
+    for (key, condition) in [
+        ("S", "root.showChannels"),
+        ("G", "root.showGuide && root.showChannels"),
+        ("Escape", "!root.showGuide && root.showChannels"),
+        ("Escape", "!root.showGuide && !root.showChannels"),
+        ("F11", "viewerActions.fullscreen"),
+        ("F11", "!viewerActions.fullscreen"),
+        ("S", "root.showChannels"),
+        ("G", "root.showGuide && root.showChannels"),
+    ] {
+        ffi::clickRootKey(engine.pin_mut(), &QString::from(key))?;
+        wait_for(app, engine, condition)?;
+    }
+    ffi::clickRootKey(engine.pin_mut(), &QString::from("C"))?;
+    if evaluate(engine, "player.comments_enabled")? {
+        wait_for(
+            app,
+            engine,
+            "root.showCommentComposer && composer.visible && inputContext.editingText && !root.showChannels && !root.showGuide",
+        )?;
+        assert!(evaluate(engine, "player.comment_draft.length === 0")?);
+        // Opening focuses the editor without inserting C. Later letters are text.
+        ffi::clickRootKey(engine.pin_mut(), &QString::from("C"))?;
+        ffi::clickRootKey(engine.pin_mut(), &QString::from("S"))?;
+        assert!(evaluate(
+            engine,
+            "!root.showChannels && player.comment_draft.toLowerCase() === 'cs'"
+        )?);
+        evaluate(engine, "surface.forceActiveFocus(); true")?;
+        wait_for(app, engine, "!inputContext.editingText")?;
+        ffi::clickRootKey(engine.pin_mut(), &QString::from("C"))?;
+        wait_for(app, engine, "composer.visible && inputContext.editingText")?;
+        assert!(evaluate(
+            engine,
+            "player.comment_draft.toLowerCase() === 'cs'"
+        )?);
+        ffi::clickRootKey(engine.pin_mut(), &QString::from("Escape"))?;
+        assert!(evaluate(engine, "!root.showCommentComposer")?);
+    } else {
+        assert!(evaluate(
+            engine,
+            "!root.showCommentComposer && root.showChannels && root.showGuide"
+        )?);
+        ffi::clickRootKey(engine.pin_mut(), &QString::from("Escape"))?;
+        wait_for(app, engine, "!root.showGuide && root.showChannels")?;
+        ffi::clickRootKey(engine.pin_mut(), &QString::from("Escape"))?;
+        wait_for(app, engine, "!root.showChannels")?;
+    }
+    evaluate(
+        engine,
+        "player.edit_comment_draft(''); settings.open(); true",
+    )?;
+    wait_for(app, engine, "settings.opened && inputContext.popupOpen")?;
+    ffi::clickRootKey(engine.pin_mut(), &QString::from("Escape"))?;
+    wait_for(app, engine, "!settings.visible && !inputContext.popupOpen")?;
     Ok(())
 }
 

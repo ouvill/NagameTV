@@ -33,6 +33,7 @@ impl ffi::Player {
         mut self: Pin<&mut Self>,
         change: impl FnOnce(State) -> State,
     ) {
+        let before_action = self.playback_action();
         let old_program = self.current_program_data().clone();
         let old_progress = *self.program_progress();
         let old_program_status = self.program_status().clone();
@@ -132,6 +133,9 @@ impl ffi::Player {
                     this.program_status = QString::from("pending");
                 }
             }
+        }
+        if before_action != self.playback_action() {
+            self.as_mut().playback_action_changed();
         }
         if before_live.0 != self.timeshift() {
             self.as_mut().timeshift_changed();

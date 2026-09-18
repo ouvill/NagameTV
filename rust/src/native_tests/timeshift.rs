@@ -208,7 +208,7 @@ pub(super) fn run(
                 "!{OBSERVER}.previousSession.length || !player.seek_timeline({OBSERVER}.previousSession, 0)"
             )
         )?);
-        assert!(evaluate(engine, "player.pause()")?);
+        evaluate(engine, "viewerActions.playbackToggle.trigger(); true")?;
         wait_for(app, engine, "player.paused && !player.seeking")?;
         assert!(evaluate(
             engine,

@@ -1,5 +1,8 @@
 import QtQml
     QtObject {
+      readonly property string playbackShortcutLabel: qsTranslate("Settings", "Play or pause")
+      readonly property string playbackShortcutCondition: qsTranslate("Settings", "Recordings and timeshift")
+      readonly property string commentShortcutCondition: qsTranslate("Settings", "While entering a comment")
       readonly property var day: new Date(2026, 8, 8, 12, 0, 0)
       readonly property string dateLabel: day.toLocaleDateString(Qt.locale(Qt.uiLanguage), qsTranslate("Main", "ddd, MMM d"))
       property string expiredPauseLabel: qsTranslate("Viewer", "Paused outside retained history")

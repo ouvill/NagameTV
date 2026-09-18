@@ -1,24 +1,18 @@
 # 全画面とショートカット
 
-`WindowActions.qml` が対象WindowとQtのウィンドウ状態を扱い、番組表・選局・Escapeは
-操作要求のsignalとして通知する。Mainが画面の開閉順序とRustへの選局要求を組み立てる。
-Rustの再生パイプラインにウィンドウ状態を持たせない。
+2026-09-18に操作層とキー定義を整理した。
+[現在の構成とキーの追加・差し替え方法](shortcut-actions-design.md)を参照。
 
-F11と全画面ボタンは同じ関数を使う。全画面に入る前の状態をQtの列挙値で記録し、
-解除時に通常または最大化へ戻す。Windowのvisibilityを表示状態の根拠とし、
-独立したfullscreenフラグは持たない。終了時にはショートカットを無効にする。
+`ViewerActions.qml`が全画面・パネル開閉を共有し、`ShortcutBindings.qml`がキーを登録する。
+`InputContext.qml`が文字入力・ポップアップ・Slider等の受付条件を判定する。
+再生／停止／一時停止の選択はRustの共通操作を呼び、画面の状態はQMLで管理する。
+局一覧はS、コメント入力欄の表示とフォーカスはCに割り当てる。
 
-GはEPGが有効な場合に番組表を開閉する。PgUp/PgDownは前後の局を要求する。
-TextInput/TextEdit（TextField/TextAreaを含む）にフォーカスがある間と
-ControlsのOverlay上にポップアップがある間は、これらのナビゲーションを抑止する。
-Escapeはポップアップ自身のclosePolicyを優先し、その後はMainが番組表、動画統計、
-全画面の順に閉じる。各ShortcutはWindowShortcut、キーリピートなし。
-
-このモジュールはWindowと同じ寿命で、タイマー、通信、映像バッファー、履歴を追加しない。
-全画面で描画領域が変わった際のQt/GPU側の確保量は別途実測の対象となる。
-操作部の自動非表示は [overlay-visibility.md](overlay-visibility.md) を参照。
-mainの独自ウィンドウ枠の移植と未検証事項は後述。
-チャンネルブラウザーのC開閉は [channel-browser.md](channel-browser.md) を参照。
+F11と全画面ボタンは同じActionを使い、通常または最大化へ復帰する。
+Escはポップアップを優先した後、番組表→局一覧→コメント入力→統計→番組情報→全画面解除の順。
+全キーはWindowShortcut、左右シークだけキーリピートを許可する。
+操作部の自動非表示は[overlay-visibility.md](overlay-visibility.md)を参照。
+以下の日時付きの記録は当時の実装・検証環境についての履歴。
 
 ## APIの根拠
 

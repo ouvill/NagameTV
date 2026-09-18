@@ -13,6 +13,7 @@
 #include <QtGui/QPainterPath>
 #include <QtSvg/QSvgRenderer>
 #include <QtQml/QQmlExpression>
+#include <QtTest/qtestkeyboard.h>
 #include <memory>
 #include <stdexcept>
 #include <mutex>
@@ -23,6 +24,14 @@ inline QImage grabRoot(QQmlApplicationEngine &engine) {
     auto *window = roots.isEmpty() ? nullptr : qobject_cast<QQuickWindow *>(roots.first());
     if (!window) throw std::runtime_error("QQuickWindow is missing");
     return window->grabWindow();
+}
+inline void clickRootKey(QQmlApplicationEngine &engine, const QString &sequence) {
+    const auto roots = engine.rootObjects();
+    auto *window = roots.isEmpty() ? nullptr : qobject_cast<QQuickWindow *>(roots.first());
+    if (!window) throw std::runtime_error("QQuickWindow is missing");
+    const QKeySequence keys(sequence, QKeySequence::PortableText);
+    if (keys.count() != 1) throw std::runtime_error("One key combination is required");
+    QTest::keyClick(window, keys[0].key(), keys[0].keyboardModifiers());
 }
 // This object lives only in the native test runner. Observe frameSwapped on
 // the render thread; GUI polling must not distort the measured intervals.
