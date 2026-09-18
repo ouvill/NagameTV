@@ -38,6 +38,8 @@ Pane {
         resetCursor();
     }
     function resetCursor() {
+        if (wheelInput)
+            wheelInput.reset();
         // Required inputs may arrive before the derived binding and child view
         // are initialized. Component.onCompleted performs the initial selection.
         if (!list || !filteredRows)
@@ -190,10 +192,12 @@ Pane {
                 keyNavigationEnabled: false
                 keyNavigationWraps: false
                 Keys.onLeftPressed: {
+                    wheelInput.reset();
                     root.navigationAnimated = true;
                     list.decrementCurrentIndex();
                 }
                 Keys.onRightPressed: {
+                    wheelInput.reset();
                     root.navigationAnimated = true;
                     list.incrementCurrentIndex();
                 }
@@ -305,18 +309,17 @@ Pane {
                     color: "#cccccc"
                 }
             }
-            MouseArea {
+            ChannelScrollArea {
+                id: wheelInput
+                objectName: "browserScrollArea"
                 anchors.fill: parent
-                acceptedButtons: Qt.NoButton
-                onWheel: function(event) {
-                    const delta = event.angleDelta.y || event.angleDelta.x;
-                    if (!delta || !list.count)
-                        return;
+                enabled: list.count > 0
+                mode: ChannelScrollArea.Steps
+                pixelsPerStep: list.candidateWidth + list.spacing
+                onScrolled: function(steps) {
                     list.forceActiveFocus();
                     root.navigationAnimated = true;
-                    if (delta < 0) list.incrementCurrentIndex();
-                    else list.decrementCurrentIndex();
-                    event.accepted = true;
+                    list.currentIndex = Math.max(0, Math.min(list.count - 1, list.currentIndex + steps));
                 }
             }
         }

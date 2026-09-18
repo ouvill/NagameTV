@@ -191,6 +191,7 @@ Item {
         }
     }
     ChannelWheelArea {
+        objectName: "sidebarScrollArea"
         anchors.fill: list
         view: list
         step: 144
