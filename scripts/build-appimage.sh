@@ -7,7 +7,7 @@ project_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 output_dir="$project_dir/build/appimage"
 build_dir=${APPIMAGE_BUILD_DIR:-$project_dir/build}
 tools_dir="$output_dir/tools"
-app_id=io.github.ouvill.litv
+app_id=io.github.ouvill.nagametv
 
 usage() {
   echo "Usage: scripts/build-appimage.sh"
@@ -78,9 +78,9 @@ download runtime-x86_64 \
   2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d
 
 app_version=$(python3 -c 'import sys, tomllib; print(tomllib.load(open(sys.argv[1], "rb"))["package"]["version"])' "$project_dir/rust/Cargo.toml")
-bundle_name="mirakurun-viewer-$app_version-x86_64.AppImage"
+bundle_name="nagametv-$app_version-x86_64.AppImage"
 export CARGO_BUILD_JOBS="$build_jobs"
-cmake -S "$project_dir" -B "$build_dir" -DMIRAKURUN_DISTRIBUTION=ON
+cmake -S "$project_dir" -B "$build_dir" -DNAGAMETV_DISTRIBUTION=ON
 cmake --build "$build_dir" --parallel "$build_jobs"
 
 # A fresh staging directory prevents removed plugins from surviving a rebuild.

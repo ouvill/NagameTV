@@ -3,10 +3,10 @@
 ## 音声出力の選択
 
 mainのrust/src/playback.rsと照合し、出力未指定時のPulse固定を修正した。
-MIRAKURUN_AUDIO_SINK未指定かつPULSE_SERVERが存在する場合はPulse、
+NAGAMETV_AUDIO_SINK未指定かつPULSE_SERVERが存在する場合はPulse、
 どちらも存在しない場合はAutomaticを選ぶ。PULSE_SERVERはmain同様に存在を判定し、
 空文字や非Unicodeでも指定ありとする。明示的なpulsesink/fakesink指定は優先する。
-不正値・非UnicodeのMIRAKURUN_AUDIO_SINKは引き続き型付きエラーとなる。
+不正値・非UnicodeのNAGAMETV_AUDIO_SINKは引き続き型付きエラーとなる。
 
 Automaticは要素を追加せず、Result<Option<Element>>のNoneとして表現し、
 playbin3のaudio-sinkを未設定に保つ。

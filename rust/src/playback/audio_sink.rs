@@ -10,16 +10,16 @@ pub enum Output {
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("Invalid MIRAKURUN_AUDIO_SINK={0:?}; expected pulsesink or fakesink")]
+    #[error("Invalid NAGAMETV_AUDIO_SINK={0:?}; expected pulsesink or fakesink")]
     Invalid(String),
-    #[error("MIRAKURUN_AUDIO_SINK is not valid Unicode")]
+    #[error("NAGAMETV_AUDIO_SINK is not valid Unicode")]
     NonUnicode,
 }
 
 impl Output {
     pub fn from_environment() -> Result<Self, Error> {
         let pulse_server_present = std::env::var_os("PULSE_SERVER").is_some();
-        match std::env::var("MIRAKURUN_AUDIO_SINK") {
+        match std::env::var("NAGAMETV_AUDIO_SINK") {
             Ok(value) => Self::parse(Some(&value), pulse_server_present),
             Err(std::env::VarError::NotPresent) => Self::parse(None, pulse_server_present),
             Err(std::env::VarError::NotUnicode(_)) => Err(Error::NonUnicode),

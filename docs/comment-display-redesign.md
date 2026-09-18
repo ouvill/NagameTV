@@ -83,21 +83,21 @@ GUIはリポジトリーの専用セッションだけを利用し、GPU・表�
 通常の配布用ビルド:
 
 ```sh
-cmake -S . -B build -DMIRAKURUN_DISTRIBUTION=ON
+cmake -S . -B build -DNAGAMETV_DISTRIBUTION=ON
 cmake --build build
 ```
 
 従来機能をまとめて有効にするローカル評価用ビルド:
 
 ```sh
-cmake -S . -B build/comment-evaluation -DMIRAKURUN_EVALUATION_LEGACY_COMMENTS=ON
+cmake -S . -B build/comment-evaluation -DNAGAMETV_EVALUATION_LEGACY_COMMENTS=ON
 cmake --build build/comment-evaluation
-./build/comment-evaluation/mirakurun-viewer
+./build/comment-evaluation/nagametv
 ```
 
 従来配置は「横スクロール」→「従来の衝突回避（評価用）」を選ぶ。フラグを付けただけでは配置の初期値は変わらない。
-個別のCMakeフラグは `MIRAKURUN_EVALUATION_COMMENT_LIST`、`MIRAKURUN_EVALUATION_WIDE_COMMENTS`、
-`MIRAKURUN_EVALUATION_COLLISION_LAYOUT`。対応するCargo featureは上記のとおり。
+個別のCMakeフラグは `NAGAMETV_EVALUATION_COMMENT_LIST`、`NAGAMETV_EVALUATION_WIDE_COMMENTS`、
+`NAGAMETV_EVALUATION_COLLISION_LAYOUT`。対応するCargo featureは上記のとおり。
 評価版は `cmake --install` を拒否し、AppImage/Flatpakは `distribution` を必須にして評価機能との併用を拒否する。
 `--all-features` は意図的に相反する機能を含むため使用せず、通常・評価・配布を別々に検証する。
 

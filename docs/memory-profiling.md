@@ -23,9 +23,9 @@ GCログが大量に出て詳細ログが回転しても、疎な履歴には影
 
 | フラグ | 環境変数 | runの既定 | profile-memoryの既定 |
 |---|---|---|---|
-| `--diagnostics=0/1` | `MIRAKURUN_DIAGNOSTICS` | 1 | 1 |
-| `--gc-log=0/1` | `MIRAKURUN_GC_LOG` | 0 | 1 |
-| `--heaptrack=0/1` | `MIRAKURUN_HEAPTRACK` | 0 | 1 |
+| `--diagnostics=0/1` | `NAGAMETV_DIAGNOSTICS` | 1 | 1 |
+| `--gc-log=0/1` | `NAGAMETV_GC_LOG` | 0 | 1 |
+| `--heaptrack=0/1` | `NAGAMETV_HEAPTRACK` | 0 | 1 |
 
 ```sh
 # 解析用記録をすべてOFF
@@ -78,11 +78,11 @@ workshop run dev profile-memory
 
 - heaptrackの圧縮記録（拡張子はインストールされたheaptrackによる）
 - 実際に起動した実行ファイルのコピー
-- 有効にした診断・Qt GC通知のJSONL（`state/mirakurun-viewer/usage/`）
+- 有効にした診断・Qt GC通知のJSONL（`state/nagametv/usage/`）
 - 共有ライブラリのパス、GPU情報、heaptrackバージョン、Gitリビジョンと追跡ファイル差分
 - 起動引数（NUL区切り）
 
-Qt GCはこの起動で既定ON。`--gc-log=0` または `MIRAKURUN_GC_LOG=0` で無効にできる。
+Qt GCはこの起動で既定ON。`--gc-log=0` または `NAGAMETV_GC_LOG=0` で無効にできる。
 解決後の3つの設定はセッションの `log-settings.txt` に保存する。
 heaptrack記録には通常ログのような容量上限・ローテーションを設けていない。
 確保頻度によって記録負荷・ディスク使用量が大きくなるため、視聴の区切りで終了する。
@@ -102,7 +102,7 @@ workshop run dev analyze-memory --output benchmark/memory-report-001
 
 ```sh
 workshop run dev analyze-memory \
-  --input benchmark/memory/session-日時-一意名/state/mirakurun-viewer/usage \
+  --input benchmark/memory/session-日時-一意名/state/nagametv/usage \
   --output benchmark/memory-report-002
 ```
 

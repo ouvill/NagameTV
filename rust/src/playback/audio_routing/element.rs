@@ -37,7 +37,7 @@ mod imp {
                     "Dual mono routing",
                     "Filter/Audio",
                     "Route confirmed broadcast dual mono",
-                    "Mirakurun Viewer",
+                    "NagameTV",
                 )
             }))
         }

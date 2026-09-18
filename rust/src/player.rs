@@ -50,7 +50,7 @@ pub mod ffi {
         fn new_player() -> UniquePtr<Player>;
     }
     unsafe extern "C++" {
-        include!("mirakurun-viewer/src/comment_model.cxxqt.h");
+        include!("nagametv/src/comment_model.cxxqt.h");
         type CommentModel = crate::comment_model::ffi::CommentModel;
         include!("cxx-qt-lib/qstring.h");
         type QString = cxx_qt_lib::QString;

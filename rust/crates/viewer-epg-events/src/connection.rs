@@ -224,9 +224,9 @@ mod tests {
     };
     type TestResult = Result<(), Box<dyn std::error::Error>>;
     #[tokio::test]
-    #[ignore = "manual real-server subscription; requires MIRAKURUN_EVENT_URL"]
+    #[ignore = "manual real-server subscription; requires NAGAMETV_EVENT_URL"]
     async fn real_server_subscription_stays_open_and_stops() -> TestResult {
-        let url = std::env::var("MIRAKURUN_EVENT_URL")?;
+        let url = std::env::var("NAGAMETV_EVENT_URL")?;
         let client = Client::new()?;
         let subscription = Subscription::start(&Handle::current(), &client, url);
         // Observe beyond the production refresh gate. A quiet server

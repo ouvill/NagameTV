@@ -1,5 +1,5 @@
-#ifndef MIRAKURUN_VIEWER_LOCALIZATION_H
-#define MIRAKURUN_VIEWER_LOCALIZATION_H
+#ifndef NAGAMETV_LOCALIZATION_H
+#define NAGAMETV_LOCALIZATION_H
 
 #include <QtCore/QCoreApplication>
 #include <QtCore/QLocale>
@@ -121,4 +121,4 @@ inline QString translateBackend(const QString &source) {
   return QCoreApplication::translate("Backend", utf8.constData());
 }
 
-#endif // MIRAKURUN_VIEWER_LOCALIZATION_H
+#endif // NAGAMETV_LOCALIZATION_H

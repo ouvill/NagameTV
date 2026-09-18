@@ -23,7 +23,7 @@ Xwaylandはrootfulモードで起動し、X11ウィンドウの管理をOpenbox�
 ## Workshopの準備
 
 [Workshop定義](../.workshop/dev.yaml)のGUI用接続は`gui:gpu → system:gpu`のみです。
-Weston、Xwayland、PulseAudioなどは[プロジェクトSDK](../.workshop/mirakurun-viewer/hooks/setup-base)で
+Weston、Xwayland、PulseAudioなどは[プロジェクトSDK](../.workshop/nagametv/hooks/setup-base)で
 導入します。既存Workshopへの定義変更の反映方法は[開発手順](development.md)を参照してください。
 更新時には旧GUI SDKが設定した`PULSE_SERVER=tcp:127.0.0.1:4713`のexportも除去します。
 

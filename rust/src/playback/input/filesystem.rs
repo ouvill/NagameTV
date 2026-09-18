@@ -81,7 +81,7 @@ fn cache_root() -> std::io::Result<PathBuf> {
                 "cache directory is unavailable",
             )
         })?;
-    Ok(root.join("mirakurun-viewer/timeshift"))
+    Ok(root.join("nagametv/timeshift"))
 }
 
 #[cfg(test)]

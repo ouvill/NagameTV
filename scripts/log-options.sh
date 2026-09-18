@@ -4,10 +4,10 @@ parse_log_options() {
   shift
   local diag_default=1 gc_default=0 heap_default=0
   if [[ "$mode" == profile ]]; then gc_default=1; heap_default=1; fi
-  local diag="${MIRAKURUN_DIAGNOSTICS-$diag_default}"
-  local gc="${MIRAKURUN_GC_LOG-$gc_default}"
-  local heap="${MIRAKURUN_HEAPTRACK-$heap_default}"
-  local diag_explicit="${MIRAKURUN_DIAGNOSTICS+x}" isolated=0
+  local diag="${NAGAMETV_DIAGNOSTICS-$diag_default}"
+  local gc="${NAGAMETV_GC_LOG-$gc_default}"
+  local heap="${NAGAMETV_HEAPTRACK-$heap_default}"
+  local diag_explicit="${NAGAMETV_DIAGNOSTICS+x}" isolated=0
   viewer_args=()
   print_log_settings=0
   for arg in "$@"; do
@@ -30,8 +30,8 @@ parse_log_options() {
   for value in "$diag" "$gc" "$heap"; do
     case "$value" in 0|1) ;; *) echo 'Logging environment values must be 0 or 1' >&2; return 2;; esac
   done
-  export MIRAKURUN_DIAGNOSTICS="$diag" MIRAKURUN_GC_LOG="$gc" MIRAKURUN_HEAPTRACK="$heap"
+  export NAGAMETV_DIAGNOSTICS="$diag" NAGAMETV_GC_LOG="$gc" NAGAMETV_HEAPTRACK="$heap"
 }
 show_log_settings() {
-  printf 'diagnostics=%s gc-log=%s heaptrack=%s\n' "$MIRAKURUN_DIAGNOSTICS" "$MIRAKURUN_GC_LOG" "$MIRAKURUN_HEAPTRACK"
+  printf 'diagnostics=%s gc-log=%s heaptrack=%s\n' "$NAGAMETV_DIAGNOSTICS" "$NAGAMETV_GC_LOG" "$NAGAMETV_HEAPTRACK"
 }

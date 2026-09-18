@@ -44,7 +44,7 @@ Item {
                     return true;
                 }
                 function refresh_remote_addresses() {}
-                property string screenshot_directory: "/pictures/mirakurun-viewer"
+                property string screenshot_directory: "/pictures/nagametv"
                 property string screenshot_error: ""
                 property string screenshot_format: "png"
                 property string screenshot_options: JSON.stringify({png_compression: 6, jpg_quality: 90,
@@ -63,7 +63,7 @@ Item {
                 function screenshot_directory_url() { return "file://" + screenshot_directory; }
                 function configure_screenshot_directory(value) { screenshot_directory = value.toString().replace(/^file:\/\//, ""); return true; }
                 function open_screenshot_directory() { screenshotFolderRequests++; return true; }
-                function reset_screenshot_directory() { screenshot_directory = "/pictures/mirakurun-viewer"; return true; }
+                function reset_screenshot_directory() { screenshot_directory = "/pictures/nagametv"; return true; }
                 function configure_autoplay(value) { autoplay = value; }
                 property string settings_error: ""
                 property string diagnostics: ""
@@ -149,7 +149,7 @@ Item {
                 backend.remote_session_only = false;
                 backend.acceptRemote = true;
                 remoteRequests.clear();
-                backend.screenshot_directory = "/pictures/mirakurun-viewer";
+                backend.screenshot_directory = "/pictures/nagametv";
                 backend.screenshot_error = "";
                 backend.screenshot_format = "png";
                 backend.configure_screenshot_options("png", 6, false);
@@ -439,7 +439,7 @@ Item {
                 const reset = findChild(panel.contentItem, "resetScreenshotDirectory");
                 reset.forceActiveFocus();
                 keyClick(Qt.Key_Space);
-                compare(path.text, "/pictures/mirakurun-viewer");
+                compare(path.text, "/pictures/nagametv");
                 const error = findChild(panel.contentItem, "screenshotFolderError");
                 compare(error.visible, false);
                 backend.screenshot_error = "Cannot write this folder";

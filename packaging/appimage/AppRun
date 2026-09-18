@@ -19,6 +19,6 @@ export GST_PLUGIN_SYSTEM_PATH=
 export GST_PLUGIN_SYSTEM_PATH_1_0=
 export GST_PLUGIN_SCANNER="$app_dir/usr/libexec/gstreamer-1.0/gst-plugin-scanner"
 export GST_PLUGIN_SCANNER_1_0="$GST_PLUGIN_SCANNER"
-export GST_REGISTRY_1_0="${XDG_CACHE_HOME:-$HOME/.cache}/mirakurun-viewer/appimage/gstreamer-registry.bin"
+export GST_REGISTRY_1_0="${XDG_CACHE_HOME:-$HOME/.cache}/nagametv/appimage/gstreamer-registry.bin"
 
-exec "$app_dir/usr/bin/mirakurun-viewer" "$@"
+exec "$app_dir/usr/bin/nagametv" "$@"

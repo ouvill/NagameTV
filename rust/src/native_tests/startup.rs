@@ -326,7 +326,7 @@ fn window(
         )?;
         let autoplay = settings::autoplay_requested(
             preferences.autoplay,
-            std::env::var("MIRAKURUN_AUTOPLAY").ok().as_deref(),
+            std::env::var("NAGAMETV_AUTOPLAY").ok().as_deref(),
         );
         assert!(evaluate(
             &mut engine,
@@ -867,10 +867,10 @@ fn launch_window(autoplay_override: Option<&str>) -> TestResult {
     command.args(["--native-tests", "startup-window"]);
     match autoplay_override {
         Some(value) => {
-            command.env("MIRAKURUN_AUTOPLAY", value);
+            command.env("NAGAMETV_AUTOPLAY", value);
         }
         None => {
-            command.env_remove("MIRAKURUN_AUTOPLAY");
+            command.env_remove("NAGAMETV_AUTOPLAY");
         }
     }
     let status = command.status()?;

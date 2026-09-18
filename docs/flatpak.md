@@ -1,6 +1,6 @@
 # Flatpakパッケージ
 
-アプリIDは`io.github.ouvill.litv`、表示名はMirakurun Viewer。
+アプリIDは`io.github.ouvill.nagametv`、表示名は日本語で「ながめTV」、英語で「NagameTV」。
 KDE 6.10ランタイムを使い、QtとGStreamerの実行環境をホストOSから分離する。
 
 ## インストール
@@ -8,8 +8,8 @@ KDE 6.10ランタイムを使い、QtとGStreamerの実行環境をホストOS�
 Flatpakを導入したLinuxで、配布されたファイルを指定する。
 
 ```sh
-flatpak install --user ./mirakurun-viewer-0.1.0-x86_64.flatpak
-flatpak run io.github.ouvill.litv
+flatpak install --user ./nagametv-0.1.0-x86_64.flatpak
+flatpak run io.github.ouvill.nagametv
 ```
 
 アプリ一覧からも起動できる。接続先のMirakurun URLは設定画面で指定する。
@@ -23,7 +23,7 @@ flatpak run io.github.ouvill.litv
 削除する場合:
 
 ```sh
-flatpak uninstall --user io.github.ouvill.litv
+flatpak uninstall --user io.github.ouvill.nagametv
 ```
 
 ## パッケージを作る
@@ -44,7 +44,7 @@ flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/fl
 ホストOS側へのQtやGStreamerのインストールは不要。初回はSDKを含む数GBのダウンロードが発生する。
 並列数は`FLATPAK_BUILD_JOBS=4 ./scripts/build-flatpak.sh`のように指定できる。
 
-マニフェストは`packaging/flatpak/io.github.ouvill.litv.json`。
+マニフェストは`packaging/flatpak/io.github.ouvill.nagametv.json`。
 作業ツリーのソースをビルドするため、パッケージ化する前のコミットは必須ではない。
 以前のビルド生成物や使っていないcrateの作業ディレクトリーは持ち込まない。
 
@@ -70,7 +70,7 @@ QtやGStreamerを更新した際はパッケージの再ビルドと再生確認
 ## サンドボックス
 
 スクリーンショットをダイアログなしで保存できるよう、既定の保存先だけに
-`--filesystem=xdg-pictures/mirakurun-viewer:create`で書き込み・作成を許可する。
+`--filesystem=xdg-pictures/nagametv:create`で書き込み・作成を許可する。
 設定画面で別の保存先を選ぶ場合はQtのフォルダーダイアログを使い、選択先へ書き込めることを確認して保存する。
 録画ファイル・保存先の選択はQtのPortal連携を使用する。ネイティブ版の
 「Portalが利用できない場合はQt Quick製ダイアログを使う」処理はFlatpakには適用しない。
@@ -94,13 +94,13 @@ GNOME/GTK系・KDE系が使用する標準MIME形式と、旧GTKのMIME形式を
 | x11 / ipc | X11またはXWaylandでのウィンドウ表示 |
 | dri | OpenGLでの映像描画 |
 | pulseaudio | PulseAudioまたはPipeWireのPulseAudio互換サーバーへの音声出力 |
-| xdg-pictures/mirakurun-viewer:create | スクリーンショットの既定保存先の作成・書き込み |
+| xdg-pictures/nagametv:create | スクリーンショットの既定保存先の作成・書き込み |
 
 現在のQt/GStreamerの描画互換設定に合わせ、パッケージは`QT_QPA_PLATFORM=xcb`で起動する。
 WaylandセッションではXWaylandが必要。ネイティブWaylandを検証済みとして扱わない。
 ホームディレクトリー全体やチューナーデバイスへのアクセスは付与しない。
 
-設定はFlatpak専用の`~/.var/app/io.github.ouvill.litv/config/mirakurun-viewer/settings.toml`へ保存する。
+設定はFlatpak専用の`~/.var/app/io.github.ouvill.nagametv/config/nagametv/settings.toml`へ保存する。
 通常版の設定を自動で取り込む処理は追加していない。
 引き継ぐ場合は両方のアプリを終了してから、既存の設定をこの場所へコピーする。
 ログはQtの標準保存先を利用し、設定画面の「ログフォルダーを開く」から参照する。

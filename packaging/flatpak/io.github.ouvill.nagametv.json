@@ -1,5 +1,5 @@
 {
-  "app-id": "io.github.ouvill.litv",
+  "app-id": "io.github.ouvill.nagametv",
   "runtime": "org.kde.Platform",
   "runtime-version": "6.10",
   "sdk": "org.kde.Sdk",
@@ -7,7 +7,7 @@
     "org.freedesktop.Sdk.Extension.rust-stable",
     "org.freedesktop.Sdk.Extension.llvm21"
   ],
-  "command": "mirakurun-viewer",
+  "command": "nagametv",
   "default-branch": "stable",
   "finish-args": [
     "--share=network",
@@ -15,7 +15,7 @@
     "--socket=x11",
     "--socket=pulseaudio",
     "--device=dri",
-    "--filesystem=xdg-pictures/mirakurun-viewer:create",
+    "--filesystem=xdg-pictures/nagametv:create",
     "--env=QT_QPA_PLATFORM=xcb"
   ],
   "build-options": {
@@ -37,7 +37,7 @@
         "-Dqt-egl=enabled"
       ],
       "post-install": [
-        "install -Dm644 ../COPYING /app/share/licenses/mirakurun-viewer/gst-plugins-good.txt"
+        "install -Dm644 ../COPYING /app/share/licenses/nagametv/gst-plugins-good.txt"
       ],
       "sources": [
         {
@@ -48,16 +48,16 @@
       ]
     },
     {
-      "name": "mirakurun-viewer",
+      "name": "nagametv",
       "buildsystem": "simple",
       "build-options": {
         "env": {
-          "CARGO_HOME": "/run/build/mirakurun-viewer/cargo",
+          "CARGO_HOME": "/run/build/nagametv/cargo",
           "CLANG_PATH": "/usr/lib/sdk/llvm21/bin/clang"
         }
       },
       "build-commands": [
-        "cmake -S . -B _build -G Ninja -DCMAKE_INSTALL_PREFIX=/app -DMIRAKURUN_DISTRIBUTION=ON",
+        "cmake -S . -B _build -G Ninja -DCMAKE_INSTALL_PREFIX=/app -DNAGAMETV_DISTRIBUTION=ON",
         "CARGO_BUILD_JOBS=\"$FLATPAK_BUILDER_N_JOBS\" cmake --build _build",
         "cmake --install _build"
       ],

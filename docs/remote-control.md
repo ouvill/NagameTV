@@ -37,7 +37,7 @@ IP一覧は [`local-ip-address::list_afinet_netifas()`](https://docs.rs/local-ip
 API自身は接続元が家庭内LANかを判定しない。通信は平文HTTP。
 ブラウザーの別オリジンを許可するCORS設定はこの版には含めない。
 
-設定は `~/.config/mirakurun-viewer/remote-control.toml` に保存する
+設定は `~/.config/nagametv/remote-control.toml` に保存する
 （`XDG_CONFIG_HOME` に対応）。他の設定とはファイルを分け、別Viewerの音量変更や
 終了時の保存でリモート設定が置き換わらないようにする。
 複数Viewerの明示的な設定変更は最後の保存が次回起動の既定値になる。
@@ -53,9 +53,9 @@ port = 50051
 
 | 環境変数 | 意味 |
 | --- | --- |
-| `MIRAKURUN_REMOTE_ENABLED` | `1` / `true`でON、`0` / `false`でOFF |
-| `MIRAKURUN_REMOTE_ADDR` | 待受IP。例: `0.0.0.0`、`127.0.0.1`、`::1` |
-| `MIRAKURUN_REMOTE_PORT` | `1`〜`65535`のポート |
+| `NAGAMETV_REMOTE_ENABLED` | `1` / `true`でON、`0` / `false`でOFF |
+| `NAGAMETV_REMOTE_ADDR` | 待受IP。例: `0.0.0.0`、`127.0.0.1`、`::1` |
+| `NAGAMETV_REMOTE_PORT` | `1`〜`65535`のポート |
 
 未指定の項目は保存値を使う。IPやポートだけの指定ではONにしない。
 上書きが1つでもある起動では、設定画面での変更も含めてそのプロセスだけに適用し、
@@ -63,22 +63,22 @@ port = 50051
 
 ```sh
 # 初期設定なら0.0.0.0:50051で受付を開始
-MIRAKURUN_REMOTE_ENABLED=1 ./build/mirakurun-viewer
+NAGAMETV_REMOTE_ENABLED=1 ./build/nagametv
 # 追加のViewerを別ポートで操作
-MIRAKURUN_REMOTE_ENABLED=1 MIRAKURUN_REMOTE_PORT=50052 ./build/mirakurun-viewer
+NAGAMETV_REMOTE_ENABLED=1 NAGAMETV_REMOTE_PORT=50052 ./build/nagametv
 ```
 
-以前の `MIRAKURUN_REMOTE_ADDR=127.0.0.1:50051` という指定も受け付ける。
-この形式は有効化も兼ねるが、`MIRAKURUN_REMOTE_ENABLED=0` があればOFFを優先する。
-ポートを二重指定しないよう、この形式と `MIRAKURUN_REMOTE_PORT` の併用はエラーにする。
+`NAGAMETV_REMOTE_ADDR=127.0.0.1:50051` というIP:port形式も受け付ける。
+この形式は有効化も兼ねるが、`NAGAMETV_REMOTE_ENABLED=0` があればOFFを優先する。
+ポートを二重指定しないよう、この形式と `NAGAMETV_REMOTE_PORT` の併用はエラーにする。
 設定ファイルや環境変数の形式不備では受付を開始せず、設定画面に理由を表示する。
 読めない設定ファイルを初期値で上書きせず、その起動中の変更は一時設定にする。
 
 Flatpakでも同じ設定画面を使える。保存先はアプリ専用の設定領域にある
-`mirakurun-viewer/remote-control.toml`。起動時の指定例:
+`nagametv/remote-control.toml`。起動時の指定例:
 
 ```sh
-flatpak run --env=MIRAKURUN_REMOTE_ENABLED=1 --env=MIRAKURUN_REMOTE_PORT=50052 io.github.ouvill.litv
+flatpak run --env=NAGAMETV_REMOTE_ENABLED=1 --env=NAGAMETV_REMOTE_PORT=50052 io.github.ouvill.nagametv
 ```
 
 APIは通常のデスクトップアプリとともに動作し、表示・GPU・音声要件は変わらない。

@@ -117,7 +117,7 @@ def report(rows, gc_count, invalid):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    default = Path(os.environ.get("XDG_STATE_HOME") or Path.home()/".local/state")/"mirakurun-viewer/usage"
+    default = Path(os.environ.get("XDG_STATE_HOME") or Path.home()/".local/state")/"nagametv/usage"
     parser.add_argument("--input", type=Path, default=default)
     parser.add_argument("--pid", type=int, help="省略時は最新のログのPID")
     parser.add_argument("--output", type=Path, required=True, help="新規の保存先ディレクトリー")

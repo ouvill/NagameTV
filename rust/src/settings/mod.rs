@@ -47,7 +47,7 @@ pub fn settings_path() -> Result<PathBuf, Error> {
                 .map(|home| PathBuf::from(home).join(".config"))
         })
         .ok_or(Error::MissingDirectory)?;
-    Ok(base.join("mirakurun-viewer/settings.toml"))
+    Ok(base.join("nagametv/settings.toml"))
 }
 
 fn load(path: &Path) -> Result<Preferences, Error> {

@@ -42,7 +42,7 @@ def build_helper(repo: Path, output: Path) -> Path:
     for line in result.stdout.splitlines():
         message = json.loads(line)
         if (message.get("reason") == "compiler-artifact"
-                and message.get("target", {}).get("name") == "mirakurun-viewer"
+                and message.get("target", {}).get("name") == "nagametv"
                 and message.get("executable")):
             binary = output / "subtitle-rendering-test"
             shutil.copy2(message["executable"], binary)

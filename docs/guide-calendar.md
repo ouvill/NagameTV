@@ -318,7 +318,7 @@ CMakeリリースビルドも成功。全機能併用時の実測は引き続き
 アプリと同じバイト上限で制限する。ネットワークや表示装置を試験自身は使用しない。
 
 ```sh
-MIRAKURUN_CAPTURE_DIR=/tmp/viewer-mirakurun-check-nog1ye6x \
+NAGAMETV_CAPTURE_DIR=/tmp/viewer-mirakurun-check-nog1ye6x \
 CARGO_TARGET_DIR=build/cargo cargo test --locked --manifest-path rust/Cargo.toml \
   validates_captured_server_catalog_and_guide -- --ignored --nocapture
 ```

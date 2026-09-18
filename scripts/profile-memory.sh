@@ -5,9 +5,9 @@ source "$(dirname "${BASH_SOURCE[0]}")/log-options.sh"
 parse_log_options profile "$@"
 if [[ "$print_log_settings" == 1 ]]; then show_log_settings; exit 0; fi
 set -- "${viewer_args[@]}"
-if [[ "$MIRAKURUN_HEAPTRACK" == 0 ]]; then
+if [[ "$NAGAMETV_HEAPTRACK" == 0 ]]; then
   export QT_QPA_PLATFORM=xcb
-  exec ./build/mirakurun-viewer "$@"
+  exec ./build/nagametv "$@"
 fi
 for tool in heaptrack xdpyinfo glxinfo pactl timeout; do
   command -v "$tool" >/dev/null || { echo "Required command missing: $tool" >&2; exit 1; }
@@ -25,13 +25,13 @@ if [[ "$graphics" != *'direct rendering: Yes'* ]] || [[ "$graphics" =~ llvmpipe|
   exit 1
 fi
 timeout 10 pactl info >/dev/null
-[[ -x build/mirakurun-viewer ]] || { echo 'Run workshop run dev build first.' >&2; exit 1; }
+[[ -x build/nagametv ]] || { echo 'Run workshop run dev build first.' >&2; exit 1; }
 mkdir -p benchmark/memory
 capture_dir=$(mktemp -d "$PWD/benchmark/memory/session-$(date +%Y%m%d-%H%M%S)-XXXXXX")
-cp build/mirakurun-viewer "$capture_dir/mirakurun-viewer"
+cp build/nagametv "$capture_dir/nagametv"
 printf '%s\n' "$graphics" > "$capture_dir/graphics.txt"
 heaptrack --version > "$capture_dir/heaptrack-version.txt"
-ldd "$capture_dir/mirakurun-viewer" > "$capture_dir/libraries.txt"
+ldd "$capture_dir/nagametv" > "$capture_dir/libraries.txt"
 git rev-parse HEAD > "$capture_dir/revision.txt"
 git diff --binary HEAD > "$capture_dir/working-tree.patch"
 printf '%s\0' "$@" > "$capture_dir/arguments.nul"
@@ -41,4 +41,4 @@ export XDG_STATE_HOME="$capture_dir/state"
 export QT_QPA_PLATFORM=xcb
 echo "Memory capture: $capture_dir" >&2
 echo 'Close the application normally to finish the heaptrack recording.' >&2
-exec heaptrack --record-only -o "$capture_dir/heaptrack" "$capture_dir/mirakurun-viewer" "$@"
+exec heaptrack --record-only -o "$capture_dir/heaptrack" "$capture_dir/nagametv" "$@"

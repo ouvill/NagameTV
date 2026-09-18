@@ -143,7 +143,7 @@ Content-Type application/json; charset=utf-8、chunkedで応答した。
 検出せず、refresh通知は0件、stop().wait()は5秒の期限内に完了した。
 
 ```sh
-MIRAKURUN_EVENT_URL='http://your-server:40772/api/events/stream?resource=program' \
+NAGAMETV_EVENT_URL='http://your-server:40772/api/events/stream?resource=program' \
 CARGO_TARGET_DIR=build/epg-events cargo test --locked \
   --manifest-path rust/crates/viewer-epg-events/Cargo.toml --features network \
   real_server_subscription_stays_open_and_stops -- --ignored --nocapture
@@ -212,7 +212,7 @@ Decoderへ1・7・4096バイト単位で供給し、1バイトの場合は163件
 
 任意試験成功、network有効・全ターゲットClippy成功。製品コードの変更はない。
 証跡はextended/replay-test.txtと上記capture。通常の自動試験ではignoredとし、
-MIRAKURUN_EVENT_FIXTUREへ完全なJSON配列のパスを指定して実行する。
+NAGAMETV_EVENT_FIXTUREへ完全なJSON配列のパスを指定して実行する。
 実データの解析・集約の確認が進んだが、実通知から実GUIの表示変更までを
 追跡した試験ではない。検証用サーバーでのQt反映試験とは区別する。
 

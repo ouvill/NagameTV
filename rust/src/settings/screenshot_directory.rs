@@ -39,9 +39,7 @@ impl From<ScreenshotDirectory> for String {
 impl ScreenshotDirectory {
     pub fn resolve(&self, pictures: &Path) -> Option<PathBuf> {
         match self {
-            Self::Pictures => pictures
-                .is_absolute()
-                .then(|| pictures.join("mirakurun-viewer")),
+            Self::Pictures => pictures.is_absolute().then(|| pictures.join("nagametv")),
             Self::Custom(path) => Some(PathBuf::from(&path.0)),
         }
     }

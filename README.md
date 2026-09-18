@@ -1,4 +1,4 @@
-# Mirakurun Viewer
+# ながめTV / NagameTV
 
 Mirakurunサーバーのテレビ放送を視聴するLinux向けアプリです。
 番組表を見ながらチャンネルを選び、字幕や実況コメントと一緒にテレビを楽しめます。
@@ -28,8 +28,8 @@ Linuxのデスクトップ環境が必要です。Flatpak版とAppImage版を利
 `.flatpak`ファイルを置いたディレクトリーで実行します。
 
 ```sh
-flatpak install --user ./mirakurun-viewer-0.1.0-x86_64.flatpak
-flatpak run io.github.ouvill.litv
+flatpak install --user ./nagametv-0.1.0-x86_64.flatpak
+flatpak run io.github.ouvill.nagametv
 ```
 
 インストール後はアプリ一覧からも起動できます。初回は必要な実行環境も自動でダウンロードします。
@@ -38,8 +38,8 @@ flatpak run io.github.ouvill.litv
 AppImage版は、ファイルに実行権限を付けて起動します。
 
 ```sh
-chmod +x ./mirakurun-viewer-0.1.0-x86_64.AppImage
-./mirakurun-viewer-0.1.0-x86_64.AppImage
+chmod +x ./nagametv-0.1.0-x86_64.AppImage
+./nagametv-0.1.0-x86_64.AppImage
 ```
 
 ビルド方法、必要な実行環境、OSの互換性条件は[AppImageの手順](docs/appimage.md)を参照してください。
@@ -55,6 +55,8 @@ chmod +x ./mirakurun-viewer-0.1.0-x86_64.AppImage
 再生バーの「再生設定」からも変更できます。影は初期状態でONです。
 
 接続先・選択局・音量・表示設定は次回起動時に復元します。
+ネイティブ版・AppImage版の設定は `~/.config/nagametv/`
+（`XDG_CONFIG_HOME`指定時はその配下）に保存します。
 通常起動では前回の選択局で待機し、再生ボタンを押すと視聴を開始します。
 設定の「接続」にある「起動時に自動再生する」をONにすると、次回起動から
 前回の選択局を自動で再生します。初期状態ではOFFです。
@@ -67,7 +69,7 @@ chmod +x ./mirakurun-viewer-0.1.0-x86_64.AppImage
 ### スクリーンショットを保存する
 
 再生バーのカメラボタン、または**Ctrl + S**で映像を撮影し、PNG画像をすぐ保存します。
-既定の保存先は「ピクチャ」内の`mirakurun-viewer`フォルダーです。フォルダーがなければ自動作成します。
+既定の保存先は「ピクチャ」内の`nagametv`フォルダーです。フォルダーがなければ自動作成します。
 ファイル名には日時を付け、同じ日時の撮影でも既存の画像を上書きしません。
 表示中の字幕・弾幕コメントを含めて保存します。操作ボタン、番組情報、サイドパネルは入りません。
 

@@ -7,7 +7,7 @@ sdks:
   - name: docker-ce
     channel: latest/stable
   - name: project-codex-latest
-  - name: project-mirakurun-viewer
+  - name: project-nagametv
   - name: project-gui
 
 connections:

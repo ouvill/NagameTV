@@ -80,9 +80,9 @@ impl Client {
 
 /// Shared by Qt hook installation and recorder startup so disabled means neither.
 pub fn requested(isolated: bool) -> bool {
-    let setting = std::env::var("MIRAKURUN_DIAGNOSTICS");
+    let setting = std::env::var("NAGAMETV_DIAGNOSTICS");
     enabled(setting.as_deref().ok(), isolated)
-        || std::env::var("MIRAKURUN_GC_LOG").as_deref() == Ok("1")
+        || std::env::var("NAGAMETV_GC_LOG").as_deref() == Ok("1")
 }
 
 pub fn start(directory: PathBuf, isolated: bool) -> Result<Option<Client>, Error> {
@@ -98,7 +98,7 @@ pub fn start(directory: PathBuf, isolated: bool) -> Result<Option<Client>, Error
         return Err(Error::AlreadyInitialized);
     }
     let samples = enabled(
-        std::env::var("MIRAKURUN_DIAGNOSTICS").as_deref().ok(),
+        std::env::var("NAGAMETV_DIAGNOSTICS").as_deref().ok(),
         isolated,
     );
     let recorder = Recorder::start_directory_with_history(

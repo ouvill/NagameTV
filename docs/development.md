@@ -9,8 +9,8 @@
 
 [`.workshop/dev.yaml`](../.workshop/dev.yaml)はUbuntu 26.04を使用します。
 RustはWorkshopのRust SDK、ネイティブ版・AppImage・Flatpakに必要なUbuntuパッケージは
-[プロジェクトSDKのsetup-base](../.workshop/mirakurun-viewer/hooks/setup-base)で導入します。
-依存パッケージを追加するときはこの一覧と[check-health](../.workshop/mirakurun-viewer/hooks/check-health)を更新します。
+[プロジェクトSDKのsetup-base](../.workshop/nagametv/hooks/setup-base)で導入します。
+依存パッケージを追加するときはこの一覧と[check-health](../.workshop/nagametv/hooks/check-health)を更新します。
 check-healthはコマンド・開発ライブラリー・QML・GStreamerプラグインファイルの存在を確認し、
 機器へアクセスせずに実行できます。画面表示・再生や機器の動作確認は別途行います。
 
@@ -62,7 +62,7 @@ QtのPortalプラグイン（Ubuntuでは`qt6-xdgdesktopportal-platformtheme`）
 git submodule update --init
 cmake -S . -B build
 cmake --build build
-./build/mirakurun-viewer
+./build/nagametv
 ```
 
 字幕デコーダーのlibaribcaptionとTS整形のtsreadexはサブモジュールからビルドします。
@@ -73,13 +73,13 @@ LinuxではX11とWaylandの両方の環境変数がある場合、Qtの表示先
 接続先などを起動時に指定する場合:
 
 ```sh
-MIRAKURUN_SERVER=http://192.168.1.100:40772 MIRAKURUN_AUTOPLAY=1 ./build/mirakurun-viewer
+NAGAMETV_SERVER=http://192.168.1.100:40772 NAGAMETV_AUTOPLAY=1 ./build/nagametv
 ```
 
-`MIRAKURUN_SERVICE_ID`で選択局を上書きできます。
-`MIRAKURUN_AUTOPLAY`は未指定なら保存済みの自動再生設定（初期値OFF）を使います。
+`NAGAMETV_SERVICE_ID`で選択局を上書きできます。
+`NAGAMETV_AUTOPLAY`は未指定なら保存済みの自動再生設定（初期値OFF）を使います。
 `0`で無効、それ以外の指定値で有効になり、この上書きは設定ファイルに保存しません。
-`MIRAKURUN_DEINTERLACE=yadif|linear|off`で起動時の映像処理を指定できます。
+`NAGAMETV_DEINTERLACE=yadif|linear|off`で起動時の映像処理を指定できます。
 音声出力の選択は[音声出力](audio-output.md)を参照してください。
 
 コメント表示の方式、関連特許の調査、通常版とローカル評価版のビルドフラグは
@@ -128,7 +128,7 @@ RSSなどの資源使用量は診断JSONLに記録します。[メモリー分�
 開発用の`--features=none|subtitles|epg|comments`は、起動する機能を制限します。
 複数指定は`--features=subtitles,epg`のようにカンマで区切ります。
 この起動では通常の設定を読み書きせず、除外した機能はUIからも有効化できません。
-診断JSONLも記録する場合は`MIRAKURUN_DIAGNOSTICS=1`を明示します。
+診断JSONLも記録する場合は`NAGAMETV_DIAGNOSTICS=1`を明示します。
 字幕の表示／非表示は通常の設定で変更できます。
 
 ## 開発資料
@@ -146,6 +146,8 @@ RSSなどの資源使用量は診断JSONLに記録します。[メモリー分�
 - [検証の記録](verification.md)・[実装移行の経緯](feature-migration.md)
 
 開発資料には実装途中の検証記録も含まれます。現在の動作と過去の状態は、各資料の更新日・追記を確認してください。
+改名前の検証記録にある`mirakurun-viewer`・`litv`・`MIRAKURUN_`は当時の名称です。
+現在の起動コマンドは`nagametv`、環境変数とCMakeオプションの接頭辞は`NAGAMETV_`です。
 
 長い実録画の冒頭停止・遠方シークを製品画面で調べる場合は、
 `bash scripts/test-startup.sh recording-probe /path/to/recording.ts` を使います。

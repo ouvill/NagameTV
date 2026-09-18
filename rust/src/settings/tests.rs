@@ -12,7 +12,7 @@ fn screenshot_directory_defaults_and_custom_paths_survive_restart()
             .preferences()
             .screenshot_directory
             .resolve(&pictures),
-        Some(pictures.join("mirakurun-viewer"))
+        Some(pictures.join("nagametv"))
     );
     assert!(
         session

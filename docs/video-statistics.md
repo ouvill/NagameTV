@@ -43,7 +43,7 @@ mainのplayback.rsとvideo_stats.rsの契約を移植し、処理別に分割し
 
 ## デインターレース
 
-`MIRAKURUN_DEINTERLACE=yadif|linear|off`を起動時に指定する。既定はyadif。
+`NAGAMETV_DEINTERLACE=yadif|linear|off`を起動時に指定する。既定はyadif。
 mainと互換のquality・balanced・disabled、前後空白と大文字にも対応する。
 不正な値は型付きエラーとして起動を失敗させる。実行中には変更しない。
 Offはidentityを使い、YADIF/Linearはauto・all fieldsで処理する。

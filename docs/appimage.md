@@ -5,7 +5,7 @@ Linux x86_64向けに、アプリ本体・Qt/QML・GStreamerの再生プラグ�
 
 ## パッケージを作る
 
-Canonical Workshopでは[プロジェクトSDK](../.workshop/mirakurun-viewer/hooks/setup-base)が
+Canonical Workshopでは[プロジェクトSDK](../.workshop/nagametv/hooks/setup-base)が
 必要なUbuntuパッケージを導入する。既存環境への反映は[Workshopの開発環境](development.md#canonical-workshopの開発環境)を参照。
 
 [ネイティブ版の開発環境](development.md#ネイティブ版をビルドする)に加えて、
@@ -35,8 +35,8 @@ git submodule update --init
 出力先:
 
 ```text
-build/appimage/mirakurun-viewer-0.1.0-x86_64.AppImage
-build/appimage/mirakurun-viewer-0.1.0-x86_64.AppImage.sha256
+build/appimage/nagametv-0.1.0-x86_64.AppImage
+build/appimage/nagametv-0.1.0-x86_64.AppImage.sha256
 ```
 
 バージョンは`rust/Cargo.toml`から取得する。作業ツリーのソースをCMakeと
@@ -58,8 +58,8 @@ SHA-256を確認し、`build/appimage/tools/`にキャッシュする。
 ## 起動する
 
 ```sh
-chmod +x ./mirakurun-viewer-0.1.0-x86_64.AppImage
-./mirakurun-viewer-0.1.0-x86_64.AppImage
+chmod +x ./nagametv-0.1.0-x86_64.AppImage
+./nagametv-0.1.0-x86_64.AppImage
 ```
 
 X11またはXWayland、GPUによるOpenGL描画、PulseAudioまたはPipeWireの
@@ -71,13 +71,13 @@ ARIB字幕フォントはアプリ本体に組み込まれている。
 これはファイルの読み出し方法を変えるだけで、表示・GPU・音声の要件は同じ。
 
 ```sh
-./mirakurun-viewer-0.1.0-x86_64.AppImage --appimage-extract
+./nagametv-0.1.0-x86_64.AppImage --appimage-extract
 ./squashfs-root/AppRun
 ```
 
 更新は新しいAppImageへの置き換え、削除はAppImageファイルの削除で行う。
 アプリ一覧への登録や自動更新は行わない。
-設定はネイティブ版と同じ`~/.config/mirakurun-viewer/settings.toml`を使う
+設定はネイティブ版と同じ`~/.config/nagametv/settings.toml`を使う
 （`XDG_CONFIG_HOME`で変更可能）。Flatpak版の設定とは別。
 
 ## 同梱内容と互換性
@@ -89,7 +89,7 @@ ARIB字幕フォントはアプリ本体に組み込まれている。
   plugin scanner、共有ライブラリー依存を同梱する。MPEG-TS、MPEG-2/H.264、AAC、
   インターレース解除、Qtへの映像表示、PulseAudio出力を含む。
 - AppRunは同梱Qt/GStreamerを参照する。GStreamerのホスト側プラグインを混在させず、
-  レジストリーも`~/.cache/mirakurun-viewer/appimage/`へ分離する
+  レジストリーも`~/.cache/nagametv/appimage/`へ分離する
   （`XDG_CACHE_HOME`で変更可能）。
 - QtのPortalプラグインはビルド環境に存在すれば収集する。利用できるPortalがなければ、
   ネイティブ版と同じQt Quickダイアログを使う。[選択方針](platform-startup.md)
@@ -124,10 +124,10 @@ AppImageはOS全体を同梱しない。glibcとGPUドライバーなどはホ�
 
 ```sh
 cd build/appimage
-sha256sum --check mirakurun-viewer-0.1.0-x86_64.AppImage.sha256
-./mirakurun-viewer-0.1.0-x86_64.AppImage --appimage-extract
-desktop-file-validate squashfs-root/io.github.ouvill.litv.desktop
-ldd squashfs-root/usr/bin/mirakurun-viewer
+sha256sum --check nagametv-0.1.0-x86_64.AppImage.sha256
+./nagametv-0.1.0-x86_64.AppImage --appimage-extract
+desktop-file-validate squashfs-root/io.github.ouvill.nagametv.desktop
+ldd squashfs-root/usr/bin/nagametv
 ```
 
 画面表示と再生の確認は、表示サーバー・GPU・音声出力を検出・検証してから行う。

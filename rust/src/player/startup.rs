@@ -38,15 +38,15 @@ impl Default for PlayerRust {
             }
         };
         let preferences = preferences.activate(
-            std::env::var("MIRAKURUN_SERVER").ok(),
-            std::env::var("MIRAKURUN_SERVICE_ID").ok(),
+            std::env::var("NAGAMETV_SERVER").ok(),
+            std::env::var("NAGAMETV_SERVICE_ID").ok(),
         );
         if !plan.locked {
             plan.comments = preferences.preferences().comments_enabled;
         }
         let autoplay_pending = settings::autoplay_requested(
             preferences.preferences().autoplay,
-            std::env::var("MIRAKURUN_AUTOPLAY").ok().as_deref(),
+            std::env::var("NAGAMETV_AUTOPLAY").ok().as_deref(),
         );
         let audio_output =
             playback::audio_output::Output::Audible(preferences.preferences().volume);

@@ -42,9 +42,9 @@ if [[ -z $audio_sinks ]]; then
 fi
 startup_test_dir=$(mktemp -d)
 trap 'rm -rf "$startup_test_dir"' EXIT
-env -u MIRAKURUN_SERVER -u MIRAKURUN_SERVICE_ID -u MIRAKURUN_AUTOPLAY \
-    -u MIRAKURUN_REMOTE_ENABLED -u MIRAKURUN_REMOTE_ADDR -u MIRAKURUN_REMOTE_PORT \
+env -u NAGAMETV_SERVER -u NAGAMETV_SERVICE_ID -u NAGAMETV_AUTOPLAY \
+    -u NAGAMETV_REMOTE_ENABLED -u NAGAMETV_REMOTE_ADDR -u NAGAMETV_REMOTE_PORT \
     XDG_CONFIG_HOME="$startup_test_dir/config" XDG_CACHE_HOME="$startup_test_dir/cache" XDG_STATE_HOME="$startup_test_dir/state" \
-    MIRAKURUN_DIAGNOSTICS=0 MIRAKURUN_AUDIO_SINK=pulsesink \
+    NAGAMETV_DIAGNOSTICS=0 NAGAMETV_AUDIO_SINK=pulsesink \
     QT_QPA_PLATFORM=xcb QSG_RHI_BACKEND=opengl \
     bash scripts/run-native-tests.sh "$startup_suite" "${@:2}"

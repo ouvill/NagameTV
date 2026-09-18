@@ -279,7 +279,7 @@ pub(super) fn run(
             let cache = std::path::PathBuf::from(
                 std::env::var_os("XDG_CACHE_HOME").ok_or("isolated cache")?,
             )
-            .join("mirakurun-viewer/timeshift");
+            .join("nagametv/timeshift");
             let deadline = std::time::Instant::now() + NETWORK_TIMEOUT;
             while std::fs::read_dir(&cache)?
                 .any(|entry| entry.map_or(true, |entry| entry.file_name() != "registry.lock"))

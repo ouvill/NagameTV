@@ -25,8 +25,8 @@ inline bool saveScreenshotImage(const QImage &image, const QString &path,
   return writer.write(image);
 }
 inline void configureQtQuickOpenGl() {
-    QCoreApplication::setApplicationName(QStringLiteral("mirakurun-viewer"));
-    QGuiApplication::setDesktopFileName(QStringLiteral("io.github.ouvill.litv"));
+    QCoreApplication::setApplicationName(QStringLiteral("nagametv"));
+    QGuiApplication::setDesktopFileName(QStringLiteral("io.github.ouvill.nagametv"));
     QQuickWindow::setGraphicsApi(QSGRendererInterface::OpenGL);
 }
 inline void useQtQuickDialogs() {
@@ -43,7 +43,7 @@ inline QString playbackLogDirectory() {
     if (home.isEmpty() || !QDir::isAbsolutePath(home)) return {};
     base = QDir(home).filePath(".local/state");
   }
-  return QDir(base).filePath("mirakurun-viewer");
+  return QDir(base).filePath("nagametv");
 #else
   const QString base = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
   if (base.isEmpty()) return {};
@@ -94,13 +94,13 @@ inline void viewerQtMessageHandler(QtMsgType type, const QMessageLogContext &con
 
 inline void installQtLogging(rust::Fn<void(std::uint8_t, rust::Str, rust::Str)> callback) {
   qtLogCallback = callback;
-  qtGcEnabled = qEnvironmentVariable("MIRAKURUN_GC_LOG") == QStringLiteral("1");
+  qtGcEnabled = qEnvironmentVariable("NAGAMETV_GC_LOG") == QStringLiteral("1");
   qInstallMessageHandler(viewerQtMessageHandler);
 }
 
 inline void installQtGcLogging(rust::Fn<void(rust::Str, rust::Str)> callback) {
   qtGcCallback = callback;
-  if (qEnvironmentVariable("MIRAKURUN_GC_LOG") == QStringLiteral("1")) {
+  if (qEnvironmentVariable("NAGAMETV_GC_LOG") == QStringLiteral("1")) {
     // Explicit QT_LOGGING_RULES/QT_LOGGING_CONF still take precedence.
     QLoggingCategory::setFilterRules(QStringLiteral(
         "qt.qml.gc.statistics.debug=true\nqt.qml.gc.allocatorStats.debug=true"));

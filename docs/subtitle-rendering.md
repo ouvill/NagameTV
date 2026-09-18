@@ -236,7 +236,7 @@ ARIB字幕PIDの発見、字幕画面2件、配置済みセルを持つ画面1�
 指定パスはCargoのテスト実行ディレクトリーに依存しない絶対パスを使用する。
 
 ```sh
-MIRAKURUN_SUBTITLE_TS_FIXTURE=/home/workshop/qt-gstreamer-features/benchmark/live-subtitle-check/capture.ts MIRAKURUN_SUBTITLE_SERVICE_ID=2080 CARGO_TARGET_DIR=build/cargo cargo test --locked --manifest-path rust/Cargo.toml discovers_caption_stream_in_fixture -- --ignored --nocapture
+NAGAMETV_SUBTITLE_TS_FIXTURE=/home/workshop/qt-gstreamer-features/benchmark/live-subtitle-check/capture.ts NAGAMETV_SUBTITLE_SERVICE_ID=2080 CARGO_TARGET_DIR=build/cargo cargo test --locked --manifest-path rust/Cargo.toml discovers_caption_stream_in_fixture -- --ignored --nocapture
 ```
 
 結果ログは同ディレクトリーのresult.log。本変更は検証用テストのみであり、

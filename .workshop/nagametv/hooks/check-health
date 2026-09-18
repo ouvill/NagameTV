@@ -96,7 +96,7 @@ else
 fi
 
 if ((${#missing[@]} > 0)); then
-  workshopctl set-health error "Missing Mirakurun Viewer dependencies: ${missing[*]}"
+  workshopctl set-health error "Missing NagameTV dependencies: ${missing[*]}"
   exit 1
 fi
 

@@ -1,5 +1,5 @@
-#ifndef MIRAKURUN_VIEWER_SUBTITLE_OUTLINE_H
-#define MIRAKURUN_VIEWER_SUBTITLE_OUTLINE_H
+#ifndef NAGAMETV_SUBTITLE_OUTLINE_H
+#define NAGAMETV_SUBTITLE_OUTLINE_H
 
 #include <QtCore/QString>
 #include <QtGui/QFont>
@@ -38,4 +38,4 @@ inline QString subtitleOutlinePath(const QString &text, const QFont &font) {
   return subtitleOutlinePathData(path);
 }
 
-#endif // MIRAKURUN_VIEWER_SUBTITLE_OUTLINE_H
+#endif // NAGAMETV_SUBTITLE_OUTLINE_H

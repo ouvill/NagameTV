@@ -40,18 +40,18 @@ class GuiSessionTests(unittest.TestCase):
         inherited = dict(DISPLAY=":99", WAYLAND_DISPLAY="host", WAYLAND_SOCKET="42",
                          XAUTHORITY="host-auth", PULSE_SERVER="host-pulse", PULSE_COOKIE="host-cookie",
                          PIPEWIRE_REMOTE="host-pipewire", DBUS_SESSION_BUS_ADDRESS="host-bus",
-                         DBUS_STARTER_ADDRESS="host-starter", MIRAKURUN_GUI_SESSION_DIR="stale",
+                         DBUS_STARTER_ADDRESS="host-starter", NAGAMETV_GUI_SESSION_DIR="stale",
                          QT_QUICK_BACKEND="software", QT_QPA_PLATFORM="offscreen",
                          CARGO_TARGET_DIR="build/cargo")
         env = gui.isolated_environment(Path("/tmp/test-session"), inherited)
         for name in ("DISPLAY", "WAYLAND_DISPLAY", "WAYLAND_SOCKET", "XAUTHORITY",
-                     "PIPEWIRE_REMOTE", "DBUS_STARTER_ADDRESS", "MIRAKURUN_GUI_SESSION_DIR", "QT_QUICK_BACKEND"):
+                     "PIPEWIRE_REMOTE", "DBUS_STARTER_ADDRESS", "NAGAMETV_GUI_SESSION_DIR", "QT_QUICK_BACKEND"):
             self.assertNotIn(name, env)
         self.assertEqual(env["PULSE_SERVER"], "unix:/tmp/test-session/pulse.sock")
         self.assertEqual(env["PULSE_COOKIE"], "/tmp/test-session/pulse.cookie")
         self.assertEqual(env["DBUS_SESSION_BUS_ADDRESS"], "unix:path=/tmp/test-session/bus")
         self.assertEqual(env["CARGO_TARGET_DIR"], "build/cargo")
-        self.assertEqual(env["MIRAKURUN_AUDIO_SINK"], "pulsesink")
+        self.assertEqual(env["NAGAMETV_AUDIO_SINK"], "pulsesink")
         self.assertEqual(inherited["DISPLAY"], ":99")
 
     def test_software_and_unverified_renderers_are_rejected(self):

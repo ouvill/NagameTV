@@ -736,13 +736,13 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires an MPEG-TS fixture supplied through MIRAKURUN_SUBTITLE_TS_FIXTURE"]
+    #[ignore = "requires an MPEG-TS fixture supplied through NAGAMETV_SUBTITLE_TS_FIXTURE"]
     fn discovers_caption_stream_in_fixture() -> Result<(), Box<dyn std::error::Error>> {
         use std::io::Read;
-        let path = std::env::var("MIRAKURUN_SUBTITLE_TS_FIXTURE")?;
+        let path = std::env::var("NAGAMETV_SUBTITLE_TS_FIXTURE")?;
         let mut input = std::fs::File::open(path)?;
         let mut extractor = TransportParser::new(true);
-        if let Some(service) = std::env::var_os("MIRAKURUN_SUBTITLE_SERVICE_ID") {
+        if let Some(service) = std::env::var_os("NAGAMETV_SUBTITLE_SERVICE_ID") {
             extractor.select_service(service.to_str().ok_or("service ID is not UTF-8")?.parse()?);
         }
         let mut buffer = [0; 16 * 1024];

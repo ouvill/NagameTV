@@ -13,7 +13,7 @@ ApplicationWindow {
     minimumWidth: 900
     minimumHeight: 560
     title: player.recording ? player.recording_name : programIdentity.item && programIdentity.item.program && programIdentity.item.program.name
-        ? programIdentity.item.program.name : qsTranslate("Main", "Mirakurun Viewer")
+        ? programIdentity.item.program.name : qsTranslate("Main", "NagameTV")
     color: "#0b0c0b"
     font.family: "Noto Sans CJK JP"
     property bool closing: false

@@ -1,5 +1,5 @@
-#ifndef MIRAKURUN_VIEWER_VIDEO_ITEM_H
-#define MIRAKURUN_VIEWER_VIDEO_ITEM_H
+#ifndef NAGAMETV_VIDEO_ITEM_H
+#define NAGAMETV_VIDEO_ITEM_H
 
 #include <QtCore/QCoreApplication>
 #include <QtCore/QThread>

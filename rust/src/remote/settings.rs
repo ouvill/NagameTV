@@ -98,9 +98,9 @@ impl Overrides {
             }
         }
         Self::parse(
-            read("MIRAKURUN_REMOTE_ENABLED")?.as_deref(),
-            read("MIRAKURUN_REMOTE_ADDR")?.as_deref(),
-            read("MIRAKURUN_REMOTE_PORT")?.as_deref(),
+            read("NAGAMETV_REMOTE_ENABLED")?.as_deref(),
+            read("NAGAMETV_REMOTE_ADDR")?.as_deref(),
+            read("NAGAMETV_REMOTE_PORT")?.as_deref(),
         )
     }
     fn parse(
@@ -118,7 +118,7 @@ impl Overrides {
             if let Ok(endpoint) = address.parse::<SocketAddr>() {
                 if port.is_some() {
                     return Err(
-                        "use an IP-only MIRAKURUN_REMOTE_ADDR with MIRAKURUN_REMOTE_PORT".into(),
+                        "use an IP-only NAGAMETV_REMOTE_ADDR with NAGAMETV_REMOTE_PORT".into(),
                     );
                 }
                 result.address = Some(endpoint.ip());
@@ -128,24 +128,24 @@ impl Overrides {
                 result.address = Some(
                     address
                         .parse()
-                        .map_err(|_| "MIRAKURUN_REMOTE_ADDR must be an IP address")?,
+                        .map_err(|_| "NAGAMETV_REMOTE_ADDR must be an IP address")?,
                 );
             }
         }
         if let Some(port) = port {
             result.port = Some(
                 port.parse()
-                    .map_err(|_| "MIRAKURUN_REMOTE_PORT must be between 1 and 65535")?,
+                    .map_err(|_| "NAGAMETV_REMOTE_PORT must be between 1 and 65535")?,
             );
         }
         if result.port == Some(0) {
-            return Err("MIRAKURUN_REMOTE_PORT must be between 1 and 65535".into());
+            return Err("NAGAMETV_REMOTE_PORT must be between 1 and 65535".into());
         }
         if let Some(enabled) = enabled {
             result.enabled = Some(match enabled {
                 "1" | "true" => true,
                 "0" | "false" => false,
-                _ => return Err("MIRAKURUN_REMOTE_ENABLED must be 0, 1, false or true".into()),
+                _ => return Err("NAGAMETV_REMOTE_ENABLED must be 0, 1, false or true".into()),
             });
         }
         Ok(result)

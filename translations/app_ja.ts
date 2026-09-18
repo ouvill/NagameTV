@@ -68,8 +68,8 @@
       <translation>ミュート解除</translation>
     </message>
     <message>
-      <source>Mirakurun Viewer</source>
-      <translation>Mirakurun Viewer</translation>
+      <source>NagameTV</source>
+      <translation>ながめTV</translation>
     </message>
     <message>
       <source>Stats for nerds</source>

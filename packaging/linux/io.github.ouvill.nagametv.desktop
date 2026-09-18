@@ -1,12 +1,13 @@
 [Desktop Entry]
 Type=Application
-Name=Mirakurun Viewer
+Name=NagameTV
+Name[ja]=ながめTV
 Comment=Watch live TV with subtitles and live comments
 Comment[ja]=字幕・実況コメント付きでテレビを視聴
-Exec=mirakurun-viewer
-Icon=io.github.ouvill.litv
+Exec=nagametv
+Icon=io.github.ouvill.nagametv
 Terminal=false
 Categories=AudioVideo;Video;TV;
 Keywords=TV;Mirakurun;NX-Jikkyo;
 StartupNotify=true
-StartupWMClass=mirakurun-viewer
+StartupWMClass=nagametv

@@ -6,10 +6,10 @@ use std::{
 use viewer_epg_events::{Decoder, RefreshGate};
 
 #[test]
-#[ignore = "requires MIRAKURUN_EVENT_FIXTURE containing a complete captured JSON array"]
+#[ignore = "requires NAGAMETV_EVENT_FIXTURE containing a complete captured JSON array"]
 fn captured_program_events_request_one_refresh() -> Result<(), Box<dyn std::error::Error>> {
     const LIMIT: u64 = 1024 * 1024;
-    let path = std::env::var_os("MIRAKURUN_EVENT_FIXTURE").ok_or("fixture path required")?;
+    let path = std::env::var_os("NAGAMETV_EVENT_FIXTURE").ok_or("fixture path required")?;
     let mut bytes = Vec::new();
     std::fs::File::open(path)?
         .take(LIMIT + 1)

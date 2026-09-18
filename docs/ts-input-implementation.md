@@ -34,8 +34,8 @@ GStreamer appsrc → playbin3へ変更した。録画全体の変換ファイル
   実際にTS読み出しが破棄に追い越された場合だけ、利用可能な範囲内へ復帰する。
 - 受信開始前には戻れない。実況の過去ログ同期は別機能。遅延中の映像に新着の弾幕を重ねない。
 
-LinuxのFS保存先は `$XDG_CACHE_HOME/mirakurun-viewer/timeshift`、未指定時は
-`~/.cache/mirakurun-viewer/timeshift`。約1 MiBずつ分割し、古い分割を削除する。
+LinuxのFS保存先は `$XDG_CACHE_HOME/nagametv/timeshift`、未指定時は
+`~/.cache/nagametv/timeshift`。約1 MiBずつ分割し、古い分割を削除する。
 読み書きに必要なファイルだけ開くため、保持時間に比例してFDを開き続けない。
 正常終了で削除し、異常終了したセッションは次のFS利用時に掃除する。
 セッションのファイルロックを取得できる場合だけ掃除し、別の起動中インスタンスは保持する。

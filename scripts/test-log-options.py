@@ -7,7 +7,7 @@ import subprocess
 import unittest
 
 ROOT = Path(__file__).resolve().parent.parent
-NAMES = ('MIRAKURUN_DIAGNOSTICS', 'MIRAKURUN_GC_LOG', 'MIRAKURUN_HEAPTRACK')
+NAMES = ('NAGAMETV_DIAGNOSTICS', 'NAGAMETV_GC_LOG', 'NAGAMETV_HEAPTRACK')
 
 class LogOptions(unittest.TestCase):
     def run_options(self, launcher, args=(), settings=None):
@@ -37,7 +37,7 @@ class LogOptions(unittest.TestCase):
 
     def test_invalid_settings_fail_before_device_access(self):
         for launcher in ('run-viewer','profile-memory'):
-            for args,env in [(['--gc-log=wrong'],{}),(['--diagnostics'],{}),([],{'MIRAKURUN_HEAPTRACK':''})]:
+            for args,env in [(['--gc-log=wrong'],{}),(['--diagnostics'],{}),([],{'NAGAMETV_HEAPTRACK':''})]:
                 result=self.run_options(launcher,args,env)
                 self.assertEqual(result.returncode,2,result.stderr)
                 self.assertEqual(result.stdout,'')

@@ -1,8 +1,8 @@
-name: mirakurun-viewer
-title: Mirakurun Viewer development SDK
+name: nagametv
+title: NagameTV development SDK
 base: ubuntu@26.04
 version: "0.2"
-summary: Qt 6, GStreamer, and packaging tools for Mirakurun Viewer
+summary: Qt 6, GStreamer, and packaging tools for NagameTV
 description: |
   Installs the complete reproducible build and runtime environment for the
   Qt/QML and Rust Mirakurun live television client, including AppImage and

@@ -25,7 +25,7 @@ OUTPUT_WIDTH = 1920
 OUTPUT_HEIGHT = 1080
 AUDIO_RATE = 48000
 AUDIO_CHANNELS = 2
-AUDIO_SINK = "litv_test"
+AUDIO_SINK = "nagametv_test"
 AUDIO_PROBE_BUFFERS = 10
 MIN_AUDIO_PROBE_PEAK = 1000
 PULSE_COOKIE_BYTES = 256
@@ -42,7 +42,7 @@ def isolated_environment(runtime, inherited):
     }
     env = {key: value for key, value in inherited.items()
            if key not in excluded and not key.startswith(
-               ("PULSE_", "PIPEWIRE_", "DBUS_", "XDG_SESSION_", "MIRAKURUN_GUI_"))}
+               ("PULSE_", "PIPEWIRE_", "DBUS_", "XDG_SESSION_", "NAGAMETV_GUI_"))}
     env.update({
         "XDG_RUNTIME_DIR": str(runtime),
         "XDG_CONFIG_HOME": str(runtime / "config"),
@@ -59,7 +59,7 @@ def isolated_environment(runtime, inherited):
         "DBUS_SESSION_BUS_ADDRESS": f"unix:path={runtime}/bus",
         "QT_QPA_PLATFORM": "xcb",
         "QSG_RHI_BACKEND": "opengl",
-        "MIRAKURUN_AUDIO_SINK": "pulsesink",
+        "NAGAMETV_AUDIO_SINK": "pulsesink",
     })
     return env
 
@@ -206,7 +206,7 @@ class ValidatedSession:
     @contextmanager
     def open(cls, logs):
         detect_resources()
-        with tempfile.TemporaryDirectory(prefix="litv-gui-", dir="/tmp") as directory, ExitStack() as stack:
+        with tempfile.TemporaryDirectory(prefix="nagametv-gui-", dir="/tmp") as directory, ExitStack() as stack:
             runtime = Path(directory)
             env = isolated_environment(runtime, os.environ)
             (runtime / "pulse").mkdir(mode=0o700)
@@ -233,10 +233,10 @@ class ValidatedSession:
             # rootless XWM, Openbox restores focus after dialogs even with no
             # physical input seat on this headless compositor.
             processes.start("weston", ["weston", "--no-config", "--backend=headless",
-                "--renderer=gl", "--shell=kiosk-shell.so", "--idle-time=0", "--socket=litv-wayland",
+                "--renderer=gl", "--shell=kiosk-shell.so", "--idle-time=0", "--socket=nagametv-wayland",
                 f"--width={OUTPUT_WIDTH}", f"--height={OUTPUT_HEIGHT}"])
-            processes.until("private Wayland socket", (runtime / "litv-wayland").is_socket)
-            env["WAYLAND_DISPLAY"] = "litv-wayland"
+            processes.until("private Wayland socket", (runtime / "nagametv-wayland").is_socket)
+            env["WAYLAND_DISPLAY"] = "nagametv-wayland"
             # -displayfd allocates a free X display and signals readiness. Never
             # guess a number or connect to a display inherited from the caller.
             number_file = runtime / "display-number"
@@ -267,7 +267,7 @@ class ValidatedSession:
             if renderer is None or any(name in renderer[1].lower() for name in SOFTWARE_RENDERERS):
                 raise RuntimeError("Weston did not initialize a hardware GL renderer.")
             print(graphics, flush=True)
-            env["MIRAKURUN_GUI_SESSION_DIR"] = str(runtime)
+            env["NAGAMETV_GUI_SESSION_DIR"] = str(runtime)
             session = object.__new__(cls)
             session.__processes = processes
             try:

@@ -10,14 +10,14 @@ pub enum Mode {
 }
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("Invalid MIRAKURUN_DEINTERLACE={0:?}; expected yadif, linear or off")]
+    #[error("Invalid NAGAMETV_DEINTERLACE={0:?}; expected yadif, linear or off")]
     Invalid(String),
-    #[error("MIRAKURUN_DEINTERLACE is not valid Unicode")]
+    #[error("NAGAMETV_DEINTERLACE is not valid Unicode")]
     NonUnicode,
 }
 impl Mode {
     pub fn from_environment() -> Result<Self, Error> {
-        match std::env::var("MIRAKURUN_DEINTERLACE") {
+        match std::env::var("NAGAMETV_DEINTERLACE") {
             Ok(value) => Self::parse(&value),
             Err(std::env::VarError::NotPresent) => Ok(Self::default()),
             Err(std::env::VarError::NotUnicode(_)) => Err(Error::NonUnicode),

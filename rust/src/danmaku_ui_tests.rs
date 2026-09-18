@@ -4,7 +4,7 @@ mod ffi {
     unsafe extern "C++" {
         include!("cxx-qt-lib/qstring.h");
         type QString = cxx_qt_lib::QString;
-        include!("mirakurun-viewer/src/danmaku_test.h");
+        include!("nagametv/src/danmaku_test.h");
         fn run_qml_tests(path: &QString) -> i32;
         #[rust_name = "send_input_method"]
         fn sendTestInputMethod(preedit: &QString, commit: &QString) -> bool;

@@ -582,7 +582,7 @@ fn watch_revalidates_opaque_ids_current_time_and_reordered_channels()
 }
 
 #[test]
-#[ignore = "manual real-server capture validation; requires MIRAKURUN_CAPTURE_DIR"]
+#[ignore = "manual real-server capture validation; requires NAGAMETV_CAPTURE_DIR"]
 fn validates_captured_server_catalog_and_guide() -> Result<(), Box<dyn std::error::Error>> {
     use std::{
         fs::File,
@@ -590,7 +590,7 @@ fn validates_captured_server_catalog_and_guide() -> Result<(), Box<dyn std::erro
         time::{SystemTime, UNIX_EPOCH},
     };
     let directory = PathBuf::from(
-        std::env::var_os("MIRAKURUN_CAPTURE_DIR").ok_or("MIRAKURUN_CAPTURE_DIR is required")?,
+        std::env::var_os("NAGAMETV_CAPTURE_DIR").ok_or("NAGAMETV_CAPTURE_DIR is required")?,
     );
     let read = |name: &str, limit: usize| -> Result<Vec<u8>, Box<dyn std::error::Error>> {
         let mut bytes = Vec::new();
