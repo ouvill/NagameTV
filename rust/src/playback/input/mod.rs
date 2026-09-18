@@ -79,10 +79,11 @@ struct Window {
     start: u64,
     end: u64,
     coverage: Coverage,
+    seekable: bool,
 }
 impl Shared {
     fn window(&self) -> Result<Option<Window>, Error> {
-        let (start, end, coverage) = match self {
+        let (start, end, coverage, seekable) = match self {
             Self::File(shared) => {
                 let state = shared.lock().map_err(|_| Error::Poisoned)?;
                 if let Status::Failed(message) = &state.status {
@@ -111,6 +112,7 @@ impl Shared {
                     } else {
                         Coverage::Partial
                     },
+                    true,
                 )
             }
             Self::Live(shared) => {
@@ -119,6 +121,7 @@ impl Shared {
                     store.index.entries().front().map(|entry| entry.time_ns),
                     store.index.end_ns(),
                     Coverage::Partial,
+                    store.policy().storage() != Retention::Off,
                 )
             }
         };
@@ -126,6 +129,7 @@ impl Shared {
             start,
             end,
             coverage,
+            seekable,
         }))
     }
     fn anchor(&self, target: u64) -> Result<Anchor, Error> {

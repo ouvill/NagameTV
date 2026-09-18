@@ -1010,8 +1010,12 @@
       <translation>容量・時間のどちらかが上限に達すると古いデータを破棄します。一時停止位置が失われた場合は、残っている範囲から再開します。上限はTS保持用で、映像のデコードなどには別途メモリーを使用します。</translation>
     </message>
     <message>
-      <source>Applying changes returns live playback to the live edge and clears its previous history.</source>
-      <translation>設定を適用するとライブの最新位置へ戻り、それまでの保持データを破棄します。</translation>
+      <source>Changes are saved automatically. Reducing limits moves playback only if its position is no longer retained. Changing storage or turning timeshift off clears history and returns to live playback.</source>
+      <translation>変更は自動で保存されます。上限を小さくした場合、再生位置が保持範囲外になったときだけ位置を移動します。保存方式の変更やタイムシフトの無効化では、保持データを破棄してライブの最新位置へ戻ります。</translation>
+    </message>
+    <message>
+      <source>Could not change timeshift settings. Previous settings remain in use.</source>
+      <translation>タイムシフト設定を変更できませんでした。元の設定を継続します。</translation>
     </message>
     <message>
       <source>Outside retained history</source>

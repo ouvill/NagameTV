@@ -49,11 +49,43 @@ pub(super) struct Store {
     segments: VecDeque<Segment>,
     boundaries: VecDeque<u64>,
     end: u64,
-    byte_limit: u64,
-    time_limit: Duration,
+    policy: super::Policy,
     pub index: Index,
     pub history: super::super::live_timeline::History,
     pub status: Status,
+}
+
+// Preparing owns the replacement resources and exclusively borrows their target.
+// A failed preparation cannot discard the current history or change its policy.
+pub(super) struct Prepared<'a> {
+    store: &'a mut Store,
+    policy: super::Policy,
+    replacement: Option<(Storage, Segment)>,
+}
+impl Prepared<'_> {
+    pub fn commit(self) -> std::io::Result<Option<super::super::timeline::RetentionChange>> {
+        use super::super::timeline::RetentionChange;
+        let (bytes, time) = self.policy.budget();
+        let (previous_bytes, previous_time) = self.store.policy.budget();
+        let change = if let Some((storage, segment)) = self.replacement {
+            self.store.segments.clear();
+            self.store.storage = storage;
+            self.store.segments.push_back(segment);
+            self.store.boundaries.clear();
+            self.store.index.clear_entries();
+            if let Some(end) = self.store.index.end_ns() {
+                self.store.history.expire(end);
+            }
+            Some(RetentionChange::ReturnToLive)
+        } else if bytes < previous_bytes || time < previous_time {
+            Some(RetentionChange::ClampPosition)
+        } else {
+            None
+        };
+        self.store.trim(bytes, time)?;
+        self.store.policy = self.policy;
+        Ok(change)
+    }
 }
 impl Store {
     pub fn new(
@@ -66,7 +98,6 @@ impl Store {
             Retention::Off | Retention::Memory => Storage::Memory,
             Retention::Filesystem => Storage::Filesystem(super::filesystem::Directory::new()?),
         };
-        let (byte_limit, time_limit) = policy.budget();
         let index = Index::new(service, programs);
         let history = super::super::live_timeline::History::from_catalog(index.catalog());
         Ok(Self {
@@ -74,11 +105,61 @@ impl Store {
             segments: VecDeque::new(),
             boundaries: VecDeque::new(),
             end: 0,
-            byte_limit,
-            time_limit,
+            policy,
             index,
             history,
             status: Status::Receiving,
+        })
+    }
+    pub fn policy(&self) -> super::Policy {
+        self.policy
+    }
+    pub fn prepare(&mut self, policy: super::Policy) -> std::io::Result<Prepared<'_>> {
+        self.prepare_with(policy, super::filesystem::Directory::new)
+    }
+    fn prepare_with(
+        &mut self,
+        policy: super::Policy,
+        directory: impl FnOnce() -> std::io::Result<super::filesystem::Directory>,
+    ) -> std::io::Result<Prepared<'_>> {
+        let reset = match (self.policy.storage(), policy.storage()) {
+            (Retention::Memory, Retention::Memory)
+            | (Retention::Filesystem, Retention::Filesystem)
+            | (Retention::Off, Retention::Off)
+            | (Retention::Off, Retention::Memory) => false,
+            (Retention::Memory | Retention::Filesystem, Retention::Off)
+            | (Retention::Off | Retention::Memory, Retention::Filesystem)
+            | (Retention::Filesystem, Retention::Memory) => true,
+        };
+        let replacement = if reset {
+            let (storage, bytes) = match policy.storage() {
+                Retention::Off | Retention::Memory => (
+                    Storage::Memory,
+                    Bytes::Memory(Vec::with_capacity(SEGMENT_BYTES)),
+                ),
+                Retention::Filesystem => {
+                    let directory = directory()?;
+                    let path = directory.path().join(self.end.to_string());
+                    File::options().create_new(true).write(true).open(&path)?;
+                    (Storage::Filesystem(directory), Bytes::File(path))
+                }
+            };
+            Some((
+                storage,
+                Segment {
+                    start: self.end,
+                    size: 0,
+                    end_ns: 0,
+                    bytes,
+                },
+            ))
+        } else {
+            None
+        };
+        Ok(Prepared {
+            store: self,
+            policy,
+            replacement,
         })
     }
     pub fn reconnect(&mut self) {
@@ -92,6 +173,7 @@ impl Store {
                 "unaligned TS write",
             ));
         }
+        let (byte_limit, time_limit) = self.policy.budget();
         let mut remaining = packets;
         while !remaining.is_empty() {
             if self
@@ -103,7 +185,7 @@ impl Store {
                 // configured TS capacity also bounds transient ring growth.
                 if matches!(self.storage, Storage::Memory) {
                     while !self.segments.is_empty()
-                        && (self.segments.len() as u64 + 1) * SEGMENT_BYTES as u64 > self.byte_limit
+                        && (self.segments.len() as u64 + 1) * SEGMENT_BYTES as u64 > byte_limit
                     {
                         self.segments.pop_front();
                     }
@@ -160,26 +242,34 @@ impl Store {
             self.end += count as u64;
             remaining = &remaining[count..];
         }
+        self.trim(byte_limit, time_limit)
+    }
+    fn trim(&mut self, byte_limit: u64, time_limit: Duration) -> std::io::Result<()> {
         let earliest = self
             .index
             .end_ns()
             .unwrap_or_default()
-            .saturating_sub(self.time_limit.as_nanos() as u64);
+            .saturating_sub(time_limit.as_nanos() as u64);
         while self.segments.len() > 1
             && self.segments.front().is_some_and(|first| {
                 (match self.storage {
                     Storage::Memory => self.segments.len() as u64 * SEGMENT_BYTES as u64,
                     Storage::Filesystem(_) => self.end - first.start,
-                }) > self.byte_limit
+                }) > byte_limit
                     || first.end_ns < earliest
             })
         {
-            let removed = self.segments.pop_front().expect("nonempty store");
             if let Storage::Filesystem(directory) = &self.storage {
-                let path = directory.path().join(removed.start.to_string());
-                drop(removed); // Close before removal, including on Windows.
+                let path = directory.path().join(
+                    self.segments
+                        .front()
+                        .expect("nonempty store")
+                        .start
+                        .to_string(),
+                );
                 std::fs::remove_file(path)?;
             }
+            self.segments.pop_front();
         }
         self.index.expire(self.start());
         while self
@@ -253,6 +343,114 @@ impl Store {
 mod tests {
     use super::*;
     #[test]
+    fn resizing_live_history_preserves_offsets_and_trims_both_budgets() -> std::io::Result<()> {
+        use super::super::{Limits, Policy};
+        const SMALL_MIB: u32 = super::super::limits::MIN_CAPACITY_MIB;
+        const LARGE_MIB: u32 = SMALL_MIB * 2;
+        const INITIAL_MINUTES: u32 = 3;
+        const REDUCED_MINUTES: u32 = 1;
+        let root = tempfile::tempdir()?;
+        for storage in [Retention::Memory, Retention::Filesystem] {
+            let initial = Limits::new(LARGE_MIB, LARGE_MIB, INITIAL_MINUTES).unwrap();
+            let mut store = Store::new(Policy::new(Retention::Memory, initial), 1, true)?;
+            store
+                .prepare_with(Policy::new(storage, initial), || {
+                    super::super::filesystem::Directory::in_root(root.path())
+                })?
+                .commit()?;
+            let packet = [0; super::super::TS_PACKET_SIZE];
+            let block = packet.repeat(READ_BYTES / packet.len());
+            let received_bytes = u64::from(SMALL_MIB + SMALL_MIB / 2) * SEGMENT_BYTES as u64;
+            for _ in 0..received_bytes.div_ceil(block.len() as u64) {
+                store.append(&block)?;
+            }
+            let end = store.end;
+            let reduced = Policy::new(
+                storage,
+                Limits::new(SMALL_MIB, SMALL_MIB, INITIAL_MINUTES).unwrap(),
+            );
+            store.prepare(reduced)?.commit()?;
+            assert_eq!(store.end, end);
+            assert!(matches!(store.read(0)?, ReadResult::Expired));
+            let start = store.start();
+            assert!(matches!(store.read(start)?, ReadResult::Data { .. }));
+            store.prepare(Policy::new(storage, initial))?.commit()?;
+            assert_eq!(store.start(), start);
+            assert_eq!(store.end, end);
+            let fixture = include_bytes!("../../../../tests/fixtures/recording-seek.ts");
+            store.append(fixture)?;
+            store.reconnect();
+            store.append(fixture)?;
+            let end = store.end;
+            let first = store.index.entries().front().unwrap().time_ns;
+            store
+                .prepare(Policy::new(
+                    storage,
+                    Limits::new(LARGE_MIB, LARGE_MIB, REDUCED_MINUTES).unwrap(),
+                ))?
+                .commit()?;
+            assert_eq!(store.end, end);
+            assert!(store.index.entries().front().unwrap().time_ns > first);
+            assert!(
+                store.index.end_ns().unwrap() - store.index.entries().front().unwrap().time_ns
+                    <= Duration::from_secs(60).as_nanos() as u64
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn storage_preparation_failure_and_cancellation_leave_history_untouched() -> std::io::Result<()>
+    {
+        use super::super::{Limits, Policy};
+        let root = tempfile::tempdir()?;
+        let blocked = root.path().join("not-a-directory");
+        std::fs::write(&blocked, b"occupied")?;
+        let mut store = Store::new(Retention::Memory, 1, true)?;
+        let fixture = include_bytes!("../../../../tests/fixtures/recording.ts");
+        store.append(fixture)?;
+        let end = store.end;
+        let first = store.index.entries().front().unwrap().time_ns;
+        let policy = store.policy();
+        let replacement = Policy::new(Retention::Filesystem, Limits::default());
+        assert!(
+            store
+                .prepare_with(
+                    replacement,
+                    || super::super::filesystem::Directory::in_root(&blocked)
+                )
+                .is_err()
+        );
+        let prepared = store.prepare_with(replacement, || {
+            super::super::filesystem::Directory::in_root(root.path())
+        })?;
+        let path = match &prepared.replacement {
+            Some((Storage::Filesystem(directory), _)) => directory.path().to_owned(),
+            _ => unreachable!(),
+        };
+        drop(prepared);
+        assert!(!path.exists());
+        assert_eq!(store.policy(), policy);
+        assert_eq!(store.end, end);
+        assert_eq!(store.index.entries().front().unwrap().time_ns, first);
+        assert!(matches!(store.read(0)?, ReadResult::Data { .. }));
+        store
+            .prepare_with(replacement, || {
+                super::super::filesystem::Directory::in_root(root.path())
+            })?
+            .commit()?;
+        assert_eq!(store.end, end);
+        assert!(store.index.entries().is_empty());
+        assert!(matches!(store.read(0)?, ReadResult::Expired));
+        store.append(fixture)?;
+        assert!(store.index.end_ns().unwrap() > first);
+        let readable = store.index.entries().front().unwrap().offset;
+        assert!(readable >= end);
+        assert!(matches!(store.read(readable)?, ReadResult::Data { .. }));
+        Ok(())
+    }
+
+    #[test]
     fn configured_memory_budget_bounds_allocations_and_discards_the_old_cursor()
     -> std::io::Result<()> {
         use super::super::{Limits, Policy, limits::MIN_CAPACITY_MIB};
@@ -283,8 +481,9 @@ mod tests {
     }
     #[test]
     fn memory_and_files_have_the_same_expiry_eof_and_cleanup_contract() -> std::io::Result<()> {
-        const TEST_BYTES: u64 = (SEGMENT_BYTES * 2) as u64;
-        const TEST_SEGMENTS: usize = 5;
+        const CAPACITY_MIB: u32 = super::super::limits::MIN_CAPACITY_MIB;
+        const TEST_BYTES: u64 = CAPACITY_MIB as u64 * SEGMENT_BYTES as u64;
+        const TEST_SEGMENTS: usize = CAPACITY_MIB as usize + 4;
         let mut packet = [0; super::super::TS_PACKET_SIZE];
         packet[0] = crate::transport::wire::SYNC_BYTE;
         let block = packet.repeat(READ_BYTES / packet.len());
@@ -295,7 +494,10 @@ mod tests {
                 store.storage =
                     Storage::Filesystem(super::super::filesystem::Directory::in_root(root.path())?);
             }
-            store.byte_limit = TEST_BYTES;
+            store.policy = super::super::Policy::new(
+                backend,
+                super::super::Limits::new(CAPACITY_MIB, CAPACITY_MIB, 1).unwrap(),
+            );
             let directory = match &store.storage {
                 Storage::Filesystem(path) => Some(path.path().to_owned()),
                 Storage::Memory => None,

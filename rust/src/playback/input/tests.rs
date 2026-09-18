@@ -48,7 +48,6 @@ fn normalized_raw_input_seeks_across_pid_changes_without_losing_pause()
             interrupted,
             Arc::new(source::Feedback::default()),
             &scope,
-            true,
         );
         let sink = pipeline.by_name("output").ok_or("sink")?;
         let mut controller = super::super::timeline::Controller::new(&sink)?;
@@ -135,7 +134,6 @@ fn sequential_playback_across_discontinuities_keeps_frames_and_monotonic_clock()
             interrupted.clone(),
             failure.clone(),
             &scope,
-            true,
         );
         let frames = Arc::new(Mutex::new(Vec::<u64>::new()));
         let output = frames.clone();
@@ -251,8 +249,24 @@ fn stopping_detaches_reader_even_when_playbin_keeps_its_appsrc()
 #[test]
 fn expired_pause_keeps_its_frame_then_resumes_inside_history()
 -> Result<(), Box<dyn std::error::Error>> {
+    exercise_expired_pause(Expiry::Natural)
+}
+
+#[test]
+fn reduced_limits_move_the_paused_frame_without_resuming() -> Result<(), Box<dyn std::error::Error>>
+{
+    exercise_expired_pause(Expiry::Settings)
+}
+
+enum Expiry {
+    Natural,
+    Settings,
+}
+fn exercise_expired_pause(expiry: Expiry) -> Result<(), Box<dyn std::error::Error>> {
     gst::init()?;
-    let bytes = include_bytes!("../../../../tests/fixtures/recording-seek.ts");
+    let fixture = include_bytes!("../../../../tests/fixtures/recording-seek.ts");
+    let bytes = fixture.repeat(2);
+    const ADVANCED_SECONDS: u64 = 70;
     let mut index = Index::new(1, true);
     for (number, packet) in bytes.as_chunks::<TS_PACKET_SIZE>().0.iter().enumerate() {
         index.packet((number * TS_PACKET_SIZE) as u64, packet);
@@ -266,8 +280,20 @@ fn expired_pause_keeps_its_frame_then_resumes_inside_history()
             .offset as usize
     };
     let initial_end = offset_at(1);
-    let advanced_end = offset_at(10);
-    let store = Arc::new(Mutex::new(Store::new(Retention::Off, 1, true)?));
+    let advanced_end = offset_at(ADVANCED_SECONDS);
+    let store = Arc::new(Mutex::new(Store::new(
+        Policy::new(
+            Retention::Memory,
+            Limits::new(
+                limits::MIN_CAPACITY_MIB,
+                limits::MIN_CAPACITY_MIB,
+                limits::MIN_RETENTION_MINUTES,
+            )
+            .unwrap(),
+        ),
+        1,
+        true,
+    )?));
     store.lock().unwrap().append(&bytes[..initial_end])?;
     let shared = Shared::Live(store.clone());
     let reader = Reader {
@@ -306,7 +332,6 @@ fn expired_pause_keeps_its_frame_then_resumes_inside_history()
         interrupted,
         feedback.clone(),
         &scope,
-        true,
     );
     let mut controller =
         super::super::timeline::Controller::new(&pipeline.by_name("output").ok_or("sink")?)?;
@@ -327,6 +352,9 @@ fn expired_pause_keeps_its_frame_then_resumes_inside_history()
         ReadResult::Expired
     ));
     let window = shared.window()?.ok_or("window")?;
+    if let Expiry::Settings = expiry {
+        controller.retention_changed(super::super::timeline::RetentionChange::ClampPosition);
+    }
     controller.retained(
         pipeline.upcast_ref(),
         super::super::timeline::LiveWindow::History(
@@ -338,15 +366,39 @@ fn expired_pause_keeps_its_frame_then_resumes_inside_history()
         ),
         true,
     )?;
-    assert_eq!(controller.phase(), super::super::timeline::Phase::Paused);
-    assert!(
-        controller
-            .snapshot()
-            .position
-            .ok_or("paused position")?
-            .nseconds()
-            < window.start
-    );
+    match expiry {
+        Expiry::Natural => {
+            assert_eq!(controller.phase(), super::super::timeline::Phase::Paused);
+            assert!(
+                controller
+                    .snapshot()
+                    .position
+                    .ok_or("paused position")?
+                    .nseconds()
+                    < window.start
+            );
+        }
+        Expiry::Settings => {
+            let deadline = Instant::now() + TEST_DEADLINE;
+            while matches!(
+                controller.phase(),
+                super::super::timeline::Phase::Seeking(_)
+            ) {
+                controller.poll(pipeline.upcast_ref())?;
+                assert!(Instant::now() < deadline, "paused correction timed out");
+                std::thread::sleep(TEST_POLL);
+            }
+            assert_eq!(controller.phase(), super::super::timeline::Phase::Paused);
+            assert!(
+                controller
+                    .snapshot()
+                    .position
+                    .ok_or("corrected position")?
+                    .nseconds()
+                    >= window.start
+            );
+        }
+    }
     controller.pause(
         pipeline.upcast_ref(),
         super::super::timeline::Resume::Playing,
@@ -370,7 +422,7 @@ fn expired_pause_keeps_its_frame_then_resumes_inside_history()
     let mut received_until = advanced_end;
     let mut previous_position = controller.snapshot().position.ok_or("position")?;
     while resumed.elapsed() < Duration::from_secs(FOLLOWUP_SECONDS) {
-        let next = offset_at(10 + resumed.elapsed().as_secs());
+        let next = offset_at(ADVANCED_SECONDS + resumed.elapsed().as_secs());
         if next > received_until {
             store.lock().unwrap().append(&bytes[received_until..next])?;
             received_until = next;

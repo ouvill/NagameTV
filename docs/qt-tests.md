@@ -168,8 +168,13 @@ Connection tests verify atomic budget notifications, rejected invalid values and
 persistence without using display or audio hardware.
 
 The timeshift settings component also checks mutually exclusive capacity controls,
-retention estimates from received bytes and the time limit, storage changes that
-preserve both budgets, and numeric keyboard entry. Timeline component tests cover
+retention estimates from received bytes and the time limit, automatic numeric saves,
+coalesced repeated steps, flushing edits when leaving the page, failed-change rollback,
+and storage changes that preserve both budgets. The product timeshift suite checks
+that budget edits preserve paused playback and the HTTP connection, shrinking budgets
+moves an expired paused position without resuming, and storage changes return to live
+without reconnecting. Hardware-free tests cover capacity/time trimming, failed or
+cancelled storage preparation, and paused position correction. Timeline component tests cover
 the shared program/history axis, non-seekable future and expired portions, retained
 data preceding the current program, and progress with retention disabled. CPU Rust
 tests cover TS clock-to-program axis mapping and bitrate measurement across clock

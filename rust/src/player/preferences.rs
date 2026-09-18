@@ -59,7 +59,11 @@ impl ffi::Player {
             self.as_mut().save_settings();
             return true;
         }
-        let restart = self.rust().stream_state.reconfigured_live(policy);
+        if let Err(error) = self.as_mut().rust_mut().media.configure_timeshift(policy) {
+            self.as_mut()
+                .set_transport_error(QString::from(error.to_string()));
+            return false;
+        }
         {
             let mut this = self.as_mut().rust_mut();
             this.preferences
@@ -67,19 +71,12 @@ impl ffi::Player {
             this.preferences
                 .change(crate::settings::Change::TimeshiftLimits(limits));
         }
+        self.as_mut()
+            .change_stream_state(|state| state.reconfigured_live(policy));
         self.as_mut().timeshift_storage_changed();
         self.as_mut().timeshift_limits_changed();
         self.as_mut().save_settings();
-        if let Some(attempt) = restart {
-            self.as_mut().stop();
-            if !matches!(
-                self.rust().stream_state,
-                super::stream_state::State::Stopped(_)
-            ) {
-                return false;
-            }
-            return self.start_stream(attempt);
-        }
+        self.as_mut().set_transport_error(QString::default());
         true
     }
 

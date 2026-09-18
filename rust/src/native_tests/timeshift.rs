@@ -6,7 +6,7 @@ use std::{
     net::{TcpListener, TcpStream},
     sync::{
         Arc,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     thread,
     time::{Duration, Instant},
@@ -31,6 +31,7 @@ const RETENTION_MINUTES: i32 = 1;
 const OBSERVER: &str =
     "root.contentItem.children.find(child => child.objectName === 'liveTimelineObserver')";
 const RECOVERY_OBSERVATION: Duration = Duration::from_secs(4);
+const RESIZE_HISTORY: Duration = Duration::from_secs(7);
 const LIVE_METADATA_READY: &str = "player.program_status === 'available' && JSON.parse(player.current_program_data) !== null && JSON.parse(player.live_timeline).viewing.utc !== null";
 
 #[derive(Clone, Copy)]
@@ -42,6 +43,7 @@ enum Traffic {
 struct Server {
     url: String,
     stop: Arc<AtomicBool>,
+    streams: Arc<AtomicUsize>,
     worker: Option<thread::JoinHandle<()>>,
 }
 impl Server {
@@ -51,14 +53,17 @@ impl Server {
         let url = format!("http://{}", listener.local_addr()?);
         let stop = Arc::new(AtomicBool::new(false));
         let stopped = stop.clone();
+        let streams = Arc::new(AtomicUsize::new(0));
+        let received_streams = streams.clone();
         let worker = thread::spawn(move || {
             let mut clients = Vec::new();
             while !stopped.load(Ordering::Acquire) {
                 match listener.accept() {
                     Ok((socket, _)) => {
                         let stopped = stopped.clone();
+                        let received_streams = received_streams.clone();
                         clients.push(thread::spawn(move || {
-                            let _ = serve(socket, &stopped, traffic);
+                            let _ = serve(socket, &stopped, traffic, &received_streams);
                         }));
                     }
                     Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
@@ -74,6 +79,7 @@ impl Server {
         Ok(Self {
             url,
             stop,
+            streams,
             worker: Some(worker),
         })
     }
@@ -86,7 +92,12 @@ impl Drop for Server {
         }
     }
 }
-fn serve(mut socket: TcpStream, stopped: &AtomicBool, traffic: Traffic) -> std::io::Result<()> {
+fn serve(
+    mut socket: TcpStream,
+    stopped: &AtomicBool,
+    traffic: Traffic,
+    streams: &AtomicUsize,
+) -> std::io::Result<()> {
     const MAX_HEADER_BYTES: usize = 8 * 1024;
     socket.set_read_timeout(Some(NETWORK_TIMEOUT))?;
     socket.set_write_timeout(Some(NETWORK_TIMEOUT))?;
@@ -97,6 +108,7 @@ fn serve(mut socket: TcpStream, stopped: &AtomicBool, traffic: Traffic) -> std::
         header.extend(byte);
     }
     if header.starts_with(b"GET /api/services/1/stream ") {
+        streams.fetch_add(1, Ordering::AcqRel);
         let ts = include_bytes!("../../../tests/fixtures/recording-seek.ts");
         const PACKET: usize = crate::transport::wire::TS_PACKET_SIZE;
         let chunk_size = ts.len() / FIXTURE_SECONDS / INTERVALS_PER_SECOND / PACKET * PACKET;
@@ -262,6 +274,36 @@ pub(super) fn run(
             engine,
             "JSON.parse(player.live_timeline).viewing.program !== null && JSON.parse(player.live_timeline).seekTarget === null"
         )?);
+        let connections = server.streams.load(Ordering::Acquire);
+        assert!(evaluate(
+            engine,
+            &format!(
+                "{OBSERVER}.saved = JSON.parse(player.live_timeline); player.configure_timeshift_options('{backend}', {}, {}, {})",
+                MEMORY_MIB * 2,
+                FILESYSTEM_MIB * 2,
+                RETENTION_MINUTES + 1
+            )
+        )?);
+        wait_for(
+            app,
+            engine,
+            &format!(
+                "player.duration_ms > {OBSERVER}.saved.live.position + {}",
+                PAUSE_RECEIVE_GROWTH.as_millis()
+            ),
+        )?;
+        assert!(evaluate(
+            engine,
+            &format!(
+                "player.paused && !player.seeking && JSON.parse(player.live_timeline).session === {OBSERVER}.saved.session && Math.abs(player.position_ms - {OBSERVER}.saved.viewing.position) < {}",
+                SEEK_TOLERANCE.as_millis()
+            )
+        )?);
+        assert_eq!(
+            server.streams.load(Ordering::Acquire),
+            connections,
+            "limit update reconnected the stream"
+        );
         return_to_live(app, engine, backend, "paused in history")?;
         assert!(evaluate(
             engine,
@@ -307,10 +349,11 @@ pub(super) fn run(
         app,
         engine,
         &format!(
-            "!player.timeshift && !player.seekable && !player.transport_error.length && ({LIVE_METADATA_READY})"
+            "!player.timeshift && !player.seekable && !player.playback_error.length && ({LIVE_METADATA_READY})"
         ),
     )?;
     assert!(evaluate(engine, "!player.pause()")?);
+    let connections = server.streams.load(Ordering::Acquire);
     assert!(evaluate(engine, "player.configure_timeshift('memory')")?);
     wait_for(
         app,
@@ -331,10 +374,15 @@ pub(super) fn run(
         app,
         engine,
         &format!(
-            "!player.timeshift && !player.seekable && !player.transport_error.length && ({LIVE_METADATA_READY})"
+            "!player.timeshift && !player.seekable && !player.playback_error.length && ({LIVE_METADATA_READY})"
         ),
     )?;
     evaluate(engine, "player.stop(); true")?;
+    assert_eq!(
+        server.streams.load(Ordering::Acquire),
+        connections,
+        "enable/disable reconnected the stream"
+    );
     eprintln!(
         "Timeshift disabled: playback and program/broadcast clock stay available; pause is rejected; enable/disable applies during playback and pause"
     );
@@ -384,6 +432,28 @@ pub(super) fn run(
                 "JSON.parse(player.live_timeline).axis.start === {OBSERVER}.saved.axis.start && JSON.parse(player.live_timeline).axis.end === {OBSERVER}.saved.axis.end && JSON.parse(player.live_timeline).viewing.position === {OBSERVER}.saved.viewing.position && JSON.stringify(JSON.parse(player.live_timeline).viewing.program) === JSON.stringify({OBSERVER}.saved.viewing.program) && JSON.parse(player.live_timeline).viewing.availability === 'expired' && {OBSERVER}.failure.length === 0"
             )
         )?);
+        assert!(evaluate(
+            engine,
+            &format!(
+                "{OBSERVER}.saved = JSON.parse(player.live_timeline); player.configure_timeshift_options('{storage}', {}, {}, {RETENTION_MINUTES})",
+                MEMORY_MIB * 2,
+                MEMORY_MIB * 2
+            )
+        )?);
+        wait_for(
+            app,
+            engine,
+            &format!(
+                "player.duration_ms > {OBSERVER}.saved.live.position + {}",
+                PAUSE_RECEIVE_GROWTH.as_millis()
+            ),
+        )?;
+        assert!(evaluate(
+            engine,
+            &format!(
+                "player.paused && !player.seeking && JSON.parse(player.live_timeline).viewing.position === {OBSERVER}.saved.viewing.position"
+            )
+        )?);
         assert!(evaluate(engine, "player.play(); true")?);
         wait_for(
             app,
@@ -398,6 +468,83 @@ pub(super) fn run(
         evaluate(engine, "player.stop(); true")?;
         eprintln!(
             "Timeshift {storage}: expired pause resumed and continued under capacity pressure"
+        );
+    }
+    for storage in ["memory", "filesystem"] {
+        assert!(evaluate(
+            engine,
+            &format!(
+                "player.configure_timeshift_options('{storage}', {FILESYSTEM_MIB}, {FILESYSTEM_MIB}, {RETENTION_MINUTES}); player.play(); true"
+            )
+        )?);
+        wait_for(
+            app,
+            engine,
+            "player.playing && player.seekable && player.position_ms > 0",
+        )?;
+        assert!(evaluate(engine, "player.pause()")?);
+        // Each shared wait has a five-second deadline; observe both milestones.
+        for retained in [RESIZE_HISTORY / 2, RESIZE_HISTORY] {
+            wait_for(
+                app,
+                engine,
+                &format!(
+                    "player.paused && !player.seeking && player.duration_ms > {}",
+                    retained.as_millis()
+                ),
+            )?;
+        }
+        let connections = pressure.streams.load(Ordering::Acquire);
+        assert!(evaluate(
+            engine,
+            &format!(
+                "{OBSERVER}.saved = JSON.parse(player.live_timeline); player.configure_timeshift_options('{storage}', {MEMORY_MIB}, {MEMORY_MIB}, {RETENTION_MINUTES})"
+            )
+        )?);
+        wait_for(
+            app,
+            engine,
+            &format!(
+                "player.paused && !player.seeking && player.window_start_ms > {OBSERVER}.saved.viewing.position && player.position_ms >= player.window_start_ms"
+            ),
+        )?;
+        assert!(evaluate(
+            engine,
+            &format!(
+                "JSON.parse(player.live_timeline).session === {OBSERVER}.saved.session && player.position_ms > {OBSERVER}.saved.viewing.position && player.transport_error.length > 0"
+            )
+        )?);
+        let next_storage = if storage == "memory" {
+            "filesystem"
+        } else {
+            "memory"
+        };
+        assert!(evaluate(
+            engine,
+            &format!(
+                "{OBSERVER}.saved = JSON.parse(player.live_timeline); player.configure_timeshift('{next_storage}')"
+            )
+        )?);
+        wait_for(
+            app,
+            engine,
+            &format!(
+                "player.playing && !player.paused && !player.seeking && player.position_ms >= {OBSERVER}.saved.live.position"
+            ),
+        )?;
+        assert_eq!(
+            pressure.streams.load(Ordering::Acquire),
+            connections,
+            "settings update reconnected the stream"
+        );
+        observe_playback(
+            app,
+            engine,
+            "player.timeshift && !player.playback_error.length",
+        )?;
+        evaluate(engine, "player.stop(); true")?;
+        eprintln!(
+            "Timeshift {storage}: shrinking moves paused playhead; storage switch returns to live without reconnecting"
         );
     }
     assert!(evaluate(

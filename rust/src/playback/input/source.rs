@@ -36,7 +36,6 @@ pub(in crate::playback) struct Input {
     subscriptions: Subscriptions,
     interrupted: Arc<AtomicBool>,
     feedback: Arc<Feedback>,
-    retention: Option<Policy>,
     sources: Arc<Mutex<Vec<gst::glib::WeakRef<AppSrc>>>>,
 }
 impl Input {
@@ -47,7 +46,7 @@ impl Input {
         programs: bool,
     ) -> Result<Self, Error> {
         let (reader, worker) = file_reader(path, service, programs)?;
-        Ok(Self::attach(playbin, reader, worker, None))
+        Ok(Self::attach(playbin, reader, worker))
     }
     pub fn live(
         playbin: &gst::Element,
@@ -57,14 +56,9 @@ impl Input {
         programs: bool,
     ) -> Result<Self, Error> {
         let (reader, worker) = live_reader(uri, service, retention, programs)?;
-        Ok(Self::attach(playbin, reader, worker, Some(retention)))
+        Ok(Self::attach(playbin, reader, worker))
     }
-    fn attach(
-        playbin: &gst::Element,
-        reader: Reader,
-        worker: Worker,
-        retention: Option<Policy>,
-    ) -> Self {
+    fn attach(playbin: &gst::Element, reader: Reader, worker: Worker) -> Self {
         let shared = reader.shared.clone();
         let interrupted = Arc::new(AtomicBool::new(false));
         let feedback = Arc::new(Feedback::default());
@@ -92,7 +86,6 @@ impl Input {
                     stopped.clone(),
                     failed.clone(),
                     &registrations,
-                    retention.is_none_or(|policy| policy.storage() != Retention::Off),
                 );
             }
             None
@@ -106,12 +99,21 @@ impl Input {
             subscriptions,
             interrupted,
             feedback,
-            retention,
             sources,
         }
     }
     pub fn suspend(&self, suspended: bool) {
         self.interrupted.store(suspended, Ordering::Release);
+    }
+    pub fn reconfigure(
+        &mut self,
+        policy: Policy,
+    ) -> Result<Option<super::super::timeline::RetentionChange>, Error> {
+        let Shared::Live(shared) = &self.shared else {
+            return Err(Error::Unindexed);
+        };
+        let mut store = shared.lock().map_err(|_| Error::Poisoned)?;
+        Ok(store.prepare(policy)?.commit()?)
     }
     pub fn check(&self) -> Result<(), Error> {
         if let Some(error) = &*self.feedback.failure.lock().map_err(|_| Error::Poisoned)? {
@@ -181,17 +183,18 @@ impl Input {
             return None;
         };
         let mut store = shared.lock().ok()?;
+        let end = store.index.end_ns().unwrap_or(0);
         let start = store
             .index
             .entries()
             .front()
-            .map_or(0, |anchor| anchor.time_ns);
-        let end = store.index.end_ns().unwrap_or(0);
+            .map_or(end, |anchor| anchor.time_ns);
+        let enabled = store.policy().storage() != Retention::Off;
         Some(presenter.project(
             &mut store.history,
             start,
             end,
-            self.retention?.storage() != Retention::Off,
+            enabled,
             super::super::live_timeline::Reading {
                 phase,
                 position_ns: position.map(|time| time.nseconds()),
@@ -204,16 +207,13 @@ impl Input {
         milliseconds: f64,
     ) -> Result<super::super::live_timeline::SeekTarget, super::super::timeline::Error> {
         use super::super::timeline::Error;
-        if self
-            .retention
-            .is_none_or(|policy| policy.storage() == Retention::Off)
-        {
-            return Err(Error::Unavailable);
-        }
         let Shared::Live(shared) = &self.shared else {
             return Err(Error::Unavailable);
         };
         let store = shared.lock().map_err(|_| Error::Unavailable)?;
+        if store.policy().storage() == Retention::Off {
+            return Err(Error::Unavailable);
+        }
         let start = store
             .index
             .entries()
@@ -228,15 +228,18 @@ impl Input {
     }
     pub fn live_window(&self) -> Option<super::super::timeline::LiveWindow> {
         use super::super::timeline::{LiveWindow, Range};
-        let policy = self.retention?;
+        if let Shared::File(_) = self.shared {
+            return None;
+        }
         let window = self.shared.window().ok()??;
         let range = Range::new(
             gst::ClockTime::from_nseconds(window.start),
             gst::ClockTime::from_nseconds(window.end),
         )?;
-        Some(match policy.storage() {
-            Retention::Off => LiveWindow::ForwardBuffer(range),
-            Retention::Memory | Retention::Filesystem => LiveWindow::History(range),
+        Some(if window.seekable {
+            LiveWindow::History(range)
+        } else {
+            LiveWindow::ForwardBuffer(range)
         })
     }
 }
@@ -264,7 +267,6 @@ pub(super) fn configure(
     interrupted: Arc<AtomicBool>,
     feedback: Arc<Feedback>,
     registrations: &Subscriptions,
-    seekable: bool,
 ) {
     source.set_format(gst::Format::Time);
     source.set_stream_type(AppStreamType::Seekable);
@@ -313,7 +315,7 @@ pub(super) fn configure(
                             if query.format() == gst::Format::Time =>
                         {
                             query.set(
-                                seekable && window.is_some(),
+                                window.is_some_and(|window| window.seekable),
                                 gst::ClockTime::from_nseconds(
                                     window.map_or(0, |value| value.start),
                                 ),

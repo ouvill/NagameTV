@@ -10,6 +10,14 @@ const POSITION_SAMPLE_INTERVAL: Duration = Duration::from_millis(200);
 const SEEK_TIMEOUT: Duration = Duration::from_secs(10);
 const RECOVERY_HEADROOM: gst::ClockTime = gst::ClockTime::from_seconds(2);
 const EXPIRED_NOTICE: &str = "保持期限を過ぎたため、再生位置を余裕のある保持範囲内へ移動しました";
+const SETTINGS_NOTICE: &str = "タイムシフト設定の変更により、再生位置を保持範囲内へ移動しました";
+const LIVE_SETTINGS_NOTICE: &str = "タイムシフト設定の変更により、ライブの最新位置へ戻りました";
+
+#[derive(Clone, Copy)]
+pub(super) enum RetentionChange {
+    ClampPosition,
+    ReturnToLive,
+}
 
 /// Forward buffering does not constrain frames already queued by the decoder.
 /// Only retained history is a user-visible playback window.
@@ -121,6 +129,7 @@ pub(super) struct Controller {
     subscriptions: crate::features::subscriptions::Subscriptions,
     next_sample: Instant,
     notice: Option<&'static str>,
+    retention_change: Option<RetentionChange>,
 }
 
 /// A short exclusive borrow, never an interchangeable capability token.
@@ -175,6 +184,7 @@ impl Controller {
             subscriptions,
             next_sample: Instant::now(),
             notice: None,
+            retention_change: None,
         })
     }
 
@@ -232,6 +242,20 @@ impl Controller {
         };
     }
 
+    pub(super) fn retention_changed(&mut self, change: RetentionChange) {
+        self.retention_change = Some(match (self.retention_change, change) {
+            (Some(RetentionChange::ReturnToLive), RetentionChange::ClampPosition)
+            | (_, RetentionChange::ReturnToLive) => {
+                self.snapshot.range = None;
+                self.snapshot.duration = None;
+                RetentionChange::ReturnToLive
+            }
+            (None | Some(RetentionChange::ClampPosition), RetentionChange::ClampPosition) => {
+                RetentionChange::ClampPosition
+            }
+        });
+    }
+
     pub fn retained(
         &mut self,
         pipeline: &gst::Element,
@@ -244,6 +268,46 @@ impl Controller {
         };
         self.snapshot.range = history;
         self.snapshot.duration = history.map(|range| range.end);
+        if let Some(change) = self.retention_change {
+            if pipeline.state(gst::ClockTime::ZERO).1 < gst::State::Paused {
+                return Ok(());
+            }
+            self.sample(pipeline);
+            self.snapshot.range = history;
+            self.snapshot.duration = history.map(|range| range.end);
+            let position = self.seek_target().or(self.snapshot.position);
+            let correction = match change {
+                RetentionChange::ReturnToLive => Some((
+                    range
+                        .end
+                        .saturating_sub(gst::ClockTime::MSECOND)
+                        .max(range.start),
+                    Resume::Playing,
+                )),
+                RetentionChange::ClampPosition => {
+                    if expired || position.is_some_and(|position| position < range.start) {
+                        let resume = match self.phase() {
+                            Phase::Paused | Phase::Seeking(Resume::Paused) => Resume::Paused,
+                            Phase::Playing | Phase::Ended | Phase::Seeking(Resume::Playing) => {
+                                Resume::Playing
+                            }
+                        };
+                        Some((range.recovery_target(), resume))
+                    } else {
+                        None
+                    }
+                }
+            };
+            if let Some((target, resume)) = correction {
+                self.start_seek(pipeline, target, resume)?;
+                self.notice = Some(match change {
+                    RetentionChange::ClampPosition => SETTINGS_NOTICE,
+                    RetentionChange::ReturnToLive => LIVE_SETTINGS_NOTICE,
+                });
+            }
+            self.retention_change = None;
+            return Ok(());
+        }
         let behind = history.is_some()
             && self
                 .snapshot

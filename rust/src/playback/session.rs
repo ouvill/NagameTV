@@ -118,6 +118,25 @@ impl Session {
             Input::Idle => None,
         }
     }
+    pub fn configure_timeshift(&mut self, policy: super::input::Policy) -> Result<()> {
+        match &mut self.input {
+            Input::Active {
+                source,
+                controller,
+                projection: Projection::Live(_),
+            } => {
+                if let Some(change) = source.reconfigure(policy)? {
+                    controller.retention_changed(change);
+                }
+            }
+            Input::Idle
+            | Input::Active {
+                projection: Projection::Recording,
+                ..
+            } => {}
+        }
+        Ok(())
+    }
     pub fn live_timeline(&mut self) -> Option<super::live_timeline::Snapshot> {
         match &mut self.input {
             Input::Active {

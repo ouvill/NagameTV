@@ -105,23 +105,17 @@ impl Default for State {
     }
 }
 impl State {
-    pub(super) fn reconfigured_live(&self, retention: Policy) -> Option<Attempt> {
-        let live = match self {
+    pub(super) fn reconfigured_live(mut self, retention: Policy) -> Self {
+        match &mut self {
             Self::Playing(live, _)
             | Self::Connecting(Attempt::Live(live))
-            | Self::StopFailed(Attempt::Live(live)) => live,
+            | Self::StopFailed(Attempt::Live(live)) => live.retention = retention,
             Self::Stopped(_)
             | Self::Recording(_, _)
             | Self::Connecting(Attempt::File(_))
-            | Self::StopFailed(Attempt::File(_)) => return None,
-        };
-        Some(Attempt::Live(LiveAttempt {
-            service: live.service,
-            name: live.name.clone(),
-            broadcast: live.broadcast,
-            retry: Retry::Available,
-            retention,
-        }))
+            | Self::StopFailed(Attempt::File(_)) => {}
+        }
+        self
     }
 
     pub(super) fn connecting(&self) -> bool {
