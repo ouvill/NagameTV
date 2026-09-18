@@ -155,7 +155,11 @@ retains pause, return-to-live resumes playback, and stop releases the session.
 The startup suite also includes these cases. Tests isolate XDG cache as well as
 settings; they do not connect to a real tuner. Rust memory-sink tests independently
 check raw SI at the playhead, TS/M2TS/204-byte framing, both store contracts,
-stale disk-session cleanup, sequential discontinuities and paused boundary seeks.
+anonymous file lifetime (including a subprocess killed with SIGKILL), disk-block
+reclamation and slot reuse, cleanup of legacy disk sessions without deleting live
+owners, sequential discontinuities and paused boundary seeks. The product test
+observes the anonymous file descriptor during playback and its release after stop;
+an empty directory alone is not treated as proof of resource release.
 
 `bash scripts/test-startup.sh recording-probe PATH` accepts a longer real broadcast
 recording. It checks output progress through 28 seconds (six seconds without new

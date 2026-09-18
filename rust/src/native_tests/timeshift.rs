@@ -309,19 +309,27 @@ pub(super) fn run(
             engine,
             &format!("{OBSERVER}.previousSession = JSON.parse(player.live_timeline).session; true")
         )?);
-        assert!(evaluate(
-            engine,
-            "player.stop(); player.live_timeline === 'null' && !player.timeshift && !player.media_active && player.timeshift_bytes_per_second === 0"
-        )?);
-        if backend == "filesystem" {
+        let disk_cache = if backend == "filesystem" {
             let cache = std::path::PathBuf::from(
                 std::env::var_os("XDG_CACHE_HOME").ok_or("isolated cache")?,
             )
             .join("nagametv/timeshift");
+            assert_eq!(
+                anonymous_history_files(&cache)?.len(),
+                1,
+                "filesystem history must own exactly one anonymous file"
+            );
+            Some(cache)
+        } else {
+            None
+        };
+        assert!(evaluate(
+            engine,
+            "player.stop(); player.live_timeline === 'null' && !player.timeshift && !player.media_active && player.timeshift_bytes_per_second === 0"
+        )?);
+        if let Some(cache) = disk_cache {
             let deadline = std::time::Instant::now() + NETWORK_TIMEOUT;
-            while std::fs::read_dir(&cache)?
-                .any(|entry| entry.map_or(true, |entry| entry.file_name() != "registry.lock"))
-            {
+            while !anonymous_history_files(&cache)?.is_empty() {
                 assert!(
                     std::time::Instant::now() < deadline,
                     "stopped appsrc retained disk files"
@@ -648,4 +656,39 @@ fn observe_playback(
         "video must advance after recovery"
     );
     Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn anonymous_history_files(cache: &std::path::Path) -> std::io::Result<Vec<std::path::PathBuf>> {
+    use std::os::unix::fs::MetadataExt;
+    let mut files = Vec::new();
+    for entry in std::fs::read_dir("/proc/self/fd")? {
+        let path = entry?.path();
+        match std::fs::read_link(&path) {
+            Ok(target) if target.starts_with(cache) => {
+                let metadata = match std::fs::metadata(&path) {
+                    Ok(metadata) => metadata,
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+                    Err(error) => return Err(error),
+                };
+                assert_eq!(
+                    metadata.nlink(),
+                    0,
+                    "timeshift data must have no directory entry"
+                );
+                files.push(path);
+            }
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(files)
+}
+#[cfg(not(target_os = "linux"))]
+fn anonymous_history_files(_cache: &std::path::Path) -> std::io::Result<Vec<std::path::PathBuf>> {
+    Err(std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "anonymous TS descriptor checks require Linux procfs",
+    ))
 }

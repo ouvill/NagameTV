@@ -1,13 +1,8 @@
 //! Bounded raw TS retention. Logical offsets never refer to reused physical bytes.
 use super::index::Index;
-use std::{
-    collections::VecDeque,
-    fs::File,
-    io::{Read, Seek, SeekFrom, Write},
-    time::Duration,
-};
+use std::{collections::VecDeque, time::Duration};
 
-const SEGMENT_BYTES: usize = 1024 * 1024;
+pub(super) const SEGMENT_BYTES: usize = 1024 * 1024;
 pub(super) const READ_BYTES: usize = super::TS_PACKET_SIZE * 256;
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -20,11 +15,11 @@ pub enum Retention {
 
 enum Storage {
     Memory,
-    Filesystem(super::filesystem::Directory),
+    Filesystem(super::filesystem::Buffer),
 }
 enum Bytes {
     Memory(Vec<u8>),
-    File(std::path::PathBuf),
+    File,
 }
 struct Segment {
     start: u64,
@@ -96,7 +91,7 @@ impl Store {
         let policy = policy.into();
         let storage = match policy.storage() {
             Retention::Off | Retention::Memory => Storage::Memory,
-            Retention::Filesystem => Storage::Filesystem(super::filesystem::Directory::new()?),
+            Retention::Filesystem => Storage::Filesystem(super::filesystem::Buffer::new()?),
         };
         let index = Index::new(service, programs);
         let history = super::super::live_timeline::History::from_catalog(index.catalog());
@@ -115,12 +110,12 @@ impl Store {
         self.policy
     }
     pub fn prepare(&mut self, policy: super::Policy) -> std::io::Result<Prepared<'_>> {
-        self.prepare_with(policy, super::filesystem::Directory::new)
+        self.prepare_with(policy, super::filesystem::Buffer::new)
     }
     fn prepare_with(
         &mut self,
         policy: super::Policy,
-        directory: impl FnOnce() -> std::io::Result<super::filesystem::Directory>,
+        buffer: impl FnOnce() -> std::io::Result<super::filesystem::Buffer>,
     ) -> std::io::Result<Prepared<'_>> {
         let reset = match (self.policy.storage(), policy.storage()) {
             (Retention::Memory, Retention::Memory)
@@ -137,12 +132,7 @@ impl Store {
                     Storage::Memory,
                     Bytes::Memory(Vec::with_capacity(SEGMENT_BYTES)),
                 ),
-                Retention::Filesystem => {
-                    let directory = directory()?;
-                    let path = directory.path().join(self.end.to_string());
-                    File::options().create_new(true).write(true).open(&path)?;
-                    (Storage::Filesystem(directory), Bytes::File(path))
-                }
+                Retention::Filesystem => (Storage::Filesystem(buffer()?), Bytes::File),
             };
             Some((
                 storage,
@@ -192,11 +182,7 @@ impl Store {
                 }
                 let bytes = match &self.storage {
                     Storage::Memory => Bytes::Memory(Vec::with_capacity(SEGMENT_BYTES)),
-                    Storage::Filesystem(directory) => {
-                        let path = directory.path().join(self.end.to_string());
-                        File::options().create_new(true).write(true).open(&path)?;
-                        Bytes::File(path)
-                    }
+                    Storage::Filesystem(_) => Bytes::File,
                 };
                 self.segments.push_back(Segment {
                     start: self.end,
@@ -212,11 +198,11 @@ impl Store {
             let packets = &remaining[..count];
             match &mut segment.bytes {
                 Bytes::Memory(bytes) => bytes.extend_from_slice(packets),
-                Bytes::File(path) => {
-                    File::options()
-                        .append(true)
-                        .open(path)?
-                        .write_all(packets)?;
+                Bytes::File => {
+                    let Storage::Filesystem(buffer) = &mut self.storage else {
+                        unreachable!("file segment belongs to filesystem storage")
+                    };
+                    buffer.write(segment.start, segment.size, packets)?;
                 }
             }
             for (number, packet) in packets
@@ -241,6 +227,10 @@ impl Store {
             segment.end_ns = self.index.end_ns().unwrap_or_default();
             self.end += count as u64;
             remaining = &remaining[count..];
+            // Reclaim between chunks even when a caller supplies a large batch.
+            if !remaining.is_empty() {
+                self.trim(byte_limit, time_limit)?;
+            }
         }
         self.trim(byte_limit, time_limit)
     }
@@ -259,15 +249,8 @@ impl Store {
                     || first.end_ns < earliest
             })
         {
-            if let Storage::Filesystem(directory) = &self.storage {
-                let path = directory.path().join(
-                    self.segments
-                        .front()
-                        .expect("nonempty store")
-                        .start
-                        .to_string(),
-                );
-                std::fs::remove_file(path)?;
+            if let Storage::Filesystem(buffer) = &mut self.storage {
+                buffer.remove(self.segments.front().expect("nonempty store").start)?;
             }
             self.segments.pop_front();
         }
@@ -324,12 +307,11 @@ impl Store {
         let count = READ_BYTES.min(segment.size - within).min(until_boundary);
         let bytes = match &mut segment.bytes {
             Bytes::Memory(bytes) => bytes[within..within + count].to_vec(),
-            Bytes::File(path) => {
-                let mut file = File::open(path)?;
-                file.seek(SeekFrom::Start(within as u64))?;
-                let mut bytes = vec![0; count];
-                file.read_exact(&mut bytes)?;
-                bytes
+            Bytes::File => {
+                let Storage::Filesystem(buffer) = &mut self.storage else {
+                    unreachable!("file segment belongs to filesystem storage")
+                };
+                buffer.read(segment.start, within, count)?
             }
         };
         Ok(ReadResult::Data {
@@ -355,7 +337,7 @@ mod tests {
             let mut store = Store::new(Policy::new(Retention::Memory, initial), 1, true)?;
             store
                 .prepare_with(Policy::new(storage, initial), || {
-                    super::super::filesystem::Directory::in_root(root.path())
+                    super::super::filesystem::Buffer::in_root(root.path())
                 })?
                 .commit()?;
             let packet = [0; super::super::TS_PACKET_SIZE];
@@ -415,28 +397,26 @@ mod tests {
         let replacement = Policy::new(Retention::Filesystem, Limits::default());
         assert!(
             store
-                .prepare_with(
-                    replacement,
-                    || super::super::filesystem::Directory::in_root(&blocked)
-                )
+                .prepare_with(replacement, || super::super::filesystem::Buffer::in_root(
+                    &blocked
+                ))
                 .is_err()
         );
         let prepared = store.prepare_with(replacement, || {
-            super::super::filesystem::Directory::in_root(root.path())
+            super::super::filesystem::Buffer::in_root(root.path())
         })?;
-        let path = match &prepared.replacement {
-            Some((Storage::Filesystem(directory), _)) => directory.path().to_owned(),
-            _ => unreachable!(),
-        };
         drop(prepared);
-        assert!(!path.exists());
+        assert!(std::fs::read_dir(root.path())?.all(|entry| {
+            let name = entry.unwrap().file_name();
+            name == "registry.lock" || name == "not-a-directory"
+        }));
         assert_eq!(store.policy(), policy);
         assert_eq!(store.end, end);
         assert_eq!(store.index.entries().front().unwrap().time_ns, first);
         assert!(matches!(store.read(0)?, ReadResult::Data { .. }));
         store
             .prepare_with(replacement, || {
-                super::super::filesystem::Directory::in_root(root.path())
+                super::super::filesystem::Buffer::in_root(root.path())
             })?
             .commit()?;
         assert_eq!(store.end, end);
@@ -467,7 +447,7 @@ mod tests {
                 .iter()
                 .map(|segment| match &segment.bytes {
                     Bytes::Memory(bytes) => bytes.capacity(),
-                    Bytes::File(_) => unreachable!(),
+                    Bytes::File => unreachable!(),
                 })
                 .sum();
             assert!(allocated as u64 <= capacity);
@@ -492,16 +472,12 @@ mod tests {
             let mut store = Store::new(Retention::Memory, 1, true)?;
             if backend == Retention::Filesystem {
                 store.storage =
-                    Storage::Filesystem(super::super::filesystem::Directory::in_root(root.path())?);
+                    Storage::Filesystem(super::super::filesystem::Buffer::in_root(root.path())?);
             }
             store.policy = super::super::Policy::new(
                 backend,
                 super::super::Limits::new(CAPACITY_MIB, CAPACITY_MIB, 1).unwrap(),
             );
-            let directory = match &store.storage {
-                Storage::Filesystem(path) => Some(path.path().to_owned()),
-                Storage::Memory => None,
-            };
             assert!(matches!(store.read(0)?, ReadResult::Awaiting));
             for _ in 0..(TEST_SEGMENTS * SEGMENT_BYTES).div_ceil(block.len()) {
                 store.append(&block)?;
@@ -517,7 +493,10 @@ mod tests {
             store.status = Status::Failed("disk full".into());
             assert!(store.read(store.end).is_err());
             drop(store);
-            assert!(directory.is_none_or(|directory| !directory.exists()));
+            assert!(
+                std::fs::read_dir(root.path())?
+                    .all(|entry| entry.unwrap().file_name() == "registry.lock")
+            );
         }
         Ok(())
     }
@@ -550,7 +529,7 @@ mod reconnect_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, target_os = "linux", target_env = "gnu"))]
 mod failure_tests {
     use super::*;
     #[test]
@@ -558,17 +537,15 @@ mod failure_tests {
         let root = tempfile::tempdir()?;
         let mut store = Store::new(Retention::Memory, 1, true)?;
         store.storage =
-            Storage::Filesystem(super::super::filesystem::Directory::in_root(root.path())?);
+            Storage::Filesystem(super::super::filesystem::Buffer::in_root(root.path())?);
         let ts = include_bytes!("../../../../tests/fixtures/recording.ts");
         store.append(ts)?;
         let end = store.end;
         let duration = store.index.end_ns();
-        let Bytes::File(path) = &store.segments.back().unwrap().bytes else {
+        let Storage::Filesystem(buffer) = &mut store.storage else {
             unreachable!()
         };
-        // A real filesystem error, without a device or a replaced production IO implementation.
-        std::fs::remove_file(path)?;
-        std::fs::create_dir(path)?;
+        buffer.deny_writes_for_test()?;
         assert!(store.append(ts).is_err());
         assert_eq!(store.end, end);
         assert_eq!(store.index.end_ns(), duration);
