@@ -22,9 +22,11 @@ impl ffi::Player {
             .as_str()
             .into()
     }
-    // Avoid simultaneous list + moving overlay: JP7080382 / JP7277651 / JP7153786,
-    // estimated expiry 2027-03-02. Registry status unverified; no automatic
-    // date-based reactivation. These compile-time overrides are evaluation only.
+    // Normal builds omit the separate received-comment list, even with danmaku
+    // off: JP7080382 / JP7277651 / JP7153786 / JP7852687. Estimated expiry
+    // 2027-03-02; registry status unverified, no date-based reactivation.
+    // This restores the display only for local evaluation; build.rs also gates
+    // its QML resource. Internal history storage alone is not a list display.
     pub fn evaluation_comment_list(&self) -> bool {
         cfg!(feature = "evaluation-comment-list")
     }

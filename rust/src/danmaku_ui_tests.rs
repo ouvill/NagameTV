@@ -12,11 +12,27 @@ mod ffi {
         fn run_qml_test_args(arguments: &[String]) -> i32;
     }
     unsafe extern "RustQt" {
+        // Inspect compile-time features without constructing Player, whose
+        // startup plan and persistent resources belong to the native tests.
+        #[qobject]
+        #[qml_element]
+        #[qproperty(bool, evaluation_comment_list, READ = evaluation_comment_list, CONSTANT)]
+        type TestBuildConfiguration = super::BuildConfiguration;
+        fn evaluation_comment_list(self: &TestBuildConfiguration) -> bool;
+
         #[qobject]
         #[qml_element]
         type TestInputMethod = super::InputMethod;
         #[qinvokable]
         fn compose(self: &TestInputMethod, preedit: &QString, commit: &QString) -> bool;
+    }
+}
+
+#[derive(Default)]
+pub struct BuildConfiguration;
+impl ffi::TestBuildConfiguration {
+    pub fn evaluation_comment_list(&self) -> bool {
+        cfg!(feature = "evaluation-comment-list")
     }
 }
 

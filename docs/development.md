@@ -117,6 +117,7 @@ bash scripts/test-startup.sh
 
 製品のQMLコンポーネントは`rust/qml/`直下に置きます。`rust/build.rs`がこのディレクトリーの
 `.qml`ファイルを列挙して登録するため、ファイル一覧の追記は不要です。
+例外として`CommentList.qml`は評価用featureでのみ登録し、通常版のリソースには含めません。
 `rust/qml/tests/`のテスト用コンポーネントは製品モジュールへ含めません。
 
 通常ログは標準エラーへ出力し、既定は`info`以上です。

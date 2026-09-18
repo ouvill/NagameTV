@@ -22,7 +22,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut qml_files = std::fs::read_dir("qml")?
         .map(|entry| entry.map(|entry| entry.path()))
         .collect::<Result<Vec<_>, _>>()?;
-    qml_files.retain(|path| path.extension().is_some_and(|extension| extension == "qml"));
+    qml_files.retain(|path| {
+        path.extension().is_some_and(|extension| extension == "qml")
+            // Remove the separate received-comment display from normal builds:
+            // JP7080382 / JP7277651 / JP7153786 / JP7852687. Estimated expiry
+            // 2027-03-02; registry status unverified, never auto-enable by date.
+            // Hiding a compiled list at runtime would retain the display feature.
+            && (cfg!(feature = "evaluation-comment-list")
+                || path.file_name().is_none_or(|name| name != "CommentList.qml"))
+    });
     qml_files.sort();
     let mut module = QmlModule::new("MinimalViewer");
     for path in &qml_files {

@@ -216,6 +216,12 @@ fn check_danmaku_layout(
         engine,
         "sidebar.item !== null && sidebar.item.showCommentControls === !player.evaluation_comment_list",
     )?;
+    // The distribution UI must keep controls when comments are turned off too;
+    // exercise the real Player binding, not only a standalone sidebar fixture.
+    assert!(evaluate(
+        engine,
+        "player.configure_danmaku(false, player.comment_font_size, player.comment_opacity, player.comment_speed); sidebar.item.showCommentControls === !player.evaluation_comment_list",
+    )?);
     evaluate(
         engine,
         "player.configure_comment_presentation('scroll','sequential'); danmaku.active = false; commentBounds.aspectRatio = Qt.binding(() => player.video_aspect_ratio); true",

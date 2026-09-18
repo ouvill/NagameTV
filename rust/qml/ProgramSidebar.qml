@@ -25,10 +25,13 @@ Rectangle {
     signal presentationRequested(string displayMode, string placementMode)
     signal adjusted(real textSize, real textOpacity, real speed)
     signal shadowRequested(bool enabled)
-    // JP7080382 / JP7277651 / JP7153786: avoid a simultaneous comment list and moving
-    // overlay. Estimated expiry 2027-03-02; registry status unverified. The
-    // compile-time evaluation override is provided by Player, never a setting.
-    readonly property bool showCommentControls: danmakuEnabled && !evaluationCommentList
+    // JP7080382 / JP7277651 / JP7153786 require a separate list; JP7852687
+    // requires a received-comment field to the video's right. Normal builds
+    // omit CommentList.qml and show controls even with danmaku off, removing
+    // that display feature rather than relying on simultaneous-use wording.
+    // Estimated expiry 2027-03-02; registry status unverified, no auto-reactivation.
+    // Player supplies the compile-time evaluation override, never a setting.
+    readonly property bool showCommentControls: !evaluationCommentList
     signal danmakuRequested(bool enabled)
     property var commentModel: null
     property string commentProgramTitle: ""
@@ -245,14 +248,28 @@ Rectangle {
             }
         }
         Loader {
+            id: commentList
             Layout.fillWidth: true
             Layout.fillHeight: true
             objectName: "sidebarCommentList"
-            active: root.page === ProgramSidebar.Comments && !root.showCommentControls
+            active: root.page === ProgramSidebar.Comments && root.evaluationCommentList
             visible: active
-            sourceComponent: CommentList {
-                commentModel: root.commentModel
-                status: root.commentStatus
+            // Load only the evaluation resource. A static CommentList reference
+            // would require registering it in normal builds as well.
+            function configureSource() {
+                if (!root.evaluationCommentList) {
+                    source = "";
+                    return;
+                }
+                setSource(Qt.resolvedUrl("CommentList.qml"), {
+                    commentModel: Qt.binding(() => root.commentModel),
+                    status: Qt.binding(() => root.commentStatus)
+                });
+            }
+            Component.onCompleted: configureSource()
+            Connections {
+                target: root
+                function onEvaluationCommentListChanged() { commentList.configureSource(); }
             }
         }
         ScrollView {
@@ -265,10 +282,18 @@ Rectangle {
             clip: true
             ColumnLayout {
                 width: commentControls.availableWidth
-                enabled: root.commentsEnabled
                 spacing: 18
+                Label {
+                    objectName: "sidebarCommentStatus"
+                    Layout.fillWidth: true
+                    text: qsTranslate("Settings", "Live comments: %1").arg(root.commentStatus)
+                    textFormat: Text.PlainText
+                    wrapMode: Text.Wrap
+                    color: "#b6bab6"
+                }
                 CommentPresentation {
                     Layout.fillWidth: true
+                    enabled: root.commentsEnabled
                     displayMode: root.displayMode
                     placementMode: root.placementMode
                     evaluationCollision: root.evaluationCollision
@@ -276,6 +301,7 @@ Rectangle {
                 }
                 DanmakuAdjustments {
                     Layout.fillWidth: true
+                    enabled: root.commentsEnabled
                     textSize: root.textSize
                     textOpacity: root.textOpacity
                     speed: root.speed
@@ -283,6 +309,7 @@ Rectangle {
                 }
                 RowLayout {
                     Layout.fillWidth: true
+                    enabled: root.commentsEnabled
                     Label { text: qsTranslate("Settings", "Drop shadow"); color: "#f4f5f3"; Layout.fillWidth: true }
                     ToggleSwitch {
                         text: qsTranslate("Settings", "Drop shadow")
