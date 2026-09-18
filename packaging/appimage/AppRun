@@ -9,6 +9,9 @@ export QT_PLUGIN_PATH="$app_dir/usr/plugins"
 export QT_QPA_PLATFORM_PLUGIN_PATH="$QT_PLUGIN_PATH/platforms"
 export QML_IMPORT_PATH="$app_dir/usr/qml"
 export QML2_IMPORT_PATH="$QML_IMPORT_PATH"
+# Use the TLS backend built against the bundled GLib, including on systems
+# without a native GStreamer/libsoup installation.
+export GIO_MODULE_DIR="$app_dir/usr/lib/gio/modules"
 # Match the supported Flatpak display backend; Wayland sessions need XWayland.
 export QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-xcb}"
 

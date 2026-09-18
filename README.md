@@ -35,7 +35,8 @@ flatpak run io.github.ouvill.nagametv
 インストール後はアプリ一覧からも起動できます。初回は必要な実行環境も自動でダウンロードします。
 パッケージの作成方法と、更新・削除の手順は[Flatpakの手順](docs/flatpak.md)を参照してください。
 
-AppImage版は、ファイルに実行権限を付けて起動します。
+AppImage版はUbuntu 24.04（glibc 2.39）をビルド基準とします。
+ファイルに実行権限を付けて起動します。
 
 ```sh
 chmod +x ./nagametv-0.1.0-x86_64.AppImage

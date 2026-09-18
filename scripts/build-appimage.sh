@@ -8,23 +8,51 @@ output_dir="$project_dir/build/appimage"
 build_dir=${APPIMAGE_BUILD_DIR:-$project_dir/build}
 tools_dir="$output_dir/tools"
 app_id=io.github.ouvill.nagametv
+max_glibc=2.39
 
 usage() {
-  echo "Usage: scripts/build-appimage.sh"
-  echo "Environment: APPIMAGE_BUILD_DIR (default: build), APPIMAGE_BUILD_JOBS (default: 8), QMAKE (default: qmake6)"
+  echo "Usage: scripts/build-appimage.sh [--native]"
+  echo "Default: build in the Ubuntu 24.04 Docker environment (no hardware access)."
+  echo "--native: use an existing compatible environment; requires glibc <= $max_glibc."
+  echo "Environment: APPIMAGE_BUILD_JOBS (default: 8)"
+  echo "Native only: APPIMAGE_BUILD_DIR (default: build), QMAKE (default: qmake6)"
 }
+build_mode=container
 if [[ $# -gt 0 ]]; then
   if [[ $# == 1 && $1 == --help ]]; then usage; exit 0; fi
-  usage >&2
-  exit 2
+  if [[ $# == 1 && $1 == --native ]]; then
+    build_mode=native
+  else
+    usage >&2
+    exit 2
+  fi
 fi
 fail() { echo "AppImage: $*" >&2; exit 1; }
 [[ $(uname -s) == Linux && $(uname -m) == x86_64 ]] || fail "Only native Linux x86_64 builds are supported."
 build_jobs=${APPIMAGE_BUILD_JOBS:-8}
 [[ $build_jobs =~ ^[1-9][0-9]*$ ]] || fail "APPIMAGE_BUILD_JOBS must be a positive integer."
-for tool in cmake cargo pkg-config curl python3 sha256sum flock desktop-file-validate; do
+if [[ $build_mode == container ]]; then
+  command -v docker >/dev/null || fail "Docker is required for the Ubuntu 24.04 build (see docs/appimage.md)."
+  docker info >/dev/null || fail "Docker daemon is unavailable."
+  [[ -z ${APPIMAGE_BUILD_DIR:-} && -z ${QMAKE:-} ]] || fail "APPIMAGE_BUILD_DIR and QMAKE are native-only options; use --native in a compatible environment."
+  image_name=nagametv-appimage-ubuntu24:local
+  docker build --tag "$image_name" "$project_dir/packaging/appimage"
+  # Keep all compiler/Cargo caches separate from the Workshop's newer ABI.
+  # No display sockets, audio sockets or hardware devices are passed through.
+  exec docker run --rm --user "$(id -u):$(id -g)" \
+    --mount "type=bind,src=$project_dir,dst=/project" \
+    --env APPIMAGE_BUILD_DIR=/project/build/appimage/ubuntu24/native \
+    --env CARGO_HOME=/project/build/appimage/ubuntu24/cargo-home \
+    --env APPIMAGE_BUILD_JOBS="$build_jobs" \
+    "$image_name" bash scripts/build-appimage.sh --native
+fi
+for tool in cmake cargo pkg-config curl python3 sha256sum flock desktop-file-validate readelf getconf file; do
   command -v "$tool" >/dev/null || fail "Required tool not found: $tool"
 done
+host_glibc=$(getconf GNU_LIBC_VERSION)
+python3 -c 'import sys; sys.exit(tuple(map(int, sys.argv[1].split("."))) > tuple(map(int, sys.argv[2].split("."))))' \
+  "${host_glibc#glibc }" "$max_glibc" \
+  || fail "This environment uses $host_glibc; Ubuntu 24.04 requires glibc <= $max_glibc. Run without --native to use the isolated build."
 export QMAKE=${QMAKE:-qmake6}
 command -v "$QMAKE" >/dev/null || fail "Qt 6 qmake not found: $QMAKE"
 [[ $("$QMAKE" -query QT_VERSION) == 6.* ]] || fail "QMAKE must select Qt 6."
@@ -38,6 +66,14 @@ done
 gst_plugins_dir=$(pkg-config --variable=pluginsdir gstreamer-1.0)
 gst_scanner="$(pkg-config --variable=pluginscannerdir gstreamer-1.0)/gst-plugin-scanner"
 [[ -x $gst_scanner ]] || fail "GStreamer plugin scanner not found: $gst_scanner"
+# GStreamer 1.24 dlopens libsoup, and GIO dlopens its TLS backend. Neither
+# dependency is visible to linuxdeploy's normal ELF dependency traversal.
+pkg-config --exists libsoup-3.0 || fail "libsoup-3.0 development metadata is required (Ubuntu: libsoup-3.0-dev)."
+soup_library="$(pkg-config --variable=libdir libsoup-3.0)/libsoup-3.0.so.0"
+gio_tls_module="$(pkg-config --variable=giomoduledir gio-2.0)/libgiognutls.so"
+for library in "$soup_library" "$gio_tls_module"; do
+  [[ -f $library ]] || fail "Required HTTP/TLS library not found: $library (see docs/appimage.md)"
+done
 gst_plugins=()
 while IFS= read -r plugin; do
   [[ -z $plugin || $plugin == \#* ]] && continue
@@ -92,6 +128,7 @@ DESTDIR="$app_dir" cmake --install "$build_dir" --prefix /usr
 install -d "$app_dir/usr/lib/gstreamer-1.0" "$app_dir/usr/libexec/gstreamer-1.0"
 install -m 644 "${gst_plugins[@]}" "$app_dir/usr/lib/gstreamer-1.0/"
 install -m 755 "$gst_scanner" "$app_dir/usr/libexec/gstreamer-1.0/"
+install -Dm644 "$gio_tls_module" "$app_dir/usr/lib/gio/modules/libgiognutls.so"
 
 # Match rust/build.rs: only production QML files, excluding QtTest fixtures.
 mkdir "$stage_dir/qml"
@@ -102,6 +139,8 @@ export APPIMAGE_EXTRACT_AND_RUN=1
 export PATH="$tools_dir:$PATH"
 
 "$tools_dir/linuxdeploy-x86_64.AppImage" --appdir "$app_dir" \
+  --library "$soup_library" \
+  --deploy-deps-only "$app_dir/usr/lib/gio/modules" \
   --deploy-deps-only "$app_dir/usr/lib/gstreamer-1.0" \
   --deploy-deps-only "$app_dir/usr/libexec/gstreamer-1.0" \
   --desktop-file "$project_dir/packaging/linux/$app_id.desktop" \
@@ -120,6 +159,9 @@ export LDAI_RUNTIME_FILE="$tools_dir/runtime-x86_64"
 export LDAI_OUTPUT="$stage_dir/$bundle_name"
 "$tools_dir/linuxdeploy-x86_64.AppImage" --appdir "$app_dir" --output appimage
 
+# The output pass can collect additional dependencies. Validate its final
+# AppDir before publishing the image or replacing the previous successful one.
+python3 "$project_dir/scripts/check-appimage-glibc.py" "$app_dir" --max-glibc "$max_glibc"
 mv -- "$stage_dir/$bundle_name" "$output_dir/$bundle_name"
 (cd "$output_dir" && sha256sum "$bundle_name" > "$bundle_name.sha256")
 echo "Package: $output_dir/$bundle_name"

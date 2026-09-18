@@ -8,8 +8,9 @@
 ## Canonical Workshopの開発環境
 
 [`.workshop/dev.yaml`](../.workshop/dev.yaml)はUbuntu 26.04を使用します。
-RustはWorkshopのRust SDK、ネイティブ版・AppImage・Flatpakに必要なUbuntuパッケージは
+ネイティブ版のRustはWorkshopのRust SDK、開発・パッケージ用のUbuntuパッケージは
 [プロジェクトSDKのsetup-base](../.workshop/nagametv/hooks/setup-base)で導入します。
+配布用AppImageは別のUbuntu 24.04 Docker環境を使います。
 依存パッケージを追加するときはこの一覧と[check-health](../.workshop/nagametv/hooks/check-health)を更新します。
 check-healthはコマンド・開発ライブラリー・QML・GStreamerプラグインファイルの存在を確認し、
 機器へアクセスせずに実行できます。画面表示・再生や機器の動作確認は別途行います。
@@ -34,7 +35,8 @@ workshop refresh
 
 ## AppImageパッケージを作る
 
-ネイティブ版の開発環境で`./scripts/build-appimage.sh`を実行します。
+Dockerが利用できる環境で`./scripts/build-appimage.sh`を実行します。
+Ubuntu 24.04専用のビルド環境を使い、Workshopの新しいglibcを同梱ライブラリーへ持ち込みません。
 Linux x86_64向けのAppImageとSHA-256を`build/appimage/`へ出力します。
 必要な追加ツールとOSの互換性条件は[AppImageのビルド手順](appimage.md)を参照してください。
 
