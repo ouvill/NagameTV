@@ -1,7 +1,20 @@
 # ながめTV / NagameTV
 
-Mirakurunサーバーのテレビ放送を視聴するLinux向けアプリです。
-番組表を見ながらチャンネルを選び、字幕や実況コメントと一緒にテレビを楽しめます。
+Mirakurunサーバーのテレビ放送とローカルのTS録画を再生するLinux向けアプリです。
+7日分の番組表、字幕表示、NX-Jikkyoの実況コメントに対応しています。
+
+![ながめTVの視聴画面。番組情報と再生操作を映像に重ねて表示](docs/media/live.png)
+
+[スクリーンショット一覧](docs/media/README.md)
+
+撮影には架空の局・番組情報を使用しています。
+映像: [Big Buck Bunny](https://peach.blender.org/about/),
+(c) copyright 2008, Blender Foundation / www.bigbuckbunny.org —
+[CC BY 3.0](https://creativecommons.org/licenses/by/3.0/)。[素材とクレジット](docs/media/README.md#素材とクレジット)
+
+| 番組を見ながらチャンネル選択 | 今日から7日分の番組表 |
+| --- | --- |
+| ![チャンネル一覧](docs/media/channels.png) | ![番組表](docs/media/guide.png) |
 
 ## できること
 
