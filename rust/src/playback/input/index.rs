@@ -79,6 +79,7 @@ impl Anchor {
                                 + program.description.capacity()
                                 + program.extended.capacity()
                                 + program.genres.capacity() * std::mem::size_of::<(u8, u8)>()
+                                + program.audio_heap_bytes()
                         })
                         .sum::<usize>()
             })

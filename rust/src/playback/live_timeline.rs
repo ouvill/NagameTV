@@ -87,6 +87,7 @@ impl Record {
             + self.program.description.len()
             + self.program.extended.len()
             + self.program.genres.len() * std::mem::size_of::<(u8, u8)>()
+            + self.program.audio_heap_bytes()
             + self.station.len()
             + self.provider.len()
     }

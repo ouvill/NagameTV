@@ -36,6 +36,9 @@ Playback本体は字幕デコーダーやEPGスナップショットを所有し
 投影はplayer/epg.rs、設定保存はplayer/preferences.rsに置く。
 音声選択はplayback/audio_streams、PMT照合はaudio_components、主副の変換はaudio_routing。
 PMTメッセージは通常のGStreamer bus pollで処理し、字幕の有効化には依存しない。
+音声記述子は共通TS入力のEITから取得し、Sessionが再生位置の番組カタログを参照する。
+音声判定にMirakurunの現在番組やPC時刻を使わず、TS番組解析は音声用に常時有効にする。
+EPG設定による番組通信・番組表示の無効化は維持する。[音声の現在の情報源](audio-selection.md)
 TS/PAT/PMTの構文とPSI再構成・PAT集約は`transport`で録画検証と字幕機能が共有する。
 字幕用フレーミング・PES解析・字幕ES選択は字幕モジュールにある。
 READYで停止してplaybinを再利用する方針を保持するが、パイプライン全体が最小版と同一ではない。

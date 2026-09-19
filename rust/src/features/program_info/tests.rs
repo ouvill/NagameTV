@@ -442,15 +442,18 @@ fn audio_metadata_tracks_program_boundaries_and_disable_without_guide_payloads()
         service_id: 1,
     });
     let role = |feature: &ProgramInfo, now| {
-        crate::audio::matching(feature.audio_descriptors(service, now), Some(16))
-            .map(crate::audio::Descriptor::role)
+        crate::audio::matching(
+            feature.current(service, now).map_or(&[], |p| &p.audios),
+            Some(16),
+        )
+        .map(crate::audio::Descriptor::role)
     };
     assert_eq!(role(&feature, 99), None);
     assert_eq!(role(&feature, 199), Some(crate::audio::Role::Main));
     assert_eq!(role(&feature, 200), Some(crate::audio::Role::Sub));
     assert_eq!(role(&feature, 300), None);
-    assert!(feature.audio_descriptors(None, 100).is_empty());
-    assert!(feature.audio_descriptors(key(11, 1), 100).is_empty());
+    assert!(feature.current(None, 100).is_none());
+    assert!(feature.current(key(11, 1), 100).is_none());
     let guide = feature.view(service, guide::DayWindow::new(0.0, 86_400_000.0)?)?;
     assert!(!guide.contains("audios"));
     assert!(!guide.contains("langs"));

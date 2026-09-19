@@ -227,9 +227,10 @@ mod tests {
         )?;
         let mut program = Program {
             key: audio::ProgramKey {
-                id: 1,
-                start: 100,
-                duration: 100,
+                source: 1,
+                event: 1,
+                start: Some(100),
+                transport_stream: 1,
                 service: BroadcastService {
                     network_id: 10,
                     service_id: 1,
@@ -251,7 +252,7 @@ mod tests {
                 .all(|choice| choice.enabled && !choice.selected)
         );
         assert_ne!(options[0].id, options[1].id);
-        program.key.start = 200;
+        program.key.start = Some(200);
         assert_ne!(
             options[0].id,
             choices(vec![track(false)], Some(program), format)?[0].id
@@ -276,9 +277,10 @@ mod tests {
         )?;
         let program = Program {
             key: audio::ProgramKey {
-                id: 1,
-                start: 100,
-                duration: 100,
+                source: 1,
+                event: 1,
+                start: Some(100),
+                transport_stream: 1,
                 service: BroadcastService {
                     network_id: 10,
                     service_id: 1,
@@ -300,7 +302,7 @@ mod tests {
         assert!(!intent.matches(None, None, format));
         assert!(!intent.matches(Some(program), None, format));
         let mut changed = program;
-        changed.key.start += 1;
+        changed.key.start = Some(101);
         assert!(!intent.matches(Some(changed), descriptors.first(), format));
         let replacement: Vec<audio::Descriptor> = serde_json::from_str(
             r#"[

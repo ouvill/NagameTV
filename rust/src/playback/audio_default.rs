@@ -95,9 +95,10 @@ mod tests {
         )?;
         let mut program = Program {
             key: audio::ProgramKey {
-                id: 1,
-                start: 100,
-                duration: 100,
+                source: 1,
+                event: 1,
+                start: Some(100),
+                transport_stream: 1,
                 service: BroadcastService {
                     network_id: 4,
                     service_id: 101,
@@ -140,7 +141,7 @@ mod tests {
         }
         policy.selection = Selection::Automatic(options[0].id.clone());
         assert!(policy.candidate(&options).is_none());
-        program.key.start += 100;
+        program.key.start = Some(200);
         let next = choices(tracks(), Some(program), format)?;
         assert_eq!(
             policy.candidate(&next).map(|c| c.role),

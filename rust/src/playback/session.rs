@@ -106,6 +106,28 @@ impl Session {
             Input::Idle => None,
         }
     }
+    /// Audio follows the same sampled output position as transport, including pause.
+    /// A pending seek has no confirmed destination to which routing can be applied.
+    pub(crate) fn audio_metadata(&self) -> Option<crate::audio::Metadata> {
+        match &self.input {
+            Input::Active {
+                source, controller, ..
+            } => match controller.phase() {
+                super::timeline::Phase::Seeking(_) => None,
+                super::timeline::Phase::Playing
+                | super::timeline::Phase::Paused
+                | super::timeline::Phase::Ended => {
+                    let position = controller.snapshot().position?;
+                    let view = source.metadata(position.nseconds());
+                    Some(crate::audio::Metadata::from_ts(
+                        source.identity(),
+                        view.program?,
+                    ))
+                }
+            },
+            Input::Idle => None,
+        }
+    }
     pub fn timeline(&self) -> Option<(super::timeline::Phase, super::timeline::Snapshot)> {
         match &self.input {
             Input::Active { controller, .. } => Some((controller.phase(), controller.snapshot())),

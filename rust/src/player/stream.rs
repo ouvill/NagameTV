@@ -270,7 +270,9 @@ impl ffi::Player {
             return true;
         }
         let server = self.server().to_string();
-        let programs_enabled = *self.epg_enabled() || self.rust().comments_allowed;
+        // Audio selection always needs position-scoped EIT, independently of
+        // Mirakurun EPG and comment settings. Their UI/network gates stay separate.
+        let programs_enabled = true;
         let subtitles_enabled = self.rust().subtitles_enabled;
         // Keep stop failure distinct: the previous generation is still owned.
         // A successful stop grants an exclusive capability for the next start.

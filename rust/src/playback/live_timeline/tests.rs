@@ -21,6 +21,7 @@ fn program(id: u16, start: i64) -> Program {
         description: String::new(),
         extended: String::new(),
         genres: Vec::new(),
+        audios: Box::default(),
     }
 }
 fn observe(history: &mut History, epoch: u64, position: i64, utc: i64, event: Option<Program>) {

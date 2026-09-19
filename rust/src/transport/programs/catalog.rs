@@ -566,7 +566,11 @@ impl Catalog {
                         }
                         corrected = candidate;
                     }
-                    view.program = Some(corrected.clone());
+                    let mut result = corrected.clone();
+                    // Text corrections can enrich an earlier interval. Audio format
+                    // changes belong to their observed position, even within one event.
+                    result.audios.clone_from(&program.audios);
+                    view.program = Some(result);
                     view.status = Status::Available;
                 }
                 Present::Empty => view.status = Status::Unavailable,
@@ -590,6 +594,7 @@ fn information_bytes(info: &Information) -> usize {
                     + program.description.len()
                     + program.extended.len()
                     + program.genres.len() * std::mem::size_of::<(u8, u8)>()
+                    + program.audio_heap_bytes()
             })
             .sum::<usize>()
 }

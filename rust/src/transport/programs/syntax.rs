@@ -17,6 +17,7 @@ const SERVICE_DESCRIPTOR_TAG: u8 = ffi::GST_MTS_DESC_DVB_SERVICE as u8;
 const SHORT_EVENT_DESCRIPTOR_TAG: u8 = ffi::GST_MTS_DESC_DVB_SHORT_EVENT as u8;
 const EXTENDED_EVENT_DESCRIPTOR_TAG: u8 = ffi::GST_MTS_DESC_DVB_EXTENDED_EVENT as u8;
 const CONTENT_DESCRIPTOR_TAG: u8 = ffi::GST_MTS_DESC_DVB_CONTENT as u8;
+const AUDIO_COMPONENT_DESCRIPTOR_TAG: u8 = ffi::GST_MTS_DESC_ISDB_AUDIO_COMPONENT as u8;
 const CONTENT_ENTRY_SIZE: usize = 2;
 const JAPANESE_LANGUAGE_CODE: &[u8] = b"jpn";
 
@@ -186,10 +187,15 @@ pub(super) fn event(data: &[u8], transport: u16, service: u16) -> Option<Event> 
         description: String::new(),
         extended: String::new(),
         genres: Vec::new(),
+        audios: Box::default(),
     };
     let mut fragments = BTreeMap::new();
+    let mut audios = Vec::new();
     for (tag, body) in descriptors(&body[12..])? {
         match tag {
+            AUDIO_COMPONENT_DESCRIPTOR_TAG => {
+                audios.push(crate::audio::Descriptor::from_arib(body)?);
+            }
             SHORT_EVENT_DESCRIPTOR_TAG if body.starts_with(JAPANESE_LANGUAGE_CODE) => {
                 let mut body = &body[3..];
                 program.name = string(&mut body)?;
@@ -244,6 +250,7 @@ pub(super) fn event(data: &[u8], transport: u16, service: u16) -> Option<Event> 
             .collect::<Vec<_>>()
             .join("\n");
     }
+    program.audios = audios.into_boxed_slice();
     event.program = Some(program);
     Some(event)
 }

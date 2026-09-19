@@ -13,6 +13,7 @@ fn event(id: u16) -> Program {
         description: String::new(),
         extended: String::new(),
         genres: vec![],
+        audios: Box::default(),
     }
 }
 fn observe(

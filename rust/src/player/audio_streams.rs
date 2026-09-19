@@ -13,28 +13,19 @@ fn error_source(error: crate::playback::audio_streams::Error) -> &'static str {
 }
 
 impl super::ffi::Player {
-    fn audio_program(&self) -> Option<crate::audio::Program<'_>> {
-        let state = self.rust();
-        if !state.epg_enabled {
-            return None;
-        }
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .ok()
-            .and_then(|time| u64::try_from(time.as_millis()).ok())?;
-        let entry = usize::try_from(state.selected)
-            .ok()
-            .and_then(|index| state.entries.get(index))
-            .filter(|entry| state.stream_state.active_service() == Some(entry.id))?;
-        state.epg.audio_program(entry.broadcast, now)
-    }
     pub(super) fn poll_audio_choice(&self) {
         if let Some(playback) = self.rust().media.playback() {
-            if playback.has_audio_intent() {
-                playback.update_audio_choice(self.audio_program());
+            let automatic_due = playback.audio_default_due();
+            if !playback.has_audio_intent() && !automatic_due {
+                return;
             }
-            if playback.audio_default_due() {
-                playback.apply_audio_default(self.audio_program());
+            let metadata = self.rust().media.audio_metadata();
+            let program = metadata.as_ref().map(crate::audio::Metadata::program);
+            if playback.has_audio_intent() {
+                playback.update_audio_choice(program);
+            }
+            if automatic_due {
+                playback.apply_audio_default(program);
             }
         }
     }
@@ -47,11 +38,14 @@ impl super::ffi::Player {
             .unwrap_or_default()
     }
     pub fn audio_tracks(&self) -> QString {
+        let metadata = self.rust().media.audio_metadata();
         let result = self
             .rust()
             .media
             .playback()
-            .map(|player| player.audio_choices(self.audio_program()))
+            .map(|player| {
+                player.audio_choices(metadata.as_ref().map(crate::audio::Metadata::program))
+            })
             .transpose()
             .and_then(|choices| serde_json::to_string(&choices.unwrap_or_default()));
         match result {
@@ -63,12 +57,18 @@ impl super::ffi::Player {
         }
     }
     pub fn select_audio(&self, key: QString) -> QString {
+        let metadata = self.rust().media.audio_metadata();
         let result = self
             .rust()
             .media
             .playback()
             .ok_or(crate::playback::audio_streams::Error::Unavailable)
-            .and_then(|player| player.choose_audio(&key.to_string(), self.audio_program()));
+            .and_then(|player| {
+                player.choose_audio(
+                    &key.to_string(),
+                    metadata.as_ref().map(crate::audio::Metadata::program),
+                )
+            });
         match result {
             Ok(()) => QString::default(),
             Err(error) => QString::from(error_source(error)),

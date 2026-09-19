@@ -26,6 +26,18 @@ pub(crate) struct Program {
     pub description: String,
     pub extended: String,
     pub genres: Vec<(u8, u8)>,
+    #[serde(skip_serializing)]
+    pub audios: Box<[crate::audio::Descriptor]>,
+}
+impl Program {
+    pub fn audio_heap_bytes(&self) -> usize {
+        std::mem::size_of_val(self.audios.as_ref())
+            + self
+                .audios
+                .iter()
+                .map(crate::audio::Descriptor::heap_bytes)
+                .sum::<usize>()
+    }
 }
 
 /// No section received is not an empty, valid present section.
@@ -238,6 +250,9 @@ impl Collector {
         })
     }
 }
+
+#[cfg(test)]
+mod audio_tests;
 
 #[cfg(test)]
 mod tests {
