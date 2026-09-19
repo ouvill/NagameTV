@@ -40,24 +40,14 @@ Item {
                     verify(component.errorString().indexOf("No such file") >= 0, component.errorString());
                 component.destroy();
             }
-            function verifyCommentPage(view) {
+            function verifyPlaybackPage(view) {
                 const list = findChild(view, "sidebarCommentList");
-                const controls = findChild(view, "sidebarCommentControls");
-                compare(list.active, buildConfiguration.evaluation_comment_list);
-                compare(controls.visible, !buildConfiguration.evaluation_comment_list);
-                if (buildConfiguration.evaluation_comment_list) {
-                    tryVerify(() => list.item !== null);
-                    compare(list.item.commentModel, comments);
-                    compare(list.item.status, view.commentStatus);
-                } else {
-                    compare(list.source.toString(), "");
-                    compare(list.item, null);
-                    const status = findChild(view, "sidebarCommentStatus");
-                    verify(status.visible);
-                    verify(status.enabled);
-                    compare(status.text, "Live comments: " + view.commentStatus);
-                    compare(status.textFormat, Text.PlainText);
-                }
+                const controls = findChild(view, "sidebarPlaybackSettings");
+                compare(list.active, false);
+                compare(list.item, null);
+                verify(controls.visible);
+                compare(controls.danmakuEnabled, view.danmakuEnabled);
+                compare(controls.commentsEnabled, view.commentsEnabled);
             }
             function test_updates_and_reverse_animation_keep_content_then_release() {
                 compare(panel.item, null);
@@ -74,22 +64,34 @@ Item {
                 tryVerify(() => panel.item !== null);
                 tryCompare(panel, "x", 280);
                 const view = panel.item;
-                view.page = ProgramSidebar.Comments;
+                view.page = ProgramSidebar.Playback;
                 view.commentStatus = "Waiting";
-                verifyCommentPage(view);
+                verifyPlaybackPage(view);
                 view.danmakuEnabled = true;
-                verifyCommentPage(view);
+                verifyPlaybackPage(view);
                 view.commentStatus = "<b>Connected</b>";
-                verifyCommentPage(view);
+                verifyPlaybackPage(view);
                 view.danmakuEnabled = false;
-                verifyCommentPage(view);
+                verifyPlaybackPage(view);
                 view.commentsEnabled = true;
                 comments.append_test("Received while danmaku is off", 0, false);
-                verifyCommentPage(view);
-                if (buildConfiguration.evaluation_comment_list)
-                    compare(findChild(view, "sidebarCommentList").item.count, comments.count);
+                verifyPlaybackPage(view);
                 view.commentsEnabled = false;
-                verifyCommentPage(view);
+                verifyPlaybackPage(view);
+                view.page = ProgramSidebar.Program;
+                const list = findChild(view, "sidebarCommentList");
+                compare(list.active, buildConfiguration.evaluation_comment_list);
+                if (buildConfiguration.evaluation_comment_list) {
+                    tryVerify(() => list.item !== null);
+                    compare(list.item.commentModel, comments);
+                    compare(list.item.count, comments.count);
+                } else {
+                    compare(list.source.toString(), "");
+                    compare(list.item, null);
+                }
+                const status = findChild(view, "sidebarCommentStatus");
+                compare(status.text, "NX-Jikkyo · " + view.commentStatus);
+                compare(status.textFormat, Text.PlainText);
                 const title = findChild(view, "commentProgramTitle");
                 verify(title.visible);
                 compare(title.text, "Program title unavailable");
@@ -101,8 +103,9 @@ Item {
                 view.commentProgramTitle = "";
                 compare(title.text, "Program title unavailable");
                 comments.append_test("Pending follow before page destruction", 0, false);
-                view.page = ProgramSidebar.Program;
-                compare(findChild(view, "sidebarCommentList").item, null);
+                view.recording = true;
+                verify(!findChild(view, "commentProgramCard").visible);
+                view.recording = false;
                 compare(findChild(view, "programDescription").textFormat, Text.PlainText);
                 compare(findChild(view, "programDescription").text, "<b>plain</b>");
                 testCase.programData = JSON.stringify({
@@ -118,14 +121,14 @@ Item {
                 panel.open = true;
                 tryCompare(panel, "x", 280);
                 compare(panel.item, view);
-                view.page = ProgramSidebar.Comments;
-                verifyCommentPage(view);
+                view.page = ProgramSidebar.Playback;
+                verifyPlaybackPage(view);
                 panel.open = false;
                 tryVerify(() => panel.item === null);
                 panel.open = true;
                 tryVerify(() => panel.item !== null);
-                panel.item.page = ProgramSidebar.Comments;
-                verifyCommentPage(panel.item);
+                panel.item.page = ProgramSidebar.Playback;
+                verifyPlaybackPage(panel.item);
                 panel.shuttingDown = true;
                 compare(panel.item, null);
             }

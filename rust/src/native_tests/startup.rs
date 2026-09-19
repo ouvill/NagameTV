@@ -226,7 +226,7 @@ fn check_danmaku_layout(
         engine,
         r#"
         player.configure_comment_presentation("pop", "random");
-        root.showProgram = true; root.sidebarPage = ProgramSidebar.Comments;
+        root.showProgram = true; root.sidebarPage = ProgramSidebar.Playback;
         commentBounds.aspectRatio = 4/3;
         danmaku.item.controller.seek(2);
         danmaku.width === Math.floor(Math.min(video.width, video.height * 4/3))
@@ -238,14 +238,37 @@ fn check_danmaku_layout(
     wait_for(
         app,
         engine,
-        "sidebar.item !== null && sidebar.item.showCommentControls === !player.evaluation_comment_list",
+        "sidebar.item !== null && sidebar.item.page === ProgramSidebar.Playback",
     )?;
     // The distribution UI must keep controls when comments are turned off too;
     // exercise the real Player binding, not only a standalone sidebar fixture.
     assert!(evaluate(
         engine,
-        "player.configure_danmaku(false, player.comment_font_size, player.comment_opacity, player.comment_speed); sidebar.item.showCommentControls === !player.evaluation_comment_list",
+        "player.configure_danmaku(false, player.comment_font_size, player.comment_opacity, player.comment_speed); sidebar.item.page === ProgramSidebar.Playback && !sidebar.item.danmakuEnabled",
     )?);
+    assert!(evaluate(
+        engine,
+        "sidebar.item.statsRequested(true); root.showStats && sidebar.item.statsVisible",
+    )?);
+    assert!(evaluate(
+        engine,
+        "sidebar.item.statsRequested(false); !root.showStats && !sidebar.item.statsVisible",
+    )?);
+    assert!(evaluate(
+        engine,
+        "sidebar.item.pageRequested(ProgramSidebar.Program); sidebar.item.commentProgramTitle === player.comment_program_title && sidebar.item.commentStatus === player.comment_status",
+    )?);
+    assert!(evaluate(
+        engine,
+        "viewerActions.toggleSettings.trigger(); root.showProgram && root.sidebarPage === ProgramSidebar.Playback",
+    )?);
+    evaluate(engine, "sidebar.item.timeshiftSettingsRequested(); true")?;
+    wait_for(
+        app,
+        engine,
+        "settings.opened && settings.page === SettingsPanel.Timeshift",
+    )?;
+    evaluate(engine, "settings.close(); true")?;
     evaluate(
         engine,
         "player.configure_comment_presentation('scroll','sequential'); danmaku.active = false; commentBounds.aspectRatio = Qt.binding(() => player.video_aspect_ratio); true",

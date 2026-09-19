@@ -5,6 +5,10 @@ import MinimalViewer 1.0
 QtObject {
     property bool playing: false
     property bool paused: false
+    property bool seeking: false
+    property real live_delay_ms: 0
+    property int liveRequests: 0
+    function return_to_live() { liveRequests++; }
     property bool recording: false
     property bool timeshift: false
     property bool media_active: playing || paused

@@ -17,33 +17,25 @@ TestCase {
         }
     }
     function initTestCase() { failOnWarning(/.*/); }
-    function choose(combo, key) {
-        mouseClick(combo);
-        tryCompare(combo.popup, "opened", true);
-        keyClick(key);
-        keyClick(Qt.Key_Return);
-        tryCompare(combo.popup, "visible", false);
-        waitForRendering(combo.parent);
-    }
     function test_normal_choices_and_evaluation_only_option() {
         const controls = createTemporaryObject(component, this);
         const motion = findChild(controls, "commentMotion");
         const placement = findChild(controls, "commentPlacement");
-        compare(placement.count, 2);
-        choose(motion, Qt.Key_End);
+        compare(placement.options.length, 2);
+        mouseClick(findChild(controls, "motion-pop"));
         compare(controls.displayMode, "pop");
-        choose(placement, Qt.Key_End);
+        mouseClick(findChild(controls, "placement-random"));
         compare(controls.placementMode, "random");
         controls.evaluationCollision = true;
-        compare(placement.count, 2);
-        choose(motion, Qt.Key_Home);
+        compare(placement.options.length, 2);
+        mouseClick(findChild(controls, "motion-scroll"));
         compare(controls.displayMode, "scroll");
-        compare(placement.count, 3);
-        choose(placement, Qt.Key_End);
+        compare(placement.options.length, 3);
+        mouseClick(findChild(controls, "placement-collision"));
         compare(controls.placementMode, "collision");
-        choose(motion, Qt.Key_End);
+        mouseClick(findChild(controls, "motion-pop"));
         compare(controls.displayMode, "pop");
         compare(controls.placementMode, "sequential");
-        compare(placement.count, 2);
+        compare(placement.options.length, 2);
     }
 }

@@ -8,6 +8,7 @@ ToolButton {
     property string iconLabel: ""
     property bool active: false
     property bool primary: false
+    property bool toolTipEnabled: true
     // Player overlays use bare icons until hover, focus, or selection.
     flat: false
     // Animate the visuals; keep the hit area still while the pointer is down.
@@ -50,7 +51,7 @@ ToolButton {
     }
     ToolTip {
         parent: control
-        visible: control.hovered
+        visible: control.toolTipEnabled && control.hovered
         text: control.tip
         delay: 350
         timeout: 3000

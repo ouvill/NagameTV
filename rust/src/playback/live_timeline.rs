@@ -418,20 +418,17 @@ impl History {
         let position = MediaMs::from_ns(position_ns);
         let epoch = self.epoch(position)?;
         let view = self.metadata(position_ns);
-        let clock = view
-            .clock
-            .and_then(|clock| clock.utc(position_ns))
-            .map(|utc| Clock {
-                media: position,
-                utc: UtcMs(utc),
-            });
         let record = Record {
             program: view.program?,
             station: view.station,
             provider: view.provider,
             announcement: Announcement::Current,
         };
-        Selection::new(epoch.serial, clock, &record, position)
+        // Project program boundaries with the same fixed clock as the axis and
+        // program segments. Re-anchoring at each fractional PCR position rounds
+        // UTC and media time separately, shifting scheduled times by 1 ms.
+        // Frame UTC still uses the catalog's nanosecond mapping in History::utc.
+        Selection::new(epoch.serial, epoch.clock, &record, position)
     }
     fn retained(&self, range: Option<Span>) -> Vec<Span> {
         let Some(range) = range else {

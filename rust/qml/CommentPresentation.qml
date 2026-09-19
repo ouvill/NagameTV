@@ -1,3 +1,4 @@
+pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -10,26 +11,30 @@ ColumnLayout {
     signal selected(string displayMode, string placementMode)
     spacing: 6
     Label { text: qsTranslate("Main", "Comment motion"); color: "#b6bab6"; font.pixelSize: 12 }
-    SettingsChoice {
+    SegmentedControl {
         objectName: "commentMotion"
+        objectNamePrefix: "motion-"
         Layout.fillWidth: true
-        implicitHeight: 40
-        model: [qsTranslate("Main", "Scroll"), qsTranslate("Main", "Fountain")]
-        currentIndex: root.displayMode === "pop" ? 1 : 0
-        onActivated: function(index) {
-            root.selected(index === 1 ? "pop" : "scroll", index === 1 && root.placementMode === "collision" ? "sequential" : root.placementMode);
+        options: [{value: "scroll", label: qsTranslate("Main", "Scroll")},
+            {value: "pop", label: qsTranslate("Main", "Fountain")}]
+        value: root.displayMode
+        onSelected: function(value) {
+            root.selected(value, value === "pop" && root.placementMode === "collision" ? "sequential" : root.placementMode);
         }
     }
-    Label { text: qsTranslate("Main", "Comment placement"); color: "#b6bab6"; font.pixelSize: 12 }
-    SettingsChoice {
+    Label {
+        Layout.topMargin: 8
+        text: qsTranslate("Main", "Comment placement"); color: "#b6bab6"; font.pixelSize: 12
+    }
+    SegmentedControl {
         objectName: "commentPlacement"
+        objectNamePrefix: "placement-"
         Layout.fillWidth: true
-        implicitHeight: 40
         readonly property bool legacyAvailable: root.evaluationCollision && root.displayMode === "scroll"
-        model: legacyAvailable
-            ? [qsTranslate("Main", "Even spread"), qsTranslate("Main", "Random"), qsTranslate("Main", "Legacy collision layout (evaluation)")]
-            : [qsTranslate("Main", "Even spread"), qsTranslate("Main", "Random")]
-        currentIndex: root.placementMode === "collision" && legacyAvailable ? 2 : root.placementMode === "random" ? 1 : 0
-        onActivated: function(index) { root.selected(root.displayMode, ["sequential", "random", "collision"][index]); }
+        options: [{value: "sequential", label: qsTranslate("Main", "Even spread")},
+            {value: "random", label: qsTranslate("Main", "Random")}].concat(legacyAvailable
+                ? [{value: "collision", label: qsTranslate("Main", "Legacy collision layout (evaluation)")}] : [])
+        value: root.placementMode
+        onSelected: function(value) { root.selected(root.displayMode, value); }
     }
 }

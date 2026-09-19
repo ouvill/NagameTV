@@ -684,6 +684,18 @@
   <context>
     <name>Viewer</name>
     <message>
+      <source>Watching · %1</source>
+      <translation>視聴中 · %1</translation>
+    </message>
+    <message>
+      <source>More controls</source>
+      <translation>その他の操作</translation>
+    </message>
+    <message>
+      <source>Live broadcast</source>
+      <translation>現在の放送</translation>
+    </message>
+    <message>
       <source>Return to live</source>
       <translation>ライブに戻る</translation>
     </message>
@@ -1072,12 +1084,8 @@
       <translation>実際の保持時間は放送内容や下の時間上限によって変わります。</translation>
     </message>
     <message>
-      <source>Watching: %1</source>
-      <translation>視聴中: %1</translation>
-    </message>
-    <message>
-      <source>On air: %1</source>
-      <translation>放送中: %1</translation>
+      <source>On air · %1</source>
+      <translation>放送中 · %1</translation>
     </message>
     <message>
       <source>Program information unavailable</source>

@@ -42,13 +42,13 @@ ApplicationWindow {
         surface.forceActiveFocus();
         overlayVisibility.reveal();
     }
-    property int sidebarPage: ProgramSidebar.Program
+    property int sidebarPage: ProgramSidebar.Playback
     readonly property bool summariesVisible: !closing && (channelPanel.active || (sidebar.active && sidebarPage === ProgramSidebar.Channels))
-    readonly property bool commentaryVisible: !closing && sidebar.active && sidebarPage === ProgramSidebar.Comments
+    readonly property bool commentaryVisible: !closing && sidebar.active && sidebarPage === ProgramSidebar.Program
     readonly property bool guideVisible: !closing && player.epg_enabled && showGuide
     onCommentaryVisibleChanged: player.comments_open(commentaryVisible)
     onSummariesVisibleChanged: player.browser_open(summariesVisible)
-    readonly property real panelWidth: Math.min(408, Math.max(360, width * 0.32))
+    readonly property real panelWidth: Math.min(408, Math.max(320, width * 0.32))
     readonly property var channelRows: JSON.parse(player.channel_data)
     Player {
         id: player
@@ -126,33 +126,6 @@ ApplicationWindow {
         }
         onClosed: overlayVisibility.reveal()
     }
-    PlaybackSettings {
-        id: playbackSettings
-        timeshiftStorage: player.timeshift_storage
-        onTimeshiftRequested: function(storage) { player.configure_timeshift(storage); }
-        onTimeshiftSettingsRequested: { settings.open(); settings.page = SettingsPanel.Timeshift; }
-        toggleButton: playerControls.settingsButton
-        commentsEnabled: player.comments_enabled
-        displayMode: player.comment_display
-        placementMode: player.comment_placement
-        evaluationCollision: player.evaluation_collision_layout
-        onPresentationRequested: function(display, placement) { player.configure_comment_presentation(display, placement); }
-        danmakuEnabled: player.danmaku_enabled
-        textSize: player.comment_font_size
-        textOpacity: player.comment_opacity
-        speed: player.comment_speed
-        shadowEnabled: player.comment_shadow_enabled
-        statsVisible: root.showStats
-        onDanmakuRequested: function(enabled, size, opacity, speed) {
-            player.configure_danmaku(enabled, size, opacity, speed);
-        }
-        onStatsRequested: function(visible) { root.showStats = visible; }
-        onShadowRequested: function(enabled) { player.configure_comment_shadow(enabled); }
-        onClosed: {
-            if (!root.closing) player.save_settings();
-            overlayVisibility.reveal();
-        }
-    }
     ViewerActions {
         id: viewerActions
         backend: player
@@ -174,7 +147,10 @@ ApplicationWindow {
         onRecordingRequested: recordingInput.open()
         onCaptureRequested: screenshot.capture()
         onAudioRequested: audioSettings.open()
-        onSettingsRequested: playbackSettings.toggle()
+        onSettingsRequested: {
+            root.showProgram = !(root.showProgram && root.sidebarPage === ProgramSidebar.Playback);
+            root.sidebarPage = ProgramSidebar.Playback;
+        }
     }
     InputContext {
         id: inputContext
@@ -502,7 +478,7 @@ ApplicationWindow {
                 color: "transparent"
             }
             contentItem: ColumnLayout {
-                spacing: 12
+                spacing: 0
                 PlaybackTimeline {
                     id: recordingTimeline
                     Layout.fillWidth: true
@@ -516,7 +492,7 @@ ApplicationWindow {
                     Layout.fillWidth: true
                     Layout.leftMargin: 24
                     Layout.rightMargin: 24
-                    settingsVisible: playbackSettings.visible
+                    videoWidth: surface.width
                     actions: viewerActions
                 }
             }
@@ -660,6 +636,9 @@ ApplicationWindow {
                 player.configure_danmaku(enabled, player.comment_font_size, player.comment_opacity, player.comment_speed);
                 player.save_settings();
             }
+            statsVisible: root.showStats
+            onStatsRequested: function(visible) { root.showStats = visible; }
+            onTimeshiftSettingsRequested: { settings.open(); settings.page = SettingsPanel.Timeshift; }
             commentModel: player.comment_model
             commentStatus: player.comment_status
             commentProgramTitle: player.comment_program_title

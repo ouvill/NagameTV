@@ -77,6 +77,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "../assets/icons/calendar-days.svg",
         "../assets/icons/settings-2.svg",
         "../assets/icons/maximize.svg",
+        "../assets/icons/ellipsis.svg",
+        "../assets/icons/radio.svg",
+        "../assets/icons/radio-off.svg",
         "../assets/fonts/rounded-mplus-1m-arib.ttf",
         "../assets/fonts/LICENSE-Rounded-Mplus-1m-for-ARIB.txt",
     ])

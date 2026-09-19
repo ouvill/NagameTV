@@ -1,64 +1,92 @@
 pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls
-import QtQuick.Layouts
 
 Item {
     id: root
+    enum Density { Wide, Narrow, Dense }
     required property ViewerActions actions
     readonly property var backend: actions.backend
-    readonly property bool closing: !actions.enabled
-    enabled: actions.enabled
-    property bool settingsVisible: false
+    property real videoWidth: width
     property url iconDirectory: "qrc:/qt/qml/MinimalViewer/assets/icons/"
-    readonly property bool volumePressed: volumeSlider.pressed
-    readonly property Item settingsButton: playbackSettingsButton
-    // Keep all controls reachable when the sidebar narrows the video surface.
-    readonly property bool transportControls: backend.recording || backend.timeshift === true
-    readonly property bool compact: width < (transportControls ? 1000 : 780)
-    readonly property int buttonSize: compact ? 36 : 42
-    implicitHeight: compact ? 96 : 54
+    readonly property bool volumePressed: volume.pressed
+    readonly property bool transportControls: backend.recording || backend.timeshift
+    readonly property int wideVideoWidth: 960
+    readonly property int narrowVideoWidth: 740
+    readonly property int density: videoWidth >= wideVideoWidth ? PlayerControls.Wide
+        : videoWidth >= narrowVideoWidth ? PlayerControls.Narrow : PlayerControls.Dense
+    readonly property int actionSize: density === PlayerControls.Dense ? 32 : 42
+    readonly property int actionSpacing: density === PlayerControls.Dense ? 2 : 6
+    readonly property int dividerWidth: density === PlayerControls.Dense ? 8 : 18
+    enabled: actions.enabled
+    implicitHeight: 42
+    onEnabledChanged: if (!enabled) overflow.close()
+
     component Control: IconAction {
         flat: true
-        implicitWidth: root.buttonSize
-        implicitHeight: root.buttonSize
+        implicitWidth: root.actionSize
+        implicitHeight: root.actionSize
     }
-    RowLayout {
-        id: volumeControls
+    component Divider: Item {
+        width: root.dividerWidth
+        height: root.actionSize
+        Rectangle {
+            anchors.centerIn: parent
+            width: 1; height: 24
+            color: "#343c35"
+        }
+    }
+    Row {
         objectName: "volumeControls"
-        anchors.left: parent.left
-        y: root.compact ? 54 : 6
-        height: root.buttonSize
-        spacing: 4
-        Control {
-            objectName: "muteButton"
-            iconSource: root.iconDirectory + (root.backend.audio_muted || root.backend.volume_level === 0 ? "volume-x.svg" : "volume-2.svg")
-            tip: action.text
-            action: root.actions.toggleMute
+        anchors { left: parent.left; verticalCenter: parent.verticalCenter }
+        spacing: 6
+        PlayerVolumeButton {
+            id: volume
+            actions: root.actions
+            iconDirectory: root.iconDirectory
         }
-        Control {
-            objectName: "audioSelectionButton"
-            iconSource: root.iconDirectory + "chevron-down.svg"
+        IconAction {
+            objectName: "returnToLiveButton"
+            flat: true
+            visible: !root.backend.recording
+            iconSource: root.iconDirectory + (root.actions.atLiveEdge ? "radio.svg" : "radio-off.svg")
             tip: action.text
-            implicitWidth: 24
-            action: root.actions.openAudio
-        }
-        VolumeSlider {
-            id: volumeSlider
-            objectName: "playerVolumeSlider"
-            Layout.preferredWidth: root.compact ? 96 : 132
-            value: root.backend.volume_level
-            subdued: root.backend.audio_muted
-            closing: root.closing
-            onVolumeRequested: function(fraction) { root.backend.volume(fraction); }
-            onSaveRequested: root.backend.save_settings()
+            action: root.actions.returnToLive
         }
     }
     Row {
         objectName: "transportControls"
-        anchors.horizontalCenter: parent.horizontalCenter
-        y: 6
+        anchors.centerIn: parent
         spacing: 12
+        IconAction {
+            objectName: "skipBackButton"
+            flat: true
+            visible: root.transportControls
+            iconSource: root.iconDirectory + "rotate-ccw.svg"
+            iconLabel: String(root.actions.seekSteps.backwardSeconds)
+            tip: action.text
+            action: root.actions.seekBackward
+        }
+        IconAction {
+            objectName: "playStopButton"
+            flat: true
+            iconSource: root.iconDirectory + root.actions.playbackIcon
+            tip: action.text
+            action: root.actions.playbackToggle
+        }
+        IconAction {
+            objectName: "skipForwardButton"
+            flat: true
+            visible: root.transportControls
+            iconSource: root.iconDirectory + "rotate-cw.svg"
+            iconLabel: String(root.actions.seekSteps.forwardSeconds)
+            tip: action.text
+            action: root.actions.seekForward
+        }
+    }
+    Row {
+        objectName: "viewControls"
+        anchors { right: parent.right; verticalCenter: parent.verticalCenter }
         Control {
             objectName: "channelsButton"
             visible: !root.backend.recording
@@ -66,81 +94,89 @@ Item {
             tip: action.text
             action: root.actions.openChannels
         }
-        Control {
-            objectName: "skipBackButton"
-            visible: root.transportControls
-            iconSource: root.iconDirectory + "rotate-ccw.svg"
-            iconLabel: String(root.actions.seekSteps.backwardSeconds)
-            tip: action.text
-            action: root.actions.seekBackward
+        Divider { visible: !root.backend.recording }
+        Row {
+            spacing: root.actionSpacing
+            Control {
+                objectName: "postCommentButton"
+                visible: !root.backend.recording
+                iconSource: root.iconDirectory + "pencil.svg"
+                tip: action.text
+                action: root.actions.openComposer
+            }
+            Control {
+                objectName: "screenshotButton"
+                iconSource: root.iconDirectory + "camera.svg"
+                tip: action.text
+                action: root.actions.captureScreenshot
+            }
+            Control {
+                objectName: "subtitlesButton"
+                visible: root.density === PlayerControls.Wide
+                iconSource: root.iconDirectory + (root.backend.subtitle_display ? "captions.svg" : "captions-off.svg")
+                tip: action.text
+                active: root.backend.subtitles_enabled && root.backend.subtitle_display
+                action: root.actions.toggleSubtitles
+            }
+            Control {
+                objectName: "danmakuButton"
+                visible: root.density === PlayerControls.Wide
+                iconSource: root.iconDirectory + (root.backend.danmaku_enabled ? "message-square.svg" : "message-square-off.svg")
+                tip: action.text
+                active: enabled && root.backend.danmaku_enabled
+                action: root.actions.toggleDanmaku
+            }
+            Control {
+                objectName: "fullscreenButton"
+                visible: root.density === PlayerControls.Wide
+                iconSource: root.iconDirectory + "maximize.svg"
+                tip: action.text
+                action: root.actions.toggleFullscreen
+            }
+            Control {
+                id: more
+                objectName: "moreControlsButton"
+                visible: root.density !== PlayerControls.Wide
+                iconSource: root.iconDirectory + "ellipsis.svg"
+                tip: qsTranslate("Viewer", "More controls")
+                active: overflow.visible
+                onClicked: if (overflow.visible) overflow.close(); else overflow.open()
+                onVisibleChanged: if (!visible) overflow.close()
+                Menu {
+                    id: overflow
+                    objectName: "playerOverflowMenu"
+                    y: -height - 8
+                    x: parent.width - width
+                    width: 264
+                    padding: 8
+                    closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutsideParent
+                    background: Rectangle { radius: 12; color: "#f21a1c1a"; border.color: "#343c35" }
+                    component Entry: MenuItem {
+                        implicitHeight: 48
+                        icon.width: 24; icon.height: 24; icon.color: "#f4f5f3"
+                        palette.text: "#f4f5f3"
+                        palette.buttonText: "#f4f5f3"
+                        background: Rectangle { radius: 8; color: parent.highlighted ? "#303c32" : "transparent" }
+                    }
+                    Entry {
+                        objectName: "overflowSubtitles"
+                        action: root.actions.toggleSubtitles
+                        icon.source: root.iconDirectory + (root.backend.subtitle_display ? "captions.svg" : "captions-off.svg")
+                    }
+                    Entry {
+                        objectName: "overflowDanmaku"
+                        action: root.actions.toggleDanmaku
+                        icon.source: root.iconDirectory + (root.backend.danmaku_enabled ? "message-square.svg" : "message-square-off.svg")
+                    }
+                    Entry {
+                        objectName: "overflowFullscreen"
+                        action: root.actions.toggleFullscreen
+                        icon.source: root.iconDirectory + "maximize.svg"
+                    }
+                }
+            }
         }
-        Control {
-            objectName: "playStopButton"
-            iconSource: root.iconDirectory + root.actions.playbackIcon
-            tip: action.text
-            action: root.actions.playbackToggle
-        }
-        Control {
-            objectName: "skipForwardButton"
-            visible: root.transportControls
-            iconSource: root.iconDirectory + "rotate-cw.svg"
-            iconLabel: String(root.actions.seekSteps.forwardSeconds)
-            tip: action.text
-            action: root.actions.seekForward
-        }
-        Control {
-            objectName: "postCommentButton"
-            visible: !root.backend.recording
-            iconSource: root.iconDirectory + "pencil.svg"
-            tip: action.text
-            action: root.actions.openComposer
-        }
-    }
-    Row {
-        objectName: "viewControls"
-        anchors.right: parent.right
-        y: root.compact ? 54 : 6
-        spacing: 6
-        Control {
-            objectName: "screenshotButton"
-            iconSource: root.iconDirectory + "camera.svg"
-            tip: action.text
-            action: root.actions.captureScreenshot
-        }
-        Control {
-            objectName: "subtitlesButton"
-            iconSource: root.iconDirectory + (root.backend.subtitle_display ? "captions.svg" : "captions-off.svg")
-            tip: action.text
-            active: root.backend.subtitles_enabled && root.backend.subtitle_display
-            action: root.actions.toggleSubtitles
-        }
-        Control {
-            objectName: "danmakuButton"
-            iconSource: root.iconDirectory + (root.backend.danmaku_enabled ? "message-square.svg" : "message-square-off.svg")
-            tip: action.text
-            active: enabled && root.backend.danmaku_enabled
-            action: root.actions.toggleDanmaku
-        }
-        Control {
-            id: playbackSettingsButton
-            objectName: "playbackSettingsButton"
-            iconSource: root.iconDirectory + "settings-2.svg"
-            tip: action.text
-            active: root.settingsVisible
-            action: root.actions.toggleSettings
-        }
-        Control {
-            objectName: "fullscreenButton"
-            iconSource: root.iconDirectory + "maximize.svg"
-            tip: action.text
-            action: root.actions.toggleFullscreen
-        }
-        Rectangle {
-            width: 1
-            height: 24
-            anchors.verticalCenter: parent.verticalCenter
-            color: "#42ffffff"
-        }
+        Divider {}
         Control {
             objectName: "sidePanelButton"
             iconSource: root.iconDirectory + (root.actions.programVisible ? "panel-right-close.svg" : "panel-right-open.svg")

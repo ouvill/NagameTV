@@ -8,7 +8,7 @@ Rectangle {
     enum Page {
         Program,
         Channels,
-        Comments
+        Playback
     }
     property bool recording: false
     property string fallbackTitle: ""
@@ -25,18 +25,14 @@ Rectangle {
     signal presentationRequested(string displayMode, string placementMode)
     signal adjusted(real textSize, real textOpacity, real speed)
     signal shadowRequested(bool enabled)
-    // JP7080382 / JP7277651 / JP7153786 require a separate list; JP7852687
-    // requires a received-comment field to the video's right. Normal builds
-    // omit CommentList.qml and show controls even with danmaku off, removing
-    // that display feature rather than relying on simultaneous-use wording.
-    // Estimated expiry 2027-03-02; registry status unverified, no auto-reactivation.
-    // Player supplies the compile-time evaluation override, never a setting.
-    readonly property bool showCommentControls: !evaluationCommentList
+    property bool statsVisible: false
+    signal statsRequested(bool visible)
+    signal timeshiftSettingsRequested()
     signal danmakuRequested(bool enabled)
     property var commentModel: null
     property string commentProgramTitle: ""
     property string commentStatus: ""
-    property int page: ProgramSidebar.Program
+    property int page: ProgramSidebar.Playback
     property var channelRows: []
     property int selectedChannel: -1
     property string channelVisibility: "[]"
@@ -68,42 +64,28 @@ Rectangle {
     }
     ColumnLayout {
         x: 24
-        y: 78
+        y: 88
         width: parent.width - 48
-        height: parent.height - 102
-        spacing: 14
+        height: parent.height - 112
+        spacing: 16
         RowLayout {
             Layout.fillWidth: true
+            Label {
+                objectName: "sidebarHeading"
+                text: root.page === ProgramSidebar.Playback ? qsTranslate("Main", "Playback settings")
+                    : root.page === ProgramSidebar.Channels ? qsTranslate("Main", "Channels") : qsTranslate("Main", "Program information")
+                color: "#f4f5f3"
+                font.pixelSize: 22
+                font.bold: true
+                Layout.fillWidth: true
+                elide: Text.ElideRight
+            }
             IconAction {
+                objectName: "sidebarCloseButton"
+                flat: true
                 iconSource: root.iconDirectory + "panel-right-close.svg"
                 tip: qsTranslate("Main", "Collapse")
                 onClicked: root.closeRequested()
-            }
-            Label {
-                text: root.page === ProgramSidebar.Comments ? qsTranslate("Main", "Comments") : (root.page === ProgramSidebar.Channels ? qsTranslate("Main", "Channels") : qsTranslate("Main", "Program information"))
-                color: "#f4f5f3"
-                font.pixelSize: 17
-                font.bold: true
-                Layout.fillWidth: true
-            }
-            Row {
-                visible: root.page === ProgramSidebar.Comments
-                enabled: root.commentsEnabled
-                spacing: 9
-                Layout.alignment: Qt.AlignVCenter
-                Label {
-                    height: parent.height
-                    verticalAlignment: Text.AlignVCenter
-                    text: qsTranslate("Main", "Danmaku")
-                    color: root.danmakuEnabled ? "#f4f5f3" : "#b6bab6"
-                    font.pixelSize: 13
-                }
-                ToggleSwitch {
-                    objectName: "sidebarDanmakuToggle"
-                    text: qsTranslate("Main", "Danmaku")
-                    checked: root.danmakuEnabled
-                    onToggled: root.danmakuRequested(checked)
-                }
             }
         }
         ScrollView {
@@ -149,7 +131,7 @@ Rectangle {
                     font.pixelSize: 13
                 }
                 Label {
-                    visible: root.recording && root.program && root.program.genres && root.program.genres.length > 0
+                    visible: root.recording && !!root.program && !!root.program.genres && root.program.genres.length > 0
                     Layout.fillWidth: true
                     readonly property var names: [qsTranslate("Viewer", "News"), qsTranslate("Viewer", "Sports"), qsTranslate("Viewer", "Information"), qsTranslate("Viewer", "Drama"), qsTranslate("Viewer", "Music"), qsTranslate("Viewer", "Variety"), qsTranslate("Viewer", "Film"), qsTranslate("Viewer", "Animation"), qsTranslate("Viewer", "Documentary"), qsTranslate("Viewer", "Theater"), qsTranslate("Viewer", "Education"), qsTranslate("Viewer", "Welfare")]
                     text: visible ? root.program.genres.map(genre => names[genre[0]] || qsTranslate("Viewer", "Other")).join(" / ") : ""
@@ -173,6 +155,55 @@ Rectangle {
                             radius: 2
                             color: "#9caf9f"
                         }
+                    }
+                }
+                Pane {
+                    objectName: "commentProgramCard"
+                    visible: !root.recording
+                    Layout.fillWidth: true
+                    Layout.topMargin: 14
+                    Layout.bottomMargin: 14
+                    padding: 16
+                    background: Rectangle { radius: 12; color: "#1c201d" }
+                    contentItem: ColumnLayout {
+                        spacing: 16
+                        Label {
+                            objectName: "sidebarCommentStatus"
+                            Layout.fillWidth: true
+                            text: "NX-Jikkyo · " + root.commentStatus
+                            textFormat: Text.PlainText
+                            color: "#9caf9f"; font.pixelSize: 12
+                            wrapMode: Text.Wrap
+                        }
+                        Label {
+                            objectName: "commentProgramTitle"
+                            Layout.fillWidth: true
+                            text: root.commentProgramTitle || qsTranslate("Viewer", "Program title unavailable")
+                            textFormat: Text.PlainText
+                            wrapMode: Text.Wrap
+                            color: "#f4f5f3"; font.pixelSize: 16; font.bold: true
+                        }
+                    }
+                }
+                // The received-comment list remains exclusive to evaluation builds.
+                Loader {
+                    id: commentList
+                    objectName: "sidebarCommentList"
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: active ? 240 : 0
+                    active: root.page === ProgramSidebar.Program && root.evaluationCommentList
+                    visible: active
+                    function configureSource() {
+                        if (!root.evaluationCommentList) { source = ""; return; }
+                        setSource(Qt.resolvedUrl("CommentList.qml"), {
+                            commentModel: Qt.binding(() => root.commentModel),
+                            status: Qt.binding(() => root.commentStatus)
+                        });
+                    }
+                    Component.onCompleted: configureSource()
+                    Connections {
+                        target: root
+                        function onEvaluationCommentListChanged() { commentList.configureSource(); }
                     }
                 }
                 Label {
@@ -223,101 +254,27 @@ Rectangle {
                 }
             }
         }
-        ColumnLayout {
-            visible: root.page === ProgramSidebar.Comments
-            Layout.fillWidth: true
-            spacing: 5
-            Label {
-                text: qsTranslate("Viewer", "NX-Jikkyo program")
-                color: "#929497"
-                font.pixelSize: 12
-            }
-            Label {
-                objectName: "commentProgramTitle"
-                Layout.fillWidth: true
-                text: root.commentProgramTitle || qsTranslate("Viewer", "Program title unavailable")
-                textFormat: Text.PlainText
-                wrapMode: Text.Wrap
-                maximumLineCount: 3
-                elide: Text.ElideRight
-                color: "#e5e5e4"
-                font.pixelSize: 14
-                ToolTip.visible: titleHover.hovered && root.commentProgramTitle.length > 0
-                ToolTip.text: root.commentProgramTitle
-                HoverHandler { id: titleHover }
-            }
-        }
-        Loader {
-            id: commentList
+        PlaybackSettings {
+            objectName: "sidebarPlaybackSettings"
+            visible: root.page === ProgramSidebar.Playback
             Layout.fillWidth: true
             Layout.fillHeight: true
-            objectName: "sidebarCommentList"
-            active: root.page === ProgramSidebar.Comments && root.evaluationCommentList
-            visible: active
-            // Load only the evaluation resource. A static CommentList reference
-            // would require registering it in normal builds as well.
-            function configureSource() {
-                if (!root.evaluationCommentList) {
-                    source = "";
-                    return;
-                }
-                setSource(Qt.resolvedUrl("CommentList.qml"), {
-                    commentModel: Qt.binding(() => root.commentModel),
-                    status: Qt.binding(() => root.commentStatus)
-                });
-            }
-            Component.onCompleted: configureSource()
-            Connections {
-                target: root
-                function onEvaluationCommentListChanged() { commentList.configureSource(); }
-            }
-        }
-        ScrollView {
-            id: commentControls
-            objectName: "sidebarCommentControls"
-            visible: root.page === ProgramSidebar.Comments && root.showCommentControls
-            Layout.fillWidth: true
-            Layout.fillHeight: true
-            contentWidth: availableWidth
-            clip: true
-            ColumnLayout {
-                width: commentControls.availableWidth
-                spacing: 18
-                Label {
-                    objectName: "sidebarCommentStatus"
-                    Layout.fillWidth: true
-                    text: qsTranslate("Settings", "Live comments: %1").arg(root.commentStatus)
-                    textFormat: Text.PlainText
-                    wrapMode: Text.Wrap
-                    color: "#b6bab6"
-                }
-                CommentPresentation {
-                    Layout.fillWidth: true
-                    enabled: root.commentsEnabled
-                    displayMode: root.displayMode
-                    placementMode: root.placementMode
-                    evaluationCollision: root.evaluationCollision
-                    onSelected: function(display, placement) { root.presentationRequested(display, placement); }
-                }
-                DanmakuAdjustments {
-                    Layout.fillWidth: true
-                    enabled: root.commentsEnabled
-                    textSize: root.textSize
-                    textOpacity: root.textOpacity
-                    speed: root.speed
-                    onAdjusted: function(size, opacity, speed) { root.adjusted(size, opacity, speed); }
-                }
-                RowLayout {
-                    Layout.fillWidth: true
-                    enabled: root.commentsEnabled
-                    Label { text: qsTranslate("Settings", "Drop shadow"); color: "#f4f5f3"; Layout.fillWidth: true }
-                    ToggleSwitch {
-                        text: qsTranslate("Settings", "Drop shadow")
-                        checked: root.shadowEnabled
-                        onToggled: root.shadowRequested(checked)
-                    }
-                }
-            }
+            commentsEnabled: root.commentsEnabled
+            danmakuEnabled: root.danmakuEnabled
+            displayMode: root.displayMode
+            placementMode: root.placementMode
+            evaluationCollision: root.evaluationCollision
+            textSize: root.textSize
+            textOpacity: root.textOpacity
+            speed: root.speed
+            shadowEnabled: root.shadowEnabled
+            statsVisible: root.statsVisible
+            onPresentationRequested: function(display, placement) { root.presentationRequested(display, placement); }
+            onDanmakuRequested: function(enabled) { root.danmakuRequested(enabled); }
+            onAdjusted: function(size, opacity, speed) { root.adjusted(size, opacity, speed); }
+            onShadowRequested: function(enabled) { root.shadowRequested(enabled); }
+            onStatsRequested: function(visible) { root.statsRequested(visible); }
+            onTimeshiftSettingsRequested: root.timeshiftSettingsRequested()
         }
         Rectangle {
             Layout.fillWidth: true
@@ -329,13 +286,15 @@ Rectangle {
             spacing: 8
             SidebarTab {
                 Layout.fillWidth: true
-                iconSource: root.iconDirectory + "message-square.svg"
-                selected: root.page === ProgramSidebar.Comments
-                text: qsTranslate("Main", "Comments")
-                onClicked: root.pageRequested(ProgramSidebar.Comments)
+                objectName: "playbackSidebarTab"
+                iconSource: root.iconDirectory + "settings-2.svg"
+                selected: root.page === ProgramSidebar.Playback
+                text: qsTranslate("Main", "Playback settings")
+                onClicked: root.pageRequested(ProgramSidebar.Playback)
             }
             SidebarTab {
                 Layout.fillWidth: true
+                objectName: "programSidebarTab"
                 iconSource: root.iconDirectory + "info.svg"
                 selected: root.page === ProgramSidebar.Program
                 text: qsTranslate("Main", "Program information")
@@ -343,6 +302,7 @@ Rectangle {
             }
             SidebarTab {
                 Layout.fillWidth: true
+                objectName: "channelsSidebarTab"
                 iconSource: root.iconDirectory + "grid-2x2.svg"
                 selected: root.page === ProgramSidebar.Channels
                 text: qsTranslate("Main", "Channels")

@@ -27,7 +27,6 @@ Item {
                 property int requests: 0
                 function setDanmaku(value) { danmaku = value; requests++; }
             }
-            CommentModel { id: comments }
             SettingsToggle {
                 id: setting
                 width: 480
@@ -37,32 +36,6 @@ Item {
                 checked: backend.danmaku
                 onToggled: backend.setDanmaku(checked)
             }
-            IconAction {
-                id: playbackButton
-                x: 500
-                y: host.height - 64
-                iconSource: Qt.resolvedUrl("../../../assets/icons/settings-2.svg")
-                tip: "Playback settings"
-                active: playback.visible
-                onClicked: playback.toggle()
-            }
-            PlaybackSettings {
-                id: playback
-                toggleButton: playbackButton
-                commentsEnabled: backend.enabled
-                danmakuEnabled: backend.danmaku
-                textSize: backend.size
-                textOpacity: 1
-                speed: 1
-                shadowEnabled: backend.shadow
-                statsVisible: backend.stats
-                onDanmakuRequested: function(value, size, opacity, speed) {
-                    backend.setDanmaku(value);
-                    backend.size = size;
-                }
-                onShadowRequested: function(value) { backend.shadow = value; }
-                onStatsRequested: function(value) { backend.stats = value; }
-            }
             ProgramSidebar {
                 id: sidebar
                 x: 600
@@ -70,127 +43,89 @@ Item {
                 height: host.height
                 targetWindow: host
                 programJson: "null"
-                commentModel: comments
                 iconDirectory: Qt.resolvedUrl("../../../assets/icons/")
-                page: ProgramSidebar.Comments
+                page: ProgramSidebar.Playback
                 commentsEnabled: backend.enabled
                 danmakuEnabled: backend.danmaku
+                textSize: backend.size
+                statsVisible: backend.stats
+                shadowEnabled: backend.shadow
                 onDanmakuRequested: function(value) { backend.setDanmaku(value); }
+                onAdjusted: function(size, opacity, speed) { backend.size = size; }
+                onShadowRequested: function(value) { backend.shadow = value; }
+                onStatsRequested: function(value) { backend.stats = value; }
+                onPageRequested: function(next) { page = next; }
             }
-            SignalSpy { id: statsRequests; target: playback; signalName: "statsRequested" }
-            function revealPlaybackControl(control) {
-                const flickable = playback.contentItem.contentItem;
+            SignalSpy { id: statsRequests; target: sidebar; signalName: "statsRequested" }
+            SignalSpy { id: timeshiftRequests; target: sidebar; signalName: "timeshiftSettingsRequested" }
+            function reveal(control) {
+                const scroll = findChild(sidebar, "sidebarPlaybackSettings");
+                const flickable = scroll.contentItem;
                 const point = control.mapToItem(flickable.contentItem, 0, 0);
                 flickable.contentY = Math.max(0, Math.min(point.y - 10, flickable.contentHeight - flickable.height));
-                waitForRendering(playback.contentItem);
+                waitForRendering(scroll);
             }
-            function playbackToggle() { return findChild(playback.contentItem, "playbackDanmakuToggle"); }
-            function sidebarToggle() { return findChild(sidebar, "sidebarDanmakuToggle"); }
+            function sidebarToggle() { return findChild(sidebar, "playbackDanmakuToggle"); }
             function verifyState(value, requests) {
                 compare(backend.danmaku, value);
                 compare(backend.requests, requests);
                 compare(setting.checked, value);
-                compare(playbackToggle().checked, value);
                 compare(sidebarToggle().checked, value);
             }
             function init() {
                 failOnWarning(/.*/);
-                backend.enabled = true;
-                backend.danmaku = false;
-                backend.stats = false;
-                backend.shadow = true;
-                backend.size = 21;
+                backend.enabled = true; backend.danmaku = false;
+                backend.stats = false; backend.shadow = true; backend.size = 21;
                 backend.requests = 0;
-                statsRequests.clear();
-                host.requestActivate();
-                tryCompare(host, "active", true);
-                compare(setting.enabled, true);
+                sidebar.page = ProgramSidebar.Playback;
+                statsRequests.clear(); timeshiftRequests.clear();
+                host.requestActivate(); tryCompare(host, "active", true);
+                reveal(sidebarToggle());
             }
-            function cleanup() { playback.close(); }
-            function test_all_surfaces_stay_in_sync_after_mouse_keyboard_and_external_changes() {
-                // The settings label remains clickable, beyond the small indicator.
+            function test_surfaces_stay_in_sync_after_mouse_keyboard_and_external_changes() {
                 mouseClick(setting, 20, setting.height / 2);
                 verifyState(true, 1);
-                playback.open();
-                tryCompare(playback, "opened", true);
-                const compact = playbackToggle();
-                // Press feedback must not shrink the logical click target.
-                mousePress(compact, 0, compact.height / 2);
+                const toggle = sidebarToggle();
+                mousePress(toggle, 0, toggle.height / 2);
                 wait(120);
-                mouseRelease(compact, 0, compact.height / 2);
+                mouseRelease(toggle, 0, toggle.height / 2);
                 verifyState(false, 2);
-                playback.close();
-                tryCompare(playback, "visible", false);
-                sidebarToggle().forceActiveFocus();
-                keyClick(Qt.Key_Space);
+                toggle.forceActiveFocus(); keyClick(Qt.Key_Space);
                 verifyState(true, 3);
-                backend.danmaku = false;
-                verifyState(false, 3);
-                keyClick(Qt.Key_Space);
-                verifyState(true, 4);
+                backend.danmaku = false; verifyState(false, 3);
+                keyClick(Qt.Key_Space); verifyState(true, 4);
             }
             function test_disabled_controls_do_not_request_changes() {
                 backend.enabled = false;
-                mouseClick(setting);
-                mouseClick(sidebarToggle());
-                playback.open();
-                tryCompare(playback, "opened", true);
-                mouseClick(playbackToggle());
+                mouseClick(setting); mouseClick(sidebarToggle());
                 verifyState(false, 0);
             }
-            function test_playback_stats_mouse_and_keyboard_toggles_keep_menu_open() {
-                playback.open();
-                tryCompare(playback, "opened", true);
-                const stats = findChild(playback.contentItem, "playbackStatsToggle");
-                revealPlaybackControl(stats);
-                mouseClick(stats);
-                compare(backend.stats, true);
-                compare(statsRequests.count, 1);
-                compare(playback.opened, true);
-                stats.forceActiveFocus();
-                keyClick(Qt.Key_Space);
-                compare(backend.stats, false);
-                compare(statsRequests.count, 2);
-                compare(playback.opened, true);
+            function test_stats_and_timeshift_remain_reachable_in_short_sidebar() {
+                const stats = findChild(sidebar, "playbackStatsToggle");
+                reveal(stats); mouseClick(stats);
+                compare(backend.stats, true); compare(statsRequests.count, 1);
+                stats.forceActiveFocus(); keyClick(Qt.Key_Space);
+                compare(backend.stats, false); compare(statsRequests.count, 2);
+                const timeshift = findChild(sidebar, "playbackTimeshiftSettings");
+                reveal(timeshift); mouseClick(timeshift);
+                compare(timeshiftRequests.count, 1);
+                compare(sidebar.page, ProgramSidebar.Playback);
             }
-            function test_playback_shadow_and_large_font_apply_without_dismissing_menu() {
-                playback.open();
-                tryCompare(playback, "opened", true);
-                const shadow = findChild(playback.contentItem, "playbackShadowToggle");
-                revealPlaybackControl(shadow);
-                mouseClick(shadow);
-                compare(backend.shadow, false);
-                compare(playback.opened, true);
-                backend.shadow = true;
-                compare(shadow.checked, true);
-                const size = findChild(playback.contentItem, "danmakuTextSize");
-                revealPlaybackControl(size);
-                size.forceActiveFocus();
-                for (let value = 21; value < 72; ++value)
-                    keyClick(Qt.Key_Right);
+            function test_shadow_and_large_font_updates_survive_tab_changes() {
+                const shadow = findChild(sidebar, "playbackShadowToggle");
+                reveal(shadow); mouseClick(shadow); compare(backend.shadow, false);
+                backend.shadow = true; compare(shadow.checked, true);
+                const size = findChild(sidebar, "danmakuTextSize");
+                reveal(size); size.forceActiveFocus();
+                for (let value = 21; value < 72; ++value) keyClick(Qt.Key_Right);
                 compare(backend.size, 72);
-                compare(playback.opened, true);
-                backend.enabled = false;
-                revealPlaybackControl(shadow);
-                mouseClick(shadow);
+                mouseClick(findChild(sidebar, "programSidebarTab"));
+                compare(sidebar.page, ProgramSidebar.Program);
+                mouseClick(findChild(sidebar, "playbackSidebarTab"));
+                compare(sidebar.page, ProgramSidebar.Playback);
+                compare(size.value, 72);
+                backend.enabled = false; reveal(shadow); mouseClick(shadow);
                 compare(backend.shadow, true);
-            }
-            function test_playback_button_closes_without_reopening_and_dismissal_still_works() {
-                mouseClick(playbackButton);
-                tryCompare(playback, "opened", true);
-                mousePress(playbackButton);
-                wait(120);
-                compare(playback.opened, true);
-                mouseRelease(playbackButton);
-                tryCompare(playback, "visible", false);
-                mouseClick(playbackButton);
-                tryCompare(playback, "opened", true);
-                keyClick(Qt.Key_Escape);
-                tryCompare(playback, "visible", false);
-                mouseClick(playbackButton);
-                tryCompare(playback, "opened", true);
-                mouseClick(testCase, 20, 130);
-                tryCompare(playback, "visible", false);
             }
         }
     }

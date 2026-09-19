@@ -18,6 +18,10 @@ Item {
             failure = "Program notification exposed different viewing metadata";
         if (backend.program_progress !== (program ? program.progress : 0))
             failure = "Program notification exposed a different viewing progress";
+        const live = model.live.program;
+        if (live && live.span && model.axis.end === live.span.end
+                && model.axis.endUtc !== live.data.startAt + live.data.duration)
+            failure = "Program end clock differs from the broadcast schedule";
         if ((model.state === "seeking") !== backend.seeking || (model.state === "paused" && !backend.paused))
             failure = "Transport notification exposed a different timeline state";
     }

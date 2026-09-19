@@ -15,6 +15,10 @@ Item {
     readonly property bool fullscreen: targetWindow !== null && targetWindow.visibility === Window.FullScreen
     property int restoreVisibility: Window.Windowed
     readonly property RecordingSeekSteps seekSteps: RecordingSeekSteps {}
+    // Allow the decoder's small receive-to-display delay at the live edge.
+    readonly property real liveEdgeToleranceMs: 2500
+    readonly property bool atLiveEdge: !backend.recording && backend.media_active && !backend.paused
+        && !backend.seeking && (!backend.timeshift || backend.live_delay_ms <= liveEdgeToleranceMs)
     signal activity
     signal channelsVisibilityRequested(bool visible)
     signal composerVisibilityRequested(bool visible)
@@ -56,6 +60,14 @@ Item {
     readonly property Action openRecording: Operation {
         text: qsTranslate("Recording", "Open TS file")
         onTriggered: root.recordingRequested()
+    }
+    readonly property Action returnToLive: Operation {
+        text: root.atLiveEdge ? qsTranslate("Viewer", "Live broadcast") : qsTranslate("Viewer", "Return to live")
+        enabled: root.enabled && !root.backend.recording && root.backend.media_active
+        onTriggered: {
+            if (root.backend.timeshift && root.backend.seekable) root.backend.return_to_live();
+            root.activity();
+        }
     }
     readonly property Action openChannels: Operation {
         text: qsTranslate("Main", "Channels")
@@ -144,7 +156,7 @@ Item {
         onTriggered: { root.settingsRequested(); root.activity(); }
     }
     readonly property Action toggleProgram: Operation {
-        text: root.programVisible ? qsTranslate("Main", "Close side panel") : qsTranslate("Main", "Program information")
+        text: root.programVisible ? qsTranslate("Main", "Close side panel") : qsTranslate("Main", "Open side panel")
         onTriggered: root.programVisibilityRequested(!root.programVisible)
     }
 }

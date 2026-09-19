@@ -138,6 +138,64 @@ fn fractional_retention_start_keeps_the_full_program_axis() {
 }
 
 #[test]
+fn fractional_pcr_updates_keep_program_boundary_clocks_exact() {
+    const CLOCK_FRACTION_NS: u64 = 800_000;
+    const FIRST_PCR_NS: u64 = NS_PER_MS + 200_000;
+    const PCR_FRACTIONS_NS: [u64; 2] = [200_000, 900_000];
+    const UPDATE_COUNT: usize = 6;
+    let mut history = History::default();
+    // The first TDT arrives after reception starts, between two PCR samples.
+    history.observe(EPOCH, 0, FIRST_PCR_NS, None);
+    history.observe(
+        EPOCH,
+        FIRST_PCR_NS,
+        FIRST_PCR_NS + ns(SECOND_MS),
+        Some(&Arc::new(Observation {
+            pcr: FIRST_PCR_NS,
+            information: Information {
+                current: Some(program(1, 0)).into(),
+                time: Some((CLOCK_FRACTION_NS, BROADCAST_START_MS)),
+                ..Default::default()
+            },
+        })),
+    );
+    let mut presenter = Presenter::new();
+    for (update, fraction_ns) in PCR_FRACTIONS_NS
+        .into_iter()
+        .cycle()
+        .take(UPDATE_COUNT)
+        .enumerate()
+    {
+        let received_ms = (update as i64 + 1) * SECOND_MS;
+        let start_ns = ns(received_ms) + fraction_ns;
+        let end_ns = ns(MINUTE_MS + received_ms) + fraction_ns;
+        history.advance_end(end_ns);
+        let snapshot = presenter.project(
+            &mut history,
+            start_ns,
+            end_ns,
+            true,
+            Reading {
+                phase: Phase::Playing,
+                position_ns: Some(end_ns - ns(SECOND_MS)),
+                target_ns: None,
+            },
+        );
+        assert_eq!(
+            snapshot.axis.end_utc,
+            Some(UtcMs(BROADCAST_START_MS + SHOW_MS)),
+            "a fractional PCR update must not move the scheduled end into the previous minute"
+        );
+        assert_eq!(snapshot.axis.start_utc, Some(UtcMs(BROADCAST_START_MS)));
+        let span = snapshot.live.program.as_ref().unwrap().span.unwrap();
+        assert_eq!(span.start, snapshot.programs[0].start);
+        assert_eq!(span.end, snapshot.programs[0].end);
+        assert_eq!(span.start, snapshot.axis.start);
+        assert_eq!(span.end, snapshot.axis.end);
+    }
+}
+
+#[test]
 fn three_program_axis_and_broadcast_progress_do_not_follow_the_playhead() {
     let mut history = three_programs();
     let mut presenter = Presenter::new();
