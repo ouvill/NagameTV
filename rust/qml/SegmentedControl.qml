@@ -12,9 +12,11 @@ Rectangle {
     signal downRequested
     readonly property int selectedIndex: options.findIndex(option => option.value === value)
     readonly property real segmentWidth: (width - 6) / Math.max(1, options.length)
+    readonly property real outerCornerRadius: 12
+    readonly property real segmentCornerRadius: 8
     implicitWidth: options.length * 130 + 6
     implicitHeight: 40
-    radius: height / 2
+    radius: root.outerCornerRadius
     color: "#b8171918"
     border.color: "#32ffffff"
     opacity: enabled ? 1 : 0.42
@@ -29,7 +31,7 @@ Rectangle {
     Rectangle {
         x: 3 + Math.max(0, root.selectedIndex) * root.segmentWidth
         y: 3; width: root.segmentWidth; height: root.height - 6
-        radius: height / 2
+        radius: root.segmentCornerRadius
         visible: root.selectedIndex >= 0
         color: "#429caf9f"; border.color: "#9caf9f"
         Behavior on x { NumberAnimation { duration: 170; easing.type: Easing.OutCubic } }
@@ -62,7 +64,7 @@ Rectangle {
                     elide: Text.ElideRight
                 }
                 background: Rectangle {
-                    color: "transparent"; radius: height / 2
+                    color: "transparent"; radius: root.segmentCornerRadius
                     border.width: tab.visualFocus ? 1 : 0; border.color: "#9caf9f"
                 }
             }
