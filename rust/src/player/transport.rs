@@ -6,20 +6,49 @@ use crate::playback::{
 };
 use cxx_qt::CxxQtType;
 use cxx_qt_lib::QString;
-use std::pin::Pin;
+use std::{
+    pin::Pin,
+    time::{Duration, Instant},
+};
+
+// Match the six-second reading time used by screenshot notices.
+pub(super) const NOTICE_DURATION: Duration = Duration::from_secs(6);
+
+#[derive(PartialEq, Eq)]
+pub(super) struct TimedNotice {
+    kind: Notice,
+    deadline: Instant,
+}
 
 #[derive(PartialEq, Eq)]
 pub(super) enum Message {
     None,
-    Notice(Notice),
+    Notice(TimedNotice),
     Failure(QString),
 }
 
 impl Message {
+    pub(super) fn notice(kind: Notice, now: Instant) -> Self {
+        Self::Notice(TimedNotice {
+            kind,
+            deadline: now + NOTICE_DURATION,
+        })
+    }
+
+    fn expire(&mut self, now: Instant) -> bool {
+        match self {
+            Self::Notice(notice) if now >= notice.deadline => {
+                *self = Self::None;
+                true
+            }
+            Self::None | Self::Notice(_) | Self::Failure(_) => false,
+        }
+    }
+
     fn render(&self) -> QString {
         match self {
             Self::None => QString::default(),
-            Self::Notice(notice) => tr(match notice {
+            Self::Notice(notice) => tr(match notice.kind {
                 Notice::Expired => {
                     "The playback position expired and was moved into the retained range."
                 }
@@ -39,6 +68,12 @@ impl Message {
 impl ffi::Player {
     pub fn transport_error(&self) -> QString {
         self.rust().transport_message.render()
+    }
+
+    pub(super) fn expire_transport_notice(mut self: Pin<&mut Self>, now: Instant) {
+        if self.as_mut().rust_mut().transport_message.expire(now) {
+            self.as_mut().transport_error_changed();
+        }
     }
 
     pub fn timeshift(&self) -> bool {

@@ -357,6 +357,8 @@ impl ffi::Player {
     pub fn poll(mut self: Pin<&mut Self>) {
         self.as_mut().poll_remote_commands();
         self.as_mut().poll_player();
+        self.as_mut()
+            .expire_transport_notice(std::time::Instant::now());
         let aspect = self
             .rust()
             .media
@@ -378,7 +380,10 @@ impl ffi::Player {
         let result = self.as_mut().rust_mut().media.poll();
         if let Some(notice) = self.as_mut().rust_mut().media.take_notice() {
             self.as_mut()
-                .set_transport_message(super::transport::Message::Notice(notice));
+                .set_transport_message(super::transport::Message::notice(
+                    notice,
+                    std::time::Instant::now(),
+                ));
         }
         self.poll_audio_choice();
         match result {

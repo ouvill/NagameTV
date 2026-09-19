@@ -245,7 +245,7 @@ fn checks() -> TestResult {
 }
 
 fn check_transport_messages() {
-    use super::transport::Message;
+    use super::transport::{Message, NOTICE_DURATION};
     use crate::playback::timeline::Notice;
     use cxx_qt_lib::QQmlApplicationEngine;
 
@@ -280,27 +280,68 @@ fn check_transport_messages() {
         ),
     ] {
         observed.lock().unwrap().clear();
+        let shown_at = Instant::now();
         player
             .pin_mut()
-            .set_transport_message(Message::Notice(notice));
+            .set_transport_message(Message::notice(notice, shown_at));
         assert_eq!(player.transport_error(), QString::from(english));
         assert!(player.pin_mut().request_language("ja".into()));
         assert_eq!(player.transport_error(), QString::from(japanese));
         assert!(player.pin_mut().request_language("en".into()));
         assert_eq!(player.transport_error(), QString::from(english));
         assert_eq!(*observed.lock().unwrap(), [english, japanese, english]);
+        let deadline = shown_at + NOTICE_DURATION;
+        player
+            .pin_mut()
+            .expire_transport_notice(deadline - Duration::from_nanos(1));
+        assert_eq!(player.transport_error(), QString::from(english));
+        player.pin_mut().expire_transport_notice(deadline);
+        assert!(player.transport_error().is_empty());
+        assert_eq!(*observed.lock().unwrap(), [english, japanese, english, ""]);
+        player
+            .pin_mut()
+            .expire_transport_notice(deadline + NOTICE_DURATION);
+        assert_eq!(*observed.lock().unwrap(), [english, japanese, english, ""]);
     }
+
+    // Repeating the same notice replaces its deadline as well as its content.
+    let shown_at = Instant::now();
+    player
+        .pin_mut()
+        .set_transport_message(Message::notice(Notice::Expired, shown_at));
+    let repeated_at = shown_at + NOTICE_DURATION / 2;
+    player
+        .pin_mut()
+        .set_transport_message(Message::notice(Notice::Expired, repeated_at));
+    player
+        .pin_mut()
+        .expire_transport_notice(shown_at + NOTICE_DURATION);
+    assert!(!player.transport_error().is_empty());
+    player
+        .pin_mut()
+        .expire_transport_notice(repeated_at + NOTICE_DURATION);
+    assert!(player.transport_error().is_empty());
+
+    player
+        .pin_mut()
+        .set_transport_message(Message::notice(Notice::Expired, shown_at));
     // Even a diagnostic that happens to match a translation key stays literal.
     player
         .pin_mut()
         .set_transport_message(Message::Failure("Paused".into()));
     assert!(player.pin_mut().request_language("ja".into()));
+    // An old notice deadline must not clear a later error.
+    player
+        .pin_mut()
+        .expire_transport_notice(shown_at + NOTICE_DURATION);
     assert_eq!(player.transport_error(), QString::from("Paused"));
     player.pin_mut().set_transport_message(Message::None);
     assert!(player.pin_mut().request_language("en".into()));
     assert!(player.transport_error().is_empty());
     assert!(player.pin_mut().shutdown());
-    println!("Transport notices follow language changes and preserve literal diagnostics");
+    println!(
+        "Transport notices retranslate, expire once, renew on repetition and preserve later errors"
+    );
 }
 
 fn check_stream_state(player: &mut cxx::UniquePtr<ffi::Player>) -> TestResult {

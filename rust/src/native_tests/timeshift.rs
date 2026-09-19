@@ -545,14 +545,18 @@ pub(super) fn run(
             connections,
             "settings update reconnected the stream"
         );
+        assert!(evaluate(engine, "player.transport_error.length > 0")?);
         observe_playback(
             app,
             engine,
             "player.timeshift && !player.playback_error.length",
         )?;
+        // Four seconds of playback above leaves time for the six-second notice
+        // to expire within the shared five-second wait, without another action.
+        wait_for(app, engine, "player.transport_error.length === 0")?;
         evaluate(engine, "player.stop(); true")?;
         eprintln!(
-            "Timeshift {storage}: shrinking moves paused playhead; storage switch returns to live without reconnecting"
+            "Timeshift {storage}: shrinking moves paused playhead; storage switch returns to live without reconnecting; notice expires automatically"
         );
     }
     assert!(evaluate(
