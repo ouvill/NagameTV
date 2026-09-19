@@ -197,6 +197,7 @@ pub mod ffi {
         #[qproperty(QString, activity_data, READ, NOTIFY)]
         #[qproperty(QString, comment_status, READ, NOTIFY)]
         #[qproperty(QString, comment_timeline, READ, NOTIFY)]
+        #[qproperty(f64, comment_cache_bytes, READ, NOTIFY)]
         #[qproperty(QString, comment_draft, READ, NOTIFY)]
         #[qproperty(QString, comment_post_status, READ, NOTIFY)]
         #[qproperty(QString, comment_post_target, READ, NOTIFY)]
@@ -399,6 +400,8 @@ pub mod ffi {
         #[qinvokable]
         fn comments_open(self: Pin<&mut Player>, opened: bool);
         #[qinvokable]
+        fn clear_comment_cache(self: Pin<&mut Player>);
+        #[qinvokable]
         fn configure_comment_presentation(
             self: Pin<&mut Player>,
             display: QString,
@@ -482,6 +485,7 @@ pub struct PlayerRust {
     comments: crate::features::comments::Comments,
     comment_replay: crate::features::comments::replay::Replay,
     comment_timeline: QString,
+    comment_cache_bytes: f64,
     subtitles_active: bool,
     subtitle_display: bool,
     subtitle_data: QString,

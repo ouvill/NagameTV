@@ -33,8 +33,14 @@ fn jikkyo(channel: &Channel) -> Option<u16> {
     let service = channel.broadcast?;
     mapping::resolve(service.network_id, service.service_id)
 }
+pub(crate) fn channel_for(service: crate::channels::BroadcastService) -> Option<u16> {
+    mapping::resolve(service.network_id, service.service_id)
+}
 
 impl Comments {
+    pub fn reception_epoch(&self) -> Option<u64> {
+        self.controller.reception_epoch()
+    }
     pub fn configure(&mut self, enabled: bool, channel: Option<&Channel>) -> bool {
         self.channel_selected = channel.is_some();
         let target = enabled

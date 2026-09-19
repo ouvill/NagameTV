@@ -106,6 +106,24 @@ impl Session {
             Input::Idle => None,
         }
     }
+    pub fn comment_source(
+        &self,
+        fallback: Option<BroadcastService>,
+        channel: impl Fn(BroadcastService) -> Option<u16>,
+        reception: viewer_comments::cache::Reception,
+    ) -> Option<viewer_comments::cache::Source> {
+        match &self.input {
+            Input::Active {
+                source, controller, ..
+            } => source.comment_source(
+                fallback,
+                channel,
+                controller.snapshot().position.map(|p| p.nseconds()),
+                reception,
+            ),
+            Input::Idle => None,
+        }
+    }
     /// Audio follows the same sampled output position as transport, including pause.
     /// A pending seek has no confirmed destination to which routing can be applied.
     pub(crate) fn audio_metadata(&self) -> Option<crate::audio::Metadata> {

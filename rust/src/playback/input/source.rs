@@ -28,6 +28,7 @@ impl Feedback {
 }
 
 const SOURCE_QUEUE_BYTES: u64 = (READ_BYTES * 2) as u64;
+const LIVE_EDGE_TOLERANCE_NS: u64 = 5_000_000_000;
 
 pub(in crate::playback) struct Input {
     identity: u64,
@@ -124,6 +125,71 @@ impl Input {
     }
     pub fn identity(&self) -> u64 {
         self.identity
+    }
+    pub fn comment_source(
+        &self,
+        fallback: Option<crate::channels::BroadcastService>,
+        channel: impl Fn(crate::channels::BroadcastService) -> Option<u16>,
+        position: Option<u64>,
+        reception: viewer_comments::cache::Reception,
+    ) -> Option<viewer_comments::cache::Source> {
+        use viewer_comments::cache::{ClockSpan, RecordingRange, Source};
+        let window = self.shared.window().ok().flatten()?;
+        let catalog = match &self.shared {
+            Shared::File(shared) => shared.lock().ok()?.index.catalog(),
+            Shared::Live(shared) => shared.lock().ok()?.index.catalog(),
+        };
+        let mapped_start = match &self.shared {
+            Shared::Live(_) => window
+                .start
+                .saturating_sub(viewer_comments::danmaku::MAX_LIFETIME.as_nanos() as u64),
+            Shared::File(_) => window.start,
+        };
+        let mapped = catalog
+            .lock()
+            .ok()?
+            .broadcast_spans(mapped_start, window.end);
+        let spans: Vec<_> = mapped
+            .iter()
+            .filter_map(|span| {
+                let channel = channel(span.service.or(fallback)?)?;
+                let (start, end) = span.clock.range();
+                Some(ClockSpan {
+                    key: span.clock.key(),
+                    channel,
+                    media_start_ms: i64::try_from(start / 1_000_000).ok()?,
+                    media_end_ms: i64::try_from(end / 1_000_000).ok()?,
+                    utc_start_ms: span.clock.utc_range().0,
+                })
+            })
+            .collect();
+        match &self.shared {
+            Shared::File(_) => {
+                let mut through = window.start;
+                let complete = mapped.len() == spans.len()
+                    && mapped.iter().all(|span| {
+                        let (start, end) = span.clock.range();
+                        let contiguous = start <= through;
+                        through = through.max(end);
+                        contiguous
+                    })
+                    && through >= window.end
+                    && matches!(window.coverage, Coverage::Complete);
+                Some(Source::Recording(if complete {
+                    RecordingRange::Known(spans)
+                } else {
+                    RecordingRange::Discovering(spans)
+                }))
+            }
+            Shared::Live(_) => Some(Source::Live {
+                earliest_media_ms: i64::try_from(window.start / 1_000_000).ok()?,
+                spans,
+                reception,
+                at_edge: position.is_none_or(|position| {
+                    window.end.saturating_sub(position) <= LIVE_EDGE_TOLERANCE_NS
+                }),
+            }),
+        }
     }
     pub fn metadata(&self, position_ns: u64) -> crate::transport::programs::catalog::View {
         match &self.shared {

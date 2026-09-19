@@ -50,6 +50,24 @@ pub fn settings_path() -> Result<PathBuf, Error> {
     Ok(base.join("nagametv/settings.toml"))
 }
 
+/// Native Linux and Flatpak honor their own XDG cache root. Other platforms
+/// keep cache data under their conventional per-user application directory.
+pub fn comment_cache_directory() -> Result<PathBuf, Error> {
+    #[cfg(target_os = "windows")]
+    let base = std::env::var_os("LOCALAPPDATA").map(PathBuf::from);
+    #[cfg(target_os = "macos")]
+    let base = std::env::var_os("HOME").map(|home| PathBuf::from(home).join("Library/Caches"));
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    let base = std::env::var_os("XDG_CACHE_HOME")
+        .map(PathBuf::from)
+        .filter(|p| p.is_absolute())
+        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".cache")));
+    Ok(base
+        .filter(|p| p.is_absolute())
+        .ok_or(Error::MissingDirectory)?
+        .join("nagametv/comment-archive"))
+}
+
 fn load(path: &Path) -> Result<Preferences, Error> {
     let file = match fs::File::open(path) {
         Ok(file) => file,

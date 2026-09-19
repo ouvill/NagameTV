@@ -39,6 +39,8 @@ pub struct Controller {
     desired: Option<Endpoints>,
     phase: Phase,
     status: Status,
+    generation: u64,
+    dropped: u64,
 }
 
 impl Default for Controller {
@@ -47,11 +49,25 @@ impl Default for Controller {
             desired: None,
             phase: Phase::Idle,
             status: Status::Disabled,
+            generation: 0,
+            dropped: 0,
         }
     }
 }
 
 impl Controller {
+    pub fn reception_epoch(&self) -> Option<u64> {
+        match &self.phase {
+            Phase::Running(connection)
+                if matches!(self.status, Status::Connection(State::Receiving))
+                    && matches!(connection.state(), State::Receiving)
+                    && connection.dropped() == self.dropped =>
+            {
+                Some(self.generation)
+            }
+            Phase::Idle | Phase::Waiting(_) | Phase::Stopping { .. } | Phase::Running(_) => None,
+        }
+    }
     pub fn status(&self) -> &Status {
         &self.status
     }
@@ -119,6 +135,8 @@ impl Controller {
         if matches!(self.phase, Phase::Idle)
             && let Some(endpoints) = &self.desired
         {
+            self.generation = self.generation.wrapping_add(1);
+            self.dropped = 0;
             self.phase = Phase::Running(Connection::start(
                 runtime,
                 client.clone(),
@@ -131,6 +149,12 @@ impl Controller {
         // Observe terminal state first: if it arrives during draining, defer
         // teardown to the next poll so a concurrently queued last chat survives.
         let state = connection.state();
+        let dropped = connection.dropped();
+        if dropped != self.dropped {
+            // Queue loss is a reception gap even when the socket stayed open.
+            self.generation = self.generation.wrapping_add(1);
+            self.dropped = dropped;
+        }
         let comments: Vec<_> = std::iter::from_fn(|| connection.try_next())
             .take(MAX_POLL_COMMENTS)
             .collect();

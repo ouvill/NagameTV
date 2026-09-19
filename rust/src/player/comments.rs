@@ -137,16 +137,18 @@ impl ffi::Player {
 
     pub fn comments_open(mut self: Pin<&mut Self>, opened: bool) {
         if opened {
+            self.as_mut().rust_mut().comment_replay.open_cache();
             self.as_mut().poll_comments();
         }
+    }
+    pub fn clear_comment_cache(mut self: Pin<&mut Self>) {
+        self.as_mut().rust_mut().comment_replay.clear_unused();
+        self.poll_comments();
     }
 
     pub(super) fn poll_comments(mut self: Pin<&mut Self>) {
         self.as_mut().poll_activity();
         let seeking = self.seeking();
-        let earliest = self
-            .timeshift()
-            .then(|| gstreamer::ClockTime::from_mseconds(self.window_start_ms().max(0.) as u64));
         let (reset, comments, timeline) = {
             let mut this = self.as_mut().rust_mut();
             let this = &mut *this;
@@ -155,7 +157,8 @@ impl ffi::Player {
                 .and_then(|index| this.entries.get(index))
                 .filter(|_| this.stream_state.recording().is_none());
             let reset = this.comments.configure(this.comments_enabled, channel);
-            let comments = match &this.network {
+            let accepting = this.comment_replay.can_receive();
+            let comments = match this.network.as_ref().filter(|_| accepting) {
                 Some(network) => match this.comments.poll(network) {
                     Ok(comments) => comments,
                     Err(error) => {
@@ -165,9 +168,18 @@ impl ffi::Player {
                 },
                 None => Vec::new(),
             };
-            let context = if this.comments_enabled
-                && (this.stream_state.active() || this.stream_state.connecting())
+            let reception = if accepting
+                && comments.len() < viewer_comments::controller::MAX_POLL_COMMENTS
+                && this.comments_enabled
             {
+                this.comments
+                    .reception_epoch()
+                    .map(viewer_comments::cache::Reception::Receiving)
+                    .unwrap_or(viewer_comments::cache::Reception::Interrupted)
+            } else {
+                viewer_comments::cache::Reception::Interrupted
+            };
+            let context = if this.stream_state.active() || this.stream_state.connecting() {
                 this.media.source_identity().map(|source| {
                     let position = this
                         .media
@@ -176,12 +188,11 @@ impl ffi::Player {
                     let view = position
                         .map(|position| this.media.metadata(position))
                         .unwrap_or_default();
-                    let earliest_utc = earliest.and_then(|position| {
-                        this.media
-                            .metadata(position)
-                            .clock?
-                            .utc(position.nseconds())
-                    });
+                    let fallback = channel.and_then(|channel| channel.broadcast);
+                    let source_range = this
+                        .media
+                        .comment_source(fallback, crate::features::comments::channel_for, reception)
+                        .unwrap_or(viewer_comments::cache::Source::Pending);
                     crate::features::comments::replay::Context {
                         source,
                         service: view
@@ -189,7 +200,9 @@ impl ffi::Player {
                             .or_else(|| channel.and_then(|channel| channel.broadcast)),
                         position: position.map(|position| position.nseconds()),
                         clock: view.clock,
-                        earliest_utc,
+                        source_range,
+                        enabled: this.comments_enabled,
+                        display: this.danmaku_enabled,
                     }
                 })
             } else {
@@ -211,7 +224,6 @@ impl ffi::Player {
                 .and_then(|time| i64::try_from(time.as_millis()).ok())
                 .unwrap_or(0);
             this.comment_replay.update(
-                this.network.as_ref(),
                 context,
                 seeking && this.comments_enabled,
                 received,
@@ -232,6 +244,11 @@ impl ffi::Player {
         if *self.comment_timeline() != timeline {
             self.as_mut().rust_mut().comment_timeline = timeline;
             self.as_mut().comment_timeline_changed();
+        }
+        let cache_bytes = self.rust().comment_replay.disk_bytes() as f64;
+        if self.rust().comment_cache_bytes != cache_bytes {
+            self.as_mut().rust_mut().comment_cache_bytes = cache_bytes;
+            self.as_mut().comment_cache_bytes_changed();
         }
         if reset {
             self.as_mut().clear_comment_history();

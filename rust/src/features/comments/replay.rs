@@ -1,233 +1,20 @@
-//! Broadcast-time comment retention and cancellable, bounded archive windows.
+//! Playback projection over persistent comments. Fetching and storage have an
+//! independent lifetime, so seeks never cancel or invalidate a received response.
 use super::mapping;
-use crate::{
-    channels::BroadcastService,
-    services::{Job, Network, Progress, Stopping},
-    transport::programs::catalog::ClockReading,
-};
+use crate::{channels::BroadcastService, transport::programs::catalog::ClockReading};
 use std::{
-    collections::{BTreeMap, HashSet},
+    collections::{HashMap, HashSet},
+    path::PathBuf,
     time::{Duration, Instant},
 };
-use viewer_comments::{Comment, archive};
-const WINDOW_MS: i64 = 120_000;
-const LOOKBACK_MS: i64 = viewer_comments::danmaku::MAX_LIFETIME.as_millis() as i64;
-const PREFETCH_MS: i64 = 30_000;
-const MAX_CACHE_BYTES: usize = 16 * 1024 * 1024;
-const MAX_CACHE_COMMENTS: usize = 50_000;
-const MAX_WINDOWS: usize = 32;
-const RETRY: Duration = Duration::from_secs(30);
-const ARCHIVE_SETTLE_MS: i64 = 10 * 60 * 1000;
+use viewer_comments::{
+    Comment,
+    cache::{self, Controller, Demand, Interval, Record, RecordOrigin, Source, View},
+};
+const FORWARD_SECONDS: i64 = 120;
+const SEEK_SETTLE: Duration = Duration::from_millis(500);
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct Target {
-    source: u64,
-    channel: u16,
-}
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct Window {
-    start: i64,
-    end: i64,
-}
-impl Window {
-    fn contains(self, utc: i64) -> bool {
-        self.start <= utc && utc < self.end
-    }
-    fn url(self, target: Target) -> String {
-        format!(
-            "https://jikkyo.tsukumijima.net/api/kakolog/jk{}?starttime={}&endtime={}&format=json",
-            target.channel,
-            self.start / 1000,
-            self.end / 1000
-        )
-    }
-}
-#[derive(Default)]
-enum Request {
-    #[default]
-    Idle,
-    Loading {
-        target: Target,
-        window: Window,
-        job: Job<Vec<Comment>, archive::Error>,
-    },
-    Cancelling(Stopping),
-}
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Origin {
-    Reception,
-    Archive,
-}
-struct Entry {
-    origin: Origin,
-    id: u64,
-    key: String,
-    comment: Comment,
-    own: bool,
-}
-impl Entry {
-    fn charge(&self) -> usize {
-        std::mem::size_of::<Self>()
-            + self.key.capacity()
-            + self.comment.text.len()
-            + self
-                .comment
-                .identity
-                .as_ref()
-                .map_or(0, |identity| identity.user_id.len())
-    }
-}
-#[derive(Default)]
-struct Buffer {
-    serial: u64,
-    entries: BTreeMap<(u64, u64), Entry>,
-    bytes: usize,
-    revision: u64,
-}
-fn normalize_user(user: &str) -> &str {
-    user.trim_start_matches("nicolive:")
-        .trim_start_matches("rekari:")
-}
-impl Buffer {
-    fn insert(&mut self, comment: Comment, own: bool) {
-        self.insert_from(comment, own, Origin::Reception, &mut HashSet::new());
-    }
-    fn merge_archive(&mut self, comments: impl Iterator<Item = Comment>) {
-        let mut paired = HashSet::new();
-        for comment in comments {
-            self.insert_from(comment, false, Origin::Archive, &mut paired);
-        }
-    }
-    fn insert_from(
-        &mut self,
-        comment: Comment,
-        own: bool,
-        origin: Origin,
-        paired: &mut HashSet<u64>,
-    ) {
-        let Some(time) = comment.timestamp_micros else {
-            return;
-        };
-        // Comment number alone is not unique in kakolog. Include timestamp,
-        // origin, text and style; distinct numbered repeats remain distinct.
-        let key = serde_json::to_string(&(
-            time,
-            comment.source_id,
-            comment.origin,
-            &comment.text,
-            comment.style,
-            comment.identity.as_ref().map(|id| {
-                id.user_id
-                    .as_ref()
-                    .trim_start_matches("nicolive:")
-                    .trim_start_matches("rekari:")
-            }),
-        ))
-        .expect("comment key");
-        // A live relay and kakolog can assign different thread/comment IDs.
-        // Match equal original timestamps/payloads across the two paths once
-        // per occurrence. Never collapse repeated posts within either path.
-        let same_user = |other: &Comment| match (&comment.identity, &other.identity) {
-            (Some(left), Some(right)) => {
-                normalize_user(&left.user_id) == normalize_user(&right.user_id)
-            }
-            (None, _) | (_, None) => true,
-        };
-        let existing = self
-            .entries
-            .range((time, 0)..=(time, u64::MAX))
-            .find(|(_, entry)| {
-                entry.key == key
-                    || (entry.origin != origin
-                        && !paired.contains(&entry.id)
-                        && entry.comment.origin == comment.origin
-                        && entry.comment.text == comment.text
-                        && entry.comment.style == comment.style
-                        && same_user(&entry.comment))
-            })
-            .map(|(&position, _)| position);
-        if let Some(position) = existing {
-            let entry = self.entries.get_mut(&position).expect("found above");
-            if origin == Origin::Archive {
-                paired.insert(entry.id);
-            }
-            if origin == Origin::Reception && (entry.origin != origin || (own && !entry.own)) {
-                self.bytes = self.bytes.saturating_sub(entry.charge());
-                entry.origin = origin;
-                entry.key = key.clone();
-                entry.comment = comment;
-                entry.own |= own;
-                self.bytes += entry.charge();
-                self.revision += 1;
-            }
-            return;
-        }
-        self.serial += 1;
-        let entry = Entry {
-            origin,
-            id: self.serial,
-            key,
-            comment,
-            own,
-        };
-        self.bytes += entry.charge();
-        self.entries.insert((time, entry.id), entry);
-        self.revision += 1;
-    }
-    fn remove(&mut self, key: (u64, u64)) {
-        if let Some(entry) = self.entries.remove(&key) {
-            self.bytes = self.bytes.saturating_sub(entry.charge());
-            self.revision += 1;
-        }
-    }
-    fn retain(&mut self, earliest_ms: Option<i64>, viewing: Window) -> bool {
-        let mut evicted = false;
-        if let Some(earliest) = earliest_ms.and_then(|time| u64::try_from(time).ok()) {
-            while let Some((&key, _)) = self.entries.first_key_value() {
-                if key.0 / 1000 >= earliest {
-                    break;
-                }
-                self.remove(key);
-            }
-        }
-        while self.bytes > MAX_CACHE_BYTES || self.entries.len() > MAX_CACHE_COMMENTS {
-            let victim = self
-                .entries
-                .keys()
-                .find(|(time, _)| !viewing.contains((time / 1000) as i64))
-                .copied()
-                .or_else(|| self.entries.keys().next().copied());
-            let Some(victim) = victim else {
-                break;
-            };
-            self.remove(victim);
-            evicted = true;
-        }
-        evicted
-    }
-    fn project(&self, clock: ClockReading, viewing: Window) -> String {
-        let start = viewing.start.max(0) as u64 * 1000;
-        let end = viewing.end.max(0) as u64 * 1000;
-        let records: Vec<_> = self
-            .entries
-            .range((start, 0)..(end, 0))
-            .filter_map(|(_, entry)| {
-                let micros = entry.comment.timestamp_micros?;
-                let position = clock
-                    .media(i64::try_from(micros / 1000).ok()?)?
-                    .checked_add(micros % 1000 * 1000)?;
-                Some(serde_json::json!({
-                    "id": entry.id.to_string(), "time": position as f64 / 1_000_000_000.,
-                    "text": entry.comment.text, "type": entry.comment.style.position,
-                    "color": entry.comment.style.color, "own": entry.own,
-                }))
-            })
-            .take(archive::MAX_COMMENTS)
-            .collect();
-        serde_json::to_string(&records).expect("finite replay window")
-    }
-}
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) enum Status {
     #[default]
     Disabled,
@@ -238,287 +25,399 @@ pub(crate) enum Status {
     Loading,
     Ready,
     Pending,
+    Waiting,
     Empty,
-    Failed,
+    Failed(String),
+    StorageFailed(String),
 }
-/// Source identity plus an optional output-confirmed position. Reception may
-/// begin before the first frame; no wall-clock position is substituted.
 pub(crate) struct Context {
     pub source: u64,
     pub service: Option<BroadcastService>,
     pub position: Option<u64>,
     pub clock: Option<ClockReading>,
-    pub earliest_utc: Option<i64>,
+    pub source_range: Source,
+    pub enabled: bool,
+    pub display: bool,
+}
+#[derive(Default)]
+enum Storage {
+    #[default]
+    Dormant,
+    Active(Controller),
+    Failed(String),
+}
+struct Pending {
+    source: u64,
+    channel: u16,
+    clock: Option<cache::ClockSpan>,
+    comments: Vec<(Comment, bool)>,
 }
 #[derive(Default)]
 pub(crate) struct Replay {
-    target: Option<Target>,
-    buffer: Buffer,
-    request: Request,
-    // Successful windows (including empty ones) and failed attempts have separate
-    // states, so an HTTP failure never becomes a permanent empty result.
-    covered: Vec<(Window, Instant)>,
-    failed: Option<(Window, Instant)>,
-    projected: Option<(u64, i64, i64)>,
+    storage: Storage,
+    directory: Option<PathBuf>,
+    target: Option<(u64, u16)>,
+    pending: Option<Pending>,
+    projected: Option<(u64, i64, String)>,
     clock: Option<ClockReading>,
     position: Option<u64>,
+    seeking: bool,
+    settled: Option<Instant>,
     pub generation: u64,
     pub data: String,
     pub status: Status,
-    was_seeking: bool,
 }
 impl Replay {
-    pub fn disable(&mut self) {
-        self.configure(None);
+    #[cfg(test)]
+    fn in_directory(directory: PathBuf) -> Self {
+        Self {
+            directory: Some(directory),
+            ..Default::default()
+        }
+    }
+    pub fn can_receive(&self) -> bool {
+        self.pending.is_none()
+            && match &self.storage {
+                Storage::Dormant => true,
+                Storage::Active(store) => {
+                    store.has_capacity()
+                        && !matches!(store.snapshot().state, cache::State::StorageFailed(_))
+                }
+                Storage::Failed(_) => false,
+            }
+    }
+    pub fn disk_bytes(&self) -> u64 {
+        match &self.storage {
+            Storage::Active(store) => store.snapshot().disk_bytes,
+            Storage::Dormant | Storage::Failed(_) => 0,
+        }
+    }
+    pub fn open_cache(&mut self) {
+        self.start_store();
+    }
+    pub fn clear_unused(&mut self) {
+        self.start_store();
+        if let Storage::Active(store) = &mut self.storage {
+            store.clear_unused();
+        }
+    }
+    pub fn shutdown(&mut self) {
+        if let Storage::Active(store) = &mut self.storage {
+            store.shutdown();
+        }
+        self.storage = Storage::Dormant;
+        self.pending = None;
+        self.target = None;
+        self.clear_projection();
         self.status = Status::Disabled;
     }
-    fn cancel(&mut self) {
-        self.request = match std::mem::take(&mut self.request) {
-            Request::Loading { job, .. } => Request::Cancelling(job.cancel()),
-            state @ (Request::Idle | Request::Cancelling(_)) => state,
-        };
+    fn clear_projection(&mut self) {
+        self.generation = self.generation.wrapping_add(1);
+        self.data = "[]".into();
+        self.projected = None;
+        self.clock = None;
+        self.position = None;
     }
-    fn configure(&mut self, target: Option<Target>) {
-        if self.target != target {
-            self.cancel();
-            self.target = target;
-            self.buffer = Buffer::default();
-            self.covered.clear();
-            self.failed = None;
-            self.projected = None;
-            self.clock = None;
-            self.position = None;
-            self.generation += 1;
-            self.data = "[]".into();
+    fn start_store(&mut self) {
+        if !matches!(self.storage, Storage::Dormant) {
+            return;
         }
+        let directory = self.directory.clone().map(Ok).unwrap_or_else(|| {
+            crate::settings::comment_cache_directory().map_err(|e| e.to_string())
+        });
+        self.storage =
+            match directory.and_then(|dir| Controller::start(dir).map_err(|e| e.to_string())) {
+                Ok(store) => Storage::Active(store),
+                Err(error) => Storage::Failed(error),
+            };
     }
     pub fn update(
         &mut self,
-        network: Option<&Network>,
         context: Option<Context>,
         seeking: bool,
         comments: Vec<(Comment, bool)>,
         now: Instant,
         wall_ms: i64,
     ) {
-        if seeking
-            && context
-                .as_ref()
-                .zip(self.target)
-                .is_some_and(|(context, target)| context.source == target.source)
-        {
-            for (comment, own) in comments {
-                self.buffer.insert(comment, own);
+        let target = context.as_ref().and_then(|c| {
+            c.service
+                .and_then(|s| mapping::resolve(s.network_id, s.service_id))
+                .or_else(|| {
+                    self.target
+                        .filter(|(source, _)| *source == c.source)
+                        .map(|(_, channel)| channel)
+                })
+                .map(|channel| (c.source, channel))
+        });
+        if target != self.target {
+            self.target = target;
+            self.pending = None;
+            self.clear_projection();
+            self.settled = Some(now + SEEK_SETTLE);
+        }
+        if self.seeking && !seeking {
+            self.clear_projection();
+            self.settled = Some(now + SEEK_SETTLE);
+        }
+        self.seeking = seeking;
+        if context.as_ref().is_some_and(|c| c.enabled) && target.is_some() {
+            self.start_store();
+        }
+        let reading = context.as_ref().and_then(|c| {
+            let position = c.position?;
+            let clock = c
+                .clock
+                .or_else(|| self.position.filter(|old| *old == position).and(self.clock))?;
+            Some((clock, position, clock.utc(position)?))
+        });
+        if let Some((clock, position, _)) = reading {
+            if self.clock.is_some_and(|old| !old.agrees(clock, position)) {
+                self.clear_projection();
             }
-            let utc = self.projected.map_or(0, |(_, seconds, _)| seconds * 1000);
-            if self.buffer.retain(
-                None,
-                Window {
-                    start: utc - LOOKBACK_MS,
-                    end: utc + WINDOW_MS,
-                },
-            ) {
-                self.covered.clear();
+            self.clock = Some(clock);
+            self.position = Some(position);
+        }
+        let view = reading.and_then(|(clock, _, utc)| {
+            Interval::new(
+                (utc / 1000 - cache::LOOKBACK_SECONDS).max(0),
+                utc / 1000 + FORWARD_SECONDS,
+            )
+            .map(|interval| View {
+                clock_key: clock.key(),
+                interval,
+            })
+        });
+        let mut demand = context
+            .as_ref()
+            .zip(target)
+            .map(|(c, (source, channel))| Demand {
+                source,
+                channel,
+                view: (c.enabled && c.display && !seeking)
+                    .then(|| view.clone())
+                    .flatten(),
+                source_range: c.source_range.clone(),
+                fetch: c.enabled
+                    && c.display
+                    && !seeking
+                    && self.settled.is_none_or(|at| now >= at),
+            });
+        if let Storage::Active(store) = &mut self.storage {
+            if let Some(mut pending) = self.pending.take() {
+                match store.receive(
+                    pending.source,
+                    pending.channel,
+                    pending.clock.clone(),
+                    pending.comments,
+                ) {
+                    Ok(()) => {}
+                    Err(comments) => {
+                        pending.comments = comments;
+                        self.pending = Some(pending);
+                    }
+                }
             }
-            self.was_seeking = true;
+            if !comments.is_empty() {
+                if let Some((source, channel)) = target {
+                    let clock = context.as_ref().and_then(|c| match &c.source_range {
+                        Source::Live { spans, .. } => spans
+                            .iter()
+                            .filter(|s| s.channel == channel)
+                            .max_by_key(|s| s.media_end_ms)
+                            .cloned(),
+                        Source::Pending | Source::Recording(_) => None,
+                    });
+                    match store.receive(source, channel, clock.clone(), comments) {
+                        Ok(()) => {}
+                        Err(comments) => {
+                            // poll_comments checks can_receive before draining.
+                            if let Some(pending) = &mut self.pending {
+                                pending.comments.extend(comments);
+                            } else {
+                                self.pending = Some(Pending {
+                                    source,
+                                    channel,
+                                    clock,
+                                    comments,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+            if self.pending.is_some() {
+                if let Some(Demand {
+                    source_range: Source::Live { reception, .. },
+                    ..
+                }) = &mut demand
+                {
+                    *reception = cache::Reception::Interrupted;
+                }
+            }
+            // Publish the reception tip after enqueuing its comments, so the
+            // store can never mark this range complete before saving them.
+            store.configure(demand);
+        }
+        let enabled = context.as_ref().is_some_and(|c| c.enabled && c.display);
+        if !enabled {
+            if self.data != "[]" {
+                self.clear_projection();
+            }
+            self.status = Status::Disabled;
+            return;
+        }
+        if target.is_none() {
+            self.status = if context.as_ref().is_some_and(|c| c.service.is_none()) {
+                Status::WaitingService
+            } else {
+                Status::Unsupported
+            };
+            self.data = "[]".into();
+            return;
+        }
+        if seeking {
             self.status = Status::Seeking;
             return;
         }
-        let target = context.as_ref().and_then(|context| {
-            let Some(service) = context.service else {
-                return self.target.filter(|target| target.source == context.source);
-            };
-            mapping::resolve(service.network_id, service.service_id).map(|channel| Target {
-                source: context.source,
-                channel,
-            })
-        });
-        self.configure(target);
-        for (comment, own) in comments {
-            if target.is_some() {
-                self.buffer.insert(comment, own);
-            }
-        }
-        let restored = self.was_seeking && !seeking;
-        self.was_seeking = seeking;
-        let reading = context.as_ref().and_then(|context| {
-            let position = context.position?;
-            let clock = context.clock.or_else(|| {
-                self.position
-                    .filter(|previous| *previous == position)
-                    .and(self.clock)
-            })?;
-            clock.utc(position).map(|utc| (clock, position, utc))
-        });
-        let Some((clock, position, utc)) = reading.filter(|_| target.is_some()) else {
-            self.status = if context.is_none() {
-                Status::Disabled
-            } else if context
-                .as_ref()
-                .is_some_and(|context| context.service.is_none())
-            {
-                Status::WaitingService
-            } else if target.is_none() {
-                Status::Unsupported
-            } else {
-                Status::WaitingClock
-            };
-            self.cancel();
-            self.poll_cancel();
-            if self.clock.take().is_some() {
-                self.generation += 1;
-            }
+        let Some((clock, _, utc)) = reading else {
+            self.status = Status::WaitingClock;
             self.data = "[]".into();
             self.projected = None;
-            if self.buffer.retain(None, Window { start: 0, end: 0 }) {
-                self.covered.clear();
-            }
             return;
         };
-        let changed_clock = self.clock.is_none_or(|old| !old.agrees(clock, position));
-        if restored || changed_clock {
-            self.generation += 1;
-            self.projected = None;
-        }
-        self.clock = Some(clock);
-        self.position = Some(position);
-        let viewing = Window {
-            start: utc.saturating_sub(LOOKBACK_MS),
-            end: utc.saturating_add(WINDOW_MS),
+        let Some(view) = view else {
+            self.status = Status::WaitingClock;
+            self.data = "[]".into();
+            return;
         };
-        if self.buffer.retain(
-            context.as_ref().and_then(|context| context.earliest_utc),
-            viewing,
-        ) {
-            self.covered.clear();
-        }
-        let bucket = utc.saturating_sub(LOOKBACK_MS).max(0) / WINDOW_MS * WINDOW_MS;
-        let desired = [
-            Window {
-                start: bucket,
-                end: (bucket + WINDOW_MS).min(wall_ms / 1000 * 1000),
-            },
-            Window {
-                start: bucket + WINDOW_MS,
-                end: (bucket + 2 * WINDOW_MS).min(wall_ms / 1000 * 1000),
-            },
-        ];
-        let needed = |window: Window| window.end > window.start && window.start < utc + PREFETCH_MS;
-        if let Request::Loading {
-            target: loaded,
-            window,
-            ..
-        } = &self.request
-            && (Some(*loaded) != self.target
-                || !desired.iter().any(|desired| desired.start == window.start))
-        {
-            self.cancel();
-        }
-        match std::mem::take(&mut self.request) {
-            Request::Loading {
-                target: loaded,
-                window,
-                job,
-            } => match job.poll() {
-                Progress::Pending(job) => {
-                    self.request = Request::Loading {
-                        target: loaded,
-                        window,
-                        job,
-                    }
-                }
-                Progress::Complete(result) if Some(loaded) == self.target => match result {
-                    Ok(comments) => {
-                        self.buffer
-                            .merge_archive(comments.into_iter().filter(|comment| {
-                                comment
-                                    .timestamp_micros
-                                    .is_some_and(|time| window.contains((time / 1000) as i64))
-                            }));
-                        self.covered.retain(|(old, _)| old.start != window.start);
-                        self.covered.push((window, now));
-                        if self.covered.len() > MAX_WINDOWS {
-                            self.covered.remove(0);
-                        }
-                        self.failed = None;
-                    }
-                    Err(error) => {
-                        tracing::warn!("Comment archive: {error}");
-                        self.failed = Some((window, now));
-                    }
-                },
-                Progress::Complete(_) => {}
-            },
-            Request::Cancelling(stopping) => {
-                if let Progress::Pending(stopping) = stopping.poll() {
-                    self.request = Request::Cancelling(stopping);
-                }
+        let snapshot = match &self.storage {
+            Storage::Active(store) => store.snapshot(),
+            Storage::Failed(error) => {
+                self.status = Status::StorageFailed(error.clone());
+                return;
             }
-            Request::Idle => {}
-        }
-        let missing = desired
-            .into_iter()
-            .filter(|window| needed(*window))
-            .find(|window| {
-                !self.covered.iter().any(|(covered, fetched)| {
-                    covered.start == window.start
-                        && (covered.end >= window.end && covered.end < wall_ms - ARCHIVE_SETTLE_MS
-                            || now.duration_since(*fetched) < RETRY)
-                })
-            });
-        if let Some(window) = missing
-            && matches!(self.request, Request::Idle)
-            && !self.failed.is_some_and(|(failed, when)| {
-                failed.start == window.start && now.duration_since(when) < RETRY
-            })
-            && let (Some(network), Some(target)) = (network, self.target)
-        {
-            self.request = Request::Loading {
-                target,
-                window,
-                job: network.fetch_json(
-                    window.url(target),
-                    archive::MAX_RESPONSE_BYTES,
-                    archive::parse,
-                ),
+            Storage::Dormant => {
+                self.status = Status::Loading;
+                return;
+            }
+        };
+        let signature = (snapshot.revision, utc / 1000, clock.key());
+        if self.projected.as_ref() != Some(&signature) {
+            self.data = if snapshot.source == target.map(|(source, _)| source)
+                && snapshot
+                    .view
+                    .as_ref()
+                    .is_some_and(|view| view.clock_key == clock.key())
+            {
+                project(&snapshot.records, clock, view.interval)
+            } else {
+                "[]".into()
             };
-        }
-        if self.buffer.retain(
-            context.as_ref().and_then(|context| context.earliest_utc),
-            viewing,
-        ) {
-            self.covered.clear();
-        }
-        // One-second window movement bounds Qt serialization while renderer
-        // positions advance from the actual media clock on every render frame.
-        let signature = (
-            self.buffer.revision,
-            utc / 1000,
-            clock.range().1 as i64 / 1_000_000_000,
-        );
-        if self.projected != Some(signature) {
-            self.data = self.buffer.project(clock, viewing);
             self.projected = Some(signature);
         }
-        self.status = if self.failed.is_some_and(|(failed, _)| failed.contains(utc)) {
-            Status::Failed
-        } else if self.data != "[]" {
-            Status::Ready
-        } else if matches!(self.request, Request::Loading { .. }) {
-            Status::Loading
-        } else if missing.is_some() {
-            Status::Pending
-        } else {
-            Status::Empty
+        self.status = match snapshot.state {
+            cache::State::StorageFailed(error) => Status::StorageFailed(error),
+            cache::State::FetchFailed(error) => Status::Failed(error),
+            _ if self.data != "[]" => Status::Ready,
+            _ if utc / 1000 >= cache::archive_end(wall_ms / 1000) => Status::Pending,
+            cache::State::Starting | cache::State::Loading => Status::Loading,
+            cache::State::Waiting(_) => Status::Waiting,
+            cache::State::Ready => Status::Empty,
         };
     }
-    fn poll_cancel(&mut self) {
-        if let Request::Cancelling(stopping) = std::mem::take(&mut self.request)
-            && let Progress::Pending(stopping) = stopping.poll()
-        {
-            self.request = Request::Cancelling(stopping);
+}
+
+/// Pair original payloads across reception and archive once per occurrence.
+/// Equal posts within the archive remain distinct, including identical IDs.
+fn project(records: &[Record], clock: ClockReading, viewing: Interval) -> String {
+    let mut live: HashMap<String, Vec<usize>> = HashMap::new();
+    let mut paired = HashSet::new();
+    let payload = |record: &Record| {
+        serde_json::to_string(&(
+            record.comment.timestamp_micros,
+            record.comment.origin,
+            &record.comment.text,
+            record.comment.style,
+        ))
+        .expect("comment key")
+    };
+    let mut live_ids = HashSet::new();
+    let mut duplicate_live = HashSet::new();
+    for (index, record) in records.iter().enumerate() {
+        if record.origin == RecordOrigin::Live {
+            if let Some(id) = record.comment.source_id {
+                if !live_ids.insert((id, record.comment.timestamp_micros, payload(record))) {
+                    duplicate_live.insert(index);
+                    continue;
+                }
+            }
+            live.entry(payload(record)).or_default().push(index);
         }
     }
+    let mut selected = Vec::new();
+    for (index, record) in records.iter().enumerate() {
+        if record.origin == RecordOrigin::Live {
+            if duplicate_live.contains(&index) {
+                continue;
+            }
+        } else if let Some(candidates) = live.get(&payload(record)) {
+            let same_user = |other: &Comment| match (&record.comment.identity, &other.identity) {
+                (Some(a), Some(b)) => {
+                    a.user_id
+                        .trim_start_matches("nicolive:")
+                        .trim_start_matches("rekari:")
+                        == b.user_id
+                            .trim_start_matches("nicolive:")
+                            .trim_start_matches("rekari:")
+                }
+                _ => true,
+            };
+            if let Some(&matched) = candidates.iter().find(|&&candidate| {
+                !paired.contains(&candidate) && same_user(&records[candidate].comment)
+            }) {
+                paired.insert(matched);
+                continue;
+            }
+        }
+        selected.push(index);
+    }
+    let mut json = String::from("[");
+    let mut count = 0;
+    for index in selected {
+        let record = &records[index];
+        let Some(micros) = record.comment.timestamp_micros else {
+            continue;
+        };
+        if !viewing.contains((micros / 1_000_000) as i64) {
+            continue;
+        }
+        let media = if record.origin == RecordOrigin::Live {
+            record
+                .media_ms
+                .and_then(|ms| u64::try_from(ms).ok())
+                .and_then(|ms| ms.checked_mul(1_000_000))
+                .or_else(|| clock.media((micros / 1000) as i64))
+        } else {
+            clock.media((micros / 1000) as i64)
+        };
+        let Some(media) = media.and_then(|ns| ns.checked_add(micros % 1000 * 1000)) else {
+            continue;
+        };
+        let entry=serde_json::json!({"id":record.id.to_string(),"time":media as f64/1_000_000_000.,
+            "text":record.comment.text,"type":record.comment.style.position,"color":record.comment.style.color,"own":record.own}).to_string();
+        if count >= viewer_comments::danmaku::MAX_TIMELINE_COMMENTS
+            || json.len() + entry.len() + 2 > viewer_comments::danmaku::MAX_TIMELINE_BYTES
+        {
+            break;
+        }
+        if count > 0 {
+            json.push(',');
+        }
+        json.push_str(&entry);
+        count += 1;
+    }
+    json.push(']');
+    json
 }
 
 #[cfg(test)]
@@ -549,6 +448,14 @@ mod tests {
                 }),
             },
         );
+        let clock = catalog.view(seconds * SECOND).clock.unwrap();
+        let span = cache::ClockSpan {
+            key: clock.key(),
+            channel: 101,
+            media_start_ms: 0,
+            media_end_ms: 1_000_000,
+            utc_start_ms: UTC,
+        };
         Context {
             source,
             service: Some(BroadcastService {
@@ -556,8 +463,15 @@ mod tests {
                 service_id: 101,
             }),
             position: Some(seconds * SECOND),
-            clock: catalog.view(seconds * SECOND).clock,
-            earliest_utc: None,
+            clock: Some(clock),
+            source_range: Source::Live {
+                earliest_media_ms: 0,
+                spans: vec![span],
+                reception: cache::Reception::Interrupted,
+                at_edge: true,
+            },
+            enabled: true,
+            display: true,
         }
     }
     fn comment(seconds: u64, number: u64) -> Comment {
@@ -573,205 +487,94 @@ mod tests {
         }
     }
     #[test]
-    fn replay_retains_received_comments_during_seek_and_rejects_future_comments_at_projection() {
-        let mut replay = Replay::default();
+    fn disk_replay_survives_seek_display_off_and_rejects_old_sources() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut replay = Replay::in_directory(directory.path().into());
         let now = Instant::now();
         replay.update(
-            None,
             Some(context(1, 3)),
             false,
             vec![(comment(1, 1), true), (comment(500, 2), false)],
             now,
             UTC + 600_000,
         );
+        let until = Instant::now() + Duration::from_secs(3);
+        while replay.data == "[]" && Instant::now() < until {
+            std::thread::sleep(Duration::from_millis(5));
+            replay.update(Some(context(1, 3)), false, vec![], now, UTC + 600_000);
+        }
         let value: serde_json::Value = serde_json::from_str(&replay.data).unwrap();
         assert_eq!(value.as_array().unwrap().len(), 1);
         assert_eq!(value[0]["time"], 1.);
         assert_eq!(value[0]["own"], true);
-        let generation = replay.generation;
-        replay.update(None, Some(context(1, 4)), false, vec![], now, UTC + 600_000);
-        assert_eq!(replay.generation, generation);
-        replay.update(
-            None,
-            Some(context(1, 100)),
-            true,
-            vec![(comment(2, 3), false)],
-            now,
-            UTC + 600_000,
-        );
-        assert_eq!(replay.buffer.entries.len(), 3);
-        replay.update(None, Some(context(1, 3)), false, vec![], now, UTC + 600_000);
-        assert!(replay.generation > generation);
-        assert_eq!(
-            serde_json::from_str::<serde_json::Value>(&replay.data)
-                .unwrap()
-                .as_array()
-                .unwrap()
-                .len(),
-            2
-        );
-        replay.update(None, Some(context(2, 3)), false, vec![], now, UTC + 600_000);
+        let mut disabled = context(1, 3);
+        disabled.enabled = false;
+        replay.update(Some(disabled), false, vec![], now, UTC + 600_000);
         assert_eq!(replay.data, "[]");
-        assert!(replay.buffer.entries.is_empty());
-    }
-    #[test]
-    fn buffer_deduplicates_overlap_without_collapsing_distinct_repeated_posts_and_is_bounded() {
-        let mut buffer = Buffer::default();
-        buffer.insert(comment(1, 1), false);
-        buffer.insert(comment(1, 1), false);
-        buffer.insert(comment(1, 2), false);
-        assert_eq!(buffer.entries.len(), 2);
-        let protected = Window {
-            start: UTC,
-            end: UTC + 20_000,
-        };
-        for number in 3..8000 {
-            let mut comment = comment(number, number);
-            comment.text = "x".repeat(viewer_comments::MAX_COMMENT_BYTES).into();
-            buffer.insert(comment, false);
+        replay.update(Some(context(1, 3)), false, vec![], now, UTC + 600_000);
+        let until = Instant::now() + Duration::from_secs(3);
+        while replay.data == "[]" && Instant::now() < until {
+            std::thread::sleep(Duration::from_millis(5));
+            replay.update(Some(context(1, 3)), false, vec![], now, UTC + 600_000);
         }
-        assert!(buffer.retain(None, protected));
-        assert!(buffer.bytes <= MAX_CACHE_BYTES);
-        assert!(buffer.entries.len() <= MAX_CACHE_COMMENTS);
-        assert_eq!(
-            buffer.entries.first_key_value().unwrap().0.0,
-            (UTC as u64 + 1000) * 1000
-        );
-        buffer.retain(Some(UTC + 30_000), Window { start: 0, end: 0 });
-        assert!(
-            buffer
-                .entries
-                .keys()
-                .all(|(time, _)| time / 1000 >= (UTC + 30_000) as u64)
-        );
-    }
-    #[test]
-    fn archive_relay_ids_do_not_duplicate_posts_or_collapse_their_multiplicity() {
-        let mut buffer = Buffer::default();
-        buffer.insert(comment(1, 1), false);
-        buffer.insert(comment(1, 2), false);
-        buffer.merge_archive([comment(1, 11), comment(1, 12), comment(1, 13)].into_iter());
-        assert_eq!(buffer.entries.len(), 3);
-        buffer.merge_archive([comment(1, 11), comment(1, 12), comment(1, 13)].into_iter());
-        assert_eq!(buffer.entries.len(), 3);
-        buffer.insert(comment(1, 3), true);
-        assert_eq!(buffer.entries.len(), 3);
-        assert_eq!(buffer.entries.values().filter(|entry| entry.own).count(), 1);
-    }
-    #[test]
-    fn missing_clock_preserves_cache_but_never_projects_by_wall_time() {
-        let mut replay = Replay::default();
-        let now = Instant::now();
-        let mut missing = context(1, 3);
-        missing.clock = None;
-        replay.update(
-            None,
-            Some(missing),
-            false,
-            vec![(comment(1, 1), false)],
-            now,
-            UTC + 600_000,
-        );
-        assert_eq!(replay.status, Status::WaitingClock);
+        assert_ne!(replay.data, "[]");
+        replay.update(Some(context(1, 500)), true, vec![], now, UTC + 600_000);
+        replay.update(Some(context(2, 3)), false, vec![], now, UTC + 600_000);
         assert_eq!(replay.data, "[]");
-        assert_eq!(replay.buffer.entries.len(), 1);
-        replay.update(None, Some(context(1, 3)), false, vec![], now, UTC + 600_000);
-        assert_eq!(replay.status, Status::Ready);
+        replay.shutdown();
     }
     #[test]
-    fn reception_before_first_frame_waits_for_a_confirmed_position() {
-        let mut replay = Replay::default();
-        let now = Instant::now();
-        let mut starting = context(1, 3);
-        starting.position = None;
-        replay.update(
-            None,
-            Some(starting),
-            false,
-            vec![(comment(1, 1), false)],
-            now,
-            UTC + 600_000,
-        );
-        assert_eq!(replay.status, Status::WaitingClock);
-        assert_eq!(replay.data, "[]");
-        assert_eq!(replay.buffer.entries.len(), 1);
-        replay.update(None, Some(context(1, 3)), false, vec![], now, UTC + 600_000);
-        assert_eq!(replay.status, Status::Ready);
-        let value: serde_json::Value = serde_json::from_str(&replay.data).unwrap();
-        assert_eq!(value[0]["time"], 1.);
-    }
-}
-
-#[cfg(test)]
-mod request_tests {
-    use super::*;
-    fn completed(body: &str) -> (Network, Job<Vec<Comment>, archive::Error>) {
-        use std::{
-            io::{Read, Write},
-            net::TcpListener,
-            thread,
-        };
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let url = format!("http://{}/archive", listener.local_addr().unwrap());
-        let body = body.to_owned();
-        let server = thread::spawn(move || {
-            let (mut socket, _) = listener.accept().unwrap();
-            socket
-                .set_read_timeout(Some(Duration::from_secs(2)))
-                .unwrap();
-            let mut request = [0; 4096];
-            let received = socket.read(&mut request).unwrap();
-            assert!(received > 0);
-            write!(
-                socket,
-                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-                body.len()
-            )
-            .unwrap();
-        });
-        let network = Network::new().unwrap();
-        let job = network.fetch_json(url, archive::MAX_RESPONSE_BYTES, archive::parse);
-        let deadline = Instant::now() + Duration::from_secs(3);
-        while !job.is_finished() && Instant::now() < deadline {
-            thread::sleep(Duration::from_millis(1));
-        }
-        assert!(job.is_finished());
-        server.join().unwrap();
-        (network, job)
-    }
-    #[test]
-    fn queued_archive_result_cannot_cross_a_source_change_even_back_to_same_channel() {
-        let (_network, job) =
-            completed(r#"{"packet":[{"chat":{"date":100,"content":"old generation"}}]}"#);
-        let first = Target {
-            source: 1,
-            channel: 101,
-        };
-        let mut replay = Replay::default();
-        replay.configure(Some(first));
-        replay.request = Request::Loading {
-            target: first,
-            window: Window {
-                start: 0,
-                end: WINDOW_MS,
+    fn pairing_preserves_archive_multiplicity_and_microseconds() {
+        let ctx = context(1, 3);
+        let clock = ctx.clock.unwrap();
+        let mut posts = vec![
+            Record {
+                id: 1,
+                comment: comment(1, 1),
+                own: true,
+                origin: RecordOrigin::Live,
+                media_ms: None,
             },
-            job,
+            Record {
+                id: 2,
+                comment: comment(1, 11),
+                own: false,
+                origin: RecordOrigin::Archive,
+                media_ms: None,
+            },
+            Record {
+                id: 3,
+                comment: comment(1, 11),
+                own: false,
+                origin: RecordOrigin::Archive,
+                media_ms: None,
+            },
+        ];
+        posts[0]
+            .comment
+            .timestamp_micros
+            .as_mut()
+            .map(|t| *t += 123);
+        posts[1].comment.timestamp_micros = posts[0].comment.timestamp_micros;
+        posts[2].comment.timestamp_micros = posts[0].comment.timestamp_micros;
+        // A reconnect may repeat a live post. It must not consume a second
+        // archive occurrence when pairing the two origins.
+        let duplicate = Record {
+            id: 4,
+            comment: posts[0].comment.clone(),
+            own: true,
+            origin: RecordOrigin::Live,
+            media_ms: None,
         };
-        replay.configure(Some(Target {
-            source: 2,
-            channel: 101,
-        }));
-        assert!(matches!(replay.request, Request::Cancelling(_)));
-        replay.poll_cancel();
-        assert!(matches!(replay.request, Request::Idle));
-        assert!(replay.buffer.entries.is_empty());
-        assert_eq!(replay.data, "[]");
-    }
-    #[test]
-    fn empty_and_failure_remain_distinct_results() {
-        let (_network, empty) = completed(r#"{"packet":[]}"#);
-        assert!(matches!(empty.poll(), Progress::Complete(Ok(comments)) if comments.is_empty()));
-        let (_network, failed) = completed(r#"{"error":"archive temporarily unavailable"}"#);
-        assert!(matches!(failed.poll(), Progress::Complete(Err(_))));
+        posts.push(duplicate);
+        let value: serde_json::Value = serde_json::from_str(&project(
+            &posts,
+            clock,
+            Interval::new(UTC / 1000, UTC / 1000 + 10).unwrap(),
+        ))
+        .unwrap();
+        assert_eq!(value.as_array().unwrap().len(), 2);
+        assert_eq!(value[0]["time"], 1.000123);
+        assert_eq!(value[0]["own"], true);
     }
 }

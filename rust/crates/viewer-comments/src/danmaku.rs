@@ -357,6 +357,8 @@ struct Pending {
 }
 /// Maximum retention for long scrolling comments and seek reconstruction.
 pub const MAX_LIFETIME: Duration = Duration::from_secs(16);
+pub const MAX_TIMELINE_BYTES: usize = 8 * 1024 * 1024;
+pub const MAX_TIMELINE_COMMENTS: usize = 20_000;
 
 /// All persistent comment data, lane occupancy, pending measurement and clocks
 /// have one owner. Lane storage is lazy: unused rows allocate nothing.
@@ -1035,11 +1037,11 @@ pub fn parse_timeline(json: &str) -> Result<Vec<TimedComment>, LoadError> {
         #[serde(default)]
         own: bool,
     }
-    if json.len() > crate::archive::MAX_RESPONSE_BYTES {
+    if json.len() > MAX_TIMELINE_BYTES {
         return Err(LoadError::Invalid);
     }
     let records: Vec<Record> = serde_json::from_str(json)?;
-    if records.len() > crate::archive::MAX_COMMENTS {
+    if records.len() > MAX_TIMELINE_COMMENTS {
         return Err(LoadError::Invalid);
     }
     records

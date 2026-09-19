@@ -332,6 +332,28 @@ fn websocket_disconnect_drains_final_comments_and_reconnects_with_fresh_history(
                 controller.status(),
                 Status::Connection(State::Receiving)
             ));
+            let epoch_before_loss = controller.reception_epoch().unwrap();
+            for _ in 0..=crate::connection::QUEUE_CAPACITY {
+                socket
+                    .send(Message::Text(
+                        r#"{"chat":{"content":"burst","date":1}}"#.into(),
+                    ))
+                    .await?;
+            }
+            timeout(Duration::from_secs(2), async {
+                loop {
+                    if let Phase::Running(connection) = &controller.phase
+                        && connection.dropped() > 0
+                    {
+                        break;
+                    }
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await?;
+            assert_eq!(controller.reception_epoch(), None);
+            controller.poll(&Handle::current(), &client, retry)?;
+            assert_ne!(controller.reception_epoch().unwrap(), epoch_before_loss);
             controller.configure(None);
             timeout(Duration::from_secs(2), async {
                 while !controller.is_stopped() {

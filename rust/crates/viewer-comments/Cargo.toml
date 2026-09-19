@@ -4,14 +4,23 @@ version = "0.1.0"
 edition = "2024"
 publish = false
 
+[dev-dependencies]
+flate2 = "1.1"
+
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 thiserror = "2.0"
+rusqlite = { version = "0.40.2", features = ["bundled"] }
+tempfile = "3.27"
 
 [features]
 evaluation-collision-layout = []
-network = ["dep:futures-util", "dep:reqwest", "dep:tokio", "dep:tokio-tungstenite", "dep:time"]
+network = ["dep:futures-util", "dep:reqwest", "dep:tokio", "dep:tokio-tungstenite", "dep:time", "dep:tracing"]
+
+[dependencies.tracing]
+version = "0.1"
+optional = true
 
 [dependencies.time]
 version = "0.3"
@@ -26,12 +35,12 @@ optional = true
 [dependencies.reqwest]
 version = "0.13"
 default-features = false
-features = ["rustls"]
+features = ["rustls", "gzip"]
 optional = true
 
 [dependencies.tokio]
 version = "1.47"
-features = ["rt", "time", "sync", "net", "io-util"]
+features = ["rt", "time", "sync", "net", "io-util", "macros"]
 optional = true
 
 [dependencies.tokio-tungstenite]

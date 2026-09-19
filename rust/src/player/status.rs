@@ -18,16 +18,19 @@ impl ffi::Player {
     pub(super) fn refresh_comment_status(mut self: Pin<&mut Self>) {
         if self.media_active() && *self.comments_enabled() {
             use crate::features::comments::replay::Status;
-            let text = match self.rust().comment_replay.status {
+            let text = match &self.rust().comment_replay.status {
                 Status::Disabled => tr("Disabled"),
                 Status::WaitingService => tr("Identifying the broadcast service…"),
                 Status::WaitingClock => tr("Waiting for broadcast time…"),
                 Status::Unsupported => tr("Comments are unavailable for this channel"),
                 Status::Seeking => tr("Seeking comments…"),
-                Status::Loading | Status::Pending => tr("Fetching past comments…"),
+                Status::Loading => tr("Fetching past comments…"),
+                Status::Pending => tr("Waiting for the comment archive to update…"),
+                Status::Waiting => tr("Waiting to fetch past comments…"),
                 Status::Ready => tr("Comments synchronized to playback"),
                 Status::Empty => tr("No archived comments in this interval"),
-                Status::Failed => tr("Could not fetch past comments. Retrying…"),
+                Status::Failed(_) => tr("Could not fetch past comments. Retrying…"),
+                Status::StorageFailed(error) => with_detail("Could not save comments: %1", error),
             };
             self.set_comment_status(text);
             return;

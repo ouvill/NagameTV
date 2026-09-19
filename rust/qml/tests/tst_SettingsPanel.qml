@@ -83,6 +83,9 @@ Item {
                 property bool comment_shadow_enabled: true
                 function configure_comment_shadow(value) { comment_shadow_enabled = value; }
                 property string comment_status: ""
+                property real comment_cache_bytes: 0
+                function comments_open(opened) {}
+                function clear_comment_cache() { comment_cache_bytes = 0; }
                 property bool comment_send_on_enter: false
                 function configure_comment_send_on_enter(value) { comment_send_on_enter = value; }
                 property string log_error: ""

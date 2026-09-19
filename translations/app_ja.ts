@@ -350,6 +350,16 @@
 </context>
   <context>
     <name>Backend</name>
+    <message><source>Waiting for the comment archive to update…</source><translation>過去ログへの反映を待っています…</translation></message>
+    <message><source>Waiting to fetch past comments…</source><translation>過去ログの取得を待っています…</translation></message>
+    <message><source>Could not save comments: %1</source><translation>コメントを保存できません: %1</translation></message>
+    <message><source>Identifying the broadcast service…</source><translation>放送サービスを確認中…</translation></message>
+    <message><source>Waiting for broadcast time…</source><translation>放送日時を確認中…</translation></message>
+    <message><source>Seeking comments…</source><translation>シーク先のコメントを確認中…</translation></message>
+    <message><source>Fetching past comments…</source><translation>過去の実況コメントを取得中…</translation></message>
+    <message><source>Comments synchronized to playback</source><translation>再生位置に合わせて実況を表示しています</translation></message>
+    <message><source>No archived comments in this interval</source><translation>この区間の過去ログはありません</translation></message>
+    <message><source>Could not fetch past comments. Retrying…</source><translation>過去ログを取得できませんでした。時間を置いて再試行します…</translation></message>
     <message>
       <source>Could not capture the picture. Try again while the video is playing.</source>
       <translation>映像を撮影できませんでした。再生中にもう一度お試しください。</translation>
@@ -1084,6 +1094,10 @@
 </context>
   <context>
     <name>Settings</name>
+    <message><source>Saved comments</source><translation>保存済みコメント</translation></message>
+    <message><source>Disk usage: %1 MiB</source><translation>ディスク使用量: %1 MiB</translation></message>
+    <message><source>Comments for the open recording and retained live video are kept when unused data is cleared.</source><translation>未使用データを削除しても、再生中の録画とタイムシフト可能な映像のコメントは保持します。</translation></message>
+    <message><source>Clear unused comments</source><translation>未使用のコメントを削除</translation></message>
     <message>
       <source>Play or pause</source>
       <translation>再生／一時停止</translation>

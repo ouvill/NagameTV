@@ -58,14 +58,14 @@ impl ThreadId {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Phase {
     #[default]
     History,
     Live,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Origin {
     #[serde(rename = "ニコ実")]
     Niconico,
@@ -73,7 +73,7 @@ pub enum Origin {
     Nx,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Position {
     #[default]
@@ -92,7 +92,7 @@ impl Position {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Style {
     pub position: Position,
     pub color: u32,
@@ -172,7 +172,7 @@ pub struct Comment {
 
 /// Wire identity used to recognize an echo of this app's explicit post.
 /// It is never projected into the UI's serialized comment history.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CommentIdentity {
     pub thread_id: u64,
     pub user_id: Box<str>,
@@ -249,11 +249,16 @@ struct Chat<'a> {
 fn timestamp<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Option<u64>, D::Error> {
     #[derive(Deserialize)]
     #[serde(untagged)]
-    enum Number { Integer(u64), Text(String) }
-    Option::<Number>::deserialize(deserializer)?.map(|value| match value {
-        Number::Integer(value) => Ok(value),
-        Number::Text(value) => value.parse().map_err(serde::de::Error::custom),
-    }).transpose()
+    enum Number {
+        Integer(u64),
+        Text(String),
+    }
+    Option::<Number>::deserialize(deserializer)?
+        .map(|value| match value {
+            Number::Integer(value) => Ok(value),
+            Number::Text(value) => value.parse().map_err(serde::de::Error::custom),
+        })
+        .transpose()
 }
 
 impl Decoder {
@@ -295,8 +300,14 @@ impl Decoder {
             origin,
             phase: self.phase,
             unix_seconds: chat.date.unwrap_or(0),
-            timestamp_micros: chat.date.and_then(|seconds| seconds.checked_mul(1_000_000))
-                .zip(chat.date_usec.or(Some(0)).filter(|micros| *micros < 1_000_000))
+            timestamp_micros: chat
+                .date
+                .and_then(|seconds| seconds.checked_mul(1_000_000))
+                .zip(
+                    chat.date_usec
+                        .or(Some(0))
+                        .filter(|micros| *micros < 1_000_000),
+                )
                 .and_then(|(seconds, micros)| seconds.checked_add(micros)),
             source_id: chat.thread.zip(chat.no),
             style: Style::from_mail(&chat.mail),

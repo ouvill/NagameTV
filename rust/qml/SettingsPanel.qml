@@ -31,6 +31,7 @@ Popup {
     function connectToServer() { connectionForm.connectToServer(); }
     onPageChanged: {
         pageFlick.contentY = 0;
+        if (page === SettingsPanel.Comments) backend.comments_open(true);
         if (opened) pageRevealMotion.restart();
     }
     onAboutToHide: pageRevealMotion.complete()
@@ -46,6 +47,7 @@ Popup {
         remoteSettings.reset();
         languageError.visible = false;
         if (!backend.server.length) page = SettingsPanel.Connection;
+        if (page === SettingsPanel.Comments) backend.comments_open(true);
     }
     parent: Overlay.overlay
     FolderDialog {
@@ -510,6 +512,25 @@ Popup {
                                     root.backend.configure_comment_send_on_enter(index === 1);
                                     currentIndex = Qt.binding(function() { return root.backend.comment_send_on_enter ? 1 : 0; });
                                 }
+                            }
+                        }
+                        ColumnLayout {
+                            Layout.topMargin: 20
+                            Layout.fillWidth: true
+                            spacing: 8
+                            Heading { text: qsTranslate("Settings", "Saved comments") }
+                            Detail {
+                                objectName: "commentCacheUsage"
+                                text: qsTranslate("Settings", "Disk usage: %1 MiB").arg((root.backend.comment_cache_bytes / (1024 * 1024)).toFixed(1))
+                            }
+                            Detail {
+                                Layout.fillWidth: true
+                                text: qsTranslate("Settings", "Comments for the open recording and retained live video are kept when unused data is cleared.")
+                            }
+                            Button {
+                                objectName: "clearCommentCache"
+                                text: qsTranslate("Settings", "Clear unused comments")
+                                onClicked: root.backend.clear_comment_cache()
                             }
                         }
                     }

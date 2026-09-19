@@ -143,6 +143,16 @@ pub(crate) struct ClockReading {
     pub epoch: u64,
 }
 impl ClockReading {
+    pub fn key(self) -> String {
+        format!(
+            "{}:{}:{}",
+            self.epoch, self.clock.media_ns, self.clock.unix_ms
+        )
+    }
+    /// The exclusive end is verified by the same scan as the last byte/frame.
+    pub fn utc_range(self) -> (i64, i64) {
+        (self.clock.utc(self.start), self.clock.utc(self.end))
+    }
     pub fn utc(self, position: u64) -> Option<i64> {
         (self.start <= position && position < self.end).then(|| self.clock.utc(position))
     }
@@ -159,6 +169,11 @@ impl ClockReading {
     pub fn range(self) -> (u64, u64) {
         (self.start, self.end)
     }
+}
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct BroadcastSpan {
+    pub clock: ClockReading,
+    pub service: Option<BroadcastService>,
 }
 pub(crate) struct View {
     pub status: Status,
@@ -218,6 +233,58 @@ impl View {
     }
 }
 impl Catalog {
+    /// Enumerate only scanned clock/service scopes. Neither an estimated file
+    /// duration nor matching clocks on opposite sides can bridge an unread gap.
+    pub fn broadcast_spans(&self, start: u64, end: u64) -> Vec<BroadcastSpan> {
+        let mut boundaries = std::collections::BTreeSet::from([start, end]);
+        for run in self
+            .runs
+            .values()
+            .filter(|run| run.start < end && run.end > start)
+        {
+            boundaries.insert(run.start.max(start));
+            boundaries.insert(run.end.min(end));
+            for anchor in &run.clocks.anchors {
+                if start < anchor.media_ns && anchor.media_ns < end {
+                    boundaries.insert(anchor.media_ns);
+                }
+            }
+            let mut previous = None;
+            for sample in &run.samples {
+                let service = sample.information.service;
+                if service != previous && start < sample.position && sample.position < end {
+                    boundaries.insert(sample.position);
+                }
+                previous = service;
+            }
+        }
+        let boundaries: Vec<_> = boundaries.into_iter().collect();
+        let mut spans: Vec<BroadcastSpan> = Vec::new();
+        for pair in boundaries.windows(2) {
+            let view = self.view(pair[0]);
+            let Some(mut clock) = view.clock else {
+                continue;
+            };
+            clock.start = clock.start.max(pair[0]);
+            clock.end = clock.end.min(pair[1]);
+            if clock.start >= clock.end {
+                continue;
+            }
+            if let Some(last) = spans.last_mut()
+                && last.service == view.service
+                && last.clock.end == clock.start
+                && last.clock.key() == clock.key()
+            {
+                last.clock.end = clock.end;
+            } else {
+                spans.push(BroadcastSpan {
+                    clock,
+                    service: view.service,
+                });
+            }
+        }
+        spans
+    }
     pub fn observe(&mut self, cursor: &mut ScanCursor, point: ScanPoint<'_>) {
         let ScanPoint {
             accuracy,

@@ -1,6 +1,43 @@
 use super::*;
 const SECOND: u64 = 1_000_000_000;
 const UTC: i64 = 1_700_000_000_000;
+#[test]
+fn archive_scopes_do_not_bridge_unread_gaps_and_program_changes_do_not_split_clocks() {
+    let mut catalog = Catalog::default();
+    let mut first = ScanCursor::default();
+    let info = Information {
+        time: Some((0, UTC)),
+        current: Present::Event(event(1)),
+        ..Default::default()
+    };
+    observe(&mut catalog, &mut first, 0, 0, info.clone());
+    observe(
+        &mut catalog,
+        &mut first,
+        0,
+        30,
+        Information {
+            current: Present::Event(event(2)),
+            ..info.clone()
+        },
+    );
+    let mut other = ScanCursor::default();
+    observe(
+        &mut catalog,
+        &mut other,
+        0,
+        100,
+        Information {
+            time: Some((100 * SECOND, UTC + 100_000)),
+            ..info
+        },
+    );
+    let spans = catalog.broadcast_spans(0, 101 * SECOND);
+    assert_eq!(spans.len(), 2);
+    assert_eq!(spans[0].clock.range(), (0, 31 * SECOND));
+    assert_eq!(spans[1].clock.range(), (100 * SECOND, 101 * SECOND));
+    assert_eq!(spans[0].clock.utc_range(), (UTC, UTC + 31_000));
+}
 fn event(id: u16) -> Program {
     Program {
         event_id: id,

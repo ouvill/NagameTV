@@ -134,6 +134,7 @@ impl Default for PlayerRust {
             comments: Default::default(),
             comment_replay: Default::default(),
             comment_timeline: QString::from("null"),
+            comment_cache_bytes: 0.0,
             subtitles_active: false,
             subtitle_display: preferences.preferences().show_subtitles,
             subtitle_data: QString::default(),
