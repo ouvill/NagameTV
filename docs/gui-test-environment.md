@@ -20,6 +20,10 @@ Xwaylandはrootfulモードで起動し、X11ウィンドウの管理をOpenbox�
 フォーカスが戻らない場合があります。専用のX11ウィンドウマネージャーにより、
 キーボード操作やダイアログの開閉をテスト内で完結させます。
 
+`NAGAMETV_TEST_QPA=wayland`または`auto`で映像処理・キャプチャの試験をWayland上で実行できます。
+この環境のkiosk-shellはWaylandウィンドウを全画面に固定するため、任意のウィンドウサイズや
+フォーカス・キーボード操作を含む起動試験全体はX11で実行します。
+
 ## Workshopの準備
 
 [Workshop定義](../.workshop/dev.yaml)のGUI用接続は`gui:gpu → system:gpu`のみです。
@@ -48,6 +52,8 @@ python3 scripts/run-gui-tests.py --check
 bash scripts/test-screenshot.sh
 bash scripts/test-startup.sh
 bash scripts/test-pointer-activity.sh
+NAGAMETV_TEST_QPA=wayland bash scripts/test-startup.sh screenshot-playback
+NAGAMETV_TEST_QPA=auto bash scripts/test-startup.sh video-processing
 ```
 
 ホストから実行する場合はWorkshop内で起動してください。
@@ -115,5 +121,6 @@ SIGINT・SIGTERM・コンポジター終了時のテスト停止および後片�
 ## 参照仕様
 
 - [Westonのバックエンドとレンダラー](https://wayland.pages.freedesktop.org/weston/toc/running-weston.html)
+- [kiosk-shellの全画面制約](https://wayland.pages.freedesktop.org/weston/toc/kiosk-shell.html)
 - [Ubuntu 26.04のWeston・Xwayland起動仕様](https://manpages.ubuntu.com/manpages/resolute/man1/weston.1.html)
 - [PulseAudioのnull sinkとmonitor](https://wiki.freedesktop.org/www/Software/PulseAudio/Documentation/User/Modules/#module-null-sink)

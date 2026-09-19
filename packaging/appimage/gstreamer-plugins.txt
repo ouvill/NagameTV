@@ -9,12 +9,14 @@ coreelements
 deinterlace
 libav
 mpegtsdemux
+nvcodec
 opengl
 playback
 pulseaudio
 qml6
 soup
 typefindfunctions
+va
 videoconvertscale
 videoparsersbad
 volume

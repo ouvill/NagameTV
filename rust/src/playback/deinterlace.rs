@@ -7,10 +7,14 @@ pub enum Mode {
     Yadif,
     Linear,
     Off,
+    /// NVDEC GL textures followed by the single-rate OpenGL filter.
+    NvidiaGl,
+    /// Linux VA surfaces, with field-rate hardware deinterlacing.
+    VaApi,
 }
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("Invalid NAGAMETV_DEINTERLACE={0:?}; expected yadif, linear or off")]
+    #[error("Invalid NAGAMETV_DEINTERLACE={0:?}; expected yadif, linear, off, gl or va")]
     Invalid(String),
     #[error("NAGAMETV_DEINTERLACE is not valid Unicode")]
     NonUnicode,
@@ -28,6 +32,8 @@ impl Mode {
             "yadif" | "quality" => Ok(Self::Yadif),
             "linear" | "balanced" => Ok(Self::Linear),
             "off" | "disabled" => Ok(Self::Off),
+            "gl" => Ok(Self::NvidiaGl),
+            "va" => Ok(Self::VaApi),
             _ => Err(Error::Invalid(value.to_owned())),
         }
     }
@@ -36,6 +42,8 @@ impl Mode {
             Self::Yadif => "YADIF (auto / all fields)",
             Self::Linear => "Linear (auto / all fields)",
             Self::Off => "Off",
+            Self::NvidiaGl => "NVDEC + OpenGL vfir (single rate)",
+            Self::VaApi => "VA-API adaptive (all fields / NV12)",
         }
     }
     pub fn build(self) -> Result<gst::Element, gst::glib::BoolError> {
@@ -43,6 +51,21 @@ impl Mode {
             Self::Off => return gst::ElementFactory::make("identity").build(),
             Self::Yadif => "yadif",
             Self::Linear => "linear",
+            Self::NvidiaGl => {
+                let element = gst::ElementFactory::make("gldeinterlace").build()?;
+                // The upstream greedyh implementation retains a raw prev_tex
+                // pointer across stop/start after releasing prev_buffer. Use
+                // the stateless filter so stream changes cannot dereference it.
+                element.set_property_from_str("method", "vfir");
+                return Ok(element);
+            }
+            Self::VaApi => {
+                // Request the algorithm explicitly; unsupported drivers must
+                // report an error instead of silently changing CPU/GPU paths.
+                return gst::ElementFactory::make("vadeinterlace")
+                    .property_from_str("method", "adaptive")
+                    .build();
+            }
         };
         let element = gst::ElementFactory::make("deinterlace").build()?;
         // Fixed documented enum nicknames, never unvalidated environment values.

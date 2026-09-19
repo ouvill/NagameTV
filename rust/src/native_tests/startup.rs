@@ -281,6 +281,7 @@ enum WindowCheck {
     PidChange,
     Timeshift,
     Screenshots,
+    VideoProcessing,
     RecordingAudit(std::path::PathBuf),
     RecordingProbe(std::path::PathBuf),
 }
@@ -302,6 +303,11 @@ fn window(
     assert_eq!(ffi::root_count(&engine), 1);
     match check {
         WindowCheck::Startup => {}
+        WindowCheck::VideoProcessing => {
+            let result = super::video_processing::run(app, &mut engine);
+            evaluate(&mut engine, "player.stop(); root.close(); true")?;
+            return result;
+        }
         WindowCheck::Screenshots => {
             let result = super::screenshots::run(app, &mut engine);
             evaluate(&mut engine, "player.stop(); root.close(); true")?;
@@ -910,6 +916,10 @@ pub fn run_window() -> i32 {
 pub fn run_timeshift() -> i32 {
     run_window_check(WindowCheck::Timeshift)
 }
+pub fn run_video_processing() -> i32 {
+    run_window_check(WindowCheck::VideoProcessing)
+}
+
 pub fn run_screenshots() -> i32 {
     run_window_check(WindowCheck::Screenshots)
 }
@@ -927,6 +937,10 @@ pub fn run_recording_probe(path: std::path::PathBuf) -> i32 {
 
 fn run_window_check(check: WindowCheck) -> i32 {
     // SAFETY: This is a fresh subprocess, before Qt or worker initialization.
+    #[cfg(target_os = "linux")]
+    unsafe {
+        crate::platform::configure_at_startup();
+    }
     #[cfg(target_os = "linux")]
     let dialogs = unsafe { crate::platform::DialogSetup::prepare() };
     // Native GTK dialog warnings bypass Qt's message handler. Keep them visible

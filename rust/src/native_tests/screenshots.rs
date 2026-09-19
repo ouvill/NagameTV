@@ -27,7 +27,7 @@ fn pump(app: &QGuiApplication, duration: Duration) {
         thread::sleep(Duration::from_millis(2));
     }
 }
-fn json(
+pub(super) fn json(
     engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
     expression: &str,
 ) -> TestResult<serde_json::Value> {
@@ -40,7 +40,7 @@ fn json(
     .to_string();
     Ok(serde_json::from_str(&text)?)
 }
-fn file_url(path: &Path) -> TestResult<String> {
+pub(super) fn file_url(path: &Path) -> TestResult<String> {
     Ok(serde_json::to_string(
         url::Url::from_file_path(path)
             .map_err(|_| "file URL")?
@@ -56,7 +56,7 @@ fn saved_files(directory: &Path) -> TestResult<Vec<PathBuf>> {
     files.sort();
     Ok(files)
 }
-fn capture(
+pub(super) fn capture(
     app: &QGuiApplication,
     engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
 ) -> TestResult<QImage> {

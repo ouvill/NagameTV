@@ -37,13 +37,15 @@ sinkのdroppedが0でも、ディスプレイへの全フレームの提示を�
 mainのplayback.rsとvideo_stats.rsの契約を移植し、処理別に分割した。
 
 - `playback/deinterlace.rs`: 起動設定をMode enumへ検証し、映像処理elementを生成。
+- `playback/video_output.rs`: sinkの形式を検証し、CPU／NVDEC／VAのメモリー制約を持つ出力binを構築。
 - `playback/stats.rs`: 現在のcaps・sink統計・queue使用量を読み取り、所有するスナップショットを返す。
 - `player/statistics.rs`: Qt境界でJSONへ変換。変換失敗はログへ記録する。
 - `qml/VideoStats.qml`: 1秒ごとに値を更新するパネル。固定の11行を再利用し、更新ごとにdelegateを作り直さない。
 
 ## デインターレース
 
-`NAGAMETV_DEINTERLACE=yadif|linear|off`を起動時に指定する。既定はyadif。
+`NAGAMETV_DEINTERLACE=yadif|linear|off|gl|va`を起動時に指定する。既定はyadif。
+GPU経路、NV12表示、デコーダー／メモリー形式の統計は[GPU映像処理](gpu-video.md)を参照。
 mainと互換のquality・balanced・disabled、前後空白と大文字にも対応する。
 不正な値は型付きエラーとして起動を失敗させる。実行中には変更しない。
 Offはidentityを使い、YADIF/Linearはauto・all fieldsで処理する。

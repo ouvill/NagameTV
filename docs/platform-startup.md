@@ -31,19 +31,17 @@ Portalの可用性は起動時に決定するため、導入・起動後はア�
 2026-09-16: Qt 6.10.2 / GTK 3.24.52 / X11の表示倍率2倍で、最小の
 FileDialogでも同じ警告を再現。Wayland経由またはGTKの倍率1倍では再現しなかった。
 
-## 映像表示の互換設定
+## 映像表示の選択
 
-mainのrust/src/main.rsにあるapply_temporary_xcb_workaroundを移植した。
-mainのREADMEでは、Ubuntu 26.04 / NVIDIA / native WaylandのGL共有で映像が崩れる
-問題への暫定対策としている。関連リンクは
-[GStreamer #5178](https://gitlab.freedesktop.org/gstreamer/gstreamer/-/work_items/5178)。
-今回この上流ページは取得できず、現在の修正状況は未確認。対策を不要と判断せず、
-mainの選択条件を維持する。
+ネイティブ版ではQtに表示方式の自動選択を任せる。WaylandとX11の表示先が両方あっても、
+アプリから`xcb`を自動指定しない。`QT_QPA_PLATFORM=wayland`または`xcb`を明示できる。
+明示設定は空文字・非Unicodeも含めて保持する。
 
-LinuxでQT_QPA_PLATFORMが未指定、WAYLAND_DISPLAYとDISPLAYが両方空でない場合だけ
-xcbを指定する。明示設定は空文字・非Unicodeも含めて保持する。
-Waylandのみ、X11のみ、表示変数なしの場合は変更しない。
-この条件は環境変数による方針選択であり、表示サーバーが応答する保証ではない。
+VA-API経路だけはDMA_DRMのEGL importにWaylandが必要なため、未指定の
+`QT_QPA_PLATFORM=wayland`と`GST_GL_PLATFORM=egl`をQt起動前に設定する。
+必要な環境を利用できなければエラーにする。[GPU映像処理](gpu-video.md)
+
+環境変数の設定は表示サーバーが応答する保証ではない。
 試験時には使う表示先を別途検出・検証し、欠けていれば起動しない。
 
 [QtのQGuiApplication仕様](https://doc.qt.io/qt-6/qguiapplication.html#QGuiApplication)
@@ -51,19 +49,31 @@ Waylandのみ、X11のみ、表示変数なしの場合は変更しない。
 [Rustのset_var安全条件](https://doc.rust-lang.org/std/env/fn.set_var.html#safety)
 に従い、mainの最初の処理としてQt・GStreamer・診断・ワーカーの開始前に呼ぶ。
 環境変更関数をunsafeとして呼び出し側の前提を文書化し、呼び出し位置にも安全性の
-理由を記した。条件判定はPolicy enumを返す純粋関数で、テストは環境を変更しない。
-unwrapや新しい常駐処理は追加していない。
+理由を記した。
 
-明示設定の優先、空文字、非Unicode、Waylandのみ・X11のみ・両方の条件を
-デバイスを使わないユニットテストで確認する。native Waylandの描画修復や
-GPU性能は、この選択規則の検証だけでは確認できない。
+`NAGAMETV_TEST_QPA=wayland bash scripts/test-startup.sh video-processing`で製品画面の映像処理を検証する。
+`NAGAMETV_TEST_QPA=auto`ではQtの自動選択を使う。どちらも
+[専用GUI環境](gui-test-environment.md)を起動し、実GPUと仮想音声を検証する。
 
-2026-09-07: 対象テスト2件、全ターゲットClippy（警告をエラー扱い）、書式検査、
-CMakeリリースビルド成功。専用Xvfb :99はxdpyinfoとglxinfoで事前確認した。
-WAYLAND_DISPLAYへ試験専用の値policy-test-onlyを与え、QT_QPA_PLATFORMを未指定にして
-起動した。この値は分岐入力の模擬であり、Waylandサーバーへ接続する試験ではない。
-実際の表示先は検証済みの:99、音声は明示fakesink、全追加機能無効、再生停止中。
-xcb互換モードの起動ログ、プロセスのlibqxcb.soマッピング、表示された待機画面を確認した。
-閉じるボタンから終了コード0。QML例外・GStreamer criticalはログになかった。
-証跡はGit対象外のbenchmark/platform-startup/にplayer.log、platform-maps.txt、
-started.png、専用設定・診断ログとして保存した。実GPUの検証プロセスは維持した。
+## 変更の経緯
+
+以前はUbuntu 26.04 / NVIDIA / native WaylandのGL共有で映像が崩れる問題への
+暫定対策として、WaylandとX11の両方がある場合に`xcb`を自動指定していた。
+関連報告は[GStreamer #5178](https://gitlab.freedesktop.org/gstreamer/gstreamer/-/work_items/5178)。
+2026-09-07の検証はこの選択規則とX11の起動が対象で、Wayland描画の試験ではなかった。
+
+2026-09-20: GPU経路・NV12対応後、ユーザー環境でnative Waylandの正常再生の報告があった。
+この報告を踏まえ、ネイティブ版の`xcb`自動指定と、削除した選択規則だけを検証するテストを除去した。
+QtのGL display/contextを再生前にplaybinへ明示的に渡す修正が改善理由の候補だが、
+NV12対応なども同時に変更しており、原因を切り分けた比較試験は行っていない。
+この報告は上流の関連問題がすべて修正されたことを証明するものではない。
+
+同日の専用Weston／RTX 4070 Ti／GStreamer 1.28.2で、Qtの自動選択による
+`libqwayland.so`の読み込み、yadif＋NV12、NVDEC＋OpenGL＋NV12の再生・映像切り替え・
+キャプチャを確認した。Wayland明示指定で字幕・コメントを含むキャプチャ試験も通過した。
+起動試験全体はkiosk-shellのサイズ制約で失敗し、試験用desktop-shellでサイズチェックを
+通した後もウィンドウのアクティブ化待ちで失敗した。試験の判定は変更していない。
+専用環境のWayland検証は映像関連までとし、通常の起動・入力試験はX11で行う。
+
+AppImage／Flatpakは同梱qml6glsinkのWayland対応を別途検証する必要があるため、
+パッケージ起動設定の`xcb`は維持する。

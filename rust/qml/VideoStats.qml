@@ -20,6 +20,11 @@ Rectangle {
         return format && format.width && format.height
             ? format.width + " × " + format.height + " / " + number(format.fps, 3) + " fps" : "—"
     }
+    function pixels(format) {
+        if (!format?.pixel_format) return "—"
+        const memory = format.memory?.replace("memory:", "")
+        return format.pixel_format + (memory ? " (" + memory + ")" : "")
+    }
     function metric(key) {
         const s = panel.snapshot
         switch (key) {
@@ -28,13 +33,13 @@ Rectangle {
         case "scan": return (s.input?.interlace || "—") + " / " + (s.input?.pixel_aspect_ratio || "—")
         case "viewport": return Math.round(panel.viewportSize.width) + " × " + Math.round(panel.viewportSize.height) + " / " + panel.viewportDpr
         case "output": return panel.formatVideo(s.output)
-        case "pixels": return (s.input?.pixel_format || "—") + " → " + (s.output?.pixel_format || "—")
+        case "pixels": return panel.pixels(s.input) + " → " + panel.pixels(s.output)
         case "deinterlace": return s.deinterlacer || "—"
         case "rate": return panel.number(s.average_fps, 2) + " fps"
         case "frames": return panel.number(s.rendered, 0) + " / " + panel.number(s.dropped, 0)
         case "queue": return panel.number(s.queue_buffers, 0) + " frames / " + panel.number(s.queue_ms, 1) + " ms"
         case "memory": return panel.number(s.queue_bytes / 1048576, 2) + " MiB"
-        case "engine": return s.gstreamer || "—"
+        case "engine": return (s.gstreamer || "—") + (s.decoders?.length ? " / " + s.decoders.join(", ") : "")
         default: return "—"
         }
     }

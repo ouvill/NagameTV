@@ -70,8 +70,8 @@ cmake --build build
 
 字幕デコーダーのlibaribcaptionとTS整形のtsreadexはサブモジュールからビルドします。
 映像表示にはOpenGL、音声再生には利用可能な音声出力が必要です。
-LinuxではX11とWaylandの両方の環境変数がある場合、Qtの表示先が未指定なら互換設定として`xcb`を選びます。
-明示した`QT_QPA_PLATFORM`は優先します。[表示環境の扱い](platform-startup.md)
+Linuxの表示方式はQtの自動選択に任せます。`QT_QPA_PLATFORM=wayland`または`xcb`で明示できます。
+VA-API経路では未指定の表示方式をWaylandにします。[表示環境の扱い](platform-startup.md)
 
 接続先などを起動時に指定する場合:
 
@@ -82,7 +82,9 @@ NAGAMETV_SERVER=http://192.168.1.100:40772 NAGAMETV_AUTOPLAY=1 ./build/nagametv
 `NAGAMETV_SERVICE_ID`で選択局を上書きできます。
 `NAGAMETV_AUTOPLAY`は未指定なら保存済みの自動再生設定（初期値OFF）を使います。
 `0`で無効、それ以外の指定値で有効になり、この上書きは設定ファイルに保存しません。
-`NAGAMETV_DEINTERLACE=yadif|linear|off`で起動時の映像処理を指定できます。
+`NAGAMETV_DEINTERLACE=yadif|linear|off|gl|va`で起動時の映像処理を指定できます。
+`NAGAMETV_VIDEO_FORMAT=auto|nv12|rgba`で表示形式を選択します。
+GPU経路の前提条件と方式の違いは[GPU映像処理](gpu-video.md)を参照してください。
 `NAGAMETV_PLAYBACK_CLOCK=auto|system`で実機比較用の再生時計を指定できます。
 音声出力の選択と時計の比較方法は[音声出力](audio-output.md)を参照してください。
 
@@ -115,6 +117,10 @@ bash scripts/test-startup.sh
 専用画面・実GPU・仮想音声を起動して検証した後、製品の`Main.qml`を読み込み、初回・設定済み起動・
 番組表の開閉・再生エラー・終了を確認します。設定先は一時ディレクトリーです。
 画面部品を変更した場合は、その部品のQMLテストも実行してください。
+`NAGAMETV_TEST_QPA=wayland bash scripts/test-startup.sh video-processing`で専用Wayland画面を使います。
+`NAGAMETV_TEST_QPA=auto`は表示先の明示指定を外し、Qtの自動選択を検証します。
+省略時の試験は`xcb`（VA-API経路だけ`wayland`）です。
+Wayland試験のサイズ変更・入力フォーカスの制約は[専用GUI環境](gui-test-environment.md)を参照してください。
 スクリーンショットの連写・保存・設定変更の試験は`bash scripts/test-screenshot.sh`で実行します。
 この試験も専用セッションを自動起動し、画像を一時ディレクトリーに保存して終了時に削除します。
 元映像の取得・字幕／コメント合成・連写中の描画は

@@ -15,6 +15,7 @@ pub mod stats;
 pub mod timeline;
 #[cfg(feature = "video_item_tests")]
 pub(crate) mod video_item_checks;
+mod video_output;
 pub mod warnings;
 
 use gstreamer::{self as gst, prelude::*};
@@ -39,6 +40,8 @@ pub enum Error {
     },
     #[error("{0}")]
     Deinterlace(#[from] deinterlace::Error),
+    #[error("Video output: {0}")]
+    VideoOutput(String),
     #[error("{0}")]
     AudioSink(#[from] audio_sink::Error),
     #[error("{0}")]
@@ -216,43 +219,12 @@ impl Playback {
             .build()?;
         let presentation = crate::screenshots::native::Presentation::default();
         presentation.install(&sink.static_pad("sink").ok_or(Error::MissingSinkPad)?);
-        let input = gst::ElementFactory::make("videoconvert").build()?;
         let mode = deinterlace::Mode::from_environment()?;
-        let deinterlace = mode.build()?;
-        tracing::info!("Video processing: {}", mode.label());
-        let queue = gst::ElementFactory::make("queue")
-            .property("max-size-buffers", 8_u32)
-            .property("max-size-bytes", 0_u32)
-            .property("max-size-time", 0_u64)
-            .build()?;
-        let upload = gst::ElementFactory::make("glupload").build()?;
-        let convert = gst::ElementFactory::make("glcolorconvert").build()?;
-        let filter = gst::ElementFactory::make("capsfilter")
-            .property(
-                "caps",
-                gst::Caps::builder("video/x-raw")
-                    .features(["memory:GLMemory"])
-                    .field("format", "RGBA")
-                    .field("texture-target", "2D")
-                    .build(),
-            )
-            .build()?;
-        let output = gst::Bin::new();
-        let elements = [
-            &input,
-            &deinterlace,
-            &queue,
-            &upload,
-            &convert,
-            &filter,
-            &sink,
-        ];
-        output.add_many(elements)?;
-        gst::Element::link_many(elements)?;
-        let pad =
-            gst::GhostPad::with_target(&input.static_pad("sink").ok_or(Error::MissingSinkPad)?)?;
-        pad.set_active(true)?;
-        output.add_pad(&pad)?;
+        let video_output::Output {
+            bin: output,
+            processor,
+            queue,
+        } = video_output::Validated::new(sink.clone(), mode)?.build()?;
         let audio = audio_sink::Output::from_environment()?.build()?;
         let routing = audio_routing::Routing::default();
         let audio_filter = routing.filter()?;
@@ -293,7 +265,7 @@ impl Playback {
         Ok(Self {
             playbin,
             sink,
-            processor: deinterlace,
+            processor,
             queue,
             mode,
             video_output: VideoOutputState::Unattached,
@@ -366,6 +338,14 @@ impl Playback {
         );
         // Qt must supply the GL display before any other GL element starts.
         self.sink.set_state(gst::State::Ready)?;
+        // video-sink is still only a playsink property at this point: its bin
+        // may not yet be parented into playbin. Forward Qt's display explicitly
+        // so a hardware decoder cannot create and propagate a different one
+        // before playsink links the output bin (the CPU path masked this).
+        let display = self.sink.context("gst.gl.GLDisplay").ok_or_else(|| {
+            Error::VideoOutput("qml6glsink did not provide Qt's GL display context".into())
+        })?;
+        self.playbin.set_context(&display);
         self.playbin.set_property("uri", uri);
         if let Err(error) = self.playbin.set_state(gst::State::Playing) {
             // A synchronous failure may already have a more specific HTTP error queued.

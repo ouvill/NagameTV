@@ -45,6 +45,15 @@ impl Presented {
             .checked_mul(height as usize)
             .and_then(|p| p.checked_mul(8))
             .and_then(|size| size.checked_add(self.frame.info.size()))
+            .and_then(|size| {
+                // A capture of NV12 additionally owns a temporary RGBA frame.
+                if self.frame.info.format() == video::VideoFormat::Rgba {
+                    return Some(size);
+                }
+                let pixels = (self.frame.info.width() as usize)
+                    .checked_mul(self.frame.info.height() as usize)?;
+                size.checked_add(pixels.checked_mul(4)?)
+            })
             .ok_or(Error::Capacity)
     }
     fn output_size(&self) -> Result<(u32, u32), Error> {
@@ -59,12 +68,23 @@ impl Presented {
     }
     pub fn image(self) -> Result<cxx_qt_lib::QImage, Error> {
         let (width, height) = self.output_size()?;
-        let mapped =
+        let source =
             video::VideoFrameRef::from_buffer_ref_readable(&self.frame.buffer, &self.frame.info)
                 .map_err(|_| Error::Encode)?;
-        if mapped.format() != video::VideoFormat::Rgba {
-            return Err(Error::Encode);
-        }
+        // Conversion happens only for an accepted capture, on the save worker.
+        // GstVideoConverter applies negotiated range/matrix/chroma placement;
+        // normal playback keeps both NV12 planes on the GPU.
+        let converted = match source.format() {
+            video::VideoFormat::Rgba => None,
+            video::VideoFormat::Nv12 => Some(convert_to_rgba(&source)?),
+            _ => return Err(Error::Encode),
+        };
+        let mapped = if let Some((buffer, info)) = &converted {
+            video::VideoFrameRef::from_buffer_ref_readable(buffer, info)
+                .map_err(|_| Error::Encode)?
+        } else {
+            source
+        };
         let source_width = self.frame.info.width() as usize;
         let row_bytes = source_width.checked_mul(4).ok_or(Error::Encode)?;
         let stride = usize::try_from(mapped.plane_stride()[0]).map_err(|_| Error::Encode)?;
@@ -91,6 +111,26 @@ impl Presented {
     fn pts(&self) -> Option<gst::ClockTime> {
         self.frame.buffer.pts()
     }
+}
+
+fn convert_to_rgba(
+    source: &video::VideoFrameRef<&gst::BufferRef>,
+) -> Result<(gst::Buffer, video::VideoInfo), Error> {
+    let input = source.info();
+    let info = video::VideoInfo::builder(video::VideoFormat::Rgba, input.width(), input.height())
+        .fps(input.fps())
+        .par(input.par())
+        .interlace_mode(input.interlace_mode())
+        .build()
+        .map_err(|_| Error::Encode)?;
+    let converter = video::VideoConverter::new(input, &info, None).map_err(|_| Error::Encode)?;
+    let mut buffer = gst::Buffer::with_size(info.size()).map_err(|_| Error::Capacity)?;
+    {
+        let mut output = video::VideoFrameRef::from_buffer_ref_writable(buffer.make_mut(), &info)
+            .map_err(|_| Error::Encode)?;
+        converter.frame_ref(source, &mut output);
+    }
+    Ok((buffer, info))
 }
 
 #[derive(Default)]
@@ -166,7 +206,10 @@ impl Presentation {
                     else {
                         return gst::PadProbeReturn::Ok;
                     };
-                    if info.format() != video::VideoFormat::Rgba {
+                    if !matches!(
+                        info.format(),
+                        video::VideoFormat::Rgba | video::VideoFormat::Nv12
+                    ) {
                         return gst::PadProbeReturn::Ok;
                     }
                     // Never replace the map callback in a reusable pool buffer.
@@ -423,6 +466,81 @@ mod tests {
             tracker.capture().unwrap().pts(),
             Some(gst::ClockTime::from_mseconds(100))
         );
+    }
+    #[test]
+    fn nv12_capture_converts_limited_range_and_preserves_presented_frame() {
+        gst::init().unwrap();
+        // Width 6 deliberately exercises padded Y/UV strides.
+        let info = video::VideoInfo::from_caps(&"video/x-raw,format=NV12,width=6,height=4,framerate=25/1,colorimetry=bt709,interlace-mode=progressive".parse::<gst::Caps>().unwrap()).unwrap();
+        let tracker = Presentation::default();
+        let observer = tracker.observer();
+        tracker.stage(Overlay::empty(6.0, 4.0));
+        let mut buffer = gst::Buffer::with_size(info.size()).unwrap();
+        {
+            let buffer = buffer.make_mut();
+            let mut frame = video::VideoFrameRef::from_buffer_ref_writable(buffer, &info).unwrap();
+            let stride = frame.plane_stride()[0] as usize;
+            let y = frame.plane_data_mut(0).unwrap();
+            for row in 0..4 {
+                y[row * stride..row * stride + 6].fill(if row < 2 { 16 } else { 235 });
+            }
+            frame.plane_data_mut(1).unwrap().fill(128);
+            drop(frame);
+            video::VideoMeta::add_full(
+                buffer,
+                video::VideoFrameFlags::empty(),
+                info.format(),
+                info.width(),
+                info.height(),
+                info.offset(),
+                info.stride(),
+            )
+            .unwrap();
+            // SAFETY: exclusively owned CPU test buffer; no GPU access.
+            unsafe {
+                install_map_observer(buffer, &tracker, info.clone(), 0);
+            }
+        }
+        sync(&observer, &buffer, &info);
+        assert!(tracker.capture().is_err());
+        observer.presented();
+        let captured = tracker.capture().unwrap();
+        tracker.clear();
+        let image = captured.image().unwrap();
+        assert_eq!((image.width(), image.height()), (6, 4));
+        for (row, expected) in [(0, 0), (3, 255)] {
+            let pixel = image.pixel_color(2, row);
+            for value in [pixel.red(), pixel.green(), pixel.blue()] {
+                assert!((value - expected).abs() <= 2, "{row}: {value}");
+            }
+        }
+    }
+    #[test]
+    fn nv12_capture_uses_negotiated_color_matrix() {
+        gst::init().unwrap();
+        // Encodings of red differ between the SD and HD YUV matrices.
+        for (matrix, y, u, v) in [("bt601", 81, 90, 240), ("bt709", 63, 102, 240)] {
+            let caps: gst::Caps = format!("video/x-raw,format=NV12,width=6,height=4,framerate=25/1,colorimetry={matrix},interlace-mode=progressive").parse().unwrap();
+            let info = video::VideoInfo::from_caps(&caps).unwrap();
+            let mut buffer = gst::Buffer::with_size(info.size()).unwrap();
+            {
+                let mut frame =
+                    video::VideoFrameRef::from_buffer_ref_writable(buffer.make_mut(), &info)
+                        .unwrap();
+                frame.plane_data_mut(0).unwrap().fill(y);
+                for pair in frame.plane_data_mut(1).unwrap().chunks_exact_mut(2) {
+                    pair.copy_from_slice(&[u, v]);
+                }
+            }
+            let source = video::VideoFrameRef::from_buffer_ref_readable(&buffer, &info).unwrap();
+            let (rgba, rgba_info) = convert_to_rgba(&source).unwrap();
+            let pixels = video::VideoFrameRef::from_buffer_ref_readable(&rgba, &rgba_info).unwrap();
+            let pixel = &pixels.plane_data(0).unwrap()[..4];
+            assert!(
+                pixel[0] >= 250 && pixel[1] <= 5 && pixel[2] <= 5 && pixel[3] == 255,
+                "{matrix}: {pixel:?}"
+            );
+        }
     }
     #[test]
     fn only_presented_frames_are_captured_and_old_generations_cannot_return() {

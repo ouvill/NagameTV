@@ -40,6 +40,7 @@ pub struct VideoFormat {
     fps: Option<f64>,
     interlace: Option<String>,
     pixel_format: Option<String>,
+    memory: Option<String>,
     pixel_aspect_ratio: Option<String>,
 }
 
@@ -58,6 +59,9 @@ impl VideoFormat {
                 .map(|rate| f64::from(rate.numer()) / f64::from(rate.denom())),
             interlace: s.get::<&str>("interlace-mode").ok().map(str::to_owned),
             pixel_format: s.get::<&str>("format").ok().map(str::to_owned),
+            memory: caps
+                .and_then(|caps| caps.features(0))
+                .map(|features| features.to_string()),
             pixel_aspect_ratio: s
                 .get::<gst::Fraction>("pixel-aspect-ratio")
                 .ok()
@@ -79,6 +83,8 @@ pub struct VideoStats {
     queue_bytes: u32,
     queue_ms: f64,
     gstreamer: String,
+    decoders: Vec<String>,
+    processor_passthrough: Option<bool>,
 }
 
 pub fn snapshot(
@@ -115,7 +121,38 @@ pub fn snapshot(
         queue_bytes: queue.property("current-level-bytes"),
         queue_ms: queue.property::<u64>("current-level-time") as f64 / 1_000_000.0,
         gstreamer: gst::version_string().to_string(),
+        decoders: if active {
+            decoder_names(player)
+        } else {
+            Vec::new()
+        },
+        processor_passthrough: active
+            .then(|| {
+                processor
+                    .downcast_ref::<gstreamer_base::BaseTransform>()
+                    .map(gstreamer_base::prelude::BaseTransformExt::is_passthrough)
+            })
+            .flatten(),
     }
+}
+
+fn decoder_names(player: &gst::Element) -> Vec<String> {
+    let Some(bin) = player.downcast_ref::<gst::Bin>() else {
+        return Vec::new();
+    };
+    let mut names = Vec::new();
+    let mut elements = bin.iterate_recurse();
+    while let Ok(Some(element)) = elements.next() {
+        if let Some(factory) = element.factory()
+            && factory
+                .has_type(gst::ElementFactoryType::DECODER | gst::ElementFactoryType::MEDIA_VIDEO)
+        {
+            names.push(factory.name().to_string());
+        }
+    }
+    names.sort();
+    names.dedup();
+    names
 }
 
 #[cfg(test)]

@@ -97,7 +97,7 @@ GNOME/GTK系・KDE系が使用する標準MIME形式と、旧GTKのMIME形式を
 | pulseaudio | PulseAudioまたはPipeWireのPulseAudio互換サーバーへの音声出力 |
 | xdg-pictures/nagametv:create | スクリーンショットの既定保存先の作成・書き込み |
 
-現在のQt/GStreamerの描画互換設定に合わせ、パッケージは`QT_QPA_PLATFORM=xcb`で起動する。
+同梱qml6glsinkのWayland対応は未検証のため、パッケージは`QT_QPA_PLATFORM=xcb`で起動する。
 WaylandセッションではXWaylandが必要。ネイティブWaylandを検証済みとして扱わない。
 ホームディレクトリー全体やチューナーデバイスへのアクセスは付与しない。
 

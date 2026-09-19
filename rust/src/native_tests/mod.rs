@@ -14,6 +14,7 @@ mod recording_drop;
 mod screenshots;
 mod startup;
 mod timeshift;
+mod video_processing;
 
 pub fn run() -> i32 {
     let mut arguments = std::env::args().skip(2);
@@ -51,6 +52,7 @@ pub fn run() -> i32 {
         Some("startup") => startup::run(),
         Some("startup-window") => startup::run_window(),
         Some("timeshift") => startup::run_timeshift(),
+        Some("video-processing") => startup::run_video_processing(),
         Some("screenshot-playback") => startup::run_screenshots(),
         Some("recording-pid-change") => startup::run_pid_change(),
         #[cfg(target_os = "linux")]
