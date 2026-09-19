@@ -42,6 +42,19 @@ impl Server {
         let stop = Arc::new(AtomicBool::new(false));
         let count = requests.clone();
         let stopped = stop.clone();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(std::io::Error::other)?;
+        let programs = serde_json::json!([{
+            "id":101, "eventId":7, "networkId":10, "serviceId":2,
+            "startAt": now.as_secs().saturating_sub(60) * 1000, "duration":3_600_000,
+            "name":"Metadata program", "description":"Program overview", "isFree":true,
+            "genres":[{"lv1":3,"lv2":0}],
+            "extended":{"番組内容":"詳しい番組内容", "出演者":"出演者テスト", "スタッフ":"スタッフテスト"},
+            "video":{"type":"mpeg2", "resolution":"1080i"},
+            "audios":[{"componentTag":16,"componentType":3,"isMain":true,"langs":["jpn"],"samplingRate":48000}],
+            "series":{"name":"Test series","episode":3,"lastEpisode":12}
+        }]).to_string();
         let worker = thread::spawn(move || {
             while !stopped.load(Ordering::Relaxed) {
                 let mut socket = match listener.accept() {
@@ -65,8 +78,10 @@ impl Server {
                 }
                 let body = if header.starts_with(b"GET /api/services ") {
                     count.fetch_add(1, Ordering::Relaxed);
-                    r#"[{"id":1,"name":"First TV","type":1,"channel":{"type":"GR"}},
-                        {"id":2,"name":"Saved TV","type":1,"channel":{"type":"GR"}}]"#
+                    r#"[{"id":1,"networkId":10,"serviceId":1,"name":"First TV","type":1,"channel":{"type":"GR"}},
+                        {"id":2,"networkId":10,"serviceId":2,"name":"Saved TV","type":1,"channel":{"type":"GR"}}]"#
+                } else if header.starts_with(b"GET /api/programs ") {
+                    &programs
                 } else {
                     "[]"
                 };
@@ -387,6 +402,79 @@ fn window(
             &mut engine,
             "!root.guideVisible && !root.showGuide"
         )?);
+        evaluate(&mut engine, "viewerActions.toggleGuide.trigger(); true")?;
+        wait_for(app, &mut engine, "guideLoader.item !== null")?;
+        wait_for(
+            app,
+            &mut engine,
+            "JSON.parse(guideLoader.item.programsJson).some(column => column.programs.some(program => program.id === 101))",
+        )?;
+        evaluate(
+            &mut engine,
+            r#"
+            const guide = guideLoader.item;
+            guide.selectedChannel = 'Saved TV';
+            const column = JSON.parse(guide.programsJson).find(column => column.programs.some(program => program.id === 101));
+            guide.selectedProgram = column.programs.find(program => program.id === 101);
+            true
+        "#,
+        )?;
+        wait_for(
+            app,
+            &mut engine,
+            r#"
+            const loader = Array.from(guideLoader.item.data).find(item => item.objectName === 'scheduledDetailsLoader');
+            loader && loader.item && loader.item.opened
+        "#,
+        )?;
+        assert!(evaluate(
+            &mut engine,
+            r#"
+            function find(item, name) {
+                if (item.objectName === name) return item;
+                for (const child of item.children || []) { const result = find(child, name); if (result) return result; }
+                return null;
+            }
+            const loader = Array.from(guideLoader.item.data).find(item => item.objectName === 'scheduledDetailsLoader');
+            const metadata = find(loader.item.contentItem, 'programMetadata');
+            const valid = metadata.sections.some(section => section.heading === '出演者' && section.text === '出演者テスト')
+                && metadata.broadcastFields.some(field => field.text === 'HD · 1080i / MPEG-2')
+                && metadata.broadcastFields.some(field => field.text.includes('48 kHz'))
+                && metadata.broadcastFields.some(field => field.text.includes('Test series'));
+            loader.item.close();
+            valid
+        "#
+        )?);
+        wait_for(
+            app,
+            &mut engine,
+            "guideLoader.item.selectedProgram === null",
+        )?;
+        evaluate(
+            &mut engine,
+            "guideLoader.item.modeRequested(ModeNavigation.Settings); true",
+        )?;
+        wait_for(app, &mut engine, "settings.opened && root.guideVisible")?;
+        evaluate(&mut engine, "settings.close(); true")?;
+        wait_for(app, &mut engine, "!settings.visible")?;
+        evaluate(
+            &mut engine,
+            "guideLoader.item.modeRequested(ModeNavigation.Recording); true",
+        )?;
+        let guide_picker =
+            "Array.from(recordingInput.data).find(item => item.objectName === 'recordingPicker')";
+        wait_for(app, &mut engine, &format!("{guide_picker}.visible"))?;
+        evaluate(&mut engine, &format!("{guide_picker}.reject(); true"))?;
+        wait_for(
+            app,
+            &mut engine,
+            &format!("!{guide_picker}.visible && root.guideVisible"),
+        )?;
+        evaluate(
+            &mut engine,
+            "guideLoader.item.modeRequested(ModeNavigation.Live); true",
+        )?;
+        wait_for(app, &mut engine, "!root.guideVisible && !root.showGuide")?;
         evaluate(
             &mut engine,
             "viewerActions.toggleGuide.trigger(); root.chooseConnectedChannel(); true",

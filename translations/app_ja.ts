@@ -700,6 +700,106 @@
   <context>
     <name>Viewer</name>
     <message>
+      <source>Mono</source>
+      <translation>モノラル</translation>
+    </message>
+    <message>
+      <source>Dual mono</source>
+      <translation>二重音声</translation>
+    </message>
+    <message>
+      <source>Stereo</source>
+      <translation>ステレオ</translation>
+    </message>
+    <message>
+      <source>4-channel surround</source>
+      <translation>4チャンネルサラウンド</translation>
+    </message>
+    <message>
+      <source>5-channel surround</source>
+      <translation>5チャンネルサラウンド</translation>
+    </message>
+    <message>
+      <source>5.1 surround</source>
+      <translation>5.1チャンネルサラウンド</translation>
+    </message>
+    <message>
+      <source>Audio mode %1</source>
+      <translation>音声方式 %1</translation>
+    </message>
+    <message>
+      <source>Episode %1</source>
+      <translation>第%1話</translation>
+    </message>
+    <message>
+      <source>%1 episodes</source>
+      <translation>全%1話</translation>
+    </message>
+    <message>
+      <source>Series</source>
+      <translation>シリーズ</translation>
+    </message>
+    <message>
+      <source>Video format</source>
+      <translation>映像フォーマット</translation>
+    </message>
+    <message>
+      <source>Broadcast information</source>
+      <translation>放送・音声の情報</translation>
+    </message>
+    <message>
+      <source>Upcoming</source>
+      <translation>これから放送</translation>
+    </message>
+    <message>
+      <source>On air</source>
+      <translation>放送中</translation>
+    </message>
+    <message>
+      <source>Ended</source>
+      <translation>放送終了</translation>
+    </message>
+    <message>
+      <source>%1 min</source>
+      <translation>%1分</translation>
+    </message>
+    <message>
+      <source>News / Reports</source>
+      <translation>ニュース・報道</translation>
+    </message>
+    <message>
+      <source>Information / Lifestyle</source>
+      <translation>情報・ワイドショー</translation>
+    </message>
+    <message>
+      <source>Animation / Special effects</source>
+      <translation>アニメ・特撮</translation>
+    </message>
+    <message>
+      <source>Documentary / Culture</source>
+      <translation>ドキュメンタリー・教養</translation>
+    </message>
+    <message>
+      <source>Theater / Performance</source>
+      <translation>劇場・公演</translation>
+    </message>
+    <message>
+      <source>Hobbies / Education</source>
+      <translation>趣味・教育</translation>
+    </message>
+    <message>
+      <source>Free-to-air</source>
+      <translation>無料放送</translation>
+    </message>
+    <message>
+      <source>Paid broadcast</source>
+      <translation>有料放送</translation>
+    </message>
+    <message>
+      <source>ddd, MMM d · hh:mm</source>
+      <translation>M/d（ddd）hh:mm</translation>
+    </message>
+    <message>
       <source>Watching · %1</source>
       <translation>視聴中 · %1</translation>
     </message>

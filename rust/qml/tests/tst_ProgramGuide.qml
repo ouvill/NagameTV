@@ -12,6 +12,7 @@ TestCase {
         id: component
         Viewer.ProgramGuide {
             width: 600; height: 460
+            targetWindow: guideWindow
             iconDirectory: Qt.resolvedUrl("../../../assets/icons/")
             programsJson: "[]"
             channel: "Test channel"
@@ -21,7 +22,8 @@ TestCase {
         }
     }
     property var guide
-    SignalSpy { id: settingsSpy; target: testCase.guide || null; signalName: "settingsRequested" }
+    Window { id: guideWindow }
+    SignalSpy { id: modesSpy; target: testCase.guide || null; signalName: "modeRequested" }
     SignalSpy { id: closeSpy; target: testCase.guide || null; signalName: "closeRequested" }
     SignalSpy { id: watchSpy; target: testCase.guide || null; signalName: "watchRequested" }
     function initTestCase() { failOnWarning(/.*/) }
@@ -204,20 +206,23 @@ TestCase {
         testCase.Window.window.width = 1440; testCase.Window.window.height = 900
         testCase.width = 1440; testCase.height = 900
         guide.width = 1440; guide.height = 880
+        guide.rows = Array.from({length: 8}, (_, index) => ({index:index, label:"Channel " + index, band:"GR"}))
         verify(waitForRendering(guide))
-        guide.selectedPosition = Qt.point(104, 140)
+        const timeline = findChild(guide, "guideTimeline").parent
+        guide.selectedPosition = Qt.point(timeline.timeRulerWidth, 140)
         guide.selectedChannel = "101 NHK BS"
         guide.selectedProgram = {name:"World news",description:"Description",startAt:0,duration:1}
         const loader = findChild(guide, "scheduledDetailsLoader")
         const popup = loader.item
         tryCompare(popup, "opened", true)
-        compare(popup.width, 500); compare(popup.height, 360)
-        compare(popup.x, 350); compare(popup.y, 140)
+        compare(popup.width, 560); compare(popup.height, 620)
+        compare(popup.x - guide.selectedPosition.x - timeline.channelWidth, 24)
+        compare(popup.y, 140)
         compare(popup.dim, false)
         compare(findChild(popup, "programChannel").text, "101 NHK BS")
         guide.selectedPosition = Qt.point(1100, 1000)
-        compare(popup.x, 572)
-        compare(popup.y, popup.parent.height - 380)
+        compare(popup.x, 512)
+        compare(popup.y, popup.parent.height - popup.height - 20)
         guide.width = 640; guide.height = 480
         verify(popup.x + popup.width <= guide.width - 24)
         verify(popup.y + popup.height <= popup.parent.height - 20)
@@ -284,15 +289,84 @@ TestCase {
         compare(selector.currentIndex, 6)
         compare(guide.requests[guide.requests.length-1][0], guide.days[6].start)
     }
-    function test_toolbar_forwards_actions_and_reserves_main_height() {
-        settingsSpy.clear()
+    function test_short_adjacent_programs_remain_individually_selectable() {
+        guide.dayOffset = 1
+        guide.rows = [{index:0, label:"Channel", band:"GR"}]
+        const minuteMs = 60000
+        const shortMinutes = 5
+        const nextMinutes = 15
+        const start = guide.days[1].start
+        guide.programsJson = JSON.stringify([{index:0, programs:[
+            {watchKey:"short", name:"Short news", startAt:start, duration:shortMinutes * minuteMs},
+            {watchKey:"next", name:"Next program", startAt:start + shortMinutes * minuteMs, duration:nextMinutes * minuteMs}
+        ]}])
+        verify(waitForRendering(guide))
+        const view = findChild(guide, "guideTimeline")
+        const timeline = view.parent
+        const loader = findChild(guide, "scheduledDetailsLoader")
+        mouseClick(view, 20, timeline.channelHeaderHeight + shortMinutes * timeline.pixelsPerMinute / 2)
+        tryCompare(loader.item, "opened", true)
+        compare(guide.selectedProgram.watchKey, "short")
+        keyClick(Qt.Key_Escape)
+        tryCompare(loader, "item", null)
+        mouseClick(view, 20, timeline.channelHeaderHeight + (shortMinutes + nextMinutes / 2) * timeline.pixelsPerMinute)
+        tryCompare(loader.item, "opened", true)
+        compare(guide.selectedProgram.watchKey, "next")
+    }
+    function test_toolbar_forwards_actions_and_fills_window_data() {
+        return [
+            {tag: "small component", width: 600, height: 460, language: "ja", bands: ["GR"], columns: 3},
+            {tag: "minimum window", width: 900, height: 560, language: "ja", bands: ["GR", "BS", "CS"], columns: 5},
+            {tag: "normal window", width: 1440, height: 900, language: "ja", bands: ["GR", "BS", "CS"], columns: 8},
+            {tag: "all bands in English", width: 900, height: 560, language: "en", bands: ["GR", "BS", "CS", "SKY", "OTHER"], columns: 5}
+        ]
+    }
+    function test_toolbar_forwards_actions_and_fills_window(data) {
+        modesSpy.clear()
         closeSpy.clear()
+        testCase.Window.window.width = data.width
+        testCase.Window.window.height = data.height
+        guide.width = data.width; guide.height = data.height
+        guide.uiLanguage = data.language
+        guide.targetWindow = guideWindow
+        guide.rows = data.bands.map((band, index) => ({index:index, label:band, band:band}))
+            .concat(Array.from({length: 8}, (_, index) => ({index:index + data.bands.length, label:"Channel " + index, band:"GR"})))
         const toolbar = findChild(guide, "guideToolbar")
-        compare(toolbar.height, 84)
-        compare(findChild(guide, "guideTimeline").parent.y, 84)
         verify(waitForRendering(toolbar))
-        mouseClick(findChild(toolbar, "guideSettings"))
-        compare(settingsSpy.count, 1)
+        const view = findChild(guide, "guideTimeline")
+        const timeline = view.parent
+        compare(toolbar.height, toolbar.twoRows ? 100 : 56)
+        compare(timeline.y, toolbar.height)
+        compare(timeline.y + timeline.height, guide.height)
+        compare(view.x, 36)
+        compare(view.width, guide.width - view.x)
+        compare(findChild(guide, "guideChannelHeader").height, 40)
+        compare(timeline.visibleChannelCount, data.columns)
+        fuzzyCompare(timeline.channelWidth * data.columns, view.width, 0.01)
+        const filters = findChild(guide, "guideFilters")
+        const selector = findChild(guide, "guideDay")
+        verify(selector.x + selector.width <= filters.width)
+        verify(filters.mapToItem(guide, 0, 0).y + filters.height <= toolbar.height)
+        verify(filters.x + filters.width <= guide.width)
+        const help = findChild(toolbar, "guideHelpPopup")
+        mouseClick(findChild(toolbar, "guideHelp"))
+        tryCompare(help, "opened", true)
+        keyClick(Qt.Key_Escape)
+        tryCompare(help, "opened", false)
+        const navigation = findChild(toolbar, "guideModeNavigation")
+        compare(navigation.mode, Viewer.ModeNavigation.Guide)
+        verify(findChild(navigation, "guideModeButton").active)
+        for (const entry of [
+            ["liveModeButton", Viewer.ModeNavigation.Live],
+            ["recordingModeButton", Viewer.ModeNavigation.Recording],
+            ["guideModeButton", Viewer.ModeNavigation.Guide],
+            ["settingsModeButton", Viewer.ModeNavigation.Settings]
+        ]) {
+            modesSpy.clear()
+            mouseClick(findChild(navigation, entry[0]))
+            compare(modesSpy.count, 1)
+            compare(modesSpy.signalArguments[0][0], entry[1])
+        }
         mouseClick(findChild(toolbar, "closeGuide"))
         compare(closeSpy.count, 1)
     }
@@ -319,13 +393,158 @@ TestCase {
         popup.now = start - 1
         compare(button.visible, false)
     }
+    function test_full_details_scroll_without_moving_grid_data() {
+        return [
+            {tag:"small", width:600, height:460},
+            {tag:"wide", width:900, height:560}
+        ]
+    }
+    function test_epg_sections_media_and_missing_fields_follow_refresh() {
+        guide.dayOffset = 1
+        const start = guide.selectedWindow.start
+        const program = {
+            watchKey:"metadata", startAt:start, duration:3600000, name:"Details", description:"Overview",
+            genre:3, isFree:true,
+            extended:[{heading:"番組内容", text:"長い番組内容\n".repeat(60)},
+                {heading:"番組内容2", text:"More details"}, {heading:"出演者", text:"<b>Plain cast names</b>"},
+                {heading:"スタッフ", text:"Staff"}, {heading:"", text:"Text without a heading"}],
+            video:{type:"mpeg2", resolution:"1080i"},
+            audios:[{isMain:true, componentType:3, langs:["jpn"], samplingRate:48000},
+                {isMain:false, componentType:2, langs:["jpn", "eng"], samplingRate:32000}],
+            series:{name:"Series title", episode:3, lastEpisode:12}
+        }
+        guide.rows = [{index:0, label:"Channel", band:"GR"}]
+        guide.programsJson = JSON.stringify([{index:0, programs:[program]}])
+        verify(waitForRendering(guide))
+        mouseClick(findChild(guide, "guideCell"), 20, 30)
+        const loader = findChild(guide, "scheduledDetailsLoader")
+        const popup = loader.item
+        tryCompare(popup, "opened", true)
+        const metadata = findChild(popup, "programMetadata")
+        const flick = findChild(popup, "programDetailsFlickable")
+        const facts = findChild(popup, "programFacts")
+        compare(facts.facts, [qsTranslate("Viewer", "Upcoming"), qsTranslate("Viewer", "%1 min").arg(60),
+            qsTranslate("Viewer", "Drama"), qsTranslate("Viewer", "Free-to-air")])
+        popup.now = start
+        compare(facts.broadcastState, Viewer.ProgramFacts.OnAir)
+        popup.now = start + program.duration
+        compare(facts.broadcastState, Viewer.ProgramFacts.Finished)
+        compare(metadata.sections.map(section => section.heading), program.extended.map(section => section.heading))
+        const longText = findChild(metadata, "programExtendedText0")
+        verify(longText.height > flick.height)
+        compare(longText.truncated, false)
+        compare(findChild(metadata, "programExtendedText2").text, "<b>Plain cast names</b>")
+        compare(findChild(metadata, "programExtendedText2").textFormat, Text.PlainText)
+        compare(findChild(metadata, "programExtendedText4").text, "Text without a heading")
+        compare(metadata.broadcastFields.length, 4)
+        verify(metadata.broadcastFields[0].text.indexOf("Series title") >= 0)
+        verify(metadata.broadcastFields[0].text.indexOf("12") >= 0)
+        compare(metadata.broadcastFields[1].text, "HD · 1080i / MPEG-2")
+        compare(metadata.broadcastFields[2].heading, qsTranslate("Main", "Main audio"))
+        verify(metadata.broadcastFields[2].text.indexOf("日本語") >= 0)
+        verify(metadata.broadcastFields[2].text.indexOf("48 kHz") >= 0)
+        compare(metadata.broadcastFields[3].heading, qsTranslate("Main", "Sub audio"))
+        verify(metadata.broadcastFields[3].text.indexOf("日本語 / English") >= 0)
+        const revised = Object.assign({}, program, {
+            extended:[{heading:"更新された見出し", text:"Updated information"}],
+            video:{type:"future-codec", resolution:"future-resolution"},
+            audios:[{isMain:false, componentType:254, langs:["unknown"], samplingRate:-1}],
+            series:null, isFree:undefined
+        })
+        guide.programsJson = JSON.stringify([{index:0, programs:[revised]}])
+        tryCompare(findChild(metadata, "programExtendedText0"), "text", "Updated information")
+        compare(metadata.broadcastFields.length, 2)
+        compare(metadata.broadcastFields[0].text, "future-resolution / future-codec")
+        verify(metadata.broadcastFields[1].text.indexOf("0xfe") >= 0)
+        verify(metadata.broadcastFields[1].text.indexOf("kHz") < 0)
+        guide.programsJson = JSON.stringify([{index:0, programs:[{
+            watchKey:program.watchKey, startAt:start, duration:program.duration, name:"Sparse EPG"
+        }]}])
+        tryCompare(metadata, "visible", false)
+        compare(facts.facts.length, 2)
+        compare(metadata.sections.length, 0)
+        compare(metadata.broadcastFields.length, 0)
+        verify(waitForRendering(popup.contentItem))
+        verify(flick.atYBeginning)
+        mouseClick(findChild(popup, "closeGuideProgramDetails"))
+        tryCompare(loader, "item", null)
+    }
+    function test_full_details_scroll_without_moving_grid(data) {
+        testCase.Window.window.width = data.width; testCase.Window.window.height = data.height
+        testCase.width = data.width; testCase.height = data.height
+        guide.width = data.width; guide.height = data.height
+        const channel = "長い放送局名も最後まで確認できるチャンネル ".repeat(4)
+        const program = {
+            watchKey:"full-details", startAt:Date.now() - 60000, duration:3600000,
+            name:"長い番組名のすべてを確認する特別番組 ".repeat(10),
+            description:Array.from({length:16}, (_, index) => "第" + (index + 1) + "項目\n"
+                + "出演者や番組の見どころを省略せずに表示します。 ".repeat(4)).join("\n\n") + "\n説明の最終行"
+        }
+        guide.rows = [{index:0, label:channel, band:"GR"}]
+        guide.programsJson = JSON.stringify([{index:0, programs:[program]}])
+        const view = findChild(guide, "guideTimeline")
+        view.contentY = Math.max(0, (program.startAt - guide.selectedWindow.start) / 60000 * view.parent.pixelsPerMinute)
+        verify(waitForRendering(guide))
+        const cell = findChild(guide, "guideCell")
+        mouseClick(cell, 20, 30)
+        const loader = findChild(guide, "scheduledDetailsLoader")
+        const popup = loader.item
+        tryCompare(popup, "opened", true)
+        const flick = findChild(popup, "programDetailsFlickable")
+        const title = findChild(popup, "programTitle")
+        const description = findChild(popup, "programDescription")
+        const channelLabel = findChild(popup, "programChannel")
+        compare(title.text, program.name)
+        compare(title.truncated, false)
+        verify(title.lineCount > 3)
+        compare(channelLabel.text, channel)
+        compare(channelLabel.truncated, false)
+        verify(channelLabel.lineCount > 1)
+        compare(description.text, program.description)
+        compare(description.truncated, false)
+        verify(description.height > flick.height)
+        verify(flick.contentHeight > flick.height)
+        compare(flick.contentY, 0)
+        const gridPosition = Qt.point(view.contentX, view.contentY)
+        const button = findChild(popup, "watchGuideProgram")
+        const buttonPosition = button.mapToItem(popup.contentItem, 0, 0)
+        keyClick(Qt.Key_Down)
+        tryVerify(function() { return flick.contentY > 0 })
+        const afterKey = flick.contentY
+        mouseWheel(flick, flick.width / 2, flick.height / 2, 0, -120)
+        tryVerify(function() { return flick.contentY > afterKey })
+        mouseWheel(flick, flick.width / 2, flick.height / 2, 0, -120000)
+        tryCompare(flick, "atYEnd", true)
+        const descriptionBottom = description.mapToItem(flick, 0, description.height).y
+        verify(descriptionBottom > 0 && descriptionBottom <= flick.height + 1)
+        compare(Qt.point(view.contentX, view.contentY), gridPosition)
+        compare(button.mapToItem(popup.contentItem, 0, 0), buttonPosition)
+        verify(button.visible && buttonPosition.y + button.height <= popup.availableHeight)
+        watchSpy.clear()
+        mouseClick(button)
+        compare(watchSpy.count, 1)
+        compare(watchSpy.signalArguments[0][0], program.watchKey)
+        // A failed watch request must reveal its error even with a long description.
+        guide.watchError = "番組情報が更新されています"
+        const error = findChild(popup, "watchGuideError")
+        tryVerify(function() {
+            const bottom = error.mapToItem(flick, 0, error.height).y
+            return bottom > 0 && bottom <= flick.height + 1
+        })
+        keyClick(Qt.Key_Escape)
+        tryCompare(loader, "item", null)
+        guide.watchError = ""
+        mouseClick(cell, 20, 30)
+        tryCompare(loader.item, "opened", true)
+        compare(findChild(loader.item, "programDetailsFlickable").contentY, 0)
+    }
     function test_details_allow_toolbar_and_outside_click_dismisses() {
-        settingsSpy.clear()
+        modesSpy.clear()
         guide.selectedProgram = {name:"Program",description:"Description",startAt:0,duration:1}
         const loader = findChild(guide, "scheduledDetailsLoader")
         tryCompare(loader.item, "opened", true)
-        mouseClick(findChild(guide, "guideSettings"))
-        compare(settingsSpy.count, 1)
+        mouseClick(findChild(guide, "settingsModeButton"))
+        compare(modesSpy.count, 1)
         tryCompare(loader, "item", null)
         guide.selectedProgram = {name:"Program",description:"Description",startAt:0,duration:1}
         tryCompare(loader.item, "opened", true)
@@ -341,11 +560,11 @@ TestCase {
         const wheel = findChild(guide, "guideWheelArea")
         verify(waitForRendering(guide))
         mouseWheel(wheel, 20, 130, 0, -120, Qt.NoButton, Qt.ShiftModifier)
-        tryCompare(view, "contentX", 222)
+        tryCompare(view, "contentX", view.parent.channelWidth)
         compare(view.contentY, 0)
         mouseWheel(wheel, 20, 130, 0, -120, Qt.NoButton, Qt.NoModifier)
         tryVerify(function() { return view.contentY > 0 })
-        compare(view.contentX, 222)
+        compare(view.contentX, view.parent.channelWidth)
         mouseWheel(wheel, 20, 130, 0, 120, Qt.NoButton, Qt.ShiftModifier)
         tryCompare(view, "contentX", 0)
         view.contentX = view.contentWidth - view.width
@@ -359,6 +578,7 @@ TestCase {
         compare(view.contentX, 0)
     }
     function test_compact_boundaries_and_wide_date_click() {
+        guide.rows = [{index:0, label:"Channel", band:"GR"}]
         const selector = findChild(guide, "guideDay")
         const previous = findChild(selector, "previousGuideDay")
         const next = findChild(selector, "nextGuideDay")
@@ -422,7 +642,7 @@ TestCase {
         verify(loader.item !== null)
         tryCompare(loader.item, "opened", true)
         compare(guide.selectedChannel, "Channel 0")
-        compare(guide.selectedPosition.x, 104)
+        compare(guide.selectedPosition.x, list.x + list.parent.dividerWidth)
         compare(findChild(loader.item, "programDescription").text, "Full description 0")
         list.contentX = list.contentWidth - list.width
         verify(waitForRendering(guide))

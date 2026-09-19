@@ -2,7 +2,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls
 
-Rectangle {
+SegmentedFrame {
     id: root
     required property var options
     required property string value
@@ -12,13 +12,8 @@ Rectangle {
     signal downRequested
     readonly property int selectedIndex: options.findIndex(option => option.value === value)
     readonly property real segmentWidth: (width - 6) / Math.max(1, options.length)
-    readonly property real outerCornerRadius: 12
-    readonly property real segmentCornerRadius: 8
     implicitWidth: options.length * 130 + 6
     implicitHeight: 40
-    radius: root.outerCornerRadius
-    color: "#b8171918"
-    border.color: "#32ffffff"
     opacity: enabled ? 1 : 0.42
     function focusCurrent() {
         const tab = tabs.itemAt(Math.max(0, selectedIndex));

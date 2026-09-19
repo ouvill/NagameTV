@@ -15,9 +15,17 @@ pub struct Program {
     pub duration: u64,
     pub name: Option<String>,
     pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub extended: Option<super::details::Extended>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub video: Option<super::details::Video>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub series: Option<super::details::Series>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_free: Option<bool>,
     #[serde(default, rename(deserialize = "genres"))]
     pub genre: super::genre::Genre,
-    #[serde(default, skip_serializing)]
+    #[serde(default)]
     pub audios: Box<[crate::audio::Descriptor]>,
 }
 impl Program {
@@ -41,10 +49,11 @@ pub struct Storage {
     pub records: usize,
     pub strings: usize,
     pub audio: usize,
+    pub details: usize,
 }
 impl Storage {
     pub fn total(self) -> usize {
-        self.records + self.strings + self.audio
+        self.records + self.strings + self.audio + self.details
     }
 }
 
@@ -117,6 +126,15 @@ impl Snapshot {
             .map(|p| {
                 p.name.as_ref().map_or(0, String::capacity)
                     + p.description.as_ref().map_or(0, String::capacity)
+                    + p.extended
+                        .as_ref()
+                        .map_or(0, super::details::Extended::string_bytes)
+                    + p.video
+                        .as_ref()
+                        .map_or(0, super::details::Video::string_bytes)
+                    + p.series
+                        .as_ref()
+                        .map_or(0, super::details::Series::string_bytes)
             })
             .sum();
         let audio_bytes: usize = self
@@ -135,6 +153,12 @@ impl Snapshot {
             records: record_bytes,
             strings: string_bytes,
             audio: audio_bytes,
+            details: self
+                .0
+                .iter()
+                .filter_map(|program| program.extended.as_ref())
+                .map(super::details::Extended::record_bytes)
+                .sum(),
         }
     }
 }

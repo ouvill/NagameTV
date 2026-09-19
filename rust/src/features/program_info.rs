@@ -2,6 +2,7 @@
 use crate::channels::BroadcastService;
 use crate::services::{FetchError, Job, Network, Progress, Stopping};
 pub mod browser;
+mod details;
 mod genre;
 mod grid;
 pub mod guide;
@@ -128,11 +129,12 @@ impl ProgramInfo {
                             update.completed = Some(Completion::Succeeded);
                             let storage = programs.storage();
                             tracing::debug!(
-                                "EPG_MEMORY programs={} record_capacity_bytes={} string_capacity_bytes={} audio_heap_bytes={} snapshot_capacity_bytes={}",
+                                "EPG_MEMORY programs={} record_capacity_bytes={} string_capacity_bytes={} audio_heap_bytes={} detail_record_bytes={} snapshot_capacity_bytes={}",
                                 programs.len(),
                                 storage.records,
                                 storage.strings,
                                 storage.audio,
+                                storage.details,
                                 storage.total()
                             );
                             self.text_capacity_bytes = storage.strings;

@@ -2,7 +2,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls
 
-Rectangle {
+SegmentedFrame {
     id: root
     required property var days
     required property int currentIndex
@@ -13,7 +13,7 @@ Rectangle {
     signal selected(int index)
     implicitWidth: compact ? 202 : 572
     implicitHeight: 40
-    radius: 20; color: "#b8171918"; border.color: "#32ffffff"; clip: true
+    clip: true
     activeFocusOnTab: true
     function selectDay(index) {
         if (index >= 0 && index < days.length && index !== currentIndex)
@@ -56,7 +56,7 @@ Rectangle {
         Rectangle {
             x: root.itemX(root.currentIndex); y: 3
             width: root.itemWidth(root.currentIndex); height: flick.height - 6
-            radius: height / 2; color: "#429caf9f"; border.color: "#9caf9f"
+            radius: root.segmentCornerRadius; color: "#429caf9f"; border.color: "#9caf9f"
             Behavior on x { NumberAnimation { duration: 170; easing.type: Easing.OutCubic } }
             Behavior on width { NumberAnimation { duration: 170; easing.type: Easing.OutCubic } }
         }
@@ -94,7 +94,7 @@ Rectangle {
                 enabled: index === 0 ? root.currentIndex > 0 : root.currentIndex < root.days.length - 1
                 opacity: enabled ? 1 : .35
                 Accessible.name: index === 0 ? qsTranslate("Viewer", "Previous day") : qsTranslate("Viewer", "Next day")
-                background: Rectangle { radius: height / 2; color: arrow.hovered && arrow.enabled ? "#28ffffff" : "transparent" }
+                background: Rectangle { radius: root.outerCornerRadius; color: arrow.hovered && arrow.enabled ? "#28ffffff" : "transparent" }
                 contentItem: Item { Image { anchors.centerIn: parent; width: 16; height: 16; source: root.iconDirectory + "chevron-left.svg"; mirror: arrow.index === 1 } }
                 onClicked: root.selectDay(root.currentIndex + (index === 0 ? -1 : 1))
             }

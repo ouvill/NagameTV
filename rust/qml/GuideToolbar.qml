@@ -11,63 +11,111 @@ Rectangle {
     required property int dayOffset
     property string uiLanguage: Qt.uiLanguage
     required property string band
-    property Window targetWindow: null
+    required property Window targetWindow
     property url iconDirectory: "qrc:/qt/qml/MinimalViewer/assets/icons/"
     signal closeRequested
-    signal settingsRequested
+    signal modeRequested(int mode)
     signal bandRequested(string band)
     signal dayRequested(int index)
-    implicitHeight: 84
+    readonly property real singleRowHeight: 56
+    readonly property real secondRowHeight: 44
+    readonly property real sideMargin: 12
+    readonly property real controlSpacing: 8
+    readonly property real compactDateWidth: 202
+    readonly property real expandedDateWidth: 572
+    readonly property real bandWidth: broadcastTabs.visible ? broadcastTabs.implicitWidth + controlSpacing : 0
+    readonly property bool twoRows: width < sideMargin * 2 + heading.width + actions.width
+        + bandWidth + compactDateWidth + controlSpacing * 2
+    implicitHeight: singleRowHeight + (twoRows ? secondRowHeight : 0)
     color: "#151715"
     Loader {
         anchors.fill: parent
         active: root.targetWindow !== null
         sourceComponent: WindowDragArea { targetWindow: root.targetWindow }
     }
-    Loader {
-        id: windowButtons
-        anchors.right: parent.right; anchors.rightMargin: 18
-        anchors.top: parent.top; anchors.topMargin: 18
-        width: active ? 126 : 0; height: 42
-        active: root.targetWindow !== null
-        sourceComponent: WindowButtons { targetWindow: root.targetWindow; iconDirectory: root.iconDirectory }
-    }
-    RowLayout {
-        anchors.left: parent.left; anchors.leftMargin: 18
-        anchors.right: windowButtons.left; anchors.rightMargin: 14
-        anchors.top: parent.top; anchors.topMargin: 18
+    Row {
+        id: heading
+        x: root.sideMargin
+        y: (root.singleRowHeight - height) / 2
         height: 42
-        spacing: root.width < 980 ? 8 : 14
+        spacing: root.controlSpacing
         IconAction {
             objectName: "closeGuide"
+            flat: true
             iconSource: root.iconDirectory + "chevron-left.svg"
             tip: qsTranslate("Viewer", "Close program guide")
             onClicked: root.closeRequested()
         }
         Label {
             visible: root.width >= 900
-            text: qsTranslate("Main", "Program guide"); color: "#e6e8e6"; font.pixelSize: 26; font.bold: true
-            elide: Text.ElideRight
+            anchors.verticalCenter: parent.verticalCenter
+            text: qsTranslate("Main", "Program guide"); color: "#e6e8e6"; font.pixelSize: 18; font.bold: true
         }
-        BroadcastTabs { rows: root.rows; value: root.band; onSelected: function(band) { root.bandRequested(band) } }
+    }
+    RowLayout {
+        id: filters
+        objectName: "guideFilters"
+        x: root.twoRows ? root.sideMargin : heading.x + heading.width + root.controlSpacing
+        y: root.twoRows ? root.singleRowHeight : (root.singleRowHeight - height) / 2
+        width: Math.max(0, (root.twoRows ? root.width - root.sideMargin : actions.x - root.controlSpacing) - x)
+        height: 40
+        spacing: root.controlSpacing
+        BroadcastTabs {
+            id: broadcastTabs
+            Layout.preferredWidth: implicitWidth
+            rows: root.rows; value: root.band; uiLanguage: root.uiLanguage
+            onSelected: function(band) { root.bandRequested(band) }
+        }
         GuideDateSelector {
             objectName: "guideDay"
-            Layout.fillWidth: !compact
-            Layout.minimumWidth: compact ? 202 : 82
-            Layout.preferredWidth: compact ? 202 : 572
-            Layout.maximumWidth: compact ? 202 : 572
+            Layout.minimumWidth: root.compactDateWidth
+            Layout.preferredWidth: compact ? root.compactDateWidth : root.expandedDateWidth
+            Layout.maximumWidth: Layout.preferredWidth
             days: root.days; currentIndex: root.dayOffset
             uiLanguage: root.uiLanguage
-            compact: root.width < 1280
+            compact: filters.width < root.bandWidth + root.expandedDateWidth
             iconDirectory: root.iconDirectory
             onSelected: function(index) { root.dayRequested(index) }
         }
         Item { Layout.fillWidth: true }
+    }
+    Row {
+        id: actions
+        anchors.right: parent.right; anchors.rightMargin: root.sideMargin
+        y: (root.singleRowHeight - height) / 2
+        height: 42
+        spacing: root.controlSpacing
         IconAction {
-            objectName: "guideSettings"
-            iconSource: root.iconDirectory + "settings-2.svg"
-            tip: qsTranslate("Main", "Settings")
-            onClicked: root.settingsRequested()
+            objectName: "guideHelp"
+            flat: true
+            iconSource: root.iconDirectory + "info.svg"
+            tip: qsTranslate("Main", "←→ Channels   ↑↓ Time   Enter Details")
+            toolTipEnabled: false
+            onClicked: help.open()
+        }
+        ModeNavigation {
+            objectName: "guideModeNavigation"
+            targetWindow: root.targetWindow
+            iconDirectory: root.iconDirectory
+            mode: ModeNavigation.Guide
+            guideEnabled: true
+            onModeRequested: function(mode) { root.modeRequested(mode) }
+        }
+    }
+    Popup {
+        id: help
+        objectName: "guideHelpPopup"
+        x: root.width - width - root.sideMargin
+        y: root.height
+        width: Math.min(420, root.width - root.sideMargin * 2)
+        padding: 12
+        focus: true
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        background: Rectangle { radius: 8; color: "#151715"; border.color: "#38ffffff" }
+        contentItem: Label {
+            text: qsTranslate("Main", "←→ Channels   ↑↓ Time   Enter Details")
+            color: "#e6e8e6"; font.pixelSize: 12
+            wrapMode: Text.Wrap
         }
     }
 }

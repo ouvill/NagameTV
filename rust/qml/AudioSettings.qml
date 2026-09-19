@@ -13,25 +13,9 @@ Popup {
     property string errorText: ""
     property url iconDirectory: "qrc:/qt/qml/MinimalViewer/assets/icons/"
     readonly property var tracks: JSON.parse(tracksJson)
+    AudioLabels { id: audioLabels }
     function trackLabel(track, index) {
-        const languages = {
-            "ja": "日本語",
-            "jpn": "日本語",
-            "en": "English",
-            "eng": "English",
-            "de": "Deutsch",
-            "deu": "Deutsch",
-            "ger": "Deutsch",
-            "fr": "Français",
-            "fra": "Français",
-            "fre": "Français",
-            "ko": "한국어",
-            "kor": "한국어",
-            "zh": "中文",
-            "zho": "中文",
-            "chi": "中文"
-        };
-        const language = languages[track.language] || track.language;
+        const language = audioLabels.language(track.language);
         const number = track.number || index + 1;
         const role = track.role === "main" ? qsTranslate("Main", "Main audio") : track.role === "sub" ? qsTranslate("Main", "Sub audio") : track.role === "both" ? qsTranslate("Main", "Main / sub") : "";
         const name = track.role === "both" ? role : (language ? language + (role ? " · " + role : "") : role);

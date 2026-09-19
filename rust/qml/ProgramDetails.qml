@@ -48,6 +48,7 @@ Popup {
                     textFormat: Text.PlainText
                     wrapMode: Text.Wrap
                 }
+                ProgramMetadata { width: parent.width; program: popup.program }
             }
         }
     }

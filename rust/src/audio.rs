@@ -10,6 +10,18 @@ const COMPONENT_TAG_OFFSET: usize = 2;
 const COMPONENT_FLAGS_OFFSET: usize = 5;
 const MULTILINGUAL_FLAG: u8 = 0x80;
 const MAIN_COMPONENT_FLAG: u8 = 0x40;
+const SAMPLING_RATE_SHIFT: u8 = 1;
+const SAMPLING_RATE_MASK: u8 = 0x07;
+const SAMPLING_RATES_HZ: [Option<i32>; 8] = [
+    None,
+    Some(16_000),
+    Some(22_050),
+    Some(24_000),
+    None,
+    Some(32_000),
+    Some(44_100),
+    Some(48_000),
+];
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -19,6 +31,9 @@ pub struct Descriptor {
     is_main: bool,
     #[serde(default)]
     pub langs: Box<[String]>,
+    // Mirakurun uses -1 when the broadcast descriptor has no known rate.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    sampling_rate: Option<i32>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -62,6 +77,8 @@ impl Descriptor {
             component_type: header[COMPONENT_TYPE_OFFSET],
             is_main: flags & MAIN_COMPONENT_FLAG != 0,
             langs,
+            sampling_rate: SAMPLING_RATES_HZ
+                [usize::from((flags >> SAMPLING_RATE_SHIFT) & SAMPLING_RATE_MASK)],
         })
     }
     pub fn kind(&self) -> Kind {
@@ -155,6 +172,7 @@ mod tests {
         assert_eq!(parsed.kind(), Kind::DualMono);
         assert!(parsed.is_main());
         assert_eq!(&*parsed.langs, ["jpn", "eng"]);
+        assert_eq!(parsed.sampling_rate, Some(24_000));
         for end in 0..dual.len() {
             assert!(
                 Descriptor::from_arib(&dual[..end]).is_none(),
@@ -167,6 +185,20 @@ mod tests {
         let parsed = Descriptor::from_arib(&single).ok_or("single descriptor")?;
         assert_eq!(parsed.role(), Role::Sub);
         assert_eq!(&*parsed.langs, ["jpn"]);
+        single[COMPONENT_FLAGS_OFFSET] = 0x0e; // sampling_rate 7: 48 kHz.
+        assert_eq!(
+            Descriptor::from_arib(&single)
+                .ok_or("48 kHz")?
+                .sampling_rate,
+            Some(48_000)
+        );
+        single[COMPONENT_FLAGS_OFFSET] = 0x08; // Reserved sampling_rate 4.
+        assert_eq!(
+            Descriptor::from_arib(&single)
+                .ok_or("unknown rate")?
+                .sampling_rate,
+            None
+        );
         single[COMPONENT_HEADER_BYTES] = 0xff;
         assert!(Descriptor::from_arib(&single).is_none());
         Ok(())

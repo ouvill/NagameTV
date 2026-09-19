@@ -84,6 +84,7 @@ ApplicationWindow {
         switch (mode) {
         case ModeNavigation.Live:
             player.cancel_recording_open();
+            player.guide_open(false);
             if (root.setupRequired) {
                 setup.open();
             } else if (player.recording && player.selected >= 0) {
@@ -523,6 +524,7 @@ ApplicationWindow {
             onSendRequested: player.post_comment()
         }
         Loader {
+            id: guideLoader
             anchors.fill: parent
             z: 500
             active: root.guideVisible
@@ -536,7 +538,7 @@ ApplicationWindow {
                         if (error.length) guidePanel.watchError = error
                     }
                     targetWindow: root
-                    onSettingsRequested: settings.open()
+                    onModeRequested: function(mode) { root.requestMode(mode); }
                     rows: root.channelRows
                     visibilityJson: player.guide_visibility_data
                     programsJson: player.epg_data

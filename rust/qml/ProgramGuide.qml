@@ -18,15 +18,15 @@ Rectangle {
     readonly property var visibleRows: rows.filter(row => row.band === band && (visibleSet === null || visibleSet.has(row.index)))
     onVisibilityJsonChanged: selectedProgram = null
     property string band: rows.length ? rows[0].band : "GR"
-    property Window targetWindow: null
-    signal settingsRequested()
+    required property Window targetWindow
+    signal modeRequested(int mode)
     signal watchRequested(string key)
     property string watchError: ""
     signal closeRequested()
     signal dayRequested(double start, double end)
     property int dayOffset: 0
     property double baseDay: midnight()
-    property point selectedPosition: Qt.point(104, 88)
+    property point selectedPosition: Qt.point(timeline.timeRulerWidth, timeline.channelHeaderHeight)
     property string selectedChannel: ""
     property var selectedProgram: null
     onSelectedProgramChanged: watchError = ""
@@ -79,12 +79,11 @@ Rectangle {
         anchors.fill: parent; spacing: 0
         GuideToolbar {
             Layout.fillWidth: true
-            Layout.preferredHeight: 84
             uiLanguage: root.uiLanguage
             rows: root.rows; days: root.days; dayOffset: root.dayOffset; band: root.band
             targetWindow: root.targetWindow; iconDirectory: root.iconDirectory
             onCloseRequested: root.closeRequested()
-            onSettingsRequested: root.settingsRequested()
+            onModeRequested: function(mode) { root.modeRequested(mode) }
             onDayRequested: function(index) { root.dayOffset = index }
             onBandRequested: function(band) { root.band = band; root.selectedProgram = null }
         }
@@ -103,22 +102,18 @@ Rectangle {
                 root.selectedProgram = program
             }
         }
-        Rectangle {
-            objectName: "guideFooter"
-            Layout.fillWidth: true
-            Layout.minimumHeight: 60; Layout.maximumHeight: 60
-            color: "#0b0c0b"; border.color: "#18ffffff"
-            Label {
-                anchors.left: parent.left; anchors.leftMargin: 24
-                anchors.right: parent.right; anchors.rightMargin: 24
-                anchors.verticalCenter: parent.verticalCenter
-                text: root.programsJson === "[]" ? root.status
-                    : qsTranslate("Main", "←→ Channels   ↑↓ Time   Enter Details")
-                textFormat: Text.PlainText
-                color: "#b6bab6"; font.pixelSize: 12
-                wrapMode: Text.Wrap; maximumLineCount: 2; elide: Text.ElideRight
-            }
-        }
+    }
+    Label {
+        objectName: "guideStatus"
+        parent: timeline
+        anchors.centerIn: parent
+        width: Math.max(0, timeline.width - 48)
+        visible: root.programsJson === "[]"
+        text: root.status
+        textFormat: Text.PlainText
+        horizontalAlignment: Text.AlignHCenter
+        color: "#b6bab6"; font.pixelSize: 12
+        wrapMode: Text.Wrap
     }
     // Block the grid behind the card, keeping main's toolbar usable.
     MouseArea {
@@ -132,7 +127,10 @@ Rectangle {
         active: root.selectedProgram !== null
         sourceComponent: GuideProgramDetails {
             parent: timeline
+            iconDirectory: root.iconDirectory
+            uiLanguage: root.uiLanguage
             cellPosition: root.selectedPosition
+            channelWidth: timeline.channelWidth
             channelLabel: root.selectedChannel
             program: root.selectedProgram
             watchError: root.watchError

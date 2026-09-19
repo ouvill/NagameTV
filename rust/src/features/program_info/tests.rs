@@ -423,7 +423,7 @@ fn guide_window_rejects_invalid_numbers_and_accepts_dst_days() {
 }
 
 #[test]
-fn audio_metadata_tracks_program_boundaries_and_disable_without_guide_payloads()
+fn audio_metadata_tracks_program_boundaries_disable_and_detail_payloads()
 -> Result<(), Box<dyn std::error::Error>> {
     let mut feature = ProgramInfo {
         desired: Some("http://example.test".into()),
@@ -455,10 +455,73 @@ fn audio_metadata_tracks_program_boundaries_and_disable_without_guide_payloads()
     assert!(feature.current(None, 100).is_none());
     assert!(feature.current(key(11, 1), 100).is_none());
     let guide = feature.view(service, guide::DayWindow::new(0.0, 86_400_000.0)?)?;
-    assert!(!guide.contains("audios"));
-    assert!(!guide.contains("langs"));
+    let guide: serde_json::Value = serde_json::from_str(&guide)?;
+    assert_eq!(guide[0]["audios"][0]["langs"][0], "jpn");
+    assert_eq!(guide[1]["audios"][0]["isMain"], false);
     feature.configure(None);
     assert_eq!(role(&feature, 199), None);
+    Ok(())
+}
+
+#[test]
+fn epg_details_keep_order_optional_fields_and_unknown_formats_in_grid()
+-> Result<(), Box<dyn std::error::Error>> {
+    let snapshot = parse(r#"[
+        {"id":1,"networkId":10,"serviceId":1,"startAt":100,"duration":100,
+         "name":"番組名","description":"短い概要","isFree":false,
+         "genres":[{"lv1":3,"lv2":0}],
+         "extended":{"番組内容":"本文\n次の行","番組内容2":"続き","出演者":"<b>出演者</b>","スタッフ":"スタッフ名","独自の見出し":"末尾"},
+         "video":{"type":"mpeg2","resolution":"1080i","streamContent":1,"componentType":179},
+         "audios":[{"componentTag":16,"componentType":3,"isMain":true,"langs":["jpn"],"samplingRate":48000},
+                   {"componentTag":17,"componentType":2,"isMain":false,"langs":["jpn","eng"],"samplingRate":-1}],
+         "series":{"name":"シリーズ名","episode":3,"lastEpisode":12}},
+        {"id":2,"networkId":10,"serviceId":1,"startAt":200,"duration":100},
+        {"id":3,"networkId":10,"serviceId":1,"startAt":300,"duration":100,
+         "extended":null,"video":{"type":"future-codec","resolution":"future-resolution"},"series":null,"isFree":null}
+    ]"#.as_bytes())?;
+    let channels =
+        crate::channels::parse(br#"[{"id":42,"name":"A","type":1,"networkId":10,"serviceId":1}]"#)?;
+    let grid: serde_json::Value = serde_json::from_str(
+        &snapshot.grid_view(&channels, guide::DayWindow::new(0.0, 86_400_000.0)?)?,
+    )?;
+    let program = &grid[0]["programs"][0];
+    let sections = program["extended"].as_array().ok_or("missing sections")?;
+    let headings: Vec<_> = sections
+        .iter()
+        .map(|section| section["heading"].as_str())
+        .collect();
+    assert_eq!(
+        headings,
+        [
+            Some("番組内容"),
+            Some("番組内容2"),
+            Some("出演者"),
+            Some("スタッフ"),
+            Some("独自の見出し")
+        ]
+    );
+    assert_eq!(sections[0]["text"], "本文\n次の行");
+    assert_eq!(sections[2]["text"], "<b>出演者</b>");
+    assert_eq!(program["video"]["type"], "mpeg2");
+    assert_eq!(program["video"]["resolution"], "1080i");
+    assert_eq!(program["audios"][0]["samplingRate"], 48000);
+    assert_eq!(program["audios"][1]["samplingRate"], -1);
+    assert_eq!(program["series"]["episode"], 3);
+    assert_eq!(program["isFree"], false);
+    assert_eq!(program["genre"], 3);
+    let missing = &grid[0]["programs"][1];
+    for field in ["extended", "video", "series", "isFree"] {
+        assert!(missing.get(field).is_none());
+    }
+    assert_eq!(missing["audios"], serde_json::json!([]));
+    assert_eq!(grid[0]["programs"][2]["video"]["type"], "future-codec");
+    assert!(grid[0]["programs"][2].get("extended").is_none());
+    let storage = snapshot.storage();
+    assert_eq!(
+        storage.details,
+        sections.len() * std::mem::size_of::<super::details::Section>()
+    );
+    assert!(storage.strings >= "番組名短い概要番組内容本文\n次の行番組内容2続き出演者<b>出演者</b>スタッフスタッフ名独自の見出し末尾mpeg21080iシリーズ名future-codecfuture-resolution".len());
     Ok(())
 }
 
