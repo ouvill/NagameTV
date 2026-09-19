@@ -25,11 +25,18 @@ impl ffi::Player {
                 Status::Unsupported => tr("Comments are unavailable for this channel"),
                 Status::Seeking => tr("Seeking comments…"),
                 Status::Loading => tr("Fetching past comments…"),
+                Status::Importing => tr("Saving past comments…"),
                 Status::Pending => tr("Waiting for the comment archive to update…"),
                 Status::Waiting => tr("Waiting to fetch past comments…"),
+                Status::Scheduled(minutes) => with_detail("Next attempt in %1 min", minutes),
+                Status::Retrying { message, minutes } => with_detail(
+                    "Next attempt in %1 min. Could not fetch past comments: %2",
+                    minutes,
+                )
+                .arg(&QString::from(message.as_str())),
                 Status::Ready => tr("Comments synchronized to playback"),
                 Status::Empty => tr("No archived comments in this interval"),
-                Status::Failed(_) => tr("Could not fetch past comments. Retrying…"),
+                Status::Failed(error) => with_detail("Could not fetch past comments: %1", error),
                 Status::StorageFailed(error) => with_detail("Could not save comments: %1", error),
             };
             self.set_comment_status(text);

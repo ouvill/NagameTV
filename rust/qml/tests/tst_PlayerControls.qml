@@ -103,7 +103,7 @@ Item {
                 mouseClick(play);
                 compare(backend.playbackRequests, 3);
             }
-            function test_actions_follow_backend_and_recording_disables_live_comments() {
+            function test_actions_follow_backend_and_recording_allows_danmaku() {
                 const toggle = findChild(controls, "danmakuButton");
                 mouseClick(toggle);
                 compare(backend.danmaku_enabled, true);
@@ -113,10 +113,22 @@ Item {
                 mouseClick(findChild(controls, "subtitlesButton"));
                 compare(backend.subtitle_display, false);
                 backend.recording = true;
+                verify(toggle.enabled);
                 mouseClick(toggle);
+                compare(backend.danmaku_enabled, true);
+                compare(toggle.active, true);
+                compare(backend.saved, 2);
+                mouseClick(toggle);
+                compare(backend.danmaku_enabled, false);
+                compare(toggle.active, false);
+                compare(backend.saved, 3);
                 verify(!findChild(controls, "postCommentButton").visible);
-                compare(backend.saved, 1);
                 compare(comments.count, 0);
+                backend.comments_enabled = false;
+                verify(!toggle.enabled);
+                mouseClick(toggle);
+                compare(backend.danmaku_enabled, false);
+                compare(backend.saved, 3);
                 mouseClick(findChild(controls, "screenshotButton"));
                 compare(capture.count, 1);
                 actions.canCapture = false;
@@ -184,6 +196,12 @@ Item {
                 mouseClick(findChild(menu, "overflowDanmaku"));
                 compare(backend.danmaku_enabled, true); compare(backend.saved, 1);
                 tryCompare(menu, "visible", false);
+                backend.recording = true;
+                mouseClick(more); tryCompare(menu, "opened", true);
+                mouseClick(findChild(menu, "overflowDanmaku"));
+                compare(backend.danmaku_enabled, false); compare(backend.saved, 2);
+                tryCompare(menu, "visible", false);
+                backend.recording = false;
                 mouseClick(findChild(controls, "sidePanelButton"));
                 compare(panel.count, 1);
                 more.forceActiveFocus(); keyClick(Qt.Key_Space);

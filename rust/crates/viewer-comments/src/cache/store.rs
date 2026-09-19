@@ -6,9 +6,10 @@ use std::{
     time::Duration,
 };
 
-const SCHEMA_VERSION: i64 = 1;
+const SCHEMA_VERSION: i64 = 2;
 const APPLICATION_ID: i64 = 0x4e434d54;
 const ROW_CHARGE: i64 = 128;
+const COVERAGE_CHARGE: i64 = 512;
 #[cfg(test)]
 mod tests;
 pub(super) const IMPORT_BATCH: usize = 512;
@@ -16,6 +17,20 @@ pub(super) const IMPORT_BATCH: usize = 512;
 pub(super) struct Store {
     db: Connection,
     directory: PathBuf,
+    cache_bytes: i64,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub(super) struct RequestPlan {
+    pub target: plan::Target,
+    pub range: Interval,
+    pub refresh: i64,
+}
+pub(super) enum Planned {
+    Complete,
+    Ready(RequestPlan),
+    Waiting(i64),
+    Failed(String),
 }
 pub(super) struct ProviderLease {
     _file: File,
@@ -45,6 +60,7 @@ pub(super) struct EligibleRequest<'a> {
     range: Interval,
     fetched: i64,
     generation: i64,
+    plan: Option<RequestPlan>,
 }
 impl EligibleRequest<'_> {
     pub fn begin(self, id: String) -> Result<super::spool::Receiving, Error> {
@@ -56,6 +72,7 @@ impl EligibleRequest<'_> {
                 range: self.range,
                 fetched: self.fetched,
                 generation: self.generation,
+                plan: self.plan,
             },
         )
     }
@@ -65,7 +82,7 @@ impl Store {
     pub fn open(directory: &Path) -> Result<Self, Error> {
         fs::create_dir_all(directory)?;
         fs::create_dir_all(directory.join("sessions"))?;
-        let db = Connection::open(directory.join("cache.sqlite3"))?;
+        let mut db = Connection::open(directory.join("cache.sqlite3"))?;
         db.busy_timeout(Duration::from_secs(2))?;
         if db.query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))? == 0 {
             db.execute_batch("PRAGMA auto_vacuum=INCREMENTAL;")?;
@@ -76,15 +93,30 @@ impl Store {
         )?;
         let version: i64 = db.query_row("PRAGMA user_version", [], |row| row.get(0))?;
         let app: i64 = db.query_row("PRAGMA application_id", [], |row| row.get(0))?;
-        if (version != 0 && version != SCHEMA_VERSION) || (app != 0 && app != APPLICATION_ID) {
+        if !(0..=SCHEMA_VERSION).contains(&version) || (app != 0 && app != APPLICATION_ID) {
             return Err(Error::Format("unsupported database version".into()));
         }
-        db.execute_batch(include_str!("schema.sql"))?;
-        db.pragma_update(None, "application_id", APPLICATION_ID)?;
-        db.pragma_update(None, "user_version", SCHEMA_VERSION)?;
+        if version < SCHEMA_VERSION {
+            let tx = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+            tx.execute_batch(include_str!("schema.sql"))?;
+            // Recheck under the migration lock: another process may have won.
+            let current: i64 = tx.pragma_query_value(None, "user_version", |r| r.get(0))?;
+            if current < SCHEMA_VERSION {
+                tx.execute_batch("ALTER TABLE coverage ADD COLUMN settled INTEGER NOT NULL DEFAULT 0;
+                    ALTER TABLE coverage ADD COLUMN target_key TEXT REFERENCES targets(key) ON DELETE SET NULL;")?;
+                tx.execute(
+                    "UPDATE coverage SET settled=(fetched>=end+?1),bytes=bytes+?2",
+                    params![SETTLED_SECONDS, COVERAGE_CHARGE],
+                )?;
+                tx.pragma_update(None, "application_id", APPLICATION_ID)?;
+                tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
+            }
+            tx.commit()?;
+        }
         Ok(Self {
             db,
             directory: directory.to_owned(),
+            cache_bytes: DEFAULT_CACHE_BYTES,
         })
     }
     pub fn try_provider(&self) -> Result<Option<ProviderLease>, Error> {
@@ -167,7 +199,7 @@ impl Store {
         tx.commit()?;
         Ok(())
     }
-    pub fn pin(&mut self, owner: &str, spans: &[ClockSpan]) -> Result<(), Error> {
+    pub fn pin(&mut self, owner: &str, spans: &[ClockSpan], now: i64) -> Result<(), Error> {
         let tx = self.db.transaction()?;
         tx.execute("DELETE FROM pins WHERE owner=?1", [owner])?;
         for span in spans {
@@ -178,6 +210,7 @@ impl Store {
                 )?;
             }
         }
+        touch_pinned(&tx, now)?;
         tx.commit()?;
         Ok(())
     }
@@ -188,6 +221,7 @@ impl Store {
                 r.get(0)
             })?)
     }
+    #[cfg(test)]
     pub fn reserve<'a>(
         &mut self,
         lease: &'a ProviderLease,
@@ -195,12 +229,37 @@ impl Store {
         range: Interval,
         now: i64,
     ) -> Result<Reservation<'a>, Error> {
+        self.reserve_slot(lease, channel, range, now, None)
+    }
+    pub fn reserve_plan<'a>(
+        &mut self,
+        lease: &'a ProviderLease,
+        request: RequestPlan,
+        now: i64,
+    ) -> Result<Reservation<'a>, Error> {
+        self.register_target(&request.target, now)?;
+        self.reserve_slot(
+            lease,
+            request.target.channel,
+            request.range,
+            now,
+            Some(request),
+        )
+    }
+    fn reserve_slot<'a>(
+        &mut self,
+        lease: &'a ProviderLease,
+        channel: u16,
+        range: Interval,
+        now: i64,
+        plan: Option<RequestPlan>,
+    ) -> Result<Reservation<'a>, Error> {
         if lease.directory != self.directory {
             return Err(Error::Format(
                 "provider lock belongs to another cache".into(),
             ));
         }
-        if range.missing(self.covered(channel, range, now)?).is_empty() {
+        if plan.is_none() && range.missing(self.covered(channel, range, now)?).is_empty() {
             return Ok(Reservation::Ready);
         }
         let tx = self
@@ -243,6 +302,7 @@ impl Store {
             range,
             fetched: now,
             generation,
+            plan,
         }))
     }
     pub fn failed(
@@ -276,11 +336,151 @@ impl Store {
         wanted: Interval,
         now: i64,
     ) -> Result<Vec<Interval>, Error> {
-        Ok(self.db.prepare("SELECT start,end FROM coverage WHERE published=1 AND channel=?1 AND start<?2 AND end>?3
-            AND (fetched>=end+?4 OR fetched>?5) ORDER BY start")?
-            .query_map(params![channel,wanted.end,wanted.start,SETTLED_SECONDS,now-RECHECK_SECONDS], |row| Ok((row.get::<_,i64>(0)?,row.get::<_,i64>(1)?)))?
-            .map(|row| { let (a,b)=row?; Interval::new(a,b).ok_or_else(|| Error::Format("invalid coverage".into())) }).collect::<Result<Vec<_>,Error>>()?)
+        let _ = now; // Successful data never expires for playback or ordinary reuse.
+        self.coverage(channel, wanted, false)
     }
+    pub fn is_settled(&self, channel: u16, range: Interval) -> Result<bool, Error> {
+        Ok(range
+            .missing(self.coverage(channel, range, true)?)
+            .is_empty())
+    }
+    fn coverage(
+        &self,
+        channel: u16,
+        wanted: Interval,
+        settled_only: bool,
+    ) -> Result<Vec<Interval>, Error> {
+        self.db.prepare("SELECT start,end FROM coverage WHERE published=1 AND channel=?1 AND start<?2 AND end>?3 AND (?4=0 OR settled=1) ORDER BY start")?
+            .query_map(params![channel,wanted.end,wanted.start,settled_only], |r| Ok((r.get::<_,i64>(0)?,r.get::<_,i64>(1)?)))?
+            .map(|row| { let (start,end)=row?; Interval::new(start,end).ok_or_else(|| Error::Format("invalid coverage".into())) }).collect()
+    }
+    pub fn register_target(&mut self, target: &plan::Target, now: i64) -> Result<(), Error> {
+        self.db.execute("INSERT INTO targets(key,channel,start,end,last_used) VALUES(?1,?2,?3,?4,?5)
+            ON CONFLICT(key) DO UPDATE SET start=excluded.start,end=excluded.end,last_used=excluded.last_used",
+            params![target.key(),target.channel,target.range.start,target.range.end,now])?;
+        Ok(())
+    }
+    pub fn request_refresh(&mut self, target: &plan::Target, now: i64) -> Result<(), Error> {
+        self.register_target(target, now)?;
+        let tx = self.db.transaction()?;
+        tx.execute("UPDATE targets SET refresh=completed_refresh+1,failures=0,stopped=0,failure=NULL WHERE key=?1",[target.key()])?;
+        tx.execute("UPDATE provider SET revision=revision+1 WHERE id=1", [])?;
+        tx.commit()?;
+        Ok(())
+    }
+    pub fn planned(&self, owner: &str, target: &plan::Target, now: i64) -> Result<Planned, Error> {
+        let state = self.db.query_row("SELECT refresh,completed_refresh,stopped,retry_at,failure FROM targets WHERE key=?1", [target.key()],
+            |r| Ok((r.get::<_,i64>(0)?, r.get::<_,i64>(1)?, r.get::<_,bool>(2)?, r.get::<_,i64>(3)?,r.get::<_,Option<String>>(4)?))).optional()?;
+        let (refresh, completed, stopped, retry_at, failure) =
+            state.unwrap_or((0, 0, false, 0, None));
+        if stopped {
+            return Ok(Planned::Failed(
+                failure.unwrap_or_else(|| "実況の再取得が必要です".into()),
+            ));
+        }
+        if retry_at > now {
+            return Ok(Planned::Waiting(retry_at));
+        }
+        let Some(range) = Interval::new(target.range.start, target.range.end.min(archive_end(now)))
+        else {
+            return Ok(Planned::Complete);
+        };
+        let mut covered = if refresh > completed {
+            vec![]
+        } else {
+            self.coverage(
+                target.channel,
+                range,
+                now >= target.range.end.saturating_add(SETTLED_SECONDS),
+            )?
+        };
+        if let Some(clock) = target.live_clock() {
+            covered.extend(self.live_covered(owner, target.channel, clock, range)?);
+        }
+        let gaps = range.missing(covered);
+        #[cfg(feature = "network")]
+        if !gaps.is_empty() {
+            tracing::debug!(target: "comment_archive", target_key = %target.key(),
+                manual = refresh > completed, post_broadcast_check = now >= target.range.end.saturating_add(SETTLED_SECONDS),
+                gaps = gaps.len(), missing_seconds = gaps.iter().map(|gap| gap.end-gap.start).sum::<i64>(),
+                "archive acquisition needed");
+        }
+        let (Some(first), Some(last)) = (gaps.first(), gaps.last()) else {
+            return Ok(Planned::Complete);
+        };
+        let mut selected = Interval::new(first.start, last.end).expect("gap envelope");
+        if selected.end - selected.start == 1 {
+            selected = if selected.start > range.start {
+                Interval::new(selected.start - 1, selected.end)
+            } else {
+                Interval::new(selected.start, (selected.end + 1).min(range.end))
+            }
+            .expect("nonempty range");
+        }
+        if selected.end - selected.start < 2 {
+            return Ok(Planned::Complete);
+        }
+        Ok(Planned::Ready(RequestPlan {
+            target: target.clone(),
+            range: selected.request_prefix(),
+            refresh,
+        }))
+    }
+    pub fn set_budget(&mut self, bytes: i64) {
+        self.cache_bytes = bytes.max(0);
+    }
+    pub fn pin_target(
+        &mut self,
+        owner: &str,
+        target: &plan::Target,
+        now: i64,
+    ) -> Result<(), Error> {
+        self.register_target(target, now)?;
+        self.pin_archive(owner, target.channel, target.range, now)
+    }
+    pub fn pin_archive(
+        &mut self,
+        owner: &str,
+        channel: u16,
+        range: Interval,
+        now: i64,
+    ) -> Result<(), Error> {
+        let tx = self.db.transaction()?;
+        tx.execute("DELETE FROM pins WHERE owner=?1", [owner])?;
+        tx.execute(
+            "INSERT INTO pins(owner,channel,start,end) VALUES(?1,?2,?3,?4)",
+            params![owner, channel, range.start, range.end],
+        )?;
+        touch_pinned(&tx, now)?;
+        tx.commit()?;
+        Ok(())
+    }
+    pub fn fail_target(
+        &mut self,
+        target: &plan::Target,
+        message: &str,
+        permanent: bool,
+        retry_after: Option<i64>,
+        now: i64,
+    ) -> Result<Option<i64>, Error> {
+        self.register_target(target, now)?;
+        self.failed(permanent, retry_after, now)?;
+        let failures: i64 = self.db.query_row(
+            "SELECT failures FROM targets WHERE key=?1",
+            [target.key()],
+            |r| r.get(0),
+        )?;
+        let failures = failures + 1;
+        let stopped = permanent || failures >= 3;
+        let until =
+            (now + if failures == 1 { 5 * 60 } else { 30 * 60 }).max(retry_after.unwrap_or(0));
+        self.db.execute(
+            "UPDATE targets SET failures=?2,retry_at=?3,stopped=?4,failure=?5 WHERE key=?1",
+            params![target.key(), failures, until, stopped, message],
+        )?;
+        Ok((!stopped).then_some(until))
+    }
+
     pub fn live_covered(
         &self,
         owner: &str,
@@ -383,6 +583,9 @@ impl Store {
         Ok(())
     }
     pub fn begin_import(&mut self, receipt: &spool::Receipt) -> Result<i64, Error> {
+        if let Some(plan) = &receipt.plan {
+            self.register_target(&plan.target, receipt.fetched)?;
+        }
         let tx = self.db.transaction()?;
         let existing: Option<(i64, bool)> = tx
             .query_row(
@@ -397,8 +600,8 @@ impl Store {
         if let Some((id, false)) = existing {
             tx.execute("DELETE FROM coverage WHERE id=?1", [id])?;
         }
-        tx.execute("INSERT INTO coverage(channel,start,end,fetched,last_used,receipt,published,bytes) VALUES(?1,?2,?3,?4,?4,?5,0,0)",
-            params![receipt.channel,receipt.range.start,receipt.range.end,receipt.fetched,receipt.id])?;
+        tx.execute("INSERT INTO coverage(channel,start,end,fetched,last_used,receipt,published,bytes) VALUES(?1,?2,?3,?4,?4,?5,0,?6)",
+            params![receipt.channel,receipt.range.start,receipt.range.end,receipt.fetched,receipt.id,COVERAGE_CHARGE])?;
         let id = tx.last_insert_rowid();
         tx.commit()?;
         Ok(id)
@@ -481,9 +684,23 @@ impl Store {
             return Ok(());
         }
         let range = receipt.range;
-        let overlap=tx.prepare("SELECT id,start,end,fetched,last_used FROM coverage WHERE published=1 AND channel=?1 AND start<?2 AND end>?3 AND id<>?4")?
-            .query_map(params![receipt.channel,range.end,range.start,id],|r|Ok((r.get::<_,i64>(0)?,r.get::<_,i64>(1)?,r.get::<_,i64>(2)?,r.get::<_,i64>(3)?,r.get::<_,i64>(4)?)))?.collect::<Result<Vec<_>,_>>()?;
-        for (old, start, end, fetched, used) in overlap {
+        // Responses overlap intentionally. Preserve the maximum multiplicity
+        // across snapshots, including genuine identical posts in one response.
+        // SQL's sort spills to disk rather than buffering a programme in RAM.
+        tx.execute("WITH old AS (
+            SELECT c.time,c.payload,ROW_NUMBER() OVER(PARTITION BY c.time,c.payload ORDER BY c.id) AS occurrence
+            FROM comments c JOIN coverage v ON v.id=c.coverage
+            WHERE v.published=1 AND v.channel=?1 AND c.time>=?2 AND c.time<?3
+        ), incoming AS (
+            SELECT time,payload,ROW_NUMBER() OVER(PARTITION BY time,payload ORDER BY id) AS occurrence
+            FROM comments WHERE coverage=?4
+        ) INSERT INTO comments(coverage,time,payload)
+            SELECT ?4,old.time,old.payload FROM old LEFT JOIN incoming
+            ON old.time=incoming.time AND old.payload=incoming.payload AND old.occurrence=incoming.occurrence
+            WHERE incoming.occurrence IS NULL", params![receipt.channel,range.start*1_000_000,range.end*1_000_000,id])?;
+        let overlap=tx.prepare("SELECT id,start,end,fetched,last_used,settled,target_key FROM coverage WHERE published=1 AND channel=?1 AND start<?2 AND end>?3 AND id<>?4")?
+            .query_map(params![receipt.channel,range.end,range.start,id],|r|Ok((r.get::<_,i64>(0)?,r.get::<_,i64>(1)?,r.get::<_,i64>(2)?,r.get::<_,i64>(3)?,r.get::<_,i64>(4)?,r.get::<_,bool>(5)?,r.get::<_,Option<String>>(6)?)))?.collect::<Result<Vec<_>,_>>()?;
+        for (old, start, end, fetched, used, settled, target) in overlap {
             for remain in [
                 Interval::new(start, range.start.min(end)),
                 Interval::new(range.end.max(start), end),
@@ -491,17 +708,29 @@ impl Store {
             .into_iter()
             .flatten()
             {
-                tx.execute("INSERT INTO coverage(channel,start,end,fetched,last_used,published,bytes) VALUES(?1,?2,?3,?4,?5,1,0)",params![receipt.channel,remain.start,remain.end,fetched,used])?;
+                tx.execute("INSERT INTO coverage(channel,start,end,fetched,last_used,published,bytes,settled,target_key) VALUES(?1,?2,?3,?4,?5,1,0,?6,?7)",params![receipt.channel,remain.start,remain.end,fetched,used,settled,target])?;
                 let kept = tx.last_insert_rowid();
                 tx.execute(
                     "UPDATE comments SET coverage=?1 WHERE coverage=?2 AND time>=?3 AND time<?4",
                     params![kept, old, remain.start * 1_000_000, remain.end * 1_000_000],
                 )?;
-                tx.execute("UPDATE coverage SET bytes=COALESCE((SELECT SUM(length(payload)+?1) FROM comments WHERE coverage=?2),0) WHERE id=?2",params![ROW_CHARGE,kept])?;
+                tx.execute("UPDATE coverage SET bytes=?3+COALESCE((SELECT SUM(length(payload)+?1) FROM comments WHERE coverage=?2),0) WHERE id=?2",params![ROW_CHARGE,kept,COVERAGE_CHARGE])?;
             }
             tx.execute("DELETE FROM coverage WHERE id=?1", [old])?;
         }
-        tx.execute("UPDATE coverage SET published=1 WHERE id=?1", [id])?;
+        let settled = receipt.fetched
+            >= receipt
+                .plan
+                .as_ref()
+                .map_or(range.end, |p| p.target.range.end)
+                .saturating_add(SETTLED_SECONDS);
+        let target_key = receipt.plan.as_ref().map(|p| p.target.key());
+        tx.execute("UPDATE coverage SET published=1,settled=?2,target_key=?3,
+            bytes=?5+COALESCE((SELECT SUM(length(payload)+?4) FROM comments WHERE coverage=?1),0) WHERE id=?1",
+            params![id,settled,target_key,ROW_CHARGE,COVERAGE_CHARGE])?;
+        if let Some(plan) = &receipt.plan {
+            tx.execute("UPDATE targets SET completed_refresh=MAX(completed_refresh,?2),failures=0,retry_at=0,stopped=0,failure=NULL WHERE key=?1",params![plan.target.key(),plan.refresh])?;
+        }
         tx.execute(
             "UPDATE provider SET failures=0,wait_until=0,revision=revision+1 WHERE id=1",
             [],
@@ -514,13 +743,7 @@ impl Store {
             .db
             .query_row("SELECT revision FROM provider WHERE id=1", [], |r| r.get(0))?)
     }
-    pub fn read(
-        &mut self,
-        owner: &str,
-        channel: u16,
-        view: &View,
-        now: i64,
-    ) -> Result<Vec<Record>, Error> {
+    pub fn read(&self, owner: &str, channel: u16, view: &View) -> Result<Vec<Record>, Error> {
         let mut statement=self.db.prepare("SELECT id,time,payload,own,origin,media_ms FROM (
             SELECT c.id,c.time,c.payload,0 AS own,0 AS origin,NULL AS media_ms FROM comments c JOIN coverage v ON v.id=c.coverage
                 WHERE v.published=1 AND v.channel=?1 AND c.time>=?2 AND c.time<?3
@@ -559,33 +782,46 @@ impl Store {
                 media_ms: row.get(5)?,
             });
         }
-        drop(rows);
-        drop(statement);
-        self.db.execute("UPDATE coverage SET last_used=?1 WHERE published=1 AND channel=?2 AND start<?3 AND end>?4 AND last_used<?1",params![now,channel,view.interval.end,view.interval.start])?;
+        // Reading a published window must not acquire a write lock. Usage is
+        // refreshed with the retained ranges, at pinning and maintenance.
         Ok(records)
     }
     pub fn cleanup(&mut self, now: i64, clear: bool) -> Result<(), Error> {
         let tx = self.db.transaction()?;
+        touch_pinned(&tx, now)?;
         if clear {
             tx.execute(
                 "UPDATE provider SET generation=generation+1,revision=revision+1 WHERE id=1",
                 [],
             )?;
         }
-        let candidates=tx.prepare("SELECT id,bytes,last_used FROM coverage v WHERE published=1 AND NOT EXISTS
-            (SELECT 1 FROM pins p WHERE p.channel=v.channel AND p.start<v.end AND p.end>v.start) ORDER BY last_used,id")?
-            .query_map([],|r|Ok((r.get::<_,i64>(0)?,r.get::<_,i64>(1)?,r.get::<_,i64>(2)?)))?.collect::<Result<Vec<_>,_>>()?;
-        let mut count = candidates.len() as i64;
-        let mut bytes = candidates.iter().map(|c| c.1).sum::<i64>();
-        for (id, charge, used) in candidates {
-            if clear
-                || bytes > CACHE_BYTES
-                || count > CACHE_INTERVALS
-                || used < now - CACHE_AGE_SECONDS
-            {
-                tx.execute("DELETE FROM coverage WHERE id=?1", [id])?;
+        let candidates = tx
+            .prepare(
+                "SELECT COALESCE(v.target_key,'legacy:'||v.id),SUM(v.bytes),MAX(v.last_used)
+            FROM coverage v WHERE v.published=1 GROUP BY COALESCE(v.target_key,'legacy:'||v.id)
+            HAVING NOT EXISTS(SELECT 1 FROM coverage member JOIN pins p
+                ON p.channel=member.channel AND p.start<member.end AND p.end>member.start
+                WHERE member.published=1 AND (member.target_key=v.target_key OR member.id=v.id))
+            ORDER BY MAX(v.last_used),MIN(v.id)",
+            )?
+            .query_map([], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, i64>(1)?,
+                    r.get::<_, i64>(2)?,
+                ))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut bytes: i64 = tx.query_row(
+            "SELECT COALESCE(SUM(bytes),0) FROM coverage WHERE published=1",
+            [],
+            |r| r.get(0),
+        )?;
+        for (id, charge, _used) in candidates {
+            if clear || bytes > self.cache_bytes {
+                tx.execute("DELETE FROM coverage WHERE published=1 AND COALESCE(target_key,'legacy:'||id)=?1", [id])?;
                 bytes -= charge;
-                count -= 1;
+                tx.execute("UPDATE provider SET revision=revision+1 WHERE id=1", [])?;
             }
         }
         tx.commit()?;
@@ -605,4 +841,13 @@ impl Store {
         .map(|m| m.len())
         .sum()
     }
+}
+
+fn touch_pinned(db: &Connection, now: i64) -> Result<(), Error> {
+    db.execute(
+        "UPDATE coverage SET last_used=?1 WHERE published=1 AND last_used<?1 AND EXISTS
+        (SELECT 1 FROM pins p WHERE p.channel=coverage.channel AND p.start<coverage.end AND p.end>coverage.start)",
+        [now],
+    )?;
+    Ok(())
 }

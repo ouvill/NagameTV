@@ -378,12 +378,7 @@ impl Stopped<'_> {
     ) -> Result<SubtitleStart> {
         let playback = self.0.playback.as_ref().ok_or(Error::Unavailable)?;
         let input = Input::Active {
-            source: super::input::Input::file(
-                playback.element(),
-                file.path(),
-                file.service(),
-                programs_enabled,
-            )?,
+            source: super::input::Input::recording(playback.element(), file, programs_enabled)?,
             controller: Box::new(super::timeline::Controller::new(&playback.sink)?),
             projection: Projection::Recording,
         };

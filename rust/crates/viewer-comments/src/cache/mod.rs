@@ -2,14 +2,16 @@
 //! worker; GUI callers exchange bounded data and the latest demand only.
 #[cfg(feature = "network")]
 mod download;
+mod plan;
 mod spool;
 mod store;
+pub use plan::{Program, ProgramId, Recording};
 #[cfg(feature = "network")]
 mod worker;
 use crate::{Comment, CommentIdentity, Origin, Phase, Style};
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "network")]
-pub use worker::{Controller, Snapshot, State};
+pub use worker::{Availability, Controller, Snapshot, State};
 
 pub const WORKING_BYTES: usize = 16 * 1024 * 1024;
 pub const WORKING_COMMENTS: usize = 50_000;
@@ -18,14 +20,11 @@ pub const FALLBACK_SECONDS: i64 = 30 * 60;
 pub const ARCHIVE_DELAY_SECONDS: i64 = 10 * 60;
 const COLLECTION_SECONDS: i64 = 5 * 60;
 const MAX_REQUEST_SECONDS: i64 = 3 * 24 * 60 * 60;
-const RECHECK_SECONDS: i64 = 60 * 60;
 const SETTLED_SECONDS: i64 = 24 * 60 * 60;
 const REQUEST_SPACING_SECONDS: i64 = 30;
 const REQUEST_WINDOW_SECONDS: i64 = 10 * 60;
 const REQUESTS_PER_WINDOW: usize = 6;
-const CACHE_BYTES: i64 = 256 * 1024 * 1024;
-const CACHE_INTERVALS: i64 = 1024;
-const CACHE_AGE_SECONDS: i64 = 30 * 24 * 60 * 60;
+pub const DEFAULT_CACHE_BYTES: i64 = 1024 * 1024 * 1024;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -137,18 +136,6 @@ impl ClockSpan {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum RecordingRange {
-    Discovering(Vec<ClockSpan>),
-    Known(Vec<ClockSpan>),
-}
-impl RecordingRange {
-    pub fn spans(&self) -> &[ClockSpan] {
-        match self {
-            Self::Discovering(spans) | Self::Known(spans) => spans,
-        }
-    }
-}
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Reception {
     Receiving(u64),
@@ -157,7 +144,7 @@ pub enum Reception {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Source {
     Pending,
-    Recording(RecordingRange),
+    Recording(Recording),
     Live {
         earliest_media_ms: i64,
         spans: Vec<ClockSpan>,

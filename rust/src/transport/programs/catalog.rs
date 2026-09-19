@@ -178,6 +178,7 @@ pub(crate) struct BroadcastSpan {
 pub(crate) struct View {
     pub status: Status,
     pub program: Option<Program>,
+    pub next: Option<Program>,
     pub station: String,
     pub provider: String,
     pub service: Option<BroadcastService>,
@@ -188,6 +189,7 @@ impl Default for View {
         Self {
             status: Status::Pending,
             program: None,
+            next: None,
             station: String::new(),
             provider: String::new(),
             service: None,
@@ -595,6 +597,7 @@ impl Catalog {
             }
         }
         if let Some((run, sample)) = best {
+            view.next.clone_from(&sample.information.next);
             match &sample.information.current {
                 Present::Event(program) => {
                     // Corrections to one uninterrupted present event also enrich
@@ -632,6 +635,7 @@ impl Catalog {
                             break;
                         }
                         corrected = candidate;
+                        view.next.clone_from(&later.information.next);
                     }
                     let mut result = corrected.clone();
                     // Text corrections can enrich an earlier interval. Audio format

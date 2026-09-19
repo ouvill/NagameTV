@@ -16,6 +16,8 @@ pub(super) struct Receipt {
     pub range: Interval,
     pub fetched: i64,
     pub generation: i64,
+    #[serde(default)]
+    pub plan: Option<super::store::RequestPlan>,
 }
 #[derive(Serialize, Deserialize)]
 enum Metadata {
@@ -198,11 +200,18 @@ impl Validated {
         let id = store.begin_import(receipt)?;
         let mut batch = Vec::with_capacity(super::store::IMPORT_BATCH);
         let file = File::open(self.0.directory.join("response.json"))?;
+        #[cfg(feature = "network")]
+        let response_bytes = file.metadata()?.len();
         let reader = CancellableReader {
             file,
             cancelled: &mut cancelled,
         };
+        let mut received = [0_u64; 2];
         let result = crate::archive::visit(reader, |comment| {
+            match comment.origin {
+                crate::Origin::Niconico => received[0] += 1,
+                crate::Origin::Nx => received[1] += 1,
+            }
             batch.push(comment);
             if batch.len() == super::store::IMPORT_BATCH {
                 store.import_batch(id, receipt.range, &mut batch)?;
@@ -221,7 +230,11 @@ impl Validated {
         if cancelled() {
             return Err(Error::Cancelled);
         }
-        store.publish(id, receipt)
+        store.publish(id, receipt)?;
+        #[cfg(feature = "network")]
+        tracing::debug!(target: "comment_archive", channel = receipt.channel, start = receipt.range.start, end = receipt.range.end,
+            niconico = received[0], nx_jikkyo = received[1], response_bytes, "archive response published");
+        Ok(())
     }
     pub fn finish(self) -> Result<(), Error> {
         self.0.discard()
@@ -240,6 +253,7 @@ mod tests {
             range: Interval::new(100, 200).unwrap(),
             fetched: 100_000,
             generation: 0,
+            plan: None,
         };
         let mut rx = Receiving::prepare(dir.path(), receipt).unwrap();
         rx.write(br#"{"packet":[]}"#).unwrap();
@@ -265,6 +279,7 @@ mod tests {
             range: Interval::new(100, 200).unwrap(),
             fetched: 100_000,
             generation: 0,
+            plan: None,
         };
         let mut rx = Receiving::prepare(dir.path(), receipt.clone()).unwrap();
         rx.write(br#"{"packet":[{"chat":{"date":150,"content":"ok"}}]}"#)

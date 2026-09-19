@@ -13,14 +13,13 @@ use index::{Anchor, Index};
 pub(super) use source::Input;
 use std::{
     collections::VecDeque,
-    fs::File,
     io::{Read, Seek, SeekFrom},
     path::Path,
     sync::{
         Arc, Mutex,
         atomic::{AtomicBool, Ordering},
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 pub use store::Retention;
 use store::{READ_BYTES, ReadResult, Status, Store};
@@ -31,7 +30,8 @@ const RECEIVE_TIMEOUT: Duration = Duration::from_secs(15);
 const RECONNECT_DELAY: Duration = Duration::from_secs(1);
 const MAX_RECONNECTS: usize = 3;
 const INPUT_WAIT: Duration = Duration::from_millis(10);
-const FILE_SCAN_YIELD: Duration = Duration::from_millis(2);
+const METADATA_BYTES: usize = 8 * 1024 * 1024;
+pub(super) const EXPLORATION_TIMEOUT: Duration = Duration::from_secs(2);
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -47,14 +47,23 @@ pub enum Error {
     Unindexed,
     #[error("TS exploration was cancelled")]
     Cancelled,
+    #[error("シーク位置の探索が時間上限に達しました")]
+    ExplorationTimedOut,
 }
 
 struct FileIndex {
     index: Index,
     status: Status,
     survey: Option<file::Survey>,
-    metadata_scan: Option<(Index, Anchor)>,
+    metadata_scan: Option<(Index, Anchor, Instant)>,
+    discovery: Discovery,
+    additional_bytes: u64,
     priority: Arc<AtomicBool>,
+}
+#[derive(Clone, Copy)]
+enum Discovery {
+    Pending,
+    Finished,
 }
 enum Shared {
     File(Arc<Mutex<FileIndex>>),
@@ -153,6 +162,12 @@ impl Shared {
                 .find(|entry| entry.time_ns <= preroll)
                 .unwrap_or(first)
                 .clone();
+            if matches!(self, Self::File(_))
+                && preroll.saturating_sub(anchor.time_ns)
+                    > file::MAX_SEARCH_PREROLL.as_nanos() as u64
+            {
+                return Err(Error::Unindexed);
+            }
             Ok(anchor)
         };
         match self {
@@ -180,7 +195,7 @@ enum SeekAnchor {
 }
 
 enum ReaderSource {
-    File(File),
+    File(file::LocalFile),
     Live(Arc<Mutex<Store>>),
 }
 struct Reader {
@@ -223,7 +238,7 @@ impl Reader {
             anchor,
         })
     }
-    fn apply(&mut self, anchor: Anchor) -> Result<(), Error> {
+    fn apply(&mut self, anchor: Anchor, deadline: Instant) -> Result<(), Error> {
         self.filter = tsreadex::Filter::new(self.service)?;
         self.clock = self.clock.reader();
         self.clock.seed(&anchor);
@@ -241,7 +256,7 @@ impl Reader {
             && let Shared::File(shared) = &self.shared
         {
             shared.lock().map_err(|_| Error::Poisoned)?.metadata_scan =
-                Some((self.clock.reader(), anchor));
+                Some((self.clock.reader(), anchor, deadline));
         }
         Ok(())
     }
@@ -251,11 +266,9 @@ impl Reader {
     }
     fn next_with_cancel(&mut self, cancelled: impl Fn() -> bool) -> Result<Output, Error> {
         if let Some(seek) = self.pending_seek.take() {
+            let deadline = Instant::now() + EXPLORATION_TIMEOUT;
             let anchor = match seek {
-                SeekAnchor::Indexed(anchor) => {
-                    self.clock.indexed();
-                    anchor
-                }
+                SeekAnchor::Indexed(anchor) => anchor,
                 SeekAnchor::Search { target, survey } => {
                     let _priority = if let Shared::File(shared) = &self.shared {
                         Some(file::Priority::new(
@@ -267,13 +280,24 @@ impl Reader {
                     let ReaderSource::File(file) = &mut self.source else {
                         return Err(Error::Unindexed);
                     };
-                    let anchor =
-                        survey.locate(file, self.framing, self.service, target, &cancelled)?;
-                    self.clock.provisional();
-                    anchor
+                    let mut probe = file::Metered::new(file);
+                    let result =
+                        survey.locate(&mut probe, self.framing, self.service, target, || {
+                            cancelled() || Instant::now() >= deadline
+                        });
+                    if let Shared::File(shared) = &self.shared {
+                        shared.lock().map_err(|_| Error::Poisoned)?.additional_bytes += probe.bytes;
+                    }
+                    tracing::debug!(target: "recording_metadata", bytes = probe.bytes, target_ns = target, "seek exploration finished");
+                    match result {
+                        Err(Error::Cancelled) if !cancelled() => {
+                            return Err(Error::ExplorationTimedOut);
+                        }
+                        result => result?,
+                    }
                 }
             };
-            self.apply(anchor)?;
+            self.apply(anchor, deadline)?;
         }
 
         if let Some(output) = self.pending.pop_front() {
@@ -333,6 +357,20 @@ impl Reader {
                     }
                     bytes.extend(self.filter.push(packet)?);
                 }
+                if let Shared::File(shared) = &self.shared {
+                    let mut state = shared.lock().map_err(|_| Error::Poisoned)?;
+                    if matches!(state.discovery, Discovery::Finished) {
+                        state.index.retain_reader(&self.clock);
+                    }
+                    if state
+                        .survey
+                        .as_ref()
+                        .is_some_and(|survey| !survey.agrees_with(&self.clock))
+                    {
+                        state.survey = None;
+                        state.index.clear_provisional();
+                    }
+                }
                 self.clock.clear_entries();
                 self.offset += data.len() as u64;
                 if !bytes.is_empty() {
@@ -379,92 +417,126 @@ impl Drop for Worker {
         }
     }
 }
+#[cfg(test)]
 fn file_reader(path: &Path, service: u16, programs: bool) -> Result<(Reader, Worker), Error> {
-    let mut scan = File::open(path)?;
-    let prefix = read_block(&mut scan, READ_BYTES)?;
+    let deadline = Instant::now() + EXPLORATION_TIMEOUT;
+    let mut file = std::fs::File::open(path)?;
+    let size = file.metadata()?.len();
+    let prefix = read_block(&mut file, READ_BYTES)?;
     let framing = Framing::detect(&prefix).ok_or_else(|| {
         std::io::Error::new(std::io::ErrorKind::InvalidData, "TS framing not found")
     })?;
-    scan.seek(SeekFrom::Start(framing.offset()))?;
-    let file = File::open(path)?;
+    file_reader_inspected(
+        path,
+        service,
+        programs,
+        &super::recording::Inspection {
+            prefix: Arc::new(prefix),
+            size,
+            framing,
+            deadline,
+        },
+    )
+}
+fn file_reader_inspected(
+    path: &Path,
+    service: u16,
+    programs: bool,
+    inspection: &super::recording::Inspection,
+) -> Result<(Reader, Worker), Error> {
+    let deadline = inspection.deadline;
+    let initial_budget = METADATA_BYTES;
+    let size = inspection.size;
+    let framing = inspection.framing;
+    let prefix = inspection.prefix.clone();
+    let inspection_bytes = prefix.len();
+    let mut scan = file::Metered::new(file::LocalFile::new(path));
+    let file = file::LocalFile::new(path);
     let shared = Arc::new(Mutex::new(FileIndex {
         index: Index::new(service, programs),
         status: Status::Receiving,
         survey: None,
         metadata_scan: None,
+        discovery: Discovery::Pending,
+        additional_bytes: 0,
         priority: Arc::new(AtomicBool::new(false)),
     }));
     let cancellation = Cancellation(Arc::new(AtomicBool::new(false)));
     let cancelled = cancellation.0.clone();
     let indexed = shared.clone();
     std::thread::Builder::new()
-        .name("ts-index".into())
+        .name("ts-metadata".into())
         .spawn(move || {
             let result = (|| -> Result<(), Error> {
-                // Discover endpoints first; do not wait for a NAS to stream the
-                // entire recording before publishing a provisional seek range.
-                let survey = file::Survey::discover(&mut scan, framing, service, programs, || {
-                    cancelled.load(Ordering::Acquire)
-                })?;
-                indexed.lock().map_err(|_| Error::Poisoned)?.survey = survey;
-                scan.seek(SeekFrom::Start(framing.offset()))?;
                 let mut offset = framing.offset();
-                while !cancelled.load(Ordering::Acquire) {
-                    if indexed
-                        .lock()
-                        .map_err(|_| Error::Poisoned)?
-                        .priority
-                        .load(Ordering::Acquire)
-                    {
-                        std::thread::sleep(INPUT_WAIT);
-                        continue;
-                    }
-                    let metadata_scan = indexed
-                        .lock()
-                        .map_err(|_| Error::Poisoned)?
-                        .metadata_scan
-                        .take();
-                    if let Some((mut metadata, anchor)) = metadata_scan {
-                        scan_metadata(
-                            &mut scan,
-                            framing,
-                            &indexed,
-                            &cancelled,
-                            &mut metadata,
-                            &anchor,
-                        )?;
+                let prefix_bytes = prefix.len();
+                let mut initial = prefix[framing.offset() as usize..].to_vec();
+                if prefix_bytes as u64 != size {
+                    initial.truncate(initial.len() / framing.stride() * framing.stride());
+                }
+                let mut scanned = prefix_bytes - initial.len();
+                let mut eof = false;
+                loop {
+                    if cancelled.load(Ordering::Acquire) { return Ok(()); }
+                    let bytes = if !initial.is_empty() {
+                        std::mem::take(&mut initial)
+                    } else {
+                        if scanned >= initial_budget || Instant::now() >= deadline { break; }
                         scan.seek(SeekFrom::Start(offset))?;
-                    }
-                    let bytes = read_block(&mut scan, framing.stride() * PACKETS_PER_READ)?;
+                        read_exploration(&mut scan, (initial_budget - scanned).min(framing.stride() * PACKETS_PER_READ), || cancelled.load(Ordering::Acquire) || Instant::now() >= deadline)?
+                    };
                     if bytes.is_empty() {
+                        eof = Instant::now() < deadline && !cancelled.load(Ordering::Acquire);
                         break;
                     }
                     let mut state = indexed.lock().map_err(|_| Error::Poisoned)?;
                     for (within, packet) in framing.packets(&bytes) {
                         state.index.packet(offset + within, packet);
                     }
-                    if state
-                        .survey
-                        .as_ref()
-                        .is_some_and(|survey| !survey.agrees_with(&state.index))
-                    {
-                        state.survey = None;
-                        state.index.clear_provisional();
-                    }
                     offset += bytes.len() as u64;
+                    scanned += bytes.len();
                     state.index.compact_file();
-                    drop(state);
-                    // Limit background read pressure while playback/seek owns
-                    // another handle to a slow network-mounted recording.
-                    std::thread::sleep(FILE_SCAN_YIELD);
+                    if offset >= size { eof = true; break; }
+                    if size > METADATA_BYTES as u64 && metadata_ready(&state.index) { break; }
+                }
+                {
+                    let mut state = indexed.lock().map_err(|_| Error::Poisoned)?;
+                    state.discovery = Discovery::Finished;
+                    if eof { state.status = Status::Ended; }
+                }
+                // Programme acquisition can now start, independently of the
+                // optional endpoint survey used for interpolation seeks.
+                if !eof && Instant::now() < deadline {
+                    let survey = file::Survey::discover(&mut scan, framing, service, programs, || {
+                        cancelled.load(Ordering::Acquire) || Instant::now() >= deadline
+                    });
+                    match survey {
+                        Ok(survey) => indexed.lock().map_err(|_| Error::Poisoned)?.survey = survey,
+                        Err(Error::Cancelled) => {},
+                        Err(error) => tracing::debug!(%error, "endpoint survey unavailable"),
+                    }
+                }
+                indexed.lock().map_err(|_| Error::Poisoned)?.additional_bytes += scan.bytes + inspection_bytes as u64;
+                tracing::debug!(target: "recording_metadata", bytes = scan.bytes + inspection_bytes as u64, "initial exploration finished");
+                while !cancelled.load(Ordering::Acquire) {
+                    let request = indexed.lock().map_err(|_| Error::Poisoned)?.metadata_scan.take();
+                    if let Some((mut metadata, anchor, deadline)) = request {
+                        let before = scan.bytes;
+                        scan_metadata(&mut scan, framing, &indexed, &cancelled, &mut metadata, &anchor, deadline)?;
+                        let bytes = scan.bytes - before;
+                        indexed.lock().map_err(|_| Error::Poisoned)?.additional_bytes += bytes;
+                        tracing::debug!(target: "recording_metadata", bytes, "metadata lookahead finished");
+                    } else {
+                        // No sequential fallback: idle recording input issues
+                        // no I/O, however large or slow the file is.
+                        std::thread::sleep(Duration::from_millis(100));
+                    }
                 }
                 Ok(())
             })();
-            if let Ok(mut state) = indexed.lock() {
-                state.status = match result {
-                    Ok(()) => Status::Ended,
-                    Err(error) => Status::Failed(error.to_string()),
-                };
+            if let Err(error) = result && let Ok(mut state) = indexed.lock() {
+                state.discovery = Discovery::Finished;
+                state.status = Status::Failed(error.to_string());
             }
         })?;
     let clock = shared.lock().map_err(|_| Error::Poisoned)?.index.reader();
@@ -486,18 +558,28 @@ fn file_reader(path: &Path, service: u16, programs: bool) -> Result<(Reader, Wor
     Ok((reader, Worker::File(cancellation)))
 }
 
+fn metadata_ready(index: &Index) -> bool {
+    let Some(end) = index.end_ns() else {
+        return false;
+    };
+    let view = index.view(end.saturating_sub(1));
+    view.clock.is_some() && view.program.is_some() && view.next.is_some()
+}
+
 // Bounded lookahead covers sparse EIT/TOT even when output is paused after seek.
 // A metadata read failure must not terminate the independent playback index.
 fn scan_metadata(
-    file: &mut File,
+    file: &mut (impl Read + Seek),
     framing: Framing,
     shared: &Mutex<FileIndex>,
     cancelled: &AtomicBool,
     index: &mut Index,
     anchor: &Anchor,
+    deadline: Instant,
 ) -> Result<(), Error> {
-    const MAX_SCAN_BYTES: u64 = 64 * 1024 * 1024;
-    const MAX_SCAN_NS: u64 = 30_000_000_000;
+    if Instant::now() >= deadline || cancelled.load(Ordering::Acquire) {
+        return Ok(());
+    }
     index.seed(anchor);
     for packet in anchor.bootstrap.as_chunks::<TS_PACKET_SIZE>().0 {
         index.packet(anchor.offset, packet);
@@ -506,7 +588,8 @@ fn scan_metadata(
         return Ok(());
     }
     let mut offset = anchor.offset;
-    while offset.saturating_sub(anchor.offset) < MAX_SCAN_BYTES
+    while offset.saturating_sub(anchor.offset) < METADATA_BYTES as u64
+        && Instant::now() < deadline
         && !cancelled.load(Ordering::Acquire)
     {
         if shared
@@ -517,7 +600,12 @@ fn scan_metadata(
         {
             break;
         }
-        let bytes = match read_block(file, framing.stride() * PACKETS_PER_READ) {
+        let remaining = METADATA_BYTES - offset.saturating_sub(anchor.offset) as usize;
+        let bytes = match read_exploration(
+            file,
+            remaining.min(framing.stride() * PACKETS_PER_READ),
+            || cancelled.load(Ordering::Acquire) || Instant::now() >= deadline,
+        ) {
             Ok(bytes) if !bytes.is_empty() => bytes,
             Ok(_) | Err(_) => break,
         };
@@ -525,14 +613,15 @@ fn scan_metadata(
             index.packet(offset + within, packet);
         }
         offset += bytes.len() as u64;
+        shared
+            .lock()
+            .map_err(|_| Error::Poisoned)?
+            .index
+            .retain_reader(index);
         index.clear_entries();
-        if index
-            .end_ns()
-            .is_some_and(|end| end >= anchor.time_ns.saturating_add(MAX_SCAN_NS))
-        {
+        if metadata_ready(index) {
             break;
         }
-        std::thread::sleep(FILE_SCAN_YIELD);
     }
     Ok(())
 }
@@ -648,5 +737,26 @@ async fn receive(uri: &str, store: &Mutex<Store>) -> Result<(), String> {
 fn read_block(file: &mut impl Read, bytes: usize) -> std::io::Result<Vec<u8>> {
     let mut block = Vec::with_capacity(bytes);
     file.take(bytes as u64).read_to_end(&mut block)?;
+    Ok(block)
+}
+
+// Short reads on slow/network files must recheck the deadline before issuing
+// another syscall. read_to_end would hide an unbounded number of such reads.
+fn read_exploration(
+    file: &mut impl Read,
+    bytes: usize,
+    stopped: impl Fn() -> bool,
+) -> std::io::Result<Vec<u8>> {
+    let mut block = vec![0; bytes];
+    let mut filled = 0;
+    while filled < bytes && !stopped() {
+        match file.read(&mut block[filled..]) {
+            Ok(0) => break,
+            Ok(count) => filled += count,
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(error) => return Err(error),
+        }
+    }
+    block.truncate(filled);
     Ok(block)
 }

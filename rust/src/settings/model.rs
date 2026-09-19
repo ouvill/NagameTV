@@ -64,6 +64,7 @@ pub struct Preferences {
     #[serde(rename = "subtitles_enabled")]
     pub show_subtitles: bool,
     pub comments_enabled: bool,
+    pub comment_cache_limit_mib: super::CommentCacheLimit,
     pub danmaku_enabled: bool,
     pub comment_font_size: CommentFontSize,
     pub comment_opacity: CommentOpacity,
@@ -94,6 +95,7 @@ impl Default for Preferences {
             // Its settings have no comments_enabled field; preserve reception
             // when importing them, including danmaku_enabled=true preferences.
             comments_enabled: true,
+            comment_cache_limit_mib: Default::default(),
             danmaku_enabled: false,
             comment_font_size: Default::default(),
             comment_opacity: Default::default(),

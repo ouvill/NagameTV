@@ -1,11 +1,33 @@
 //! Bounded endpoint discovery and interpolation search for slow/random-access files.
-//! Endpoints are provisional: sequential indexing replaces them with exact epochs.
+//! Endpoints are provisional; observed playback ranges supply exact metadata.
 use super::*;
 
 const PROBE_BYTES: usize = 2 * 1024 * 1024;
 const MAX_SEARCH_PROBES: usize = 12;
-const MAX_SEARCH_PREROLL: Duration = Duration::from_secs(8);
+pub(super) const MAX_SEARCH_PREROLL: Duration = Duration::from_secs(8);
 const MAX_CONTINUOUS_SPAN: Duration = Duration::from_secs(24 * 60 * 60);
+
+pub(super) struct Metered<R> {
+    inner: R,
+    pub bytes: u64,
+}
+impl<R> Metered<R> {
+    pub fn new(inner: R) -> Self {
+        Self { inner, bytes: 0 }
+    }
+}
+impl<R: Read> Read for Metered<R> {
+    fn read(&mut self, bytes: &mut [u8]) -> std::io::Result<usize> {
+        let count = self.inner.read(bytes)?;
+        self.bytes += count as u64;
+        Ok(count)
+    }
+}
+impl<R: Seek> Seek for Metered<R> {
+    fn seek(&mut self, position: SeekFrom) -> std::io::Result<u64> {
+        self.inner.seek(position)
+    }
+}
 
 pub(super) struct Priority(Arc<AtomicBool>);
 impl Priority {
@@ -35,6 +57,9 @@ impl Survey {
         programs: bool,
         cancelled: impl Fn() -> bool,
     ) -> Result<Option<Self>, Error> {
+        if cancelled() {
+            return Err(Error::Cancelled);
+        }
         let size = file.seek(SeekFrom::End(0))?;
         let Some(head) = probe(
             file,
@@ -166,13 +191,20 @@ fn probe(
     offset: u64,
     cancelled: &impl Fn() -> bool,
 ) -> Result<Option<Index>, Error> {
+    if cancelled() {
+        return Err(Error::Cancelled);
+    }
     let stride = framing.stride() as u64;
     let offset = framing.offset() + offset.saturating_sub(framing.offset()) / stride * stride;
     file.seek(SeekFrom::Start(offset))?;
     let mut index = Index::new(service, programs);
     let mut read = 0;
     while read < PROBE_BYTES && !cancelled() {
-        let bytes = read_block(file, framing.stride() * PACKETS_PER_READ)?;
+        let bytes = super::read_exploration(
+            file,
+            (PROBE_BYTES - read).min(framing.stride() * PACKETS_PER_READ),
+            cancelled,
+        )?;
         if bytes.is_empty() {
             break;
         }
@@ -235,7 +267,7 @@ mod tests {
             .unwrap()
             .unwrap();
         const ENDPOINTS: usize = 2;
-        assert!(source.read_bytes <= ENDPOINTS * (PROBE_BYTES + READ_BYTES));
+        assert!(source.read_bytes <= ENDPOINTS * (PROBE_BYTES));
         assert!(source.read_bytes < source.data.get_ref().len());
         assert!(survey.end_ns > TARGET.as_nanos() as u64);
         source.read_bytes = 0;
@@ -266,5 +298,36 @@ mod tests {
                 .unwrap()
                 .is_none()
         );
+    }
+}
+
+// Opening a network path may block. Only reader/metadata worker I/O reaches
+// this transition; constructing the playback input performs no filesystem I/O.
+pub(super) enum LocalFile {
+    Pending(std::path::PathBuf),
+    Open(std::fs::File),
+}
+impl LocalFile {
+    pub fn new(path: &std::path::Path) -> Self {
+        Self::Pending(path.to_owned())
+    }
+    fn file(&mut self) -> std::io::Result<&mut std::fs::File> {
+        if let Self::Pending(path) = self {
+            *self = Self::Open(std::fs::File::open(path)?);
+        }
+        match self {
+            Self::Open(file) => Ok(file),
+            Self::Pending(_) => unreachable!("opened file"),
+        }
+    }
+}
+impl Read for LocalFile {
+    fn read(&mut self, bytes: &mut [u8]) -> std::io::Result<usize> {
+        self.file()?.read(bytes)
+    }
+}
+impl Seek for LocalFile {
+    fn seek(&mut self, position: SeekFrom) -> std::io::Result<u64> {
+        self.file()?.seek(position)
     }
 }

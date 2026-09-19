@@ -357,6 +357,10 @@
     <message><source>Waiting for broadcast time…</source><translation>放送日時を確認中…</translation></message>
     <message><source>Seeking comments…</source><translation>シーク先のコメントを確認中…</translation></message>
     <message><source>Fetching past comments…</source><translation>過去の実況コメントを取得中…</translation></message>
+    <message><source>Saving past comments…</source><translation>過去の実況コメントを保存中…</translation></message>
+    <message><source>Next attempt in %1 min</source><translation>次の取得まで約%1分</translation></message>
+    <message><source>Next attempt in %1 min. Could not fetch past comments: %2</source><translation>約%1分後に再試行します。実況を取得できません: %2</translation></message>
+    <message><source>Could not fetch past comments: %1</source><translation>過去ログを取得できませんでした: %1</translation></message>
     <message><source>Comments synchronized to playback</source><translation>再生位置に合わせて実況を表示しています</translation></message>
     <message><source>No archived comments in this interval</source><translation>この区間の過去ログはありません</translation></message>
     <message><source>Could not fetch past comments. Retrying…</source><translation>過去ログを取得できませんでした。時間を置いて再試行します…</translation></message>
@@ -1103,6 +1107,8 @@
   <context>
     <name>Settings</name>
     <message><source>Saved comments</source><translation>保存済みコメント</translation></message>
+    <message><source>Storage target (MiB)</source><translation>保存容量の目安（MiB）</translation></message>
+    <message><source>Fetch this program's comments again</source><translation>この番組の実況を再取得</translation></message>
     <message><source>Disk usage: %1 MiB</source><translation>ディスク使用量: %1 MiB</translation></message>
     <message><source>Comments for the open recording and retained live video are kept when unused data is cleared.</source><translation>未使用データを削除しても、再生中の録画とタイムシフト可能な映像のコメントは保持します。</translation></message>
     <message><source>Clear unused comments</source><translation>未使用のコメントを削除</translation></message>

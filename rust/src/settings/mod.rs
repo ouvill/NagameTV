@@ -1,5 +1,7 @@
 //! Bounded, compatible preference storage. IO occurs at startup and explicit save.
+mod comment_cache;
 mod comment_style;
+pub use comment_cache::CommentCacheLimit;
 mod language;
 mod model;
 mod screenshot_directory;
@@ -144,6 +146,7 @@ pub enum Change {
     Volume(Volume),
     SubtitleDisplay(bool),
     Comments(bool),
+    CommentCacheLimit(CommentCacheLimit),
     Danmaku {
         enabled: bool,
         size: CommentFontSize,
@@ -211,6 +214,7 @@ impl Session {
             Change::Volume(volume) => preferences.volume = volume,
             Change::SubtitleDisplay(display) => preferences.show_subtitles = display,
             Change::Comments(enabled) => preferences.comments_enabled = enabled,
+            Change::CommentCacheLimit(limit) => preferences.comment_cache_limit_mib = limit,
             Change::Danmaku {
                 enabled,
                 size,

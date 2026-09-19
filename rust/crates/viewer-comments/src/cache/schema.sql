@@ -40,3 +40,11 @@ CREATE TABLE IF NOT EXISTS live_coverage (
     channel INTEGER NOT NULL, clock TEXT NOT NULL, start INTEGER NOT NULL, end INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS live_coverage_time ON live_coverage(owner,channel,clock,start);
+CREATE TABLE IF NOT EXISTS targets (
+    key TEXT PRIMARY KEY, channel INTEGER NOT NULL,
+    start INTEGER NOT NULL, end INTEGER NOT NULL CHECK(end>start),
+    last_used INTEGER NOT NULL,
+    refresh INTEGER NOT NULL DEFAULT 0, completed_refresh INTEGER NOT NULL DEFAULT 0,
+    failures INTEGER NOT NULL DEFAULT 0, retry_at INTEGER NOT NULL DEFAULT 0,
+    failure TEXT, stopped INTEGER NOT NULL DEFAULT 0 CHECK(stopped IN (0,1))
+);

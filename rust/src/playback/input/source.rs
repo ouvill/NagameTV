@@ -29,6 +29,9 @@ impl Feedback {
 
 const SOURCE_QUEUE_BYTES: u64 = (READ_BYTES * 2) as u64;
 const LIVE_EDGE_TOLERANCE_NS: u64 = 5_000_000_000;
+// Allow the bounded metadata scan to finish after playback has started.
+// The planner still requires the following event to start within its padding.
+const INITIAL_PROGRAM_SELECTION: Duration = Duration::from_secs(120);
 
 pub(in crate::playback) struct Input {
     identity: u64,
@@ -40,6 +43,20 @@ pub(in crate::playback) struct Input {
     sources: Arc<Mutex<Vec<gst::glib::WeakRef<AppSrc>>>>,
 }
 impl Input {
+    pub fn recording(
+        playbin: &gst::Element,
+        recording: &crate::playback::recording::Recording,
+        programs: bool,
+    ) -> Result<Self, Error> {
+        let (reader, worker) = file_reader_inspected(
+            recording.path(),
+            recording.service(),
+            programs,
+            recording.inspection(),
+        )?;
+        Ok(Self::attach(playbin, reader, worker))
+    }
+    #[cfg(test)]
     pub fn file(
         playbin: &gst::Element,
         path: &Path,
@@ -133,12 +150,42 @@ impl Input {
         position: Option<u64>,
         reception: viewer_comments::cache::Reception,
     ) -> Option<viewer_comments::cache::Source> {
-        use viewer_comments::cache::{ClockSpan, RecordingRange, Source};
+        use viewer_comments::cache::{ClockSpan, Program, ProgramId, Recording, Source};
         let window = self.shared.window().ok().flatten()?;
         let catalog = match &self.shared {
             Shared::File(shared) => shared.lock().ok()?.index.catalog(),
             Shared::Live(shared) => shared.lock().ok()?.index.catalog(),
         };
+        if let Shared::File(shared) = &self.shared {
+            let state = shared.lock().ok()?;
+            if matches!(state.discovery, Discovery::Pending) {
+                return Some(Source::Recording(Recording::Discovering));
+            }
+            let position = position.unwrap_or(window.start);
+            let view = state.index.view(position);
+            let program = |value: &crate::transport::programs::Program| {
+                Program::new(
+                    ProgramId {
+                        network: value.network_id,
+                        transport: value.transport_stream_id,
+                        service: value.service_id,
+                        event: value.event_id,
+                    },
+                    value.start_at?.div_euclid(1000),
+                    i64::try_from(value.duration? / 1000).ok()?,
+                )
+            };
+            return Some(Source::Recording(Recording::Observed {
+                current: view.program.as_ref().and_then(program),
+                next: view.next.as_ref().and_then(program),
+                utc_seconds: view
+                    .clock
+                    .and_then(|clock| clock.utc(position))
+                    .map(|utc| utc.div_euclid(1000)),
+                at_start: position.saturating_sub(window.start)
+                    < INITIAL_PROGRAM_SELECTION.as_nanos() as u64,
+            }));
+        }
         let mapped_start = match &self.shared {
             Shared::Live(_) => window
                 .start
@@ -164,23 +211,7 @@ impl Input {
             })
             .collect();
         match &self.shared {
-            Shared::File(_) => {
-                let mut through = window.start;
-                let complete = mapped.len() == spans.len()
-                    && mapped.iter().all(|span| {
-                        let (start, end) = span.clock.range();
-                        let contiguous = start <= through;
-                        through = through.max(end);
-                        contiguous
-                    })
-                    && through >= window.end
-                    && matches!(window.coverage, Coverage::Complete);
-                Some(Source::Recording(if complete {
-                    RecordingRange::Known(spans)
-                } else {
-                    RecordingRange::Discovering(spans)
-                }))
-            }
+            Shared::File(_) => unreachable!("recording metadata handled above"),
             Shared::Live(_) => Some(Source::Live {
                 earliest_media_ms: i64::try_from(window.start / 1_000_000).ok()?,
                 spans,

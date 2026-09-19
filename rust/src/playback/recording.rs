@@ -5,16 +5,40 @@ use std::{
     fs::File,
     io::Read,
     path::{Path, PathBuf},
-    sync::atomic::{AtomicBool, Ordering},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::Instant,
 };
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 pub struct Recording {
     path: PathBuf,
     uri: String,
     name: String,
     service: u16,
+    inspection: Inspection,
 }
+
+// The asynchronous loader owns every filesystem operation needed before
+// playback starts. Streaming and metadata workers open their own cursors later.
+#[derive(Clone, Debug)]
+pub(super) struct Inspection {
+    pub prefix: Arc<Vec<u8>>,
+    pub size: u64,
+    pub framing: crate::transport::framing::Framing,
+    pub deadline: Instant,
+}
+impl PartialEq for Recording {
+    fn eq(&self, other: &Self) -> bool {
+        self.path == other.path
+            && self.service == other.service
+            && self.uri == other.uri
+            && self.name == other.name
+    }
+}
+impl Eq for Recording {}
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -26,6 +50,8 @@ pub enum Error {
     Read(#[from] std::io::Error),
     #[error("No transport stream program was found in the beginning of this file.")]
     MissingProgram,
+    #[error("TS file inspection reached its time limit. Try opening the file again.")]
+    TimedOut,
     #[error("TS file inspection was cancelled.")]
     Cancelled,
     #[error("The TS file inspection worker stopped unexpectedly.")]
@@ -38,6 +64,7 @@ impl Recording {
         Self::inspect(path, &AtomicBool::new(false))
     }
     fn inspect(path: &Path, cancelled: &AtomicBool) -> Result<Self, Error> {
+        let deadline = Instant::now() + super::input::EXPLORATION_TIMEOUT;
         if !std::fs::metadata(path)?.is_file() {
             return Err(Error::NotLocal);
         }
@@ -45,13 +72,14 @@ impl Recording {
         if !file.metadata()?.is_file() {
             return Err(Error::NotLocal);
         }
+        let size = file.metadata()?.len();
         // Bound memory and check cancellation between reads. Filesystem syscalls
         // themselves cannot be interrupted portably; the UI never waits on them.
         let mut prefix = Vec::new();
         const INSPECTION_READ_BYTES: usize = 64 * 1024;
         let mut chunk = [0; INSPECTION_READ_BYTES];
         const PROBE_LIMIT: usize = 4 * 1024 * 1024;
-        while prefix.len() < PROBE_LIMIT {
+        while prefix.len() < PROBE_LIMIT && Instant::now() < deadline {
             if cancelled.load(Ordering::Relaxed) {
                 return Err(Error::Cancelled);
             }
@@ -72,7 +100,15 @@ impl Recording {
         if cancelled.load(Ordering::Relaxed) {
             return Err(Error::Cancelled);
         }
-        let service = crate::transport::recording_service(&prefix).ok_or(Error::MissingProgram)?;
+        let service = crate::transport::recording_service(&prefix).ok_or_else(|| {
+            if Instant::now() >= deadline {
+                Error::TimedOut
+            } else {
+                Error::MissingProgram
+            }
+        })?;
+        let framing =
+            crate::transport::framing::Framing::detect(&prefix).ok_or(Error::MissingProgram)?;
         let path = std::fs::canonicalize(path)?;
         let uri = url::Url::from_file_path(&path)
             .map_err(|_| Error::NotLocal)?
@@ -87,11 +123,20 @@ impl Recording {
             uri,
             name,
             service,
+            inspection: Inspection {
+                prefix: Arc::new(prefix),
+                size,
+                framing,
+                deadline,
+            },
         })
     }
 
     pub fn path(&self) -> &Path {
         &self.path
+    }
+    pub(super) fn inspection(&self) -> &Inspection {
+        &self.inspection
     }
     #[cfg(test)]
     pub fn uri(&self) -> &str {

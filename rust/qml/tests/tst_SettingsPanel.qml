@@ -84,6 +84,11 @@ Item {
                 function configure_comment_shadow(value) { comment_shadow_enabled = value; }
                 property string comment_status: ""
                 property real comment_cache_bytes: 0
+                property int comment_cache_limit_mib: 1024
+                property bool recording: false
+                property int commentRefreshes: 0
+                function configure_comment_cache_limit(value) { comment_cache_limit_mib = value; return true; }
+                function refresh_recording_comments() { commentRefreshes++; }
                 function comments_open(opened) {}
                 function clear_comment_cache() { comment_cache_bytes = 0; }
                 property bool comment_send_on_enter: false
@@ -252,6 +257,32 @@ Item {
                 keyClick(Qt.Key_Escape);
                 tryCompare(choice.popup, "visible", false);
                 compare(panel.opened, true);
+            }
+            function test_comment_cache_limit_and_recording_refresh() {
+                selectPage(SettingsPanel.Comments);
+                const flick = findChild(panel.contentItem, "settingsFlickable");
+                flick.contentY = flick.contentHeight - flick.height;
+                const limit = findChild(panel.contentItem, "commentCacheLimit");
+                backend.comment_cache_limit_mib = 1024;
+                compare(limit.value, 1024);
+                limit.forceActiveFocus();
+                keyClick(Qt.Key_Up);
+                compare(backend.comment_cache_limit_mib, 1088);
+                const refresh = findChild(panel.contentItem, "refreshRecordingComments");
+                backend.recording = false;
+                compare(refresh.enabled, false);
+                backend.recording = true;
+                backend.comments_enabled = true;
+                backend.danmaku_enabled = true;
+                compare(refresh.enabled, true);
+                const before = backend.commentRefreshes;
+                waitForRendering(panel.contentItem);
+                const point = refresh.mapToItem(flick.contentItem, 0, 0);
+                flick.contentY = Math.max(0, Math.min(point.y - flick.height / 2, flick.contentHeight - flick.height));
+                waitForRendering(flick);
+                mouseClick(refresh, refresh.width / 2, refresh.height / 2);
+                compare(backend.commentRefreshes, before + 1);
+                backend.recording = false;
             }
             function test_shortcut_help_follows_binding_even_while_popup_disables_keys() {
                 selectPage(SettingsPanel.Shortcuts);

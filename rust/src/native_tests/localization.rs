@@ -159,8 +159,18 @@ pub fn run(missing_catalog: bool) -> i32 {
         text(&engine, "commentShortcutCondition"),
         qs("コメント入力中")
     );
-    assert_eq!(text(&engine, "watchingLabel"), qs("視聴中: 番組A"));
-    assert_eq!(text(&engine, "broadcastLabel"), qs("放送中: 番組B"));
+    assert_eq!(
+        tr("Saving past comments…"),
+        qs("過去の実況コメントを保存中…")
+    );
+    assert_eq!(
+        tr("Next attempt in %1 min. Could not fetch past comments: %2")
+            .arg(&qs("5"))
+            .arg(&qs("source %1 <tag>")),
+        qs("約5分後に再試行します。実況を取得できません: source %1 <tag>")
+    );
+    assert_eq!(text(&engine, "watchingLabel"), qs("視聴中 · 番組A"));
+    assert_eq!(text(&engine, "broadcastLabel"), qs("放送中 · 番組B"));
     assert_eq!(text(&engine, "unknownProgramLabel"), qs("番組情報未取得"));
     assert_eq!(
         text(&engine, "historyEstimate"),

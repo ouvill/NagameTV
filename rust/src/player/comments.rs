@@ -145,6 +145,35 @@ impl ffi::Player {
         self.as_mut().rust_mut().comment_replay.clear_unused();
         self.poll_comments();
     }
+    pub fn comment_cache_limit_mib(&self) -> i32 {
+        self.rust()
+            .preferences
+            .preferences()
+            .comment_cache_limit_mib
+            .mib()
+    }
+    pub fn configure_comment_cache_limit(mut self: Pin<&mut Self>, mib: i32) -> bool {
+        let Some(limit) = crate::settings::CommentCacheLimit::checked(mib) else {
+            return false;
+        };
+        self.as_mut()
+            .rust_mut()
+            .preferences
+            .change(crate::settings::Change::CommentCacheLimit(limit));
+        self.as_mut()
+            .rust_mut()
+            .comment_replay
+            .set_budget(limit.bytes());
+        self.as_mut().comment_cache_limit_mib_changed();
+        self.save_settings();
+        true
+    }
+    pub fn refresh_recording_comments(mut self: Pin<&mut Self>) {
+        if self.rust().stream_state.recording().is_some() {
+            self.as_mut().rust_mut().comment_replay.refresh_current();
+            self.poll_comments();
+        }
+    }
 
     pub(super) fn poll_comments(mut self: Pin<&mut Self>) {
         self.as_mut().poll_activity();
@@ -152,6 +181,12 @@ impl ffi::Player {
         let (reset, comments, timeline) = {
             let mut this = self.as_mut().rust_mut();
             let this = &mut *this;
+            this.comment_replay.set_budget(
+                this.preferences
+                    .preferences()
+                    .comment_cache_limit_mib
+                    .bytes(),
+            );
             let channel = usize::try_from(this.selected)
                 .ok()
                 .and_then(|index| this.entries.get(index))
@@ -227,7 +262,6 @@ impl ffi::Player {
                 context,
                 seeking && this.comments_enabled,
                 received,
-                now,
                 wall_ms,
             );
             let timeline = format!(

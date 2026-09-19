@@ -519,6 +519,18 @@ Popup {
                             Layout.fillWidth: true
                             spacing: 8
                             Heading { text: qsTranslate("Settings", "Saved comments") }
+                            RowLayout {
+                                Layout.fillWidth: true
+                                Detail { text: qsTranslate("Settings", "Storage target (MiB)") }
+                                SpinBox {
+                                    objectName: "commentCacheLimit"
+                                    from: 64; to: 65536; stepSize: 64
+                                    editable: true
+                                    value: root.backend.comment_cache_limit_mib
+                                    Accessible.name: qsTranslate("Settings", "Storage target (MiB)")
+                                    onValueModified: root.backend.configure_comment_cache_limit(value)
+                                }
+                            }
                             Detail {
                                 objectName: "commentCacheUsage"
                                 text: qsTranslate("Settings", "Disk usage: %1 MiB").arg((root.backend.comment_cache_bytes / (1024 * 1024)).toFixed(1))
@@ -526,6 +538,12 @@ Popup {
                             Detail {
                                 Layout.fillWidth: true
                                 text: qsTranslate("Settings", "Comments for the open recording and retained live video are kept when unused data is cleared.")
+                            }
+                            Button {
+                                objectName: "refreshRecordingComments"
+                                text: qsTranslate("Settings", "Fetch this program's comments again")
+                                enabled: root.backend.recording && root.backend.comments_enabled && root.backend.danmaku_enabled
+                                onClicked: root.backend.refresh_recording_comments()
                             }
                             Button {
                                 objectName: "clearCommentCache"

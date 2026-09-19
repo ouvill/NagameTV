@@ -6,6 +6,108 @@ const TEST_DEADLINE: Duration = Duration::from_secs(5);
 const TEST_POLL: Duration = Duration::from_millis(5);
 
 #[test]
+#[ignore = "hardware-free bounded I/O probe; requires NAGAMETV_RECORDING_PROBE"]
+fn recording_metadata_probe_uses_bounded_io_and_stays_idle()
+-> Result<(), Box<dyn std::error::Error>> {
+    let path = std::env::var_os("NAGAMETV_RECORDING_PROBE").ok_or("NAGAMETV_RECORDING_PROBE")?;
+    let started = Instant::now();
+    let recording = crate::playback::recording::Recording::open(Path::new(&path))?;
+    let (mut reader, _worker) = file_reader_inspected(
+        recording.path(),
+        recording.service(),
+        true,
+        recording.inspection(),
+    )?;
+    let Shared::File(shared) = reader.shared.clone() else {
+        unreachable!()
+    };
+    let deadline = Instant::now() + TEST_DEADLINE;
+    loop {
+        let ready = {
+            let state = shared.lock().unwrap();
+            matches!(state.discovery, Discovery::Finished) && state.additional_bytes > 0
+        };
+        if ready {
+            break;
+        }
+        assert!(Instant::now() < deadline, "initial metadata did not finish");
+        std::thread::sleep(TEST_POLL);
+    }
+    let before = shared.lock().unwrap().additional_bytes;
+    assert!(
+        before <= 12 * 1024 * 1024,
+        "initial additional bytes: {before}"
+    );
+    {
+        let state = shared.lock().unwrap();
+        let start = state.index.entries().front().unwrap().time_ns;
+        let view = state.index.view(start);
+        eprintln!(
+            "initial: elapsed_ms={} additional_bytes={} current={:?} next={:?}",
+            started.elapsed().as_millis(),
+            before,
+            view.program
+                .as_ref()
+                .map(|p| (&p.name, p.start_at, p.duration)),
+            view.next
+                .as_ref()
+                .map(|p| (&p.name, p.start_at, p.duration))
+        );
+        assert!(view.program.is_some() || view.next.is_some());
+    }
+    std::thread::sleep(Duration::from_millis(300));
+    assert_eq!(
+        shared.lock().unwrap().additional_bytes,
+        before,
+        "idle input kept scanning"
+    );
+    let target = reader.shared.window()?.ok_or("seek window")?.end * 4 / 5;
+    let seeking = Instant::now();
+    reader.prepare(target)?.execute()?;
+    let deadline = Instant::now() + TEST_DEADLINE;
+    while reader.time_ns < target {
+        assert!(
+            Instant::now() < deadline,
+            "seek preroll did not reach target"
+        );
+        if matches!(reader.next()?, Output::End) {
+            break;
+        }
+    }
+    std::thread::sleep(Duration::from_millis(300));
+    let after = shared.lock().unwrap().additional_bytes;
+    assert!(
+        after - before <= 32 * 1024 * 1024,
+        "seek additional bytes: {}",
+        after - before
+    );
+    let view = reader.clock.view(reader.time_ns);
+    assert!(
+        view.clock.is_some(),
+        "seek did not acquire its own broadcast clock"
+    );
+    assert!(
+        view.program.is_some(),
+        "seek did not acquire its own programme"
+    );
+    eprintln!(
+        "seek: elapsed_ms={} additional_bytes={} target_ns={} actual_ns={} program={:?}",
+        seeking.elapsed().as_millis(),
+        after - before,
+        target,
+        reader.time_ns,
+        view.program.as_ref().map(|p| &p.name)
+    );
+    std::thread::sleep(Duration::from_millis(300));
+    assert_eq!(
+        shared.lock().unwrap().additional_bytes,
+        after,
+        "seek resumed a sequential scan"
+    );
+    Ok(())
+}
+
+#[test]
 fn normalized_raw_input_seeks_across_pid_changes_without_losing_pause()
 -> Result<(), Box<dyn std::error::Error>> {
     gst::init()?;
@@ -497,4 +599,55 @@ fn normalizer_announces_and_feeds_missing_captions_before_broadcast_changes() {
         payload_seen,
         "announced caption stream must receive management data for preroll"
     );
+}
+
+#[test]
+fn slow_short_read_does_not_start_another_io_after_exploration_deadline() {
+    struct SlowFile {
+        reads: usize,
+    }
+    impl Read for SlowFile {
+        fn read(&mut self, bytes: &mut [u8]) -> std::io::Result<usize> {
+            self.reads += 1;
+            std::thread::sleep(Duration::from_millis(40));
+            bytes[0] = 0;
+            Ok(1)
+        }
+    }
+    let mut source = SlowFile { reads: 0 };
+    let deadline = Instant::now() + Duration::from_millis(20);
+    assert_eq!(
+        read_exploration(&mut source, READ_BYTES, || Instant::now() >= deadline)
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(source.reads, 1);
+}
+
+#[test]
+fn inspected_input_construction_never_opens_the_file_on_the_caller() {
+    let inspection = crate::playback::recording::Inspection {
+        prefix: Arc::new(include_bytes!("../../../../tests/fixtures/recording-seek.ts").to_vec()),
+        size: u64::MAX,
+        framing: Framing::transport(),
+        deadline: Instant::now() - EXPLORATION_TIMEOUT,
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let (reader, _worker) =
+        file_reader_inspected(&dir.path().join("unavailable.ts"), 1, true, &inspection).unwrap();
+    let Shared::File(shared) = reader.shared else {
+        unreachable!()
+    };
+    let deadline = Instant::now() + TEST_DEADLINE;
+    loop {
+        let state = shared.lock().unwrap();
+        assert!(!matches!(state.status, Status::Failed(_)));
+        if matches!(state.discovery, Discovery::Finished) {
+            break;
+        }
+        assert!(Instant::now() < deadline);
+        drop(state);
+        std::thread::sleep(TEST_POLL);
+    }
 }

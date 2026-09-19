@@ -129,7 +129,7 @@ Item {
     }
     readonly property Action toggleDanmaku: Operation {
         text: root.backend.danmaku_enabled ? qsTranslate("Main", "Hide danmaku") : qsTranslate("Main", "Show danmaku")
-        enabled: root.enabled && root.backend.comments_enabled && !root.backend.recording
+        enabled: root.enabled && root.backend.comments_enabled
         onTriggered: {
             root.backend.configure_danmaku(!root.backend.danmaku_enabled, root.backend.comment_font_size,
                 root.backend.comment_opacity, root.backend.comment_speed);

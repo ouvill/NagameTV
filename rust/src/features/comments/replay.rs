@@ -5,14 +5,12 @@ use crate::{channels::BroadcastService, transport::programs::catalog::ClockReadi
 use std::{
     collections::{HashMap, HashSet},
     path::PathBuf,
-    time::{Duration, Instant},
 };
 use viewer_comments::{
     Comment,
     cache::{self, Controller, Demand, Interval, Record, RecordOrigin, Source, View},
 };
 const FORWARD_SECONDS: i64 = 120;
-const SEEK_SETTLE: Duration = Duration::from_millis(500);
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) enum Status {
@@ -23,9 +21,15 @@ pub(crate) enum Status {
     Unsupported,
     Seeking,
     Loading,
+    Importing,
     Ready,
     Pending,
     Waiting,
+    Scheduled(u64),
+    Retrying {
+        message: String,
+        minutes: u64,
+    },
     Empty,
     Failed(String),
     StorageFailed(String),
@@ -56,13 +60,13 @@ struct Pending {
 pub(crate) struct Replay {
     storage: Storage,
     directory: Option<PathBuf>,
+    budget: Option<i64>,
     target: Option<(u64, u16)>,
     pending: Option<Pending>,
     projected: Option<(u64, i64, String)>,
     clock: Option<ClockReading>,
     position: Option<u64>,
     seeking: bool,
-    settled: Option<Instant>,
     pub generation: u64,
     pub data: String,
     pub status: Status,
@@ -101,6 +105,20 @@ impl Replay {
             store.clear_unused();
         }
     }
+    pub fn refresh_current(&mut self) {
+        if let Storage::Active(store) = &mut self.storage {
+            store.refresh_current();
+        }
+    }
+    pub fn set_budget(&mut self, bytes: i64) {
+        if self.budget == Some(bytes) {
+            return;
+        }
+        self.budget = Some(bytes);
+        if let Storage::Active(store) = &mut self.storage {
+            store.set_budget(bytes);
+        }
+    }
     pub fn shutdown(&mut self) {
         if let Storage::Active(store) = &mut self.storage {
             store.shutdown();
@@ -127,7 +145,12 @@ impl Replay {
         });
         self.storage =
             match directory.and_then(|dir| Controller::start(dir).map_err(|e| e.to_string())) {
-                Ok(store) => Storage::Active(store),
+                Ok(mut store) => {
+                    if let Some(bytes) = self.budget {
+                        store.set_budget(bytes);
+                    }
+                    Storage::Active(store)
+                }
                 Err(error) => Storage::Failed(error),
             };
     }
@@ -136,7 +159,6 @@ impl Replay {
         context: Option<Context>,
         seeking: bool,
         comments: Vec<(Comment, bool)>,
-        now: Instant,
         wall_ms: i64,
     ) {
         let target = context.as_ref().and_then(|c| {
@@ -153,11 +175,9 @@ impl Replay {
             self.target = target;
             self.pending = None;
             self.clear_projection();
-            self.settled = Some(now + SEEK_SETTLE);
         }
         if self.seeking && !seeking {
             self.clear_projection();
-            self.settled = Some(now + SEEK_SETTLE);
         }
         self.seeking = seeking;
         if context.as_ref().is_some_and(|c| c.enabled) && target.is_some() {
@@ -197,10 +217,9 @@ impl Replay {
                     .then(|| view.clone())
                     .flatten(),
                 source_range: c.source_range.clone(),
-                fetch: c.enabled
-                    && c.display
-                    && !seeking
-                    && self.settled.is_none_or(|at| now >= at),
+                // The storage worker owns seek settling. Cache reads remain
+                // available immediately after the output position is known.
+                fetch: c.enabled && c.display && !seeking,
             });
         if let Storage::Active(store) = &mut self.storage {
             if let Some(mut pending) = self.pending.take() {
@@ -280,11 +299,17 @@ impl Replay {
             return;
         }
         let Some((clock, _, utc)) = reading else {
+            if self.status != Status::WaitingClock {
+                tracing::debug!(target: "comment_archive", source = ?self.target, "waiting for broadcast clock");
+            }
             self.status = Status::WaitingClock;
             self.data = "[]".into();
             self.projected = None;
             return;
         };
+        if self.status == Status::WaitingClock {
+            tracing::debug!(target: "comment_archive", source = ?self.target, utc_ms = utc, "broadcast clock acquired");
+        }
         let Some(view) = view else {
             self.status = Status::WaitingClock;
             self.data = "[]".into();
@@ -317,12 +342,26 @@ impl Replay {
         }
         self.status = match snapshot.state {
             cache::State::StorageFailed(error) => Status::StorageFailed(error),
-            cache::State::FetchFailed(error) => Status::Failed(error),
+            cache::State::FetchFailed { message, retry_at } => match retry_at {
+                Some(until) => Status::Retrying {
+                    message,
+                    minutes: (until.saturating_sub(wall_ms / 1000).max(1) as u64).div_ceil(60),
+                },
+                None => Status::Failed(message),
+            },
+            cache::State::Loading => Status::Loading,
+            cache::State::Importing => Status::Importing,
+            cache::State::Waiting(until) => {
+                Status::Scheduled((until.saturating_sub(wall_ms / 1000).max(1) as u64).div_ceil(60))
+            }
             _ if self.data != "[]" => Status::Ready,
             _ if utc / 1000 >= cache::archive_end(wall_ms / 1000) => Status::Pending,
-            cache::State::Starting | cache::State::Loading => Status::Loading,
-            cache::State::Waiting(_) => Status::Waiting,
-            cache::State::Ready => Status::Empty,
+            cache::State::Starting => Status::Waiting,
+            cache::State::Ready => match snapshot.availability {
+                cache::Availability::Stored => Status::Empty,
+                cache::Availability::Provisional => Status::Pending,
+                cache::Availability::Unrequested => Status::Waiting,
+            },
         };
     }
 }
@@ -381,6 +420,7 @@ fn project(records: &[Record], clock: ClockReading, viewing: Interval) -> String
         }
         selected.push(index);
     }
+    let selected_count = selected.len();
     let mut json = String::from("[");
     let mut count = 0;
     for index in selected {
@@ -417,6 +457,8 @@ fn project(records: &[Record], clock: ClockReading, viewing: Interval) -> String
         count += 1;
     }
     json.push(']');
+    tracing::debug!(target: "comment_archive", cached = records.len(), merged = selected_count, projected = count,
+        excluded_duplicate = records.len() - selected_count, excluded_clock_window_or_limit = selected_count - count, "projected comments");
     json
 }
 
@@ -427,6 +469,7 @@ mod tests {
         Information, Observation,
         catalog::{Accuracy, Catalog, ScanCursor, ScanPoint},
     };
+    use std::time::{Duration, Instant};
     const UTC: i64 = 1_700_000_000_000;
     const SECOND: u64 = 1_000_000_000;
     fn context(source: u64, seconds: u64) -> Context {
@@ -490,36 +533,57 @@ mod tests {
     fn disk_replay_survives_seek_display_off_and_rejects_old_sources() {
         let directory = tempfile::tempdir().unwrap();
         let mut replay = Replay::in_directory(directory.path().into());
-        let now = Instant::now();
         replay.update(
             Some(context(1, 3)),
             false,
             vec![(comment(1, 1), true), (comment(500, 2), false)],
-            now,
             UTC + 600_000,
         );
         let until = Instant::now() + Duration::from_secs(3);
         while replay.data == "[]" && Instant::now() < until {
             std::thread::sleep(Duration::from_millis(5));
-            replay.update(Some(context(1, 3)), false, vec![], now, UTC + 600_000);
+            replay.update(Some(context(1, 3)), false, vec![], UTC + 600_000);
         }
         let value: serde_json::Value = serde_json::from_str(&replay.data).unwrap();
         assert_eq!(value.as_array().unwrap().len(), 1);
         assert_eq!(value[0]["time"], 1.);
         assert_eq!(value[0]["own"], true);
+        // A completed seek restores persisted comments before the worker's
+        // HTTP settling deadline, in both directions on the same source.
+        const CACHE_READ_DEADLINE: Duration = Duration::from_millis(400);
+        for (position, expected_time) in [(500, 500.), (3, 1.)] {
+            replay.update(Some(context(1, position)), true, vec![], UTC + 600_000);
+            let generation = replay.generation;
+            replay.update(Some(context(1, position)), false, vec![], UTC + 600_000);
+            assert_ne!(replay.generation, generation);
+            let until = Instant::now() + CACHE_READ_DEADLINE;
+            loop {
+                let value: serde_json::Value = serde_json::from_str(&replay.data).unwrap();
+                if value[0]["time"] == expected_time {
+                    assert_eq!(value.as_array().unwrap().len(), 1);
+                    break;
+                }
+                assert!(
+                    Instant::now() < until,
+                    "cached seek did not restore comments"
+                );
+                std::thread::sleep(Duration::from_millis(5));
+                replay.update(Some(context(1, position)), false, vec![], UTC + 600_000);
+            }
+        }
         let mut disabled = context(1, 3);
         disabled.enabled = false;
-        replay.update(Some(disabled), false, vec![], now, UTC + 600_000);
+        replay.update(Some(disabled), false, vec![], UTC + 600_000);
         assert_eq!(replay.data, "[]");
-        replay.update(Some(context(1, 3)), false, vec![], now, UTC + 600_000);
+        replay.update(Some(context(1, 3)), false, vec![], UTC + 600_000);
         let until = Instant::now() + Duration::from_secs(3);
         while replay.data == "[]" && Instant::now() < until {
             std::thread::sleep(Duration::from_millis(5));
-            replay.update(Some(context(1, 3)), false, vec![], now, UTC + 600_000);
+            replay.update(Some(context(1, 3)), false, vec![], UTC + 600_000);
         }
         assert_ne!(replay.data, "[]");
-        replay.update(Some(context(1, 500)), true, vec![], now, UTC + 600_000);
-        replay.update(Some(context(2, 3)), false, vec![], now, UTC + 600_000);
+        replay.update(Some(context(1, 500)), true, vec![], UTC + 600_000);
+        replay.update(Some(context(2, 3)), false, vec![], UTC + 600_000);
         assert_eq!(replay.data, "[]");
         replay.shutdown();
     }

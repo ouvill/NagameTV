@@ -31,6 +31,7 @@ pub(super) struct Anchor {
     pub offset: u64,
     pub time_ns: u64,
     pub epoch: u64,
+    accuracy: Accuracy,
     pub bootstrap: Arc<Vec<u8>>,
     pcr: u64,
     programs: Option<Arc<Observation>>,
@@ -46,6 +47,7 @@ impl Anchor {
         anchor.time_ns =
             origin.time_ns + ticks_to_ns((self.pcr + PCR_WRAP - origin.pcr) % PCR_WRAP);
         anchor.epoch = origin.epoch;
+        anchor.accuracy = Accuracy::Provisional;
         if let Some(observation) = &self.programs {
             let shift = |ns: u64| {
                 (i128::from(ns) + i128::from(anchor.time_ns) - i128::from(self.time_ns)).max(0)
@@ -108,6 +110,7 @@ pub(super) struct Index {
     interval: u64,
     last_pts: BTreeMap<Pid, u64>,
     presentation_end: u64,
+    observed_end: Option<u64>,
     entries: VecDeque<Anchor>,
     metadata_bytes: usize,
 }
@@ -135,6 +138,7 @@ impl Index {
             interval: INDEX_INTERVAL_TICKS,
             last_pts: BTreeMap::new(),
             presentation_end: 0,
+            observed_end: None,
             entries: VecDeque::new(),
             metadata_bytes: 0,
         }
@@ -151,13 +155,11 @@ impl Index {
     pub fn metadata_enabled(&self) -> bool {
         self.collector.is_some()
     }
-    pub fn indexed(&mut self) {
-        self.accuracy = Accuracy::Indexed;
-    }
-    pub fn provisional(&mut self) {
-        self.accuracy = Accuracy::Provisional;
-    }
-    pub fn clear_provisional(&self) {
+    pub fn clear_provisional(&mut self) {
+        self.entries
+            .retain(|anchor| anchor.accuracy == Accuracy::Indexed);
+        self.metadata_bytes = self.entries.iter().map(Anchor::charge).sum();
+        self.observed_end = self.entries.back().map(|anchor| anchor.time_ns);
         if let Ok(mut catalog) = self.catalog.lock() {
             catalog.clear_provisional();
         }
@@ -206,6 +208,7 @@ impl Index {
         self.service
     }
     pub fn seed(&mut self, anchor: &Anchor) {
+        self.accuracy = anchor.accuracy;
         self.clock = Some((
             anchor.pcr,
             (u128::from(anchor.time_ns) * u128::from(PCR_HZ) / u128::from(NANOSECONDS_PER_SECOND))
@@ -404,6 +407,7 @@ impl Index {
             offset,
             time_ns: ticks_to_ns(ticks),
             epoch: self.epoch,
+            accuracy: self.accuracy,
             pcr,
             programs: self.programs.clone(),
             bootstrap: self.tables.clone(),
@@ -417,7 +421,7 @@ impl Index {
             self.metadata_bytes += anchor.charge();
             self.entries.push_back(anchor.clone());
         }
-        let end = self.end_ns().unwrap_or(anchor.time_ns);
+        let end = self.clock_end_ns().unwrap_or(anchor.time_ns);
         if self.collector.is_some()
             && let Ok(mut catalog) = self.catalog.lock()
         {
@@ -453,6 +457,35 @@ impl Index {
             self.interval *= 2;
         }
     }
+    /// Retain anchors observed by a playback reader, including random reads.
+    /// This shares observations, never pretends an unread gap was scanned.
+    pub fn retain_reader(&mut self, reader: &Self) {
+        for anchor in reader.entries() {
+            let at = self
+                .entries
+                .partition_point(|entry| entry.time_ns < anchor.time_ns);
+            if at > 0
+                && self.entries.get(at - 1).is_some_and(|previous| {
+                    previous.epoch == anchor.epoch
+                        && Arc::ptr_eq(&previous.bootstrap, &anchor.bootstrap)
+                        && anchor.time_ns.saturating_sub(previous.time_ns)
+                            < self.interval * NANOSECONDS_PER_SECOND / PCR_HZ
+                })
+            {
+                continue;
+            }
+            if self
+                .entries
+                .get(at)
+                .is_none_or(|entry| entry.time_ns != anchor.time_ns)
+            {
+                self.metadata_bytes += anchor.charge();
+                self.entries.insert(at, anchor.clone());
+            }
+        }
+        self.observed_end = self.observed_end.max(reader.end_ns());
+        self.compact_file();
+    }
     pub fn expire(&mut self, first_offset: u64) {
         while self
             .entries
@@ -463,6 +496,9 @@ impl Index {
         }
     }
     pub fn end_ns(&self) -> Option<u64> {
+        self.clock_end_ns().max(self.observed_end)
+    }
+    fn clock_end_ns(&self) -> Option<u64> {
         self.clock
             .map(|(_, time)| ticks_to_ns(time + self.step).max(self.presentation_end))
     }
@@ -500,6 +536,7 @@ mod rate_tests {
             offset: seconds * BYTES_PER_SECOND,
             time_ns: seconds * NANOSECONDS_PER_SECOND,
             epoch,
+            accuracy: Accuracy::Indexed,
             bootstrap: Arc::default(),
             pcr: seconds * PCR_HZ,
             programs: None,

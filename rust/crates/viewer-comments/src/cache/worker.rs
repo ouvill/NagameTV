@@ -1,5 +1,5 @@
 use super::{
-    download::{Job, Outcome},
+    download::{Acquisition, Job, Outcome, Progress},
     store::Store,
     *,
 };
@@ -25,10 +25,21 @@ pub enum State {
     Starting,
     Ready,
     Loading,
+    Importing,
     Waiting(i64),
-    FetchFailed(String),
+    FetchFailed {
+        message: String,
+        retry_at: Option<i64>,
+    },
     StorageFailed(String),
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Availability {
+    Unrequested,
+    Provisional,
+    Stored,
+}
+
 #[derive(Clone, Debug)]
 pub struct Snapshot {
     pub source: Option<u64>,
@@ -37,6 +48,8 @@ pub struct Snapshot {
     pub revision: u64,
     pub state: State,
     pub disk_bytes: u64,
+    pub availability: Availability,
+    target: Option<plan::Target>,
 }
 impl Default for Snapshot {
     fn default() -> Self {
@@ -47,6 +60,8 @@ impl Default for Snapshot {
             revision: 0,
             state: State::Starting,
             disk_bytes: 0,
+            availability: Availability::Unrequested,
+            target: None,
         }
     }
 }
@@ -63,6 +78,8 @@ struct Input {
     batches: VecDeque<Batch>,
     bytes: usize,
     clear: bool,
+    refresh: Option<plan::Target>,
+    budget: Option<i64>,
     stop: bool,
 }
 struct Shared {
@@ -152,6 +169,24 @@ impl Controller {
                 ..Default::default()
             })
     }
+    pub fn refresh_current(&mut self) {
+        let target = self
+            .shared
+            .output
+            .lock()
+            .ok()
+            .and_then(|output| output.target.clone());
+        if let Ok(mut input) = self.shared.input.lock() {
+            input.refresh = target;
+            self.shared.wake.notify_one();
+        }
+    }
+    pub fn set_budget(&mut self, bytes: i64) {
+        if let Ok(mut input) = self.shared.input.lock() {
+            input.budget = Some(bytes);
+            self.shared.wake.notify_one();
+        }
+    }
     pub fn clear_unused(&mut self) {
         if let Ok(mut input) = self.shared.input.lock() {
             input.clear = true;
@@ -224,16 +259,23 @@ fn run(directory: PathBuf, endpoint: String, shared: Arc<Shared>) {
     let mut job: Option<Job> = None;
     let mut demand: Option<Demand> = None;
     let mut pending: Option<Batch> = None;
-    let mut next_fetch = Instant::now() + SEEK_SETTLE;
+    let mut next_fetch = Some(Instant::now() + SEEK_SETTLE);
+    let mut planner = plan::Planner::default();
+    let mut pinned_target = None;
+    let mut fetch_key = None;
+    let mut fetched_revision = None;
+    let mut blocked_target = None;
     let mut maintenance = Instant::now();
     let mut observed: Option<(u64, String, u16, u64, i64)> = None;
     let mut read_signature = None;
     let mut live_revision = 0_u64;
     let mut storage_retry = None;
     let mut clear_pending = false;
+    let mut refresh_pending = None;
+    let mut budget_pending = None;
     loop {
         let now = initial_wall.saturating_add(epoch.elapsed().as_secs() as i64);
-        let (latest, clear, stopping, backlog) = match shared.input.lock() {
+        let (latest, clear, refresh, budget, stopping, backlog) = match shared.input.lock() {
             Ok(mut input) => {
                 if pending.is_none() {
                     pending = input.batches.pop_front();
@@ -241,6 +283,8 @@ fn run(directory: PathBuf, endpoint: String, shared: Arc<Shared>) {
                 (
                     input.demand.clone(),
                     std::mem::take(&mut input.clear),
+                    input.refresh.take(),
+                    input.budget.take(),
                     input.stop,
                     !input.batches.is_empty(),
                 )
@@ -251,6 +295,12 @@ fn run(directory: PathBuf, endpoint: String, shared: Arc<Shared>) {
             break;
         }
         clear_pending |= clear;
+        if refresh.is_some() {
+            refresh_pending = refresh;
+        }
+        if budget.is_some() {
+            budget_pending = budget;
+        }
         if storage_retry.is_some_and(|deadline| Instant::now() < deadline) {
             if wait(&shared, POLL) {
                 break;
@@ -263,21 +313,30 @@ fn run(directory: PathBuf, endpoint: String, shared: Arc<Shared>) {
             if source != next_source {
                 store.reset_source(owner)?;
                 source = next_source;
+                set_state(&shared, State::Ready);
                 observed = None;
+                pinned_target = None;
                 read_signature = None;
-                next_fetch = Instant::now() + SEEK_SETTLE;
+                next_fetch = Some(Instant::now() + SEEK_SETTLE);
             }
             if latest != demand {
-                if let Some(latest) = &latest {
+                // Moving the view does not change retention. Rewriting the
+                // same pins would wait for an archive import's write lock
+                // before a cached seek could use SQLite's concurrent reader.
+                if let Some(latest) = &latest
+                    && demand.as_ref().is_none_or(|old| {
+                        old.source != latest.source || old.source_range != latest.source_range
+                    })
+                {
                     match &latest.source_range {
                         Source::Pending => {}
-                        Source::Recording(range) => store.pin(owner, range.spans())?,
+                        Source::Recording(_) => {}
                         Source::Live {
                             spans,
                             earliest_media_ms,
                             ..
                         } => {
-                            store.pin(owner, spans)?;
+                            store.pin(owner, spans, now)?;
                             store.retain_live(owner, *earliest_media_ms, spans)?;
                         }
                     }
@@ -292,7 +351,7 @@ fn run(directory: PathBuf, endpoint: String, shared: Arc<Shared>) {
                         })
                 });
                 if jump {
-                    next_fetch = Instant::now() + SEEK_SETTLE;
+                    next_fetch = Some(Instant::now() + SEEK_SETTLE);
                 }
                 demand = latest.clone();
             }
@@ -348,28 +407,50 @@ fn run(directory: PathBuf, endpoint: String, shared: Arc<Shared>) {
                 observed = None;
             }
             if job.as_ref().is_some_and(Job::finished) {
-                let outcome = job.take().expect("finished job").finish()?;
+                let finished = job.take().expect("finished job");
+                let finished_target = finished.target.clone();
+                let outcome = finished.finish()?;
                 match outcome {
                     Outcome::Complete => {
                         read_signature = None;
-                        next_fetch = Instant::now();
+                        next_fetch = Some(Instant::now());
                         set_state(&shared, State::Ready);
                     }
                     Outcome::Idle => {
-                        next_fetch = Instant::now() + Duration::from_secs(1);
+                        next_fetch = (finished_target != pinned_target).then(Instant::now);
                         set_state(&shared, State::Ready);
                     }
                     Outcome::Waiting(until) => {
-                        next_fetch = Instant::now()
-                            + Duration::from_secs(until.saturating_sub(now).max(1) as u64);
+                        next_fetch = Some(
+                            Instant::now()
+                                + Duration::from_secs(until.saturating_sub(now).max(1) as u64),
+                        );
                         set_state(&shared, State::Waiting(until));
                     }
-                    Outcome::RemoteFailed(message) => {
-                        next_fetch =
-                            Instant::now() + Duration::from_secs(REQUEST_SPACING_SECONDS as u64);
-                        set_state(&shared, State::FetchFailed(message));
+                    Outcome::RemoteFailed {
+                        target: failed_target,
+                        message,
+                        retry_at,
+                    } => {
+                        if retry_at.is_none() {
+                            blocked_target = failed_target.as_ref().map(plan::Target::key);
+                        }
+                        if failed_target != pinned_target {
+                            next_fetch = Some(Instant::now());
+                            set_state(&shared, State::Ready);
+                        } else {
+                            next_fetch = retry_at.map(|until| {
+                                Instant::now()
+                                    + Duration::from_secs(until.saturating_sub(now).max(1) as u64)
+                            });
+                            set_state(&shared, State::FetchFailed { message, retry_at });
+                        }
                     }
                 }
+            }
+            if let Some(bytes) = budget_pending.take() {
+                store.set_budget(bytes);
+                maintenance = Instant::now();
             }
             if clear_pending || Instant::now() >= maintenance {
                 store.cleanup(now, clear_pending)?;
@@ -387,7 +468,7 @@ fn run(directory: PathBuf, endpoint: String, shared: Arc<Shared>) {
                 let signature = (d.source, d.channel, d.view.clone(), revision, live_revision);
                 if read_signature.as_ref() != Some(&signature) {
                     let records = match &d.view {
-                        Some(view) => store.read(owner, d.channel, view, now)?,
+                        Some(view) => store.read(owner, d.channel, view)?,
                         None => Vec::new(),
                     };
                     if let Ok(mut output) = shared.output.lock() {
@@ -399,30 +480,125 @@ fn run(directory: PathBuf, endpoint: String, shared: Arc<Shared>) {
                     }
                     read_signature = Some(signature);
                 }
-                if job.is_none() && Instant::now() >= next_fetch {
+                let target = planner.update(d, now);
+                if target != pinned_target {
+                    if matches!(d.source_range, Source::Recording(_))
+                        && let Some(target) = &target
+                    {
+                        store.pin_target(owner, target, now)?;
+                    }
+                    pinned_target = target.clone();
+                }
+                if let Some(refresh) = &refresh_pending {
+                    store.request_refresh(refresh, now)?;
+                    refresh_pending = None;
+                    blocked_target = None;
+                    next_fetch = Some(Instant::now());
+                }
+                let acquisition = target
+                    .clone()
+                    .filter(|_| d.fetch)
+                    .map(|target| Acquisition {
+                        target,
+                        focus: d
+                            .view
+                            .as_ref()
+                            .map(|view| view.interval.start + LOOKBACK_SECONDS),
+                    });
+                // Read coverage without holding the publication mutex: the
+                // GUI's snapshot must never wait on SQLite or filesystem I/O.
+                let (availability, needs_view) = if let Some(view) = &d.view {
+                    let utc = view.interval.start + LOOKBACK_SECONDS;
+                    let point = Interval::new(utc, utc + 1).expect("view point");
+                    let covered = store.covered(d.channel, view.interval, now)?;
+                    let availability = if point.missing(covered.iter().copied()).is_empty() {
+                        if store.is_settled(d.channel, point)? {
+                            Availability::Stored
+                        } else {
+                            Availability::Provisional
+                        }
+                    } else {
+                        Availability::Unrequested
+                    };
+                    let needs_view = target
+                        .as_ref()
+                        .and_then(|t| t.range.intersection(view.interval))
+                        .is_some_and(|wanted| !wanted.missing(covered).is_empty());
+                    (availability, needs_view)
+                } else {
+                    (Availability::Unrequested, false)
+                };
+                let key = acquisition.as_ref().map(|a| (a.target.clone(), needs_view));
+                if key != fetch_key || fetched_revision != Some(revision) {
+                    if fetched_revision != Some(revision) {
+                        blocked_target = None;
+                    }
+                    fetch_key = key;
+                    fetched_revision = Some(revision);
+                    next_fetch = Some(Instant::now() + SEEK_SETTLE);
+                }
+                if let Ok(mut output) = shared.output.lock() {
+                    output.target = target.clone();
+                    output.availability = availability;
+                }
+                // Only meaningful deadlines wake an idle acquisition: an
+                // archive collection boundary or the one post-broadcast check.
+                if next_fetch.is_none()
+                    && let Some(a) = &acquisition
+                    && blocked_target
+                        .as_ref()
+                        .is_none_or(|key| *key != a.target.key())
+                {
+                    let until = if a.target.range.end > archive_end(now) {
+                        Some((now.div_euclid(COLLECTION_SECONDS) + 1) * COLLECTION_SECONDS)
+                    } else {
+                        let settled = a.target.range.end.saturating_add(SETTLED_SECONDS);
+                        (now < settled).then_some(settled)
+                    };
+                    next_fetch = until.map(|until| {
+                        Instant::now()
+                            + Duration::from_secs(until.saturating_sub(now).max(1) as u64)
+                    });
+                }
+                if let Some(job) = &job
+                    && job.target == target
+                {
+                    match job.progress() {
+                        Progress::Preparing => {}
+                        Progress::Receiving => set_state(&shared, State::Loading),
+                        Progress::Importing => set_state(&shared, State::Importing),
+                    }
+                }
+                if job.is_none() && next_fetch.is_some_and(|until| Instant::now() >= until) {
                     // Also checks for a completed local response after restart.
                     // `download::next` forbids HTTP while fetch is disabled.
                     job = Some(Job::start(
                         directory.clone(),
                         owner.clone(),
-                        d.clone(),
+                        acquisition,
                         endpoint.clone(),
                         now,
                     )?);
-                    set_state(
-                        &shared,
-                        if d.fetch {
-                            State::Loading
-                        } else {
-                            State::Ready
-                        },
-                    );
+                    next_fetch = None;
                 }
-            } else if let Ok(mut output) = shared.output.lock() {
-                if output.source.take().is_some() {
-                    output.records = Arc::default();
-                    output.view = None;
-                    output.revision = output.revision.wrapping_add(1);
+            } else {
+                if let Ok(mut output) = shared.output.lock() {
+                    if output.source.take().is_some() {
+                        output.records = Arc::default();
+                        output.view = None;
+                        output.target = None;
+                        output.revision = output.revision.wrapping_add(1);
+                    }
+                }
+                if job.is_none() && next_fetch.is_some_and(|until| Instant::now() >= until) {
+                    job = Some(Job::start(
+                        directory.clone(),
+                        owner.clone(),
+                        None,
+                        endpoint.clone(),
+                        now,
+                    )?);
+                    next_fetch = None;
                 }
             }
             Ok(())
@@ -433,7 +609,7 @@ fn run(directory: PathBuf, endpoint: String, shared: Arc<Shared>) {
             storage_retry = Some(Instant::now() + LOCAL_RETRY);
             // Local recovery comes before another GET. The complete spool is
             // retained by the download/import typestates on every error path.
-            next_fetch = Instant::now() + LOCAL_RETRY;
+            next_fetch = Some(Instant::now() + LOCAL_RETRY);
         }
         if wait(&shared, POLL) {
             break;
@@ -459,7 +635,7 @@ mod tests {
             source: 1,
             channel: 1,
             view: None,
-            source_range: Source::Recording(RecordingRange::Discovering(vec![])),
+            source_range: Source::Recording(Recording::Discovering),
             fetch: false,
         }));
         let until = Instant::now() + Duration::from_secs(3);

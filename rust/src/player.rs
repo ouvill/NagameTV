@@ -198,6 +198,7 @@ pub mod ffi {
         #[qproperty(QString, comment_status, READ, NOTIFY)]
         #[qproperty(QString, comment_timeline, READ, NOTIFY)]
         #[qproperty(f64, comment_cache_bytes, READ, NOTIFY)]
+        #[qproperty(i32, comment_cache_limit_mib, READ = comment_cache_limit_mib, NOTIFY)]
         #[qproperty(QString, comment_draft, READ, NOTIFY)]
         #[qproperty(QString, comment_post_status, READ, NOTIFY)]
         #[qproperty(QString, comment_post_target, READ, NOTIFY)]
@@ -401,6 +402,11 @@ pub mod ffi {
         fn comments_open(self: Pin<&mut Player>, opened: bool);
         #[qinvokable]
         fn clear_comment_cache(self: Pin<&mut Player>);
+        #[qinvokable]
+        fn refresh_recording_comments(self: Pin<&mut Player>);
+        #[qinvokable]
+        fn configure_comment_cache_limit(self: Pin<&mut Player>, mib: i32) -> bool;
+        fn comment_cache_limit_mib(self: &Player) -> i32;
         #[qinvokable]
         fn configure_comment_presentation(
             self: Pin<&mut Player>,

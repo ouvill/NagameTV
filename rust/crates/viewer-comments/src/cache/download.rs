@@ -1,13 +1,13 @@
 use super::{
     spool,
-    store::{Reservation, Store},
+    store::{Planned, Reservation, Store},
     *,
 };
 use std::{
     path::PathBuf,
     sync::{
         Arc,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU8, Ordering},
     },
     thread,
     time::{Duration, Instant},
@@ -15,8 +15,6 @@ use std::{
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const READ_TIMEOUT: Duration = Duration::from_secs(30);
-const PREFETCH_SECONDS: i64 = 60;
-const MIN_REQUEST_SECONDS: i64 = 2;
 #[cfg(test)]
 mod integration_tests;
 
@@ -43,26 +41,52 @@ pub(super) enum Outcome {
     Complete,
     Idle,
     Waiting(i64),
-    RemoteFailed(String),
+    RemoteFailed {
+        target: Option<plan::Target>,
+        message: String,
+        retry_at: Option<i64>,
+    },
 }
 pub(super) struct Job {
     task: thread::JoinHandle<Result<Outcome, Error>>,
     cancel: Arc<Cancellation>,
+    progress: Arc<AtomicU8>,
+    pub target: Option<plan::Target>,
 }
 impl Job {
     pub fn start(
         directory: PathBuf,
         owner: String,
-        demand: Demand,
+        demand: Option<Acquisition>,
         endpoint: String,
         now: i64,
     ) -> Result<Self, Error> {
         let cancel = Arc::new(Cancellation::new());
         let stopping = cancel.clone();
+        let progress = Arc::new(AtomicU8::new(Progress::Preparing as u8));
+        let reporting = progress.clone();
+        let target = demand.as_ref().map(|d| d.target.clone());
         let task = thread::Builder::new()
             .name("comment-archive".into())
-            .spawn(move || run(directory, owner, demand, endpoint, now, &stopping))?;
-        Ok(Self { task, cancel })
+            .spawn(move || {
+                run_progress(
+                    directory, owner, demand, endpoint, now, &stopping, &reporting,
+                )
+            })?;
+        Ok(Self {
+            task,
+            cancel,
+            progress,
+            target,
+        })
+    }
+    pub fn progress(&self) -> Progress {
+        match self.progress.load(Ordering::Acquire) {
+            value if value == Progress::Preparing as u8 => Progress::Preparing,
+            value if value == Progress::Receiving as u8 => Progress::Receiving,
+            value if value == Progress::Importing as u8 => Progress::Importing,
+            _ => unreachable!("private progress state"),
+        }
     }
     pub fn finished(&self) -> bool {
         self.task.is_finished()
@@ -78,100 +102,32 @@ impl Job {
     }
 }
 
-fn next(
-    store: &Store,
-    owner: &str,
-    demand: &Demand,
-    now: i64,
-) -> Result<Option<(u16, Interval)>, Error> {
-    if !demand.fetch {
-        return Ok(None);
-    }
-    let Some(view) = &demand.view else {
-        return Ok(None);
-    };
-    let (spans, whole) = match &demand.source_range {
-        Source::Pending => return Ok(None),
-        Source::Recording(RecordingRange::Known(spans)) => (spans, true),
-        Source::Recording(RecordingRange::Discovering(spans)) => (spans, false),
-        Source::Live { at_edge: true, .. } => return Ok(None),
-        Source::Live { spans, .. } => (spans, false),
-    };
-    let mut missing = Vec::new();
-    for span in spans {
-        if !whole && (span.channel != demand.channel || span.key != view.clock_key) {
-            continue;
-        }
-        let Some(mut range) = span.interval() else {
-            continue;
-        };
-        if !whole {
-            let Some(part) = range.intersection(
-                Interval::new(
-                    view.interval.start,
-                    view.interval.start.saturating_add(FALLBACK_SECONDS),
-                )
-                .expect("view interval is bounded"),
-            ) else {
-                continue;
-            };
-            range = part;
-        }
-        let Some(range) = Interval::new(range.start, range.end.min(archive_end(now))) else {
-            continue;
-        };
-        let mut covered = store.covered(span.channel, range, now)?;
-        if matches!(demand.source_range, Source::Live { .. }) {
-            covered.extend(store.live_covered(owner, span.channel, &span.key, range)?);
-        }
-        for gap in range.missing(covered) {
-            if !whole && gap.start >= view.interval.start + LOOKBACK_SECONDS + PREFETCH_SECONDS {
-                continue;
-            }
-            // The provider's inclusive endpoints require starttime < endtime.
-            // Pad a one-second hole inside the verified scope only.
-            let gap = if gap.end - gap.start >= MIN_REQUEST_SECONDS {
-                Some(gap)
-            } else if gap.end < range.end {
-                Interval::new(gap.start, gap.end + 1)
-            } else if gap.start > range.start {
-                Interval::new(gap.start - 1, gap.end)
-            } else {
-                None
-            };
-            if let Some(gap) = gap {
-                missing.push((span.channel, gap));
-            }
-        }
-    }
-    missing.sort_by_key(|(channel, range)| {
-        (
-            !(*channel == demand.channel && range.intersection(view.interval).is_some()),
-            range.start,
-        )
-    });
-    // Adjacent verified scopes of the same channel can share a request. Do not
-    // bridge a saved interval or a gap in broadcast-clock verification.
-    let Some((channel, mut selected)) = missing.first().copied() else {
-        return Ok(None);
-    };
-    loop {
-        let previous = selected;
-        for &(next_channel, range) in &missing {
-            if next_channel == channel && range.start <= selected.end && range.end >= selected.start
-            {
-                selected =
-                    Interval::new(selected.start.min(range.start), selected.end.max(range.end))
-                        .expect("union");
-            }
-        }
-        if selected == previous {
-            break;
-        }
-    }
-    Ok(Some((channel, selected.request_prefix())))
+#[repr(u8)]
+pub(super) enum Progress {
+    Preparing,
+    Receiving,
+    Importing,
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct Acquisition {
+    pub target: plan::Target,
+    pub focus: Option<i64>,
 }
 
+fn next(store: &Store, owner: &str, demand: &Acquisition, now: i64) -> Result<Planned, Error> {
+    let plan = store.planned(owner, &demand.target, now)?;
+    if let Planned::Ready(request) = &plan
+        && demand.target.range.end > archive_end(now)
+        && demand
+            .focus
+            .is_some_and(|utc| request.range.start > utc + plan::PROGRAM_PADDING_SECONDS)
+    {
+        return Ok(Planned::Complete);
+    }
+    Ok(plan)
+}
+
+#[cfg(test)]
 fn run(
     directory: PathBuf,
     owner: String,
@@ -180,75 +136,159 @@ fn run(
     now: i64,
     cancel: &Cancellation,
 ) -> Result<Outcome, Error> {
+    let target = plan::Planner::default().update(&demand, now);
+    let acquisition = target.filter(|_| demand.fetch).map(|target| Acquisition {
+        target,
+        focus: demand
+            .view
+            .as_ref()
+            .map(|v| v.interval.start + LOOKBACK_SECONDS),
+    });
+    run_progress(
+        directory,
+        owner,
+        acquisition,
+        endpoint,
+        now,
+        cancel,
+        &AtomicU8::new(Progress::Preparing as u8),
+    )
+}
+
+fn run_progress(
+    directory: PathBuf,
+    owner: String,
+    demand: Option<Acquisition>,
+    endpoint: String,
+    now: i64,
+    cancel: &Cancellation,
+    progress: &AtomicU8,
+) -> Result<Outcome, Error> {
     let started = Instant::now();
     let failure_time = || now.saturating_add(started.elapsed().as_secs() as i64);
     let mut store = Store::open(&directory)?;
     let Some(lease) = store.try_provider()? else {
-        return Ok(Outcome::Waiting(now + 1));
+        return Ok(Outcome::Waiting(now + REQUEST_SPACING_SECONDS));
     };
-    let downloaded = match spool::recover(&directory)? {
-        spool::Recovery::Downloaded(file) => {
-            store.discard_staged(&lease, Some(&file.receipt.id))?;
-            file
+    // A download owns its pin independently of the player's current source.
+    // A seek or source reset cannot make the in-flight programme evictable.
+    let session = store.session()?;
+    let result = (|| {
+        if let Some(demand) = &demand {
+            store.pin_target(&session.name, &demand.target, now)?;
         }
-        spool::Recovery::Partial => {
-            store.failed(false, None, now)?;
-            return Ok(Outcome::Waiting(now + 5 * 60));
-        }
-        spool::Recovery::None => {
-            store.discard_staged(&lease, None)?;
-            let Some((channel, range)) = next(&store, &owner, &demand, now)? else {
-                return Ok(Outcome::Idle);
-            };
-            let eligible = match store.reserve(&lease, channel, range, now)? {
-                Reservation::Ready => return Ok(Outcome::Complete),
-                Reservation::Waiting(until) => return Ok(Outcome::Waiting(until)),
-                Reservation::Granted(eligible) => eligible,
-            };
-            static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-            let receiving = eligible.begin(format!(
-                "{}-{now}-{}",
-                owner,
-                NEXT.fetch_add(1, Ordering::Relaxed)
-            ))?;
-            let runtime = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()?;
-            match runtime.block_on(receive(receiving, &endpoint, cancel)) {
-                Ok(file) => file,
-                Err(ReceiveError::Local(error)) => return Err(error),
-                Err(ReceiveError::Remote {
-                    message,
-                    permanent,
-                    retry_after,
-                }) => {
-                    spool::discard(&directory)?;
-                    store.failed(permanent, retry_after, failure_time())?;
-                    return Ok(Outcome::RemoteFailed(message));
+        let downloaded = match spool::recover(&directory)? {
+            spool::Recovery::Downloaded(file) => {
+                store.discard_staged(&lease, Some(&file.receipt.id))?;
+                file
+            }
+            spool::Recovery::Partial => {
+                store.failed(false, None, now)?;
+                return Ok(Outcome::Waiting(now + 5 * 60));
+            }
+            spool::Recovery::None => {
+                store.discard_staged(&lease, None)?;
+                let Some(demand) = &demand else {
+                    return Ok(Outcome::Idle);
+                };
+                let request = match next(&store, &owner, demand, now)? {
+                    Planned::Complete => return Ok(Outcome::Idle),
+                    Planned::Waiting(until) => return Ok(Outcome::Waiting(until)),
+                    Planned::Failed(message) => {
+                        return Ok(Outcome::RemoteFailed {
+                            target: Some(demand.target.clone()),
+                            message,
+                            retry_at: None,
+                        });
+                    }
+                    Planned::Ready(request) => request,
+                };
+                tracing::debug!(target: "comment_archive", start = request.range.start, end = request.range.end, refresh = request.refresh, "planned archive range");
+                let eligible = match store.reserve_plan(&lease, request, now)? {
+                    Reservation::Ready => return Ok(Outcome::Complete),
+                    Reservation::Waiting(until) => return Ok(Outcome::Waiting(until)),
+                    Reservation::Granted(eligible) => eligible,
+                };
+                static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+                let receiving = eligible.begin(format!(
+                    "{}-{now}-{}",
+                    owner,
+                    NEXT.fetch_add(1, Ordering::Relaxed)
+                ))?;
+                let runtime = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()?;
+                progress.store(Progress::Receiving as u8, Ordering::Release);
+                tracing::debug!(target: "comment_archive", channel = demand.target.channel, target_key = %demand.target.key(), start = demand.target.range.start, end = demand.target.range.end, "sending archive request");
+                match runtime.block_on(receive(receiving, &endpoint, cancel)) {
+                    Ok(file) => file,
+                    Err(ReceiveError::Local(error)) => return Err(error),
+                    Err(ReceiveError::Remote {
+                        message,
+                        permanent,
+                        retry_after,
+                    }) => {
+                        spool::discard(&directory)?;
+                        let retry_at = store.fail_target(
+                            &demand.target,
+                            &message,
+                            permanent,
+                            retry_after,
+                            failure_time(),
+                        )?;
+                        return Ok(Outcome::RemoteFailed {
+                            target: Some(demand.target.clone()),
+                            message,
+                            retry_at,
+                        });
+                    }
                 }
             }
+        };
+        if let Some(plan) = &downloaded.receipt.plan {
+            store.pin_target(&session.name, &plan.target, now)?;
+        } else {
+            store.pin_archive(
+                &session.name,
+                downloaded.receipt.channel,
+                downloaded.receipt.range,
+                now,
+            )?;
         }
-    };
-    if cancel.stopped() {
-        return Err(Error::Cancelled);
-    }
-    if store.imported(&downloaded.receipt.id)? || !store.can_publish(&downloaded.receipt)? {
-        store.discard_staged(&lease, None)?;
-        downloaded.discard()?;
-        return Ok(Outcome::Complete);
-    }
-    let validated = match downloaded.validate_with(|| cancel.stopped()) {
-        Ok(file) => file,
-        Err((file, Error::Archive(error))) => {
-            file.discard()?;
-            store.failed(true, None, failure_time())?;
-            return Ok(Outcome::RemoteFailed(error.to_string()));
+        if cancel.stopped() {
+            return Err(Error::Cancelled);
         }
-        Err((_file, error)) => return Err(error),
-    };
-    validated.import(&mut store, || cancel.stopped())?;
-    validated.finish()?;
-    Ok(Outcome::Complete)
+        if store.imported(&downloaded.receipt.id)? || !store.can_publish(&downloaded.receipt)? {
+            store.discard_staged(&lease, None)?;
+            downloaded.discard()?;
+            return Ok(Outcome::Complete);
+        }
+        let validated = match downloaded.validate_with(|| cancel.stopped()) {
+            Ok(file) => file,
+            Err((file, Error::Archive(error))) => {
+                let target = file.receipt.plan.as_ref().map(|plan| plan.target.clone());
+                file.discard()?;
+                let message = error.to_string();
+                if let Some(target) = &target {
+                    store.fail_target(target, &message, true, None, failure_time())?;
+                } else {
+                    store.failed(true, None, failure_time())?;
+                }
+                return Ok(Outcome::RemoteFailed {
+                    target,
+                    message,
+                    retry_at: None,
+                });
+            }
+            Err((_file, error)) => return Err(error),
+        };
+        progress.store(Progress::Importing as u8, Ordering::Release);
+        validated.import(&mut store, || cancel.stopped())?;
+        validated.finish()?;
+        Ok(Outcome::Complete)
+    })();
+    store.release_session(&session.name)?;
+    result
 }
 
 enum ReceiveError {
@@ -335,117 +375,5 @@ async fn receive(
     tokio::select! {
         result=work=>result,
         _=cancel.wake.notified()=>Err(ReceiveError::Local(Error::Cancelled)),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::spool::Receipt;
-    use super::*;
-    #[test]
-    fn fallback_waits_until_prefetch_boundary_and_pads_only_one_second_holes() {
-        let dir = tempfile::tempdir().unwrap();
-        let mut store = Store::open(dir.path()).unwrap();
-        let owner = store.session().unwrap();
-        let span = ClockSpan {
-            key: "clock".into(),
-            channel: 1,
-            media_start_ms: 0,
-            media_end_ms: 3_600_000,
-            utc_start_ms: 100_000_000,
-        };
-        let mut incoming = spool::Receiving::prepare(
-            dir.path(),
-            Receipt {
-                id: "cached".into(),
-                channel: 1,
-                range: Interval::new(100_000, 101_800).unwrap(),
-                fetched: 300_000,
-                generation: store.generation().unwrap(),
-            },
-        )
-        .unwrap();
-        incoming.write(br#"{"packet":[]}"#).unwrap();
-        let file = incoming
-            .finish()
-            .unwrap()
-            .validate()
-            .map_err(|(_, e)| e)
-            .unwrap();
-        file.import(&mut store, || false).unwrap();
-        file.finish().unwrap();
-        let mut demand = Demand {
-            source: 1,
-            channel: 1,
-            fetch: true,
-            view: Some(View {
-                clock_key: "clock".into(),
-                interval: Interval::new(100_001, 100_121).unwrap(),
-            }),
-            source_range: Source::Recording(RecordingRange::Discovering(vec![span.clone()])),
-        };
-        assert!(
-            next(&store, &owner.name, &demand, 300_001)
-                .unwrap()
-                .is_none()
-        );
-        demand.view.as_mut().unwrap().interval = Interval::new(101_730, 101_850).unwrap();
-        assert_eq!(
-            next(&store, &owner.name, &demand, 300_001).unwrap(),
-            Some((1, Interval::new(101_800, 103_530).unwrap()))
-        );
-        let short = ClockSpan {
-            media_end_ms: 1_801_000,
-            ..span
-        };
-        demand.source_range = Source::Recording(RecordingRange::Known(vec![short]));
-        assert_eq!(
-            next(&store, &owner.name, &demand, 300_001).unwrap(),
-            Some((1, Interval::new(101_799, 101_801).unwrap()))
-        );
-    }
-    #[test]
-    fn fresh_recording_is_one_request_and_live_edge_is_never_requested() {
-        let dir = tempfile::tempdir().unwrap();
-        let mut store = Store::open(dir.path()).unwrap();
-        let owner = store.session().unwrap();
-        let span = ClockSpan {
-            key: "clock".into(),
-            channel: 1,
-            media_start_ms: 0,
-            media_end_ms: 3_600_000,
-            utc_start_ms: 100_000_000,
-        };
-        let mut demand = Demand {
-            source: 1,
-            channel: 1,
-            view: Some(View {
-                clock_key: "clock".into(),
-                interval: Interval::new(100_100, 100_220).unwrap(),
-            }),
-            source_range: Source::Recording(RecordingRange::Known(vec![span.clone()])),
-            fetch: true,
-        };
-        assert_eq!(
-            next(&store, &owner.name, &demand, 200_000).unwrap(),
-            Some((1, Interval::new(100_000, 103_600).unwrap()))
-        );
-        demand.source_range = Source::Live {
-            earliest_media_ms: 0,
-            spans: vec![span],
-            reception: Reception::Receiving(1),
-            at_edge: true,
-        };
-        assert!(
-            next(&store, &owner.name, &demand, 200_000)
-                .unwrap()
-                .is_none()
-        );
-        demand.fetch = false;
-        assert!(
-            next(&store, &owner.name, &demand, 200_000)
-                .unwrap()
-                .is_none()
-        );
     }
 }

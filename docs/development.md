@@ -150,6 +150,7 @@ RSSなどの資源使用量は診断JSONLに記録します。[メモリー分�
 - [番組表](guide-calendar.md)・[EPGの更新](epg-event-stream.md)
 - [弾幕表示](danmaku.md)・[字幕描画](subtitle-rendering.md)・[音声切り替え](audio-selection.md)
 - [実況過去ログの取得・保存仕様](comment-archive-fetch-design.md)
+- [実況過去ログの取得・保持 再設計と検証](comment-archive-redesign.md)
 - [動画統計](video-statistics.md)・[操作への反応](ui-feedback.md)
 - [検証の記録](verification.md)・[実装移行の経緯](feature-migration.md)
 
@@ -161,3 +162,27 @@ RSSなどの資源使用量は診断JSONLに記録します。[メモリー分�
 `bash scripts/test-startup.sh recording-probe /path/to/recording.ts` を使います。
 表示・GPU・音声の検証後に実行し、通常の起動試験とは別に約28秒の再生と
 境界前後・長い録画の80%位置へのシークを確認します。全編の検査ではありません。
+
+録画実況の補助I/Oだけを機器なしで測る場合:
+
+```sh
+NAGAMETV_RECORDING_PROBE=/path/to/recording.ts CARGO_TARGET_DIR=build/cargo \
+  cargo test --manifest-path rust/Cargo.toml --release --locked \
+  recording_metadata_probe_uses_bounded_io_and_stays_idle -- --ignored --nocapture
+```
+
+初期情報の取得、80%位置へのシーク、探索後の追加読取り停止を検証します。
+通常再生で読む量と補助読取り量を分け、実ファイルは変更しません。
+旧DBの移行確認には、使用中のDBではなく取得済みのコピーを指定します。
+試験はさらに一時ディレクトリーへコピーしてから移行・空応答との統合を行います。
+
+```sh
+NAGAMETV_COMMENT_CACHE_PROBE=/path/to/copied/cache.sqlite3 CARGO_TARGET_DIR=build/cargo \
+  cargo test --manifest-path rust/crates/viewer-comments/Cargo.toml --release --locked \
+  --features network copied_legacy_cache_is_preserved_and_completed_as_one_program \
+  -- --ignored --nocapture
+```
+
+実況の詳細ログは`RUST_LOG=info,comment_archive=debug,recording_metadata=debug`で有効にできます。
+要求の対象・範囲・補完／再確認条件、応答バイト数・出典別件数、表示への投影数、
+時計待ち／取得の時点、補助I/Oの量を確認できます。コメント本文・ユーザーIDは出力しません。

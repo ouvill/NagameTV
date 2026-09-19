@@ -490,3 +490,32 @@ fn comment_modes_roundtrip_and_old_preferences_keep_normal_defaults() {
         PlacementMode::Sequential
     );
 }
+
+#[test]
+fn comment_cache_budget_is_validated_and_persisted() -> Result<(), Box<dyn std::error::Error>> {
+    let directory = tempfile::tempdir()?;
+    let path = directory.path().join("settings.toml");
+    let mut session = open(path.clone())?;
+    assert_eq!(
+        session.preferences().comment_cache_limit_mib.bytes(),
+        viewer_comments::cache::DEFAULT_CACHE_BYTES
+    );
+    for invalid in [-1, 0, 63, 65537] {
+        assert!(CommentCacheLimit::checked(invalid).is_none());
+    }
+    session.change(Change::CommentCacheLimit(
+        CommentCacheLimit::checked(2048).unwrap(),
+    ));
+    session.flush()?;
+    assert_eq!(
+        open(path)?.preferences().comment_cache_limit_mib.mib(),
+        2048
+    );
+    assert_eq!(
+        toml::from_str::<Preferences>("comment_cache_limit_mib = 0")?
+            .comment_cache_limit_mib
+            .mib(),
+        64
+    );
+    Ok(())
+}
