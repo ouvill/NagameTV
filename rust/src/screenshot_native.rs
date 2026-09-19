@@ -151,13 +151,13 @@ impl Presentation {
                 | gst::PadProbeType::EVENT_DOWNSTREAM
                 | gst::PadProbeType::EVENT_FLUSH,
             move |pad, probe| {
-                if let Some(event) = probe.event() {
-                    if matches!(
+                if let Some(event) = probe.event()
+                    && matches!(
                         event.view(),
                         gst::EventView::FlushStart(_) | gst::EventView::StreamStart(_)
-                    ) {
-                        tracker.clear();
-                    }
+                    )
+                {
+                    tracker.clear();
                 }
                 if let Some(buffer) = probe.buffer_mut() {
                     let Some(info) = pad
@@ -176,8 +176,8 @@ impl Presentation {
                     gst::ParentBufferMeta::add(observed.make_mut(), buffer);
                     *buffer = observed;
                     let buffer = buffer.make_mut();
-                    if buffer.meta::<video::VideoMeta>().is_none() {
-                        if video::VideoMeta::add_full(
+                    if buffer.meta::<video::VideoMeta>().is_none()
+                        && video::VideoMeta::add_full(
                             buffer,
                             video::VideoFrameFlags::empty(),
                             info.format(),
@@ -187,9 +187,8 @@ impl Presentation {
                             info.stride(),
                         )
                         .is_err()
-                        {
-                            return gst::PadProbeReturn::Ok;
-                        }
+                    {
+                        return gst::PadProbeReturn::Ok;
                     }
                     let generation = tracker
                         .0

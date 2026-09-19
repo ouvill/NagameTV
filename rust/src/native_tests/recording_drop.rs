@@ -34,7 +34,7 @@ pub fn run(app: &QGuiApplication, directory: &Path) {
     const TS_PACKET_BYTES: usize = 188;
     const M2TS_PREFIX_BYTES: usize = 4;
     let mut m2ts = Vec::new();
-    for packet in ts.chunks_exact(TS_PACKET_BYTES) {
+    for packet in ts.as_chunks::<TS_PACKET_BYTES>().0 {
         m2ts.extend_from_slice(&[0; M2TS_PREFIX_BYTES]);
         m2ts.extend_from_slice(packet);
     }
