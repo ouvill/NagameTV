@@ -23,6 +23,7 @@ impl ffi::Player {
         self.as_mut().refresh_comment_posting();
         self.as_mut().refresh_epg_status();
         self.as_mut().refresh_subtitle_status();
+        self.as_mut().transport_error_changed();
         self.as_mut().refresh_metric_text();
         self.save_settings();
         true

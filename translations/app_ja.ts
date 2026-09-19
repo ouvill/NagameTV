@@ -350,6 +350,18 @@
 </context>
   <context>
     <name>Backend</name>
+    <message>
+      <source>The playback position expired and was moved into the retained range.</source>
+      <translation>保持期限を過ぎたため、再生位置を保持範囲内へ移動しました</translation>
+    </message>
+    <message>
+      <source>Timeshift settings changed. The playback position was moved into the retained range.</source>
+      <translation>タイムシフト設定の変更により、再生位置を保持範囲内へ移動しました</translation>
+    </message>
+    <message>
+      <source>Timeshift settings changed. Playback returned to the live edge.</source>
+      <translation>タイムシフト設定の変更により、ライブの最新位置へ戻りました</translation>
+    </message>
     <message><source>Waiting for the comment archive to update…</source><translation>過去ログへの反映を待っています…</translation></message>
     <message><source>Waiting to fetch past comments…</source><translation>過去ログの取得を待っています…</translation></message>
     <message><source>Could not save comments: %1</source><translation>コメントを保存できません: %1</translation></message>

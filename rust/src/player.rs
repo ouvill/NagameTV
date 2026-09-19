@@ -172,7 +172,7 @@ pub mod ffi {
         #[qproperty(QString, timeshift_limits, READ = timeshift_limits, NOTIFY)]
         #[qproperty(f64, timeshift_bytes_per_second, READ, NOTIFY)]
         #[qproperty(QString, live_timeline, READ, NOTIFY)]
-        #[qproperty(QString, transport_error, READ, NOTIFY)]
+        #[qproperty(QString, transport_error, READ = transport_error, NOTIFY)]
         #[qproperty(bool, recording, READ = recording, NOTIFY)]
         #[qproperty(QString, recording_name, READ = recording_name, NOTIFY)]
         #[qproperty(QString, file_error, READ, NOTIFY)]
@@ -290,6 +290,7 @@ pub mod ffi {
         fn live_delay_ms(self: &Player) -> f64;
         fn timeshift_storage(self: &Player) -> QString;
         fn timeshift_limits(self: &Player) -> QString;
+        fn transport_error(self: &Player) -> QString;
         #[qinvokable]
         fn return_to_live(self: Pin<&mut Player>) -> bool;
         #[qinvokable]
@@ -464,7 +465,7 @@ pub struct PlayerRust {
     timeline: playback::timeline::Snapshot,
     timeshift_bytes_per_second: f64,
     live_timeline: QString,
-    transport_error: QString,
+    transport_message: transport::Message,
     recording_loader: playback::recording::Loader,
     file_error: QString,
     subtitles_enabled: bool,

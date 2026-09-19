@@ -192,6 +192,7 @@ fn checks() -> TestResult {
     check_guide_state();
     check_autoplay()?;
     check_timeshift_options()?;
+    check_transport_messages();
     check_screenshot_directory()?;
     check_comment_presentation()?;
     super::remote_checks::run()?;
@@ -241,6 +242,65 @@ fn checks() -> TestResult {
         "Connection checks passed: pending/failed saves, empty catalog, success, save failure, shutdown"
     );
     Ok(())
+}
+
+fn check_transport_messages() {
+    use super::transport::Message;
+    use crate::playback::timeline::Notice;
+    use cxx_qt_lib::QQmlApplicationEngine;
+
+    let mut engine = QQmlApplicationEngine::new();
+    assert!(ffi::initialize_ui_language(engine.pin_mut(), &"en".into()));
+    let mut player = ffi::new_player();
+    assert!(player.rust().media.playback().is_none());
+    assert!(player.transport_error().is_empty());
+    let observed = Arc::new(Mutex::new(Vec::new()));
+    let messages = observed.clone();
+    let _signal = player.pin_mut().on_transport_error_changed(move |player| {
+        messages
+            .lock()
+            .unwrap()
+            .push(player.transport_error().to_string());
+    });
+    for (notice, english, japanese) in [
+        (
+            Notice::Expired,
+            "The playback position expired and was moved into the retained range.",
+            "保持期限を過ぎたため、再生位置を保持範囲内へ移動しました",
+        ),
+        (
+            Notice::SettingsClamped,
+            "Timeshift settings changed. The playback position was moved into the retained range.",
+            "タイムシフト設定の変更により、再生位置を保持範囲内へ移動しました",
+        ),
+        (
+            Notice::SettingsReturnedToLive,
+            "Timeshift settings changed. Playback returned to the live edge.",
+            "タイムシフト設定の変更により、ライブの最新位置へ戻りました",
+        ),
+    ] {
+        observed.lock().unwrap().clear();
+        player
+            .pin_mut()
+            .set_transport_message(Message::Notice(notice));
+        assert_eq!(player.transport_error(), QString::from(english));
+        assert!(player.pin_mut().request_language("ja".into()));
+        assert_eq!(player.transport_error(), QString::from(japanese));
+        assert!(player.pin_mut().request_language("en".into()));
+        assert_eq!(player.transport_error(), QString::from(english));
+        assert_eq!(*observed.lock().unwrap(), [english, japanese, english]);
+    }
+    // Even a diagnostic that happens to match a translation key stays literal.
+    player
+        .pin_mut()
+        .set_transport_message(Message::Failure("Paused".into()));
+    assert!(player.pin_mut().request_language("ja".into()));
+    assert_eq!(player.transport_error(), QString::from("Paused"));
+    player.pin_mut().set_transport_message(Message::None);
+    assert!(player.pin_mut().request_language("en".into()));
+    assert!(player.transport_error().is_empty());
+    assert!(player.pin_mut().shutdown());
+    println!("Transport notices follow language changes and preserve literal diagnostics");
 }
 
 fn check_stream_state(player: &mut cxx::UniquePtr<ffi::Player>) -> TestResult {

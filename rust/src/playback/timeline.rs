@@ -9,9 +9,13 @@ use std::{
 const POSITION_SAMPLE_INTERVAL: Duration = Duration::from_millis(200);
 const SEEK_TIMEOUT: Duration = Duration::from_secs(10);
 const RECOVERY_HEADROOM: gst::ClockTime = gst::ClockTime::from_seconds(2);
-const EXPIRED_NOTICE: &str = "保持期限を過ぎたため、再生位置を余裕のある保持範囲内へ移動しました";
-const SETTINGS_NOTICE: &str = "タイムシフト設定の変更により、再生位置を保持範囲内へ移動しました";
-const LIVE_SETTINGS_NOTICE: &str = "タイムシフト設定の変更により、ライブの最新位置へ戻りました";
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Notice {
+    Expired,
+    SettingsClamped,
+    SettingsReturnedToLive,
+}
 
 #[derive(Clone, Copy)]
 pub(super) enum RetentionChange {
@@ -128,7 +132,7 @@ pub(super) struct Controller {
     output: Arc<Mutex<Output>>,
     subscriptions: crate::features::subscriptions::Subscriptions,
     next_sample: Instant,
-    notice: Option<&'static str>,
+    notice: Option<Notice>,
     retention_change: Option<RetentionChange>,
 }
 
@@ -197,7 +201,7 @@ impl Controller {
         }
     }
 
-    pub fn take_notice(&mut self) -> Option<&'static str> {
+    pub fn take_notice(&mut self) -> Option<Notice> {
         self.notice.take()
     }
 
@@ -301,8 +305,8 @@ impl Controller {
             if let Some((target, resume)) = correction {
                 self.start_seek(pipeline, target, resume)?;
                 self.notice = Some(match change {
-                    RetentionChange::ClampPosition => SETTINGS_NOTICE,
-                    RetentionChange::ReturnToLive => LIVE_SETTINGS_NOTICE,
+                    RetentionChange::ClampPosition => Notice::SettingsClamped,
+                    RetentionChange::ReturnToLive => Notice::SettingsReturnedToLive,
                 });
             }
             self.retention_change = None;
@@ -330,7 +334,7 @@ impl Controller {
             };
             self.start_seek(pipeline, target, resume)?;
             if history.is_some() {
-                self.notice = Some(EXPIRED_NOTICE);
+                self.notice = Some(Notice::Expired);
             }
             tracing::info!(
                 start = range.start.mseconds(),
@@ -368,7 +372,7 @@ impl Controller {
                     .ok_or(Error::Unavailable)?
                     .recovery_target();
                 self.start_seek(pipeline, target, resume)?;
-                self.notice = Some(EXPIRED_NOTICE);
+                self.notice = Some(Notice::Expired);
             }
             return Ok(());
         }
@@ -520,7 +524,7 @@ impl Ready<'_> {
         };
         self.apply(target)?;
         if corrected || expired {
-            self.controller.notice = Some(EXPIRED_NOTICE);
+            self.controller.notice = Some(Notice::Expired);
         }
         Ok(())
     }

@@ -261,7 +261,8 @@ impl ffi::Player {
         self.start_stream(attempt);
     }
     pub(super) fn start_stream(mut self: Pin<&mut Self>, attempt: Attempt) -> bool {
-        self.as_mut().set_transport_error(QString::default());
+        self.as_mut()
+            .set_transport_message(super::transport::Message::None);
         self.as_mut().cancel_recording_open();
         if attempt
             .service()
@@ -376,7 +377,8 @@ impl ffi::Player {
         self.as_mut().poll_recording();
         let result = self.as_mut().rust_mut().media.poll();
         if let Some(notice) = self.as_mut().rust_mut().media.take_notice() {
-            self.as_mut().set_transport_error(QString::from(notice));
+            self.as_mut()
+                .set_transport_message(super::transport::Message::Notice(notice));
         }
         self.poll_audio_choice();
         match result {

@@ -10,6 +10,9 @@
 
 // Extraction markers for the status strings emitted by the Rust backend.
 inline constexpr const char *backendTranslationSources[] = {
+    QT_TRANSLATE_NOOP("Backend", "The playback position expired and was moved into the retained range."),
+    QT_TRANSLATE_NOOP("Backend", "Timeshift settings changed. The playback position was moved into the retained range."),
+    QT_TRANSLATE_NOOP("Backend", "Timeshift settings changed. Playback returned to the live edge."),
     QT_TRANSLATE_NOOP("Backend", "Could not determine the audio format. Choose a track again."),
     QT_TRANSLATE_NOOP("Backend", "Could not prepare the audio choices."),
 

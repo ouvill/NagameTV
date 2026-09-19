@@ -1,14 +1,46 @@
 //! Publish transport controls as one coherent Qt snapshot.
-use super::ffi;
+use super::{ffi, status::tr};
 use crate::playback::{
     self,
-    timeline::{Error, Resume},
+    timeline::{Error, Notice, Resume},
 };
 use cxx_qt::CxxQtType;
 use cxx_qt_lib::QString;
 use std::pin::Pin;
 
+#[derive(PartialEq, Eq)]
+pub(super) enum Message {
+    None,
+    Notice(Notice),
+    Failure(QString),
+}
+
+impl Message {
+    fn render(&self) -> QString {
+        match self {
+            Self::None => QString::default(),
+            Self::Notice(notice) => tr(match notice {
+                Notice::Expired => {
+                    "The playback position expired and was moved into the retained range."
+                }
+                Notice::SettingsClamped => {
+                    "Timeshift settings changed. The playback position was moved into the retained range."
+                }
+                Notice::SettingsReturnedToLive => {
+                    "Timeshift settings changed. Playback returned to the live edge."
+                }
+            }),
+            // Diagnostics are literal data, never translation keys.
+            Self::Failure(detail) => detail.clone(),
+        }
+    }
+}
+
 impl ffi::Player {
+    pub fn transport_error(&self) -> QString {
+        self.rust().transport_message.render()
+    }
+
     pub fn timeshift(&self) -> bool {
         self.rust().stream_state.timeshift()
     }
@@ -98,11 +130,11 @@ impl ffi::Player {
             Err(Error::Unavailable)
         };
         let accepted = result.is_ok();
-        let error = result
-            .err()
-            .map_or_else(QString::default, |error| QString::from(error.to_string()));
-        let changed = self.rust().transport_error != error;
-        self.as_mut().rust_mut().transport_error = error;
+        let message = result.err().map_or(Message::None, |error| {
+            Message::Failure(QString::from(error.to_string()))
+        });
+        let changed = self.rust().transport_message != message;
+        self.as_mut().rust_mut().transport_message = message;
         self.as_mut().change_stream_state(|state| state);
         if changed {
             self.as_mut().transport_error_changed();
@@ -118,9 +150,9 @@ impl ffi::Player {
         }
         accepted
     }
-    pub(super) fn set_transport_error(mut self: Pin<&mut Self>, message: QString) {
-        if self.rust().transport_error != message {
-            self.as_mut().rust_mut().transport_error = message;
+    pub(super) fn set_transport_message(mut self: Pin<&mut Self>, message: Message) {
+        if self.rust().transport_message != message {
+            self.as_mut().rust_mut().transport_message = message;
             self.as_mut().transport_error_changed();
         }
     }

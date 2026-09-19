@@ -85,7 +85,7 @@ impl Session {
         }
     }
 
-    pub fn take_notice(&mut self) -> Option<&'static str> {
+    pub fn take_notice(&mut self) -> Option<super::timeline::Notice> {
         match &mut self.input {
             Input::Active { controller, .. } => controller.take_notice(),
             Input::Idle => None,

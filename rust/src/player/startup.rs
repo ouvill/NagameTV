@@ -107,7 +107,7 @@ impl Default for PlayerRust {
             timeline: Default::default(),
             timeshift_bytes_per_second: 0.0,
             live_timeline: QString::from("null"),
-            transport_error: QString::default(),
+            transport_message: super::transport::Message::None,
             recording_loader: Default::default(),
             file_error: QString::default(),
             subtitles_enabled: plan.subtitles,

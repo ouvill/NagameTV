@@ -61,7 +61,9 @@ impl ffi::Player {
         }
         if let Err(error) = self.as_mut().rust_mut().media.configure_timeshift(policy) {
             self.as_mut()
-                .set_transport_error(QString::from(error.to_string()));
+                .set_transport_message(super::transport::Message::Failure(QString::from(
+                    error.to_string(),
+                )));
             return false;
         }
         {
@@ -76,7 +78,8 @@ impl ffi::Player {
         self.as_mut().timeshift_storage_changed();
         self.as_mut().timeshift_limits_changed();
         self.as_mut().save_settings();
-        self.as_mut().set_transport_error(QString::default());
+        self.as_mut()
+            .set_transport_message(super::transport::Message::None);
         true
     }
 
