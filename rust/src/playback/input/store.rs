@@ -7,8 +7,8 @@ pub(super) const READ_BYTES: usize = super::TS_PACKET_SIZE * 256;
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Retention {
-    Off,
     #[default]
+    Off,
     Memory,
     Filesystem,
 }

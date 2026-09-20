@@ -346,6 +346,7 @@ fn check_transport_messages() {
 
 fn check_stream_state(player: &mut cxx::UniquePtr<ffi::Player>) -> TestResult {
     use super::stream_state::{Attempt, State};
+    use crate::playback::input::Retention;
     let observed = Arc::new(Mutex::new(Vec::new()));
     let transport = Arc::new(Mutex::new(Vec::new()));
     let transport_observer = transport.clone();
@@ -371,7 +372,7 @@ fn check_stream_state(player: &mut cxx::UniquePtr<ffi::Player>) -> TestResult {
             .unwrap()
             .push((player.connecting(), player.playing()));
     });
-    let attempt = Attempt::new(&player.rust().entries[0], Default::default());
+    let attempt = Attempt::new(&player.rust().entries[0], Retention::Memory.into());
     player
         .pin_mut()
         .update_stream_state(State::Connecting(attempt));
@@ -523,7 +524,7 @@ fn check_timeshift_options() -> TestResult {
         FILESYSTEM_MIB,
         MINUTES
     ));
-    assert_eq!(player.timeshift_storage().to_string(), "memory");
+    assert_eq!(player.timeshift_storage().to_string(), "off");
     assert!(observed.lock().unwrap().is_empty());
     assert!(player.pin_mut().configure_timeshift_options(
         QString::from("filesystem"),
