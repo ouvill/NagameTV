@@ -74,7 +74,7 @@ Item {
                         const before = backend.playbackRequests;
                         mouseClick(play);
                         compare(backend.playbackRequests, before + 1);
-                        const icon = state === Player.Play ? "play-outline.svg" : state === Player.Pause ? "pause.svg" : "square.svg";
+                        const icon = state === Player.Play ? "play.svg" : state === Player.Pause ? "pause.svg" : "square.svg";
                         verify(String(play.iconSource).endsWith(icon));
                     }
                 }

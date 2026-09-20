@@ -62,7 +62,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "../assets/icons/panel-right-close.svg",
         "../assets/icons/square.svg",
         "../assets/icons/play.svg",
-        "../assets/icons/play-outline.svg",
         "../assets/icons/pause.svg",
         "../assets/icons/rotate-ccw.svg",
         "../assets/icons/rotate-cw.svg",

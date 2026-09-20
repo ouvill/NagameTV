@@ -46,7 +46,7 @@ Item {
         onTriggered: { root.backend.toggle_playback(); root.activity(); }
     }
     readonly property string playbackIcon: backend.playback_action === Player.Pause ? "pause.svg"
-        : backend.playback_action === Player.Stop ? "square.svg" : "play-outline.svg"
+        : backend.playback_action === Player.Stop ? "square.svg" : "play.svg"
     readonly property Action seekBackward: Operation {
         text: qsTranslate("Viewer", "Back 10 seconds")
         enabled: root.enabled && root.backend.seekable
