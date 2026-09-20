@@ -238,6 +238,7 @@ impl ffi::Player {
                         source_range,
                         enabled: this.comments_enabled,
                         display: this.danmaku_enabled,
+                        paused: this.stream_state.paused(),
                     }
                 })
             } else {

@@ -19,6 +19,7 @@ fn record(id: &str, time: f64, position: Position) -> TimedComment {
     TimedComment {
         id: id.into(),
         time: seconds(time).unwrap(),
+        timing: Timing::Scheduled,
         comment: Comment::new("コメント", position, 0xffffff).unwrap(),
     }
 }
@@ -29,6 +30,58 @@ fn timed(engine: &mut Engine, record: TimedComment, width: f64) -> Option<Spawn>
 fn direct(engine: &mut Engine, width: f64) -> Option<Spawn> {
     let measurement = engine.prepare(Comment::new("test", Position::Right, 0xffffff).unwrap())?;
     engine.measured(measurement.id.value(), width)
+}
+
+#[test]
+fn live_arrival_starts_at_edge_with_full_lifetime_and_is_not_repeated() {
+    let width = 128.;
+    let received = seconds(10.).unwrap();
+    let measured = seconds(10.5).unwrap();
+    for position in [Position::Right, Position::Top, Position::Bottom] {
+        let mut e = engine(DisplayMode::Scroll, PlacementMode::Sequential);
+        let mut live = record("arrival", received.as_secs_f64(), position);
+        live.timing = Timing::Live;
+        e.load_at(vec![live.clone()], received);
+        let due = e.next_due().unwrap();
+        let measurement = e.prepare_timed(due).unwrap();
+        e.set_position(measured);
+        let spawn = e.measured(measurement.id.value(), width).unwrap();
+        let expected_lifetime = if position == Position::Right {
+            assert_eq!(spawn.from_x, e.viewport.width);
+            seconds((e.viewport.width + width) / (e.viewport.width / SCROLL_SECONDS)).unwrap()
+        } else {
+            seconds(FIXED_SECONDS).unwrap()
+        };
+        assert_eq!(spawn.lifetime, expected_lifetime);
+        e.replace(vec![live]);
+        assert!(e.next_due().is_none());
+        e.set_position(measured + expected_lifetime - Duration::from_millis(1));
+        assert!(e.advance_wall(Duration::ZERO).is_empty());
+        e.set_position(measured + expected_lifetime);
+        assert_eq!(e.advance_wall(Duration::ZERO), vec![spawn.id]);
+    }
+}
+
+#[test]
+fn live_future_waits_and_explicit_seek_restores_elapsed_position() {
+    let mut e = engine(DisplayMode::Scroll, PlacementMode::Sequential);
+    let mut live = record("future", 5., Position::Right);
+    live.timing = Timing::Live;
+    e.load_at(vec![live], seconds(3.).unwrap());
+    assert!(e.next_due().is_none());
+    e.set_position(seconds(5.1).unwrap());
+    let due = e.next_due().unwrap();
+    let spawn = timed(&mut e, due, 128.).unwrap();
+    assert_eq!(spawn.from_x, e.viewport.width);
+    e.set_paused(true);
+    e.seek(seconds(7.).unwrap());
+    let due = e.next_due().unwrap();
+    let restored = timed(&mut e, due, 128.).unwrap();
+    assert_eq!(
+        restored.from_x,
+        e.viewport.width - e.viewport.width * 2. / SCROLL_SECONDS
+    );
+    assert_eq!(restored.lifetime, spawn.lifetime - seconds(2.).unwrap());
 }
 
 #[test]

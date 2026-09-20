@@ -1,7 +1,9 @@
 //! Playback projection over persistent comments. Fetching and storage have an
 //! independent lifetime, so seeks never cancel or invalidate a received response.
 use super::mapping;
+mod arrivals;
 use crate::{channels::BroadcastService, transport::programs::catalog::ClockReading};
+use arrivals::LiveArrivals;
 use std::{
     collections::{HashMap, HashSet},
     path::PathBuf,
@@ -42,6 +44,7 @@ pub(crate) struct Context {
     pub source_range: Source,
     pub enabled: bool,
     pub display: bool,
+    pub paused: bool,
 }
 #[derive(Default)]
 enum Storage {
@@ -67,6 +70,7 @@ pub(crate) struct Replay {
     clock: Option<ClockReading>,
     position: Option<u64>,
     seeking: bool,
+    arrivals: LiveArrivals,
     pub generation: u64,
     pub data: String,
     pub status: Status,
@@ -135,6 +139,7 @@ impl Replay {
         self.projected = None;
         self.clock = None;
         self.position = None;
+        self.arrivals.clear();
     }
     fn start_store(&mut self) {
         if !matches!(self.storage, Storage::Dormant) {
@@ -196,6 +201,15 @@ impl Replay {
             }
             self.clock = Some(clock);
             self.position = Some(position);
+            let mut changed = self.arrivals.advance(clock, position);
+            if let Some(c) = context.as_ref()
+                && let Some(reception) = self.arrivals.at_edge(c, seeking, clock, position)
+            {
+                changed |= reception.receive(&comments);
+            }
+            if changed {
+                self.projected = None;
+            }
         }
         let view = reading.and_then(|(clock, _, utc)| {
             Interval::new(
@@ -278,7 +292,7 @@ impl Replay {
         }
         let enabled = context.as_ref().is_some_and(|c| c.enabled && c.display);
         if !enabled {
-            if self.data != "[]" {
+            if self.data != "[]" || !self.arrivals.is_empty() {
                 self.clear_projection();
             }
             self.status = Status::Disabled;
@@ -327,16 +341,17 @@ impl Replay {
         };
         let signature = (snapshot.revision, utc / 1000, clock.key());
         if self.projected.as_ref() != Some(&signature) {
-            self.data = if snapshot.source == target.map(|(source, _)| source)
+            let records = if snapshot.source == target.map(|(source, _)| source)
                 && snapshot
                     .view
                     .as_ref()
                     .is_some_and(|view| view.clock_key == clock.key())
             {
-                project(&snapshot.records, clock, view.interval)
+                &snapshot.records[..]
             } else {
-                "[]".into()
+                &[]
             };
+            self.data = project(records, clock, view.interval, &self.arrivals);
             self.projected = Some(signature);
         }
         self.status = match snapshot.state {
@@ -367,7 +382,18 @@ impl Replay {
 
 /// Pair original payloads across reception and archive once per occurrence.
 /// Equal posts within the archive remain distinct, including identical IDs.
-fn project(records: &[Record], clock: ClockReading, viewing: Interval) -> String {
+fn project(
+    records: &[Record],
+    clock: ClockReading,
+    viewing: Interval,
+    arrivals: &LiveArrivals,
+) -> String {
+    // Prefer the transient arrival over its persisted copy. Its ID and display
+    // time survive worker snapshots, while the stored posting time stays intact.
+    let stored = records.iter().filter(|record| {
+        record.origin != RecordOrigin::Live || !arrivals.contains(&record.comment)
+    });
+    let records: Vec<_> = arrivals.records().into_iter().chain(stored).collect();
     let mut live: HashMap<String, Vec<usize>> = HashMap::new();
     let mut paired = HashSet::new();
     let payload = |record: &Record| {
@@ -423,11 +449,12 @@ fn project(records: &[Record], clock: ClockReading, viewing: Interval) -> String
     let mut json = String::from("[");
     let mut count = 0;
     for index in selected {
-        let record = &records[index];
+        let record = records[index];
         let Some(micros) = record.comment.timestamp_micros else {
             continue;
         };
-        if !viewing.contains((micros / 1_000_000) as i64) {
+        let arrival = arrivals.start(record.id);
+        if arrival.is_none() && !viewing.contains((micros / 1_000_000) as i64) {
             continue;
         }
         let media = if record.origin == RecordOrigin::Live {
@@ -439,11 +466,14 @@ fn project(records: &[Record], clock: ClockReading, viewing: Interval) -> String
         } else {
             clock.media((micros / 1000) as i64)
         };
-        let Some(media) = media.and_then(|ns| ns.checked_add(micros % 1000 * 1000)) else {
+        let Some(media) =
+            arrival.or_else(|| media.and_then(|ns| ns.checked_add(micros % 1000 * 1000)))
+        else {
             continue;
         };
         let entry=serde_json::json!({"id":record.id.to_string(),"time":media as f64/1_000_000_000.,
-            "text":record.comment.text,"type":record.comment.style.position,"color":record.comment.style.color,"own":record.own}).to_string();
+            "text":record.comment.text,"type":record.comment.style.position,"color":record.comment.style.color,"own":record.own,
+            "timing": if arrival.is_some() { viewer_comments::danmaku::Timing::Live } else { viewer_comments::danmaku::Timing::Scheduled }}).to_string();
         if count >= viewer_comments::danmaku::MAX_TIMELINE_COMMENTS
             || json.len() + entry.len() + 2 > viewer_comments::danmaku::MAX_TIMELINE_BYTES
         {
@@ -472,6 +502,9 @@ mod tests {
     const UTC: i64 = 1_700_000_000_000;
     const SECOND: u64 = 1_000_000_000;
     fn context(source: u64, seconds: u64) -> Context {
+        context_until(source, seconds, 1000)
+    }
+    fn context_until(source: u64, seconds: u64, end_seconds: u64) -> Context {
         let mut catalog = Catalog::default();
         catalog.observe(
             &mut ScanCursor::default(),
@@ -480,7 +513,7 @@ mod tests {
                 epoch: 0,
                 offset: 0,
                 position: 0,
-                end: 1000 * SECOND,
+                end: end_seconds * SECOND,
                 observation: Some(&Observation {
                     pcr: 0,
                     information: Information {
@@ -495,7 +528,7 @@ mod tests {
             key: clock.key(),
             channel: 101,
             media_start_ms: 0,
-            media_end_ms: 1_000_000,
+            media_end_ms: end_seconds as i64 * 1000,
             utc_start_ms: UTC,
         };
         Context {
@@ -510,10 +543,11 @@ mod tests {
                 earliest_media_ms: 0,
                 spans: vec![span],
                 reception: cache::Reception::Interrupted,
-                at_edge: true,
+                at_edge: false,
             },
             enabled: true,
             display: true,
+            paused: false,
         }
     }
     fn comment(seconds: u64, number: u64) -> Comment {
@@ -527,6 +561,145 @@ mod tests {
             timestamp_micros: Some((UTC as u64 + seconds * 1000) * 1000),
             style: Default::default(),
         }
+    }
+    fn live_context(seconds: u64) -> Context {
+        let mut ctx = context(1, seconds);
+        if let Source::Live { at_edge, .. } = &mut ctx.source_range {
+            *at_edge = true;
+        }
+        ctx
+    }
+    #[test]
+    fn live_arrival_is_immediate_and_keeps_original_time_for_seek() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut replay = Replay::in_directory(directory.path().into());
+        const POSTED: u64 = 1;
+        const RECEIVED: u64 = 3;
+        replay.update(
+            Some(live_context(RECEIVED)),
+            false,
+            vec![(comment(POSTED, 1), true)],
+            UTC + 600_000,
+        );
+        let first = replay.data.clone();
+        let value: serde_json::Value = serde_json::from_str(&first).unwrap();
+        assert_eq!(value.as_array().unwrap().len(), 1);
+        assert_eq!(value[0]["time"], RECEIVED as f64);
+        assert_eq!(value[0]["timing"], "live");
+        assert_eq!(value[0]["own"], true);
+        // Wait for the actual storage worker, then ensure the saved copy and a
+        // repeated delivery do not replace or duplicate the displayed arrival.
+        let until = Instant::now() + Duration::from_secs(3);
+        loop {
+            let stored = match &replay.storage {
+                Storage::Active(store) => !store.snapshot().records.is_empty(),
+                _ => false,
+            };
+            if stored {
+                break;
+            }
+            assert!(Instant::now() < until, "live comment was not persisted");
+            std::thread::sleep(Duration::from_millis(5));
+            replay.update(Some(live_context(RECEIVED)), false, vec![], UTC + 600_000);
+        }
+        replay.update(
+            Some(live_context(RECEIVED)),
+            false,
+            vec![(comment(POSTED, 1), true)],
+            UTC + 600_000,
+        );
+        assert_eq!(replay.data, first);
+        replay.update(Some(context(1, RECEIVED)), true, vec![], UTC + 600_000);
+        replay.update(Some(context(1, RECEIVED)), false, vec![], UTC + 600_000);
+        let restored: serde_json::Value = serde_json::from_str(&replay.data).unwrap();
+        assert_eq!(restored.as_array().unwrap().len(), 1);
+        assert_eq!(restored[0]["time"], POSTED as f64);
+        assert_eq!(restored[0]["timing"], "scheduled");
+        replay.shutdown();
+    }
+    #[test]
+    fn live_arrivals_outlive_network_delay_but_wait_for_future_video() {
+        let mut arrivals = LiveArrivals::default();
+        let ctx = live_context(30);
+        let clock = ctx.clock.unwrap();
+        let position = ctx.position.unwrap();
+        assert!(
+            arrivals
+                .at_edge(&ctx, false, clock, position)
+                .unwrap()
+                .receive(&[(comment(1, 1), false), (comment(35, 2), false)])
+        );
+        let view = Interval::new(UTC / 1000 + 14, UTC / 1000 + 150).unwrap();
+        let value: serde_json::Value =
+            serde_json::from_str(&project(&[], clock, view, &arrivals)).unwrap();
+        assert_eq!(value.as_array().unwrap().len(), 2);
+        assert_eq!(value[0]["time"], 30.);
+        assert_eq!(value[1]["time"], 35.);
+        assert!(arrivals.advance(clock, 46 * SECOND));
+        assert_eq!(arrivals.records().len(), 1);
+        assert!(arrivals.advance(clock, 51 * SECOND));
+        assert!(arrivals.records().is_empty());
+    }
+    #[test]
+    fn history_pause_seek_and_timeshift_do_not_create_live_arrivals() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut replay = Replay::in_directory(directory.path().into());
+        let mut paused = live_context(3);
+        paused.paused = true;
+        let mut history = comment(1, 1);
+        history.phase = viewer_comments::Phase::History;
+        for (ctx, seeking, post) in [
+            (live_context(3), false, history),
+            (paused, false, comment(1, 2)),
+            (live_context(3), true, comment(1, 3)),
+            (context(1, 3), false, comment(1, 4)),
+        ] {
+            replay.update(Some(ctx), seeking, vec![(post, false)], UTC + 600_000);
+            assert!(replay.arrivals.records().is_empty());
+        }
+        replay.shutdown();
+    }
+    #[test]
+    fn live_arrival_waits_for_verified_clock_before_showing_future_post() {
+        let mut arrivals = LiveArrivals::default();
+        let mut ctx = context_until(1, 3, 4);
+        if let Source::Live { at_edge, .. } = &mut ctx.source_range {
+            *at_edge = true;
+        }
+        let clock = ctx.clock.unwrap();
+        arrivals
+            .at_edge(&ctx, false, clock, ctx.position.unwrap())
+            .unwrap()
+            .receive(&[(comment(5, 1), false)]);
+        assert!(arrivals.records().is_empty());
+        assert!(!arrivals.advance(clock, ctx.position.unwrap()));
+        let ready = context_until(1, 5, 7);
+        assert!(arrivals.advance(ready.clock.unwrap(), ready.position.unwrap()));
+        let posts = arrivals.records();
+        assert_eq!(posts.len(), 1);
+        assert_eq!(arrivals.start(posts[0].id), Some(5 * SECOND));
+    }
+    #[test]
+    fn disabling_display_releases_arrivals_still_waiting_for_video_clock() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut replay = Replay::in_directory(directory.path().into());
+        let mut ctx = context_until(1, 3, 4);
+        if let Source::Live { at_edge, .. } = &mut ctx.source_range {
+            *at_edge = true;
+        }
+        replay.update(
+            Some(ctx),
+            false,
+            vec![(comment(5, 1), false)],
+            UTC + 600_000,
+        );
+        assert_eq!(replay.data, "[]");
+        assert!(!replay.arrivals.is_empty());
+        let mut disabled = context_until(1, 3, 4);
+        disabled.display = false;
+        replay.update(Some(disabled), false, vec![], UTC + 600_000);
+        assert!(replay.arrivals.is_empty());
+        replay.shutdown();
     }
     #[test]
     fn disk_replay_survives_seek_display_off_and_rejects_old_sources() {
@@ -630,6 +803,7 @@ mod tests {
             &posts,
             clock,
             Interval::new(UTC / 1000, UTC / 1000 + 10).unwrap(),
+            &LiveArrivals::default(),
         ))
         .unwrap();
         assert_eq!(value.as_array().unwrap().len(), 2);

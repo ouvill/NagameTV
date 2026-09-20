@@ -323,6 +323,16 @@ pub struct TimedComment {
     pub id: Box<str>,
     pub time: Duration,
     pub comment: Comment,
+    pub timing: Timing,
+}
+
+/// Live arrivals begin when measured; replay restores the scheduled position.
+#[derive(Clone, Copy, Debug, Default, serde::Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Timing {
+    #[default]
+    Scheduled,
+    Live,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -344,6 +354,7 @@ enum CursorMode {
     #[default]
     Playing,
     Restoring,
+    Updating,
 }
 enum Start {
     Now,
@@ -721,7 +732,11 @@ impl Engine {
     }
     pub fn prepare_timed(&mut self, record: TimedComment) -> Option<Measurement> {
         let seed = presentation::seed(record.id.as_bytes());
-        self.prepare_at(record.comment, Start::At(record.time), seed)
+        let start = match record.timing {
+            Timing::Scheduled => Start::At(record.time),
+            Timing::Live => Start::Now,
+        };
+        self.prepare_at(record.comment, start, seed)
     }
     pub fn prepare(&mut self, comment: Comment) -> Option<Measurement> {
         let seed = presentation::seed(comment.text.as_bytes()) ^ u64::from(self.serial);
@@ -929,10 +944,14 @@ impl Engine {
         })
     }
     pub fn load(&mut self, records: Vec<TimedComment>) {
+        self.load_at(records, self.position);
+    }
+    pub fn load_at(&mut self, records: Vec<TimedComment>, position: Duration) {
         self.timebase = Timebase::Media;
         self.timeline = records;
         self.timeline.sort_by_key(|record| record.time);
-        self.seek(self.position);
+        self.seek(position);
+        self.cursor_mode = CursorMode::Updating;
     }
     /// Refresh a bounded window without restarting surviving labels. Newly
     /// acquired comments may already be partway across the screen.
@@ -945,7 +964,7 @@ impl Engine {
         self.next = self
             .timeline
             .partition_point(|record| record.time < earliest);
-        self.cursor_mode = CursorMode::Restoring;
+        self.cursor_mode = CursorMode::Updating;
     }
     pub fn seek(&mut self, position: Duration) {
         self.clear();
@@ -996,7 +1015,11 @@ impl Engine {
                 continue;
             }
             self.delivered.insert(record.id.clone(), record.time);
-            return Some(record.clone());
+            let mut record = record.clone();
+            if matches!(self.cursor_mode, CursorMode::Restoring) {
+                record.timing = Timing::Scheduled;
+            }
+            return Some(record);
         }
     }
 }
@@ -1036,6 +1059,8 @@ pub fn parse_timeline(json: &str) -> Result<Vec<TimedComment>, LoadError> {
         color: Option<Rgb>,
         #[serde(default)]
         own: bool,
+        #[serde(default)]
+        timing: Timing,
     }
     if json.len() > MAX_TIMELINE_BYTES {
         return Err(LoadError::Invalid);
@@ -1074,6 +1099,7 @@ pub fn parse_timeline(json: &str) -> Result<Vec<TimedComment>, LoadError> {
                     .unwrap_or_else(|| format!("{index}:{}", r.time))
                     .into_boxed_str(),
                 time,
+                timing: r.timing,
                 comment: {
                     let mut comment =
                         Comment::new(&r.text, kind, color).ok_or(LoadError::Invalid)?;

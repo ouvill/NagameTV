@@ -467,8 +467,7 @@ impl ffi::DanmakuController {
             return false;
         };
         let cleared = if reset {
-            self.as_mut().rust_mut().engine.load(records);
-            self.as_mut().rust_mut().engine.seek(position);
+            self.as_mut().rust_mut().engine.load_at(records, position);
             true
         } else {
             let backwards = self.as_mut().rust_mut().engine.set_position(position);

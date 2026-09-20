@@ -26,6 +26,25 @@ TestCase {
     }
     function seek(position) { overlay.controller.seek(position); }
     function load() { verify(overlay.controller.load_timeline(records())); }
+    function test_live_arrival_enters_at_right_edge_and_replay_restores_timestamp() {
+        const receivedAt = 10;
+        const postedAt = 8;
+        const live = JSON.stringify([{id: "arrival", time: receivedAt, text: "遅れて届いた新着", timing: "live"}]);
+        verify(overlay.controller.update_timeline(live, receivedAt + 0.5, true));
+        compare(overlay.activeCount, 1);
+        const entry = entries()[0];
+        compare(entry.x, overlay.width);
+        const fullDuration = entry.duration;
+        verify(overlay.controller.update_timeline(live, receivedAt + 1, false));
+        compare(entries()[0], entry);
+        fuzzyCompare(entry.x, overlay.width - overlay.width * 0.5 / 5, 0.01);
+        overlay.paused = true;
+        const replay = JSON.stringify([{id: "stored", time: postedAt, text: "遅れて届いた新着"}]);
+        verify(overlay.controller.update_timeline(replay, receivedAt, true));
+        compare(overlay.activeCount, 1);
+        fuzzyCompare(entries()[0].x, overlay.width - overlay.width * (receivedAt - postedAt) / 5, 0.01);
+        verify(Math.abs(entries()[0].duration - (fullDuration - 2000)) <= 1);
+    }
     function test_default_burst_budget_and_clear() {
         const burst = Array.from({length: 1000}, (_, i) => ({time: 0, text: "burst " + i}));
         verify(overlay.controller.load_timeline(JSON.stringify(burst)));
