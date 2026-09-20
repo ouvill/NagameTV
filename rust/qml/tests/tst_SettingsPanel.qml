@@ -122,6 +122,7 @@ Item {
             }
             SettingsPanel {
                 id: panel
+                targetWindow: host
                 shortcutEntries: shortcuts.entries
                 commentSubmitPolicy: commentPolicy
                 backend: backend
@@ -131,6 +132,7 @@ Item {
             SignalSpy { id: connections; target: backend; signalName: "connectRequested" }
             SignalSpy { id: accepted; target: panel; signalName: "connectionAccepted" }
             SignalSpy { id: remoteRequests; target: backend; signalName: "remoteRequested" }
+            SignalSpy { id: modes; target: panel; signalName: "modeRequested" }
             function init() {
                 failOnWarning(/.*/);
                 host.requestActivate();
@@ -181,6 +183,30 @@ Item {
                 tryCompare(panel, "opened", true);
             }
             function cleanup() { panel.close(); tryCompare(panel, "visible", false); }
+            function test_navigation_keeps_settings_selected_and_respects_guide_availability() {
+                const navigation = findChild(panel.contentItem, "settingsModeNavigation");
+                compare(navigation.mode, ModeNavigation.Settings);
+                compare(navigation.y, 18);
+                compare(panel.width - navigation.x - navigation.width, 18);
+                verify(findChild(navigation, "settingsModeButton").active);
+                for (const entry of [
+                    ["liveModeButton", ModeNavigation.Live],
+                    ["recordingModeButton", ModeNavigation.Recording],
+                    ["guideModeButton", ModeNavigation.Guide],
+                    ["settingsModeButton", ModeNavigation.Settings]
+                ]) {
+                    modes.clear();
+                    mouseClick(findChild(navigation, entry[0]));
+                    compare(modes.count, 1);
+                    compare(modes.signalArguments[0][0], entry[1]);
+                }
+                modes.clear();
+                backend.epg_enabled = false;
+                const guide = findChild(navigation, "guideModeButton");
+                verify(!guide.enabled);
+                mouseClick(guide);
+                compare(modes.count, 0);
+            }
             function test_remote_defaults_can_be_enabled_and_binding_failures_remain_visible() {
                 selectPage(SettingsPanel.Remote);
                 const toggle = findChild(panel.contentItem, "remoteEnabled");

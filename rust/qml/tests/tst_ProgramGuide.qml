@@ -335,7 +335,7 @@ TestCase {
         verify(waitForRendering(toolbar))
         const view = findChild(guide, "guideTimeline")
         const timeline = view.parent
-        compare(toolbar.height, toolbar.twoRows ? 100 : 56)
+        compare(toolbar.height, toolbar.twoRows ? 122 : 78)
         compare(timeline.y, toolbar.height)
         compare(timeline.y + timeline.height, guide.height)
         compare(view.x, 36)
@@ -354,6 +354,8 @@ TestCase {
         keyClick(Qt.Key_Escape)
         tryCompare(help, "opened", false)
         const navigation = findChild(toolbar, "guideModeNavigation")
+        compare(navigation.mapToItem(guide, 0, 0).y, 18)
+        compare(guide.width - navigation.mapToItem(guide, navigation.width, 0).x, 18)
         compare(navigation.mode, Viewer.ModeNavigation.Guide)
         verify(findChild(navigation, "guideModeButton").active)
         for (const entry of [

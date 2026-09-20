@@ -291,6 +291,140 @@ fn check_danmaku_layout(
     Ok(())
 }
 
+fn check_screen_navigation(
+    app: &QGuiApplication,
+    engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
+) -> TestResult {
+    let review =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../build/navigation-review");
+    std::fs::create_dir_all(&review)?;
+    let capture = |engine: &mut cxx::UniquePtr<QQmlApplicationEngine>, name: &str| -> TestResult {
+        let image = ffi::grabRoot(engine.pin_mut())?;
+        let default_quality = -1;
+        let png_compression_percent = 60;
+        if !player::ffi::save_screenshot_image(
+            &image,
+            &QString::from(review.join(name).to_string_lossy().as_ref()),
+            &QString::from("png"),
+            default_quality,
+            png_compression_percent,
+        ) {
+            return Err("could not save navigation review image".into());
+        }
+        Ok(())
+    };
+    for (width, height) in [(900, 560), (1440, 900)] {
+        evaluate(
+            engine,
+            &format!(
+                "root.width = {width}; root.height = {height}; root.showProgram = true; root.sidebarPage = ProgramSidebar.Playback; true"
+            ),
+        )?;
+        wait_for(
+            app,
+            engine,
+            "sidebar.open && sidebar.reveal === 1 && surface.width === root.width - sidebar.width",
+        )?;
+        capture(engine, &format!("viewing-{width}.png"))?;
+        evaluate(
+            engine,
+            "modeNavigation.modeRequested(ModeNavigation.Guide); true",
+        )?;
+        wait_for(
+            app,
+            engine,
+            "guideLoader.item !== null && guideLoader.item.width === root.width && !sidebar.visible && !sidebar.enabled",
+        )?;
+        capture(engine, &format!("guide-{width}.png"))?;
+        evaluate(
+            engine,
+            "guideLoader.item.modeRequested(ModeNavigation.Settings); true",
+        )?;
+        wait_for(app, engine, "settings.opened")?;
+        capture(engine, &format!("settings-{width}.png"))?;
+        assert!(evaluate(
+            engine,
+            r#"
+            function find(item, name) {
+                if (item.objectName === name) return item;
+                for (const child of item.children || []) { const result = find(child, name); if (result) return result; }
+                return null;
+            }
+            const guideNavigation = find(guideLoader.item, 'guideModeNavigation');
+            const settingsNavigation = find(settings.contentItem, 'settingsModeNavigation');
+            const windowEdgeMargin = 18;
+            [modeNavigation, guideNavigation, settingsNavigation].every(navigation => {
+                if (!navigation) return false;
+                const corner = navigation.mapToItem(root.contentItem, navigation.width, 0);
+                return corner.x === root.width - windowEdgeMargin && corner.y === windowEdgeMargin
+                    && navigation.width === modeNavigation.width && navigation.height === modeNavigation.height;
+            })
+        "#,
+        )?);
+        // Choosing Guide from settings must reveal the existing guide, not toggle it off.
+        evaluate(engine, "settings.modeRequested(ModeNavigation.Guide); true")?;
+        wait_for(
+            app,
+            engine,
+            "!settings.visible && root.guideVisible && !sidebar.visible && guideLoader.item.width === root.width",
+        )?;
+        evaluate(engine, "guideLoader.item.closeRequested(); true")?;
+        wait_for(
+            app,
+            engine,
+            "!root.guideVisible && root.showProgram && sidebar.open && sidebar.reveal === 1 && surface.width === root.width - sidebar.width",
+        )?;
+        // Direct backend requests and rapid shortcut reversals share the same layout rules.
+        evaluate(engine, "player.guide_open(true); true")?;
+        wait_for(app, engine, "guideLoader.item !== null && !sidebar.visible")?;
+        evaluate(
+            engine,
+            "viewerActions.toggleGuide.trigger(); viewerActions.toggleGuide.trigger(); true",
+        )?;
+        wait_for(
+            app,
+            engine,
+            "guideLoader.item !== null && guideLoader.item.width === root.width && !sidebar.visible",
+        )?;
+        evaluate(engine, "root.requestMode(ModeNavigation.Settings); true")?;
+        wait_for(app, engine, "settings.opened")?;
+        evaluate(engine, "settings.modeRequested(ModeNavigation.Live); true")?;
+        wait_for(
+            app,
+            engine,
+            "!settings.visible && !root.showGuide && root.showProgram && sidebar.visible && sidebar.reveal === 1",
+        )?;
+    }
+    evaluate(engine, "root.requestMode(ModeNavigation.Settings); true")?;
+    wait_for(app, engine, "settings.opened")?;
+    evaluate(
+        engine,
+        "settings.modeRequested(ModeNavigation.Recording); true",
+    )?;
+    let picker =
+        "Array.from(recordingInput.data).find(item => item.objectName === 'recordingPicker')";
+    wait_for(app, engine, &format!("{picker}.visible"))?;
+    evaluate(engine, &format!("{picker}.reject(); true"))?;
+    wait_for(
+        app,
+        engine,
+        &format!("!{picker}.visible && settings.opened && !root.showGuide"),
+    )?;
+    // Settings opened from viewing can also enter the guide for the first time.
+    evaluate(engine, "settings.modeRequested(ModeNavigation.Guide); true")?;
+    wait_for(
+        app,
+        engine,
+        "!settings.visible && root.guideVisible && !sidebar.visible",
+    )?;
+    evaluate(
+        engine,
+        "viewerActions.dismissTopmost.trigger(); root.showProgram = false; true",
+    )?;
+    wait_for(app, engine, "!sidebar.active")?;
+    Ok(())
+}
+
 enum WindowCheck {
     Startup,
     PidChange,
@@ -394,6 +528,7 @@ fn window(
         // the channel browser, whose navigation is checked separately below.
         check_danmaku_layout(app, &mut engine)?;
         check_shortcuts(app, &mut engine)?;
+        check_screen_navigation(app, &mut engine)?;
         // Every way of changing guide visibility must run the same synchronization.
         evaluate(&mut engine, "viewerActions.toggleGuide.trigger(); true")?;
         wait_for(app, &mut engine, "root.guideVisible && root.showGuide")?;

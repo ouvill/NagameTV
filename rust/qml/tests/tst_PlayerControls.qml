@@ -29,7 +29,6 @@ Item {
         }
         ModeNavigation {
             id: navigation
-            anchors { right: parent.right; top: parent.top; margins: 18 }
             targetWindow: host
             mode: backend.recording ? ModeNavigation.Recording : ModeNavigation.Live
             guideEnabled: true

@@ -75,6 +75,11 @@ from builds or other GPU tests when comparing performance. `QT_SCALE_FACTOR=1.5`
 with the same public command covers high-DPI rendering. These synthetic tests do
 not verify a real tuner, broadcast-specific font rendering or physical display latency.
 
+Startup also checks the shared top-right navigation at 900×560 and 1440×900,
+settings-to-guide/live transitions, recording-picker cancellation from settings,
+and guide open/close with the viewing sidebar retained but hidden in the guide.
+Review images for viewing, guide and settings are saved to `build/navigation-review/`.
+
 Local recording coverage in the startup suite drops a generated MPEG-2/AAC TS
 onto the production window, including its first-run setup screen. It also opens
 the recording picker through mode navigation, cancels without changing playback,

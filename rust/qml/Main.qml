@@ -61,6 +61,7 @@ ApplicationWindow {
         enabled: !root.closing
         onStarted: {
             setup.close();
+            settings.close();
             player.guide_open(false);
             root.showChannels = false;
             root.showProgram = false;
@@ -83,6 +84,7 @@ ApplicationWindow {
         overlayVisibility.reveal();
         switch (mode) {
         case ModeNavigation.Live:
+            settings.close();
             player.cancel_recording_open();
             player.guide_open(false);
             if (root.setupRequired) {
@@ -99,7 +101,10 @@ ApplicationWindow {
             viewerActions.openRecording.trigger();
             break;
         case ModeNavigation.Guide:
-            viewerActions.toggleGuide.trigger();
+            if (!player.epg_enabled) break;
+            if (settings.visible) player.guide_open(true);
+            else viewerActions.toggleGuide.trigger();
+            settings.close();
             break;
         case ModeNavigation.Settings:
             settings.open();
@@ -221,7 +226,7 @@ ApplicationWindow {
     }
     Item {
         id: surface
-        width: root.width - (root.showProgram ? root.panelWidth : 0)
+        width: root.width - (sidebar.open ? root.panelWidth : 0)
         height: root.height
         focus: true
         signal activity
@@ -231,7 +236,7 @@ ApplicationWindow {
             id: videoPicture
             color: "#0b0c0b"
             width: parent.width
-            height: root.showProgram ? Math.min(parent.height, width * 9 / 16) : parent.height
+            height: sidebar.open ? Math.min(parent.height, width * 9 / 16) : parent.height
             anchors.verticalCenter: parent.verticalCenter
             GstGLQt6VideoItem {
                 id: video
@@ -418,6 +423,7 @@ ApplicationWindow {
                 root.showStats = visible;
             }
             onConnectionAccepted: root.chooseConnectedChannel()
+            onModeRequested: function(mode) { root.requestMode(mode); }
         }
         FirstRunSetup {
             id: setup
@@ -615,7 +621,8 @@ ApplicationWindow {
     SidePanel {
         id: sidebar
         width: root.panelWidth
-        open: root.showProgram
+        open: root.showProgram && !root.guideVisible
+        visible: active && !root.guideVisible
         shuttingDown: root.closing
         sourceComponent: ProgramSidebar {
             evaluationCommentList: player.evaluation_comment_list
@@ -670,7 +677,6 @@ ApplicationWindow {
     }
     ModeNavigation {
         id: modeNavigation
-        anchors { right: parent.right; top: parent.top; margins: 18 }
         z: 20
         targetWindow: root
         enabled: !root.closing

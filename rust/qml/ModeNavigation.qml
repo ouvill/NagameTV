@@ -8,7 +8,10 @@ Row {
     required property Window targetWindow
     property bool guideEnabled: false
     property url iconDirectory: "qrc:/qt/qml/MinimalViewer/assets/icons/"
+    readonly property real edgeMargin: 18
+    readonly property real headerHeight: height + edgeMargin * 2
     signal modeRequested(int mode)
+    anchors { right: parent.right; top: parent.top; margins: root.edgeMargin }
     spacing: 12
 
     Row {

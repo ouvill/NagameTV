@@ -10,7 +10,7 @@ Popup {
     required property var backend
     required property list<ShortcutBinding> shortcutEntries
     required property CommentSubmitPolicy commentSubmitPolicy
-    property Window targetWindow: null
+    required property Window targetWindow
     property bool statsVisible: false
     property int page: SettingsPanel.Connection
     property real pageReveal: 1
@@ -28,6 +28,7 @@ Popup {
     ]
     signal statsRequested(bool visible)
     signal connectionAccepted
+    signal modeRequested(int mode)
     function connectToServer() { connectionForm.connectToServer(); }
     onPageChanged: {
         pageFlick.contentY = 0;
@@ -644,11 +645,13 @@ Popup {
                 onClicked: root.close()
             }
         }
-        Loader {
-            anchors { right: parent.right; rightMargin: 20; top: parent.top; topMargin: 18 }
-            width: 126; height: 42
-            active: root.targetWindow !== null
-            sourceComponent: WindowButtons { targetWindow: root.targetWindow; iconDirectory: root.iconDirectory }
+        ModeNavigation {
+            objectName: "settingsModeNavigation"
+            targetWindow: root.targetWindow
+            iconDirectory: root.iconDirectory
+            mode: ModeNavigation.Settings
+            guideEnabled: root.backend.epg_enabled
+            onModeRequested: function(mode) { root.modeRequested(mode); }
         }
         Loader {
             anchors.fill: parent
