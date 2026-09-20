@@ -8,10 +8,14 @@ fi
 # Catch stale sessions and changed connection variables before opening a window.
 # The suites still perform their own display/GPU checks inside this session.
 if [[ ! -f $NAGAMETV_GUI_SESSION_DIR/display ]] ||
+   [[ ! -f $NAGAMETV_GUI_SESSION_DIR/pulse-server ]] ||
+   [[ ! -f $NAGAMETV_GUI_SESSION_DIR/pulse-sink ]] ||
    [[ ${XDG_RUNTIME_DIR:-} != "$NAGAMETV_GUI_SESSION_DIR" ]] ||
    [[ ${DISPLAY:-} != "$(cat "$NAGAMETV_GUI_SESSION_DIR/display")" ]] ||
    [[ ${WAYLAND_DISPLAY:-} != nagametv-wayland ]] ||
-   [[ ${PULSE_SERVER:-} != "unix:$NAGAMETV_GUI_SESSION_DIR/pulse.sock" ]] ||
+   [[ ${PULSE_SERVER:-} != "$(cat "$NAGAMETV_GUI_SESSION_DIR/pulse-server")" ]] ||
+   [[ ${PULSE_SINK:-} != "$(cat "$NAGAMETV_GUI_SESSION_DIR/pulse-sink")" ]] ||
+   [[ ${PULSE_SOURCE:-} != "$PULSE_SINK.monitor" ]] ||
    [[ ${DBUS_SESSION_BUS_ADDRESS:-} != "unix:path=$NAGAMETV_GUI_SESSION_DIR/bus" ]]; then
     echo "Invalid or closed isolated GUI session; rerun the public test script." >&2
     exit 1

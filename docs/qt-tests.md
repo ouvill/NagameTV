@@ -13,17 +13,20 @@ normal application builds. Test QObjects are generated from
 
 GUI scripts automatically start an [isolated test session](gui-test-environment.md):
 GPU-rendered Weston headless, private rootful Xwayland/Openbox, a private D-Bus session and
-clocked virtual PulseAudio output. Every session validates the display, GPU and
+per-run clocked virtual output on an already running PipeWire Pulse server.
+The environment owns the audio server; tests only own their virtual outputs.
+Workshop starts the audio services in its SDK hook; native Linux can use the
+existing local PipeWire server. Every session validates the display, GPU and
 audio loopback before running its command, including suites that do not use audio.
-Host desktop/audio connections and physical audio devices are not required.
+Host desktop connections and physical audio devices are not required.
 
 | Command | Preserved coverage | Hardware |
 | --- | --- | --- |
 | `bash scripts/test-localization.sh` | Locale resolution, existing QML retranslation, date stability, dynamic snapshots, literal diagnostic arguments, 100 repeated language switches and translator ownership; a separate process removes the real catalog resource and checks failure cleanup | None: QCoreApplication and QtObject |
 | `bash scripts/test-connection.sh` | Real Player and local HTTP fixtures: pending/failed saves, empty catalogs, save failures, shutdown, coherent stream properties during Qt signals, retry allowance and guide visibility/day notification order | None: QCoreApplication and HTTP |
-| `bash scripts/test-startup.sh` | Production Main.qml in separate processes: first run, two saved startups, channel restoration, guide open/close, native playback failure and clean shutdown; QML warnings fail the test | Validated private X11 display, GPU and virtual PulseAudio output |
+| `bash scripts/test-startup.sh` | Production Main.qml in separate processes: first run, two saved startups, channel restoration, guide open/close, native playback failure and clean shutdown; QML warnings fail the test | Validated private X11 display, GPU and virtual PipeWire output |
 | `bash scripts/test-screenshot.sh` | Real Player, parallel PNG/JPG/WebP saving, immutable images/settings, accepted saves surviving UI unavailability, Unicode/escaped folders and failure recovery | Validated X11 display and GPU |
-| `bash scripts/test-startup.sh screenshot-playback` | Production Main.qml, native 1080p numbered frames, captions and comments, visibility, resize/fullscreen, pixel aspect ratio, burst capture, seek/stop and frame interval measurements | Validated private X11 display, GPU and virtual PulseAudio output |
+| `bash scripts/test-startup.sh screenshot-playback` | Production Main.qml, native 1080p numbered frames, captions and comments, visibility, resize/fullscreen, pixel aspect ratio, burst capture, seek/stop and frame interval measurements | Validated private X11 display, GPU and virtual PipeWire output |
 | `bash scripts/test-video-item.sh` | Video-item attachment, terminal shutdown, failed native transitions, and retained subtitle subscriptions until a successful stop | Validated X11 display and GPU; native graph stays in NULL |
 | `bash scripts/test-subtitle-outline.sh` | Six pixel-exact QPainterPath/SVG comparisons: full height, small ink/cubic curves, midline, overhang/descender, separate contours, empty path | None: QCoreApplication and in-memory QImage rasterization |
 | `bash scripts/test-pointer-activity.sh` | Duplicate installation, repeated positions, disabled items, window changes, observer deletion and event delivery after item destruction | Validated X11 display and GPU |

@@ -2,9 +2,39 @@
 set -eu
 
 # Remove only the export installed by the previous version of this SDK.
-# Each test session now supplies its own private PulseAudio endpoint.
+# Clients use the container-local pipewire-pulse Unix socket.
 for profile_path in "$HOME/.profile" "$HOME/.bashrc"; do
   if [ -f "$profile_path" ]; then
     sed -i '\|^export PULSE_SERVER=tcp:127\.0\.0\.1:4713$|d' "$profile_path"
   fi
 done
+
+# GPU driver libraries arrive with interface connections, after setup-base.
+# Refresh their SONAME links/cache here so Xwayland can load NVIDIA EGL after
+# a Workshop refresh, even when the mounted files only have versioned names.
+sudo -n ldconfig
+
+# Workshop supplies virtual audio only. Do not probe physical audio, MIDI,
+# Bluetooth or camera devices when the environment starts its session manager.
+# This SDK configuration is confined to the Workshop user, never a Fedora host.
+wireplumber_config_dir="${XDG_CONFIG_HOME:-$HOME/.config}/wireplumber/wireplumber.conf.d"
+mkdir -p "$wireplumber_config_dir"
+cat > "$wireplumber_config_dir/90-nagametv-virtual-only.conf" <<'EOF'
+wireplumber.profiles = {
+  main = {
+    monitor.alsa = disabled
+    monitor.alsa-midi = disabled
+    monitor.bluez = disabled
+    monitor.bluez-midi = disabled
+    monitor.v4l2 = disabled
+    monitor.libcamera = disabled
+  }
+}
+EOF
+
+systemctl --user daemon-reload
+systemctl --user enable --now pipewire.socket pipewire-pulse.socket wireplumber.service
+# Re-read our configuration if setup-project is reapplied to a running SDK.
+systemctl --user restart wireplumber.service
+systemctl --user start pipewire.service pipewire-pulse.service
+systemctl --user is-active --quiet pipewire.service pipewire-pulse.service wireplumber.service

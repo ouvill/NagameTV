@@ -409,6 +409,14 @@ fn window(
             &mut engine,
             "JSON.parse(guideLoader.item.programsJson).some(column => column.programs.some(program => program.id === 101))",
         )?;
+        // A user can select this card only after channel visibility arrives.
+        // Its initial publication clears selectedProgram; selecting earlier
+        // races that update and can close the details popup during this wait.
+        wait_for(
+            app,
+            &mut engine,
+            "guideLoader.item.visibilityJson !== 'null' && guideLoader.item.visibleRows.some(row => row.index === player.selected)",
+        )?;
         evaluate(
             &mut engine,
             r#"
@@ -424,7 +432,7 @@ fn window(
             &mut engine,
             r#"
             const loader = Array.from(guideLoader.item.data).find(item => item.objectName === 'scheduledDetailsLoader');
-            loader && loader.item && loader.item.opened
+            Boolean(loader && loader.item && loader.item.opened)
         "#,
         )?;
         assert!(evaluate(

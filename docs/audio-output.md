@@ -38,7 +38,9 @@ playbin3のaudio-sinkを未設定に保つ。
 Automaticは要素を生成しないことを確認した。これは自動検出で選ばれる実デバイスの
 検証ではない。実音声試験では利用可能な音声経路を事前に検出・検証し、
 利用できない場合は停止する。GUI試験では[専用テスト環境](gui-test-environment.md)の
-仮想PulseAudio出力へ`pulsesink`で接続する。CPU音声試験では`fakesink`を明示する。
+起動済みPipeWire上のテスト専用仮想出力へ`pulsesink`で接続する。
+PulseAudio互換プロトコルを利用するが、PulseAudioサーバー本体には依存しない。
+CPU音声試験では`fakesink`を明示する。
 どちらも実スピーカーの動作や聴取品質の成功判定には使わない。
 
 2026-09-07: 対象テスト1件、全ターゲットClippy（警告をエラー扱い）、

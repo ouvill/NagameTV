@@ -1,11 +1,11 @@
 name: gui
-title: GPU access for isolated GUI tests
+title: GPU and PipeWire environment for GUI tests
 base: ubuntu@26.04
-version: "0.2"
-summary: GPU access without the host desktop or audio session
+version: "0.4"
+summary: GPU access and container-local PipeWire without host desktop sharing
 description: |
-  Exposes GPU devices to the workshop. GUI tests start their own display and
-  virtual audio servers inside the workshop.
+  Exposes GPU devices and starts container-local PipeWire services. GUI tests
+  start their own display and create per-run virtual outputs on PipeWire.
 license: MIT
 
 plugs:
