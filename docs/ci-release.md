@@ -40,11 +40,17 @@ git submodule update --init --recursive
 docker build --target ci --tag nagametv-ci:local packaging/appimage
 docker run --rm --user "$(id -u):$(id -g)" \
   --mount "type=bind,src=$PWD,dst=/project" \
+  --mount type=bind,src=/etc/passwd,dst=/etc/passwd,readonly \
+  --mount type=bind,src=/etc/group,dst=/etc/group,readonly \
   --env CARGO_HOME=/project/build/ci/cargo-home \
   --env CARGO_TARGET_DIR=/project/build/ci/cargo \
   --env CARGO_BUILD_JOBS=2 \
   nagametv-ci:local bash scripts/ci.sh
 ```
+
+D-Busが数値UID/GIDを解決できるように、ユーザー・グループ情報を読み取り専用で渡す。
+画面や音声のソケットは渡さない。ユーザー情報がない場合はコンパイル前に停止する。
+Flatpakのホスト側AppStream生成にはSVGローダーも必要で、CIでは`librsvg2-common`を明示的に導入する。
 
 依存関係を導入済みのネイティブ開発環境では`bash scripts/ci.sh`でも実行できる。
 ネイティブ実行の既定の出力先は`build/ci-native/cargo`。

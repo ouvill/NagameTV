@@ -29,13 +29,14 @@ flatpak uninstall --user io.github.ouvill.nagametv
 
 ## パッケージを作る
 
-必要なツールはFlatpak、flatpak-builder、elfutils、Python 3.11以降。
+必要なツールはFlatpak、flatpak-builder、elfutils、Python 3.11以降と、
+ホスト側AppStream生成用のGdkPixbuf SVGローダー（Ubuntuでは`librsvg2-common`）。
 Rust、Qt、libclangなどのコンパイラー・SDKはFlatpak側で用意する。
 
 Ubuntuのビルド用環境なら:
 
 ```sh
-sudo apt install flatpak flatpak-builder elfutils python3
+sudo apt install flatpak flatpak-builder elfutils python3 librsvg2-common
 flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
 ./scripts/build-flatpak.sh
 ```

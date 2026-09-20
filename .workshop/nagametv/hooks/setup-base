@@ -38,6 +38,7 @@ apt-get install --yes --no-install-recommends \
   libclang-dev \
   libmpv-dev \
   libqt6svg6 \
+  librsvg2-common \
   lld \
   mesa-utils \
   imagemagick \

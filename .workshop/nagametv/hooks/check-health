@@ -17,6 +17,12 @@ for command in Xvfb Xwayland cargo cmake curl dbus-daemon dbus-run-session dbus-
   fi
 done
 
+# Flatpak's host-side AppStream composer needs GdkPixbuf's SVG loader.
+svg_loader=$(dpkg-query --listfiles librsvg2-common 2>/dev/null | grep '/libpixbufloader_svg\.so$' || true)
+if [[ -z $svg_loader || ! -f $svg_loader ]]; then
+  missing+=("GdkPixbuf:SVG (librsvg2-common)")
+fi
+
 if ! fc-match :lang=ja | grep -qi "Noto"; then
   missing+=("font:Noto-CJK")
 fi

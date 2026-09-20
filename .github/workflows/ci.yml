@@ -82,8 +82,11 @@ jobs:
           restore-keys: sources-${{ runner.os }}-x86_64-
       - name: Run hardware-free tests
         run: |
+          # D-Bus needs NSS entries for the runner's UID/GID inside Docker.
           docker run --rm --user "$(id -u):$(id -g)" \
             --mount "type=bind,src=$PWD,dst=/project" \
+            --mount type=bind,src=/etc/passwd,dst=/etc/passwd,readonly \
+            --mount type=bind,src=/etc/group,dst=/etc/group,readonly \
             --env CARGO_HOME=/project/build/ci/cargo-home \
             --env CARGO_TARGET_DIR=/project/build/ci/cargo \
             --env CARGO_BUILD_JOBS=2 \
@@ -183,7 +186,7 @@ jobs:
       - name: Install Flatpak build tools
         run: |
           sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends flatpak flatpak-builder elfutils dbus-daemon
+          sudo apt-get install --yes --no-install-recommends flatpak flatpak-builder elfutils dbus-daemon librsvg2-common
           flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
