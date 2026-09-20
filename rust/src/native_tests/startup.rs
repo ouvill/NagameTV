@@ -342,6 +342,23 @@ fn check_screen_navigation(
         )?;
         wait_for(app, engine, "settings.opened")?;
         capture(engine, &format!("settings-{width}.png"))?;
+        evaluate(engine, "settings.page = SettingsPanel.Connection; true")?;
+        wait_for(app, engine, "settings.pageReveal === 1")?;
+        assert!(evaluate(
+            engine,
+            r#"
+            function find(item, name) {
+                if (item.objectName === name) return item;
+                for (const child of item.children || []) { const result = find(child, name); if (result) return result; }
+                return null;
+            }
+            const flick = find(settings.contentItem, 'settingsFlickable');
+            flick.contentY = Math.max(0, flick.contentHeight - flick.height);
+            const field = find(settings.contentItem, 'liveBufferMilliseconds');
+            field.visible && field.value === JSON.parse(player.live_buffer_options).milliseconds
+        "#,
+        )?);
+        capture(engine, &format!("settings-live-buffer-{width}.png"))?;
         assert!(evaluate(
             engine,
             r#"
@@ -495,6 +512,13 @@ fn window(
     assert!(evaluate(
         &mut engine,
         &format!("player.autoplay === {}", preferences.autoplay)
+    )?);
+    assert!(evaluate(
+        &mut engine,
+        &format!(
+            "JSON.parse(player.live_buffer_options).milliseconds === {}",
+            preferences.live_buffer_ms.milliseconds()
+        )
     )?);
     if !preferences.server.is_empty() {
         wait_for(
@@ -1139,6 +1163,10 @@ fn checks() -> TestResult {
     let mut preferences =
         settings::Loaded::open(path.clone())?.activate(Some(server.url.clone()), Some("2".into()));
     preferences.change(settings::Change::Comments(false));
+    const SAVED_LIVE_BUFFER_MS: i32 = 150;
+    preferences.change(settings::Change::LiveBuffer(
+        settings::LiveBuffer::checked(SAVED_LIVE_BUFFER_MS).ok_or("live buffer")?,
+    ));
     preferences.flush()?;
     for (autoplay, launch_override) in [
         (false, None),
@@ -1156,6 +1184,10 @@ fn checks() -> TestResult {
         assert_eq!(saved.preferences().server, server.url);
         assert_eq!(saved.preferences().service_id, "2");
         assert_eq!(saved.preferences().autoplay, autoplay);
+        assert_eq!(
+            saved.preferences().live_buffer_ms.milliseconds(),
+            SAVED_LIVE_BUFFER_MS
+        );
     }
     println!(
         "Main.qml checks passed: first run, saved startup, autoplay and environment overrides, guide/channel visibility, clean shutdown"

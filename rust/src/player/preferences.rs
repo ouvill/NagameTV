@@ -6,6 +6,36 @@ use cxx_qt_lib::QString;
 use std::pin::Pin;
 
 impl ffi::Player {
+    pub fn live_buffer_options(&self) -> QString {
+        use crate::settings::LiveBuffer;
+        QString::from(
+            serde_json::json!({
+                "milliseconds": self.rust().preferences.preferences().live_buffer_ms.milliseconds(),
+                "min_ms": LiveBuffer::MIN_MS,
+                "max_ms": LiveBuffer::MAX_MS,
+                "default_ms": LiveBuffer::DEFAULT_MS,
+            })
+            .to_string(),
+        )
+    }
+
+    pub fn configure_live_buffer(mut self: Pin<&mut Self>, milliseconds: i32) -> bool {
+        let Some(buffer) = crate::settings::LiveBuffer::checked(milliseconds) else {
+            return false;
+        };
+        if buffer != self.rust().preferences.preferences().live_buffer_ms {
+            {
+                let mut this = self.as_mut().rust_mut();
+                this.media.configure_live_buffer(buffer);
+                this.preferences
+                    .change(crate::settings::Change::LiveBuffer(buffer));
+            }
+            self.as_mut().live_buffer_options_changed();
+        }
+        self.save_settings();
+        true
+    }
+
     pub fn timeshift_storage(&self) -> QString {
         use crate::playback::input::Retention;
         QString::from(match self.rust().preferences.preferences().timeshift {

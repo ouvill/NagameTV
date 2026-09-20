@@ -25,6 +25,13 @@ Item {
                 property bool subtitle_display: true
                 property bool epg_enabled: true
                 property bool autoplay: false
+                property string live_buffer_options: JSON.stringify({milliseconds:250, min_ms:1, max_ms:1000, default_ms:250})
+                function configure_live_buffer(value) {
+                    const options = JSON.parse(live_buffer_options);
+                    options.milliseconds = value;
+                    live_buffer_options = JSON.stringify(options);
+                    return true;
+                }
                 property bool remote_enabled: false
                 property string remote_address: "0.0.0.0"
                 property int remote_port: 50051

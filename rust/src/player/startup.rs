@@ -81,6 +81,7 @@ impl Default for PlayerRust {
             },
             Err(_) => None,
         };
+        let media = playback::Session::new(playback, preferences.preferences().live_buffer_ms);
         let mut player = Self {
             language: QString::from(preferences.preferences().language.code()),
             ui_language: super::ffi::current_ui_language(),
@@ -168,7 +169,7 @@ impl Default for PlayerRust {
             channel_refresh: Default::default(),
             network: network.ok(),
             remote: crate::remote::Control::load(plan.locked),
-            media: playback::Session::new(playback),
+            media,
             entries: vec![],
         };
         player.start_remote_if_requested();

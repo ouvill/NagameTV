@@ -3,6 +3,8 @@ mod comment_cache;
 mod comment_style;
 pub use comment_cache::CommentCacheLimit;
 mod language;
+mod live_buffer;
+pub use live_buffer::LiveBuffer;
 mod model;
 mod screenshot_directory;
 mod screenshot_format;
@@ -138,6 +140,7 @@ pub enum Change {
     Language(Language),
     Service(String),
     Autoplay(bool),
+    LiveBuffer(LiveBuffer),
     Timeshift(crate::playback::input::Retention),
     TimeshiftLimits(crate::playback::input::Limits),
     ScreenshotDirectory(ScreenshotDirectory),
@@ -206,6 +209,7 @@ impl Session {
             Change::Language(language) => preferences.language = language,
             Change::Service(service) => preferences.service_id = service,
             Change::Autoplay(enabled) => preferences.autoplay = enabled,
+            Change::LiveBuffer(value) => preferences.live_buffer_ms = value,
             Change::Timeshift(retention) => preferences.timeshift = retention,
             Change::TimeshiftLimits(limits) => preferences.timeshift_limits = limits,
             Change::ScreenshotDirectory(directory) => preferences.screenshot_directory = directory,

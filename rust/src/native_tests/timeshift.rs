@@ -25,9 +25,8 @@ const LIVE_EDGE_TOLERANCE: Duration = Duration::from_millis(2500);
 // Includes the fixture's 250 ms deliveries and the UI's sampled playhead. This
 // catches startup lag that a subsequent manual return-to-live could still remove.
 const STARTUP_LIVE_EDGE_TOLERANCE: Duration = Duration::from_millis(750);
-// The UI's receive position can be one 250 ms fixture delivery behind. The
-// request itself must not add the old fixed one-second delay to live playback.
-const LIVE_TARGET_TOLERANCE: Duration = SEND_INTERVAL;
+const CUSTOM_LIVE_BUFFER_MS: i32 = 150;
+const UPDATED_LIVE_BUFFER_MS: i32 = 100;
 const MEMORY_MIB: i32 = 16;
 const FILESYSTEM_MIB: i32 = 64;
 const RETENTION_MINUTES: i32 = 1;
@@ -192,6 +191,15 @@ pub(super) fn run(
     wait_for(app, engine, "settings.opened")?;
     evaluate(engine, "settings.close(); true")?;
     for backend in ["memory", "filesystem"] {
+        let buffer_ms = if backend == "memory" {
+            CUSTOM_LIVE_BUFFER_MS
+        } else {
+            crate::settings::LiveBuffer::DEFAULT_MS
+        };
+        assert!(evaluate(
+            engine,
+            &format!("player.configure_live_buffer({buffer_ms})")
+        )?);
         start_near_live(
             app,
             engine,
@@ -226,6 +234,16 @@ pub(super) fn run(
             engine,
             &format!("{OBSERVER}.failure.length === 0")
         )?);
+        if backend == "memory" {
+            // Editing the reserve must leave this stream and its playhead alone.
+            // The following explicit return-to-live must use the new value.
+            assert!(evaluate(
+                engine,
+                &format!(
+                    "(function() {{ const count = {OBSERVER}.seekRequests; const session = JSON.parse(player.live_timeline).session; return player.configure_live_buffer({UPDATED_LIVE_BUFFER_MS}) && !player.seeking && player.playing && {OBSERVER}.seekRequests === count && JSON.parse(player.live_timeline).session === session; }})()"
+                )
+            )?);
+        }
         return_to_live(app, engine, backend, "already playing")?;
         assert!(evaluate(
             engine,
@@ -596,39 +614,54 @@ fn start_near_live(
     .ok_or("seek request count")?;
     let connections = server.streams.load(Ordering::Acquire);
     assert!(evaluate(engine, start)?);
-    wait_for(
+    let headroom = live_buffer_ms(engine)?;
+    let started = wait_for(
         app,
         engine,
         &format!(
-            "{OBSERVER}.seekRequests > {previous} && player.playing && !player.seeking && !player.paused"
+            "player.playing && !player.seeking && !player.paused && player.position_ms > {} && JSON.parse(player.video_stats()).rendered > 0",
+            PAUSE_RECEIVE_GROWTH.as_millis()
         ),
-    )?;
+    );
     let startup_state = super::bridge::ffi::evaluate_root(
         engine.pin_mut(),
         &cxx_qt_lib::QString::from(format!(
-            "JSON.stringify({{requests: {OBSERVER}.seekRequests, previous: {previous}, target: {OBSERVER}.lastSeekTarget, edge: {OBSERVER}.lastSeekEdge, requestedSession: {OBSERVER}.lastSeekSession, current: JSON.parse(player.live_timeline), error: player.playback_error}})"
+            "JSON.stringify({{requests: {OBSERVER}.seekRequests, previous: {previous}, target: {OBSERVER}.lastSeekTarget, edge: {OBSERVER}.lastSeekEdge, requestedSession: {OBSERVER}.lastSeekSession, current: JSON.parse(player.live_timeline), playing: player.playing, seeking: player.seeking, paused: player.paused, position: player.position_ms, video: JSON.parse(player.video_stats()), error: player.playback_error}})"
         )),
     )?;
-    // Reception continues while the native flush runs. Bracket the target by
-    // snapshots before/after its notification instead of treating the later
-    // receive edge as the instant at which the request was made.
+    if let Err(error) = started {
+        return Err(format!("{context}: {error}: {startup_state:?}").into());
+    }
+    // A fast startup already inside the live reserve needs no forward seek.
+    // Wait for advancing playback above so the first-render decision is over.
+    // If alignment was needed, bracket its target by the receive snapshots
+    // before/after notification; reception continues during a native flush.
+    let requests = super::bridge::ffi::evaluate_root(
+        engine.pin_mut(),
+        &cxx_qt_lib::QString::from(format!("{OBSERVER}.seekRequests")),
+    )?
+    .value::<i32>()
+    .ok_or("seek request count")?;
+    assert!(
+        (previous..=previous + 1).contains(&requests),
+        "{startup_state:?}"
+    );
     assert!(
         evaluate(
             engine,
             &format!(
-                "{OBSERVER}.seekRequests === {} && {OBSERVER}.lastSeekTarget + {} >= {OBSERVER}.lastSeekPreviousEdge && {OBSERVER}.lastSeekTarget <= {OBSERVER}.lastSeekEdge && {OBSERVER}.lastSeekSession === JSON.parse(player.live_timeline).session",
-                previous + 1,
-                gstreamer::ClockTime::MSECOND.mseconds()
+                "{OBSERVER}.seekRequests === {previous} || ({OBSERVER}.lastSeekTarget + {headroom} >= {OBSERVER}.lastSeekPreviousEdge && {OBSERVER}.lastSeekTarget + {headroom} <= {OBSERVER}.lastSeekEdge && {OBSERVER}.lastSeekSession === JSON.parse(player.live_timeline).session)",
+                headroom = headroom
             ),
         )?,
-        "{context}: startup did not target this source's receive edge exactly once: {startup_state:?}"
+        "{context}: startup did not target this source's live reserve: {startup_state:?}"
     );
     observe_playback(
         app,
         engine,
         &format!(
             "{OBSERVER}.seekRequests === {} && JSON.parse(player.live_timeline).live.position - player.position_ms < {}",
-            previous + 1,
+            requests,
             STARTUP_LIVE_EDGE_TOLERANCE.as_millis()
         ),
     )?;
@@ -646,7 +679,8 @@ fn start_near_live(
     .value::<f64>()
     .ok_or("startup live delay")?;
     eprintln!(
-        "Live startup {context}: one alignment, sustained receive-to-playhead gap {gap:.0} ms"
+        "Live startup {context}: {} alignment(s), sustained receive-to-playhead gap {gap:.0} ms",
+        requests - previous
     );
     Ok(())
 }
@@ -657,8 +691,11 @@ fn return_to_live(
     backend: &str,
     context: &str,
 ) -> TestResult {
+    let headroom = live_buffer_ms(engine)?;
+    // The sampled receive edge can be one fixture delivery behind.
+    let target_tolerance = headroom + SEND_INTERVAL.as_millis() as i32;
     // No event processing between the pre-click snapshot and requested target.
-    // Both ordinary playback and a paused rewind must resume at the receive edge.
+    // Ordinary playback and a paused rewind use the same bounded live reserve.
     assert!(evaluate(
         engine,
         &format!("{OBSERVER}.saved = JSON.parse(player.live_timeline); player.return_to_live()"),
@@ -667,11 +704,11 @@ fn return_to_live(
         evaluate(
             engine,
             &format!(
-                "(function() {{ const current = JSON.parse(player.live_timeline); return current.seekTarget !== null && current.seekTarget >= {OBSERVER}.saved.live.position - {} && current.seekTarget >= {OBSERVER}.saved.viewing.position; }})()",
-                LIVE_TARGET_TOLERANCE.as_millis()
+                "(function() {{ const current = JSON.parse(player.live_timeline); return current.seekTarget !== null && current.seekTarget >= {OBSERVER}.saved.live.position - {} && current.seekTarget <= current.live.position && current.seekTarget >= {OBSERVER}.saved.viewing.position - {}; }})()",
+                target_tolerance, headroom
             ),
         )?,
-        "{backend}: live return from {context} requested an older position"
+        "{backend}: live return from {context} exceeded the delivery reserve"
     );
     let before = super::bridge::ffi::evaluate_root(
         engine.pin_mut(),
@@ -706,6 +743,15 @@ fn return_to_live(
         "Timeshift {backend}: return from {context}, receive-to-playhead gap {before:.0} -> {delay:.0} ms"
     );
     Ok(())
+}
+
+fn live_buffer_ms(engine: &mut cxx::UniquePtr<QQmlApplicationEngine>) -> TestResult<i32> {
+    super::bridge::ffi::evaluate_root(
+        engine.pin_mut(),
+        &cxx_qt_lib::QString::from("JSON.parse(player.live_buffer_options).milliseconds"),
+    )?
+    .value::<i32>()
+    .ok_or_else(|| "live buffer setting".into())
 }
 
 fn observe_playback(

@@ -1,6 +1,7 @@
 //! Time-based transport for recordings and retained live streams. A prepared
 //! operation borrows its controller and pipeline with a validated TIME range:
 //! a seeking query for user transport, or the active source's receive window.
+use crate::settings::LiveBuffer;
 use gstreamer::{self as gst, prelude::*};
 use std::{
     sync::{Arc, Mutex},
@@ -10,6 +11,11 @@ use std::{
 const POSITION_SAMPLE_INTERVAL: Duration = Duration::from_millis(200);
 const SEEK_TIMEOUT: Duration = Duration::from_secs(10);
 const RECOVERY_HEADROOM: gst::ClockTime = gst::ClockTime::from_seconds(2);
+// Decode preroll supplies reference frames before the seek target, not reserve
+// data after it. Keep a small receive-to-playhead margin for live delivery jitter.
+fn live_headroom(buffer: LiveBuffer) -> gst::ClockTime {
+    gst::ClockTime::from_mseconds(buffer.milliseconds() as u64)
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Notice {
@@ -39,7 +45,7 @@ pub enum Resume {
 
 pub(super) enum StartPosition {
     Beginning,
-    LiveEdge,
+    LiveEdge(LiveBuffer),
 }
 
 enum Startup {
@@ -83,9 +89,9 @@ impl Range {
     pub fn end(self) -> gst::ClockTime {
         self.end
     }
-    fn live_target(self) -> gst::ClockTime {
+    fn live_target(self, buffer: LiveBuffer) -> gst::ClockTime {
         self.end
-            .saturating_sub(gst::ClockTime::MSECOND)
+            .saturating_sub(live_headroom(buffer))
             .max(self.start)
     }
     fn target(self, milliseconds: f64) -> Result<gst::ClockTime, Error> {
@@ -145,6 +151,7 @@ enum State {
 pub(super) struct Controller {
     state: State,
     startup: Startup,
+    live_buffer: LiveBuffer,
     sink: gst::glib::WeakRef<gst::Element>,
     snapshot: Snapshot,
     output: Arc<Mutex<Output>>,
@@ -203,7 +210,11 @@ impl Controller {
             state: State::Playing,
             startup: match start {
                 StartPosition::Beginning => Startup::Complete,
-                StartPosition::LiveEdge => Startup::AwaitingLiveOutput,
+                StartPosition::LiveEdge(_) => Startup::AwaitingLiveOutput,
+            },
+            live_buffer: match start {
+                StartPosition::Beginning => LiveBuffer::default(),
+                StartPosition::LiveEdge(buffer) => buffer,
             },
             sink: sink.downgrade(),
             snapshot: Snapshot::default(),
@@ -222,6 +233,11 @@ impl Controller {
             State::Seeking(seek) => Phase::Seeking(seek.resume),
             State::Ended => Phase::Ended,
         }
+    }
+
+    /// Update only future live targets; never seek or replace a pending target.
+    pub fn configure_live_buffer(&mut self, buffer: LiveBuffer) {
+        self.live_buffer = buffer;
     }
 
     pub fn take_notice(&mut self) -> Option<Notice> {
@@ -305,7 +321,9 @@ impl Controller {
             self.snapshot.duration = history.map(|range| range.end);
             let position = self.seek_target().or(self.snapshot.position);
             let correction = match change {
-                RetentionChange::ReturnToLive => Some((range.live_target(), Resume::Playing)),
+                RetentionChange::ReturnToLive => {
+                    Some((range.live_target(self.live_buffer), Resume::Playing))
+                }
                 RetentionChange::ClampPosition => {
                     if expired || position.is_some_and(|position| position < range.start) {
                         let resume = match self.phase() {
@@ -403,7 +421,7 @@ impl Controller {
         // Consume the startup adjustment even if native seeking is rejected.
         // Never keep jumping to live during ordinary viewing or user transport.
         self.startup = Startup::Complete;
-        let target = range.live_target();
+        let target = range.live_target(self.live_buffer);
         if target <= position {
             return Ok(false);
         }
@@ -583,9 +601,9 @@ impl Controller {
 impl Ready<'_> {
     pub fn return_to_live(self) -> Result<(), Error> {
         // Use the freshly queried receive edge, not the UI's sampled duration.
-        // Reader::prepare already supplies decode preroll before this target;
-        // subtracting an additional second here leaves playback behind live.
-        let target = self.range.live_target();
+        // Keep the same bounded delivery reserve as initial live alignment;
+        // Reader::prepare supplies the separate decode preroll before it.
+        let target = self.range.live_target(self.controller.live_buffer);
         let result = match &mut self.controller.state {
             State::Seeking(seek) => {
                 self.pipeline.set_state(gst::State::Playing)?;
@@ -651,6 +669,33 @@ mod startup_tests;
 mod tests {
     use super::*;
     #[test]
+    fn live_target_leaves_delivery_headroom_within_the_available_window() {
+        let start = gst::ClockTime::from_seconds(10);
+        let end = gst::ClockTime::from_seconds(20);
+        let range = Range::new(start, end).unwrap();
+        assert_eq!(
+            range.live_target(LiveBuffer::default()),
+            end - live_headroom(LiveBuffer::default())
+        );
+        // A new or recently reset input may not yet have a full reserve.
+        let short = Range::new(start, start + live_headroom(LiveBuffer::default()) / 2).unwrap();
+        assert_eq!(short.live_target(LiveBuffer::default()), start);
+        let initial = Range::new(
+            gst::ClockTime::ZERO,
+            live_headroom(LiveBuffer::default()) / 2,
+        )
+        .unwrap();
+        assert_eq!(
+            initial.live_target(LiveBuffer::default()),
+            gst::ClockTime::ZERO
+        );
+        // Explicit history/file seeks retain their original endpoint semantics.
+        assert_eq!(
+            range.target(end.mseconds() as f64).unwrap(),
+            end - gst::ClockTime::MSECOND
+        );
+    }
+    #[test]
     fn rejected_live_seek_keeps_the_paused_frame_and_does_not_report_recovery() {
         gst::init().unwrap();
         let sink = gst::ElementFactory::make("fakesink").build().unwrap();
@@ -707,6 +752,13 @@ mod tests {
             deadline: Instant::now() + SEEK_TIMEOUT,
         });
         let latest_edge = gst::ClockTime::from_seconds(20);
+        let buffer = LiveBuffer::checked(100).ok_or("live buffer")?;
+        controller.configure_live_buffer(buffer);
+        assert_eq!(
+            controller.seek_target(),
+            Some(gst::ClockTime::from_seconds(2))
+        );
+        assert_eq!(controller.phase(), Phase::Seeking(Resume::Paused));
         let range = Range::new(gst::ClockTime::ZERO, latest_edge).ok_or("range")?;
         let ready = Ready {
             controller: &mut controller,
@@ -724,7 +776,7 @@ mod tests {
         assert_eq!(seek.resume, Resume::Playing);
         assert_eq!(
             controller.seek_target(),
-            Some(latest_edge - gst::ClockTime::MSECOND)
+            Some(latest_edge - live_headroom(buffer))
         );
         assert!(controller.take_notice().is_none());
         Ok(())

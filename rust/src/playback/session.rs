@@ -7,6 +7,7 @@ pub struct Session {
     playback: Option<Playback>,
     subtitles: Option<subtitles::Session>,
     input: Input,
+    live_buffer: crate::settings::LiveBuffer,
 }
 
 enum Input {
@@ -57,11 +58,23 @@ pub enum SubtitleStart {
 }
 
 impl Session {
-    pub fn new(playback: Option<Playback>) -> Self {
+    pub fn new(playback: Option<Playback>, live_buffer: crate::settings::LiveBuffer) -> Self {
         Self {
             playback,
             subtitles: None,
             input: Input::Idle,
+            live_buffer,
+        }
+    }
+    pub fn configure_live_buffer(&mut self, buffer: crate::settings::LiveBuffer) {
+        self.live_buffer = buffer;
+        if let Input::Active {
+            controller,
+            projection: Projection::Live(_),
+            ..
+        } = &mut self.input
+        {
+            controller.configure_live_buffer(buffer);
         }
     }
     // Native stream-control methods are private to the playback module. This
@@ -360,7 +373,7 @@ impl Stopped<'_> {
             )?,
             controller: Box::new(super::timeline::Controller::new(
                 &playback.sink,
-                super::timeline::StartPosition::LiveEdge,
+                super::timeline::StartPosition::LiveEdge(self.0.live_buffer),
             )?),
             projection: Projection::Live(Box::new(super::live_timeline::Presenter::new())),
         };
@@ -462,6 +475,7 @@ pub(super) fn check_stop_ownership() {
         playback: Some(playback),
         subtitles: Some(subtitles),
         input: Input::Idle,
+        live_buffer: Default::default(),
     };
     let before = session.subtitles().expect("subtitle generation").counters();
     assert!(before.0 > 0);

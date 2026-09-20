@@ -440,7 +440,7 @@ fn exercise_expired_pause(expiry: Expiry) -> Result<(), Box<dyn std::error::Erro
     );
     let mut controller = super::super::timeline::Controller::new(
         &pipeline.by_name("output").ok_or("sink")?,
-        super::super::timeline::StartPosition::LiveEdge,
+        super::super::timeline::StartPosition::LiveEdge(crate::settings::LiveBuffer::default()),
     )?;
     controller.pause(
         pipeline.upcast_ref(),

@@ -1,6 +1,33 @@
 use super::*;
 
 #[test]
+fn live_buffer_defaults_migrate_and_custom_values_survive_restart()
+-> Result<(), Box<dyn std::error::Error>> {
+    let old: Preferences = toml::from_str("autoplay = true")?;
+    assert_eq!(old.live_buffer_ms, LiveBuffer::default());
+    for value in [i32::MIN, 0, LiveBuffer::MAX_MS + 1, i32::MAX] {
+        assert!(LiveBuffer::checked(value).is_none());
+        assert!(toml::from_str::<Preferences>(&format!("live_buffer_ms = {value}")).is_err());
+    }
+    let directory = tempfile::tempdir()?;
+    let path = directory.path().join("settings.toml");
+    let mut session = open(path.clone())?;
+    const CUSTOM_MS: i32 = 150;
+    for value in [
+        LiveBuffer::MIN_MS,
+        CUSTOM_MS,
+        LiveBuffer::MAX_MS,
+        LiveBuffer::DEFAULT_MS,
+    ] {
+        let buffer = LiveBuffer::checked(value).ok_or("live buffer")?;
+        session.change(Change::LiveBuffer(buffer));
+        session.flush()?;
+        assert_eq!(open(path.clone())?.preferences().live_buffer_ms, buffer);
+    }
+    Ok(())
+}
+
+#[test]
 fn screenshot_directory_defaults_and_custom_paths_survive_restart()
 -> Result<(), Box<dyn std::error::Error>> {
     let temporary = tempfile::tempdir()?;

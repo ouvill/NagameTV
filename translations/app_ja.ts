@@ -1218,6 +1218,11 @@
 </context>
   <context>
     <name>Settings</name>
+    <message><source>Live playback</source><translation>ライブ再生</translation></message>
+    <message><source>Live playback buffer</source><translation>ライブ再生の余裕</translation></message>
+    <message><source>Live playback buffer (milliseconds)</source><translation>ライブ再生の余裕（ミリ秒）</translation></message>
+    <message><source>Lower values reduce live delay. Increase this if audio cuts out. Applies when starting playback, changing channels, or returning to live.</source><translation>小さくするとライブの遅延を減らせます。音が途切れる場合は値を増やしてください。再生開始・選局・「ライブに戻る」で反映されます。</translation></message>
+    <message><source>Reset to %1 ms</source><translation>%1 msに戻す</translation></message>
     <message><source>Saved comments</source><translation>保存済みコメント</translation></message>
     <message><source>Storage target (MiB)</source><translation>保存容量の目安（MiB）</translation></message>
     <message><source>Fetch this program's comments again</source><translation>この番組の実況を再取得</translation></message>

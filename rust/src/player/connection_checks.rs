@@ -191,6 +191,7 @@ fn checks() -> TestResult {
     check_recording_notifications(&mut player)?;
     check_guide_state();
     check_autoplay()?;
+    check_live_buffer()?;
     check_timeshift_options()?;
     check_transport_messages();
     check_screenshot_directory()?;
@@ -547,6 +548,55 @@ fn check_timeshift_options() -> TestResult {
         expected
     );
     assert!(!player.loading() && !player.connecting() && !player.playing());
+    Ok(())
+}
+
+fn check_live_buffer() -> TestResult {
+    use crate::settings::LiveBuffer;
+    const CUSTOM_MS: i32 = 150;
+    let dir = tempfile::tempdir()?;
+    let path = dir.path().join("settings.toml");
+    let mut player = ffi::new_player();
+    player.pin_mut().rust_mut().preferences =
+        settings::Loaded::open(path.clone())?.activate(None, None);
+    let observed = Arc::new(Mutex::new(Vec::new()));
+    let snapshots = observed.clone();
+    let _signal = player
+        .pin_mut()
+        .on_live_buffer_options_changed(move |player| {
+            let options: serde_json::Value =
+                serde_json::from_str(&player.live_buffer_options().to_string()).unwrap();
+            assert_eq!(
+                options["milliseconds"].as_i64(),
+                Some(i64::from(
+                    player
+                        .rust()
+                        .preferences
+                        .preferences()
+                        .live_buffer_ms
+                        .milliseconds()
+                ))
+            );
+            snapshots
+                .lock()
+                .unwrap()
+                .push(options["milliseconds"].as_i64().unwrap());
+        });
+    for invalid in [-1, 0, LiveBuffer::MAX_MS + 1] {
+        assert!(!player.pin_mut().configure_live_buffer(invalid));
+    }
+    assert!(observed.lock().unwrap().is_empty());
+    assert!(player.pin_mut().configure_live_buffer(CUSTOM_MS));
+    assert!(player.pin_mut().configure_live_buffer(CUSTOM_MS));
+    assert_eq!(*observed.lock().unwrap(), [i64::from(CUSTOM_MS)]);
+    assert_eq!(
+        settings::Loaded::open(path)?
+            .preferences()
+            .live_buffer_ms
+            .milliseconds(),
+        CUSTOM_MS
+    );
+    assert!(!player.playing() && !player.connecting());
     Ok(())
 }
 

@@ -35,7 +35,10 @@ Popup {
         if (page === SettingsPanel.Comments) backend.comments_open(true);
         if (opened) pageRevealMotion.restart();
     }
-    onAboutToHide: pageRevealMotion.complete()
+    onAboutToHide: {
+        liveBufferSettings.finishEdit();
+        pageRevealMotion.complete();
+    }
     onClosed: connectionForm.phase = ConnectionForm.Idle
     NumberAnimation {
         id: pageRevealMotion
@@ -314,6 +317,12 @@ Popup {
                             description: qsTranslate("Settings", "Start playing the last selected channel when you open the app. Applies from the next launch.")
                             checked: root.backend.autoplay
                             onClicked: root.backend.configure_autoplay(checked)
+                        }
+                        Heading { Layout.topMargin: 20; text: qsTranslate("Settings", "Live playback") }
+                        LiveBufferSettings {
+                            id: liveBufferSettings
+                            Layout.fillWidth: true
+                            backend: root.backend
                         }
                     }
                     Loader {

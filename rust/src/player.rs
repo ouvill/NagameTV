@@ -170,6 +170,7 @@ pub mod ffi {
         #[qproperty(f64, live_delay_ms, READ = live_delay_ms, NOTIFY)]
         #[qproperty(QString, timeshift_storage, READ = timeshift_storage, NOTIFY)]
         #[qproperty(QString, timeshift_limits, READ = timeshift_limits, NOTIFY)]
+        #[qproperty(QString, live_buffer_options, READ = live_buffer_options, NOTIFY)]
         #[qproperty(f64, timeshift_bytes_per_second, READ, NOTIFY)]
         #[qproperty(QString, live_timeline, READ, NOTIFY)]
         #[qproperty(QString, transport_error, READ = transport_error, NOTIFY)]
@@ -290,6 +291,9 @@ pub mod ffi {
         fn live_delay_ms(self: &Player) -> f64;
         fn timeshift_storage(self: &Player) -> QString;
         fn timeshift_limits(self: &Player) -> QString;
+        fn live_buffer_options(self: &Player) -> QString;
+        #[qinvokable]
+        fn configure_live_buffer(self: Pin<&mut Player>, milliseconds: i32) -> bool;
         fn transport_error(self: &Player) -> QString;
         #[qinvokable]
         fn return_to_live(self: Pin<&mut Player>) -> bool;
