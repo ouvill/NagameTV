@@ -60,11 +60,13 @@ impl Mode {
                 return Ok(element);
             }
             Self::VaApi => {
-                // Request the algorithm explicitly; unsupported drivers must
-                // report an error instead of silently changing CPU/GPU paths.
-                return gst::ElementFactory::make("vadeinterlace")
-                    .property_from_str("method", "adaptive")
-                    .build();
+                let element = gst::ElementFactory::make("vadeinterlace").build()?;
+                // VA registers this enum from the driver's capabilities.
+                // property_from_str panics when adaptive is absent; validate
+                // the actual property before requesting the algorithm.
+                let method = adaptive_method(element.find_property("method"))?;
+                element.set_property("method", method);
+                return Ok(element);
             }
         };
         let element = gst::ElementFactory::make("deinterlace").build()?;
@@ -76,9 +78,55 @@ impl Mode {
     }
 }
 
+fn adaptive_method(
+    property: Option<gst::glib::ParamSpec>,
+) -> Result<gst::glib::Value, gst::glib::BoolError> {
+    property
+        .and_then(|property| property.downcast::<gst::glib::ParamSpecEnum>().ok())
+        .and_then(|property| property.enum_class().to_value_by_nick("adaptive"))
+        .ok_or_else(|| gst::glib::bool_error!(
+            "VA-API driver does not support adaptive deinterlacing; select another processing mode explicitly"
+        ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use gst::glib;
+
+    // Test driver-dependent enum validation without loading VA or using a GPU.
+    #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, gst::glib::Enum)]
+    #[enum_type(name = "NagameTestAdaptiveMethod")]
+    enum AdaptiveMethod {
+        #[default]
+        Bob,
+        Adaptive,
+    }
+
+    #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, gst::glib::Enum)]
+    #[enum_type(name = "NagameTestBobOnlyMethod")]
+    enum BobOnlyMethod {
+        #[default]
+        Bob,
+    }
+
+    #[test]
+    fn adaptive_requires_a_driver_advertised_enum_value() {
+        let supported = gst::glib::ParamSpecEnum::builder::<AdaptiveMethod>("method").build();
+        assert_eq!(
+            adaptive_method(Some(supported))
+                .unwrap()
+                .get::<AdaptiveMethod>()
+                .unwrap(),
+            AdaptiveMethod::Adaptive
+        );
+        let unsupported = gst::glib::ParamSpecEnum::builder::<BobOnlyMethod>("method").build();
+        assert!(adaptive_method(Some(unsupported)).is_err());
+        assert!(adaptive_method(None).is_err());
+        let wrong_type = gst::glib::ParamSpecString::builder("method").build();
+        assert!(adaptive_method(Some(wrong_type)).is_err());
+    }
+
     #[test]
     fn validates_aliases_and_constructs_each_cpu_processor()
     -> Result<(), Box<dyn std::error::Error>> {

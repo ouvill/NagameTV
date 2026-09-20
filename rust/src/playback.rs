@@ -346,6 +346,24 @@ impl Playback {
             Error::VideoOutput("qml6glsink did not provide Qt's GL display context".into())
         })?;
         self.playbin.set_context(&display);
+        if self.mode == deinterlace::Mode::VaApi {
+            // playsink may temporarily detach the output bin on stream changes.
+            // Prepare VA before decodebin can create a second display and
+            // replace the display underneath the existing VPP filters/pools.
+            self.processor.set_state(gst::State::Ready)?;
+            // VA answers context queries but does not retain its self-created
+            // context in GstElement's context list like qml6glsink does.
+            let mut query = gst::query::Context::new("gst.va.display.handle");
+            let display = self
+                .processor
+                .query(&mut query)
+                .then(|| query.context_owned())
+                .flatten()
+                .ok_or_else(|| {
+                    Error::VideoOutput("vadeinterlace did not provide a VA display context".into())
+                })?;
+            self.playbin.set_context(&display);
+        }
         self.playbin.set_property("uri", uri);
         if let Err(error) = self.playbin.set_state(gst::State::Playing) {
             // A synchronous failure may already have a more specific HTTP error queued.
@@ -462,6 +480,10 @@ impl Playback {
         // bin transition may have stopped only some children; preserve the
         // binding and allow the caller to retry instead of assuming completion.
         stop(&self.playbin)?;
+        if self.mode == deinterlace::Mode::VaApi {
+            // VA preparation can enter READY before playbin owns the output.
+            stop(&self.processor)?;
+        }
         // The sink can have entered READY independently of playbin in play().
         stop(&self.sink)?;
         self.sink

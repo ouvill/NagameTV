@@ -32,6 +32,8 @@ Qt起動前に設定し、X11を明示した場合は説明付きエラーにす
 明示した環境設定は保持し、互換性がなければ再生エラーになる。GPUやドライバーによって
 利用できるコーデック・フィルターが異なる。NVIDIA向けの`nvidia-vaapi-driver`で
 デコードできることだけでは、VAデインターレースも使えるとは判断しない。
+adaptive方式はドライバーが公開する`method`のenumを検証してから設定する。
+非対応なら説明付きエラーにし、プロパティー文字列の変換によるpanicを避ける。
 
 ## 起動例
 
@@ -57,6 +59,8 @@ GStreamer rankを制限する。playbin3にはインスタンス単位のデコ�
 
 - GPUモードは入力をGLMemoryまたはVAMemoryに限定し、VA出力もDMA_DRMのDMABufに限定する。
   CPUメモリーを経由する暗黙の代替経路を許可しない。
+  VA経路ではglupload直後をNV12／RGBAの2Dテクスチャに限定する。sinkの形式だけを
+  制限すると、RGBA指定でも途中にYUY2など別形式の取り込みが選ばれる場合がある。
 - `off`でもNV12表示を使える。videoconvertはCPUのI420→NV12変換が必要な場合に働き、
   GLMemory NV12などのGPU出力にはpassthroughする。要素の存在だけをCPU往復の証拠とはしない。
 - `yadif`と`linear`ではCPU処理が必要。videoconvertは対応する入力ならpassthroughし、
@@ -64,7 +68,10 @@ GStreamer rankを制限する。playbin3にはインスタンス単位のデコ�
   CPUデインターレース前のダウンロードが残る。
 - qml6glsinkを先にREADYにしてQtのGL display/contextを共有する既存の順序を維持する。
   sinkがまだplaybinに組み込まれていないREADY段階でも共有できるよう、sinkから取得した
-  `gst.gl.GLDisplay`をplaybinへ明示的に渡す。`enable-last-sample=false`を維持し、
+  `gst.gl.GLDisplay`をplaybinへ明示的に渡す。VA経路でもデコーダーの起動前に
+  vadeinterlaceをREADYにし、その`gst.va.display.handle`をplaybinへ渡す。
+  再生対象の切り替えで出力binが一時的に外れても、次のデコーダーと既存のVAフィルターが
+  同じdisplayを使う。`enable-last-sample=false`を維持し、
   映像queueの上限は8フレーム。GPU経路の導入時には保持する画像数を減らすため
   8から4へ変更したが、2026-09-20に継続再生中の小さな引っ掛かりが報告されたため、
   短い上流処理の遅れを吸収する余裕として8へ戻した。保持メモリーは増える。
@@ -104,11 +111,13 @@ NAGAMETV_DEINTERLACE=yadif NAGAMETV_VIDEO_FORMAT=nv12 bash scripts/test-startup.
 NAGAMETV_DEINTERLACE=gl bash scripts/test-startup.sh video-processing
 NAGAMETV_DEINTERLACE=gl NAGAMETV_VIDEO_FORMAT=nv12 bash scripts/test-startup.sh video-processing
 NAGAMETV_DEINTERLACE=va NAGAMETV_VIDEO_FORMAT=nv12 bash scripts/test-startup.sh video-processing
+NAGAMETV_DEINTERLACE=va NAGAMETV_VIDEO_FORMAT=rgba bash scripts/test-startup.sh video-processing
 NAGAMETV_VIDEO_FORMAT=nv12 bash scripts/test-startup.sh screenshot-playback
 ```
 
 `video-processing`はCPUで1080i/1080pのMPEG-2を生成し、製品Main.qmlで再生して、
-デコーダー、メモリー形式、出力fps、保存画像の寸法、映像切り替えを検証する。
+デコーダー、メモリー形式、出力fps、保存画像の寸法・空画像でないこと、映像切り替えを検証する。
+同じ形式での再開、インターレース→プログレッシブ→インターレースの切り替えを含む。
 追加のfixture生成pluginとして`interlace`と`avenc_mpeg2video`を使用する。
 物理画面やスピーカーの試験ではなく、全コーデックや全フィールド順序の画質保証でもない。
 VA-APIの実機検証には対応GPUが必要で、NVIDIAの試験結果で代用しない。
@@ -135,6 +144,35 @@ AppImage／Flatpakの配布物、他GPU、全コーデック、フィールド�
 CPU使用率・転送帯域・消費電力の改善率は計測していない。特にglは出力fps・方式が異なるので、
 yadifとの単純な負荷比較を同等画質・同等処理量の速度比較には使えない。
 
+## VA-APIの再生切り替え修正（2026-09-21）
+
+Fedora 44、GStreamer 1.28.7、Qt 6.11.2、AMD Radeon Graphics（Renoir）／
+Mesa 26.2.2の専用Weston環境で、MPEG-2の1080i再生後に1080pへ切り替えると
+表示が止まる問題を再現した。次のデコーダーが別のVA displayを生成し、
+既存フィルターに`Can't replace VA display while operating`、続いて
+`vaBeginPicture: invalid VASurfaceID`が発生していた。
+
+再生開始前にvadeinterlaceをREADYへ遷移させ、context queryで取得した
+VA displayをplaybinへ設定する。VA要素が自分で生成したdisplayは通常の
+GstElementのcontext一覧からは取得できない。これにより、再生対象の切り替え前後で
+デコーダー・フィルター・allocatorのdisplayを共有する。開始途中で失敗した場合も、
+先にREADYにした処理要素を終了時に明示的にNULLへ戻す。
+
+RGBA表示では、vapostprocの出力にYUYVが選ばれ、AMDドライバーが
+`vaEndPicture: operation failed`を返す問題も確認した。glupload直後をNV12／RGBAの
+2Dテクスチャに限定する。表示先だけを制限しても、途中のYUY2をglcolorconvertで
+変換できるため、対応する画素形式の制約は取り込み直後に必要となる。
+
+修正後、MPEG-2の1080i→1080i→1080p→1080p→1080iの再生・停止・再開を確認した。
+デコーダーは`vampeg2dec`、入力はVAMemory NV12、表示はGLMemory NV12／RGBAで、
+25fpsのインターレース入力は50fps、プログレッシブ入力は25fpsとなった。
+各再生で一時停止とキャプチャを行い、1920×1080の画像と空画像でないことも検証した。
+同じ試験をyadif＋NV12でも実行し、全3経路・計15回の再生が成功した。
+機器不要のRustテストは276件成功・5件ignoredで、adaptive非対応enumのエラーも確認した。
+AMD環境ではDMABuf段階でRGB形式へ変換される場合があり、NV12を全段で維持する保証はない。
+CPUメモリーを介さない制約は維持する。検証対象はネイティブ版のMPEG-2であり、
+他のGPU・コーデック・配布パッケージへの保証ではない。
+
 ## 参照
 
 - [qml6glsinkの形式とGL context共有](https://gstreamer.freedesktop.org/documentation/qml6/qml6glsink.html)
@@ -142,4 +180,5 @@ yadifとの単純な負荷比較を同等画質・同等処理量の速度比較
 - [greedyhの停止処理・前フレーム参照（1.28.2）](https://github.com/GStreamer/gstreamer/blob/1.28.2/subprojects/gst-plugins-base/ext/gl/gstgldeinterlace.c)
 - [OpenGLデインターレース](https://gstreamer.freedesktop.org/documentation/opengl/gldeinterlace.html)
 - [VAデインターレース](https://gstreamer.freedesktop.org/documentation/va/vadeinterlace.html)
+- [VAのcontext共有と状態遷移](https://github.com/GStreamer/gstreamer/blob/1.28.2/subprojects/gst-plugins-bad/sys/va/gstvabasetransform.c)
 - [DMABufのmodifier交渉とGL import](https://gstreamer.freedesktop.org/documentation/additional/design/dmabuf.html)
