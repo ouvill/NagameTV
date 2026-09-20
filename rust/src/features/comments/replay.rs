@@ -236,42 +236,41 @@ impl Replay {
                     }
                 }
             }
-            if !comments.is_empty() {
-                if let Some((source, channel)) = target {
-                    let clock = context.as_ref().and_then(|c| match &c.source_range {
-                        Source::Live { spans, .. } => spans
-                            .iter()
-                            .filter(|s| s.channel == channel)
-                            .max_by_key(|s| s.media_end_ms)
-                            .cloned(),
-                        Source::Pending | Source::Recording(_) => None,
-                    });
-                    match store.receive(source, channel, clock.clone(), comments) {
-                        Ok(()) => {}
-                        Err(comments) => {
-                            // poll_comments checks can_receive before draining.
-                            if let Some(pending) = &mut self.pending {
-                                pending.comments.extend(comments);
-                            } else {
-                                self.pending = Some(Pending {
-                                    source,
-                                    channel,
-                                    clock,
-                                    comments,
-                                });
-                            }
+            if !comments.is_empty()
+                && let Some((source, channel)) = target
+            {
+                let clock = context.as_ref().and_then(|c| match &c.source_range {
+                    Source::Live { spans, .. } => spans
+                        .iter()
+                        .filter(|s| s.channel == channel)
+                        .max_by_key(|s| s.media_end_ms)
+                        .cloned(),
+                    Source::Pending | Source::Recording(_) => None,
+                });
+                match store.receive(source, channel, clock.clone(), comments) {
+                    Ok(()) => {}
+                    Err(comments) => {
+                        // poll_comments checks can_receive before draining.
+                        if let Some(pending) = &mut self.pending {
+                            pending.comments.extend(comments);
+                        } else {
+                            self.pending = Some(Pending {
+                                source,
+                                channel,
+                                clock,
+                                comments,
+                            });
                         }
                     }
                 }
             }
-            if self.pending.is_some() {
-                if let Some(Demand {
+            if self.pending.is_some()
+                && let Some(Demand {
                     source_range: Source::Live { reception, .. },
                     ..
                 }) = &mut demand
-                {
-                    *reception = cache::Reception::Interrupted;
-                }
+            {
+                *reception = cache::Reception::Interrupted;
             }
             // Publish the reception tip after enqueuing its comments, so the
             // store can never mark this range complete before saving them.
@@ -384,11 +383,11 @@ fn project(records: &[Record], clock: ClockReading, viewing: Interval) -> String
     let mut duplicate_live = HashSet::new();
     for (index, record) in records.iter().enumerate() {
         if record.origin == RecordOrigin::Live {
-            if let Some(id) = record.comment.source_id {
-                if !live_ids.insert((id, record.comment.timestamp_micros, payload(record))) {
-                    duplicate_live.insert(index);
-                    continue;
-                }
+            if let Some(id) = record.comment.source_id
+                && !live_ids.insert((id, record.comment.timestamp_micros, payload(record)))
+            {
+                duplicate_live.insert(index);
+                continue;
             }
             live.entry(payload(record)).or_default().push(index);
         }
@@ -614,11 +613,7 @@ mod tests {
                 media_ms: None,
             },
         ];
-        posts[0]
-            .comment
-            .timestamp_micros
-            .as_mut()
-            .map(|t| *t += 123);
+        *posts[0].comment.timestamp_micros.as_mut().unwrap() += 123;
         posts[1].comment.timestamp_micros = posts[0].comment.timestamp_micros;
         posts[2].comment.timestamp_micros = posts[0].comment.timestamp_micros;
         // A reconnect may repeat a live post. It must not consume a second

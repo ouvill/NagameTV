@@ -219,6 +219,37 @@ fn probe(
     Ok((!index.entries().is_empty()).then_some(index))
 }
 
+// Opening a network path may block. Only reader/metadata worker I/O reaches
+// this transition; constructing the playback input performs no filesystem I/O.
+pub(super) enum LocalFile {
+    Pending(std::path::PathBuf),
+    Open(std::fs::File),
+}
+impl LocalFile {
+    pub fn new(path: &std::path::Path) -> Self {
+        Self::Pending(path.to_owned())
+    }
+    fn file(&mut self) -> std::io::Result<&mut std::fs::File> {
+        if let Self::Pending(path) = self {
+            *self = Self::Open(std::fs::File::open(path)?);
+        }
+        match self {
+            Self::Open(file) => Ok(file),
+            Self::Pending(_) => unreachable!("opened file"),
+        }
+    }
+}
+impl Read for LocalFile {
+    fn read(&mut self, bytes: &mut [u8]) -> std::io::Result<usize> {
+        self.file()?.read(bytes)
+    }
+}
+impl Seek for LocalFile {
+    fn seek(&mut self, position: SeekFrom) -> std::io::Result<u64> {
+        self.file()?.seek(position)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -298,36 +329,5 @@ mod tests {
                 .unwrap()
                 .is_none()
         );
-    }
-}
-
-// Opening a network path may block. Only reader/metadata worker I/O reaches
-// this transition; constructing the playback input performs no filesystem I/O.
-pub(super) enum LocalFile {
-    Pending(std::path::PathBuf),
-    Open(std::fs::File),
-}
-impl LocalFile {
-    pub fn new(path: &std::path::Path) -> Self {
-        Self::Pending(path.to_owned())
-    }
-    fn file(&mut self) -> std::io::Result<&mut std::fs::File> {
-        if let Self::Pending(path) = self {
-            *self = Self::Open(std::fs::File::open(path)?);
-        }
-        match self {
-            Self::Open(file) => Ok(file),
-            Self::Pending(_) => unreachable!("opened file"),
-        }
-    }
-}
-impl Read for LocalFile {
-    fn read(&mut self, bytes: &mut [u8]) -> std::io::Result<usize> {
-        self.file()?.read(bytes)
-    }
-}
-impl Seek for LocalFile {
-    fn seek(&mut self, position: SeekFrom) -> std::io::Result<u64> {
-        self.file()?.seek(position)
     }
 }

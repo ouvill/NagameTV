@@ -528,9 +528,12 @@ mod tests {
                     video::VideoFrameRef::from_buffer_ref_writable(buffer.make_mut(), &info)
                         .unwrap();
                 frame.plane_data_mut(0).unwrap().fill(y);
-                for pair in frame.plane_data_mut(1).unwrap().chunks_exact_mut(2) {
-                    pair.copy_from_slice(&[u, v]);
-                }
+                frame
+                    .plane_data_mut(1)
+                    .unwrap()
+                    .as_chunks_mut::<2>()
+                    .0
+                    .fill([u, v]);
             }
             let source = video::VideoFrameRef::from_buffer_ref_readable(&buffer, &info).unwrap();
             let (rgba, rgba_info) = convert_to_rgba(&source).unwrap();
