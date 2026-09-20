@@ -25,9 +25,9 @@ def catalog():
 class DemoServer(ThreadingHTTPServer):
     daemon_threads = True
 
-    def __init__(self):
+    def __init__(self, now):
         self.stopping = threading.Event()
-        self.schedule = schedule.programs(datetime.now(JST))
+        self.schedule = schedule.programs(now)
         super().__init__(('127.0.0.1', 0), Handler)
 
 class Handler(BaseHTTPRequestHandler):
@@ -91,8 +91,8 @@ def main():
     OUTPUT.mkdir(parents=True, exist_ok=True)
     config = Path(os.environ['XDG_CONFIG_HOME']) / 'nagametv'
     config.mkdir(parents=True, exist_ok=True)
-    server = DemoServer()
     now = datetime.now(JST)
+    server = DemoServer(now)
     fixture.author(BASE / 'demo.ts', BASE / 'Big Buck Bunny.ts', now,
                    schedule.on_air_pair(server.schedule, now))
     url = f'http://127.0.0.1:{server.server_port}'

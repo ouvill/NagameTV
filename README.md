@@ -7,7 +7,7 @@ Mirakurunサーバーのテレビ放送とローカルのTS録画を再生する
 
 [スクリーンショット一覧](docs/media/README.md)
 
-撮影には架空の局・番組情報を使用しています。
+撮影には架空の局・番組編成を使用し、サンプル映像の番組名は作品名を表示しています。
 映像: [Big Buck Bunny](https://peach.blender.org/about/),
 (c) copyright 2008, Blender Foundation / www.bigbuckbunny.org —
 [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/)。[素材とクレジット](docs/media/README.md#素材とクレジット)

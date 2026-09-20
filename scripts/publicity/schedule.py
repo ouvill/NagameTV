@@ -1,5 +1,5 @@
-"""Authored TV listings for publicity; all stations, shows and people are fictional."""
-from dataclasses import dataclass
+"""Authored publicity listings; fictional except for the sample movie's title."""
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from enum import IntEnum
 from zoneinfo import ZoneInfo
@@ -13,6 +13,12 @@ NETWORK_BASE = 65000
 SERVICE_ID = 1
 EVENT_DAY_STRIDE = 100
 PROGRAM_CHANNEL_STRIDE = GUIDE_DAYS * EVENT_DAY_STRIDE
+SAMPLE_TITLE = "Big Buck Bunny"
+SAMPLE_DESCRIPTION = (
+    "Blender Foundation制作の短編アニメーション。"
+    "大きなウサギと森の小さな動物たちの物語。\n"
+    "作品：Big Buck Bunny／Blender Foundation"
+)
 
 
 class Genre(IntEnum):
@@ -56,9 +62,7 @@ SCHEDULES = (
         listing("07:45", "今週のシネマガイド", Genre.INFORMATION),
         listing("08:00", "[字]映画の舞台を訪ねて　海辺の町と古い駅舎", Genre.DOCUMENTARY),
         listing("08:45", "シネマ便り　新作紹介・監督インタビュー", Genre.INFORMATION),
-        listing("09:00", "[字]週末アニメシアター『森の小さな物語』", Genre.ANIMATION,
-                "緑あふれる森を舞台に、大きなウサギと小さな動物たちの一日を描く短編特集。"
-                "▽オープンムービーの世界▽アニメーション制作の舞台裏\n作品：Big Buck Bunny／Blender Foundation"),
+        listing("09:00", SAMPLE_TITLE, Genre.ANIMATION, SAMPLE_DESCRIPTION),
         listing("10:30", "[字]映画をつくる人たち #12　音で描く世界", Genre.DOCUMENTARY,
                 "足音、風の音、衣擦れ。身近な道具から映画の音が生まれるまでを、音響スタッフの仕事場で追う。"),
         listing("11:00", "[字]名作映画館『夏の停留所』", Genre.FILM,
@@ -249,6 +253,12 @@ def programs(now):
         for day in range(GUIDE_DAYS):
             for index, (slot, end) in enumerate(zip(slots, ends)):
                 start = midnight + timedelta(days=day, minutes=slot.minute)
+                finish = midnight + timedelta(days=day, minutes=end)
+                # The selected station plays this movie at any capture time.
+                # Share its real title across the guide, live UI and TS metadata.
+                program = (replace(slot, title=SAMPLE_TITLE, genre=Genre.ANIMATION,
+                                   description=SAMPLE_DESCRIPTION)
+                           if channel == 0 and start <= now < finish else slot)
                 event_id = day * EVENT_DAY_STRIDE + index + 1
                 entries.append(dict(
                     id=channel * PROGRAM_CHANNEL_STRIDE + event_id,
@@ -257,9 +267,9 @@ def programs(now):
                     serviceId=SERVICE_ID,
                     startAt=int(start.timestamp() * 1000),
                     duration=(end - slot.minute) * MILLISECONDS_PER_MINUTE,
-                    name=slot.title,
-                    description=slot.description,
-                    genres=[dict(lv1=slot.genre, lv2=0)],
+                    name=program.title,
+                    description=program.description,
+                    genres=[dict(lv1=program.genre, lv2=0)],
                 ))
     return entries
 
