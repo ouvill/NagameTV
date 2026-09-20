@@ -39,6 +39,12 @@ fn raw_caps(memory: &str, format: Option<&str>) -> gst::Caps {
     builder.build()
 }
 
+fn va_import_caps() -> gst::Caps {
+    let mut caps = Format::Nv12.caps();
+    caps.make_mut().append(Format::Rgba.caps());
+    caps
+}
+
 fn filter(caps: gst::Caps) -> Result<gst::Element> {
     Ok(gst::ElementFactory::make("capsfilter")
         .property("caps", caps)
@@ -139,6 +145,10 @@ impl Validated {
                     filter(raw_caps("memory:DMABuf", Some("DMA_DRM")))?,
                     queue.clone(),
                     upload,
+                    // Keep EGL import in NV12/RGBA 2D textures. An unconstrained
+                    // glcolorconvert also admits packed YUV (YUYV on Mesa),
+                    // whose VA conversion can fail even if caps advertise it.
+                    filter(va_import_caps())?,
                     convert,
                 ]
             }
@@ -322,5 +332,10 @@ mod tests {
                     .can_intersect(&raw_caps(memory, Some("NV12")))
             );
         }
+        let va_import = va_import_caps();
+        assert!(va_import.can_intersect(&Format::Nv12.caps()));
+        assert!(va_import.can_intersect(&Format::Rgba.caps()));
+        assert!(!va_import.can_intersect(&raw_caps(GL_MEMORY, Some("YUY2"))));
+        assert!(!va_import.can_intersect(&raw_caps("memory:SystemMemory", Some("NV12"))));
     }
 }

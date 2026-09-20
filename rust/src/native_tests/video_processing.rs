@@ -11,6 +11,8 @@ use std::path::Path;
 const WIDTH: i32 = 1920;
 const HEIGHT: i32 = 1080;
 const INPUT_FPS: f64 = 25.0;
+const CAPTURE_SAMPLE_STEP: usize = 8;
+const MIN_CAPTURE_CONTRAST: i32 = 128;
 
 fn generate(path: &Path, interlaced: bool) -> TestResult {
     let mut args = vec![
@@ -64,14 +66,16 @@ pub(super) fn run(
             file_url(&temporary.path().join("images"))?
         ),
     )?;
-    // Reuse the same player to exercise progressive bypass and context/pool
-    // lifetime across stream switches, including returning to interlaced video.
+    // Reuse the same player to exercise context/pool lifetime with unchanged
+    // caps as well as progressive bypass and returning to interlaced video.
     let interlaced = temporary.path().join("interlaced.ts");
     let progressive = temporary.path().join("progressive.ts");
     generate(&interlaced, true)?;
     generate(&progressive, false)?;
     for (path, is_interlaced) in [
         (&interlaced, true),
+        (&interlaced, true),
+        (&progressive, false),
         (&progressive, false),
         (&interlaced, true),
     ] {
@@ -125,18 +129,37 @@ pub(super) fn run(
                 assert_eq!(stats["decoders"], serde_json::json!(["nvmpeg2videodec"]));
             }
             Mode::VaApi => {
+                assert_eq!(stats["processor_passthrough"], !is_interlaced);
+                assert_eq!(stats["output"]["interlace"], "progressive");
                 assert_eq!(stats["input"]["memory"], "memory:VAMemory");
                 assert_eq!(stats["decoders"], serde_json::json!(["vampeg2dec"]));
             }
             Mode::Yadif | Mode::Linear | Mode::Off => {}
         }
-        if std::env::var("NAGAMETV_VIDEO_FORMAT").as_deref() == Ok("nv12") {
-            assert_eq!(stats["output"]["pixel_format"], "NV12");
+        match std::env::var("NAGAMETV_VIDEO_FORMAT").as_deref() {
+            Ok("nv12") => assert_eq!(stats["output"]["pixel_format"], "NV12"),
+            Ok("rgba") => assert_eq!(stats["output"]["pixel_format"], "RGBA"),
+            _ => {}
         }
         assert!(evaluate(engine, "player.pause()")?);
         wait_for(app, engine, "player.paused")?;
         let image = capture(app, engine)?;
         assert_eq!((image.width(), image.height()), (WIDTH, HEIGHT));
+        // A valid size alone also accepts a blank GPU readback. The fixture
+        // contains a white ball on black; sample more finely than its diameter.
+        let mut darkest = i32::MAX;
+        let mut brightest = i32::MIN;
+        for y in (0..HEIGHT).step_by(CAPTURE_SAMPLE_STEP) {
+            for x in (0..WIDTH).step_by(CAPTURE_SAMPLE_STEP) {
+                let value = image.pixel_color(x, y).red();
+                darkest = darkest.min(value);
+                brightest = brightest.max(value);
+            }
+        }
+        assert!(
+            brightest - darkest >= MIN_CAPTURE_CONTRAST,
+            "blank captured frame"
+        );
         evaluate(engine, "player.stop(); true")?;
     }
     println!(
