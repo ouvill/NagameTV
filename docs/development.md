@@ -45,6 +45,35 @@ Linux x86_64向けのAppImageとSHA-256を`build/appimage/`へ出力します。
 
 ## ネイティブ版をビルドする
 
+### Fedoraで依存関係を導入する
+
+Fedora向けの[セットアップスクリプト](../scripts/setup-fedora.sh)で、Rustと開発ツール、
+Qt/GStreamer、専用GUIテスト用のツールを導入できます。`sudo`の認証とDNFの
+トランザクション確認は端末で行います。
+
+```sh
+bash scripts/setup-fedora.sh
+```
+
+`--assumeno`を付けると、インストールせずに依存解決の結果を確認できます。
+2026-09-20にFedora 44のRust 1.98.1、Qt 6.11.2、GStreamer 1.28.7で
+全44パッケージの導入とリリースビルドを確認しました。翻訳ツール`lrelease`は`qt6-linguist`、
+`qml6glsink`は`gstreamer1-plugins-good-qt6`に含まれます。
+
+GUIテストは既存のPipeWire／pipewire-pulseaudio／WirePlumberと実GPUを必要とします。
+スクリプトは音声サービスの起動・変更やコンテナーの設定変更を行いません。
+[専用GUI環境の検証](gui-test-environment.md#fedoraなどのlinuxで直接実行)を済ませてから
+画面を使う試験を実行してください。AppImage／Flatpak配布用のツールは各配布手順で
+別途準備します。
+
+同環境でRustテスト262件（4件はignored）とQt接続テストが成功しました。
+専用GUI環境の検証もAMD Radeon Graphics／Mesa 26.2.2／PipeWire 1.6.8で成功しています。
+起動テストでは初回起動、録画の時計リセット・PID変更、タイムシフト再生まで成功しましたが、
+設定済み起動後の録画ファイルのドロップが`check_recording`の`drop_file_on_root`で
+失敗しました。原因は未確定で、起動テスト全体の成功は未確認です。
+
+### 共通の要件とビルド手順
+
 ホストに次の開発環境と実行用プラグインが必要です。
 
 - Rust / Cargo（Rust 1.98.1でビルド確認）
