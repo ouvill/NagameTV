@@ -745,6 +745,19 @@ fn check_recording(
         engine,
         "player.recording && player.recording_name === '録画 #100%.ts' && modeNavigation.mode === ModeNavigation.Recording && !setup.visible && player.current_program_data === 'null' && !player.comment_post_available && !danmaku.active && player.subtitles_active"
     )?);
+    wait_for(app, engine, "!overlayVisibility.pinned")?;
+    assert!(evaluate(
+        engine,
+        "surface.activity(); overlayVisibility.controlsVisible"
+    )?);
+    assert!(evaluate(
+        engine,
+        "surface.pointerExited(); !overlayVisibility.controlsVisible && !bottomPanel.enabled"
+    )?);
+    assert!(evaluate(
+        engine,
+        "surface.activity(); overlayVisibility.controlsVisible && bottomPanel.enabled"
+    )?);
     // Capture a real playing video through Main.qml, then confirm the render
     // counter advances. Accepted saves must leave the transport actions enabled.
     let capture_directory =

@@ -116,7 +116,7 @@ ApplicationWindow {
         enabled: !root.closing
         playing: player.playing
         // Like main, the persistent sidebar does not pin the video controls.
-        pinned: root.showChannels || root.showGuide || inputContext.popupOpen || inputContext.editingText || playerControls.volumePressed || recordingTimeline.pressed || recordingTimeline.hovered
+        pinned: root.showChannels || root.showGuide || inputContext.popupOpen || inputContext.editingText || playerControls.volumePressed || playerControls.screenshotHovered || recordingTimeline.pressed || recordingTimeline.hovered
     }
     AudioSettings {
         id: audioSettings
@@ -230,7 +230,9 @@ ApplicationWindow {
         height: root.height
         focus: true
         signal activity
-        onActivity: overlayVisibility.reveal()
+        signal pointerExited
+        onActivity: overlayVisibility.pointerActivity()
+        onPointerExited: overlayVisibility.pointerExited()
         Component.onCompleted: player.observe_pointer(surface)
         Rectangle {
             id: videoPicture

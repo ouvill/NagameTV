@@ -32,6 +32,8 @@ protected:
       break;
     case QEvent::Leave:
       lastPosition_.reset();
+      if (item_->isVisible() && item_->isEnabled())
+        QMetaObject::invokeMethod(item_, "pointerExited", Qt::DirectConnection);
       break;
     default:
       break;

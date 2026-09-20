@@ -18,6 +18,11 @@ Item {
             playbackControls: backend.recording || backend.timeshift
         }
         ShortcutBindings { actions: actions; inputContext: inputContext }
+        OverlayVisibility {
+            id: overlay
+            pinned: controls.screenshotHovered
+            hideDelay: 60
+        }
         PlayerControls {
             id: controls
             x: 24; y: 200
@@ -25,6 +30,7 @@ Item {
             height: implicitHeight
             videoWidth: width + 48
             actions: actions
+            visible: overlay.controlsVisible
             iconDirectory: Qt.resolvedUrl("../../../assets/icons/")
         }
         ModeNavigation {
@@ -44,6 +50,7 @@ Item {
             when: windowShown
             function init() {
                 failOnWarning(/.*/);
+                overlay.playing = false;
                 backend.playback_action = Player.Play;
                 backend.playbackRequests = 0;
                 backend.playing = false;
@@ -145,6 +152,23 @@ Item {
                 }
                 compare(backend.skips, [actions.seekSteps.backwardMilliseconds, actions.seekSteps.forwardMilliseconds,
                     actions.seekSteps.backwardMilliseconds, actions.seekSteps.forwardMilliseconds]);
+            }
+            function test_screenshot_hover_shows_tip_immediately_and_keeps_controls_visible() {
+                const screenshot = findChild(controls, "screenshotButton");
+                const tip = findChild(screenshot, "actionToolTip");
+                mouseMove(screenshot, screenshot.width / 2, screenshot.height / 2);
+                compare(tip.visible, true);
+                compare(controls.screenshotHovered, true);
+                overlay.playing = true;
+                // Remain over the camera even after its tooltip times out.
+                tryCompare(tip, "visible", false);
+                wait(overlay.hideDelay * 2);
+                compare(controls.visible, true);
+                mouseClick(screenshot);
+                compare(capture.count, 1);
+                mouseMove(host.contentItem, 500, 150);
+                compare(controls.screenshotHovered, false);
+                tryCompare(controls, "visible", false);
             }
             function test_request_does_not_change_mode_before_file_selection_succeeds() {
                 const recording = findChild(navigation, "recordingModeButton");

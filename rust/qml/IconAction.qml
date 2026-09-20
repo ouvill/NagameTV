@@ -50,10 +50,11 @@ ToolButton {
         }
     }
     ToolTip {
+        objectName: "actionToolTip"
         parent: control
         visible: control.toolTipEnabled && control.hovered
         text: control.tip
-        delay: 350
+        delay: 0
         timeout: 3000
         x: (control.width - implicitWidth) / 2
         y: -implicitHeight - 10

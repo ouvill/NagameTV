@@ -10,6 +10,7 @@ Item {
     property real videoWidth: width
     property url iconDirectory: "qrc:/qt/qml/MinimalViewer/assets/icons/"
     readonly property bool volumePressed: volume.pressed
+    readonly property bool screenshotHovered: screenshot.hovered
     readonly property bool transportControls: backend.recording || backend.timeshift
     readonly property int wideVideoWidth: 960
     readonly property int narrowVideoWidth: 740
@@ -105,6 +106,7 @@ Item {
                 action: root.actions.openComposer
             }
             Control {
+                id: screenshot
                 objectName: "screenshotButton"
                 iconSource: root.iconDirectory + "camera.svg"
                 tip: action.text

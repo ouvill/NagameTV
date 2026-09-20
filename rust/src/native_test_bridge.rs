@@ -103,6 +103,10 @@ pub mod ffi {
         fn watchPointerObserver(item: &QQuickItem) -> UniquePtr<ObserverLifetime>;
         #[rust_name = "send_mouse_move"]
         fn sendMouseMove(window: Pin<&mut QQuickWindow>, position: &QPointF);
+        #[rust_name = "send_pointer_enter"]
+        fn sendPointerEnter(window: Pin<&mut QQuickWindow>, position: &QPointF);
+        #[rust_name = "send_pointer_leave"]
+        fn sendPointerLeave(window: Pin<&mut QQuickWindow>);
         #[rust_name = "install_test_pointer_activity"]
         unsafe fn installPointerActivity(item: *mut QQuickItem);
     }
@@ -130,6 +134,9 @@ pub mod ffi {
         // Invoked by the production C++ event filter through Qt meta-calls.
         #[qsignal]
         fn activity(self: Pin<&mut NativeActivityItem>);
+        #[qsignal]
+        #[rust_name = "pointer_exited"]
+        fn pointerExited(self: Pin<&mut NativeActivityItem>);
         #[inherit]
         #[rust_name = "set_size"]
         fn setSize(self: Pin<&mut NativeActivityItem>, size: &QSizeF);

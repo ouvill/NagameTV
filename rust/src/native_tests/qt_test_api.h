@@ -161,4 +161,12 @@ inline void sendMouseMove(QQuickWindow &window, const QPointF &position) {
                      Qt::NoButton, Qt::NoButton, Qt::NoModifier);
     QCoreApplication::sendEvent(&window, &event);
 }
+inline void sendPointerEnter(QQuickWindow &window, const QPointF &position) {
+    QEnterEvent event(position, position, position);
+    QCoreApplication::sendEvent(&window, &event);
+}
+inline void sendPointerLeave(QQuickWindow &window) {
+    QEvent event(QEvent::Leave);
+    QCoreApplication::sendEvent(&window, &event);
+}
 #endif

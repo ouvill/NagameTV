@@ -37,6 +37,11 @@ pub fn run() -> i32 {
     let _connection = item.pin_mut().on_activity(move |_| {
         received.fetch_add(1, Ordering::SeqCst);
     });
+    let exits = Arc::new(AtomicUsize::new(0));
+    let received_exits = exits.clone();
+    let _exit_connection = item.pin_mut().on_pointer_exited(move |_| {
+        received_exits.fetch_add(1, Ordering::SeqCst);
+    });
     ffi::send_mouse_move(first.pin_mut(), &QPointF::new(20.0, 20.0));
     assert_eq!(count.load(Ordering::SeqCst), 1);
     ffi::send_mouse_move(first.pin_mut(), &QPointF::new(20.0, 20.0));
@@ -46,6 +51,8 @@ pub fn run() -> i32 {
         "Identical positions do not emit twice"
     );
     item.pin_mut().set_enabled(false);
+    ffi::send_pointer_leave(first.pin_mut());
+    assert_eq!(exits.load(Ordering::SeqCst), 0);
     ffi::send_mouse_move(first.pin_mut(), &QPointF::new(25.0, 25.0));
     assert_eq!(
         count.load(Ordering::SeqCst),
@@ -55,6 +62,8 @@ pub fn run() -> i32 {
     item.pin_mut().set_enabled(true);
     // SAFETY: Same live-window and sole-ownership guarantees as above.
     unsafe { item.pin_mut().set_parent_item(second.content_item()) };
+    ffi::send_pointer_leave(first.pin_mut());
+    assert_eq!(exits.load(Ordering::SeqCst), 0, "Old window is detached");
     ffi::send_mouse_move(first.pin_mut(), &QPointF::new(30.0, 30.0));
     assert_eq!(
         count.load(Ordering::SeqCst),
@@ -67,15 +76,39 @@ pub fn run() -> i32 {
         2,
         "The new window must be observed"
     );
+    ffi::send_pointer_leave(second.pin_mut());
+    assert_eq!(exits.load(Ordering::SeqCst), 1);
+    ffi::send_pointer_enter(second.pin_mut(), &QPointF::new(30.0, 30.0));
+    assert_eq!(
+        count.load(Ordering::SeqCst),
+        3,
+        "Reentering at the same position must reveal controls"
+    );
+    ffi::send_mouse_move(second.pin_mut(), &QPointF::new(150.0, 30.0));
+    assert_eq!(
+        exits.load(Ordering::SeqCst),
+        1,
+        "Leaving the item is not leaving the window"
+    );
+    ffi::send_pointer_leave(second.pin_mut());
+    assert_eq!(
+        exits.load(Ordering::SeqCst),
+        2,
+        "Window exit is observed even from outside the item"
+    );
+    ffi::send_pointer_enter(second.pin_mut(), &QPointF::new(30.0, 30.0));
+    assert_eq!(count.load(Ordering::SeqCst), 4);
     drop(item);
     assert!(
         lifetime.was_destroyed(),
         "Item destruction must delete the observer"
     );
     ffi::send_mouse_move(second.pin_mut(), &QPointF::new(40.0, 40.0));
+    ffi::send_pointer_leave(second.pin_mut());
+    assert_eq!(exits.load(Ordering::SeqCst), 2);
     assert_eq!(
         count.load(Ordering::SeqCst),
-        2,
+        4,
         "No callback after destruction"
     );
     println!("Pointer activity lifecycle checks passed");
