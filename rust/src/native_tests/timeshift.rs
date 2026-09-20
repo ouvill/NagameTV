@@ -22,6 +22,9 @@ const PAUSE_RECEIVE_GROWTH: Duration = Duration::from_secs(1);
 const REWIND_TARGET: Duration = Duration::from_secs(1);
 const SEEK_TOLERANCE: Duration = Duration::from_millis(500);
 const LIVE_EDGE_TOLERANCE: Duration = Duration::from_millis(2500);
+// Includes the fixture's 250 ms deliveries and the UI's sampled playhead. This
+// catches startup lag that a subsequent manual return-to-live could still remove.
+const STARTUP_LIVE_EDGE_TOLERANCE: Duration = Duration::from_millis(750);
 // The UI's receive position can be one 250 ms fixture delivery behind. The
 // request itself must not add the old fixed one-second delay to live playback.
 const LIVE_TARGET_TOLERANCE: Duration = SEND_INTERVAL;
@@ -107,7 +110,9 @@ fn serve(
         socket.read_exact(&mut byte)?;
         header.extend(byte);
     }
-    if header.starts_with(b"GET /api/services/1/stream ") {
+    if header.starts_with(b"GET /api/services/1/stream ")
+        || header.starts_with(b"GET /api/services/2/stream ")
+    {
         streams.fetch_add(1, Ordering::AcqRel);
         let ts = include_bytes!("../../../tests/fixtures/recording-seek.ts");
         const PACKET: usize = crate::transport::wire::TS_PACKET_SIZE;
@@ -143,7 +148,8 @@ fn serve(
         }
     } else {
         let body = if header.starts_with(b"GET /api/services ") {
-            r#"[{"id":1,"serviceId":1,"networkId":1,"name":"Timeshift fixture","type":1,"channel":{"type":"GR"}}]"#
+            // Two selections use the same TS fixture to isolate stream replacement.
+            r#"[{"id":1,"serviceId":1,"networkId":1,"name":"Timeshift fixture","type":1,"channel":{"type":"GR"}},{"id":2,"serviceId":1,"networkId":1,"name":"Second fixture","type":1,"channel":{"type":"GR"}}]"#
         } else {
             "[]"
         };
@@ -186,12 +192,15 @@ pub(super) fn run(
     wait_for(app, engine, "settings.opened")?;
     evaluate(engine, "settings.close(); true")?;
     for backend in ["memory", "filesystem"] {
-        assert!(evaluate(
+        start_near_live(
+            app,
             engine,
+            &server,
+            backend,
             &format!(
                 "player.configure_timeshift_options('{backend}', {MEMORY_MIB}, {FILESYSTEM_MIB}, {RETENTION_MINUTES}); player.select(0); player.play(); true"
-            )
-        )?);
+            ),
+        )?;
         if let Err(error) = wait_for(
             app,
             engine,
@@ -342,10 +351,20 @@ pub(super) fn run(
             "Timeshift {backend}: receive while paused, backward seek, return to live and stop passed"
         );
     }
-    assert!(evaluate(
+    start_near_live(
+        app,
         engine,
-        "player.configure_timeshift('off'); player.select(0); player.play(); true"
-    )?);
+        &server,
+        "disabled",
+        "player.configure_timeshift('off'); player.select(0); player.play(); true",
+    )?;
+    start_near_live(
+        app,
+        engine,
+        &server,
+        "disabled, channel change",
+        "player.select(1); true",
+    )?;
     wait_for(
         app,
         engine,
@@ -417,12 +436,7 @@ pub(super) fn run(
         wait_for(
             app,
             engine,
-            "player.playing && player.seekable && player.position_ms > 0",
-        )?;
-        wait_for(
-            app,
-            engine,
-            "JSON.parse(player.live_timeline).viewing !== null && JSON.parse(player.live_timeline).viewing.program !== null",
+            "player.playing && !player.seeking && player.seekable && player.position_ms > 0 && JSON.parse(player.live_timeline).viewing !== null && JSON.parse(player.live_timeline).viewing.program !== null",
         )?;
         assert!(evaluate(engine, "player.pause()")?);
         assert!(evaluate(
@@ -564,6 +578,76 @@ pub(super) fn run(
         &format!("{OBSERVER}.failure.length === 0")
     )?);
     evaluate(engine, &format!("{OBSERVER}.destroy(); true"))?;
+    Ok(())
+}
+
+fn start_near_live(
+    app: &QGuiApplication,
+    engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
+    server: &Server,
+    context: &str,
+    start: &str,
+) -> TestResult {
+    let previous = super::bridge::ffi::evaluate_root(
+        engine.pin_mut(),
+        &cxx_qt_lib::QString::from(format!("{OBSERVER}.seekRequests")),
+    )?
+    .value::<i32>()
+    .ok_or("seek request count")?;
+    let connections = server.streams.load(Ordering::Acquire);
+    assert!(evaluate(engine, start)?);
+    wait_for(
+        app,
+        engine,
+        &format!(
+            "{OBSERVER}.seekRequests > {previous} && player.playing && !player.seeking && !player.paused"
+        ),
+    )?;
+    let startup_state = super::bridge::ffi::evaluate_root(
+        engine.pin_mut(),
+        &cxx_qt_lib::QString::from(format!(
+            "JSON.stringify({{requests: {OBSERVER}.seekRequests, previous: {previous}, target: {OBSERVER}.lastSeekTarget, edge: {OBSERVER}.lastSeekEdge, requestedSession: {OBSERVER}.lastSeekSession, current: JSON.parse(player.live_timeline), error: player.playback_error}})"
+        )),
+    )?;
+    // Reception continues while the native flush runs. Bracket the target by
+    // snapshots before/after its notification instead of treating the later
+    // receive edge as the instant at which the request was made.
+    assert!(
+        evaluate(
+            engine,
+            &format!(
+                "{OBSERVER}.seekRequests === {} && {OBSERVER}.lastSeekTarget + {} >= {OBSERVER}.lastSeekPreviousEdge && {OBSERVER}.lastSeekTarget <= {OBSERVER}.lastSeekEdge && {OBSERVER}.lastSeekSession === JSON.parse(player.live_timeline).session",
+                previous + 1,
+                gstreamer::ClockTime::MSECOND.mseconds()
+            ),
+        )?,
+        "{context}: startup did not target this source's receive edge exactly once: {startup_state:?}"
+    );
+    observe_playback(
+        app,
+        engine,
+        &format!(
+            "{OBSERVER}.seekRequests === {} && JSON.parse(player.live_timeline).live.position - player.position_ms < {}",
+            previous + 1,
+            STARTUP_LIVE_EDGE_TOLERANCE.as_millis()
+        ),
+    )?;
+    assert_eq!(
+        server.streams.load(Ordering::Acquire),
+        connections + 1,
+        "{context}: initial alignment reconnected the stream"
+    );
+    let gap = super::bridge::ffi::evaluate_root(
+        engine.pin_mut(),
+        &cxx_qt_lib::QString::from(
+            "JSON.parse(player.live_timeline).live.position - player.position_ms",
+        ),
+    )?
+    .value::<f64>()
+    .ok_or("startup live delay")?;
+    eprintln!(
+        "Live startup {context}: one alignment, sustained receive-to-playhead gap {gap:.0} ms"
+    );
     Ok(())
 }
 

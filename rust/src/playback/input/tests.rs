@@ -152,7 +152,10 @@ fn normalized_raw_input_seeks_across_pid_changes_without_losing_pause()
             &scope,
         );
         let sink = pipeline.by_name("output").ok_or("sink")?;
-        let mut controller = super::super::timeline::Controller::new(&sink)?;
+        let mut controller = super::super::timeline::Controller::new(
+            &sink,
+            super::super::timeline::StartPosition::Beginning,
+        )?;
         controller.pause(
             pipeline.upcast_ref(),
             super::super::timeline::Resume::Paused,
@@ -435,8 +438,10 @@ fn exercise_expired_pause(expiry: Expiry) -> Result<(), Box<dyn std::error::Erro
         feedback.clone(),
         &scope,
     );
-    let mut controller =
-        super::super::timeline::Controller::new(&pipeline.by_name("output").ok_or("sink")?)?;
+    let mut controller = super::super::timeline::Controller::new(
+        &pipeline.by_name("output").ok_or("sink")?,
+        super::super::timeline::StartPosition::LiveEdge,
+    )?;
     controller.pause(
         pipeline.upcast_ref(),
         super::super::timeline::Resume::Paused,

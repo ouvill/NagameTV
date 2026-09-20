@@ -358,7 +358,10 @@ impl Stopped<'_> {
                 retention,
                 programs_enabled,
             )?,
-            controller: Box::new(super::timeline::Controller::new(&playback.sink)?),
+            controller: Box::new(super::timeline::Controller::new(
+                &playback.sink,
+                super::timeline::StartPosition::LiveEdge,
+            )?),
             projection: Projection::Live(Box::new(super::live_timeline::Presenter::new())),
         };
         self.start_uri(
@@ -379,7 +382,10 @@ impl Stopped<'_> {
         let playback = self.0.playback.as_ref().ok_or(Error::Unavailable)?;
         let input = Input::Active {
             source: super::input::Input::recording(playback.element(), file, programs_enabled)?,
-            controller: Box::new(super::timeline::Controller::new(&playback.sink)?),
+            controller: Box::new(super::timeline::Controller::new(
+                &playback.sink,
+                super::timeline::StartPosition::Beginning,
+            )?),
             projection: Projection::Recording,
         };
         self.start_uri(

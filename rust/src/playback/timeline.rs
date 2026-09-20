@@ -1,5 +1,6 @@
-//! Time-based transport for recordings and retained live streams. A prepared operation borrows the same controller
-//! and pipeline whose TIME seeking capability was checked.
+//! Time-based transport for recordings and retained live streams. A prepared
+//! operation borrows its controller and pipeline with a validated TIME range:
+//! a seeking query for user transport, or the active source's receive window.
 use gstreamer::{self as gst, prelude::*};
 use std::{
     sync::{Arc, Mutex},
@@ -34,6 +35,16 @@ pub(super) enum LiveWindow {
 pub enum Resume {
     Playing,
     Paused,
+}
+
+pub(super) enum StartPosition {
+    Beginning,
+    LiveEdge,
+}
+
+enum Startup {
+    AwaitingLiveOutput,
+    Complete,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -71,6 +82,11 @@ impl Range {
     }
     pub fn end(self) -> gst::ClockTime {
         self.end
+    }
+    fn live_target(self) -> gst::ClockTime {
+        self.end
+            .saturating_sub(gst::ClockTime::MSECOND)
+            .max(self.start)
     }
     fn target(self, milliseconds: f64) -> Result<gst::ClockTime, Error> {
         if !milliseconds.is_finite() || milliseconds < 0.0 {
@@ -128,6 +144,8 @@ enum State {
 
 pub(super) struct Controller {
     state: State,
+    startup: Startup,
+    sink: gst::glib::WeakRef<gst::Element>,
     snapshot: Snapshot,
     output: Arc<Mutex<Output>>,
     subscriptions: crate::features::subscriptions::Subscriptions,
@@ -144,7 +162,7 @@ pub(super) struct Ready<'a> {
 }
 
 impl Controller {
-    pub fn new(sink: &gst::Element) -> Result<Self, Error> {
+    pub fn new(sink: &gst::Element, start: StartPosition) -> Result<Self, Error> {
         let pad = sink.static_pad("sink").ok_or(Error::Observer)?;
         let output = Arc::new(Mutex::new(Output::default()));
         let observed = output.clone();
@@ -183,6 +201,11 @@ impl Controller {
         subscriptions.probe(&pad, probe);
         Ok(Self {
             state: State::Playing,
+            startup: match start {
+                StartPosition::Beginning => Startup::Complete,
+                StartPosition::LiveEdge => Startup::AwaitingLiveOutput,
+            },
+            sink: sink.downgrade(),
             snapshot: Snapshot::default(),
             output,
             subscriptions,
@@ -247,6 +270,7 @@ impl Controller {
     }
 
     pub(super) fn retention_changed(&mut self, change: RetentionChange) {
+        self.startup = Startup::Complete;
         self.retention_change = Some(match (self.retention_change, change) {
             (Some(RetentionChange::ReturnToLive), RetentionChange::ClampPosition)
             | (_, RetentionChange::ReturnToLive) => {
@@ -281,13 +305,7 @@ impl Controller {
             self.snapshot.duration = history.map(|range| range.end);
             let position = self.seek_target().or(self.snapshot.position);
             let correction = match change {
-                RetentionChange::ReturnToLive => Some((
-                    range
-                        .end
-                        .saturating_sub(gst::ClockTime::MSECOND)
-                        .max(range.start),
-                    Resume::Playing,
-                )),
+                RetentionChange::ReturnToLive => Some((range.live_target(), Resume::Playing)),
                 RetentionChange::ClampPosition => {
                     if expired || position.is_some_and(|position| position < range.start) {
                         let resume = match self.phase() {
@@ -310,6 +328,9 @@ impl Controller {
                 });
             }
             self.retention_change = None;
+            return Ok(());
+        }
+        if self.align_live_start(pipeline, range)? {
             return Ok(());
         }
         let behind = history.is_some()
@@ -345,6 +366,71 @@ impl Controller {
         Ok(())
     }
 
+    fn align_live_start(&mut self, pipeline: &gst::Element, range: Range) -> Result<bool, Error> {
+        if !matches!(self.startup, Startup::AwaitingLiveOutput)
+            || !matches!(self.state, State::Playing)
+        {
+            return Ok(false);
+        }
+        // Wait for this session's first decoded output and completed startup.
+        // A PLAYING request alone does not mean a flushing seek is ready.
+        if !matches!(
+            pipeline.state(gst::ClockTime::ZERO),
+            (Ok(_), gst::State::Playing, gst::State::VoidPending)
+        ) {
+            return Ok(false);
+        }
+        {
+            let output = self.output.lock().map_err(|_| Error::Observer)?;
+            if output.buffered.is_none() || output.eos.is_some() {
+                return Ok(false);
+            }
+        }
+        // Preroll can deliver a decoded buffer before its first display time.
+        // Wait until the sink has rendered in this stream, so the adjustment
+        // does not race the initial clock wait and leave the same startup lag.
+        if !self
+            .sink
+            .upgrade()
+            .and_then(|sink| super::stats::frame_counters(&sink))
+            .is_some_and(|counts| counts.rendered > 0)
+        {
+            return Ok(false);
+        }
+        let Some(position) = pipeline.query_position::<gst::ClockTime>() else {
+            return Ok(false);
+        };
+        // Consume the startup adjustment even if native seeking is rejected.
+        // Never keep jumping to live during ordinary viewing or user transport.
+        self.startup = Startup::Complete;
+        let target = range.live_target();
+        if target <= position {
+            return Ok(false);
+        }
+        // The receive window belongs to this active source, including its
+        // bounded forward buffer when user-facing timeshift is disabled.
+        let ready = Ready {
+            controller: self,
+            pipeline,
+            range,
+        };
+        match ready.return_to_live() {
+            Ok(()) => {
+                tracing::info!(
+                    position_ms = position.mseconds(),
+                    target_ms = target.mseconds(),
+                    "Aligning new live playback to the receive edge"
+                );
+                Ok(true)
+            }
+            Err(Error::Rejected) => {
+                tracing::warn!("Initial live alignment rejected; keeping current playback");
+                Ok(false)
+            }
+            Err(error) => Err(error),
+        }
+    }
+
     pub fn prepare<'a>(&'a mut self, pipeline: &'a gst::Element) -> Result<Ready<'a>, Error> {
         let (_, state, _) = pipeline.state(gst::ClockTime::ZERO);
         if state < gst::State::Paused {
@@ -374,12 +460,14 @@ impl Controller {
                 self.start_seek(pipeline, target, resume)?;
                 self.notice = Some(Notice::Expired);
             }
+            self.startup = Startup::Complete;
             return Ok(());
         }
         pipeline.set_state(match resume {
             Resume::Playing => gst::State::Playing,
             Resume::Paused => gst::State::Paused,
         })?;
+        self.startup = Startup::Complete;
         match &mut self.state {
             State::Seeking(seek) => seek.resume = resume,
             State::Playing | State::Paused => {
@@ -497,12 +585,8 @@ impl Ready<'_> {
         // Use the freshly queried receive edge, not the UI's sampled duration.
         // Reader::prepare already supplies decode preroll before this target;
         // subtracting an additional second here leaves playback behind live.
-        let target = self
-            .range
-            .end
-            .saturating_sub(gst::ClockTime::MSECOND)
-            .max(self.range.start);
-        match &mut self.controller.state {
+        let target = self.range.live_target();
+        let result = match &mut self.controller.state {
             State::Seeking(seek) => {
                 self.pipeline.set_state(gst::State::Playing)?;
                 seek.next = Some(target);
@@ -512,7 +596,11 @@ impl Ready<'_> {
             State::Playing | State::Paused | State::ExpiredPause | State::Ended => self
                 .controller
                 .start_seek(self.pipeline, target, Resume::Playing),
+        };
+        if result.is_ok() {
+            self.controller.startup = Startup::Complete;
         }
+        result
     }
 
     pub fn seek_live(mut self, milliseconds: f64, corrected: bool) -> Result<(), Error> {
@@ -537,12 +625,15 @@ impl Ready<'_> {
         let resume = match &mut self.controller.state {
             State::Seeking(seek) => {
                 seek.next = Some(target);
+                self.controller.startup = Startup::Complete;
                 return Ok(());
             }
             State::Playing | State::Ended => Resume::Playing,
             State::Paused | State::ExpiredPause => Resume::Paused,
         };
-        self.controller.start_seek(self.pipeline, target, resume)
+        self.controller.start_seek(self.pipeline, target, resume)?;
+        self.controller.startup = Startup::Complete;
+        Ok(())
     }
 }
 
@@ -554,13 +645,16 @@ impl Drop for Controller {
 }
 
 #[cfg(test)]
+mod startup_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     #[test]
     fn rejected_live_seek_keeps_the_paused_frame_and_does_not_report_recovery() {
         gst::init().unwrap();
         let sink = gst::ElementFactory::make("fakesink").build().unwrap();
-        let mut controller = Controller::new(&sink).unwrap();
+        let mut controller = Controller::new(&sink, StartPosition::Beginning).unwrap();
         let paused = gst::ClockTime::from_seconds(1);
         let range = Range::new(
             gst::ClockTime::from_seconds(10),
@@ -603,7 +697,7 @@ mod tests {
         let sink = gst::ElementFactory::make("fakesink")
             .property("async", false)
             .build()?;
-        let mut controller = Controller::new(&sink)?;
+        let mut controller = Controller::new(&sink, StartPosition::Beginning)?;
         let sequence = gst::Seqnum::next();
         controller.state = State::Seeking(Seek {
             sequence,
@@ -639,7 +733,7 @@ mod tests {
     fn forward_buffer_eviction_does_not_expire_queued_video() {
         gst::init().unwrap();
         let sink = gst::ElementFactory::make("fakesink").build().unwrap();
-        let mut controller = Controller::new(&sink).unwrap();
+        let mut controller = Controller::new(&sink, StartPosition::Beginning).unwrap();
         controller.snapshot.position = Some(gst::ClockTime::ZERO);
         const BUFFER_SECONDS: u64 = 2;
         const EVICTIONS: u64 = 60;
@@ -716,7 +810,7 @@ mod tests {
             ),
         );
         let sink = pipeline.0.by_name("output").ok_or("output")?;
-        let mut control = Controller::new(&sink)?;
+        let mut control = Controller::new(&sink, StartPosition::Beginning)?;
         let result = (|| -> Result<(), Box<dyn std::error::Error>> {
             control.pause(pipeline.0.upcast_ref(), Resume::Paused)?;
             pipeline.0.state(gst::ClockTime::from_seconds(5)).0?;

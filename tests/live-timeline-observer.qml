@@ -8,10 +8,30 @@ Item {
     property int notifications: 0
     property var saved: null
     property string previousSession: ""
+    property int seekRequests: 0
+    property string lastSeekSession: ""
+    property real lastSeekTarget: -1
+    property real lastSeekEdge: -1
+    property real lastSeekPreviousEdge: -1
+    property string observedSession: ""
+    property real previousLivePosition: -1
     function check() {
         const model = JSON.parse(backend.live_timeline);
         if (!model) return;
         notifications++;
+        if (observedSession !== model.session) {
+            observedSession = model.session;
+            previousLivePosition = -1;
+        }
+        if (model.seekTarget !== null
+                && (lastSeekSession !== model.session || lastSeekTarget !== model.seekTarget)) {
+            seekRequests++;
+            lastSeekSession = model.session;
+            lastSeekTarget = model.seekTarget;
+            lastSeekEdge = model.live.position;
+            lastSeekPreviousEdge = previousLivePosition;
+        }
+        previousLivePosition = model.live.position;
         const program = model.viewing && model.viewing.program;
         const expected = program ? program.data : null;
         if (JSON.stringify(JSON.parse(backend.current_program_data)) !== JSON.stringify(expected))
