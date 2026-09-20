@@ -4,7 +4,8 @@ use gstreamer::{self as gst, prelude::*};
 use gstreamer_base::prelude::BaseTransformExt;
 use gstreamer_video::{VideoBufferFlags, prelude::VideoBufferExt};
 
-const QUEUE_BUFFERS: u32 = 4;
+// Leave bounded read-ahead room to absorb brief upstream processing stalls.
+const QUEUE_BUFFERS: u32 = 8;
 const GL_MEMORY: &str = "memory:GLMemory";
 const VA_MEMORY: &str = "memory:VAMemory";
 
