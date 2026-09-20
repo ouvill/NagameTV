@@ -45,6 +45,7 @@ enum Command {
     Stop,
     Raise,
     Volume { value: f64 },
+    Rate { value: f64, track: String },
     Seek { value: f64, track: String },
     SetPosition { value: f64, track: String },
 }
@@ -116,6 +117,17 @@ impl ffi::Player {
         // A moving timeshift window has no stable MPRIS track position. Expose
         // transport controls there; absolute seek/length apply only to recordings.
         let can_seek = self.recording() && self.seekable() && !track.is_empty();
+        let rate = self.rust().speed.applied.multiplier();
+        // Keep the retained rate inside the advertised interval at EOF and
+        // while controls are temporarily unavailable. MPRIS also requires 1.0.
+        let (minimum_rate, maximum_rate) = if self.speed_available() {
+            (
+                crate::playback::speed::Rate::MIN as f64 / crate::playback::speed::Rate::SCALE,
+                crate::playback::speed::Rate::MAX as f64 / crate::playback::speed::Rate::SCALE,
+            )
+        } else {
+            (rate.min(1.0), rate.max(1.0))
+        };
         let snapshot = serde_json::json!({
             "track": track, "title": title,
             "artist": if self.recording() { "" } else { channel.map_or("", |c| c.name.as_str()) },
@@ -126,6 +138,9 @@ impl ffi::Player {
             "seeking": self.seeking(),
             "position": if can_seek { (self.position_ms().max(0.0) * MICROSECONDS_PER_MILLISECOND) as i64 } else { 0 },
             "length": if can_seek { (self.duration_ms().max(0.0) * MICROSECONDS_PER_MILLISECOND) as i64 } else { 0 },
+            "rate": rate,
+            "minimum_rate": minimum_rate,
+            "maximum_rate": maximum_rate,
             "volume": if *self.audio_muted() { 0.0 } else { *self.volume_level() },
         });
         if let Registration::Registered(session) = &mut self.as_mut().rust_mut().desktop_media {
@@ -161,6 +176,14 @@ impl ffi::Player {
             Command::Volume { value } => {
                 self.as_mut().volume(value);
                 self.save_settings();
+            }
+            Command::Rate { value, track } => {
+                if !track.is_empty()
+                    && track == self.desktop_track()
+                    && let Some(rate) = crate::playback::speed::Rate::from_multiplier(value)
+                {
+                    self.set_playback_rate(rate.tenths());
+                }
             }
             Command::Seek { value, track } => {
                 if self.recording() && self.seekable() && track == self.desktop_track() {

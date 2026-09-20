@@ -19,6 +19,8 @@
 
 class DesktopMedia final : public QDBusVirtualObject {
     static constexpr int MaxPendingCommands = 32;
+    static constexpr double RateStepsPerUnit = 10.0;
+    static constexpr double RateStepTolerance = 0.000001;
     const QString path = QStringLiteral("/org/mpris/MediaPlayer2");
     const QString playerInterface = QStringLiteral("org.mpris.MediaPlayer2.Player");
     const QString rootInterface = QStringLiteral("org.mpris.MediaPlayer2");
@@ -86,9 +88,9 @@ public:
                 metadata.insert("mpris:length", next.value("length").toVariant().toLongLong());
         }
         QVariantMap properties{{"PlaybackStatus", next.value("status").toString()},
-            {"Rate", 1.0}, {"Metadata", metadata}, {"Volume", next.value("volume").toDouble()},
+            {"Rate", next.value("rate").toDouble(1.0)}, {"Metadata", metadata}, {"Volume", next.value("volume").toDouble()},
             {"Position", next.value("position").toVariant().toLongLong()},
-            {"MinimumRate", 1.0}, {"MaximumRate", 1.0}, {"CanGoNext", false}, {"CanGoPrevious", false},
+            {"MinimumRate", next.value("minimum_rate").toDouble(1.0)}, {"MaximumRate", next.value("maximum_rate").toDouble(1.0)}, {"CanGoNext", false}, {"CanGoPrevious", false},
             {"CanPlay", next.value("can_play").toBool()}, {"CanPause", next.value("can_pause").toBool()},
             {"CanSeek", next.value("can_seek").toBool()}, {"CanControl", true}};
         QVariantMap changed;
@@ -178,7 +180,12 @@ public:
                     return error(message, connection, QDBusError::InvalidArgs, "Expected a finite double");
                 if (name == "Volume") return enqueue(message, connection, "Volume", value.toDouble());
                 if (value.toDouble() == 0) return enqueue(message, connection, "Pause");
-                connection.send(message.createReply()); return true;
+                const double rate = value.toDouble();
+                if (rate < playerProperties.value("MinimumRate").toDouble()
+                    || rate > playerProperties.value("MaximumRate").toDouble()
+                    || std::abs(rate * RateStepsPerUnit - std::round(rate * RateStepsPerUnit)) > RateStepTolerance)
+                    return error(message, connection, QDBusError::InvalidArgs, "Unsupported playback rate");
+                return enqueue(message, connection, "Rate", rate, snapshot.value("track").toString());
             }
             return error(message, connection, QDBusError::InvalidArgs, "Invalid property arguments");
         }

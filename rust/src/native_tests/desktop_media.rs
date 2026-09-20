@@ -16,6 +16,7 @@ fn checks() -> Result<(), Box<dyn std::error::Error>> {
     let mut snapshot = json!({
         "track": "/org/mpris/MediaPlayer2/track/42", "title": "字幕のある番組", "artist": "試験放送",
         "status": "Playing", "can_play": true, "can_pause": true, "can_seek": true,
+        "rate": 1.0, "minimum_rate": 0.5, "maximum_rate": 2.0,
         "seeking": false, "volume": 0.5, "position": 2_000_000, "length": 60_000_000,
     });
     session
@@ -37,6 +38,7 @@ fn checks() -> Result<(), Box<dyn std::error::Error>> {
             let command: serde_json::Value = serde_json::from_str(&command)?;
             received.push(command.clone());
             match command["kind"].as_str().ok_or("command kind")? {
+                "Rate" => snapshot["rate"] = command["value"].clone(),
                 "Volume" => snapshot["volume"] = command["value"].clone(),
                 "Pause" => snapshot["status"] = json!("Paused"),
                 "Play" | "PlayPause" => snapshot["status"] = json!("Playing"),
@@ -76,10 +78,18 @@ fn checks() -> Result<(), Box<dyn std::error::Error>> {
         .collect();
     assert_eq!(
         kinds,
-        ["Volume", "Pause", "Play", "SetPosition", "Raise", "Stop"]
+        [
+            "Volume",
+            "Rate",
+            "Pause",
+            "Play",
+            "SetPosition",
+            "Raise",
+            "Stop"
+        ]
     );
     assert_eq!(received[0]["value"], 0.7);
-    assert_eq!(received[3]["track"], "/org/mpris/MediaPlayer2/track/42");
+    assert_eq!(received[4]["track"], "/org/mpris/MediaPlayer2/track/42");
     drop(session);
     let status = Command::new("python3")
         .arg(concat!(

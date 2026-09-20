@@ -189,6 +189,133 @@ impl Drop for Playback {
 }
 
 #[test]
+fn catch_up_uses_current_position_even_between_ui_samples() -> Result<(), Box<dyn std::error::Error>>
+{
+    let mut playback = Playback::new(StartPosition::Beginning)?;
+    playback.state(gst::State::Playing)?;
+    playback.controller.start_change(
+        playback.pipeline.upcast_ref(),
+        USER_POSITION,
+        Resume::Playing,
+        Rate::checked(20).unwrap(),
+        Completion::Position,
+    )?;
+    playback.finish_seek()?;
+    let position = playback
+        .pipeline
+        .query_position::<gst::ClockTime>()
+        .ok_or("position")?;
+    let buffer = live_headroom(LiveBuffer::default());
+    let range = Range::new(gst::ClockTime::ZERO, position + buffer / 2).ok_or("range")?;
+    playback.controller.live_position = LivePosition::Behind;
+    // Two-times playback moves 400 ms during the UI's 200 ms sample interval.
+    let stale_by = gst::ClockTime::from_nseconds(POSITION_SAMPLE_INTERVAL.as_nanos() as u64) * 2;
+    playback.controller.snapshot.position = Some(position - stale_by);
+    playback.controller.next_sample = Instant::now() + POSITION_SAMPLE_INTERVAL;
+    playback.controller.retained(
+        playback.pipeline.upcast_ref(),
+        LiveWindow::History(range),
+        false,
+        crate::playback::input::ReadProgress::idle(),
+    )?;
+    assert_eq!(
+        playback.controller.requested_rate(),
+        Rate::NORMAL,
+        "the fresh playhead has reached the configured reserve"
+    );
+    playback.finish_seek()?;
+    assert_eq!(playback.controller.speed().applied, Rate::NORMAL);
+    assert_eq!(playback.controller.take_notice(), Some(Notice::CaughtUp));
+    Ok(())
+}
+
+#[test]
+fn confirmed_live_return_sets_live_status_despite_receive_progress_during_seek()
+-> Result<(), Box<dyn std::error::Error>> {
+    let mut playback = Playback::new(StartPosition::Beginning)?;
+    playback.state(gst::State::Playing)?;
+    playback.controller.live_position = LivePosition::Behind;
+    let range = Range::new(gst::ClockTime::ZERO, RECEIVE_EDGE).ok_or("range")?;
+    Ready {
+        controller: &mut playback.controller,
+        pipeline: playback.pipeline.upcast_ref(),
+        range,
+    }
+    .return_to_live()?;
+    assert!(
+        !playback.controller.speed().at_live_edge,
+        "a pending seek is not confirmation"
+    );
+    playback.finish_seek()?;
+    let position = playback
+        .pipeline
+        .query_position::<gst::ClockTime>()
+        .ok_or("position")?;
+    let delivery_progress = gst::ClockTime::from_mseconds(100);
+    let later = Range::new(
+        gst::ClockTime::ZERO,
+        position + live_headroom(LiveBuffer::default()) + delivery_progress,
+    )
+    .ok_or("range")?;
+    playback.controller.retained(
+        playback.pipeline.upcast_ref(),
+        LiveWindow::History(later),
+        false,
+        crate::playback::input::ReadProgress::idle(),
+    )?;
+    assert!(
+        playback.controller.speed().at_live_edge,
+        "confirmed live return must tolerate reception advancing during preroll"
+    );
+    Ready {
+        controller: &mut playback.controller,
+        pipeline: playback.pipeline.upcast_ref(),
+        range: later,
+    }
+    .seek(USER_POSITION.mseconds() as f64)?;
+    playback.finish_seek()?;
+    playback.controller.retained(
+        playback.pipeline.upcast_ref(),
+        LiveWindow::History(later),
+        false,
+        crate::playback::input::ReadProgress::idle(),
+    )?;
+    assert!(
+        !playback.controller.speed().at_live_edge,
+        "rewinding must leave live status"
+    );
+    Ok(())
+}
+
+#[test]
+fn rewind_supersedes_pending_live_return_without_publishing_live_status()
+-> Result<(), Box<dyn std::error::Error>> {
+    let mut playback = Playback::new(StartPosition::Beginning)?;
+    playback.state(gst::State::Playing)?;
+    playback.controller.live_position = LivePosition::Behind;
+    let range = Range::new(gst::ClockTime::ZERO, RECEIVE_EDGE).ok_or("range")?;
+    Ready {
+        controller: &mut playback.controller,
+        pipeline: playback.pipeline.upcast_ref(),
+        range,
+    }
+    .return_to_live()?;
+    Ready {
+        controller: &mut playback.controller,
+        pipeline: playback.pipeline.upcast_ref(),
+        range,
+    }
+    .seek(USER_POSITION.mseconds() as f64)?;
+    playback.finish_seek()?;
+    assert!(
+        !playback.controller.speed().at_live_edge,
+        "superseded live confirmation is stale"
+    );
+    assert!(playback.controller.take_notice().is_none());
+    Ok(())
+}
+
+#[test]
 fn initial_alignment_waits_for_rendering_after_decoded_preroll()
 -> Result<(), Box<dyn std::error::Error>> {
     let mut playback = Playback::new(StartPosition::LiveEdge(
@@ -256,9 +383,12 @@ fn live_start_waits_for_output_and_aligns_only_once_per_source()
                 .align_live_start(playback.pipeline.upcast_ref(), range)?
         );
         playback.state(gst::State::Playing)?;
-        playback
-            .controller
-            .retained(playback.pipeline.upcast_ref(), window, false)?;
+        playback.controller.retained(
+            playback.pipeline.upcast_ref(),
+            window,
+            false,
+            crate::playback::input::ReadProgress::idle(),
+        )?;
         assert_eq!(
             playback.controller.seek_target(),
             Some(range.live_target(LiveBuffer::default()))

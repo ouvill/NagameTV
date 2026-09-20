@@ -288,6 +288,18 @@ fn check_transport_messages() {
     let mut player = ffi::new_player();
     assert!(player.rust().media.playback().is_none());
     assert!(player.transport_error().is_empty());
+    assert_eq!(player.playback_rate(), 10);
+    assert_eq!(player.requested_playback_rate(), 10);
+    assert_eq!(player.minimum_playback_rate(), 5);
+    assert_eq!(player.maximum_playback_rate(), 20);
+    assert!(!player.speed_available());
+    assert!(!player.at_live_edge());
+    for rate in [0, 4, 11, 21] {
+        assert!(!player.pin_mut().set_playback_rate(rate));
+        assert_eq!(player.playback_rate(), 10);
+        assert_eq!(player.requested_playback_rate(), 10);
+    }
+    player.pin_mut().set_transport_message(Message::None);
     let observed = Arc::new(Mutex::new(Vec::new()));
     let messages = observed.clone();
     let _signal = player.pin_mut().on_transport_error_changed(move |player| {
@@ -297,6 +309,16 @@ fn check_transport_messages() {
             .push(player.transport_error().to_string());
     });
     for (notice, english, japanese) in [
+        (
+            Notice::CaughtUp,
+            "Caught up with live playback. Returned to normal speed.",
+            "ライブに追いついたため、等速に戻しました。",
+        ),
+        (
+            Notice::ReceptionStalled,
+            "Reception is waiting. Returned to normal speed.",
+            "受信待ちになったため、等速に戻しました。",
+        ),
         (
             Notice::Expired,
             "The playback position expired and was moved into the retained range.",

@@ -11,6 +11,7 @@ pub mod failure;
 pub mod input;
 pub(crate) mod live_timeline;
 pub mod recording;
+pub mod speed;
 pub mod stats;
 pub mod timeline;
 #[cfg(feature = "video_item_tests")]
@@ -165,6 +166,7 @@ pub struct Playback {
     video_output: VideoOutputState,
     audio_streams: RefCell<audio_streams::Streams>,
     routing: audio_routing::Routing,
+    tempo: Option<gst::Element>,
     audio_intent: RefCell<Option<audio_choices::Intent>>,
     audio_default: RefCell<audio_default::Policy>,
     requested_uri: RefCell<Option<String>>,
@@ -227,7 +229,10 @@ impl Playback {
         } = video_output::Validated::new(sink.clone(), mode)?.build()?;
         let audio = audio_sink::Output::from_environment()?.build()?;
         let routing = audio_routing::Routing::default();
-        let audio_filter = routing.filter()?;
+        let tempo = gst::ElementFactory::find("scaletempo")
+            .map(|factory| factory.create().build())
+            .transpose()?;
+        let audio_filter = routing.filter_with_tempo(tempo.as_ref())?;
         let playbin = clock::Policy::from_environment()?.build_playbin()?;
         let program_number = Arc::new(std::sync::atomic::AtomicI32::new(-1));
         let program = program_number.clone();
@@ -271,6 +276,7 @@ impl Playback {
             video_output: VideoOutputState::Unattached,
             audio_streams: RefCell::default(),
             routing,
+            tempo,
             audio_intent: RefCell::default(),
             audio_default: RefCell::default(),
             requested_uri: RefCell::new(None),

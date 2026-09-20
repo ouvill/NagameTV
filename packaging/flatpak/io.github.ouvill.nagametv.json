@@ -34,6 +34,7 @@
         "--libdir=lib",
         "-Dauto_features=disabled",
         "-Dqt6=enabled",
+        "-Daudiofx=enabled",
         "-Dqt-x11=enabled",
         "-Dqt-egl=enabled"
       ],

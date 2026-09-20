@@ -108,6 +108,7 @@ impl Default for PlayerRust {
             catalog_selection: Default::default(),
             stream_state: Default::default(),
             timeline: Default::default(),
+            speed: Default::default(),
             timeshift_bytes_per_second: 0.0,
             live_timeline: QString::from("null"),
             transport_message: super::transport::Message::None,

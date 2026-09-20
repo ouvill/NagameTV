@@ -178,6 +178,13 @@ pub mod ffi {
         #[qproperty(f64, position_ms, READ = position_ms, NOTIFY)]
         #[qproperty(f64, duration_ms, READ = duration_ms, NOTIFY)]
         #[qproperty(bool, duration_estimated, READ = duration_estimated, NOTIFY)]
+        #[qproperty(i32, playback_rate, READ = playback_rate, NOTIFY)]
+        #[qproperty(i32, requested_playback_rate, READ = requested_playback_rate, NOTIFY)]
+        #[qproperty(i32, minimum_playback_rate, READ = minimum_playback_rate, CONSTANT)]
+        #[qproperty(i32, maximum_playback_rate, READ = maximum_playback_rate, CONSTANT)]
+        #[qproperty(bool, speed_available, READ = speed_available, NOTIFY)]
+        #[qproperty(QString, speed_reason, READ = speed_reason, NOTIFY)]
+        #[qproperty(bool, at_live_edge, READ = at_live_edge, NOTIFY)]
         #[qproperty(bool, timeshift, READ = timeshift, NOTIFY)]
         #[qproperty(f64, window_start_ms, READ = window_start_ms, NOTIFY)]
         #[qproperty(f64, window_end_ms, READ = window_end_ms, NOTIFY)]
@@ -303,6 +310,15 @@ pub mod ffi {
         fn position_ms(self: &Player) -> f64;
         fn duration_ms(self: &Player) -> f64;
         fn duration_estimated(self: &Player) -> bool;
+        fn playback_rate(self: &Player) -> i32;
+        fn requested_playback_rate(self: &Player) -> i32;
+        fn minimum_playback_rate(self: &Player) -> i32;
+        fn maximum_playback_rate(self: &Player) -> i32;
+        fn speed_available(self: &Player) -> bool;
+        fn speed_reason(self: &Player) -> QString;
+        fn at_live_edge(self: &Player) -> bool;
+        #[qinvokable]
+        fn set_playback_rate(self: Pin<&mut Player>, tenths: i32) -> bool;
         fn timeshift(self: &Player) -> bool;
         fn window_start_ms(self: &Player) -> f64;
         fn window_end_ms(self: &Player) -> f64;
@@ -490,6 +506,7 @@ pub struct PlayerRust {
     catalog_selection: channels::SelectionPolicy,
     stream_state: stream_state::State,
     timeline: playback::timeline::Snapshot,
+    speed: playback::speed::Snapshot,
     timeshift_bytes_per_second: f64,
     live_timeline: QString,
     transport_message: transport::Message,

@@ -9,6 +9,28 @@ pub(super) struct Feedback {
     pub failure: Mutex<Option<String>>,
     generation: AtomicU64,
     expired: AtomicU64,
+    progress: Mutex<ReadProgress>,
+}
+
+/// Receive-edge waits belong to one seek generation. A wait alone says nothing
+/// about data already queued in the decoder; filtered TS blocks are not waits.
+#[derive(Clone, Copy)]
+pub(in crate::playback) struct ReadProgress {
+    generation: u64,
+    waits: u64,
+}
+impl ReadProgress {
+    pub(in crate::playback) fn waited_since(self, previous: Self) -> Option<bool> {
+        (self.generation == previous.generation).then_some(self.waits != previous.waits)
+    }
+    #[cfg(test)]
+    pub(in crate::playback) fn idle() -> Self {
+        Self::for_test(0, 0)
+    }
+    #[cfg(test)]
+    pub(in crate::playback) fn for_test(generation: u64, waits: u64) -> Self {
+        Self { generation, waits }
+    }
 }
 const NO_EXPIRED_GENERATION: u64 = u64::MAX;
 impl Default for Feedback {
@@ -17,10 +39,36 @@ impl Default for Feedback {
             failure: Mutex::default(),
             generation: AtomicU64::new(0),
             expired: AtomicU64::new(NO_EXPIRED_GENERATION),
+            progress: Mutex::new(ReadProgress {
+                generation: 0,
+                waits: 0,
+            }),
         }
     }
 }
 impl Feedback {
+    fn begin_seek(&self) {
+        let generation = self.generation.fetch_add(1, Ordering::AcqRel) + 1;
+        if let Ok(mut progress) = self.progress.lock() {
+            *progress = ReadProgress {
+                generation,
+                waits: 0,
+            };
+        }
+    }
+    fn awaited(&self, generation: u64) {
+        if let Ok(mut progress) = self.progress.lock()
+            && progress.generation == generation
+        {
+            progress.waits = progress.waits.wrapping_add(1);
+        }
+    }
+    pub(super) fn read_progress(&self) -> Result<ReadProgress, Error> {
+        self.progress
+            .lock()
+            .map(|value| *value)
+            .map_err(|_| Error::Poisoned)
+    }
     pub(super) fn take_expired(&self) -> bool {
         self.expired.swap(NO_EXPIRED_GENERATION, Ordering::AcqRel)
             == self.generation.load(Ordering::Acquire)
@@ -323,6 +371,9 @@ impl Input {
     pub fn take_expired(&self) -> bool {
         self.feedback.take_expired()
     }
+    pub fn read_progress(&self) -> Result<ReadProgress, Error> {
+        self.feedback.read_progress()
+    }
     pub fn live_window(&self) -> Option<super::super::timeline::LiveWindow> {
         use super::super::timeline::{LiveWindow, Range};
         if let Shared::File(_) = self.shared {
@@ -390,7 +441,7 @@ pub(super) fn configure(
                 if let Some(event) = info.event_mut() {
                     match event.view() {
                         gst::EventView::Seek(_) => {
-                            epoch.generation.fetch_add(1, Ordering::AcqRel);
+                            epoch.begin_seek();
                             if let Ok(mut sequence) = requested.lock() {
                                 *sequence = Some(event.seqnum());
                             }
@@ -521,8 +572,10 @@ pub(super) fn configure(
                             std::thread::sleep(INPUT_WAIT);
                         }
                         Ok(Output::Awaiting) => {
-                            // An expired paused cursor waits for the UI controller to
-                            // flush and move to the new window; never emit stale data.
+                            feedback.awaited(current);
+                            std::thread::sleep(INPUT_WAIT);
+                        }
+                        Ok(Output::Filtered) => {
                             std::thread::sleep(INPUT_WAIT);
                         }
                         Ok(Output::End) => {
@@ -546,6 +599,27 @@ pub(super) fn configure(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn receive_wait_feedback_does_not_cross_a_seek() {
+        let feedback = Feedback::default();
+        let before = feedback.read_progress().unwrap();
+        feedback.awaited(before.generation);
+        let waiting = feedback.read_progress().unwrap();
+        assert_eq!(waiting.waited_since(before), Some(true));
+        feedback.begin_seek();
+        let after = feedback.read_progress().unwrap();
+        assert_eq!(after.waited_since(waiting), None);
+        feedback.awaited(before.generation);
+        assert_eq!(
+            feedback.read_progress().unwrap().waited_since(after),
+            Some(false)
+        );
+        feedback.awaited(after.generation);
+        assert_eq!(
+            feedback.read_progress().unwrap().waited_since(after),
+            Some(true)
+        );
+    }
     #[test]
     fn expired_feedback_cannot_cross_a_seek_generation() {
         let feedback = Feedback::default();

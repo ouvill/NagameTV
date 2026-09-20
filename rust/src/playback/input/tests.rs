@@ -169,7 +169,7 @@ fn normalized_raw_input_seeks_across_pid_changes_without_losing_pause()
         } else {
             &[4_500, 1_000, 4_500]
         };
-        for &target in targets {
+        for (step, &target) in targets.iter().enumerate() {
             controller
                 .prepare(pipeline.upcast_ref())?
                 .seek(target as f64)?;
@@ -189,6 +189,21 @@ fn normalized_raw_input_seeks_across_pid_changes_without_losing_pause()
                 actual.abs_diff(target) < POSITION_TOLERANCE_MS,
                 "{name}: requested {target}, got {actual}"
             );
+            // This video-only pipeline also crosses PMT/PID and clock resets.
+            let rates = [5, 11, 15, 20];
+            let rate = crate::playback::speed::Rate::checked(rates[step]).unwrap();
+            controller.prepare(pipeline.upcast_ref())?.set_rate(rate)?;
+            let deadline = Instant::now() + TEST_DEADLINE;
+            while matches!(
+                controller.phase(),
+                super::super::timeline::Phase::Seeking(_)
+            ) {
+                controller.poll(pipeline.upcast_ref())?;
+                assert!(Instant::now() < deadline, "{name}: rate change timed out");
+                std::thread::sleep(TEST_POLL);
+            }
+            assert_eq!(controller.speed().applied, rate);
+            assert_eq!(controller.phase(), super::super::timeline::Phase::Paused);
         }
         drop(stop);
         scope.close();
@@ -315,6 +330,7 @@ fn file_framing_preserves_packets_for_ts_m2ts_and_parity_frames()
             match reader.next()? {
                 Output::Data { bytes, .. } => output.extend(bytes),
                 Output::End => break,
+                Output::Filtered => {}
                 Output::Awaiting | Output::Expired => panic!("file did not complete"),
             }
         }
@@ -472,6 +488,7 @@ fn exercise_expired_pause(expiry: Expiry) -> Result<(), Box<dyn std::error::Erro
             .unwrap(),
         ),
         true,
+        feedback.read_progress()?,
     )?;
     match expiry {
         Expiry::Natural => {
@@ -546,6 +563,7 @@ fn exercise_expired_pause(expiry: Expiry) -> Result<(), Box<dyn std::error::Erro
                 .unwrap(),
             ),
             feedback.take_expired(),
+            feedback.read_progress()?,
         )?;
         assert_eq!(
             controller.phase(),
@@ -655,4 +673,106 @@ fn inspected_input_construction_never_opens_the_file_on_the_caller() {
         drop(state);
         std::thread::sleep(TEST_POLL);
     }
+}
+
+#[test]
+fn playback_speed_uses_normalized_ts_and_preserves_pause_seek_and_latest_request()
+-> Result<(), Box<dyn std::error::Error>> {
+    use crate::playback::{
+        speed::Rate,
+        timeline::{Controller, Phase, Resume, StartPosition},
+    };
+    gst::init()?;
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/fixtures/recording-seek.ts");
+    let (reader, _worker) = file_reader(&path, 1, true)?;
+    let pipeline = gst::parse::launch("appsrc name=source ! tsdemux name=demux demux. ! queue ! mpegvideoparse ! avdec_mpeg2video ! fakesink name=output sync=true demux. ! queue ! aacparse ! avdec_aac ! audioconvert ! scaletempo name=tempo ! fakesink name=audio sync=true")?
+        .downcast::<gst::Pipeline>().map_err(|_| "pipeline")?;
+    let interrupted = Arc::new(AtomicBool::new(false));
+    struct Stop(gst::Pipeline, Arc<AtomicBool>);
+    impl Drop for Stop {
+        fn drop(&mut self) {
+            self.1.store(true, Ordering::Release);
+            let _ = self.0.set_state(gst::State::Null);
+        }
+    }
+    let _stop = Stop(pipeline.clone(), interrupted.clone());
+    let scope = crate::features::subscriptions::Subscriptions::default();
+    source::configure(
+        &pipeline
+            .by_name("source")
+            .ok_or("source")?
+            .downcast()
+            .map_err(|_| "appsrc")?,
+        Arc::new(Mutex::new(reader)),
+        interrupted,
+        Arc::new(source::Feedback::default()),
+        &scope,
+    );
+    let sink = pipeline.by_name("output").ok_or("output")?;
+    let mut controller = Controller::new(&sink, StartPosition::Beginning)?;
+    let finish = |controller: &mut Controller| -> Result<(), Box<dyn std::error::Error>> {
+        let deadline = Instant::now() + TEST_DEADLINE;
+        while matches!(controller.phase(), Phase::Seeking(_)) {
+            controller.poll(pipeline.upcast_ref())?;
+            assert!(Instant::now() < deadline, "speed/seek never completed");
+            std::thread::sleep(TEST_POLL);
+        }
+        Ok(())
+    };
+    controller.pause(pipeline.upcast_ref(), Resume::Paused)?;
+    pipeline.state(gst::ClockTime::from_seconds(5)).0?;
+    controller.poll(pipeline.upcast_ref())?;
+    controller.prepare(pipeline.upcast_ref())?.seek(10_000.)?;
+    finish(&mut controller)?;
+    for tenths in [5, 11, 15, 20, 10] {
+        controller.pause(pipeline.upcast_ref(), Resume::Paused)?;
+        pipeline.state(gst::ClockTime::from_seconds(5)).0?;
+        let before = pipeline
+            .query_position::<gst::ClockTime>()
+            .ok_or("before")?;
+        let rate = Rate::checked(tenths).unwrap();
+        controller.prepare(pipeline.upcast_ref())?.set_rate(rate)?;
+        finish(&mut controller)?;
+        assert_eq!(controller.phase(), Phase::Paused);
+        assert_eq!(controller.speed().applied, rate);
+        let after = pipeline.query_position::<gst::ClockTime>().ok_or("after")?;
+        assert!(
+            after.nseconds().abs_diff(before.nseconds())
+                < gst::ClockTime::from_mseconds(150).nseconds(),
+            "rate {tenths}: position jumped from {before} to {after}"
+        );
+        controller.pause(pipeline.upcast_ref(), Resume::Playing)?;
+        pipeline.state(gst::ClockTime::from_seconds(5)).0?;
+        let start = pipeline.query_position::<gst::ClockTime>().ok_or("start")?;
+        let wall = Instant::now();
+        std::thread::sleep(Duration::from_millis(800));
+        let end = pipeline.query_position::<gst::ClockTime>().ok_or("end")?;
+        let expected = wall.elapsed().as_secs_f64() * rate.multiplier();
+        let actual = end.saturating_sub(start).nseconds() as f64 / 1_000_000_000.;
+        assert!(
+            (actual - expected).abs() < 0.15,
+            "rate {tenths}: media {actual}s, expected {expected}s"
+        );
+        let tempo = pipeline.by_name("tempo").ok_or("tempo")?;
+        assert!((tempo.property::<f64>("rate") - rate.multiplier()).abs() < 0.000_001);
+    }
+    controller.pause(pipeline.upcast_ref(), Resume::Paused)?;
+    pipeline.state(gst::ClockTime::from_seconds(5)).0?;
+    controller
+        .prepare(pipeline.upcast_ref())?
+        .set_rate(Rate::checked(15).unwrap())?;
+    controller.prepare(pipeline.upcast_ref())?.seek(30_000.)?;
+    controller
+        .prepare(pipeline.upcast_ref())?
+        .set_rate(Rate::checked(12).unwrap())?;
+    finish(&mut controller)?;
+    assert_eq!(controller.phase(), Phase::Paused);
+    assert_eq!(controller.speed().applied, Rate::checked(12).unwrap());
+    let position = pipeline
+        .query_position::<gst::ClockTime>()
+        .ok_or("position")?;
+    assert!(position.mseconds().abs_diff(30_000) < 150);
+    pipeline.set_state(gst::State::Ready)?;
+    scope.close();
+    Ok(())
 }

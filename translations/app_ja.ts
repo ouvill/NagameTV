@@ -351,6 +351,34 @@
   <context>
     <name>Backend</name>
     <message>
+      <source>Start playback to change its speed.</source>
+      <translation>再生を開始すると速度を変更できます。</translation>
+    </message>
+    <message>
+      <source>Preparing playback speed controls…</source>
+      <translation>再生速度の操作を準備中…</translation>
+    </message>
+    <message>
+      <source>Restart playback to change its speed.</source>
+      <translation>再生を再開すると速度を変更できます。</translation>
+    </message>
+    <message>
+      <source>Playback speed requires the GStreamer scaletempo plugin.</source>
+      <translation>再生速度の変更にはGStreamerのscaletempoプラグインが必要です。</translation>
+    </message>
+    <message>
+      <source>Live playback uses normal speed. Rewind to change the speed.</source>
+      <translation>ライブ位置では等速再生です。巻き戻すと速度を変更できます。</translation>
+    </message>
+    <message>
+      <source>Caught up with live playback. Returned to normal speed.</source>
+      <translation>ライブに追いついたため、等速に戻しました。</translation>
+    </message>
+    <message>
+      <source>Reception is waiting. Returned to normal speed.</source>
+      <translation>受信待ちになったため、等速に戻しました。</translation>
+    </message>
+    <message>
       <source>The playback position expired and was moved into the retained range.</source>
       <translation>保持期限を過ぎたため、再生位置を保持範囲内へ移動しました</translation>
     </message>
@@ -699,6 +727,30 @@
 </context>
   <context>
     <name>Viewer</name>
+    <message>
+      <source>Playback speed</source>
+      <translation>再生速度</translation>
+    </message>
+    <message>
+      <source>Playback speed: %1</source>
+      <translation>再生速度: %1</translation>
+    </message>
+    <message>
+      <source>Decrease playback speed</source>
+      <translation>再生速度を下げる</translation>
+    </message>
+    <message>
+      <source>Increase playback speed</source>
+      <translation>再生速度を上げる</translation>
+    </message>
+    <message>
+      <source>Reset to normal speed</source>
+      <translation>等速に戻す</translation>
+    </message>
+    <message>
+      <source>Changing to %1…</source>
+      <translation>%1に変更中…</translation>
+    </message>
     <message>
       <source>Watching</source>
       <translation>視聴中</translation>

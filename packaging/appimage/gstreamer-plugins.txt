@@ -2,6 +2,7 @@
 # Keep dynamic dependencies here: ldd cannot discover plugins loaded by name.
 app
 audioconvert
+audiofx
 audioparsers
 audioresample
 autodetect

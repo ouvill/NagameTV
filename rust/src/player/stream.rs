@@ -33,6 +33,8 @@ impl ffi::Player {
         mut self: Pin<&mut Self>,
         change: impl FnOnce(State) -> State,
     ) {
+        let before_speed = self.rust().speed;
+        let before_edge = self.at_live_edge();
         let before_action = self.playback_action();
         let before_viewing = self.viewing_channel();
         let old_program = self.current_program_data().clone();
@@ -67,12 +69,14 @@ impl ffi::Player {
             this.timeshift_bytes_per_second =
                 this.media.timeshift_bytes_per_second().unwrap_or_default();
             if this.stream_state.active() {
+                this.speed = this.media.speed();
                 if let Some((phase, snapshot)) = this.media.timeline() {
                     this.stream_state = std::mem::take(&mut this.stream_state).transport(phase);
                     this.timeline = snapshot;
                 }
             } else {
                 this.timeline = Default::default();
+                this.speed = Default::default();
                 this.timeshift_bytes_per_second = 0.0;
             }
             let source_changed = before.2 != this.stream_state.recording().is_some()
@@ -134,6 +138,19 @@ impl ffi::Player {
                     this.program_status = QString::from("pending");
                 }
             }
+        }
+        if before_speed.applied != self.rust().speed.applied {
+            self.as_mut().playback_rate_changed();
+        }
+        if before_speed.requested != self.rust().speed.requested {
+            self.as_mut().requested_playback_rate_changed();
+        }
+        if before_speed.availability != self.rust().speed.availability {
+            self.as_mut().speed_available_changed();
+            self.as_mut().speed_reason_changed();
+        }
+        if before_edge != self.at_live_edge() {
+            self.as_mut().at_live_edge_changed();
         }
         if before_action != self.playback_action() {
             self.as_mut().playback_action_changed();
@@ -384,13 +401,7 @@ impl ffi::Player {
         }
         self.as_mut().poll_recording();
         let result = self.as_mut().rust_mut().media.poll();
-        if let Some(notice) = self.as_mut().rust_mut().media.take_notice() {
-            self.as_mut()
-                .set_transport_message(super::transport::Message::notice(
-                    notice,
-                    std::time::Instant::now(),
-                ));
-        }
+        let notice = self.as_mut().rust_mut().media.take_notice();
         self.poll_audio_choice();
         match result {
             Ok(playback::Event::Playing) => {
@@ -411,6 +422,15 @@ impl ffi::Player {
                 Ok(()) => self.as_mut().playback_failed(playback::Error::EndOfStream),
                 Err(error) => self.as_mut().playback_failed(error),
             },
+            Err(playback::Error::Transport(error @ playback::timeline::Error::RateTimedOut)) => {
+                // The controller has paused and requires a confirmed normal-rate
+                // seek before resuming. Keep this source and the paused frame.
+                self.as_mut().change_stream_state(|state| state);
+                self.as_mut()
+                    .set_transport_message(super::transport::Message::Failure(QString::from(
+                        error.to_string(),
+                    )));
+            }
             Err(error) => {
                 let text = error.to_string();
                 tracing::error!("Playback error: {text}");
@@ -438,6 +458,13 @@ impl ffi::Player {
             Ok(playback::Event::Idle) => {}
         }
         self.as_mut().change_stream_state(|state| state);
+        if let Some(notice) = notice {
+            self.as_mut()
+                .set_transport_message(super::transport::Message::notice(
+                    notice,
+                    std::time::Instant::now(),
+                ));
+        }
         // Commentary uses the output-confirmed position and phase from this
         // tick, so a completed seek publishes its restored window before draw.
         self.as_mut().poll_features();

@@ -16,10 +16,8 @@ Item {
     readonly property bool fullscreen: targetWindow !== null && targetWindow.visibility === Window.FullScreen
     property int restoreVisibility: Window.Windowed
     readonly property RecordingSeekSteps seekSteps: RecordingSeekSteps {}
-    // Allow the decoder's small receive-to-display delay at the live edge.
-    readonly property real liveEdgeToleranceMs: 2500
-    readonly property bool atLiveEdge: !backend.recording && backend.media_active && !backend.paused
-        && !backend.seeking && (!backend.timeshift || backend.live_delay_ms <= liveEdgeToleranceMs)
+    readonly property bool atLiveEdge: backend.at_live_edge
+    signal speedOpened
     signal activity
     signal channelsVisibilityRequested(bool visible)
     signal composerVisibilityRequested(bool visible)

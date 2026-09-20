@@ -49,6 +49,8 @@ impl Message {
         match self {
             Self::None => QString::default(),
             Self::Notice(notice) => tr(match notice.kind {
+                Notice::CaughtUp => "Caught up with live playback. Returned to normal speed.",
+                Notice::ReceptionStalled => "Reception is waiting. Returned to normal speed.",
                 Notice::Expired => {
                     "The playback position expired and was moved into the retained range."
                 }
@@ -66,6 +68,46 @@ impl Message {
 }
 
 impl ffi::Player {
+    pub fn playback_rate(&self) -> i32 {
+        self.rust().speed.applied.tenths()
+    }
+    pub fn requested_playback_rate(&self) -> i32 {
+        self.rust().speed.requested.tenths()
+    }
+    pub fn minimum_playback_rate(&self) -> i32 {
+        playback::speed::Rate::MIN
+    }
+    pub fn maximum_playback_rate(&self) -> i32 {
+        playback::speed::Rate::MAX
+    }
+    pub fn speed_available(&self) -> bool {
+        self.rust().speed.availability == playback::speed::Availability::Variable
+    }
+    pub fn at_live_edge(&self) -> bool {
+        self.media_active() && !self.paused() && !self.seeking() && self.rust().speed.at_live_edge
+    }
+    pub fn speed_reason(&self) -> QString {
+        use playback::speed::Availability;
+        match self.rust().speed.availability {
+            Availability::Variable => QString::default(),
+            Availability::Inactive => tr("Start playback to change its speed."),
+            Availability::Preparing => tr("Preparing playback speed controls…"),
+            Availability::Ended => tr("Restart playback to change its speed."),
+            Availability::MissingTempo => {
+                tr("Playback speed requires the GStreamer scaletempo plugin.")
+            }
+            Availability::LiveOnly => {
+                tr("Live playback uses normal speed. Rewind to change the speed.")
+            }
+        }
+    }
+    pub fn set_playback_rate(self: Pin<&mut Self>, tenths: i32) -> bool {
+        self.control_transport(|media| {
+            let rate = playback::speed::Rate::checked(tenths).ok_or(Error::InvalidRate)?;
+            media.transport_control()?.set_rate(rate)
+        })
+    }
+
     pub fn transport_error(&self) -> QString {
         self.rust().transport_message.render()
     }

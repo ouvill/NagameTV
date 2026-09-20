@@ -168,7 +168,8 @@ ApplicationWindow {
         onProgramVisibilityRequested: function(visible) { root.showProgram = visible; }
         onRecordingRequested: recordingInput.open()
         onCaptureRequested: screenshot.capture()
-        onAudioRequested: audioSettings.toggle()
+        onAudioRequested: { playerControls.closeSpeed(); audioSettings.toggle(); }
+        onSpeedOpened: audioSettings.close()
         onSettingsRequested: {
             root.showProgram = !(root.showProgram && root.sidebarPage === ProgramSidebar.Playback);
             root.sidebarPage = ProgramSidebar.Playback;

@@ -4,13 +4,15 @@ mod filesystem;
 mod index;
 pub mod limits;
 pub use limits::{Limits, Policy};
+#[cfg(test)]
+mod live_speed_tests;
 mod source;
 mod store;
 #[cfg(test)]
 mod tests;
 use crate::transport::{framing::Framing, wire::TS_PACKET_SIZE};
 use index::{Anchor, Index};
-pub(super) use source::Input;
+pub(super) use source::{Input, ReadProgress};
 use std::{
     collections::VecDeque,
     io::{Read, Seek, SeekFrom},
@@ -380,7 +382,7 @@ impl Reader {
                         discontinuity,
                     });
                 }
-                Ok(self.pending.pop_front().unwrap_or(Output::Awaiting))
+                Ok(self.pending.pop_front().unwrap_or(Output::Filtered))
             }
             ReadResult::Awaiting => Ok(Output::Awaiting),
             ReadResult::Expired => Ok(Output::Expired),
@@ -395,6 +397,7 @@ enum Output {
         discontinuity: bool,
     },
     Awaiting,
+    Filtered,
     Expired,
     End,
 }

@@ -1,6 +1,8 @@
 //! Time-based transport for recordings and retained live streams. A prepared
 //! operation borrows its controller and pipeline with a validated TIME range:
 //! a seeking query for user transport, or the active source's receive window.
+use super::speed::{self, Availability, Rate};
+mod supply;
 use crate::settings::LiveBuffer;
 use gstreamer::{self as gst, prelude::*};
 use std::{
@@ -9,6 +11,8 @@ use std::{
 };
 
 const POSITION_SAMPLE_INTERVAL: Duration = Duration::from_millis(200);
+const LIVE_RATE_HYSTERESIS: gst::ClockTime = gst::ClockTime::from_seconds(1);
+const RECEPTION_STALL: Duration = Duration::from_secs(2);
 const SEEK_TIMEOUT: Duration = Duration::from_secs(10);
 const RECOVERY_HEADROOM: gst::ClockTime = gst::ClockTime::from_seconds(2);
 // Decode preroll supplies reference frames before the seek target, not reserve
@@ -22,6 +26,8 @@ pub enum Notice {
     Expired,
     SettingsClamped,
     SettingsReturnedToLive,
+    CaughtUp,
+    ReceptionStalled,
 }
 
 #[derive(Clone, Copy)]
@@ -113,10 +119,16 @@ impl Range {
 pub enum Error {
     #[error("シークをまだ利用できません")]
     Unavailable,
+    #[error("再生速度を変更できません")]
+    RateUnavailable,
+    #[error("再生速度は0.5〜2.0倍の0.1刻みで指定してください")]
+    InvalidRate,
     #[error("再生位置が不正です")]
     InvalidPosition,
     #[error("シーク要求が拒否されました")]
     Rejected,
+    #[error("再生速度の変更を確認できなかったため一時停止しました。再開時は等速に戻します")]
+    RateTimedOut,
     #[error("シークの完了を確認できませんでした")]
     TimedOut,
     #[error("再生位置の監視に失敗しました")]
@@ -130,13 +142,45 @@ struct Output {
     segment: Option<gst::Seqnum>,
     buffered: Option<gst::Seqnum>,
     eos: Option<gst::Seqnum>,
+    rate: Option<f64>,
+}
+
+#[derive(Clone, Copy)]
+enum Target {
+    At(gst::ClockTime),
+    Current,
+}
+
+#[derive(Clone, Copy)]
+enum Completion {
+    Position,
+    Live,
+    CaughtUp,
+    ReceptionStalled,
+}
+
+#[derive(Clone, Copy)]
+struct Pending {
+    target: Target,
+    rate: Rate,
+    completion: Completion,
+}
+
+#[derive(Clone, Copy)]
+enum LivePosition {
+    Recording,
+    ForwardBuffer,
+    Near,
+    Behind,
 }
 
 struct Seek {
     sequence: gst::Seqnum,
     target: gst::ClockTime,
     resume: Resume,
-    next: Option<gst::ClockTime>,
+    next: Option<Pending>,
+    rate: Rate,
+    completion: Completion,
     deadline: Instant,
 }
 
@@ -144,6 +188,7 @@ enum State {
     Playing,
     Paused,
     ExpiredPause,
+    FailedPause,
     Seeking(Seek),
     Ended,
 }
@@ -152,6 +197,10 @@ pub(super) struct Controller {
     state: State,
     startup: Startup,
     live_buffer: LiveBuffer,
+    live_position: LivePosition,
+    reception: Option<(gst::ClockTime, Instant)>,
+    supply: supply::Supply,
+    rate: Rate,
     sink: gst::glib::WeakRef<gst::Element>,
     snapshot: Snapshot,
     output: Arc<Mutex<Output>>,
@@ -187,7 +236,9 @@ impl Controller {
                                 *state = Output::default();
                             }
                             gst::EventView::Eos(_) => state.eos = Some(event.seqnum()),
-                            gst::EventView::Segment(_) => {
+                            gst::EventView::Segment(event) => {
+                                state.rate =
+                                    Some(event.segment().rate() * event.segment().applied_rate());
                                 state.eos = None;
                                 state.segment = Some(event.seqnum());
                                 state.buffered = None;
@@ -216,6 +267,13 @@ impl Controller {
                 StartPosition::Beginning => LiveBuffer::default(),
                 StartPosition::LiveEdge(buffer) => buffer,
             },
+            live_position: match start {
+                StartPosition::Beginning => LivePosition::Recording,
+                StartPosition::LiveEdge(_) => LivePosition::ForwardBuffer,
+            },
+            reception: None,
+            supply: supply::Supply::default(),
+            rate: Rate::NORMAL,
             sink: sink.downgrade(),
             snapshot: Snapshot::default(),
             output,
@@ -229,7 +287,7 @@ impl Controller {
     pub fn phase(&self) -> Phase {
         match &self.state {
             State::Playing => Phase::Playing,
-            State::Paused | State::ExpiredPause => Phase::Paused,
+            State::Paused | State::ExpiredPause | State::FailedPause => Phase::Paused,
             State::Seeking(seek) => Phase::Seeking(seek.resume),
             State::Ended => Phase::Ended,
         }
@@ -250,12 +308,98 @@ impl Controller {
 
     pub fn seek_target(&self) -> Option<gst::ClockTime> {
         match &self.state {
-            State::Seeking(seek) => Some(seek.next.unwrap_or(seek.target)),
-            State::Playing | State::Paused | State::ExpiredPause | State::Ended => None,
+            State::Seeking(seek) => Some(
+                seek.next
+                    .and_then(|next| match next.target {
+                        Target::At(target) => Some(target),
+                        Target::Current => None,
+                    })
+                    .unwrap_or(seek.target),
+            ),
+            State::Playing
+            | State::Paused
+            | State::ExpiredPause
+            | State::FailedPause
+            | State::Ended => None,
         }
     }
     pub fn snapshot(&self) -> Snapshot {
         self.snapshot
+    }
+
+    pub fn requested_rate(&self) -> Rate {
+        match &self.state {
+            State::Seeking(seek) => seek.next.map_or(seek.rate, |next| next.rate),
+            State::Playing
+            | State::Paused
+            | State::ExpiredPause
+            | State::FailedPause
+            | State::Ended => self.rate,
+        }
+    }
+
+    pub fn speed(&self) -> speed::Snapshot {
+        let availability = match self.state {
+            State::Ended => Availability::Ended,
+            State::ExpiredPause | State::FailedPause => Availability::Preparing,
+            State::Playing | State::Paused | State::Seeking(_) => {
+                if self.snapshot.range.is_none()
+                    || (self.snapshot.position.is_none()
+                        && !matches!(self.state, State::Seeking(_)))
+                {
+                    match self.live_position {
+                        LivePosition::ForwardBuffer => Availability::LiveOnly,
+                        LivePosition::Recording | LivePosition::Near | LivePosition::Behind => {
+                            Availability::Preparing
+                        }
+                    }
+                } else {
+                    match self.live_position {
+                        LivePosition::Recording | LivePosition::Behind => Availability::Variable,
+                        LivePosition::Near | LivePosition::ForwardBuffer => Availability::LiveOnly,
+                    }
+                }
+            }
+        };
+        speed::Snapshot {
+            applied: self.rate,
+            requested: self.requested_rate(),
+            availability,
+            at_live_edge: matches!(
+                self.live_position,
+                LivePosition::Near | LivePosition::ForwardBuffer
+            ),
+        }
+    }
+
+    fn observe_live(&mut self, range: Range, history: bool) {
+        if self.reception.is_none_or(|(end, _)| end != range.end) {
+            self.reception = Some((range.end, Instant::now()));
+        }
+        if !history {
+            self.live_position = LivePosition::ForwardBuffer;
+            return;
+        }
+        let Some(position) = self.snapshot.position else {
+            return;
+        };
+        let delay = range.end.saturating_sub(position);
+        // Catch up to the same configured reserve as an explicit live return.
+        // Hysteresis only delays enabling variable speed again after catch-up.
+        let threshold = live_headroom(self.live_buffer);
+        self.live_position = match self.live_position {
+            LivePosition::Behind if delay > threshold => LivePosition::Behind,
+            LivePosition::Recording
+            | LivePosition::ForwardBuffer
+            | LivePosition::Near
+            | LivePosition::Behind => {
+                if delay >= threshold + LIVE_RATE_HYSTERESIS {
+                    LivePosition::Behind
+                } else {
+                    LivePosition::Near
+                }
+            }
+        };
     }
 
     fn sample(&mut self, pipeline: &gst::Element) {
@@ -305,6 +449,7 @@ impl Controller {
         pipeline: &gst::Element,
         window: LiveWindow,
         expired: bool,
+        reader: super::input::ReadProgress,
     ) -> Result<(), Error> {
         let (range, history) = match window {
             LiveWindow::ForwardBuffer(range) => (range, None),
@@ -312,6 +457,22 @@ impl Controller {
         };
         self.snapshot.range = history;
         self.snapshot.duration = history.map(|range| range.end);
+        if matches!(self.state, State::Playing) {
+            // The receive edge is fresh on every poll. Comparing it with the
+            // 200 ms UI sample can leave fast playback permanently "behind".
+            self.snapshot.position = pipeline.query_position::<gst::ClockTime>();
+        }
+        self.observe_live(range, history.is_some());
+        let limited = match (self.phase(), self.snapshot.position) {
+            (Phase::Playing, Some(position)) => {
+                self.supply
+                    .limited(self.rate, position, reader, Instant::now())
+            }
+            _ => {
+                self.supply.reset();
+                false
+            }
+        };
         if let Some(change) = self.retention_change {
             if pipeline.state(gst::ClockTime::ZERO).1 < gst::State::Paused {
                 return Ok(());
@@ -339,7 +500,11 @@ impl Controller {
                 }
             };
             if let Some((target, resume)) = correction {
-                self.start_seek(pipeline, target, resume)?;
+                let completion = match change {
+                    RetentionChange::ClampPosition => Completion::Position,
+                    RetentionChange::ReturnToLive => Completion::Live,
+                };
+                self.start_change(pipeline, target, resume, Rate::NORMAL, completion)?;
                 self.notice = Some(match change {
                     RetentionChange::ClampPosition => Notice::SettingsClamped,
                     RetentionChange::ReturnToLive => Notice::SettingsReturnedToLive,
@@ -356,7 +521,11 @@ impl Controller {
                 .snapshot
                 .position
                 .is_some_and(|position| position < range.start);
-        if matches!(self.state, State::Paused | State::ExpiredPause) && (expired || behind) {
+        if matches!(
+            self.state,
+            State::Paused | State::ExpiredPause | State::FailedPause
+        ) && (expired || behind)
+        {
             // Keep the paused frame. Do not keep decoding/seek at every eviction;
             // resume will flush the old queue and choose a safe interior point.
             self.state = State::ExpiredPause;
@@ -365,13 +534,22 @@ impl Controller {
         if expired || (behind && !matches!(self.state, State::Seeking(_))) {
             let recovery = range.recovery_target();
             let (target, resume) = match &self.state {
-                State::Paused | State::ExpiredPause => (recovery, Resume::Paused),
-                State::Playing | State::Ended => (recovery, Resume::Playing),
-                State::Seeking(seek) => {
-                    (seek.next.unwrap_or(seek.target).max(recovery), seek.resume)
+                State::Paused | State::ExpiredPause | State::FailedPause => {
+                    (recovery, Resume::Paused)
                 }
+                State::Playing | State::Ended => (recovery, Resume::Playing),
+                State::Seeking(seek) => (
+                    seek.next
+                        .and_then(|next| match next.target {
+                            Target::At(target) => Some(target),
+                            Target::Current => None,
+                        })
+                        .unwrap_or(seek.target)
+                        .max(recovery),
+                    seek.resume,
+                ),
             };
-            self.start_seek(pipeline, target, resume)?;
+            self.start_change(pipeline, target, resume, Rate::NORMAL, Completion::Position)?;
             if history.is_some() {
                 self.notice = Some(Notice::Expired);
             }
@@ -380,6 +558,40 @@ impl Controller {
                 target = target.mseconds(),
                 "TS cursor expired; recovering inside available history"
             );
+        }
+        if matches!(self.state, State::Playing) && self.rate.faster() {
+            let stalled = self
+                .reception
+                .is_some_and(|(_, at)| at.elapsed() >= RECEPTION_STALL);
+            if stalled
+                || limited
+                || matches!(
+                    self.live_position,
+                    LivePosition::Near | LivePosition::ForwardBuffer
+                )
+            {
+                if let Some(position) = pipeline.query_position::<gst::ClockTime>() {
+                    tracing::info!(
+                        rate = self.rate.multiplier(),
+                        delay_ms = range.end.saturating_sub(position).mseconds(),
+                        reserve_ms = self.live_buffer.milliseconds(),
+                        limited,
+                        stalled,
+                        "Returning live playback to normal speed"
+                    );
+                    self.start_change(
+                        pipeline,
+                        position,
+                        Resume::Playing,
+                        Rate::NORMAL,
+                        if stalled {
+                            Completion::ReceptionStalled
+                        } else {
+                            Completion::CaughtUp
+                        },
+                    )?;
+                }
+            }
         }
         Ok(())
     }
@@ -456,6 +668,12 @@ impl Controller {
         }
         self.sample(pipeline);
         let range = self.snapshot.range.ok_or(Error::Unavailable)?;
+        if matches!(
+            self.live_position,
+            LivePosition::Near | LivePosition::Behind
+        ) {
+            self.observe_live(range, true);
+        }
         Ok(Ready {
             controller: self,
             pipeline,
@@ -464,8 +682,19 @@ impl Controller {
     }
 
     pub fn pause(&mut self, pipeline: &gst::Element, resume: Resume) -> Result<(), Error> {
+        self.supply.reset();
         if matches!(self.state, State::Ended) {
             return Err(Error::Unavailable);
+        }
+        if matches!(self.state, State::FailedPause) {
+            if resume == Resume::Playing {
+                let target = pipeline
+                    .query_position::<gst::ClockTime>()
+                    .or(self.snapshot.position)
+                    .ok_or(Error::Unavailable)?;
+                self.start_change(pipeline, target, resume, Rate::NORMAL, Completion::Position)?;
+            }
+            return Ok(());
         }
         if matches!(self.state, State::ExpiredPause) {
             if resume == Resume::Playing {
@@ -475,10 +704,30 @@ impl Controller {
                     .range
                     .ok_or(Error::Unavailable)?
                     .recovery_target();
-                self.start_seek(pipeline, target, resume)?;
+                self.start_change(pipeline, target, resume, Rate::NORMAL, Completion::Position)?;
                 self.notice = Some(Notice::Expired);
             }
             self.startup = Startup::Complete;
+            return Ok(());
+        }
+        if resume == Resume::Playing
+            && self.requested_rate().faster()
+            && matches!(
+                self.live_position,
+                LivePosition::Near | LivePosition::ForwardBuffer
+            )
+            && !matches!(self.state, State::Seeking(_))
+        {
+            let position = pipeline
+                .query_position::<gst::ClockTime>()
+                .ok_or(Error::Unavailable)?;
+            self.start_change(
+                pipeline,
+                position,
+                resume,
+                Rate::NORMAL,
+                Completion::CaughtUp,
+            )?;
             return Ok(());
         }
         pipeline.set_state(match resume {
@@ -494,19 +743,24 @@ impl Controller {
                     Resume::Paused => State::Paused,
                 }
             }
-            State::Ended | State::ExpiredPause => unreachable!("handled before state change"),
+            State::Ended | State::ExpiredPause | State::FailedPause => {
+                unreachable!("handled before state change")
+            }
         }
         Ok(())
     }
 
-    fn start_seek(
+    fn start_change(
         &mut self,
         pipeline: &gst::Element,
         target: gst::ClockTime,
         resume: Resume,
+        rate: Rate,
+        completion: Completion,
     ) -> Result<(), Error> {
+        self.supply.reset();
         let event = gst::event::Seek::new(
-            1.0,
+            rate.multiplier(),
             // TS key-unit seeks can land several seconds before the requested
             // time. Decode preroll and clip to the requested stream time.
             gst::SeekFlags::FLUSH | gst::SeekFlags::ACCURATE,
@@ -517,6 +771,19 @@ impl Controller {
         );
         let sequence = event.seqnum();
         if !pipeline.send_event(event) {
+            if rate != self.rate {
+                let confirmed = self
+                    .output
+                    .lock()
+                    .map_err(|_| Error::Observer)?
+                    .rate
+                    .and_then(Rate::from_multiplier)
+                    == Some(self.rate);
+                if !confirmed {
+                    pipeline.set_state(gst::State::Paused)?;
+                    self.state = State::FailedPause;
+                }
+            }
             return Err(Error::Rejected);
         }
         self.state = State::Seeking(Seek {
@@ -524,6 +791,8 @@ impl Controller {
             target,
             resume,
             next: None,
+            rate,
+            completion,
             deadline: Instant::now() + SEEK_TIMEOUT,
         });
         pipeline.set_state(match resume {
@@ -544,6 +813,9 @@ impl Controller {
         {
             return Ok(false);
         }
+        if let State::Seeking(seek) = &self.state {
+            self.rate = seek.rate;
+        }
         self.state = State::Ended;
         Ok(true)
     }
@@ -553,7 +825,10 @@ impl Controller {
             let (ready, eos) = {
                 let output = self.output.lock().map_err(|_| Error::Observer)?;
                 (
-                    output.buffered == Some(seek.sequence),
+                    output.buffered == Some(seek.sequence)
+                        && output
+                            .rate
+                            .is_some_and(|rate| (rate - seek.rate.multiplier()).abs() < 0.000_001),
                     output.eos == Some(seek.sequence),
                 )
             };
@@ -561,6 +836,23 @@ impl Controller {
             if eos || (ready && result.is_ok() && pending == gst::State::VoidPending) {
                 let resume = seek.resume;
                 let next = seek.next;
+                self.rate = seek.rate;
+                // A requested live target is not proof of arrival. Mark live
+                // only for the confirmed segment, with no newer user intent.
+                // The existing exit hysteresis absorbs reception during preroll.
+                if next.is_none() {
+                    match seek.completion {
+                        Completion::Position => {}
+                        Completion::Live => self.live_position = LivePosition::Near,
+                        Completion::CaughtUp => {
+                            self.live_position = LivePosition::Near;
+                            self.notice = Some(Notice::CaughtUp);
+                        }
+                        Completion::ReceptionStalled => {
+                            self.notice = Some(Notice::ReceptionStalled);
+                        }
+                    }
+                }
                 self.state = if eos && seek.next.is_none() {
                     State::Ended
                 } else {
@@ -570,11 +862,24 @@ impl Controller {
                     }
                 };
                 if let Some(next) = next {
-                    self.start_seek(pipeline, next, resume)?;
+                    let target = match next.target {
+                        Target::At(target) => target,
+                        Target::Current => pipeline
+                            .query_position::<gst::ClockTime>()
+                            .ok_or(Error::Unavailable)?,
+                    };
+                    self.start_change(pipeline, target, resume, next.rate, next.completion)?;
                 }
                 self.next_sample = Instant::now();
             } else if Instant::now() >= seek.deadline {
-                return Err(Error::TimedOut);
+                let changing_rate = seek.rate != self.rate;
+                pipeline.set_state(gst::State::Paused)?;
+                self.state = State::FailedPause;
+                return Err(if changing_rate {
+                    Error::RateTimedOut
+                } else {
+                    Error::TimedOut
+                });
             }
         }
         if Instant::now() >= self.next_sample {
@@ -588,10 +893,19 @@ impl Controller {
             return Err(Error::InvalidPosition);
         }
         let position = match &self.state {
-            State::Seeking(seek) => Some(seek.next.unwrap_or(seek.target)),
-            State::Playing | State::Paused | State::ExpiredPause | State::Ended => {
-                self.snapshot.position
-            }
+            State::Seeking(seek) => Some(
+                seek.next
+                    .and_then(|next| match next.target {
+                        Target::At(target) => Some(target),
+                        Target::Current => None,
+                    })
+                    .unwrap_or(seek.target),
+            ),
+            State::Playing
+            | State::Paused
+            | State::ExpiredPause
+            | State::FailedPause
+            | State::Ended => self.snapshot.position,
         }
         .ok_or(Error::Unavailable)?;
         Ok((position.mseconds() as f64 + delta_ms).max(0.0))
@@ -600,25 +914,78 @@ impl Controller {
 
 impl Ready<'_> {
     pub fn return_to_live(self) -> Result<(), Error> {
-        // Use the freshly queried receive edge, not the UI's sampled duration.
-        // Keep the same bounded delivery reserve as initial live alignment;
-        // Reader::prepare supplies the separate decode preroll before it.
         let target = self.range.live_target(self.controller.live_buffer);
-        let result = match &mut self.controller.state {
+        match &mut self.controller.state {
             State::Seeking(seek) => {
                 self.pipeline.set_state(gst::State::Playing)?;
-                seek.next = Some(target);
+                seek.next = Some(Pending {
+                    target: Target::At(target),
+                    rate: Rate::NORMAL,
+                    completion: Completion::Live,
+                });
                 seek.resume = Resume::Playing;
-                Ok(())
             }
-            State::Playing | State::Paused | State::ExpiredPause | State::Ended => self
-                .controller
-                .start_seek(self.pipeline, target, Resume::Playing),
-        };
-        if result.is_ok() {
-            self.controller.startup = Startup::Complete;
+            State::Playing
+            | State::Paused
+            | State::ExpiredPause
+            | State::FailedPause
+            | State::Ended => {
+                self.controller.start_change(
+                    self.pipeline,
+                    target,
+                    Resume::Playing,
+                    Rate::NORMAL,
+                    Completion::Live,
+                )?;
+            }
         }
-        result
+        self.controller.startup = Startup::Complete;
+        Ok(())
+    }
+
+    pub fn set_rate(self, rate: Rate) -> Result<(), Error> {
+        let availability = self.controller.speed().availability;
+        if availability != Availability::Variable
+            && !(availability == Availability::LiveOnly && rate == Rate::NORMAL)
+        {
+            return Err(Error::RateUnavailable);
+        }
+        if self.controller.requested_rate() == rate {
+            return Ok(());
+        }
+        match &mut self.controller.state {
+            State::Seeking(seek) => {
+                let target = seek.next.map_or(Target::Current, |next| next.target);
+                seek.next = Some(Pending {
+                    target,
+                    rate,
+                    completion: Completion::Position,
+                });
+            }
+            State::Playing | State::Paused => {
+                let resume = if matches!(self.controller.state, State::Paused) {
+                    Resume::Paused
+                } else {
+                    Resume::Playing
+                };
+                let position = self
+                    .pipeline
+                    .query_position::<gst::ClockTime>()
+                    .ok_or(Error::Unavailable)?;
+                self.controller.start_change(
+                    self.pipeline,
+                    position,
+                    resume,
+                    rate,
+                    Completion::Position,
+                )?;
+            }
+            State::ExpiredPause | State::FailedPause | State::Ended => {
+                return Err(Error::RateUnavailable);
+            }
+        }
+        self.controller.startup = Startup::Complete;
+        Ok(())
     }
 
     pub fn seek_live(mut self, milliseconds: f64, corrected: bool) -> Result<(), Error> {
@@ -640,16 +1007,26 @@ impl Ready<'_> {
     }
     fn apply(&mut self, milliseconds: f64) -> Result<(), Error> {
         let target = self.range.target(milliseconds)?;
+        let rate = if matches!(self.controller.state, State::FailedPause) {
+            Rate::NORMAL
+        } else {
+            self.controller.requested_rate()
+        };
         let resume = match &mut self.controller.state {
             State::Seeking(seek) => {
-                seek.next = Some(target);
+                seek.next = Some(Pending {
+                    target: Target::At(target),
+                    rate,
+                    completion: Completion::Position,
+                });
                 self.controller.startup = Startup::Complete;
                 return Ok(());
             }
             State::Playing | State::Ended => Resume::Playing,
-            State::Paused | State::ExpiredPause => Resume::Paused,
+            State::Paused | State::ExpiredPause | State::FailedPause => Resume::Paused,
         };
-        self.controller.start_seek(self.pipeline, target, resume)?;
+        self.controller
+            .start_change(self.pipeline, target, resume, rate, Completion::Position)?;
         self.controller.startup = Startup::Complete;
         Ok(())
     }
@@ -748,7 +1125,13 @@ mod tests {
             sequence,
             target: gst::ClockTime::from_seconds(5),
             resume: Resume::Paused,
-            next: Some(gst::ClockTime::from_seconds(2)),
+            next: Some(Pending {
+                target: Target::At(gst::ClockTime::from_seconds(2)),
+                rate: Rate::NORMAL,
+                completion: Completion::Position,
+            }),
+            rate: Rate::NORMAL,
+            completion: Completion::Position,
             deadline: Instant::now() + SEEK_TIMEOUT,
         });
         let latest_edge = gst::ClockTime::from_seconds(20);
@@ -801,6 +1184,7 @@ mod tests {
                         .unwrap(),
                     ),
                     false,
+                    crate::playback::input::ReadProgress::idle(),
                 )
                 .unwrap();
             assert_eq!(controller.phase(), Phase::Playing);
@@ -925,5 +1309,106 @@ mod tests {
         pipeline.0.set_state(gst::State::Ready)?;
         drop(control);
         result
+    }
+}
+
+#[cfg(test)]
+mod speed_tests {
+    use super::*;
+
+    #[test]
+    fn live_rate_gate_has_hysteresis_and_uses_the_configured_reserve() {
+        gst::init().unwrap();
+        let sink = gst::ElementFactory::make("fakesink").build().unwrap();
+        let mut control =
+            Controller::new(&sink, StartPosition::LiveEdge(LiveBuffer::default())).unwrap();
+        let position = gst::ClockTime::from_seconds(10);
+        control.snapshot.position = Some(position);
+        let update = |control: &mut Controller, delay| {
+            let range = Range::new(
+                gst::ClockTime::ZERO,
+                position + gst::ClockTime::from_mseconds(delay),
+            )
+            .unwrap();
+            control.snapshot.range = Some(range);
+            control.observe_live(range, true);
+            control.speed()
+        };
+        // Reconfigure the existing session, including reducing the reserve.
+        for milliseconds in [
+            LiveBuffer::MIN_MS,
+            LiveBuffer::DEFAULT_MS,
+            LiveBuffer::MAX_MS,
+            LiveBuffer::MIN_MS,
+        ] {
+            let buffer = LiveBuffer::checked(milliseconds).unwrap();
+            control.configure_live_buffer(buffer);
+            let target_delay = milliseconds as u64;
+            let enable_delay = target_delay + LIVE_RATE_HYSTERESIS.mseconds();
+            assert_eq!(
+                update(&mut control, enable_delay - 1).availability,
+                Availability::LiveOnly
+            );
+            assert_eq!(
+                update(&mut control, enable_delay).availability,
+                Availability::Variable
+            );
+            let approaching = update(&mut control, target_delay + 1);
+            assert_eq!(approaching.availability, Availability::Variable);
+            assert!(
+                !approaching.at_live_edge,
+                "caught up before {milliseconds} ms"
+            );
+            let caught_up = update(&mut control, target_delay);
+            assert_eq!(caught_up.availability, Availability::LiveOnly);
+            assert!(caught_up.at_live_edge);
+            assert_eq!(
+                update(&mut control, target_delay + 1).availability,
+                Availability::LiveOnly
+            );
+            assert!(update(&mut control, target_delay - 1).at_live_edge);
+        }
+    }
+
+    #[test]
+    fn old_or_wrong_rate_output_cannot_confirm_a_rate_change() {
+        gst::init().unwrap();
+        let sink = gst::ElementFactory::make("fakesink").build().unwrap();
+        let mut control = Controller::new(&sink, StartPosition::Beginning).unwrap();
+        let sequence = gst::Seqnum::next();
+        control.state = State::Seeking(Seek {
+            sequence,
+            target: gst::ClockTime::SECOND,
+            resume: Resume::Paused,
+            rate: Rate::checked(15).unwrap(),
+            next: None,
+            completion: Completion::Position,
+            deadline: Instant::now() + SEEK_TIMEOUT,
+        });
+        for (observed, rate) in [(gst::Seqnum::next(), 1.5), (sequence, 1.0)] {
+            *control.output.lock().unwrap() = Output {
+                segment: Some(observed),
+                buffered: Some(observed),
+                rate: Some(rate),
+                eos: None,
+            };
+            control.poll(&sink).unwrap();
+            assert!(matches!(control.phase(), Phase::Seeking(_)));
+            assert_eq!(control.speed().applied, Rate::NORMAL);
+        }
+        if let State::Seeking(seek) = &mut control.state {
+            seek.deadline = Instant::now();
+        }
+        assert!(matches!(control.poll(&sink), Err(Error::RateTimedOut)));
+        assert_eq!(control.phase(), Phase::Paused);
+        assert_eq!(control.speed().availability, Availability::Preparing);
+        control.snapshot.position = Some(gst::ClockTime::SECOND);
+        assert!(control.pause(&sink, Resume::Playing).is_err());
+        assert_eq!(
+            control.phase(),
+            Phase::Paused,
+            "unconfirmed recovery cannot resume"
+        );
+        sink.set_state(gst::State::Null).unwrap();
     }
 }

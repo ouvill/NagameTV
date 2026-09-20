@@ -80,7 +80,7 @@ GUIテストは既存のPipeWire／pipewire-pulseaudio／WirePlumberと実GPUを
 - CMake 3.24以降、C/C++コンパイラー、pkg-config、libclang
 - Qt 6.8以降のQuick / Controls / Dialogs / Layouts / Shapes / EffectsとQtCore QMLモジュール、LinuxではQt DBus、SVG・JPEG・WebP画像プラグイン、翻訳用の`lrelease`
 - GStreamer 1.24以降と開発ライブラリー（`gstreamer-mpegts-1.0`を含む）
-- GStreamerの`qml6glsink`、OpenGL関連プラグイン、`tsdemux`、映像・音声デコーダー、音声出力プラグイン
+- GStreamerの`qml6glsink`、OpenGL関連プラグイン、`tsdemux`、映像・音声デコーダー、音声出力プラグイン、速度変更用の`scaletempo`（Good Plug-insの`audiofx`）
 
 Ubuntuでは`lrelease`は`qt6-l10n-tools`、MPEG-TSの開発ライブラリーは`libgstreamer-plugins-bad1.0-dev`に含まれます。
 WebP画像の保存には`qt6-image-formats-plugins`が必要です。

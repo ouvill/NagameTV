@@ -14,7 +14,8 @@ Item {
         ViewerActions {
             id: actions; backend: backend; targetWindow: host; canCapture: true
             audioVisible: audioPopup.visible
-            onAudioRequested: audioPopup.toggle()
+            onAudioRequested: { controls.closeSpeed(); audioPopup.toggle(); }
+            onSpeedOpened: audioPopup.close()
         }
         AudioSettings {
             id: audioPopup
@@ -40,7 +41,7 @@ Item {
         }
         PlayerControls {
             id: controls
-            x: 24; y: host.height - 60
+            x: 24; y: host.height - height - 18
             width: host.width - 48
             height: implicitHeight
             videoWidth: width + 48
@@ -68,6 +69,9 @@ Item {
                 overlay.playing = false;
                 backend.playback_action = Player.Play;
                 backend.playbackRequests = 0;
+                backend.playback_rate = 10; backend.requested_playback_rate = 10;
+                backend.rateRequests = []; backend.rateAccepted = true; backend.speed_available = true;
+                backend.speed_reason = ""; backend.transport_error = "";
                 backend.playing = false;
                 backend.paused = false; backend.seeking = false; backend.live_delay_ms = 0; backend.liveRequests = 0;
                 backend.audio_muted = false; backend.volume_level = 0.5;
@@ -202,7 +206,84 @@ Item {
             }
             function cleanup() {
                 audioPopup.close();
+                controls.closeSpeed();
                 findChild(controls, "playerOverflowMenu").close();
+            }
+            function test_speed_requests_tenths_and_shows_only_confirmed_rate_on_button() {
+                backend.recording = true; backend.playing = true;
+                verify(waitForRendering(controls));
+                const button = findChild(controls, "playbackSpeedButton");
+                const popup = findChild(controls, "playbackSpeedPanel");
+                mouseClick(button); tryCompare(popup, "opened", true);
+                mouseClick(findChild(popup, "speedIncrease"));
+                mouseClick(findChild(popup, "speedIncrease"));
+                compare(backend.rateRequests, [11, 12]);
+                compare(button.text, "x1.0");
+                compare(popup.draft, 12);
+                verify(findChild(popup, "speedStatus").visible);
+                backend.playback_rate = 12;
+                compare(button.text, "x1.2");
+                const presets = findChild(popup, "speedPresets");
+                compare(presets.count, 4);
+                mouseClick(presets.itemAt(3));
+                compare(backend.requested_playback_rate, 20);
+                verify(!findChild(popup, "speedIncrease").enabled);
+                mouseClick(findChild(popup, "speedReset"));
+                compare(backend.requested_playback_rate, 10);
+                const slider = findChild(popup, "speedSlider");
+                slider.forceActiveFocus(); keyClick(Qt.Key_Left);
+                compare(backend.requested_playback_rate, 9);
+                compare(backend.skips.length, 0);
+                keyClick(Qt.Key_Escape); tryCompare(popup, "visible", false);
+                compare(backend.requested_playback_rate, 9);
+                verify(button.activeFocus);
+            }
+            function test_speed_drag_commits_on_release_and_cancel_does_not_commit() {
+                backend.recording = true; backend.playing = true;
+                verify(waitForRendering(controls));
+                const popup = findChild(controls, "playbackSpeedPanel");
+                mouseClick(findChild(controls, "playbackSpeedButton")); tryCompare(popup, "opened", true);
+                const slider = findChild(popup, "speedSlider");
+                mousePress(slider, slider.width / 3, slider.height / 2);
+                mouseMove(slider, slider.width - 12, slider.height / 2);
+                compare(backend.rateRequests.length, 0);
+                mouseRelease(slider, slider.width - 12, slider.height / 2);
+                compare(backend.rateRequests.length, 1);
+                mousePress(slider, slider.width / 2, slider.height / 2);
+                mouseMove(slider, 12, slider.height / 2);
+                popup.close();
+                mouseRelease(slider, 12, slider.height / 2);
+                tryCompare(popup, "visible", false);
+                compare(backend.rateRequests.length, 1);
+            }
+            function test_speed_disabled_reason_failure_and_popup_exclusion() {
+                backend.timeshift = true; backend.playing = true;
+                const popup = findChild(controls, "playbackSpeedPanel");
+                const button = findChild(controls, "playbackSpeedButton");
+                mouseClick(findChild(controls, "audioSettingsButton")); tryCompare(audioPopup, "opened", true);
+                mouseClick(button); tryCompare(popup, "opened", true);
+                tryCompare(audioPopup, "visible", false);
+                backend.rateAccepted = false; backend.transport_error = "speed rejected";
+                mouseClick(findChild(popup, "speedIncrease"));
+                compare(findChild(popup, "speedStatus").text, "speed rejected");
+                compare(popup.draft, 10);
+                backend.rateAccepted = true; backend.transport_error = "";
+                mouseClick(findChild(popup, "speedIncrease"));
+                compare(backend.requested_playback_rate, 11);
+                backend.requested_playback_rate = backend.playback_rate;
+                backend.transport_error = "speed confirmation timed out";
+                compare(findChild(popup, "speedStatus").text, "speed confirmation timed out");
+                backend.speed_available = false; backend.speed_reason = "live only";
+                backend.transport_error = "";
+                compare(findChild(popup, "speedStatus").text, "live only");
+                verify(!findChild(popup, "speedSlider").enabled);
+                mouseClick(findChild(controls, "audioSettingsButton")); tryCompare(audioPopup, "opened", true);
+                tryCompare(popup, "visible", false);
+                audioPopup.close();
+                mouseClick(button); tryCompare(popup, "opened", true);
+                backend.playing = false;
+                tryCompare(popup, "visible", false);
+                verify(!button.visible);
             }
             function test_live_button_tracks_backend_and_returns_without_toggling_playback() {
                 backend.timeshift = true; backend.playing = true;
@@ -304,13 +385,13 @@ Item {
                 mouseClick(host.contentItem, 600, 400);
                 tryCompare(audioPopup, "visible", false);
             }
-            function test_controls_remain_on_one_row_with_sidebar_at_minimum_width() {
+            function test_controls_fit_with_speed_button_and_sidebar_at_minimum_width() {
                 for (const recording of [false, true]) {
-                    backend.recording = recording; backend.timeshift = !recording;
+                    backend.recording = recording; backend.timeshift = !recording; backend.playing = true;
                     for (const width of [1392, 984, 912, 911, 852, 692, 691, 532]) {
                         controls.width = width;
                         waitForRendering(controls);
-                        const names = ["audioSettingsButton", "returnToLiveButton", "playStopButton", "skipBackButton", "skipForwardButton",
+                        const names = ["audioSettingsButton", "returnToLiveButton", "playbackSpeedButton", "playStopButton", "skipBackButton", "skipForwardButton",
                             "channelsButton", "postCommentButton", "screenshotButton", "subtitlesButton", "danmakuButton",
                             "fullscreenButton", "moreControlsButton", "sidePanelButton"];
                         const boxes = names.map(name => findChild(controls, name)).filter(item => item.visible).map(item => {
@@ -318,7 +399,7 @@ Item {
                             verify(p.x >= 0 && p.y >= 0, item.objectName + " starts within controls");
                             verify(p.x + item.width <= width && p.y + item.height <= controls.height,
                                 item.objectName + " fits at " + width);
-                            compare(p.y + item.height / 2, controls.height / 2);
+                            if (!controls.stacked) compare(p.y + item.height / 2, controls.height / 2);
                             return {name: item.objectName, x: p.x, y: p.y, w: item.width, h: item.height};
                         });
                         const play = findChild(controls, "playStopButton");

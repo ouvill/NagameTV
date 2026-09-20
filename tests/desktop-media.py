@@ -59,7 +59,14 @@ rejected(lambda: props.Get(interface, "Missing"), "UnknownProperty")
 props.Set(interface, "Volume", dbus.Double(0.7, variant_level=1))
 wait_for(lambda: props.Get(interface, "Volume") == 0.7)
 wait_for(lambda: any("Volume" in values for _, values, _ in changed))
-player.Pause()
+assert info["MinimumRate"] == 0.5 and info["MaximumRate"] == 2.0
+for invalid in [math.nan, math.inf, -1.0, 0.4, 2.1, 1.25]:
+    rejected(lambda: props.Set(interface, "Rate", dbus.Double(invalid, variant_level=1)), "InvalidArgs")
+props.Set(interface, "Rate", dbus.Double(1.3, variant_level=1))
+wait_for(lambda: props.Get(interface, "Rate") == 1.3)
+wait_for(lambda: any("Rate" in values for _, values, _ in changed))
+# MPRIS retains its established Rate=0 pause behavior.
+props.Set(interface, "Rate", dbus.Double(0.0, variant_level=1))
 wait_for(lambda: props.Get(interface, "PlaybackStatus") == "Paused")
 player.Play()
 wait_for(lambda: props.Get(interface, "PlaybackStatus") == "Playing")

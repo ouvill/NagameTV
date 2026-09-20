@@ -19,9 +19,13 @@ Item {
     readonly property int actionSpacing: density === PlayerControls.Dense ? 2 : 6
     readonly property int dividerWidth: density === PlayerControls.Dense ? 8 : 18
     readonly property alias audioAnchor: volume
+    readonly property bool speedVisible: speedPanel.visible
+    readonly property bool stacked: width < 620
+    function closeSpeed() { speedPanel.close(); }
     enabled: actions.enabled
-    implicitHeight: 42
-    onEnabledChanged: if (!enabled) overflow.close()
+    implicitHeight: stacked ? 90 : 42
+    onEnabledChanged: if (!enabled) { overflow.close(); speedPanel.close(); }
+    onVisibleChanged: if (!visible) speedPanel.close()
 
     component Control: IconAction {
         flat: true
@@ -38,8 +42,9 @@ Item {
         }
     }
     Row {
+        id: leftControls
         objectName: "volumeControls"
-        anchors { left: parent.left; verticalCenter: parent.verticalCenter }
+        anchors { left: parent.left; verticalCenter: parent.verticalCenter; verticalCenterOffset: root.stacked ? 24 : 0 }
         spacing: 6
         PlayerVolumeButton {
             id: volume
@@ -54,10 +59,48 @@ Item {
             tip: action.text
             action: root.actions.returnToLive
         }
+        TextAction {
+            id: speedButton
+            objectName: "playbackSpeedButton"
+            visible: root.backend.media_active
+            implicitWidth: 58; implicitHeight: 42
+            padding: 6
+            text: "x" + (root.backend.playback_rate / 10).toFixed(1)
+            Accessible.name: qsTranslate("Viewer", "Playback speed: %1").arg(text)
+            background: Rectangle {
+                radius: 21
+                scale: speedButton.feedbackScale
+                color: speedButton.down ? "#589caf9f" : speedButton.hovered || speedPanel.visible ? "#28ffffff" : "transparent"
+                border.color: speedButton.visualFocus ? "#9caf9f" : "transparent"
+                Behavior on color { ColorAnimation { duration: 100 } }
+            }
+            contentItem: Label {
+                text: speedButton.text
+                color: root.backend.playback_rate === 10 ? "#f4f5f3" : "#9caf9f"
+                font.pixelSize: 13
+                horizontalAlignment: Text.AlignHCenter
+                verticalAlignment: Text.AlignVCenter
+                scale: speedButton.feedbackScale
+            }
+            ToolTip.visible: hovered && !speedPanel.visible
+            ToolTip.text: Accessible.name
+            onClicked: speedPanel.toggle()
+        }
+    }
+    PlaybackSpeedPanel {
+        id: speedPanel
+        objectName: "playbackSpeedPanel"
+        backend: root.backend
+        anchorItem: speedButton
+        windowWidth: root.actions.targetWindow.width
+        windowHeight: root.actions.targetWindow.height
+        onActivity: root.actions.activity()
+        onAboutToShow: root.actions.speedOpened()
     }
     Row {
         objectName: "transportControls"
-        anchors.centerIn: parent
+        anchors.horizontalCenter: parent.horizontalCenter
+        y: root.stacked ? 0 : (root.height - height) / 2
         spacing: 12
         IconAction {
             objectName: "skipBackButton"
@@ -87,7 +130,7 @@ Item {
     }
     Row {
         objectName: "viewControls"
-        anchors { right: parent.right; verticalCenter: parent.verticalCenter }
+        anchors { right: parent.right; verticalCenter: parent.verticalCenter; verticalCenterOffset: root.stacked ? 24 : 0 }
         Control {
             objectName: "channelsButton"
             visible: !root.backend.recording

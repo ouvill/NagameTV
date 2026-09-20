@@ -3,6 +3,22 @@ import MinimalViewer 1.0
 
 // Only records commands; Rust tests own playback state transitions.
 QtObject {
+    property int playback_rate: 10
+    property int requested_playback_rate: 10
+    readonly property int minimum_playback_rate: 5
+    readonly property int maximum_playback_rate: 20
+    property bool speed_available: true
+    property string speed_reason: ""
+    property string transport_error: ""
+    property string recording_name: ""
+    property bool rateAccepted: true
+    property var rateRequests: []
+    property bool at_live_edge: !recording && media_active && !paused && !seeking && (!timeshift || live_delay_ms <= 1250)
+    function set_playback_rate(value) {
+        rateRequests.push(value);
+        if (rateAccepted) requested_playback_rate = value;
+        return rateAccepted;
+    }
     property bool playing: false
     property bool paused: false
     property bool seeking: false

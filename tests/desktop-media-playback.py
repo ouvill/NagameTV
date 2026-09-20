@@ -28,6 +28,12 @@ wait_for(lambda: get("PlaybackStatus") == "Paused")
 position = get("Position")
 time.sleep(0.1)
 assert abs(get("Position") - position) < 200_000
+assert get("MinimumRate") == 0.5 and get("MaximumRate") == 2.0
+for rate in [0.5, 1.1, 1.5, 2.0, 1.0]:
+    props.Set(interface, "Rate", dbus.Double(rate, variant_level=1))
+    wait_for(lambda: get("Rate") == rate)
+    assert get("PlaybackStatus") == "Paused"
+    assert abs(get("Position") - position) < 200_000
 original_volume = get("Volume")
 props.Set(interface, "Volume", dbus.Double(0.37, variant_level=1))
 wait_for(lambda: get("Volume") == 0.37)

@@ -15,10 +15,12 @@ use std::{
 const ACCEPT_POLL: Duration = Duration::from_millis(10);
 const NETWORK_TIMEOUT: Duration = Duration::from_secs(2);
 const SEND_INTERVAL: Duration = Duration::from_millis(250);
+// Small, regular deliveries expose live-edge sampling errors hidden by bursts.
+const BROADCAST_SEND_INTERVAL: Duration = Duration::from_millis(20);
 const FIXTURE_SECONDS: usize = 60;
-const INTERVALS_PER_SECOND: usize = 4;
 const MIN_SEEKABLE_HISTORY: Duration = Duration::from_secs(3);
 const PAUSE_RECEIVE_GROWTH: Duration = Duration::from_secs(1);
+const SPEED_CATCH_UP_DELAY_MS: u64 = 3500;
 const REWIND_TARGET: Duration = Duration::from_secs(1);
 const SEEK_TOLERANCE: Duration = Duration::from_millis(500);
 const LIVE_EDGE_TOLERANCE: Duration = Duration::from_millis(2500);
@@ -26,7 +28,7 @@ const LIVE_EDGE_TOLERANCE: Duration = Duration::from_millis(2500);
 // catches startup lag that a subsequent manual return-to-live could still remove.
 const STARTUP_LIVE_EDGE_TOLERANCE: Duration = Duration::from_millis(750);
 const CUSTOM_LIVE_BUFFER_MS: i32 = 150;
-const UPDATED_LIVE_BUFFER_MS: i32 = 100;
+const UPDATED_LIVE_BUFFER_MS: i32 = crate::settings::LiveBuffer::DEFAULT_MS;
 const MEMORY_MIB: i32 = 16;
 const FILESYSTEM_MIB: i32 = 64;
 const RETENTION_MINUTES: i32 = 1;
@@ -115,7 +117,13 @@ fn serve(
         streams.fetch_add(1, Ordering::AcqRel);
         let ts = include_bytes!("../../../tests/fixtures/recording-seek.ts");
         const PACKET: usize = crate::transport::wire::TS_PACKET_SIZE;
-        let chunk_size = ts.len() / FIXTURE_SECONDS / INTERVALS_PER_SECOND / PACKET * PACKET;
+        let send_interval = match traffic {
+            Traffic::Broadcast => BROADCAST_SEND_INTERVAL,
+            Traffic::CapacityPressure => SEND_INTERVAL,
+        };
+        let intervals = FIXTURE_SECONDS
+            * (Duration::from_secs(1).as_millis() / send_interval.as_millis()) as usize;
+        let packets = ts.len() / PACKET;
         // Valid null packets raise the raw bitrate without changing decode load.
         // 16 MiB capacity then expires in about four seconds on either store.
         const PAD_BYTES_PER_INTERVAL: usize = 1024 * 1024;
@@ -135,15 +143,17 @@ fn serve(
         write!(
             socket,
             "HTTP/1.1 200 OK\r\nContent-Type: video/mp2t\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-            ts.len() + ts.len().div_ceil(chunk_size) * padding.len()
+            ts.len() + intervals * padding.len()
         )?;
-        for chunk in ts.chunks(chunk_size) {
+        for interval in 0..intervals {
             if stopped.load(Ordering::Acquire) {
                 break;
             }
-            socket.write_all(chunk)?;
+            let start = packets * interval / intervals * PACKET;
+            let end = packets * (interval + 1) / intervals * PACKET;
+            socket.write_all(&ts[start..end])?;
             socket.write_all(&padding)?;
-            thread::sleep(SEND_INTERVAL);
+            thread::sleep(send_interval);
         }
     } else {
         let body = if header.starts_with(b"GET /api/services ") {
@@ -331,7 +341,54 @@ pub(super) fn run(
             connections,
             "limit update reconnected the stream"
         );
+        // Bound the catch-up duration independently of earlier UI checks.
+        assert!(evaluate(
+            engine,
+            &format!("player.seek_to(player.window_end_ms - {SPEED_CATCH_UP_DELAY_MS})")
+        )?);
+        wait_for(
+            app,
+            engine,
+            "player.paused && !player.seeking && player.speed_available",
+        )?;
+        assert!(evaluate(engine, "player.set_playback_rate(20)")?);
+        wait_for(
+            app,
+            engine,
+            "player.paused && !player.seeking && player.playback_rate === 20",
+        )?;
+        evaluate(engine, "viewerActions.playbackToggle.trigger(); true")?;
+        if let Err(error) = wait_for(
+            app,
+            engine,
+            "player.playing && !player.seeking && player.playback_rate === 10 && player.at_live_edge",
+        ) {
+            let state = super::bridge::ffi::evaluate_root(
+                engine.pin_mut(),
+                &cxx_qt_lib::QString::from(
+                    "JSON.stringify({playing:player.playing,paused:player.paused,seeking:player.seeking,rate:player.playback_rate,requested:player.requested_playback_rate,delay:player.live_delay_ms,position:player.position_ms,end:player.window_end_ms,edge:player.at_live_edge,error:player.playback_error,transport:player.transport_error})",
+                ),
+            )?;
+            return Err(format!("Speed catch-up: {error}: {state:?}").into());
+        }
+        assert!(evaluate(
+            engine,
+            "!player.speed_available && !player.set_playback_rate(15)"
+        )?);
+        check_live_button(engine)?;
+        observe_playback(
+            app,
+            engine,
+            "player.playback_rate === 10 && player.at_live_edge",
+        )?;
+        assert!(evaluate(engine, "player.seek_to(1000)")?);
+        wait_for(app, engine, "!player.seeking && player.speed_available")?;
+        assert!(evaluate(engine, "player.set_playback_rate(15)")?);
         return_to_live(app, engine, backend, "paused in history")?;
+        assert!(evaluate(
+            engine,
+            "player.playback_rate === 10 && player.requested_playback_rate === 10"
+        )?);
         assert!(evaluate(
             engine,
             &format!("{OBSERVER}.previousSession = JSON.parse(player.live_timeline).session; true")
@@ -722,7 +779,7 @@ fn return_to_live(
         app,
         engine,
         &format!(
-            "player.playing && !player.paused && !player.seeking && player.live_delay_ms < {}",
+            "player.playing && !player.paused && !player.seeking && player.at_live_edge && player.live_delay_ms < {}",
             LIVE_EDGE_TOLERANCE.as_millis()
         ),
     )?;
@@ -731,8 +788,12 @@ fn return_to_live(
     observe_playback(
         app,
         engine,
-        &format!("player.live_delay_ms < {}", LIVE_EDGE_TOLERANCE.as_millis()),
+        &format!(
+            "player.at_live_edge && player.live_delay_ms < {}",
+            LIVE_EDGE_TOLERANCE.as_millis()
+        ),
     )?;
+    check_live_button(engine)?;
     let delay = super::bridge::ffi::evaluate_root(
         engine.pin_mut(),
         &cxx_qt_lib::QString::from("player.live_delay_ms"),
@@ -741,6 +802,28 @@ fn return_to_live(
     .ok_or("live delay")?;
     eprintln!(
         "Timeshift {backend}: return from {context}, receive-to-playhead gap {before:.0} -> {delay:.0} ms"
+    );
+    Ok(())
+}
+
+fn check_live_button(engine: &mut cxx::UniquePtr<QQmlApplicationEngine>) -> TestResult {
+    assert!(
+        evaluate(
+            engine,
+            r#"
+        (function() {
+            function find(item) {
+                if (item.objectName === 'returnToLiveButton') return item;
+                for (const child of item.children || []) { const found = find(child); if (found) return found; }
+                return null;
+            }
+            const button = find(playerControls);
+            return player.at_live_edge && viewerActions.atLiveEdge && button
+                && String(button.iconSource).endsWith('/radio.svg');
+        })()
+    "#
+        )?,
+        "live return did not select the icon with the red live indicator"
     );
     Ok(())
 }

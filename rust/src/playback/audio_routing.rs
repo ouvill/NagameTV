@@ -121,13 +121,27 @@ impl Routing {
                 Some((state.wrapping_add(4) & !3) | u64::from(stereo))
             });
     }
+    #[cfg(test)]
     pub fn filter(&self) -> Result<gst::Bin, gst::glib::BoolError> {
+        self.filter_with_tempo(None)
+    }
+    pub fn filter_with_tempo(
+        &self,
+        tempo: Option<&gst::Element>,
+    ) -> Result<gst::Bin, gst::glib::BoolError> {
         let convert = gst::ElementFactory::make("audioconvert").build()?;
         let transform = element::DualMono::new(self.clone());
         let bin = gst::Bin::new();
         bin.add_many([&convert, transform.upcast_ref()])?;
         convert.link(&transform)?;
-        for (element, name) in [(&convert, "sink"), (transform.upcast_ref(), "src")] {
+        let output = if let Some(tempo) = tempo {
+            bin.add(tempo)?;
+            transform.link(tempo)?;
+            tempo
+        } else {
+            transform.upcast_ref()
+        };
+        for (element, name) in [(&convert, "sink"), (output, "src")] {
             let target = element
                 .static_pad(name)
                 .ok_or_else(|| gst::glib::bool_error!("Audio filter pad missing"))?;

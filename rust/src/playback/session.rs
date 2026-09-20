@@ -31,6 +31,18 @@ pub struct TransportControl<'a> {
 }
 
 impl TransportControl<'_> {
+    pub fn set_rate(
+        self,
+        rate: super::speed::Rate,
+    ) -> std::result::Result<(), super::timeline::Error> {
+        if self.playback.tempo.is_none() {
+            return Err(super::timeline::Error::RateUnavailable);
+        }
+        self.controller
+            .prepare(self.playback.element())?
+            .set_rate(rate)
+    }
+
     pub fn seek(self, milliseconds: f64) -> std::result::Result<(), super::timeline::Error> {
         self.controller
             .prepare(self.playback.element())?
@@ -159,6 +171,23 @@ impl Session {
             Input::Idle => None,
         }
     }
+    pub fn speed(&self) -> super::speed::Snapshot {
+        match &self.input {
+            Input::Idle => super::speed::Snapshot::default(),
+            Input::Active { controller, .. } => {
+                let mut snapshot = controller.speed();
+                if self
+                    .playback
+                    .as_ref()
+                    .is_none_or(|playback| playback.tempo.is_none())
+                {
+                    snapshot.availability = super::speed::Availability::MissingTempo;
+                }
+                snapshot
+            }
+        }
+    }
+
     pub fn timeline(&self) -> Option<(super::timeline::Phase, super::timeline::Snapshot)> {
         match &self.input {
             Input::Active { controller, .. } => Some((controller.phase(), controller.snapshot())),
@@ -291,7 +320,12 @@ impl Session {
             }
             controller.poll(playback.element())?;
             if let Some(window) = source.live_window() {
-                controller.retained(playback.element(), window, source.take_expired())?;
+                controller.retained(
+                    playback.element(),
+                    window,
+                    source.take_expired(),
+                    source.read_progress()?,
+                )?;
             }
         }
         Ok(event)
