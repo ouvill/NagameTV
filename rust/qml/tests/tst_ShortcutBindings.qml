@@ -72,6 +72,7 @@ Item {
                 }
             }
             property var view
+            TestInputMethod { id: ime }
             function initTestCase() {
                 failOnWarning(/.*/);
             }
@@ -137,6 +138,56 @@ Item {
                 view.backend.epg_enabled = false;
                 keyClick(Qt.Key_G);
                 compare(view.guideRequests, false);
+            }
+            function test_ime_forwarded_keys_after_editing_use_the_same_bindings() {
+                // Ordinary delivery initially works; IME forwarding begins
+                // after a text field has received focus.
+                keyClick(Qt.Key_S);
+                compare(view.channelRequests, 1);
+                view.editor.forceActiveFocus();
+                verify(ime.compose("", "実況"));
+                view.forceActiveFocus();
+                ime.forward_key(Qt.Key_S, Qt.NoModifier, "s", false);
+                compare(view.channelRequests, 2);
+                ime.forward_key(Qt.Key_S, Qt.NoModifier, "s", true);
+                compare(view.channelRequests, 2);
+                ime.forward_key(Qt.Key_G, Qt.NoModifier, "g", false);
+                verify(view.guideRequests);
+                ime.forward_key(Qt.Key_G, Qt.NoModifier, "g", false);
+                verify(!view.guideRequests);
+                ime.forward_key(Qt.Key_C, Qt.NoModifier, "c", false);
+                compare(view.commentRequests, 1);
+                const binding = findChild(view.bindings, "channelsShortcut");
+                binding.sequence = "Ctrl+K";
+                ime.forward_key(Qt.Key_S, Qt.NoModifier, "s", false);
+                compare(view.channelRequests, 2);
+                ime.forward_key(Qt.Key_K, Qt.ControlModifier, "k", false);
+                compare(view.channelRequests, 3);
+                view.editor.forceActiveFocus();
+                view.editor.text = "";
+                ime.forward_key(Qt.Key_S, Qt.NoModifier, "s", false);
+                ime.forward_key(Qt.Key_C, Qt.NoModifier, "c", false);
+                ime.forward_key(Qt.Key_G, Qt.NoModifier, "g", false);
+                compare(view.editor.text, "scg");
+                compare(view.channelRequests, 3);
+                compare(view.commentRequests, 1);
+                verify(!view.guideRequests);
+            }
+            function test_ime_forwarded_keys_respect_popup_and_shutdown() {
+                view.popup.open();
+                tryCompare(view.popup, "opened", true);
+                ime.forward_key(Qt.Key_S, Qt.NoModifier, "s", false);
+                compare(view.channelRequests, 0);
+                view.popup.close();
+                tryCompare(view.popup, "visible", false);
+                view.forceActiveFocus();
+                view.actions.enabled = false;
+                ime.forward_key(Qt.Key_S, Qt.NoModifier, "s", false);
+                ime.forward_key(Qt.Key_C, Qt.NoModifier, "c", false);
+                ime.forward_key(Qt.Key_G, Qt.NoModifier, "g", false);
+                compare(view.channelRequests, 0);
+                compare(view.commentRequests, 0);
+                verify(!view.guideRequests);
             }
             function test_escape_belongs_to_popup_before_window() {
                 view.popup.open();

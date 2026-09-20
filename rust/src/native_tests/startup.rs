@@ -1002,8 +1002,36 @@ fn check_shortcuts(
             engine,
             "player.comment_draft.toLowerCase() === 'cs'"
         )?);
+        assert!(ffi::sendTestInputMethodCursor(&QString::from("にほんご")));
+        assert!(ffi::sendTestInputMethod(
+            &QString::default(),
+            &QString::from("日本語")
+        ));
+        assert!(ffi::sendTestInputMethodCursor(&QString::default()));
+        assert!(evaluate(
+            engine,
+            "!composer.composing && player.comment_draft.endsWith('日本語')"
+        )?);
+        // This fixture has no posting target. Clicking its disabled send button
+        // must stay inside the production composer, preserving the draft/focus.
+        ffi::clickRootItem(engine.pin_mut(), &QString::from("sendComment"))?;
+        assert!(evaluate(
+            engine,
+            "composer.visible && inputContext.editingText && player.comment_draft.endsWith('日本語')"
+        )?);
         ffi::clickRootKey(engine.pin_mut(), &QString::from("Escape"))?;
         assert!(evaluate(engine, "!root.showCommentComposer")?);
+        for (key, condition) in [
+            ("S", "root.showChannels"),
+            ("S", "!root.showChannels"),
+            ("G", "root.showGuide"),
+            ("G", "!root.showGuide"),
+            ("C", "composer.visible && inputContext.editingText"),
+            ("Escape", "!root.showCommentComposer"),
+        ] {
+            assert!(ffi::forwardFocusKey(&QString::from(key))?);
+            wait_for(app, engine, condition)?;
+        }
     } else {
         assert!(evaluate(
             engine,

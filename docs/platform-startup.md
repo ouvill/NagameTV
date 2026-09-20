@@ -77,3 +77,20 @@ NV12対応なども同時に変更しており、原因を切り分けた比較�
 
 AppImage／Flatpakは同梱qml6glsinkのWayland対応を別途検証する必要があるため、
 パッケージ起動設定の`xcb`は維持する。
+
+## WaylandのIME診断
+
+IMEが単発キーのショートカットを取り込む場合は、問題が起きるデスクトップで
+`bash scripts/diagnose-ime.sh`を手動実行する。Waylandの文字入力経路を明示し、
+Qtの入力方式選択・フォーカス・文字入力プロトコルのdebugログを
+`build/ime-wayland-XXXXXX.log`へ保存する。`bash scripts/diagnose-ime.sh ibus`では
+表示方式をWaylandに保ったまま、IBusへの直接接続を指定する。
+`QT_IM_MODULES`は`QT_IM_MODULE`より優先されるため、両方を指定して比較する。
+環境変数はその起動だけに適用し、デスクトップやIMEの設定ファイルは変更しない。
+debugログには入力した文字が含まれることがあるため、再現にはショートカットと
+公開してよい試験文字列だけを使う。
+
+これは実際のデスクトップでの手動診断用であり、自動GUIテストからホストの画面へ
+接続する用途には使わない。`using input method:`の行で実際の選択を確認する。
+`QComposeInputContext`の場合は日本語IMEへ接続できておらず、日本語入力の検証は
+できない。専用Westonで画面が表示されることだけでは、GNOME等のIME動作の証明にならない。

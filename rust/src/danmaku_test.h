@@ -3,6 +3,7 @@
 #include <QtCore/QString>
 #include <QtGui/QGuiApplication>
 #include <QtGui/QInputMethodEvent>
+#include <QtGui/QKeyEvent>
 #include <QtQuickTest/quicktest.h>
 #include "rust/cxx.h"
 #include <vector>
@@ -34,6 +35,22 @@ inline bool sendTestInputMethod(const QString &preedit, const QString &commit) {
     if (!target) return false;
     QInputMethodEvent event(preedit, {});
     event.setCommitString(commit);
+    return QCoreApplication::sendEvent(target, &event);
+}
+
+inline bool sendTestInputMethodCursor(const QString &preedit) {
+    auto *target = QGuiApplication::focusObject();
+    if (!target) return false;
+    const QInputMethodEvent::Attribute cursor(QInputMethodEvent::Cursor, preedit.size(), 1, QVariant());
+    QInputMethodEvent event(preedit, {cursor});
+    return QCoreApplication::sendEvent(target, &event);
+}
+
+// Match IBus's direct focus-object delivery instead of QTest's window path.
+inline bool sendTestForwardedKey(int key, int modifiers, const QString &text, bool repeat) {
+    auto *target = QGuiApplication::focusObject();
+    if (!target) return false;
+    QKeyEvent event(QEvent::KeyPress, key, Qt::KeyboardModifiers(modifiers), text, repeat);
     return QCoreApplication::sendEvent(target, &event);
 }
 

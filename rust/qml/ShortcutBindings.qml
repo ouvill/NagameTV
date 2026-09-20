@@ -1,10 +1,31 @@
 pragma ComponentBehavior: Bound
 import QtQuick
+import MinimalViewer 1.0 as Native
 
 Item {
     id: root
     required property ViewerActions actions
     required property InputContext inputContext
+    Native.ShortcutKey { id: keyMatcher }
+    // Linux IBus can forward keys directly to the focus object, bypassing
+    // Qt's window shortcut map. Normal shortcut presses are consumed before
+    // Keys.pressed, so this path must use the same enabled bindings exactly once.
+    Connections {
+        target: root.inputContext.focusItem ? root.inputContext.focusItem.Keys : null
+        function onPressed(event) {
+            if (!root.inputContext.targetWindow.active) return;
+            const matches = root.entries.filter(binding => binding.enabled
+                && keyMatcher.matches(binding.portableText, event.key, event.modifiers));
+            if (matches.length === 0) return;
+            event.accepted = true;
+            if (matches.length > 1) {
+                console.warn("Ambiguous shortcut: " + matches[0].portableText);
+                return;
+            }
+            const binding = matches[0];
+            if (!event.isAutoRepeat || binding.autoRepeat) binding.operation.trigger();
+        }
+    }
     component Binding: ShortcutBinding {
         inputContext: root.inputContext
         active: root.enabled

@@ -86,6 +86,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     .file("src/screenshot_native.rs")
     .file("src/screenshot_overlay.rs")
     .file("src/danmaku.rs")
+    .file("src/shortcut_key.rs")
     .file("src/comment_model.rs")
     .include_dir("src")
     .qt_module("Quick");

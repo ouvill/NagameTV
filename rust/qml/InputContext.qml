@@ -18,6 +18,21 @@ Item {
     readonly property bool viewing: !guideVisible && !channelsVisible
     readonly property bool navigationEnabled: enabled && !editingText && !popupOpen
 
+    // Qt Wayland can keep text-input enabled when focus moves from an editor
+    // to a non-text item in the same window. Update after Qt has finished the
+    // focus transition so the compositor stops sending those keys to the IME.
+    // Query the actual focus object; the shortcut scope is not an IME policy.
+    function updateInputMethod() {
+        if (targetWindow && targetWindow.active)
+            Qt.inputMethod.update(Qt.ImEnabled);
+    }
+    onFocusItemChanged: Qt.callLater(root.updateInputMethod)
+    Component.onCompleted: Qt.callLater(root.updateInputMethod)
+    Connections {
+        target: root.targetWindow
+        function onActiveChanged() { Qt.callLater(root.updateInputMethod); }
+    }
+
     function accepts(scope) {
         if (!enabled) return false;
         switch (scope) {

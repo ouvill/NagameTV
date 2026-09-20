@@ -8,6 +8,10 @@ mod ffi {
         fn run_qml_tests(path: &QString) -> i32;
         #[rust_name = "send_input_method"]
         fn sendTestInputMethod(preedit: &QString, commit: &QString) -> bool;
+        #[rust_name = "send_input_method_cursor"]
+        fn sendTestInputMethodCursor(preedit: &QString) -> bool;
+        #[rust_name = "send_forwarded_key"]
+        fn sendTestForwardedKey(key: i32, modifiers: i32, text: &QString, repeat: bool) -> bool;
         #[cfg(feature = "native_tests")]
         fn run_qml_test_args(arguments: &[String]) -> i32;
     }
@@ -25,6 +29,16 @@ mod ffi {
         type TestInputMethod = super::InputMethod;
         #[qinvokable]
         fn compose(self: &TestInputMethod, preedit: &QString, commit: &QString) -> bool;
+        #[qinvokable]
+        fn cursor_preedit(self: &TestInputMethod, preedit: &QString) -> bool;
+        #[qinvokable]
+        fn forward_key(
+            self: &TestInputMethod,
+            key: i32,
+            modifiers: i32,
+            text: &QString,
+            repeat: bool,
+        ) -> bool;
     }
 }
 
@@ -41,6 +55,20 @@ pub struct InputMethod;
 impl ffi::TestInputMethod {
     pub fn compose(&self, preedit: &cxx_qt_lib::QString, commit: &cxx_qt_lib::QString) -> bool {
         ffi::send_input_method(preedit, commit)
+    }
+
+    pub fn cursor_preedit(&self, preedit: &cxx_qt_lib::QString) -> bool {
+        ffi::send_input_method_cursor(preedit)
+    }
+
+    pub fn forward_key(
+        &self,
+        key: i32,
+        modifiers: i32,
+        text: &cxx_qt_lib::QString,
+        repeat: bool,
+    ) -> bool {
+        ffi::send_forwarded_key(key, modifiers, text, repeat)
     }
 }
 

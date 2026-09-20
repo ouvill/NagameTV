@@ -12,6 +12,10 @@ TestCase {
     width: 420
     height: 320
     CommentSubmitPolicy { id: submitPolicy }
+    MouseArea {
+        anchors.fill: parent
+        onClicked: composer.visible = false
+    }
     CommentComposer {
         id: composer
         submitPolicy: submitPolicy
@@ -84,6 +88,25 @@ TestCase {
         compare(sent.count, 0);
         compare(findChild(composer, "sendComment").enabled, false);
     }
+    function test_disabled_send_click_stays_inside_composer_data() {
+        return [{tag: "empty"}, {tag: "busy"}, {tag: "unavailable"}, {tag: "composing"}];
+    }
+    function test_disabled_send_click_stays_inside_composer(data) {
+        switch (data.tag) {
+        case "empty": composer.draft = ""; break;
+        case "busy": composer.busy = true; break;
+        case "unavailable": composer.available = false; break;
+        case "composing": verify(ime.compose("じっきょう", "")); break;
+        }
+        const button = findChild(composer, "sendComment");
+        verify(!button.enabled);
+        mouseClick(button);
+        verify(composer.visible);
+        verify(editor().activeFocus);
+        compare(sent.count, 0);
+        mouseClick(testCase, testCase.width - 1, testCase.height - 1);
+        verify(!composer.visible);
+    }
     function test_ime_preedit_enter_and_ctrl_enter_are_not_posts() {
         submitPolicy.mode = CommentSubmitPolicy.EnterOrControlEnter;
         verify(ime.compose("じっきょう", ""));
@@ -98,6 +121,24 @@ TestCase {
         tryCompare(editor(), "inputMethodComposing", false);
         keyClick(Qt.Key_Return);
         compare(sent.count, 1);
+    }
+    function test_committed_text_with_ime_cursor_can_send_without_changing_focus() {
+        composer.draft = "";
+        verify(ime.cursor_preedit("じっきょう"));
+        compare(findChild(composer, "sendComment").enabled, false);
+        verify(ime.compose("", "実況"));
+        // An IME can retain cursor attributes after clearing its preedit. Qt's
+        // inputMethodComposing includes those attributes, even without text.
+        verify(ime.cursor_preedit(""));
+        compare(editor().inputMethodComposing, true);
+        compare(editor().preeditText, "");
+        compare(composer.draft, "実況");
+        verify(findChild(composer, "sendComment").enabled);
+        keyClick(Qt.Key_Return, Qt.ControlModifier);
+        compare(sent.count, 1);
+        mouseClick(findChild(composer, "sendComment"));
+        compare(sent.count, 2);
+        verify(editor().activeFocus);
     }
     function test_result_and_visibility_keep_text_until_backend_acknowledges() {
         composer.status = "Could not post <comment>";

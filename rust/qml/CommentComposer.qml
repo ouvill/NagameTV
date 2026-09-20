@@ -14,6 +14,9 @@ Rectangle {
     readonly property int maximumLength: 1024
     readonly property real occupiedHeight: height + (feedback.visible ? feedback.height + 8 : 0)
     readonly property string sendHint: submitPolicy.hint
+    // Qt's inputMethodComposing also includes cursor/format attributes that
+    // may remain after an IME commit. Only unfinished text blocks submission.
+    readonly property bool composing: editor.preeditText.length > 0
     property bool showFeedback: false
     signal draftEdited(string text)
     signal sendRequested
@@ -26,9 +29,13 @@ Rectangle {
 
     function focusEditor() { editor.forceActiveFocus(); }
     function send() {
-        if (available && !busy && editor.text.trim().length > 0 && !editor.inputMethodComposing)
+        if (available && !busy && editor.text.trim().length > 0 && !composing)
             sendRequested();
     }
+
+    // Disabled controls and the row's padding must not pass clicks through to
+    // the video's dismiss handler. Keep this behind the editor and send button.
+    MouseArea { anchors.fill: parent }
 
     TextField {
         id: editor
@@ -82,7 +89,7 @@ Rectangle {
         }
         Keys.priority: Keys.BeforeItem
         Keys.onPressed: function(event) {
-            const disposition = root.submitPolicy.disposition(event, inputMethodComposing);
+            const disposition = root.submitPolicy.disposition(event, root.composing);
             if (disposition === CommentSubmitPolicy.PassThrough) return;
             event.accepted = true;
             if (disposition === CommentSubmitPolicy.Submit) root.send();
@@ -109,7 +116,7 @@ Rectangle {
         implicitHeight: 40
         iconSource: root.iconDirectory + "send.svg"
         tip: qsTranslate("Main", "Send") + " · " + root.sendHint
-        enabled: root.available && !root.busy && editor.text.trim().length > 0 && !editor.inputMethodComposing
+        enabled: root.available && !root.busy && editor.text.trim().length > 0 && !root.composing
         opacity: enabled ? 1 : 0.4
         background: Rectangle {
             radius: 10

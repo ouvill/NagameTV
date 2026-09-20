@@ -3,6 +3,7 @@
 // Missing binding operations only. Test cases, inputs and assertions live in Rust.
 #include "localization.h"
 #include "pointer_activity.h"
+#include "danmaku_test.h"
 #include "rust/cxx.h"
 #include <QtCore/QFile>
 #include <QtCore/QMimeData>
@@ -15,6 +16,7 @@
 #include <QtSvg/QSvgRenderer>
 #include <QtQml/QQmlExpression>
 #include <QtTest/qtestkeyboard.h>
+#include <QtTest/qtestmouse.h>
 #include <memory>
 #include <stdexcept>
 #include <mutex>
@@ -33,6 +35,19 @@ inline void clickRootKey(QQmlApplicationEngine &engine, const QString &sequence)
     const QKeySequence keys(sequence, QKeySequence::PortableText);
     if (keys.count() != 1) throw std::runtime_error("One key combination is required");
     QTest::keyClick(window, keys[0].key(), keys[0].keyboardModifiers());
+}
+inline bool forwardFocusKey(const QString &sequence) {
+    const QKeySequence keys(sequence, QKeySequence::PortableText);
+    if (keys.count() != 1) throw std::runtime_error("One key combination is required");
+    return sendTestForwardedKey(keys[0].key(), int(keys[0].keyboardModifiers()), QString(), false);
+}
+inline void clickRootItem(QQmlApplicationEngine &engine, const QString &name) {
+    const auto roots = engine.rootObjects();
+    auto *window = roots.isEmpty() ? nullptr : qobject_cast<QQuickWindow *>(roots.first());
+    auto *item = window ? window->findChild<QQuickItem *>(name) : nullptr;
+    if (!item) throw std::runtime_error("QQuickItem is missing");
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier,
+                     item->mapToScene(QPointF(item->width() / 2, item->height() / 2)).toPoint());
 }
 // This object lives only in the native test runner. Observe frameSwapped on
 // the render thread; GUI polling must not distort the measured intervals.

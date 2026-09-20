@@ -104,6 +104,23 @@ SeekはPlaybackに加えてSliderの方向キーを優先する。Dismissはポ�
 F11・Ctrl+Oは従来どおり文字入力やQMLポップアップで追加抑制しない。
 ネイティブダイアログ等の別Windowへのキー配送はQtのWindowShortcutに従う。
 
+LinuxのIBusは、IMEを使った後のキーをフォーカス中のQObjectへ直接転送する経路を持つ。
+その経路ではWindowのShortcut判定を通らないため、ShortcutBindingsが現在の
+フォーカス項目の`Keys.pressed`も監視する。通常のShortcutで消費されたキーは
+この経路へ届かない。受付条件・Action・リピート可否は同じBindingから読み、
+`ShortcutKey`がQtの`QKeySequence`で一つのキー組み合わせを照合する。
+独自のスキャンコード表は持たず、キー変更も両方の経路と設定の案内へ反映する。
+文字入力・ポップアップ・終了中の抑制を共用し、別Windowがアクティブな間は処理しない。
+参照: [Qt IBusのforwardKeyEvent](https://github.com/qt/qtbase/blob/v6.10.2/src/plugins/platforminputcontexts/ibus/qibusplatforminputcontext.cpp)。
+
+Waylandでは、キーがQtに届く前にIMEへ取り込まれる経路もある。
+`InputContext`はフォーカス項目とWindowのアクティブ状態の変化後に、
+`Qt.inputMethod.update(Qt.ImEnabled)`を呼ぶ。Qtのフォーカス更新が完了してから
+実際の入力先へ問い合わせ、文字入力欄から同じWindowの視聴面へ戻った際にも
+Waylandの文字入力を無効化する。別Windowがアクティブな場合は更新しない。
+ショートカットの有効条件をIMEの有効条件へ流用したり、ユーザーのIMEを切り替えたりしない。
+参照: [Qt WaylandのupdateとsetFocusObject](https://github.com/qt/qtbase/blob/v6.10.2/src/plugins/platforms/wayland/qwaylandinputcontext.cpp)。
+
 設定画面は同じBindingのdescription・condition・nativeTextを読む。
 現在キーが無効でも一覧から消さない。Ctrl+O・Space・左右キーも案内に含める。
 現時点ではBinding一件につきキーは一つ。複数sequenceへ拡張する際は、
@@ -121,7 +138,8 @@ QtのnativeTextが先頭のキーしか返さないことに注意して全割�
 CommentSubmitPolicyは`Mode { ControlEnter, EnterOrControlEnter }`と
 `Disposition { PassThrough, Consume, Submit }`で投稿キーを扱う。
 保存済みのcomment_send_on_enterからModeを選び、保存形式は変えない。
-Return・テンキーEnterを受け付け、IME変換中は入力メソッドに渡し、リピートでは送信しない。
+Return・テンキーEnterを受け付け、IMEの未確定文字がある間は入力メソッドに渡し、リピートでは送信しない。
+確定後にカーソル属性だけが残る場合は投稿可能とする。
 投稿可否・下書き・送信状態はRustが所有し、送信ボタンとキーは同じsend()を経由する。
 
 遠隔操作は引き続きRust Playerの明示的な操作を呼ぶ。
@@ -134,6 +152,16 @@ Rustの状態遷移試験と機器不要の接続試験で、再生モード別�
 QML部品試験ではボタンとSpaceの共通化、フォーカス中の二重実行防止、キー差し替えと
 案内の追従、ポップアップ・Slider・終了中の抑制、Escの順序、IMEを確認する。
 製品Main.qmlの起動試験にも実キーでの画面開閉・全画面・コメント入力・録画のSpaceを含める。
+IMEの転送キーを使った繰り返し操作、確定後に残るカーソル属性、無効な投稿ボタンの
+クリックも確認する。これらはQtイベントの配送試験で、IBus/Mozcプロセス自体の試験ではない。
+
+2026-09-20: Ubuntu／IBus Mozcのユーザー環境のログで、Wayland text-input-v3を確認。
+コメント入力欄から`surface`へ戻った後に`disableSurface`が呼ばれず、C・G・Sが
+未確定文字として届くことを確認した。フォーカス更新後の`ImEnabled`再通知はこの経路への対策。
+修正後は同じユーザー環境で繰り返し操作の成功を確認。ログでもコメント欄から戻る
+3回すべてで直後に`disableSurface`が呼ばれ、入力欄の外への未確定文字の配送は0件だった。
+QML試験275件が成功（評価用機能等の18件はskip）し、製品Main.qmlを使う起動試験も成功した。
+実環境でのログ取得は[IME診断](platform-startup.md#waylandのime診断)を使う。
 
 実行方法は[開発手順](development.md)・[Qtテスト](qt-tests.md)に従う。
 GUI試験は[専用環境](gui-test-environment.md)で表示・実GPU・仮想音声を検証してから実行する。
