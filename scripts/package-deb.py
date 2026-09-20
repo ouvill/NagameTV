@@ -46,8 +46,16 @@ def shared_dependencies(stage: Path, ubuntu: UbuntuRelease) -> str:
                     dynamic = subprocess.check_output(["readelf", "-d", binary], text=True)
                     soname = re.search(r"\(SONAME\).*\[(.+)\]", dynamic)
                     if soname:
-                        name = re.fullmatch(r"(.+)\.so\.(.+)", soname[1])
+                        # Match both dpkg SONAME forms, including PulseAudio's
+                        # private libpulsecommon-<version>.so.
+                        name = (re.fullmatch(r"(.+)\.so\.(.+)", soname[1])
+                                or re.fullmatch(r"(.+)-(\d.*)\.so", soname[1]))
                         if not name:
+                            # GStreamer plugins have unversioned SONAMEs (e.g.
+                            # libgstapp.so). dpkg treats these as private modules;
+                            # scan their dependencies, but do not invent an ABI.
+                            if soname[1].endswith(".so"):
+                                continue
                             raise ValueError(f"Unsupported bundled SONAME: {soname[1]}")
                         shlibs.add(f"{name[1]} {name[2]} {PACKAGE}\n")
                 (debian / "shlibs.local").write_text("".join(sorted(shlibs)))
@@ -71,6 +79,10 @@ def main():
     stage = args.stage.resolve()
     version = tomllib.loads((ROOT / "rust/Cargo.toml").read_text())["package"]["version"]
     try:
+        # dpkg-shlibdeps uses this directory to identify the package root and
+        # resolve $ORIGIN paths relative to the staged files.
+        control = stage / "DEBIAN"
+        control.mkdir()
         dependencies = [shared_dependencies(stage, args.ubuntu)]
         match args.ubuntu:
             case UbuntuRelease.NOBLE:
@@ -78,8 +90,6 @@ def main():
             case UbuntuRelease.RESOLUTE:
                 dependencies += [line for line in (ROOT / "packaging/deb/runtime-dependencies-26.04.txt")
                                  .read_text().splitlines() if line and not line.startswith("#")]
-        control = stage / "DEBIAN"
-        control.mkdir()
         installed_size = subprocess.check_output(["du", "-sk", stage], text=True).split()[0]
         (control / "control").write_text(
             f"Package: {PACKAGE}\nVersion: {debian_version(version, args.ubuntu)}\n"
@@ -107,7 +117,9 @@ def main():
         os.replace(pending, args.output / filename)
         (args.output / f"{filename}.sha256").write_text(f"{checksum}  {filename}\n")
         print(f"Package: {args.output / filename}")
-    except (ValueError, OSError, subprocess.CalledProcessError) as error:
+    except subprocess.CalledProcessError as error:
+        parser.exit(1, f"deb: {error.cmd[0]} failed (exit {error.returncode})\n")
+    except (ValueError, OSError) as error:
         parser.exit(1, f"deb: {error}\n")
 
 

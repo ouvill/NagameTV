@@ -23,10 +23,14 @@ bundle=$(PYTHONPATH=/project/scripts python3 -c \
   "$version" "$UBUNTU_RELEASE")
 cd "/project/build/deb/ubuntu$UBUNTU_RELEASE"
 sha256sum --check "$bundle.sha256"
-apt-get install --yes --no-install-recommends "./$bundle"
+# Minimal Ubuntu images exclude /usr/share/doc by default. Include this
+# package's documentation so integrity checks cover its entire payload.
+apt-get -o 'Dpkg::Options::=--path-include=/usr/share/doc/nagametv/*' \
+  install --yes --no-install-recommends "./$bundle"
 python3 /project/scripts/check-installed-deb.py "$UBUNTU_RELEASE"
 # dpkg verifies every regular payload file against the generated md5sums.
-[[ -z $(dpkg --verify nagametv) ]]
+verification=$(dpkg --verify nagametv)
+[[ -z $verification ]] || { echo "$verification" >&2; exit 1; }
 apt-get remove --yes nagametv
 for path in /usr/bin/nagametv /opt/nagametv \
   /usr/share/applications/io.github.ouvill.nagametv.desktop \
