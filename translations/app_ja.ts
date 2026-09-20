@@ -700,6 +700,10 @@
   <context>
     <name>Viewer</name>
     <message>
+      <source>Watching</source>
+      <translation>視聴中</translation>
+    </message>
+    <message>
         <source>Audio</source>
         <translation>音声</translation>
     </message>

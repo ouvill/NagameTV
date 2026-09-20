@@ -5,8 +5,10 @@ import QtQuick.Layouts
 
 Pane {
     id: root
+    enum Motion { Positioning, Idle, Scrolling, Snapping }
     required property var rows
     required property int selected
+    property int viewingIndex: -1
     property url iconDirectory: "qrc:/qt/qml/MinimalViewer/assets/icons/"
     property string visibilityJson: "[]"
     readonly property var visibleIndices: new Set(JSON.parse(visibilityJson))
@@ -16,7 +18,6 @@ Pane {
     property real now: 0
     readonly property var programs: JSON.parse(programsJson)
     property string band: "GR"
-    property bool navigationAnimated: false
     readonly property var filteredRows: rows.filter(row => row.band === band && (row.index === selected || !visibleIndices.size || visibleIndices.has(row.index)))
     signal selectRequested(int index)
     signal closeRequested
@@ -25,11 +26,9 @@ Pane {
     }
     function openBrowser() {
         restoreSelection();
-        Qt.callLater(list.centerCurrent);
         focusBrowser();
     }
     function restoreSelection() {
-        navigationAnimated = false;
         if (!rows)
             return;
         const current = rows.find(row => row.index === selected) || rows[0];
@@ -38,14 +37,12 @@ Pane {
         resetCursor();
     }
     function resetCursor() {
-        if (wheelInput)
-            wheelInput.reset();
         // Required inputs may arrive before the derived binding and child view
         // are initialized. Component.onCompleted performs the initial selection.
         if (!list || !filteredRows)
             return;
         const selectedRow = filteredRows.findIndex(row => row.index === selected);
-        list.currentIndex = selectedRow >= 0 ? selectedRow : (filteredRows.length ? 0 : -1);
+        list.resetPosition(selectedRow >= 0 ? selectedRow : (filteredRows.length ? 0 : -1));
     }
     function selectCurrent() {
         const row = filteredRows[list.currentIndex];
@@ -108,7 +105,6 @@ Pane {
                 directionalNavigation: true
                 onDownRequested: root.focusBrowser()
                 onSelected: function (band) {
-                    root.navigationAnimated = true;
                     root.band = band;
                 }
             }
@@ -123,98 +119,137 @@ Pane {
                 orientation: ListView.Horizontal
                 spacing: 14
                 clip: true
-                cacheBuffer: 0
+                // Keep the extra half-card visible at the viewport edges.
+                cacheBuffer: extraCardWidth / 2
                 model: root.filteredRows
                 // ListView resets currentIndex when a new filtered model is
                 // installed, after the source's change handlers have run.
                 onModelChanged: Qt.callLater(root.resetCursor)
-                readonly property real candidateWidth: Math.min(356, width)
-                preferredHighlightBegin: (width - candidateWidth) / 2
-                preferredHighlightEnd: (width + candidateWidth) / 2
-                // Keep keyboard selection independent of scrolling, with room
-                // to center even the first and last cards.
+                readonly property real baseCardWidth: Math.max(0, Math.min(270, width))
+                readonly property real candidateWidth: Math.max(0, Math.min(356, width))
+                readonly property real extraCardWidth: Math.max(0, candidateWidth - baseCardWidth)
+                readonly property real cardStride: baseCardWidth + spacing
+                // Offscreen headers can retain an old x after a resize. The
+                // current delegate stays instantiated and anchors the uniform grid.
+                readonly property real logicalOrigin: currentItem ? currentItem.x - currentIndex * cardStride : 0
+                readonly property real focusPosition: Math.max(0, Math.min(count - 1,
+                    (contentX + width / 2 - logicalOrigin - baseCardWidth / 2) / cardStride))
+                readonly property int focusLeftIndex: Math.floor(focusPosition)
+                readonly property real focusFraction: focusPosition - focusLeftIndex
+                readonly property real focusBlend: focusFraction * focusFraction * (3 - 2 * focusFraction)
+                readonly property int nearestIndex: count ? Math.round(focusPosition) : -1
+                readonly property int snapDurationMs: 180
+                property int motion: ChannelBrowser.Idle
+                // The scroll geometry stays fixed. The two central cards share
+                // the extra width; shifting their neighbors preserves the gap
+                // without feeding visual expansion back into ListView's layout.
                 highlightRangeMode: ListView.NoHighlightRange
                 highlightFollowsCurrentItem: false
-                header: Item { width: list.preferredHighlightBegin; height: 1 }
-                footer: Item { width: list.preferredHighlightBegin; height: 1 }
-                property real centerOffset: 0
-                property bool followingCurrent: true
-                // Follow the live layout while easing the remaining distance
-                // to the center. Width animation never leaves a stale target.
-                function trackCenter() {
-                    if (!followingCurrent || !currentItem)
+                boundsBehavior: Flickable.StopAtBounds
+                maximumFlickVelocity: 2200
+                flickDeceleration: 2400
+                header: Item { width: (list.width - list.baseCardWidth) / 2; height: 1 }
+                footer: Item { width: (list.width - list.baseCardWidth) / 2; height: 1 }
+                function expansion(index: int): real {
+                    return index === focusLeftIndex ? 1 - focusBlend
+                        : index === focusLeftIndex + 1 ? focusBlend : 0;
+                }
+                function cardOffset(index: int): real {
+                    const preceding = index <= focusLeftIndex ? 0
+                        : index === focusLeftIndex + 1 ? 1 - focusBlend : 1;
+                    return extraCardWidth * (preceding - 0.5);
+                }
+                function centeredPosition(index: int): real {
+                    return Math.round(logicalOrigin + index * cardStride + baseCardWidth / 2 - width / 2);
+                }
+                function keepCentered() {
+                    // ListView can adjust contentX in a later resize/layout pass.
+                    // Only an idle carousel follows that correction; fresh input
+                    // always takes precedence over a queued centering callback.
+                    if (motion === ChannelBrowser.Idle && currentIndex >= 0)
+                        contentX = centeredPosition(currentIndex);
+                }
+                function resetPosition(index: int) {
+                    motion = ChannelBrowser.Positioning;
+                    centerMotion.stop();
+                    if (wheelInput) wheelInput.cancelGesture();
+                    cancelFlick();
+                    currentIndex = index;
+                    Qt.callLater(finishPositioning);
+                }
+                function finishPositioning() {
+                    if (motion !== ChannelBrowser.Positioning)
                         return;
                     forceLayout();
-                    if (!currentItem)
-                        return;
-                    contentX = currentItem.x + currentItem.width / 2 - width / 2 + centerOffset;
+                    if (currentIndex >= 0)
+                        contentX = centeredPosition(currentIndex);
+                    motion = ChannelBrowser.Idle;
                 }
-                function animateCenter() {
-                    if (!root.navigationAnimated) {
-                        centerCurrent();
+                function beginScroll() {
+                    motion = ChannelBrowser.Scrolling;
+                    centerMotion.stop();
+                    currentIndex = nearestIndex;
+                }
+                function snapTo(index: int) {
+                    motion = ChannelBrowser.Snapping;
+                    centerMotion.stop();
+                    wheelInput.cancelGesture();
+                    cancelFlick();
+                    currentIndex = index;
+                    if (index < 0) {
+                        motion = ChannelBrowser.Idle;
                         return;
                     }
-                    if (!currentItem)
-                        return;
-                    centerMotion.stop();
-                    followingCurrent = true;
                     forceLayout();
-                    if (!currentItem)
+                    centerMotion.to = centeredPosition(index);
+                    centerMotion.start();
+                }
+                function finishScroll() {
+                    if (visible && enabled && motion === ChannelBrowser.Scrolling && !moving && !wheelInput.active)
+                        snapTo(nearestIndex);
+                }
+                function moveCandidate(offset: int) {
+                    if (!count)
                         return;
-                    centerOffset = contentX - (currentItem.x + currentItem.width / 2 - width / 2);
-                    centerMotion.restart();
+                    snapTo(Math.max(0, Math.min(count - 1, currentIndex + offset)));
                 }
-                function centerCurrent() {
-                    centerMotion.stop();
-                    followingCurrent = true;
-                    centerOffset = 0;
-                    trackCenter();
-                }
-                onCurrentItemChanged: Qt.callLater(animateCenter)
-                onWidthChanged: Qt.callLater(centerCurrent)
-                onMovementStarted: {
-                    followingCurrent = false;
-                    centerMotion.stop();
-                }
+                onNearestIndexChanged: if (motion === ChannelBrowser.Scrolling) currentIndex = nearestIndex
+                onContentXChanged: if (motion === ChannelBrowser.Idle) Qt.callLater(keepCentered)
+                onLogicalOriginChanged: Qt.callLater(keepCentered)
+                onMotionChanged: if (motion === ChannelBrowser.Idle) Qt.callLater(keepCentered)
+                onWidthChanged: resetPosition(currentIndex)
+                onMovementStarted: beginScroll()
+                onMovementEnded: finishScroll()
+                onDraggingChanged: if (dragging) wheelInput.cancelGesture()
+                onVisibleChanged: if (!visible) { centerMotion.stop(); motion = ChannelBrowser.Idle; }
+                onEnabledChanged: if (!enabled) { centerMotion.stop(); motion = ChannelBrowser.Idle; }
                 NumberAnimation {
                     id: centerMotion
                     target: list
-                    property: "centerOffset"
-                    to: 0
-                    duration: 180
+                    property: "contentX"
+                    duration: list.snapDurationMs
                     easing.type: Easing.OutCubic
-                    onRunningChanged: if (!running) Qt.callLater(list.trackCenter)
-                }
-                FrameAnimation {
-                    running: centerMotion.running
-                    onTriggered: list.trackCenter()
+                    onFinished: list.motion = ChannelBrowser.Idle
                 }
                 keyNavigationEnabled: false
                 keyNavigationWraps: false
-                Keys.onLeftPressed: {
-                    wheelInput.reset();
-                    root.navigationAnimated = true;
-                    list.decrementCurrentIndex();
-                }
-                Keys.onRightPressed: {
-                    wheelInput.reset();
-                    root.navigationAnimated = true;
-                    list.incrementCurrentIndex();
-                }
+                Keys.onLeftPressed: list.moveCandidate(-1)
+                Keys.onRightPressed: list.moveCandidate(1)
                 Keys.onUpPressed: bands.focusCurrent()
                 Keys.onDownPressed: function(event) { event.accepted = true; }
                 Keys.onReturnPressed: root.selectCurrent()
                 Keys.onEnterPressed: root.selectCurrent()
-                ScrollBar.horizontal: ScrollBar {}
+                ScrollBar.horizontal: ScrollBar {
+                    onPressedChanged: {
+                        if (pressed) list.beginScroll();
+                        else list.finishScroll();
+                    }
+                }
                 delegate: Item {
                     id: slot
                     required property var modelData
                     required property int index
-                    width: card.width
-                    onWidthChanged: {
-                        if (!centerMotion.running)
-                            Qt.callLater(list.trackCenter);
-                    }
+                    width: list.baseCardWidth
                     height: 164
                     ItemDelegate {
                         id: card
@@ -226,19 +261,9 @@ Pane {
                         objectName: "browserChannelCard"
                         readonly property var modelData: slot.modelData
                         readonly property int index: slot.index
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        // Animate selection independently of viewport size so a
-                        // resize immediately clamps the card to the available width.
-                        property real expansion: highlighted ? 1 : 0
-                        Behavior on expansion {
-                            enabled: root.navigationAnimated
-                            NumberAnimation {
-                                duration: 180
-                                easing.type: Easing.OutCubic
-                            }
-                        }
-                        width: Math.min(270, list.width)
-                            + (list.candidateWidth - Math.min(270, list.width)) * expansion
+                        x: list.cardOffset(index)
+                        readonly property real expansion: list.expansion(index)
+                        width: list.baseCardWidth + list.extraCardWidth * expansion
                         height: 164
                         padding: 14
                         highlighted: slot.ListView.isCurrentItem
@@ -263,13 +288,36 @@ Pane {
                                     Layout.preferredWidth: 56
                                     Layout.preferredHeight: 32
                                 }
-                                Label {
+                                Item {
                                     Layout.fillWidth: true
-                                    text: card.modelData.label.replace(/^\d+\s+/, "")
-                                    color: "#b6bab6"
-                                    font.pixelSize: 12
-                                    textFormat: Text.PlainText
-                                    elide: Text.ElideRight
+                                    Layout.preferredHeight: 32
+                                    readonly property int indicatorGap: 6
+                                    Label {
+                                        id: channelName
+                                        objectName: "browserChannelName"
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        width: Math.min(implicitWidth, Math.max(0, parent.width
+                                            - (watching.visible ? watching.width + parent.indicatorGap : 0)))
+                                        text: card.modelData.label.replace(/^\d+\s+/, "")
+                                        color: "#b6bab6"
+                                        font.pixelSize: 12
+                                        textFormat: Text.PlainText
+                                        elide: Text.ElideRight
+                                    }
+                                    Rectangle {
+                                        id: watching
+                                        objectName: "browserWatchingIndicator"
+                                        visible: card.modelData.index === root.viewingIndex
+                                        x: channelName.width + parent.indicatorGap
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        width: 6; height: width; radius: width / 2
+                                        color: "#e36b6b"
+                                        Accessible.role: Accessible.StaticText
+                                        Accessible.name: qsTranslate("Viewer", "Watching")
+                                        HoverHandler { id: watchingHover }
+                                        ToolTip.visible: watchingHover.hovered
+                                        ToolTip.text: qsTranslate("Viewer", "Watching")
+                                    }
                                 }
                                 Label {
                                     readonly property string force: root.activity[card.modelData.index] ?? ""
@@ -309,18 +357,19 @@ Pane {
                     color: "#cccccc"
                 }
             }
-            ChannelScrollArea {
+            ChannelWheelArea {
                 id: wheelInput
                 objectName: "browserScrollArea"
                 anchors.fill: parent
                 enabled: list.count > 0
-                mode: ChannelScrollArea.Steps
-                pixelsPerStep: list.candidateWidth + list.spacing
-                onScrolled: function(steps) {
+                view: list
+                orientation: Qt.Horizontal
+                pixelInertia: true
+                onScrollStarted: {
+                    list.beginScroll();
                     list.forceActiveFocus();
-                    root.navigationAnimated = true;
-                    list.currentIndex = Math.max(0, Math.min(list.count - 1, list.currentIndex + steps));
                 }
+                onScrollFinished: list.finishScroll()
             }
         }
     }

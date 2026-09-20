@@ -165,6 +165,7 @@ pub mod ffi {
         #[qproperty(QString, guide_visibility_data, READ, NOTIFY)]
         #[qproperty(f64, channel_program_now, READ, NOTIFY)]
         #[qproperty(i32, selected, READ, NOTIFY)]
+        #[qproperty(i32, viewing_channel, READ = viewing_channel, NOTIFY)]
         #[qproperty(bool, loading, READ = loading, NOTIFY)]
         #[qproperty(bool, connecting, READ = connecting, NOTIFY)]
         #[qproperty(bool, playing, READ = playing, NOTIFY)]
@@ -292,6 +293,7 @@ pub mod ffi {
         fn loading(self: &Player) -> bool;
         fn connecting(self: &Player) -> bool;
         fn playing(self: &Player) -> bool;
+        fn viewing_channel(self: &Player) -> i32;
         fn playback_action(self: &Player) -> PlaybackAction;
         fn media_active(self: &Player) -> bool;
         fn paused(self: &Player) -> bool;

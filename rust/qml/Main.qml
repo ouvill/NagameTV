@@ -615,6 +615,7 @@ ApplicationWindow {
                 visibilityJson: player.channel_visibility_data
                 now: player.channel_program_now
                 selected: player.selected
+                viewingIndex: player.viewing_channel
                 onSelectRequested: function (index) {
                     player.select(index);
                     root.showChannels = false;

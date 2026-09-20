@@ -162,6 +162,7 @@ impl ffi::Player {
                     }
                     // Unchanged catalogs must not rebuild the guide or browser payloads.
                     if let Some(presentation) = presentation {
+                        let before_viewing = self.viewing_channel();
                         let presentation = QString::from(presentation);
                         let selected = channels::selected_after_update(
                             self.rust().catalog_selection,
@@ -183,6 +184,9 @@ impl ffi::Player {
                         self.as_mut().rust_mut().next_current_program = Instant::now();
                         self.as_mut().set_channel_data(presentation);
                         self.as_mut().set_selected(selected);
+                        if before_viewing != self.viewing_channel() {
+                            self.as_mut().viewing_channel_changed();
+                        }
                         self.as_mut().configure_epg();
                     }
                     if !self.rust().entries.is_empty() {

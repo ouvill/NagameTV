@@ -161,7 +161,7 @@ TestCase {
         const list = findChild(browser, "browserList");
         for (let frame = 0; frame < 16; ++frame) {
             wait(16);
-            compare(list.centerOffset, 0);
+            compare(list.motion, Viewer.ChannelBrowser.Idle);
             const card = findChild(list.currentItem, "browserChannelCard");
             compare(card.width, list.candidateWidth);
             verify(Math.abs(card.mapToItem(list, card.width / 2, 0).x - list.width / 2) < 2);
@@ -173,7 +173,7 @@ TestCase {
         for (let frame = 0; frame < 16; ++frame) {
             wait(16);
             compare(list.currentItem.modelData.index, browser.selected);
-            compare(list.centerOffset, 0);
+            compare(list.motion, Viewer.ChannelBrowser.Idle);
             const card = findChild(list.currentItem, "browserChannelCard");
             compare(card.width, list.candidateWidth);
             verify(Math.abs(card.mapToItem(list, card.width / 2, 0).x - list.width / 2) < 2);
@@ -191,7 +191,7 @@ TestCase {
         verify(candidate.width > 270 && candidate.width < 356);
         verify(previous.width > 270 && previous.width < 356);
         const center = candidate.mapToItem(list, candidate.width / 2, 0).x;
-        verify(center < list.width / 2 - 2, "scroll should still be moving toward the center: " + center + " offset " + list.centerOffset);
+        verify(center < list.width / 2 - 2, "scroll should still be moving toward the center: " + center);
         keyClick(Qt.Key_Right);
         verifyCentered(list);
         tryCompare(candidate, "width", 270);
@@ -271,14 +271,17 @@ TestCase {
         keyClick(Qt.Key_Return);
         compare(selection.signalArguments[0][0], 0);
     }
-    function test_playing_channel_remains_available_and_wheel_moves_candidate() {
+    function test_playing_channel_remains_available_and_wheel_snaps_without_selecting() {
         browser.visibilityJson = "[1]";
         browser.openBrowser();
         const list = findChild(browser, "browserList");
         compare(list.count, 2);
         compare(list.currentItem.modelData.index, 2);
+        verifyCentered(list);
+        const start = list.contentX;
         mouseWheel(list, list.width / 2, 60, 0, 120);
         compare(list.currentIndex, 0);
+        verify(list.contentX < start);
         verifyCentered(list);
         compare(selection.count, 0);
         browser.openBrowser();
@@ -295,6 +298,34 @@ TestCase {
         tryCompare(list, "count", 1);
         verifyCentered(list);
         compare(list.currentItem.modelData.index, 7);
+    }
+    function test_viewing_indicator_stays_with_playback_and_fits_after_channel_name() {
+        const list = findChild(browser, "browserList");
+        browser.viewingIndex = 2;
+        verifyCentered(list);
+        const viewedCard = findChild(list.currentItem, "browserChannelCard");
+        const viewedDot = findChild(viewedCard, "browserWatchingIndicator");
+        const name = findChild(viewedCard, "browserChannelName");
+        verify(viewedDot.visible);
+        verify(viewedDot.mapToItem(viewedCard, 0, 0).x
+            > name.mapToItem(viewedCard, name.width, 0).x);
+        browser.focusBrowser();
+        keyClick(Qt.Key_Left);
+        verifyCentered(list);
+        verify(viewedDot.visible);
+        const candidateDot = findChild(list.currentItem, "browserWatchingIndicator");
+        verify(!candidateDot.visible);
+        compare(selection.count, 0);
+        browser.selected = 1;
+        verify(viewedDot.visible, "Changing the requested channel cannot move the viewing indicator");
+        browser.viewingIndex = -1;
+        verify(!viewedDot.visible && !candidateDot.visible);
+        browser.viewingIndex = 1;
+        verify(candidateDot.visible);
+        browser.width = 320;
+        verifyCentered(list);
+        const card = findChild(list.currentItem, "browserChannelCard");
+        verify(candidateDot.mapToItem(card, candidateDot.width, 0).x < card.width - card.padding);
     }
     function test_large_catalog_is_virtualized_and_replacement_clears() {
         const rows = [];

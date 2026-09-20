@@ -34,6 +34,7 @@ impl ffi::Player {
         change: impl FnOnce(State) -> State,
     ) {
         let before_action = self.playback_action();
+        let before_viewing = self.viewing_channel();
         let old_program = self.current_program_data().clone();
         let old_progress = *self.program_progress();
         let old_program_status = self.program_status().clone();
@@ -153,6 +154,9 @@ impl ffi::Player {
             self.as_mut().duration_estimated_changed();
         }
         // Commit input and activity together before any Qt observer reads them.
+        if before_viewing != self.viewing_channel() {
+            self.as_mut().viewing_channel_changed();
+        }
         if old_live_timeline != *self.live_timeline() {
             self.as_mut().live_timeline_changed();
         }

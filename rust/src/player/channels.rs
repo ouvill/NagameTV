@@ -64,6 +64,25 @@ pub(super) fn selected_after_update(
 }
 
 impl super::ffi::Player {
+    /// The viewed live input, independent of the saved selection and browser cursor.
+    pub fn viewing_channel(&self) -> i32 {
+        use super::stream_state::State;
+        use cxx_qt::CxxQtType;
+        let this = self.rust();
+        let service = match &this.stream_state {
+            State::Playing(live, _) => live.service(),
+            State::Stopped(_)
+            | State::Connecting(_)
+            | State::Recording(_, _)
+            | State::StopFailed(_) => return -1,
+        };
+        this.entries
+            .iter()
+            .position(|channel| channel.id == service)
+            .and_then(|index| i32::try_from(index).ok())
+            .unwrap_or(-1)
+    }
+
     pub(super) fn refresh_channels_if_due(self: std::pin::Pin<&mut Self>) {
         use cxx_qt::CxxQtType;
         let now = std::time::Instant::now();

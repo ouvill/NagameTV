@@ -84,7 +84,7 @@ impl Response {
         self.release.send(())?;
         self.worker.join().map_err(|_| "HTTP fixture panicked")??;
         let deadline = Instant::now() + Duration::from_secs(5);
-        while player.loading() {
+        while player.loading() || player.rust().request.is_busy() {
             assert!(Instant::now() < deadline, "connection did not finish");
             player.pin_mut().poll_channels()?;
             thread::sleep(Duration::from_millis(1));
@@ -218,6 +218,7 @@ fn checks() -> TestResult {
     // All Qt signal observers see the complete stream state, and a duplicate
     // Play cannot replenish the one automatic retry of an active attempt.
     check_stream_state(&mut player)?;
+    check_viewing_channel()?;
     check_playback_actions(&mut player)?;
     check_recording_input(&mut player)?;
     check_recording_notifications(&mut player)?;
@@ -437,6 +438,92 @@ fn check_stream_state(player: &mut cxx::UniquePtr<ffi::Player>) -> TestResult {
         *transport.lock().unwrap(),
         [(true, true, true, false), (false, false, false, false)]
     );
+    Ok(())
+}
+
+fn check_viewing_channel() -> TestResult {
+    use super::stream_state::{Attempt, State};
+    use crate::playback::{input::Retention, timeline::Phase};
+    const TWO_CHANNELS: &str = r#"[
+        {"id":1,"name":"First","type":1,"remoteControlKeyId":1,"channel":{"type":"GR"}},
+        {"id":18446744073709551615,"name":"Viewed","type":1,"remoteControlKeyId":2,"channel":{"type":"GR"}}
+    ]"#;
+    const VIEWED_ONLY: &str = r#"[
+        {"id":18446744073709551615,"name":"Viewed","type":1,"remoteControlKeyId":2,"channel":{"type":"GR"}}
+    ]"#;
+    let directory = tempfile::tempdir()?;
+    let mut player = ffi::new_player();
+    player.pin_mut().rust_mut().preferences =
+        settings::Loaded::open(directory.path().join("settings.toml"))?.activate(None, None);
+    let response = Response::new(200, TWO_CHANNELS)?;
+    response.begin(&mut player)?;
+    response.finish(&mut player)?;
+    assert_eq!(player.viewing_channel(), -1);
+
+    let observed = Arc::new(Mutex::new(Vec::new()));
+    let changes = observed.clone();
+    let _signal = player.pin_mut().on_viewing_channel_changed(move |p| {
+        let index = p.viewing_channel();
+        if index >= 0 {
+            assert!(p.media_active() && !p.recording());
+            assert_eq!(p.rust().entries[index as usize].id, u64::MAX);
+            let rows: serde_json::Value =
+                serde_json::from_str(&p.channel_data().to_string()).unwrap();
+            assert_eq!(
+                rows[index as usize]["label"],
+                p.rust().entries[index as usize].label
+            );
+        }
+        changes.lock().unwrap().push(index);
+    });
+    let attempt = Attempt::new(&player.rust().entries[1], Retention::Memory.into());
+    player
+        .pin_mut()
+        .update_stream_state(State::Connecting(attempt));
+    assert_eq!(player.viewing_channel(), -1);
+    player.pin_mut().change_stream_state(State::started);
+    assert_eq!(player.viewing_channel(), 1);
+    player.pin_mut().set_selected(0);
+    assert_eq!(
+        player.viewing_channel(),
+        1,
+        "saved selection is not the viewed input"
+    );
+    player
+        .pin_mut()
+        .change_stream_state(|state| state.transport(Phase::Paused));
+    assert_eq!(
+        player.viewing_channel(),
+        1,
+        "paused live viewing retains its indicator"
+    );
+
+    for (body, expected) in [(VIEWED_ONLY, 0), ("[]", -1), (VIEWED_ONLY, 0)] {
+        let response = Response::new(200, body)?;
+        // Refresh the catalog through its real HTTP/publication path without
+        // reconfiguring the active stream. Each fixture owns its local endpoint.
+        let server = crate::services::ServerUrl::parse(&response.url)?;
+        player.pin_mut().rust_mut().request.request(server);
+        player.pin_mut().poll_channels()?;
+        response.received.recv_timeout(Duration::from_secs(5))?;
+        response.finish(&mut player)?;
+        assert_eq!(player.viewing_channel(), expected);
+    }
+    player.pin_mut().end_stream()?;
+    assert_eq!(player.viewing_channel(), -1);
+    assert_eq!(*observed.lock().unwrap(), [1, 0, -1, 0, -1]);
+
+    let file = crate::playback::recording::Recording::open(Path::new(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../tests/fixtures/subtitle-clock.ts"
+    )))?;
+    player
+        .pin_mut()
+        .update_stream_state(State::Connecting(Attempt::File(file)).started());
+    assert!(player.media_active());
+    assert_eq!(player.viewing_channel(), -1);
+    assert!(player.pin_mut().shutdown());
+    println!("Viewed channel follows live input identity across pause and catalog replacement");
     Ok(())
 }
 
