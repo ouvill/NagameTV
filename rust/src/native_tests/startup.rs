@@ -333,7 +333,7 @@ fn check_screen_navigation(
         wait_for(
             app,
             engine,
-            "guideLoader.item !== null && guideLoader.item.width === root.width && !sidebar.visible && !sidebar.enabled",
+            "guideLoader.item !== null && guideLoader.opacity === 1 && guideLoader.item.width === root.width && !sidebar.visible && !sidebar.enabled",
         )?;
         capture(engine, &format!("guide-{width}.png"))?;
         evaluate(
@@ -575,6 +575,40 @@ fn window(
             app,
             &mut engine,
             "guideLoader.item.visibilityJson !== 'null' && guideLoader.item.visibleRows.some(row => row.index === player.selected)",
+        )?;
+        wait_for(app, &mut engine, "guideLoader.opacity === 1")?;
+        assert!(evaluate(
+            &mut engine,
+            r#"
+            const guide = guideLoader.item;
+            const programs = guide.programsJson;
+            const visibility = guide.visibilityJson;
+            const status = guide.status;
+            player.guide_open(false);
+            !guideLoader.enabled && guideLoader.item === guide && guideLoader.opacity === 1
+                && programs !== '[]' && guide.programsJson === programs
+                && guide.visibilityJson === visibility && guide.status === status
+                && guide.width === root.width
+            "#,
+        )?);
+        wait_for(
+            app,
+            &mut engine,
+            "guideLoader.opacity > 0 && guideLoader.opacity < 1",
+        )?;
+        assert!(evaluate(
+            &mut engine,
+            r#"
+            const guide = guideLoader.item;
+            const opacity = guideLoader.opacity;
+            player.guide_open(true);
+            guideLoader.item === guide && guideLoader.enabled && guideLoader.opacity === opacity
+            "#,
+        )?);
+        wait_for(
+            app,
+            &mut engine,
+            "guideLoader.opacity === 1 && guideLoader.item.programsJson !== '[]' && guideLoader.item.visibilityJson !== 'null'",
         )?;
         evaluate(
             &mut engine,

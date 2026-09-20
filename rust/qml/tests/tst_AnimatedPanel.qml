@@ -66,4 +66,26 @@ TestCase {
         compare(panel.item, null);
         tryCompare(testCase, "released", 1);
     }
+    function test_fade_keeps_position_and_reverses_without_reloading() {
+        panel.motion = Viewer.AnimatedPanel.Fade;
+        panel.open = true;
+        tryVerify(function() { return panel.opacity > 0 && panel.opacity < 1; });
+        compare(panel.item.mapToItem(testCase, 0, 0).y, panel.y);
+        tryCompare(panel, "opacity", 1);
+        const original = panel.item;
+        panel.open = false;
+        compare(panel.enabled, false);
+        tryVerify(function() { return panel.opacity > 0 && panel.opacity < 1; });
+        compare(panel.item, original);
+        compare(panel.item.mapToItem(testCase, 0, 0).y, panel.y);
+        const interruptedOpacity = panel.opacity;
+        panel.open = true;
+        compare(panel.opacity, interruptedOpacity);
+        tryCompare(panel, "opacity", 1);
+        compare(panel.item, original);
+        compare(created, 1);
+        panel.open = false;
+        tryCompare(panel, "item", null);
+        tryCompare(testCase, "released", 1);
+    }
 }

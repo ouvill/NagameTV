@@ -69,8 +69,8 @@ Popup {
     focus: true
     closePolicy: Popup.CloseOnEscape
     background: Rectangle { color: "#151715" }
-    enter: Transition { NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 120 } }
-    exit: Transition { NumberAnimation { property: "opacity"; from: 1; to: 0; duration: 100 } }
+    enter: Transition { ScreenFade { entering: true; from: 0; to: 1 } }
+    exit: Transition { ScreenFade { entering: false; from: 1; to: 0 } }
 
     component Heading: Label {
         Layout.fillWidth: true

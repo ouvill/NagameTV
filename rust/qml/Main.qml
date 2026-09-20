@@ -552,12 +552,16 @@ ApplicationWindow {
             onDraftEdited: function(text) { player.edit_comment_draft(text); }
             onSendRequested: player.post_comment()
         }
-        Loader {
+        AnimatedPanel {
             id: guideLoader
+            parent: root.contentItem
             anchors.fill: parent
             z: 500
-            active: root.guideVisible
-            visible: active
+            motion: AnimatedPanel.Fade
+            open: root.guideVisible
+            shuttingDown: root.closing
+            onLoaded: item.refreshSnapshot()
+            onOpenChanged: if (open && item) item.openGuide()
             sourceComponent: Component {
                 ProgramGuide {
                     id: guidePanel
@@ -569,9 +573,24 @@ ApplicationWindow {
                     targetWindow: root
                     onModeRequested: function(mode) { root.requestMode(mode); }
                     rows: root.channelRows
-                    visibilityJson: player.guide_visibility_data
-                    programsJson: player.epg_data
-                    status: player.epg_status
+                    selected: player.selected
+                    viewingIndex: player.viewing_channel
+                    programsJson: "[]"
+                    status: ""
+                    // Closing clears Rust's projection before its visibility
+                    // signal. Retain the last frame only for the fade lifetime.
+                    function refreshSnapshot() {
+                        if (!player.guide_visible) return;
+                        visibilityJson = player.guide_visibility_data;
+                        programsJson = player.epg_data;
+                        status = player.epg_status;
+                    }
+                    Connections {
+                        target: player
+                        function onEpg_dataChanged() { guidePanel.refreshSnapshot(); }
+                        function onGuide_visibility_dataChanged() { guidePanel.refreshSnapshot(); }
+                        function onEpg_statusChanged() { guidePanel.refreshSnapshot(); }
+                    }
                     channel: player.selected >= 0 && player.selected < root.channelRows.length ? root.channelRows[player.selected].label : ""
                     onDayRequested: function (start, end) {
                         player.guide_day(start, end);
@@ -648,6 +667,7 @@ ApplicationWindow {
         open: root.showProgram && !root.guideVisible
         visible: active && !root.guideVisible
         shuttingDown: root.closing
+        onOpenChanged: if (open && item) item.openChannels()
         sourceComponent: ProgramSidebar {
             evaluationCommentList: player.evaluation_comment_list
             evaluationCollision: player.evaluation_collision_layout
@@ -678,6 +698,7 @@ ApplicationWindow {
             page: root.sidebarPage
             channelRows: root.channelRows
             selectedChannel: player.selected
+            viewingIndex: player.viewing_channel
             activityJson: player.activity_data
             channelPrograms: player.channel_program_data
             channelVisibility: player.channel_visibility_data

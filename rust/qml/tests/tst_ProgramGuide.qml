@@ -34,6 +34,95 @@ TestCase {
         guide = createTemporaryObject(component, testCase)
         verify(guide !== null)
     }
+    function test_open_reveals_current_band_and_offscreen_channel_after_catalog_arrives() {
+        guide.selected = 0
+        guide.viewingIndex = 23
+        guide.rows = Array.from({length: 24}, (_, index) =>
+            ({index:index, label:"Channel " + index, band:index % 2 ? "BS" : "GR", logo:""}))
+        const view = findChild(guide, "guideTimeline")
+        const timeline = view.parent
+        tryCompare(guide, "band", "BS")
+        tryCompare(timeline, "cursorColumn", 11)
+        tryVerify(function() { return view.contentX > 0 })
+        verify(timeline.cursorColumn * timeline.channelWidth >= view.contentX)
+        verify((timeline.cursorColumn + 1) * timeline.channelWidth <= view.contentX + view.width + 1)
+        guide.visibilityJson = "[0,1,3]"
+        tryCompare(timeline, "cursorColumn", 2)
+        compare(timeline.rows[2].index, 23)
+        guide.band = "GR"
+        guide.openGuide()
+        tryCompare(guide, "band", "BS")
+        tryCompare(timeline, "cursorColumn", 2)
+        guide.viewingIndex = -1
+        tryCompare(guide, "band", "GR")
+        tryCompare(timeline, "cursorColumn", 0)
+    }
+    function prepareSwipe() {
+        guide.dayOffset = 1
+        guide.rows = Array.from({length:24}, (_, index) => ({index:index, label:"Channel " + index, band:"GR"}))
+        verify(waitForRendering(guide))
+        const view = findChild(guide, "guideTimeline")
+        view.contentX = 1000
+        view.contentY = 1000
+        return view
+    }
+    function swipe(input, dx, dy) {
+        const sampleIntervalMs = 16
+        const sampleCount = 6
+        for (let i = 0; i < sampleCount; ++i) {
+            input.scroll(Qt.point(dx, dy), Qt.point(0, 0))
+            wait(sampleIntervalMs)
+        }
+    }
+    function test_touchpad_tracks_both_axes_and_coasts_data() {
+        return [
+            {tag:"vertical", dx:0, dy:-24},
+            {tag:"horizontal", dx:-24, dy:0},
+            {tag:"diagonal", dx:24, dy:-24}
+        ]
+    }
+    function test_touchpad_tracks_both_axes_and_coasts(data) {
+        const view = prepareSwipe()
+        const input = findChild(guide, "guideWheelArea")
+        const before = Qt.point(view.contentX, view.contentY)
+        input.scroll(Qt.point(data.dx, data.dy), Qt.point(0, -120))
+        compare(view.contentX, before.x - data.dx)
+        compare(view.contentY, before.y - data.dy)
+        swipe(input, data.dx, data.dy)
+        input.finishGesture()
+        verify(view.flicking)
+        const released = Qt.point(view.contentX, view.contentY)
+        wait(80)
+        if (data.dx) verify((view.contentX - released.x) * -Math.sign(data.dx) > 0)
+        else compare(view.contentX, released.x)
+        if (data.dy) verify((view.contentY - released.y) * -Math.sign(data.dy) > 0)
+        else compare(view.contentY, released.y)
+        input.beginGesture()
+        verify(!view.flicking)
+        input.cancelGesture()
+    }
+    function test_touchpad_bounds_day_change_and_close_cancel_momentum() {
+        const view = prepareSwipe()
+        const input = findChild(guide, "guideWheelArea")
+        view.contentX = view.contentWidth - view.width
+        const rightEdge = view.contentX
+        swipe(input, -24, -24)
+        input.finishGesture()
+        verify(view.flicking)
+        wait(80)
+        compare(view.contentX, rightEdge)
+        guide.dayOffset = 2
+        tryVerify(function() { return !view.flicking })
+        input.finishGesture()
+        compare(view.contentY, 0)
+        swipe(input, 24, -24)
+        input.finishGesture()
+        verify(view.flicking)
+        guide.enabled = false
+        verify(!view.flicking)
+        input.finishGesture()
+        verify(!view.flicking)
+    }
     function test_keyboard_keeps_future_time_across_empty_channel() {
         guide.dayOffset = 1
         const start = guide.days[1].start

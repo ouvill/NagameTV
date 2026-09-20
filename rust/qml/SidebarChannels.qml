@@ -6,6 +6,8 @@ Item {
     id: root
     required property var rows
     required property int selected
+    property int viewingIndex: -1
+    readonly property int openingIndex: viewingIndex >= 0 ? viewingIndex : selected
     property string visibilityJson: "[]"
     readonly property var visibleIndices: new Set(JSON.parse(visibilityJson))
     property string activityJson: "[]"
@@ -14,22 +16,32 @@ Item {
     property real now: 0
     property string band: "GR"
     readonly property var programs: JSON.parse(programsJson)
-    readonly property var filtered: rows.filter(row => row.band === band && (!visibleIndices.size || visibleIndices.has(row.index)))
+    readonly property var filtered: rows.filter(row => row.band === band && (row.index === openingIndex || !visibleIndices.size || visibleIndices.has(row.index)))
     signal selectRequested(int index)
     function resetCursor() {
         if (!list || !filtered)
             return;
-        const index = filtered.findIndex(row => row.index === selected);
+        if (wheelInput) wheelInput.cancelGesture();
+        list.cancelFlick();
+        const index = filtered.findIndex(row => row.index === openingIndex);
         list.currentIndex = index >= 0 ? index : (filtered.length ? 0 : -1);
+        Qt.callLater(revealCursor);
     }
-    onFilteredChanged: resetCursor()
-    onSelectedChanged: resetCursor()
-    Component.onCompleted: {
-        const current = rows.find(row => row.index === selected) || rows[0];
+    function revealCursor() {
+        list.forceLayout();
+        if (list.currentIndex >= 0)
+            list.positionViewAtIndex(list.currentIndex, ListView.Contain);
+    }
+    function openBrowser() {
+        const current = rows.find(row => row.index === openingIndex) || rows[0];
         if (current)
             band = current.band;
         resetCursor();
     }
+    onFilteredChanged: resetCursor()
+    onOpeningIndexChanged: openBrowser()
+    onRowsChanged: openBrowser()
+    Component.onCompleted: openBrowser()
     Flickable {
         id: tabsArea
         anchors {
@@ -66,6 +78,7 @@ Item {
         clip: true
         cacheBuffer: 0
         model: root.filtered
+        onModelChanged: Qt.callLater(root.resetCursor)
         activeFocusOnTab: true
         Keys.onReturnPressed: if (root.filtered[currentIndex])
             root.selectRequested(root.filtered[currentIndex].index)
@@ -107,15 +120,28 @@ Item {
                         height: 32
                         logoUrl: card.modelData.logo
                     }
-                    Label {
+                    Item {
                         width: Math.max(0, card.width - 28 - 64 - (activityLabel.visible ? activityLabel.width + 8 : 0))
                         height: 32
-                        verticalAlignment: Text.AlignVCenter
-                        text: card.modelData.label.replace(/^\d+\s+/, "")
-                        color: "#f4f5f3"
-                        font.bold: true
-                        elide: Text.ElideRight
-                        textFormat: Text.PlainText
+                        readonly property int indicatorGap: 6
+                        Label {
+                            id: channelName
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: Math.min(implicitWidth, Math.max(0, parent.width
+                                - (watching.visible ? watching.width + parent.indicatorGap : 0)))
+                            text: card.modelData.label.replace(/^\d+\s+/, "")
+                            color: "#f4f5f3"
+                            font.bold: true
+                            elide: Text.ElideRight
+                            textFormat: Text.PlainText
+                        }
+                        WatchingIndicator {
+                            id: watching
+                            objectName: "sidebarWatchingIndicator"
+                            visible: card.modelData.index === root.viewingIndex
+                            x: channelName.width + parent.indicatorGap
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
                     }
                     Label {
                         id: activityLabel
@@ -191,6 +217,7 @@ Item {
         }
     }
     ChannelWheelArea {
+        id: wheelInput
         objectName: "sidebarScrollArea"
         anchors.fill: list
         view: list

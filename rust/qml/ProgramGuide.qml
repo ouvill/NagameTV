@@ -9,15 +9,18 @@ Rectangle {
     required property string status
     property string uiLanguage: Qt.uiLanguage
     required property string channel
+    property int selected: -1
+    property int viewingIndex: -1
+    readonly property int openingIndex: viewingIndex >= 0 ? viewingIndex : selected
     property url iconDirectory: "qrc:/qt/qml/MinimalViewer/assets/icons/"
     property var rows: []
     // null means the first projection has not arrived; [] is an empty catalog.
     property string visibilityJson: "null"
     readonly property var visibleIndices: JSON.parse(visibilityJson)
     readonly property var visibleSet: visibleIndices === null ? null : new Set(visibleIndices)
-    readonly property var visibleRows: rows.filter(row => row.band === band && (visibleSet === null || visibleSet.has(row.index)))
+    readonly property var visibleRows: rows.filter(row => row.band === band && (row.index === openingIndex || visibleSet === null || visibleSet.has(row.index)))
     onVisibilityJsonChanged: selectedProgram = null
-    property string band: rows.length ? rows[0].band : "GR"
+    property string band: "GR"
     required property Window targetWindow
     signal modeRequested(int mode)
     signal watchRequested(string key)
@@ -55,6 +58,16 @@ Rectangle {
         selectedProgram = null
         dayRequested(selectedWindow.start, selectedWindow.end)
     }
+    function restoreChannel() {
+        const current = rows.find(row => row.index === openingIndex) || rows[0]
+        if (current) band = current.band
+        if (timeline) Qt.callLater(timeline.revealOpeningChannel)
+    }
+    function openGuide() {
+        restoreChannel()
+        requestDay()
+        timeline.forceActiveFocus()
+    }
     function refreshSelection(columns) {
         if (!selectedProgram) return
         const key = selectedProgram.watchKey
@@ -72,7 +85,9 @@ Rectangle {
         selectedProgram = null
     }
     onSelectedWindowChanged: requestDay()
-    Component.onCompleted: { requestDay(); timeline.forceActiveFocus() }
+    onOpeningIndexChanged: restoreChannel()
+    onRowsChanged: restoreChannel()
+    Component.onCompleted: openGuide()
     onChannelChanged: selectedProgram = null
     Timer { interval: 60000; repeat: true; running: root.visible; onTriggered: root.baseDay = root.midnight() }
     ColumnLayout {
@@ -91,6 +106,7 @@ Rectangle {
             id: timeline
             Layout.fillWidth: true; Layout.fillHeight: true
             rows: root.visibleRows
+            openingIndex: root.openingIndex
             programsJson: root.programsJson
             dayStart: root.selectedWindow.start
             dayEnd: root.selectedWindow.end

@@ -327,6 +327,18 @@ TestCase {
         const card = findChild(list.currentItem, "browserChannelCard");
         verify(candidateDot.mapToItem(card, candidateDot.width, 0).x < card.width - card.padding);
     }
+    function test_reopen_reveals_viewed_band_even_if_request_is_elsewhere() {
+        browser.selected = 0;
+        browser.viewingIndex = 2;
+        browser.visibilityJson = "[0,1]";
+        browser.band = "GR";
+        browser.openBrowser();
+        const list = findChild(browser, "browserList");
+        tryCompare(browser, "band", "BS");
+        verifyCentered(list);
+        compare(list.currentItem.modelData.index, 2);
+        compare(selection.count, 0);
+    }
     function test_large_catalog_is_virtualized_and_replacement_clears() {
         const rows = [];
         for (let i = 0; i < 500; ++i)

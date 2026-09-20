@@ -6,8 +6,10 @@ Item {
     id: root
     enum Unit { Pixels, Angle }
     enum Gesture { Idle, Started, PixelInput, WheelInput }
+    enum Axes { SingleAxis, BothAxes }
     required property Flickable view
     property int orientation: Qt.Vertical
+    property int axes: ChannelWheelArea.SingleAxis
     property bool pixelInertia: false
     readonly property real wheelStepPixels: 144
     readonly property int angleUnitsPerStep: 120 // Qt: one 15-degree wheel detent.
@@ -15,6 +17,8 @@ Item {
     readonly property int velocityWindowMs: 80
     readonly property int releaseToleranceMs: 40
     readonly property real minimumFlickSpeed: 160 // pixels/second; reject slow adjustments and momentum tails.
+    readonly property real maximumFlickSpeedPixelsPerSecond: 2200
+    readonly property real flickDecelerationPixelsPerSecondSquared: 2400
     readonly property bool active: history.gesture !== ChannelWheelArea.Idle
     readonly property bool wheelActive: verticalWheel.active || horizontalWheel.active
     signal scrollStarted()
@@ -23,10 +27,46 @@ Item {
     QtObject {
         id: history
         property int gesture: ChannelWheelArea.Idle
+    }
+    // Each axis forgets pauses, reversals and bounds independently, so reaching
+    // a horizontal edge cannot discard an ongoing vertical swipe's momentum.
+    component VelocityHistory: QtObject {
         property var samples: []
         property real position: 0
         property real direction: 0
+        function clear() {
+            samples = [];
+            position = 0;
+            direction = 0;
+        }
+        function record(distance: real) {
+            const now = Date.now();
+            const last = samples.length ? samples[samples.length - 1] : null;
+            if (!distance || distance * direction < 0
+                    || (last && (now < last.time || now - last.time > root.velocityWindowMs)))
+                clear();
+            direction = Math.sign(distance);
+            position += distance;
+            if (samples.length && samples[samples.length - 1].time === now)
+                samples[samples.length - 1].position = position;
+            else
+                samples.push({time: now, position: position});
+            while (samples.length > 2 && now - samples[0].time > root.velocityWindowMs)
+                samples.shift();
+        }
+        function velocity(): real {
+            if (samples.length < 2) return 0;
+            const first = samples[0];
+            const last = samples[samples.length - 1];
+            const age = Date.now() - last.time;
+            if (age < 0 || age > root.gestureIdleSeconds * 1000 + root.releaseToleranceMs) return 0;
+            const speed = (last.position - first.position) * 1000 / (last.time - first.time);
+            if (Math.abs(speed) < root.minimumFlickSpeed) return 0;
+            return Math.max(-root.view.maximumFlickVelocity, Math.min(root.view.maximumFlickVelocity, speed));
+        }
     }
+    VelocityHistory { id: horizontalHistory }
+    VelocityHistory { id: verticalHistory }
 
     onWheelActiveChanged: {
         if (wheelActive) beginGesture();
@@ -37,9 +77,8 @@ Item {
 
     function cancelGesture() {
         history.gesture = ChannelWheelArea.Idle;
-        history.samples = [];
-        history.position = 0;
-        history.direction = 0;
+        horizontalHistory.clear();
+        verticalHistory.clear();
     }
 
     function beginGesture() {
@@ -50,43 +89,14 @@ Item {
         view.cancelFlick();
     }
 
-    function recordTravel(distance: real) {
-        const now = Date.now();
-        const samples = history.samples;
-        const last = samples.length ? samples[samples.length - 1] : null;
-        // A pause, direction reversal or bound must not retain old momentum.
-        if (!distance || distance * history.direction < 0
-                || (last && (now < last.time || now - last.time > velocityWindowMs))) {
-            samples.length = 0;
-            history.position = 0;
-        }
-        history.direction = Math.sign(distance);
-        history.position += distance;
-        if (samples.length && samples[samples.length - 1].time === now)
-            samples[samples.length - 1].position = history.position;
-        else
-            samples.push({time: now, position: history.position});
-        while (samples.length > 2 && now - samples[0].time > velocityWindowMs)
-            samples.shift();
-    }
-
     function finishGesture() {
-        const samples = history.samples;
-        let velocity = 0;
         if (pixelInertia && history.gesture === ChannelWheelArea.PixelInput
-                && samples.length > 1 && visible && enabled && !view.dragging) {
-            const first = samples[0];
-            const last = samples[samples.length - 1];
-            const age = Date.now() - last.time;
-            if (age >= 0 && age <= gestureIdleSeconds * 1000 + releaseToleranceMs)
-                velocity = (last.position - first.position) * 1000 / (last.time - first.time);
-        }
-        // Native momentum deltas have already been applied directly. Their slow
-        // tail falls below this threshold instead of starting a second coast.
-        if (Math.abs(velocity) >= minimumFlickSpeed) {
-            velocity = Math.max(-view.maximumFlickVelocity, Math.min(view.maximumFlickVelocity, velocity));
-            if (orientation === Qt.Horizontal) view.flick(-velocity, 0);
-            else view.flick(0, -velocity);
+                && visible && enabled && !view.dragging) {
+            // Native momentum deltas already track directly; a slow tail does
+            // not start a second coast.
+            const vx = horizontalHistory.velocity();
+            const vy = verticalHistory.velocity();
+            if (vx || vy) view.flick(-vx, -vy);
         }
         cancelGesture();
         // The owner waits for Flickable.movementEnded before snapping.
@@ -97,7 +107,7 @@ Item {
         acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
         activeTimeout: root.gestureIdleSeconds
         onWheel: function(event) {
-            event.accepted = root.scroll(event.pixelDelta, event.angleDelta);
+            event.accepted = root.handleWheel(event);
         }
     }
     // Once either axis starts a gesture it receives both axes until ScrollEnd
@@ -105,10 +115,14 @@ Item {
     ScrollWheel { id: verticalWheel; orientation: Qt.Vertical; enabled: !horizontalWheel.active }
     ScrollWheel { id: horizontalWheel; orientation: Qt.Horizontal; enabled: !verticalWheel.active }
 
+    function handleWheel(event): bool {
+        return scroll(event.pixelDelta, event.angleDelta);
+    }
+
     function scroll(pixelDelta: point, angleDelta: point): bool {
         const unit = pixelDelta.x || pixelDelta.y ? ChannelWheelArea.Pixels : ChannelWheelArea.Angle;
         const delta = unit === ChannelWheelArea.Pixels ? pixelDelta : angleDelta;
-        // Use one axis per event, including horizontal swipes with slight drift.
+        // Single-axis lists use the dominant input axis, including slight drift.
         const distance = Math.abs(delta.y) >= Math.abs(delta.x) ? delta.y : delta.x;
         if (!distance)
             return false;
@@ -116,29 +130,26 @@ Item {
             beginGesture();
         const gesture = unit === ChannelWheelArea.Pixels ? ChannelWheelArea.PixelInput : ChannelWheelArea.WheelInput;
         if (history.gesture !== gesture) {
-            history.samples = [];
-            history.position = 0;
-            history.direction = 0;
+            horizontalHistory.clear();
+            verticalHistory.clear();
             history.gesture = gesture;
         }
-        const pixels = unit === ChannelWheelArea.Pixels
-            ? -distance : -distance / angleUnitsPerStep * wheelStepPixels;
+        const scale = unit === ChannelWheelArea.Pixels ? -1 : -wheelStepPixels / angleUnitsPerStep;
+        const pixels = axes === ChannelWheelArea.BothAxes ? Qt.point(delta.x * scale, delta.y * scale)
+            : orientation === Qt.Horizontal ? Qt.point(distance * scale, 0) : Qt.point(0, distance * scale);
         // Stop any selection-centering animation before changing the viewport.
         scrollStarted();
         view.cancelFlick();
-        const horizontal = orientation === Qt.Horizontal;
-        const position = horizontal ? view.contentX : view.contentY;
-        const contentSize = horizontal ? view.contentWidth : view.contentHeight;
-        const viewportSize = horizontal ? view.width : view.height;
+        const previous = Qt.point(view.contentX, view.contentY);
         // Variable-size ListView delegates can shift the content origin.
-        const origin = horizontal ? view.originX : view.originY;
-        const end = origin + Math.max(0, contentSize - viewportSize);
-        const next = Math.max(origin, Math.min(end,
-            position + pixels));
-        if (horizontal) view.contentX = next;
-        else view.contentY = next;
-        if (pixelInertia && unit === ChannelWheelArea.Pixels)
-            recordTravel(next - position);
+        if (axes === ChannelWheelArea.BothAxes || orientation === Qt.Horizontal)
+            view.contentX = Math.max(view.originX, Math.min(view.originX + Math.max(0, view.contentWidth - view.width), previous.x + pixels.x));
+        if (axes === ChannelWheelArea.BothAxes || orientation === Qt.Vertical)
+            view.contentY = Math.max(view.originY, Math.min(view.originY + Math.max(0, view.contentHeight - view.height), previous.y + pixels.y));
+        if (pixelInertia && unit === ChannelWheelArea.Pixels) {
+            horizontalHistory.record(view.contentX - previous.x);
+            verticalHistory.record(view.contentY - previous.y);
+        }
         // Consume the event so ListView cannot also scroll it.
         return true;
     }

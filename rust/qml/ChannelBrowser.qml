@@ -9,6 +9,7 @@ Pane {
     required property var rows
     required property int selected
     property int viewingIndex: -1
+    readonly property int openingIndex: viewingIndex >= 0 ? viewingIndex : selected
     property url iconDirectory: "qrc:/qt/qml/MinimalViewer/assets/icons/"
     property string visibilityJson: "[]"
     readonly property var visibleIndices: new Set(JSON.parse(visibilityJson))
@@ -18,7 +19,7 @@ Pane {
     property real now: 0
     readonly property var programs: JSON.parse(programsJson)
     property string band: "GR"
-    readonly property var filteredRows: rows.filter(row => row.band === band && (row.index === selected || !visibleIndices.size || visibleIndices.has(row.index)))
+    readonly property var filteredRows: rows.filter(row => row.band === band && (row.index === openingIndex || !visibleIndices.size || visibleIndices.has(row.index)))
     signal selectRequested(int index)
     signal closeRequested
     function focusBrowser() {
@@ -31,7 +32,7 @@ Pane {
     function restoreSelection() {
         if (!rows)
             return;
-        const current = rows.find(row => row.index === selected) || rows[0];
+        const current = rows.find(row => row.index === openingIndex) || rows[0];
         if (current)
             band = current.band;
         resetCursor();
@@ -41,7 +42,7 @@ Pane {
         // are initialized. Component.onCompleted performs the initial selection.
         if (!list || !filteredRows)
             return;
-        const selectedRow = filteredRows.findIndex(row => row.index === selected);
+        const selectedRow = filteredRows.findIndex(row => row.index === openingIndex);
         list.resetPosition(selectedRow >= 0 ? selectedRow : (filteredRows.length ? 0 : -1));
     }
     function selectCurrent() {
@@ -50,7 +51,7 @@ Pane {
             selectRequested(row.index);
     }
     onFilteredRowsChanged: resetCursor()
-    onSelectedChanged: restoreSelection()
+    onOpeningIndexChanged: restoreSelection()
     onRowsChanged: restoreSelection()
     Component.onCompleted: openBrowser()
     implicitHeight: 304
@@ -146,8 +147,8 @@ Pane {
                 highlightRangeMode: ListView.NoHighlightRange
                 highlightFollowsCurrentItem: false
                 boundsBehavior: Flickable.StopAtBounds
-                maximumFlickVelocity: 2200
-                flickDeceleration: 2400
+                maximumFlickVelocity: wheelInput.maximumFlickSpeedPixelsPerSecond
+                flickDeceleration: wheelInput.flickDecelerationPixelsPerSecondSquared
                 header: Item { width: (list.width - list.baseCardWidth) / 2; height: 1 }
                 footer: Item { width: (list.width - list.baseCardWidth) / 2; height: 1 }
                 function expansion(index: int): real {
@@ -304,19 +305,12 @@ Pane {
                                         textFormat: Text.PlainText
                                         elide: Text.ElideRight
                                     }
-                                    Rectangle {
+                                    WatchingIndicator {
                                         id: watching
                                         objectName: "browserWatchingIndicator"
                                         visible: card.modelData.index === root.viewingIndex
                                         x: channelName.width + parent.indicatorGap
                                         anchors.verticalCenter: parent.verticalCenter
-                                        width: 6; height: width; radius: width / 2
-                                        color: "#e36b6b"
-                                        Accessible.role: Accessible.StaticText
-                                        Accessible.name: qsTranslate("Viewer", "Watching")
-                                        HoverHandler { id: watchingHover }
-                                        ToolTip.visible: watchingHover.hovered
-                                        ToolTip.text: qsTranslate("Viewer", "Watching")
                                     }
                                 }
                                 Label {

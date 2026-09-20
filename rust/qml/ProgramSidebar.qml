@@ -35,6 +35,11 @@ Rectangle {
     property int page: ProgramSidebar.Playback
     property var channelRows: []
     property int selectedChannel: -1
+    property int viewingIndex: -1
+    function openChannels() {
+        const channels = channelsLoader.item as SidebarChannels;
+        if (channels) channels.openBrowser();
+    }
     property string channelVisibility: "[]"
     property string activityJson: "[]"
     property string channelPrograms: "[]"
@@ -238,6 +243,7 @@ Rectangle {
             }
         }
         Loader {
+            id: channelsLoader
             Layout.fillWidth: true
             Layout.fillHeight: true
             active: root.page === ProgramSidebar.Channels
@@ -246,6 +252,7 @@ Rectangle {
                 rows: root.channelRows
                 activityJson: root.activityJson
                 selected: root.selectedChannel
+                viewingIndex: root.viewingIndex
                 programsJson: root.channelPrograms
                 visibilityJson: root.channelVisibility
                 now: root.now

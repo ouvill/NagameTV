@@ -10,6 +10,46 @@ TestCase {
     height: 480
     SidebarChannels { id: view; anchors.fill: parent; rows: []; selected: -1 }
     SignalSpy { id: selections; target: view; signalName: "selectRequested" }
+    function init() {
+        failOnWarning(/.*/);
+        view.rows = [];
+        view.selected = -1;
+        view.viewingIndex = -1;
+        view.visibilityJson = "[]";
+        view.programsJson = "[]";
+        selections.clear();
+    }
+    function test_reopen_restores_viewed_band_and_offscreen_channel() {
+        view.rows = Array.from({length: 50}, (_, index) =>
+            ({index:index, label:"長いチャンネル名の表示 " + index, band:index % 2 ? "BS" : "GR", logo:""}));
+        view.selected = 0;
+        view.viewingIndex = 47;
+        const list = findChild(view, "sidebarChannelList");
+        view.band = "GR";
+        view.openBrowser();
+        tryCompare(view, "band", "BS");
+        tryCompare(list, "currentIndex", 23);
+        tryVerify(function() {
+            const card = list.currentItem;
+            return card && card.y >= list.contentY && card.y + card.height <= list.contentY + list.height;
+        });
+        const dot = findChild(list.currentItem, "sidebarWatchingIndicator");
+        verify(dot.visible);
+        verify(dot.mapToItem(list.currentItem, dot.width, 0).x <= list.currentItem.width - list.currentItem.padding);
+        list.forceActiveFocus();
+        keyClick(Qt.Key_Up);
+        verify(dot.visible);
+        verify(!findChild(list.currentItem, "sidebarWatchingIndicator").visible);
+        view.visibilityJson = "[1,3]";
+        view.openBrowser();
+        tryCompare(list, "currentIndex", 2);
+        compare(list.currentItem.modelData.index, 47);
+        compare(selections.count, 0);
+        view.viewingIndex = -1;
+        tryCompare(view, "band", "GR");
+        tryCompare(list, "currentIndex", 0);
+        verify(!findChild(list.currentItem, "sidebarWatchingIndicator").visible);
+    }
     function test_filter_keyboard_and_virtualized_catalog() {
         failOnWarning(/.*/);
         view.rows = Array.from({length: 500}, (_, i) => ({index: i, label: "局 " + i, band: i % 2 ? "BS" : "GR", logo: ""}));
