@@ -697,7 +697,10 @@ impl Presenter {
             .previous
             .as_ref()
             .and_then(|snapshot| snapshot.viewing.as_ref());
-        let frozen = state == PlaybackState::Seeking
+        // A failed position query does not invalidate the last displayed frame
+        // or its program. Keep that view until a new position is available.
+        let frozen = reading.position_ns.is_none()
+            || state == PlaybackState::Seeking
             || self.previous.as_ref().is_some_and(|previous| {
                 matches!(state, PlaybackState::Paused | PlaybackState::Ended)
                     && previous.state == state
@@ -818,6 +821,27 @@ impl Presenter {
                 })
                 .collect(),
         };
+        if state == PlaybackState::Playing
+            && let Some(previous) = previous_view.filter(|view| view.program.is_some())
+            && snapshot
+                .viewing
+                .as_ref()
+                .is_some_and(|view| view.program.is_none())
+        {
+            // Record transitions, rather than sampled diagnostics: a single
+            // UI tick with missing metadata can otherwise vanish from logs.
+            tracing::warn!(
+                target: "program_info",
+                session = %self.session,
+                previous_position_ns = previous.position_ns,
+                position_ns = ?reading.position_ns,
+                receive_start_ns = start_ns,
+                receive_end_ns = end_ns,
+                status = ?snapshot.program_status(),
+                clock_available = snapshot.viewing.as_ref().is_some_and(|view| view.utc.is_some()),
+                "Live program metadata became unavailable"
+            );
+        }
         if self.previous.as_ref() != Some(&snapshot) {
             snapshot.revision += 1;
         }

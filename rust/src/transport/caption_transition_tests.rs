@@ -43,8 +43,8 @@ fn media_packets(bytes: &[u8]) -> Vec<&[u8; TS_PACKET_SIZE]> {
         .collect()
 }
 
-// The production parser validates the whole PMT but intentionally only exposes
-// caption streams. Inspect the ES loop separately to assert the audio addition.
+// Inspect the complete ES loop independently of the production parser's
+// presentation/caption selection to assert the audio addition.
 fn elementary_pids(section: &[u8]) -> Vec<Pid> {
     const PROGRAM_INFO_LENGTH_OFFSET: usize = 10;
     const PROGRAM_DESCRIPTOR_OFFSET: usize = 12;

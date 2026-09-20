@@ -101,6 +101,7 @@ pub(super) struct Index {
     pmt_pid: Option<Pid>,
     pmt_sections: Sections,
     pcr_pid: Option<Pid>,
+    presentation_pids: Vec<Pid>,
     tables: Arc<Vec<u8>>,
     pat_packets: Vec<u8>,
     last_pmt: Vec<u8>,
@@ -129,6 +130,7 @@ impl Index {
             pmt_pid: None,
             pmt_sections: Sections::default(),
             pcr_pid: None,
+            presentation_pids: Vec::new(),
             tables: Arc::default(),
             pat_packets: Vec::new(),
             last_pmt: Vec::new(),
@@ -264,6 +266,8 @@ impl Index {
         self.pat_sections = Sections::default();
         self.pmt_sections = Sections::default();
         self.pcr_pid = None;
+        self.presentation_pids.clear();
+        self.last_pts.clear();
         self.tables = Arc::default();
         self.last_pmt.clear();
     }
@@ -290,6 +294,8 @@ impl Index {
                         self.pmt_pid = pid;
                         self.pmt_sections = Sections::default();
                         self.pcr_pid = None;
+                        self.presentation_pids.clear();
+                        self.last_pts.clear();
                         self.last_pmt.clear();
                     }
                     self.pat_packets = self
@@ -311,6 +317,9 @@ impl Index {
                     continue;
                 }
                 self.pcr_pid = Some(map.pcr_pid);
+                self.last_pts
+                    .retain(|pid, _| *pid == map.pcr_pid || map.presentation_pids.contains(pid));
+                self.presentation_pids = map.presentation_pids;
                 if let Some(collector) = &mut self.collector {
                     collector.pcr_pid(map.pcr_pid);
                 }
@@ -325,8 +334,11 @@ impl Index {
                 }
             }
         }
+        // PCR is often carried on its own PID in real broadcasts. Received
+        // audio/video PTS must extend metadata coverage even between PCRs;
+        // otherwise an already decoded frame briefly looks unacquired.
         if packet.start
-            && Some(packet.pid) == self.pcr_pid
+            && (Some(packet.pid) == self.pcr_pid || self.presentation_pids.contains(&packet.pid))
             && let Some(pts) = crate::transport::pes::PesHeader::parse(packet.payload)
                 .and_then(|header| header.pts_ticks)
             && let Some((pcr, ticks)) = self.clock
@@ -526,6 +538,9 @@ fn ticks_to_ns(ticks: u64) -> u64 {
     (u128::from(ticks) * u128::from(NANOSECONDS_PER_SECOND) / u128::from(PCR_HZ))
         .min(u128::from(u64::MAX)) as u64
 }
+
+#[cfg(test)]
+mod presentation_tests;
 
 #[cfg(test)]
 mod rate_tests {

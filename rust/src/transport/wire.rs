@@ -57,7 +57,27 @@ pub(crate) struct CaptionStream {
 pub(crate) struct ProgramMap {
     pub service: u16,
     pub pcr_pid: Pid,
+    pub presentation_pids: Vec<Pid>,
     pub captions: Vec<CaptionStream>,
+}
+
+fn is_presentation_stream(stream_type: u8) -> bool {
+    use gstreamer_mpegts::ffi as mpegts;
+    // Only timed audio/video extends the received media interval. Captions,
+    // data broadcasting and unknown private streams can announce future data.
+    matches!(
+        i32::from(stream_type),
+        mpegts::GST_MPEGTS_STREAM_TYPE_VIDEO_MPEG1
+            | mpegts::GST_MPEGTS_STREAM_TYPE_VIDEO_MPEG2
+            | mpegts::GST_MPEGTS_STREAM_TYPE_VIDEO_MPEG4
+            | mpegts::GST_MPEGTS_STREAM_TYPE_VIDEO_H264
+            | mpegts::GST_MPEGTS_STREAM_TYPE_VIDEO_HEVC
+            | mpegts::GST_MPEGTS_STREAM_TYPE_AUDIO_MPEG1
+            | mpegts::GST_MPEGTS_STREAM_TYPE_AUDIO_MPEG2
+            | mpegts::GST_MPEGTS_STREAM_TYPE_AUDIO_AAC_ADTS
+            | mpegts::GST_MPEGTS_STREAM_TYPE_AUDIO_AAC_LATM
+            | mpegts::GST_MPEGTS_STREAM_TYPE_AUDIO_AAC_CLEAN
+    )
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -377,6 +397,7 @@ impl<'a> PsiSection<'a> {
         let pcr_pid = cursor.pid()?; // PCR_PID may be the null PID.
         Descriptors::parse(cursor.descriptor_loop()?)?;
         let mut captions = Vec::new();
+        let mut presentation_pids = Vec::new();
         let mut seen_pids = std::collections::HashSet::new();
         let mut seen_component_tags = std::collections::HashSet::new();
         while !cursor.rest.is_empty() {
@@ -390,6 +411,9 @@ impl<'a> PsiSection<'a> {
                 && !seen_component_tags.insert(tag)
             {
                 return Err(ParseError::Invalid("duplicate component tag"));
+            }
+            if is_presentation_stream(stream_type) {
+                presentation_pids.push(pid);
             }
             if stream_type == PRIVATE_PES_STREAM
                 && descriptors.data_component == Some(ARIB_CAPTION_COMPONENT)
@@ -406,6 +430,7 @@ impl<'a> PsiSection<'a> {
         Ok(ProgramMap {
             service: self.extension,
             pcr_pid,
+            presentation_pids,
             captions,
         })
     }
@@ -465,7 +490,7 @@ impl Descriptors {
 }
 
 /// ISO/IEC 13818-1 CRC-32: initial all ones, no reflection or final XOR.
-pub(super) fn crc32_mpeg(bytes: &[u8]) -> u32 {
+pub(crate) fn crc32_mpeg(bytes: &[u8]) -> u32 {
     const POLYNOMIAL: u32 = 0x04c1_1db7;
     bytes.iter().fold(u32::MAX, |mut crc, byte| {
         crc ^= u32::from(*byte) << 24;

@@ -15,6 +15,7 @@ Item {
     property real lastSeekPreviousEdge: -1
     property string observedSession: ""
     property real previousLivePosition: -1
+    property bool programAcquired: false
     function check() {
         const model = JSON.parse(backend.live_timeline);
         if (!model) return;
@@ -22,6 +23,7 @@ Item {
         if (observedSession !== model.session) {
             observedSession = model.session;
             previousLivePosition = -1;
+            programAcquired = false;
         }
         if (model.seekTarget !== null
                 && (lastSeekSession !== model.session || lastSeekTarget !== model.seekTarget)) {
@@ -33,6 +35,12 @@ Item {
         }
         previousLivePosition = model.live.position;
         const program = model.viewing && model.viewing.program;
+        // The continuous fixture carries EIT throughout both programs. Catch
+        // even a single notification that clears an already acquired title.
+        if (programAcquired && !program && model.state === "playing")
+            failure = "Live program disappeared during playback: " + JSON.stringify(model);
+        if (program)
+            programAcquired = true;
         const expected = program ? program.data : null;
         if (JSON.stringify(JSON.parse(backend.current_program_data)) !== JSON.stringify(expected))
             failure = "Program notification exposed different viewing metadata";

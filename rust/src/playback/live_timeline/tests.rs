@@ -294,6 +294,73 @@ fn partial_expiry_keeps_axis_and_metadata_outlives_the_expired_paused_ts() {
     );
 }
 #[test]
+fn missing_position_sample_keeps_the_last_view_until_a_new_position_is_known() {
+    let mut history = three_programs();
+    let mut presenter = Presenter::new();
+    let before = project(
+        &mut presenter,
+        &mut history,
+        0,
+        75 * MINUTE_MS,
+        Phase::Playing,
+        20 * MINUTE_MS,
+    );
+    let missing = presenter.project(
+        &mut history,
+        0,
+        ns(75 * MINUTE_MS),
+        true,
+        Reading {
+            phase: Phase::Playing,
+            position_ns: None,
+            target_ns: None,
+        },
+    );
+    assert_eq!(missing.viewing, before.viewing);
+    assert_eq!(missing.viewing_program(), before.viewing_program());
+    assert_eq!(missing.program_status(), before.program_status());
+
+    let recovered = project(
+        &mut presenter,
+        &mut history,
+        0,
+        75 * MINUTE_MS,
+        Phase::Playing,
+        40 * MINUTE_MS,
+    );
+    assert_eq!(recovered.viewing.unwrap().program.unwrap().title, "番組2");
+
+    // A known position without metadata must still clear the previous title.
+    let unknown = project(
+        &mut presenter,
+        &mut history,
+        0,
+        75 * MINUTE_MS,
+        Phase::Playing,
+        90 * MINUTE_MS,
+    );
+    assert!(unknown.viewing.as_ref().unwrap().program.is_none());
+    assert_eq!(
+        unknown.program_status(),
+        crate::transport::programs::catalog::Status::Pending
+    );
+
+    // A replacement session cannot reuse the previous channel's view.
+    let startup = Presenter::new().project(
+        &mut history,
+        0,
+        ns(75 * MINUTE_MS),
+        true,
+        Reading {
+            phase: Phase::Playing,
+            position_ns: None,
+            target_ns: None,
+        },
+    );
+    assert!(startup.viewing.is_none());
+}
+
+#[test]
 fn seek_target_does_not_replace_presented_frame_until_output_is_confirmed() {
     let mut history = three_programs();
     let mut presenter = Presenter::new();

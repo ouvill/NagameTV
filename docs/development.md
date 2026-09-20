@@ -210,6 +210,18 @@ NAGAMETV_RECORDING_PROBE=/path/to/recording.ts CARGO_TARGET_DIR=build/cargo \
 
 初期情報の取得、80%位置へのシーク、探索後の追加読取り停止を検証します。
 通常再生で読む量と補助読取り量を分け、実ファイルは変更しません。
+
+ライブ番組情報のちらつきを受信データから調べる場合は、次の機器不要の試験を使います。
+TSの先頭最大64MiBを受信順に解析し、取得済みの番組情報が映像・音声の表示時刻まで
+利用できることを確認します。PCRが映像とは別のPIDにある構成も対象です。
+デコードや再生は行わず、入力ファイルも変更しません。
+
+```sh
+NAGAMETV_LIVE_METADATA_PROBE=/path/to/captured.ts CARGO_TARGET_DIR=build/cargo \
+  cargo test --manifest-path rust/Cargo.toml --release --locked \
+  captured_broadcast_covers_received_presentation_timestamps -- --ignored --nocapture
+```
+
 旧DBの移行確認には、使用中のDBではなく取得済みのコピーを指定します。
 試験はさらに一時ディレクトリーへコピーしてから移行・空応答との統合を行います。
 
