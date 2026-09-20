@@ -28,6 +28,11 @@ ApplicationWindow {
     Timer { interval: 10000; repeat: true; running: root.usageReady && !root.closing; onTriggered: root.recordUsage() }
     Connections {
         target: player
+        function onDesktop_raise_requested() {
+            if (root.visibility === Window.Minimized) root.showNormal();
+            root.raise();
+            root.requestActivate();
+        }
         function onPlayingChanged() { root.recordUsage(); }
         function onDanmaku_enabledChanged() { root.recordUsage(); }
         function onComments_enabledChanged() { root.recordUsage(); }
@@ -116,13 +121,21 @@ ApplicationWindow {
         enabled: !root.closing
         playing: player.playing
         // Like main, the persistent sidebar does not pin the video controls.
-        pinned: root.showChannels || root.showGuide || inputContext.popupOpen || inputContext.editingText || playerControls.volumePressed || playerControls.screenshotHovered || recordingTimeline.pressed || recordingTimeline.hovered
+        pinned: root.showChannels || root.showGuide || inputContext.popupOpen || inputContext.editingText || playerControls.screenshotHovered || recordingTimeline.pressed || recordingTimeline.hovered
     }
     AudioSettings {
         id: audioSettings
+        shuttingDown: root.closing
+        objectName: "audioSettingsPopup"
+        anchorItem: playerControls.audioAnchor
         windowWidth: root.width
         windowHeight: root.height
         playing: player.media_active
+        volumeLevel: player.volume_level
+        muted: player.audio_muted
+        onVolumeRequested: function(value) { player.volume(value); }
+        onMuteRequested: function(value) { player.mute(value); }
+        onSaveRequested: player.save_settings()
         onRefreshRequested: {
             tracksJson = player.audio_tracks();
             errorText = player.audio_error();
@@ -130,11 +143,14 @@ ApplicationWindow {
         onSelectRequested: function (trackId) {
             errorText = player.select_audio(trackId);
         }
+        // Popup restores keyboard focus; do not steal a new outside target's
+        // focus when the closing animation finishes.
         onClosed: overlayVisibility.reveal()
     }
     ViewerActions {
         id: viewerActions
         backend: player
+        audioVisible: audioSettings.visible
         targetWindow: root
         enabled: !root.closing
         channelsVisible: root.showChannels
@@ -152,7 +168,7 @@ ApplicationWindow {
         onProgramVisibilityRequested: function(visible) { root.showProgram = visible; }
         onRecordingRequested: recordingInput.open()
         onCaptureRequested: screenshot.capture()
-        onAudioRequested: audioSettings.open()
+        onAudioRequested: audioSettings.toggle()
         onSettingsRequested: {
             root.showProgram = !(root.showProgram && root.sidebarPage === ProgramSidebar.Playback);
             root.sidebarPage = ProgramSidebar.Playback;
@@ -307,6 +323,7 @@ ApplicationWindow {
                 active: !root.closing && player.subtitles_active && player.subtitle_display
                 sourceComponent: Component {
                     SubtitleOverlay {
+                        forceOutline: player.subtitle_force_outline
                         captionJson: player.subtitle_data
                         outlineProvider: player
                     }
@@ -314,6 +331,10 @@ ApplicationWindow {
             }
         }
         MouseArea {
+            objectName: "videoPointerArea"
+            // Panels above this area consume their own clicks/double clicks.
+            enabled: !root.closing
+            onDoubleClicked: viewerActions.toggleFullscreen.trigger()
             // Below the panels: only a click on the video leaves text editing.
             anchors.fill: parent
             onClicked: {

@@ -23,6 +23,8 @@ Item {
                 property bool loading: false
                 property bool subtitles_enabled: true
                 property bool subtitle_display: true
+                property bool subtitle_force_outline: false
+                function configure_subtitle_outline(value) { subtitle_force_outline = value; }
                 property bool epg_enabled: true
                 property bool autoplay: false
                 property string live_buffer_options: JSON.stringify({milliseconds:250, min_ms:1, max_ms:1000, default_ms:250})
@@ -428,6 +430,16 @@ Item {
                 panel.open();
                 tryCompare(panel, "opened", true);
                 compare(field.text, backend.server);
+            }
+            function test_subtitle_outline_can_be_configured_while_subtitles_are_hidden() {
+                selectPage(SettingsPanel.Display);
+                backend.subtitle_display = false;
+                const outline = findChild(panel.contentItem, "subtitleForceOutline");
+                verify(outline.enabled);
+                outline.forceActiveFocus(); keyClick(Qt.Key_Space);
+                compare(backend.subtitle_force_outline, true);
+                backend.configure_subtitle_outline(false);
+                compare(outline.checked, false);
             }
             function test_subtitle_visibility_is_a_viewer_setting_independent_of_processing() {
                 selectPage(SettingsPanel.Display);

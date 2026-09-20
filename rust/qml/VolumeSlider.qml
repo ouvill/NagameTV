@@ -6,6 +6,12 @@ ThemedSlider {
     id: slider
     property bool closing: false
     property bool keyboardGesture: false
+    function finishGesture() {
+        if (!closing && (volumeSave.running || pressed)) {
+            volumeSave.stop();
+            saveRequested();
+        }
+    }
     signal volumeRequested(real fraction)
     signal saveRequested
     from: 0

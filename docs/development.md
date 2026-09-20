@@ -141,9 +141,12 @@ RustとQMLのプロパティ・通知・起動処理を変更した場合は、�
 
 ```sh
 bash scripts/test-connection.sh
+bash scripts/test-desktop-media.sh
 bash scripts/test-startup.sh
 ```
 
+Linuxのメディア連携テストも機器不要で、専用D-Bus・`python3-dbus`・`python3-gi`を使います。
+[MPRIS連携の仕様と検証範囲](desktop-media.md)を参照してください。
 接続テストは機器を使用せず、Qt通知時の状態の整合性も確認します。起動テストは
 専用画面・実GPU・起動済みPipeWire上の仮想出力を検証した後、製品の`Main.qml`を読み込み、初回・設定済み起動・
 番組表の開閉・再生エラー・終了を確認します。設定先は一時ディレクトリーです。

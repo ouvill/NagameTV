@@ -13,6 +13,24 @@ impl ffi::Player {
 }
 
 impl ffi::Player {
+    pub fn subtitle_force_outline(&self) -> bool {
+        self.rust().preferences.preferences().subtitle_force_outline
+    }
+
+    pub fn configure_subtitle_outline(mut self: Pin<&mut Self>, enabled: bool) {
+        if !self.rust().subtitles_enabled {
+            return;
+        }
+        if self.subtitle_force_outline() != enabled {
+            self.as_mut()
+                .rust_mut()
+                .preferences
+                .change(crate::settings::Change::SubtitleForceOutline(enabled));
+            self.as_mut().subtitle_force_outline_changed();
+        }
+        self.save_settings();
+    }
+
     pub fn display_subtitles(mut self: Pin<&mut Self>, display: bool) {
         if !self.rust().subtitles_enabled {
             return;

@@ -117,6 +117,38 @@ fn checks() -> TestResult {
         player.rust().media.playback().is_none(),
         "test must not initialize playback"
     );
+    // Preference notifications must observe the committed value; this touches
+    // no decoder even when the feature is enabled for this settings-only check.
+    player.pin_mut().rust_mut().subtitles_enabled = true;
+    let outline_changes = Arc::new(Mutex::new(Vec::new()));
+    let observed_outline = outline_changes.clone();
+    let _outline_signal = player
+        .pin_mut()
+        .on_subtitle_force_outline_changed(move |player| {
+            assert_eq!(
+                player.subtitle_force_outline(),
+                player
+                    .rust()
+                    .preferences
+                    .preferences()
+                    .subtitle_force_outline
+            );
+            observed_outline
+                .lock()
+                .unwrap()
+                .push(player.subtitle_force_outline());
+        });
+    for value in [true, true, false] {
+        player.pin_mut().configure_subtitle_outline(value);
+    }
+    assert_eq!(*outline_changes.lock().unwrap(), [true, false]);
+    assert!(
+        !settings::Loaded::open(path.clone())?
+            .preferences()
+            .subtitle_force_outline
+    );
+    player.pin_mut().rust_mut().subtitles_enabled = false;
+    std::fs::remove_file(&path)?;
     assert!(player.server().is_empty());
     assert!(!player.server_configured());
     let configured_changes = Arc::new(Mutex::new(Vec::new()));

@@ -28,5 +28,6 @@ for crate in viewer-comments viewer-epg-events viewer-diagnostics viewer-remote 
 done
 
 bash scripts/test-connection.sh
+bash scripts/test-desktop-media.sh
 bash scripts/test-localization.sh
 bash scripts/test-subtitle-outline.sh

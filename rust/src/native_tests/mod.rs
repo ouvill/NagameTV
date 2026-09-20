@@ -3,6 +3,8 @@
 #[allow(dead_code)]
 #[path = "../native_test_bridge.rs"]
 mod bridge;
+#[cfg(target_os = "linux")]
+mod desktop_media;
 mod localization;
 mod outline;
 mod pointer;
@@ -48,6 +50,8 @@ pub fn run() -> i32 {
         Some("missing-catalog") => localization::run(true),
         Some("subtitle-outline") => outline::run(),
         Some("pointer-activity") => pointer::run(),
+        #[cfg(target_os = "linux")]
+        Some("desktop-media") => desktop_media::run(),
         Some("connection") => crate::player::connection_checks::run(),
         Some("startup") => startup::run(),
         Some("startup-window") => startup::run_window(),

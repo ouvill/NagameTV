@@ -7,6 +7,7 @@ Item {
     id: root
     required property var backend
     required property Window targetWindow
+    property bool audioVisible: false
     property bool channelsVisible: false
     property bool composerVisible: false
     property bool statsVisible: false
@@ -148,8 +149,8 @@ Item {
         }
     }
     readonly property Action openAudio: Operation {
-        text: qsTranslate("Viewer", "Audio selection")
-        onTriggered: root.audioRequested()
+        text: qsTranslate("Viewer", "Audio")
+        onTriggered: { root.audioRequested(); root.activity(); }
     }
     readonly property Action toggleSettings: Operation {
         text: qsTranslate("Main", "Playback settings")

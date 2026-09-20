@@ -41,6 +41,13 @@ inline bool forwardFocusKey(const QString &sequence) {
     if (keys.count() != 1) throw std::runtime_error("One key combination is required");
     return sendTestForwardedKey(keys[0].key(), int(keys[0].keyboardModifiers()), QString(), false);
 }
+inline void doubleClickRoot(QQmlApplicationEngine &engine, const QPoint &position) {
+    const auto roots = engine.rootObjects();
+    auto *window = roots.isEmpty() ? nullptr : qobject_cast<QQuickWindow *>(roots.first());
+    if (!window) throw std::runtime_error("QQuickWindow is missing");
+    QTest::mouseDClick(window, Qt::LeftButton, Qt::NoModifier, position);
+}
+
 inline void clickRootItem(QQmlApplicationEngine &engine, const QString &name) {
     const auto roots = engine.rootObjects();
     auto *window = roots.isEmpty() ? nullptr : qobject_cast<QQuickWindow *>(roots.first());

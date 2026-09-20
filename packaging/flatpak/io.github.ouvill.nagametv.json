@@ -11,6 +11,7 @@
   "default-branch": "stable",
   "finish-args": [
     "--share=network",
+    "--own-name=org.mpris.MediaPlayer2.io.github.ouvill.nagametv.*",
     "--share=ipc",
     "--socket=x11",
     "--socket=pulseaudio",

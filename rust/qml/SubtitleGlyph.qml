@@ -10,6 +10,10 @@ Label {
     required property string fontFamily
     required property real scaleX
     required property real scaleY
+    property bool forceOutline: false
+    readonly property bool outlined: forceOutline || cell.stroked
+    // Preserve broadcast-authored stroke colors; add black only to unoutlined glyphs.
+    readonly property color outlineColor: cell.stroked ? cell.stroke : "black"
     readonly property real outlineRadius: font.pixelSize * 0.06
     readonly property real captureScaleX: implicitWidth > 0
         ? Math.min(1, cell.glyphWidth * scaleX / implicitWidth) : 1
@@ -31,12 +35,12 @@ Label {
         width: glyph.width
         height: glyph.height
         z: -1
-        active: glyph.cell.stroked
+        active: glyph.outlined
         sourceComponent: Shape {
             preferredRendererType: Shape.CurveRenderer
             ShapePath {
                 fillColor: "transparent"
-                strokeColor: glyph.cell.stroke
+                strokeColor: glyph.outlineColor
                 strokeWidth: glyph.outlineRadius * 2
                 joinStyle: ShapePath.RoundJoin
                 fillRule: ShapePath.WindingFill

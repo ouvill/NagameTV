@@ -546,3 +546,23 @@ fn comment_cache_budget_is_validated_and_persisted() -> Result<(), Box<dyn std::
     );
     Ok(())
 }
+
+#[test]
+fn subtitle_outline_migrates_disabled_and_survives_reopening()
+-> Result<(), Box<dyn std::error::Error>> {
+    let old: Preferences = toml::from_str("subtitles_enabled = true")?;
+    assert!(old.show_subtitles);
+    assert!(!old.subtitle_force_outline);
+    let directory = tempfile::tempdir()?;
+    let path = directory.path().join("settings.toml");
+    let mut session = open(path.clone())?;
+    for enabled in [true, false] {
+        session.change(Change::SubtitleForceOutline(enabled));
+        session.flush()?;
+        assert_eq!(
+            open(path.clone())?.preferences().subtitle_force_outline,
+            enabled
+        );
+    }
+    Ok(())
+}

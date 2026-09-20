@@ -11,7 +11,22 @@ Item {
         width: 1100
         height: 480
         ActionTestBackend { id: backend }
-        ViewerActions { id: actions; backend: backend; targetWindow: host; canCapture: true }
+        ViewerActions {
+            id: actions; backend: backend; targetWindow: host; canCapture: true
+            audioVisible: audioPopup.visible
+            onAudioRequested: audioPopup.toggle()
+        }
+        AudioSettings {
+            id: audioPopup
+            anchorItem: controls.audioAnchor
+            windowWidth: host.width; windowHeight: host.height
+            volumeLevel: backend.volume_level
+            muted: backend.audio_muted
+            iconDirectory: controls.iconDirectory
+            onVolumeRequested: function(value) { backend.volume(value); }
+            onMuteRequested: function(value) { backend.mute(value); }
+            onSaveRequested: backend.save_settings()
+        }
         InputContext {
             id: inputContext
             targetWindow: host
@@ -25,7 +40,7 @@ Item {
         }
         PlayerControls {
             id: controls
-            x: 24; y: 200
+            x: 24; y: host.height - 60
             width: host.width - 48
             height: implicitHeight
             videoWidth: width + 48
@@ -186,7 +201,7 @@ Item {
                 compare(modes.signalArguments[1][0], ModeNavigation.Live);
             }
             function cleanup() {
-                findChild(controls, "playerVolumePopup").close();
+                audioPopup.close();
                 findChild(controls, "playerOverflowMenu").close();
             }
             function test_live_button_tracks_backend_and_returns_without_toggling_playback() {
@@ -235,24 +250,59 @@ Item {
                 tryCompare(menu, "visible", false);
                 verify(!more.visible);
             }
-            function test_volume_popup_supports_hover_keyboard_and_audio_selection() {
+            function test_audio_panel_opens_on_click_not_hover_and_supports_keyboard() {
                 host.requestActivate(); tryCompare(host, "active", true);
-                const mute = findChild(controls, "muteButton");
-                const popup = findChild(controls, "playerVolumePopup");
-                const slider = findChild(controls, "playerVolumeSlider");
-                mouseMove(mute, mute.width / 2, mute.height / 2);
-                tryCompare(popup, "opened", true);
-                mouseClick(mute); compare(backend.audio_muted, true);
+                const button = findChild(controls, "audioSettingsButton");
+                mouseMove(button, button.width / 2, button.height / 2);
+                wait(300);
+                compare(audioPopup.visible, false);
+                mouseClick(button);
+                tryCompare(audioPopup, "opened", true);
+                compare(button.active, true);
+                const slider = findChild(audioPopup, "playerVolumeSlider");
+                mouseClick(findChild(audioPopup, "muteButton")); compare(backend.audio_muted, true);
                 mouseClick(slider, slider.width * 0.75, slider.height / 2);
                 verify(backend.volume_level > 0.5); compare(backend.saved, 1);
-                mouseClick(findChild(controls, "audioSelectionButton"));
-                compare(audio.count, 1); tryCompare(popup, "visible", false);
-                mouseMove(host.contentItem, 500, 150);
-                mute.forceActiveFocus(); keyClick(Qt.Key_Up);
-                tryCompare(popup, "opened", true); verify(slider.activeFocus);
+                // Leaving the panel does not close an operation panel.
+                mouseMove(host.contentItem, 600, 400); wait(300);
+                compare(audioPopup.opened, true);
+                mouseClick(button); tryCompare(audioPopup, "visible", false);
+                button.forceActiveFocus(); keyClick(Qt.Key_Space);
+                tryCompare(audioPopup, "opened", true);
+                slider.forceActiveFocus();
                 const previous = backend.volume_level;
                 keyClick(Qt.Key_Left); verify(backend.volume_level < previous);
-                keyClick(Qt.Key_Escape); tryCompare(popup, "visible", false);
+                keyClick(Qt.Key_Escape); tryCompare(audioPopup, "visible", false);
+                compare(backend.saved, 2); verify(button.activeFocus);
+            }
+            function test_repeated_audio_click_reverses_an_unfinished_close() {
+                const button = findChild(controls, "audioSettingsButton");
+                mouseClick(button); tryCompare(audioPopup, "opened", true);
+                mouseClick(button);
+                verify(audioPopup.visible && !audioPopup.opened);
+                mouseClick(button);
+                tryCompare(audioPopup, "opened", true);
+                verify(button.active);
+            }
+            function test_closing_animation_does_not_steal_focus_from_outside_editor() {
+                const editor = createTemporaryQmlObject('import QtQuick.Controls; TextField { x: 600; y: 300; width: 200; height: 44 }', host.contentItem);
+                mouseClick(findChild(controls, "audioSettingsButton"));
+                tryCompare(audioPopup, "opened", true);
+                mouseClick(editor);
+                tryCompare(audioPopup, "visible", false);
+                verify(editor.activeFocus);
+            }
+            function test_audio_panel_touch_and_outside_dismissal() {
+                const button = findChild(controls, "audioSettingsButton");
+                touchEvent(button).press(0, button, button.width / 2, button.height / 2).commit();
+                touchEvent(button).release(0, button, button.width / 2, button.height / 2).commit();
+                tryCompare(audioPopup, "opened", true);
+                const mute = findChild(audioPopup, "muteButton");
+                touchEvent(mute).press(0, mute, mute.width / 2, mute.height / 2).commit();
+                touchEvent(mute).release(0, mute, mute.width / 2, mute.height / 2).commit();
+                compare(backend.audio_muted, true);
+                mouseClick(host.contentItem, 600, 400);
+                tryCompare(audioPopup, "visible", false);
             }
             function test_controls_remain_on_one_row_with_sidebar_at_minimum_width() {
                 for (const recording of [false, true]) {
@@ -260,7 +310,7 @@ Item {
                     for (const width of [1392, 984, 912, 911, 852, 692, 691, 532]) {
                         controls.width = width;
                         waitForRendering(controls);
-                        const names = ["muteButton", "returnToLiveButton", "playStopButton", "skipBackButton", "skipForwardButton",
+                        const names = ["audioSettingsButton", "returnToLiveButton", "playStopButton", "skipBackButton", "skipForwardButton",
                             "channelsButton", "postCommentButton", "screenshotButton", "subtitlesButton", "danmakuButton",
                             "fullscreenButton", "moreControlsButton", "sidePanelButton"];
                         const boxes = names.map(name => findChild(controls, name)).filter(item => item.visible).map(item => {

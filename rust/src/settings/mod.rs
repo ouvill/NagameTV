@@ -148,6 +148,7 @@ pub enum Change {
     ScreenshotOptions(ScreenshotOptions),
     Volume(Volume),
     SubtitleDisplay(bool),
+    SubtitleForceOutline(bool),
     Comments(bool),
     CommentCacheLimit(CommentCacheLimit),
     Danmaku {
@@ -217,6 +218,7 @@ impl Session {
             Change::ScreenshotOptions(options) => preferences.screenshot_options = options,
             Change::Volume(volume) => preferences.volume = volume,
             Change::SubtitleDisplay(display) => preferences.show_subtitles = display,
+            Change::SubtitleForceOutline(enabled) => preferences.subtitle_force_outline = enabled,
             Change::Comments(enabled) => preferences.comments_enabled = enabled,
             Change::CommentCacheLimit(limit) => preferences.comment_cache_limit_mib = limit,
             Change::Danmaku {

@@ -374,6 +374,15 @@ Popup {
                             enabled: root.backend.subtitles_enabled
                             onClicked: root.backend.display_subtitles(checked)
                         }
+                        SettingsToggle {
+                            objectName: "subtitleForceOutline"
+                            Layout.fillWidth: true
+                            text: qsTranslate("Settings", "Always outline subtitles")
+                            description: qsTranslate("Settings", "Add a black outline when the broadcast does not provide one.")
+                            checked: root.backend.subtitle_force_outline
+                            enabled: root.backend.subtitles_enabled
+                            onClicked: root.backend.configure_subtitle_outline(checked)
+                        }
                         Heading { Layout.topMargin: 20; text: qsTranslate("Settings", "Screenshots") }
                         Detail {
                             text: qsTranslate("Settings", "Save a screenshot to this folder with the camera button or Ctrl + S.")

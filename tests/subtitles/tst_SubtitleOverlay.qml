@@ -84,6 +84,22 @@ TestCase {
         holder.caption = screen("字幕", false, false)
         compare(findChild(holder, "outlineLoader").item, null)
     }
+    function test_forced_outline_updates_current_cue_and_capture_without_changing_authored_stroke() {
+        holder.caption = screen("字", false, false)
+        const glyph = findChild(holder, "subtitleGlyph")
+        const loader = findChild(glyph, "outlineLoader")
+        compare(loader.item, null)
+        holder.item.forceOutline = true
+        verify(loader.item !== null)
+        compare(glyph.outlineColor, Qt.color("black"))
+        const layer = holder.item.screenshotLayer(holder)
+        verify(layer.commands[1].stroke_width > 0)
+        holder.item.forceOutline = false
+        compare(loader.item, null)
+        holder.caption = screen("字", true, false)
+        holder.item.forceOutline = true
+        compare(findChild(holder, "subtitleGlyph").outlineColor, Qt.color("#ff0000"))
+    }
     function test_resize_scales_cell_and_outline() {
         holder.caption = screen("ー", true, false)
         holder.width = 480

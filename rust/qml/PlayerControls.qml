@@ -9,7 +9,6 @@ Item {
     readonly property var backend: actions.backend
     property real videoWidth: width
     property url iconDirectory: "qrc:/qt/qml/MinimalViewer/assets/icons/"
-    readonly property bool volumePressed: volume.pressed
     readonly property bool screenshotHovered: screenshot.hovered
     readonly property bool transportControls: backend.recording || backend.timeshift
     readonly property int wideVideoWidth: 960
@@ -19,6 +18,7 @@ Item {
     readonly property int actionSize: density === PlayerControls.Dense ? 32 : 42
     readonly property int actionSpacing: density === PlayerControls.Dense ? 2 : 6
     readonly property int dividerWidth: density === PlayerControls.Dense ? 8 : 18
+    readonly property alias audioAnchor: volume
     enabled: actions.enabled
     implicitHeight: 42
     onEnabledChanged: if (!enabled) overflow.close()

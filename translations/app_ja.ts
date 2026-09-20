@@ -700,6 +700,10 @@
   <context>
     <name>Viewer</name>
     <message>
+        <source>Audio</source>
+        <translation>音声</translation>
+    </message>
+    <message>
       <source>Mono</source>
       <translation>モノラル</translation>
     </message>
@@ -1218,6 +1222,14 @@
 </context>
   <context>
     <name>Settings</name>
+    <message>
+        <source>Add a black outline when the broadcast does not provide one.</source>
+        <translation>放送で縁取りが指定されていない字幕に、黒い縁取りを付けます。</translation>
+    </message>
+    <message>
+        <source>Always outline subtitles</source>
+        <translation>字幕に常に縁取りを付ける</translation>
+    </message>
     <message><source>Live playback</source><translation>ライブ再生</translation></message>
     <message><source>Live playback buffer</source><translation>ライブ再生の余裕</translation></message>
     <message><source>Live playback buffer (milliseconds)</source><translation>ライブ再生の余裕（ミリ秒）</translation></message>

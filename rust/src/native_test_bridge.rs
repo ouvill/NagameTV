@@ -37,6 +37,10 @@ pub mod ffi {
         fn grabRoot(engine: Pin<&mut QQmlApplicationEngine>) -> Result<QImage>;
         fn clickRootKey(engine: Pin<&mut QQmlApplicationEngine>, sequence: &QString) -> Result<()>;
         fn forwardFocusKey(sequence: &QString) -> Result<bool>;
+        fn doubleClickRoot(
+            engine: Pin<&mut QQmlApplicationEngine>,
+            position: &QPoint,
+        ) -> Result<()>;
         fn clickRootItem(engine: Pin<&mut QQmlApplicationEngine>, name: &QString) -> Result<()>;
         fn sendTestInputMethod(preedit: &QString, commit: &QString) -> bool;
         fn sendTestInputMethodCursor(preedit: &QString) -> bool;

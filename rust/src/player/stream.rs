@@ -366,7 +366,9 @@ impl ffi::Player {
             .and_then(|playback| playback.video_aspect_ratio())
             .unwrap_or(0.0);
         self.as_mut().set_video_aspect_ratio(aspect);
-        self.publish_remote();
+        self.as_mut().publish_remote();
+        #[cfg(target_os = "linux")]
+        self.poll_desktop_media();
     }
     fn poll_player(mut self: Pin<&mut Self>) {
         self.as_mut().refresh_channels_if_due();
@@ -446,6 +448,11 @@ impl ffi::Player {
             tracing::error!("Playback shutdown failed; keeping the window alive: {error}");
             self.playback_failed(error);
             return false;
+        }
+        #[cfg(target_os = "linux")]
+        {
+            self.as_mut().rust_mut().desktop_media =
+                super::desktop_media::Registration::Unavailable;
         }
         self.as_mut().rust_mut().remote.stop();
         self.as_mut().rust_mut().epg_events.configure(None);

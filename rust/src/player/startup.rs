@@ -83,6 +83,8 @@ impl Default for PlayerRust {
         };
         let media = playback::Session::new(playback, preferences.preferences().live_buffer_ms);
         let mut player = Self {
+            #[cfg(target_os = "linux")]
+            desktop_media: Default::default(),
             language: QString::from(preferences.preferences().language.code()),
             ui_language: super::ffi::current_ui_language(),
             diagnostic_recorder,

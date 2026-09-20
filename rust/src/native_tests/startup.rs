@@ -765,6 +765,8 @@ fn check_recording(
         engine,
         "player.playing && JSON.parse(player.video_stats()).rendered > 0 && JSON.parse(player.audio_tracks()).length > 0",
     )?;
+    #[cfg(target_os = "linux")]
+    super::desktop_media::check_playback(app)?;
     assert!(evaluate(
         engine,
         "player.recording && player.recording_name === '録画 #100%.ts' && modeNavigation.mode === ModeNavigation.Recording && !setup.visible && player.current_program_data === 'null' && !player.comment_post_available && !danmaku.active && player.subtitles_active"
@@ -990,6 +992,41 @@ fn check_shortcuts(
         "root.showChannels = false; root.requestActivate(); surface.forceActiveFocus(); true",
     )?;
     wait_for(app, engine, "root.active && inputContext.navigationEnabled")?;
+    // The video gesture shares fullscreen restoration with F11. Native input
+    // tests hit testing, not just a direct call to the QML signal handler.
+    for fullscreen in [true, false] {
+        ffi::doubleClickRoot(engine.pin_mut(), &cxx_qt_lib::QPoint::new(450, 200))?;
+        wait_for(
+            app,
+            engine,
+            if fullscreen {
+                "viewerActions.fullscreen"
+            } else {
+                "!viewerActions.fullscreen"
+            },
+        )?;
+    }
+    ffi::clickRootItem(engine.pin_mut(), &QString::from("audioSettingsButton"))?;
+    wait_for(
+        app,
+        engine,
+        "audioSettings.opened && inputContext.popupOpen",
+    )?;
+    let review = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../build/audio-review");
+    std::fs::create_dir_all(&review)?;
+    let image = ffi::grabRoot(engine.pin_mut())?;
+    assert!(player::ffi::save_screenshot_image(
+        &image,
+        &QString::from(review.join("audio-panel.png").to_string_lossy().as_ref()),
+        &QString::from("png"),
+        -1,
+        60
+    ));
+    ffi::clickRootItem(engine.pin_mut(), &QString::from("muteButton"))?;
+    assert!(evaluate(engine, "player.audio_muted")?);
+    ffi::clickRootKey(engine.pin_mut(), &QString::from("Escape"))?;
+    wait_for(app, engine, "!audioSettings.visible")?;
+    evaluate(engine, "player.mute(false); true")?;
     for (key, condition) in [
         ("S", "root.showChannels"),
         ("G", "root.showGuide && root.showChannels"),

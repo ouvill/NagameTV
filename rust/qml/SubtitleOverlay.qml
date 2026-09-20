@@ -6,6 +6,7 @@ Item {
     id: overlay
     required property string captionJson
     required property var outlineProvider
+    property bool forceOutline: false
     property url fontSource: "qrc:/qt/qml/MinimalViewer/assets/fonts/rounded-mplus-1m-arib.ttf"
     readonly property var cue: captionJson.length ? JSON.parse(captionJson) : null
     readonly property var cells: cue ? cue.cells : []
@@ -20,7 +21,7 @@ Item {
             commands.push({kind: "rect", x: cell.x, y: cell.y, width: cell.width, height: cell.height, color: cell.color.toString()});
             const glyph = cell.captureGlyph;
             commands.push(captureText.command(glyph, cell.x + glyph.x, cell.y + glyph.y,
-                glyph.captureScaleX, glyph.cell.stroke, glyph.cell.stroked ? glyph.outlineRadius * 2 : 0,
+                glyph.captureScaleX, glyph.outlineColor.toString(), glyph.outlined ? glyph.outlineRadius * 2 : 0,
                 null, false, false));
         }
         if (plainCaption.visible && plainCaption.text.length)
@@ -52,6 +53,7 @@ Item {
                 id: renderedGlyph
                 objectName: "subtitleGlyph"
                 anchors.centerIn: parent
+                forceOutline: overlay.forceOutline
                 cell: parent.modelData
                 outlineProvider: overlay.outlineProvider
                 scaleX: parent.sx

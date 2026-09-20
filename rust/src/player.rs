@@ -9,6 +9,8 @@ mod comments;
 mod connection;
 #[cfg(feature = "native_tests")]
 pub(crate) mod connection_checks;
+#[cfg(target_os = "linux")]
+mod desktop_media;
 mod epg;
 mod guide;
 mod language;
@@ -107,6 +109,17 @@ pub mod ffi {
         #[cfg(target_os = "linux")]
         #[cxx_name = "useQtQuickDialogs"]
         fn use_qt_quick_dialogs();
+        include!("desktop_media.h");
+        #[cfg(target_os = "linux")]
+        type DesktopMedia;
+        #[cfg(target_os = "linux")]
+        #[cxx_name = "connectDesktopMedia"]
+        fn connect_desktop_media() -> Result<UniquePtr<DesktopMedia>>;
+        #[cfg(target_os = "linux")]
+        #[cxx_name = "takeCommand"]
+        fn take_command(self: Pin<&mut DesktopMedia>) -> QString;
+        #[cfg(target_os = "linux")]
+        fn publish(self: Pin<&mut DesktopMedia>, json: &QString);
         include!("portal.h");
         #[cfg(target_os = "linux")]
         #[cxx_name = "portalThemeLoaded"]
@@ -208,6 +221,7 @@ pub mod ffi {
         #[qproperty(bool, comment_send_on_enter, READ, NOTIFY)]
         #[qproperty(bool, subtitles_active, READ, NOTIFY)]
         #[qproperty(bool, subtitle_display, READ, NOTIFY)]
+        #[qproperty(bool, subtitle_force_outline, READ = subtitle_force_outline, NOTIFY)]
         #[qproperty(QString, subtitle_data, READ, NOTIFY)]
         #[qproperty(QString, subtitle_status, READ, NOTIFY)]
         #[qproperty(QString, epg_data, READ, NOTIFY)]
@@ -272,6 +286,8 @@ pub mod ffi {
         fn poll_screenshot(self: Pin<&mut Player>);
         #[qsignal]
         fn screenshot_finished(self: Pin<&mut Player>, file: QUrl);
+        #[qsignal]
+        fn desktop_raise_requested(self: Pin<&mut Player>);
         fn server_configured(self: &Player) -> bool;
         fn loading(self: &Player) -> bool;
         fn connecting(self: &Player) -> bool;
@@ -314,6 +330,9 @@ pub mod ffi {
         fn request_language(self: Pin<&mut Player>, language: QString) -> bool;
         #[qinvokable]
         fn display_subtitles(self: Pin<&mut Player>, display: bool);
+        fn subtitle_force_outline(self: &Player) -> bool;
+        #[qinvokable]
+        fn configure_subtitle_outline(self: Pin<&mut Player>, enabled: bool);
         #[qinvokable]
         fn poll_subtitles(self: Pin<&mut Player>);
         #[qinvokable]
@@ -444,6 +463,8 @@ use std::pin::Pin;
 use std::time::Instant;
 
 pub struct PlayerRust {
+    #[cfg(target_os = "linux")]
+    desktop_media: desktop_media::Registration,
     language: QString,
     ui_language: QString,
     server: QString,

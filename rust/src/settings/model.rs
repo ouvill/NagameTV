@@ -64,6 +64,7 @@ pub struct Preferences {
     // Subtitle processing and EPG availability are selected by LaunchPlan.
     #[serde(rename = "subtitles_enabled")]
     pub show_subtitles: bool,
+    pub subtitle_force_outline: bool,
     pub comments_enabled: bool,
     pub comment_cache_limit_mib: super::CommentCacheLimit,
     pub danmaku_enabled: bool,
@@ -93,6 +94,7 @@ impl Default for Preferences {
             screenshot_options: ScreenshotOptions::default(),
             volume: Volume::default(),
             show_subtitles: false,
+            subtitle_force_outline: false,
             // main receives history independently of the scrolling overlay.
             // Its settings have no comments_enabled field; preserve reception
             // when importing them, including danmaku_enabled=true preferences.
