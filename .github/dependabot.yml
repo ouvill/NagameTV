@@ -11,3 +11,7 @@ updates:
     directory: /packaging/appimage
     schedule:
       interval: weekly
+  - package-ecosystem: docker
+    directory: /packaging/deb
+    schedule:
+      interval: weekly

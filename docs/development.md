@@ -43,6 +43,13 @@ Ubuntu 24.04専用のビルド環境を使い、Workshopの新しいglibcを同�
 Linux x86_64向けのAppImageとSHA-256を`build/appimage/`へ出力します。
 必要な追加ツールとOSの互換性条件は[AppImageのビルド手順](appimage.md)を参照してください。
 
+## Ubuntu debパッケージを作る
+
+`./scripts/build-deb.sh 24.04`または`./scripts/build-deb.sh 26.04`を実行します。
+対象OSのDocker環境でビルドし、`build/deb/ubuntu24.04/`または`build/deb/ubuntu26.04/`に
+debとSHA-256を出力します。24.04用はQtを同梱し、26.04用はシステムのQtを利用します。
+[debの構成・検証手順](deb.md)を参照してください。
+
 ## ネイティブ版をビルドする
 
 ### Fedoraで依存関係を導入する

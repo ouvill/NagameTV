@@ -10,6 +10,8 @@ import subprocess
 import tempfile
 import unittest
 
+from package_metadata import UbuntuRelease, deb_filename, debian_version, release_assets
+
 
 ROOT = Path(__file__).resolve().parent.parent
 VERSION = "0.1.0"
@@ -23,7 +25,7 @@ class ReleaseTests(unittest.TestCase):
         self.project = Path(temporary.name)
         for directory in ("scripts", "rust", "packaging/linux", "packaging/flatpak", "assets", "bin"):
             (self.project / directory).mkdir(parents=True)
-        for script in ("check-release-metadata.py", "create-release-draft.sh"):
+        for script in ("check-release-metadata.py", "create-release-draft.sh", "package_metadata.py"):
             shutil.copyfile(ROOT / "scripts" / script, self.project / "scripts" / script)
         subprocess.run(["git", "init", "--quiet", str(self.project)], check=True)
         sources = []
@@ -64,9 +66,8 @@ if sys.argv[1] == 'api':
                               text=True, capture_output=True)
 
     def bundles(self, version=VERSION):
-        for extension in ("AppImage", "flatpak"):
-            name = f"nagametv-{version}-x86_64.{extension}"
-            data = f"test bundle: {extension}".encode()
+        for name in release_assets(version):
+            data = f"test bundle: {name}".encode()
             (self.project / "assets" / name).write_bytes(data)
             (self.project / "assets" / f"{name}.sha256").write_text(
                 f"{hashlib.sha256(data).hexdigest()}  {name}\n")
@@ -112,7 +113,7 @@ if sys.argv[1] == 'api':
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("differs from submodule", result.stderr)
 
-    def test_create_draft_with_both_bundles(self):
+    def test_create_draft_with_all_bundles(self):
         self.bundles()
         result = self.draft()
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -121,9 +122,9 @@ if sys.argv[1] == 'api':
         for argument in ("--draft", "--verify-tag", "--generate-notes"):
             self.assertIn(argument, create)
         self.assertNotIn("--prerelease", create)
-        for extension in ("AppImage", "flatpak"):
-            self.assertIn(f"nagametv-{VERSION}-x86_64.{extension}", create)
-            self.assertIn(f"nagametv-{VERSION}-x86_64.{extension}.sha256", create)
+        for name in release_assets(VERSION):
+            self.assertIn(name, create)
+            self.assertIn(f"{name}.sha256", create)
 
     def test_prerelease_draft(self):
         version = "1.0.0-rc.1"
@@ -156,16 +157,35 @@ if sys.argv[1] == 'api':
         self.assertEqual(len(self.calls()), 1)
 
     def test_missing_bundle_prevents_api_calls(self):
-        self.bundles()
-        (self.project / "assets" / f"nagametv-{VERSION}-x86_64.flatpak").unlink()
-        self.assertNotEqual(self.draft().returncode, 0)
-        self.assertEqual(self.calls(), [])
+        for name in release_assets(VERSION):
+            for asset in (name, f"{name}.sha256"):
+                with self.subTest(asset=asset):
+                    self.bundles()
+                    (self.project / "assets" / asset).unlink()
+                    self.assertNotEqual(self.draft().returncode, 0)
+                    self.assertEqual(self.calls(), [])
 
     def test_corrupt_bundle_prevents_api_calls(self):
-        self.bundles()
-        (self.project / "assets" / f"nagametv-{VERSION}-x86_64.AppImage").write_bytes(b"corrupt")
-        self.assertNotEqual(self.draft().returncode, 0)
-        self.assertEqual(self.calls(), [])
+        for name in release_assets(VERSION):
+            with self.subTest(asset=name):
+                self.bundles()
+                (self.project / "assets" / name).write_bytes(b"corrupt")
+                self.assertNotEqual(self.draft().returncode, 0)
+                self.assertEqual(self.calls(), [])
+
+    def test_debian_versions_and_upgrade_order(self):
+        for ubuntu in UbuntuRelease:
+            final = debian_version("1.2.3", ubuntu)
+            prerelease = debian_version("1.2.3-rc.1", ubuntu)
+            self.assertEqual(final, f"1.2.3-1ubuntu{ubuntu.value}")
+            self.assertEqual(prerelease, f"1.2.3~rc.1-1ubuntu{ubuntu.value}")
+            self.assertEqual(deb_filename("1.2.3", ubuntu), f"nagametv_{final}_amd64.deb")
+            subprocess.run(["dpkg", "--compare-versions", prerelease, "lt", final], check=True)
+            subprocess.run(["dpkg", "--validate-version",
+                            debian_version("1.2.3-rc.1+build.5", ubuntu)], check=True)
+        subprocess.run(["dpkg", "--compare-versions",
+                        debian_version(VERSION, UbuntuRelease.NOBLE), "lt",
+                        debian_version(VERSION, UbuntuRelease.RESOLUTE)], check=True)
 
 
 if __name__ == "__main__":

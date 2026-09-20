@@ -8,7 +8,7 @@ if ! ldconfig -p 2>/dev/null | grep -E 'libclang(-[0-9]+)?\.so' >/dev/null; then
 fi
 
 for command in Xvfb Xwayland cargo cmake curl dbus-daemon dbus-run-session dbus-send \
-  desktop-file-validate eu-strip flatpak glxinfo \
+  desktop-file-validate dpkg-deb dpkg-shlibdeps eu-strip flatpak glxinfo readelf strip \
   flatpak-builder flock gh git gst-inspect-1.0 gst-launch-1.0 import lld mpv ninja \
   openbox pactl parec pipewire pipewire-pulse pkg-config python3 qmake6 qtpaths6 rustc \
   sha256sum weston wireplumber xdpyinfo xdotool xprop; do

@@ -49,10 +49,10 @@ jobs:
           echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  $RUNNER_TEMP/actionlint.tar.gz" | sha256sum --check
           tar -xzf "$RUNNER_TEMP/actionlint.tar.gz" -C "$RUNNER_TEMP" actionlint
           "$RUNNER_TEMP/actionlint" -color
-          shellcheck scripts/ci.sh scripts/create-release-draft.sh scripts/build-appimage.sh scripts/build-flatpak.sh scripts/run-native-tests.sh
+          shellcheck scripts/ci.sh scripts/create-release-draft.sh scripts/build-appimage.sh scripts/build-flatpak.sh scripts/build-deb.sh scripts/test-deb.sh scripts/run-native-tests.sh
 
   appimage:
-    name: Tests and AppImage (x86_64)
+    name: Tests, AppImage and deb (Ubuntu 24.04, x86_64)
     needs: metadata
     runs-on: ubuntu-24.04
     timeout-minutes: 90
@@ -105,6 +105,70 @@ jobs:
           if-no-files-found: error
           compression-level: 0
           retention-days: 14
+      - name: Package Ubuntu 24.04 deb from the verified AppImage
+        env:
+          VERSION: ${{ needs.metadata.outputs.version }}
+        run: |
+          docker run --rm --user "$(id -u):$(id -g)" \
+            --mount "type=bind,src=$PWD,dst=/project" \
+            nagametv-ci:local bash scripts/build-deb.sh 24.04 --native \
+              --appimage "/project/build/appimage/nagametv-$VERSION-x86_64.AppImage"
+      - name: Install and remove deb in a clean Ubuntu 24.04 container
+        run: bash scripts/test-deb.sh 24.04
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: deb-ubuntu24.04-amd64
+          path: |
+            build/deb/ubuntu24.04/*.deb
+            build/deb/ubuntu24.04/*.deb.sha256
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+
+  deb:
+    name: deb (Ubuntu 26.04, amd64)
+    needs: metadata
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Build the Ubuntu 26.04 distribution environment
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: packaging/deb
+          load: true
+          tags: nagametv-deb-ubuntu26:local
+          cache-from: type=gha,scope=ubuntu26-deb
+          cache-to: type=gha,mode=max,scope=ubuntu26-deb
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            build/deb/ubuntu26.04/cargo-home/registry
+            build/deb/ubuntu26.04/cargo-home/git
+          key: sources-deb-ubuntu26-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: sources-deb-ubuntu26-
+      - name: Build Ubuntu 26.04 deb
+        run: |
+          docker run --rm --user "$(id -u):$(id -g)" \
+            --mount "type=bind,src=$PWD,dst=/project" \
+            --env CARGO_HOME=/project/build/deb/ubuntu26.04/cargo-home \
+            --env DEB_BUILD_JOBS=2 \
+            nagametv-deb-ubuntu26:local bash scripts/build-deb.sh 26.04 --native
+      - name: Install and remove deb in a clean Ubuntu 26.04 container
+        run: bash scripts/test-deb.sh 26.04
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: deb-ubuntu26.04-amd64
+          path: |
+            build/deb/ubuntu26.04/*.deb
+            build/deb/ubuntu26.04/*.deb.sha256
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
 
   flatpak:
     name: Flatpak (x86_64)
@@ -145,7 +209,7 @@ jobs:
   release:
     name: Draft GitHub Release
     if: github.event_name == 'push' && github.ref_type == 'tag'
-    needs: [metadata, appimage, flatpak]
+    needs: [metadata, appimage, flatpak, deb]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -161,6 +225,11 @@ jobs:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: flatpak-x86_64
+          path: build/release
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: deb-ubuntu*-amd64
+          merge-multiple: true
           path: build/release
       - name: Verify assets and create or update the draft
         env:

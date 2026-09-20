@@ -11,9 +11,9 @@ python3 "$project_dir/scripts/check-release-metadata.py" --tag "$tag"
 version=${tag#v}
 cd -- "$asset_dir"
 assets=()
-for extension in AppImage flatpak; do
-  bundle="nagametv-$version-x86_64.$extension"
-  # Require both bundles and canonical checksums of those exact files before
+bundles=$(python3 "$project_dir/scripts/package_metadata.py" "$version")
+while IFS= read -r bundle; do
+  # Require all bundles and canonical checksums of those exact files before
   # making any API write. A partial build cannot produce a release draft.
   [[ -s "$bundle" && -s "$bundle.sha256" ]] || {
     echo "Missing release asset: $bundle or its SHA-256" >&2
@@ -24,7 +24,7 @@ for extension in AppImage flatpak; do
     exit 1
   }
   assets+=("$bundle" "$bundle.sha256")
-done
+done <<< "$bundles"
 : "${GH_REPO:?Set GH_REPO to owner/repository}"
 
 # Listing with pagination distinguishes 'no release' from API/auth failures.

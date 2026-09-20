@@ -31,12 +31,23 @@ Mirakurunサーバーのテレビ放送とローカルのTS録画を再生する
 
 ## 利用に必要なもの
 
-Linuxのデスクトップ環境が必要です。Flatpak版とAppImage版を利用できます。
+Linuxのデスクトップ環境が必要です。Flatpak版・AppImage版と、Ubuntu 24.04／26.04向けのdeb版を利用できます。
 ライブ視聴には接続可能なMirakurunサーバーも必要です。
 テレビ放送の受信はMirakurun側で行うため、このアプリにはMirakurunの接続先を設定します。
 現在のFlatpak版・AppImage版はX11／XWaylandで動作します。
 
 ## インストール
+
+Ubuntuでは使用中のOSに合うdebを導入できます。依存パッケージもaptが導入します。
+
+```sh
+# Ubuntu 24.04
+sudo apt install ./nagametv_0.1.0-1ubuntu24.04_amd64.deb
+# Ubuntu 26.04
+sudo apt install ./nagametv_0.1.0-1ubuntu26.04_amd64.deb
+```
+
+アプリ一覧または`nagametv`で起動します。更新・削除とビルド方法は[debの手順](docs/deb.md)を参照してください。
 
 `.flatpak`ファイルを置いたディレクトリーで実行します。
 

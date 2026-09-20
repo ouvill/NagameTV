@@ -4,7 +4,7 @@ set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
 
 # Ubuntu packages for native compilation, Qt/GStreamer runtime resources and
-# AppImage/Flatpak packaging. Rust itself comes from the Workshop Rust SDK.
+# AppImage/Flatpak/deb packaging. Rust itself comes from the Workshop Rust SDK.
 # The trailing '-' removes the old PulseAudio daemon in the same transaction;
 # pulseaudio-utils contains clients used with pipewire-pulse.
 apt-get update
@@ -16,6 +16,7 @@ apt-get install --yes --no-install-recommends \
   dbus-daemon \
   dbus-bin \
   desktop-file-utils \
+  dpkg-dev \
   elfutils \
   flatpak \
   flatpak-builder \

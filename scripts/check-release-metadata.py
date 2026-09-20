@@ -4,21 +4,16 @@
 import argparse
 import json
 from pathlib import Path
-import re
 import subprocess
 import tomllib
 import xml.etree.ElementTree as ET
 
+from package_metadata import validate_version
+
 
 def validate(project: Path, tag: str | None) -> str:
     package = tomllib.loads((project / "rust/Cargo.toml").read_text())["package"]
-    version = package["version"]
-    # Cargo/SemVer versions, including prereleases; prevent path/output injection.
-    number = r"(?:0|[1-9][0-9]*)"
-    identifier = r"(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)"
-    semver = rf"{number}\.{number}\.{number}(?:-{identifier}(?:\.{identifier})*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?"
-    if not re.fullmatch(semver, version):
-        raise ValueError(f"Invalid package version: {version!r}")
+    version = validate_version(package["version"])
     if tag is not None and tag != f"v{version}":
         raise ValueError(f"Tag {tag!r} must match Cargo.toml: v{version}")
 
