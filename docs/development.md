@@ -131,7 +131,8 @@ GPU経路の前提条件と方式の違いは[GPU映像処理](gpu-video.md)を�
 
 ## テストと診断
 
-GitHub Actionsでの自動テスト・配布ビルドと、タグからGitHub Releaseの下書きを作る手順は
+GitHub Actionsでの自動テストと配布ビルド、`main`へのpushに伴う最新Pre-releaseの更新、
+バージョンタグからGitHub Releaseの下書きを作成する手順は
 [CIとリリース](ci-release.md)を参照してください。
 
 アプリのRustテスト:

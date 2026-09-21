@@ -1,7 +1,8 @@
 # Ubuntu debパッケージ
 
 Linux amd64向けにUbuntu 24.04用と26.04用を作る。
-GitHub Actionsでは両方を生成し、AppImage／Flatpakと一緒にリリース下書きへ添付する。
+GitHub Actionsでは両方を生成し、AppImageやFlatpakとともに
+`main`の最新Pre-releaseまたはバージョンタグのリリース下書きへ添付する。
 [CIとリリース](ci-release.md)を参照。
 
 | 対象 | Qt／GStreamer | 配置 |
@@ -76,7 +77,7 @@ build/deb/ubuntu26.04/nagametv_0.1.0-1ubuntu26.04_amd64.deb.sha256
 
 バージョンはCargo.tomlから取得し、Debianのrevisionと対象Ubuntuを付ける。
 `0.2.0-rc.1`は`0.2.0~rc.1-1ubuntu24.04`のように変換し、正式版より前に並べる。
-成果物とチェックサムがすべて揃わない場合、リリース下書きは作らない。
+成果物とチェックサムがすべて揃わない場合、リリースの作成や更新処理へは進まない。
 
 対象と同じUbuntuで、Dockerfile記載のツールが導入済みなら`--native`も使える。
 24.04用ではQt公式SDKと専用ビルドのqml6glsinkも必要なため、Dockerを推奨する。
@@ -102,17 +103,22 @@ DEB_BUILD_DIR="$PWD/build" ./scripts/build-deb.sh 26.04 --native
 
 ## 検証
 
-生成後、クリーンな対象Ubuntuコンテナーで、aptによる依存解決・導入、
+Debianパッケージのバージョン命名規則やアップグレード順序、およびリリース処理のガードは、ホスト上で回帰テストを実行して確認する。
+
+```sh
+python3 scripts/test-release.py
+```
+
+パッケージの生成後は、クリーンな対象Ubuntuコンテナーで、aptによる依存解決・導入、
 全ELFのリンク解決、アプリの引数解析、デスクトップ情報、削除を確認する。
 表示・GPU・音声にはアクセスしない。コンテナー外のパッケージは変更しない。
 
 ```sh
-python3 scripts/test-release.py
 bash scripts/test-deb.sh 24.04
 bash scripts/test-deb.sh 26.04
 ```
 
-この検査はGUI起動・映像・音声再生の確認を含まない。
+これらの検査はGUI起動や映像・音声再生の確認を含まない。
 配布前のGUI試験は[専用GUI環境](gui-test-environment.md)で資源を検出・検証し、
 対象OSでも表示・ライブ視聴・TS録画・字幕・音声・ファイル選択を確認する。
 

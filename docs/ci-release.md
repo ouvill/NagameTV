@@ -1,8 +1,11 @@
 # CIとリリース
 
 [GitHub Actions](../.github/workflows/ci.yml)でLinux x86_64向けのテストと
-AppImage／Flatpak／Ubuntu 24.04・26.04用debのビルドを実行する。`main`へのpush、pull request、`v*`タグのpush、
-Actions画面の手動実行が対象。配布ファイルと個別のSHA-256をActions artifactとして14日間保存する。
+AppImage、Flatpak、Ubuntu 24.04用および26.04用debのビルドを実行する。
+`main`へのpush、pull request、`v*`タグのpush、Actions画面の手動実行（workflow_dispatch）が対象。
+配布ファイルとそれぞれのSHA-256の計8ファイルをActions artifactとして14日間保存する。
+全ジョブ成功後、`main`へのpushでは最新ビルドのPre-releaseを作成または更新し、
+`v*`タグのpushではGitHub Releaseの下書きを作成する。pull requestと手動実行では検証とartifact生成のみを行う。
 
 ## CIの確認範囲
 
@@ -57,7 +60,29 @@ Flatpakのホスト側AppStream生成にはSVGローダーも必要で、CIで�
 Docker版とネイティブ版で同じ`CARGO_TARGET_DIR`を共有しないこと。
 パッケージ単体の作成方法は[AppImage](appimage.md)・[Flatpak](flatpak.md)・[deb](deb.md)を参照。
 
-## リリースを作る
+## mainの最新ビルド
+
+`main`へのpushでは、全テストと配布ビルドの成功後に
+固定タグ[`latest-build`の公開Pre-release](https://github.com/ouvill/NagameTV/releases/tag/latest-build)を1件作成または更新する。
+AppImage、Flatpak、Ubuntu 24.04用および26.04用debと、それぞれのSHA-256の計8ファイルを差し替える。
+GitHubの正式版を示すLatestには設定しない。
+
+`latest-build`タグはビルドしたコミットへ移動し、リリースノートにCargo.tomlのバージョンと完全なコミットSHAを記録する。
+パッケージ内部のバージョンと配布ファイル名にはCargo.tomlのバージョンを使い、ビルドごとのバージョン更新は不要である。
+バージョン更新によってファイル名が変わった場合は、以前の添付ファイルを削除する。
+
+成果物の検証と更新は段階的に進める。ダウンロードした配布ファイルとチェックサムをすべてローカルで検証した後に、
+既存のPre-releaseを一時的に下書きへ戻す。タグの移動、ファイルの差し替え、古いファイルの削除が完了した時点で再公開する。
+更新中および更新途中の失敗時は公開ダウンロードができない。
+更新途中で失敗した場合も下書きのまま保持され、同じワークフロー実行を再実行することで不足ファイルを補完して再公開できる。
+
+ビルドの並行動作と公開順序はジョブ設定で制御する。`main`の各ビルドは独立して実行し、公開ジョブはconcurrencyによって直列化する。
+待機ジョブには`queue: max`を指定し、後から完了したビルドによって待機中のジョブが取り消されることを防ぐ。GitHubにおける待機上限は100件である。
+公開処理の開始時にGitHub上の`main`の先頭コミットを読み込み、ビルドしたコミットがすでに古い場合は書き込みを行わずに終了する。
+これにより、ビルド完了順の前後や古いCIの再実行による巻き戻しを防ぐ。
+後続のpushでCIが失敗した場合は、最後に公開されたビルドが保持される。
+
+## バージョンタグからリリースを作る
 
 1. `rust/Cargo.toml`のアプリバージョンを更新し、`rust/Cargo.lock`も更新する。
    `packaging/linux/io.github.ouvill.nagametv.metainfo.xml`の`releases`の先頭に
@@ -73,7 +98,7 @@ Docker版とネイティブ版で同じ`CARGO_TARGET_DIR`を共有しないこ�
    git push origin v0.1.0
    ```
 
-5. タグのコミットでCIを再実行し、全ジョブ成功後にGitHub Releaseの**下書き**を作る。
+5. タグのコミットでCIを再実行し、全ジョブ成功後にGitHub Releaseの下書きを作成する。
    AppImage・Flatpak・24.04用deb・26.04用debとSHA-256の計8ファイルを添付し、変更履歴を自動生成する。
    `v0.2.0-rc.1`のようなタグはprereleaseとして扱う。
 6. 下書きから配布ファイルを取得して専用環境・対象OSでGUIと再生を確認し、
@@ -84,13 +109,15 @@ Docker版とネイティブ版で同じ`CARGO_TARGET_DIR`を共有しないこ�
 同じタグのActionsを再実行すると既存の下書きの添付ファイルを更新する。
 公開済みリリースのファイルは上書きせず停止する。
 artifactの保存期限を過ぎた場合は、ビルドを含む全ジョブを再実行する。
-Actionsの手動実行は検証・artifact生成用で、下書きはタグpushの実行でのみ作る。
 
 ## GitHub側の設定と保守
 
-通常のCIジョブは`contents: read`のみ。リリースジョブだけに`contents: write`を付け、
-標準の`GITHUB_TOKEN`で下書きを作る。追加のPATや配布用秘密鍵は不要。
+通常のCIジョブは`contents: read`のみを設定し、リリースジョブにのみ`contents: write`を付与する。
+標準の`GITHUB_TOKEN`でタグとリリースを作成・更新するため、追加のPATや配布用秘密鍵は不要である。
 リポジトリー／OrganizationのポリシーでActionsと利用するActionが許可されている必要がある。
+リポジトリやOrganizationの設定では、`latest-build`タグの更新を許可し、リリースの不変性（immutable releases）を無効にしておく必要がある。
+固定リリースの差し替えにはタグの強制移動と添付ファイルの変更を伴うため、不変性が有効なリリースは更新できない。
+既存の`latest-build`が通常リリース（非Pre-release）または不変リリース（immutable）であった場合は、書き込みを行わずに停止する。
 
 `main`の保護ルールを設定する場合は、上記4つのCIジョブを必須チェックに指定する。
 リリースジョブはpull requestで実行しないため、必須チェックには指定しない。
@@ -101,19 +128,29 @@ UbuntuベースイメージのdigestもDependabotの対象。Rust・Qt・GStream
 バージョンとSHA-256は対応するDockerfile／スクリプト／ワークフローで明示的に更新する。
 Flatpakの同一SDKブランチ内の更新とUbuntuのapt更新は可変のため、ビット単位の再現性は保証しない。
 
+GitHub Actions公式の`concurrency.queue`（`queue: max`）に対して、actionlint 1.7.12は未対応である。
+そのため、[actionlint設定](../.github/actionlint.yaml)でこのキーの未対応診断のみを除外している。
+対応版へ更新した時点でこの除外設定を削除する。他の構文、式、シェルスクリプトの検査は継続する。
+
 設定変更時の軽量な確認:
 
 ```sh
 python3 scripts/test-release.py
 python3 scripts/check-release-metadata.py
 python3 scripts/flatpak-cargo-sources.py --check
-bash -n scripts/ci.sh scripts/create-release-draft.sh scripts/build-appimage.sh scripts/build-deb.sh scripts/test-deb.sh
+bash -n scripts/ci.sh scripts/create-release.sh scripts/build-appimage.sh scripts/build-deb.sh scripts/test-deb.sh
 actionlint
 ```
 
-リリース処理のテストは一時GitリポジトリーとローカルのGitHub CLI応答を使う。
-バージョン不一致、破損・欠落した成果物、API失敗、下書きの再実行、公開済みリリースの保護を
-ネットワーク通信やGitHubへの書き込みなしで確認する。
+2026-09-21のローカル検証では、リリース処理のテスト（`python3 scripts/test-release.py`の24テスト）、ShellCheck、`bash -n`、
+上記除外を適用したactionlint、`git diff --check`、メタデータ検証、Flatpak依存一覧チェックはローカルで確認済みである。
+リリース処理テストは一時Gitリポジトリとローカルの疑似GitHub CLI応答を使い、
+バージョン不一致、破損・欠落した成果物、API失敗時の挙動、タグとコミットの対応、
+最新ビルドの差し替えと古い成果物の削除、失敗後の再実行、古いビルドの除外、
+通常の公開済みリリースや不変リリースの保護をネットワーク通信なしで検証する。
+この検証時点では、GitHub上でのCI実行や実リリースの更新は未確認であり、リモートへのpushは行っていない。
 
 参照: [GitHub Actionsのartifact](https://github.com/actions/upload-artifact)、
-[GitHub CLIのRelease作成オプション](https://cli.github.com/manual/gh_release_create)。
+[GitHub CLIのRelease作成オプション](https://cli.github.com/manual/gh_release_create)、
+[GitHub CLIのRelease更新オプション](https://cli.github.com/manual/gh_release_edit)、
+[GitHub Actionsの同時実行制御](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency)。

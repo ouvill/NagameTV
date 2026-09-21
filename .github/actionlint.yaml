@@ -1,0 +1,8 @@
+paths:
+  .github/workflows/ci.yml:
+    ignore:
+      # GitHub supports queue: max, but actionlint 1.7.12 does not parse it yet.
+      # Keep other concurrency and workflow diagnostics enabled; remove this
+      # exception once actionlint supports the documented queue property.
+      # https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency
+      - '^unexpected key "queue" for "concurrency" section\. expected one of "cancel-in-progress", "group"$'

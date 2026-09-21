@@ -11,8 +11,9 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref_type != 'tag' }}
+  # Let main builds finish independently; serialize their publication below.
+  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && github.run_id || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'push' }}
 
 defaults:
   run:
@@ -49,7 +50,7 @@ jobs:
           echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  $RUNNER_TEMP/actionlint.tar.gz" | sha256sum --check
           tar -xzf "$RUNNER_TEMP/actionlint.tar.gz" -C "$RUNNER_TEMP" actionlint
           "$RUNNER_TEMP/actionlint" -color
-          shellcheck scripts/ci.sh scripts/create-release-draft.sh scripts/build-appimage.sh scripts/build-flatpak.sh scripts/build-deb.sh scripts/test-deb.sh scripts/run-native-tests.sh
+          shellcheck scripts/ci.sh scripts/create-release.sh scripts/build-appimage.sh scripts/build-flatpak.sh scripts/build-deb.sh scripts/test-deb.sh scripts/run-native-tests.sh
 
   appimage:
     name: Tests, AppImage and deb (Ubuntu 24.04, x86_64)
@@ -210,13 +211,18 @@ jobs:
           retention-days: 14
 
   release:
-    name: Draft GitHub Release
-    if: github.event_name == 'push' && github.ref_type == 'tag'
+    name: GitHub Release
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref_type == 'tag')
     needs: [metadata, appimage, flatpak, deb]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       contents: write
+    concurrency:
+      group: release-${{ github.workflow }}-${{ github.ref }}
+      cancel-in-progress: false
+      # Older builds must not evict a newer build already waiting to publish.
+      queue: max
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -234,9 +240,16 @@ jobs:
           pattern: deb-ubuntu*-amd64
           merge-multiple: true
           path: build/release
-      - name: Verify assets and create or update the draft
+      - name: Verify assets and create or update the release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
+          REF_TYPE: ${{ github.ref_type }}
           RELEASE_TAG: ${{ github.ref_name }}
-        run: bash scripts/create-release-draft.sh "$RELEASE_TAG" build/release
+          VERSION: ${{ needs.metadata.outputs.version }}
+        run: |
+          if [[ "$REF_TYPE" == tag ]]; then
+            bash scripts/create-release.sh "$RELEASE_TAG" build/release
+          else
+            bash scripts/create-release.sh "v$VERSION" build/release --latest-build
+          fi
