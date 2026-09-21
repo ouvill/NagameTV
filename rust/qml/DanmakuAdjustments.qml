@@ -33,7 +33,7 @@ ColumnLayout {
     ThemedSlider {
         Layout.fillWidth: true
         leftPadding: 0; rightPadding: 0
-        from: 0.2; to: 1; stepSize: 0.05
+        from: 0; to: 1; stepSize: 0.05
         value: root.textOpacity
         onMoved: root.adjusted(root.textSize, value, root.speed)
     }
