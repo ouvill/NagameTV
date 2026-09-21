@@ -49,6 +49,8 @@ impl From<Volume> for f64 {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Preferences {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub window_size: Option<super::WindowSize>,
     pub language: Language,
     pub server: String,
     pub service_id: String,
@@ -82,6 +84,7 @@ pub struct Preferences {
 impl Default for Preferences {
     fn default() -> Self {
         Self {
+            window_size: None,
             language: Language::default(),
             server: String::new(),
             service_id: String::new(),

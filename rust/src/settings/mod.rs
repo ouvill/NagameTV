@@ -8,6 +8,7 @@ pub use live_buffer::LiveBuffer;
 mod model;
 mod screenshot_directory;
 mod screenshot_format;
+mod window_size;
 pub use comment_style::{CommentFontSize, CommentOpacity, CommentSpeed};
 pub use language::Language;
 pub use model::{Preferences, Volume, autoplay_requested};
@@ -21,6 +22,7 @@ use std::{
     io::{self, Read, Write},
     path::{Path, PathBuf},
 };
+pub use window_size::WindowSize;
 
 const MAX_SETTINGS_BYTES: u64 = 64 * 1024;
 
@@ -137,6 +139,7 @@ pub struct Session {
 pub struct Loaded(Session);
 
 pub enum Change {
+    WindowSize(WindowSize),
     Language(Language),
     Service(String),
     Autoplay(bool),
@@ -207,6 +210,7 @@ impl Session {
     pub fn change(&mut self, change: Change) {
         let preferences = &mut self.preferences;
         match change {
+            Change::WindowSize(size) => preferences.window_size = Some(size),
             Change::Language(language) => preferences.language = language,
             Change::Service(service) => preferences.service_id = service,
             Change::Autoplay(enabled) => preferences.autoplay = enabled,

@@ -216,7 +216,7 @@ pub(super) fn run(
     // window includes letterboxing, scaling and Qt's texture filtering.
     let geometry = json(
         engine,
-        "(function(){const p=video.mapToItem(null,0,0); return {x:p.x,y:p.y,w:video.width,h:video.height,dpr:root.devicePixelRatio};})()",
+        "(function(){const r=video.mapToItem(null,0,0,video.width,video.height); return {x:r.x,y:r.y,w:r.width,h:r.height,dpr:root.devicePixelRatio};})()",
     )?;
     let ratio = window.width() as f64 / json(engine, "root.width")?.as_f64().ok_or("root width")?;
     let vw = geometry["w"].as_f64().ok_or("video width")?;
@@ -339,6 +339,27 @@ pub(super) fn run(
         (f64::from(resized_green.1) - f64::from(displayed_green.1) * factor).abs() < 5.0,
         "resized caption no longer matches displayed position at width {logical_width}"
     );
+    evaluate(engine, "root.width=640; root.height=360; true")?;
+    pump(app, SETTLE);
+    // Resizing can reveal the controls through pointer activity, just like
+    // fullscreen. Their gradient is deliberately absent from saved images.
+    evaluate(engine, "overlayVisibility.controlsVisible=false; true")?;
+    pump(app, SETTLE);
+    let minimum = capture(app, engine)?;
+    assert_eq!(
+        (minimum.width(), minimum.height()),
+        (SOURCE_WIDTH, SOURCE_HEIGHT)
+    );
+    save(&minimum, &review.join("minimum-native.png"))?;
+    let displayed_minimum = ffi::grabRoot(engine.pin_mut())?;
+    save(&displayed_minimum, &review.join("minimum-window.png"))?;
+    let minimum_green = colored(&displayed_minimum, 1);
+    let minimum_factor = f64::from(SOURCE_WIDTH) / f64::from(displayed_minimum.width());
+    assert!(
+        (f64::from(colored(&minimum, 1).1) - f64::from(minimum_green.1) * minimum_factor).abs()
+            < 5.0,
+        "minimum-window caption no longer matches the native screenshot"
+    );
     evaluate(engine, "root.showFullScreen(); true")?;
     pump(app, SETTLE);
     // Entering fullscreen reveals controls. Hide the UI gradient before
@@ -358,6 +379,8 @@ pub(super) fn run(
         ("initial window", &overlaid_window),
         ("resized capture", &resized),
         ("resized window", &displayed),
+        ("minimum capture", &minimum),
+        ("minimum window", &displayed_minimum),
         ("fullscreen capture", &full),
         ("fullscreen window", &displayed_full),
     ] {
@@ -527,7 +550,7 @@ pub(super) fn run(
     save(&clipped, &review.join("pillarbox-comments-window.png"))?;
     let edges = json(
         engine,
-        "(function(){const p=danmaku.mapToItem(null,0,0);return {x:p.x,y:p.y,w:danmaku.width,h:danmaku.height,root:root.width};})()",
+        "(function(){const r=danmaku.mapToItem(null,0,0,danmaku.width,danmaku.height);return {x:r.x,y:r.y,w:r.width,h:r.height,root:root.width};})()",
     )?;
     let dpr = f64::from(clipped.width()) / edges["root"].as_f64().unwrap();
     let ink = colored(&clipped, 0);

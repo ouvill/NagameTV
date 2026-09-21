@@ -76,10 +76,15 @@ from builds or other GPU tests when comparing performance. `QT_SCALE_FACTOR=1.5`
 with the same public command covers high-DPI rendering. These synthetic tests do
 not verify a real tuner, broadcast-specific font rendering or physical display latency.
 
-Startup also checks the shared top-right navigation at 900×560 and 1440×900,
+Startup also checks the shared top-right navigation at 640×360, 960×540,
+1280×720 and 1440×810, including scaled popup alignment,
 settings-to-guide/live transitions, recording-picker cancellation from settings,
 and guide open/close with the viewing sidebar retained but hidden in the guide.
 Review images for viewing, guide and settings are saved to `build/navigation-review/`.
+It verifies the initial 16:9 size and restores a saved, freely resized 850×610
+window across processes. Hardware-free preference tests cover smaller logical
+work areas, old settings without dimensions, invalid sizes and persistence;
+QML tests cover keeping the windowed size through maximize/fullscreen transitions.
 
 Local recording coverage in the startup suite drops a generated MPEG-2/AAC TS
 onto the production window, including its first-run setup screen. It also opens

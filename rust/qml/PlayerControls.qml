@@ -92,8 +92,8 @@ Item {
         objectName: "playbackSpeedPanel"
         backend: root.backend
         anchorItem: speedButton
-        windowWidth: root.actions.targetWindow.width
-        windowHeight: root.actions.targetWindow.height
+        windowWidth: root.Overlay.overlay ? root.Overlay.overlay.width : root.width
+        windowHeight: root.Overlay.overlay ? root.Overlay.overlay.height : root.height
         onActivity: root.actions.activity()
         onAboutToShow: root.actions.speedOpened()
     }

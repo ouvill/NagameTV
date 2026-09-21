@@ -11,6 +11,16 @@
 #include <QtGui/QGuiApplication>
 #include <QtGui/QImage>
 #include <QtGui/QImageWriter>
+#include <QtGui/QScreen>
+#include <stdexcept>
+inline QSize availableWindowSize(QQuickItem *item) {
+  const auto *window = item ? item->window() : nullptr;
+  const auto *screen = window ? window->screen() : nullptr;
+  if (!screen) throw std::runtime_error("The window has no screen for startup sizing");
+  // QScreen reports the current monitor's work area in logical pixels,
+  // already accounting for OS scaling and reserved desktop panels.
+  return screen->availableGeometry().size();
+}
 inline QString picturesDirectory() {
   return QStandardPaths::writableLocation(QStandardPaths::PicturesLocation);
 }

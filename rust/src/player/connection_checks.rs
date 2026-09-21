@@ -263,6 +263,30 @@ fn checks() -> TestResult {
     assert!(player.settings_error().is_empty());
     assert_eq!(saved_server(&path), expected);
 
+    const SAVED_WINDOW_WIDTH: i32 = 850;
+    const SAVED_WINDOW_HEIGHT: i32 = 610;
+    assert!(
+        player
+            .pin_mut()
+            .remember_window_size(SAVED_WINDOW_WIDTH, SAVED_WINDOW_HEIGHT)
+    );
+    assert!(
+        !player
+            .pin_mut()
+            .remember_window_size(0, SAVED_WINDOW_HEIGHT)
+    );
+    assert!(
+        !player
+            .pin_mut()
+            .remember_window_size(SAVED_WINDOW_WIDTH, -1)
+    );
+    assert_eq!(
+        settings::Loaded::open(path.clone())?
+            .preferences()
+            .window_size,
+        settings::WindowSize::checked(SAVED_WINDOW_WIDTH, SAVED_WINDOW_HEIGHT)
+    );
+
     // Shutdown during an outstanding attempt must keep the confirmed server.
     assert!(
         player

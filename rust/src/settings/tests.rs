@@ -1,6 +1,30 @@
 use super::*;
 
 #[test]
+fn window_size_is_optional_for_old_settings_and_survives_restart()
+-> Result<(), Box<dyn std::error::Error>> {
+    let old: Preferences = toml::from_str("autoplay = true")?;
+    assert_eq!(old.window_size, None);
+    for (width, height) in [(0, 720), (1280, -1)] {
+        assert!(WindowSize::checked(width, height).is_none());
+        assert!(
+            toml::from_str::<Preferences>(&format!(
+                "[window_size]\nwidth = {width}\nheight = {height}"
+            ))
+            .is_err()
+        );
+    }
+    let directory = tempfile::tempdir()?;
+    let path = directory.path().join("settings.toml");
+    let mut session = open(path.clone())?;
+    let size = WindowSize::checked(850, 610).ok_or("window size")?;
+    session.change(Change::WindowSize(size));
+    session.flush()?;
+    assert_eq!(open(path)?.preferences().window_size, Some(size));
+    Ok(())
+}
+
+#[test]
 fn live_buffer_defaults_migrate_and_custom_values_survive_restart()
 -> Result<(), Box<dyn std::error::Error>> {
     let old: Preferences = toml::from_str("autoplay = true")?;

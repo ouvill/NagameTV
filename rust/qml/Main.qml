@@ -4,14 +4,9 @@ import QtQuick.Layouts
 import org.freedesktop.gstreamer.Qt6GLVideoItem 1.0
 import MinimalViewer 1.0
 
-ApplicationWindow {
+ViewerWindow {
     id: root
-    visible: true
     flags: Qt.Window | Qt.FramelessWindowHint
-    width: 1440
-    height: 900
-    minimumWidth: 900
-    minimumHeight: 560
     title: player.recording ? player.recording_name : programIdentity.item && programIdentity.item.program && programIdentity.item.program.name
         ? programIdentity.item.program.name : qsTranslate("Main", "NagameTV")
     color: "#0b0c0b"
@@ -53,7 +48,7 @@ ApplicationWindow {
     readonly property bool guideVisible: !closing && player.epg_enabled && showGuide
     onCommentaryVisibleChanged: player.comments_open(commentaryVisible)
     onSummariesVisibleChanged: player.browser_open(summariesVisible)
-    readonly property real panelWidth: Math.min(408, Math.max(320, width * 0.32))
+    readonly property real panelWidth: Math.min(408, Math.max(320, viewport.width * 0.32))
     readonly property var channelRows: JSON.parse(player.channel_data)
     Player {
         id: player
@@ -128,8 +123,8 @@ ApplicationWindow {
         shuttingDown: root.closing
         objectName: "audioSettingsPopup"
         anchorItem: playerControls.audioAnchor
-        windowWidth: root.width
-        windowHeight: root.height
+        windowWidth: root.viewport.width
+        windowHeight: root.viewport.height
         playing: player.media_active
         volumeLevel: player.volume_level
         muted: player.audio_muted
@@ -226,13 +221,24 @@ ApplicationWindow {
         onTriggered: player.poll_subtitles()
     }
     onClosing: function(close) {
+        // Native playback shutdown can process pending window events. Preserve
+        // the geometry at the close request, before those events change it.
+        const closingSize = root.windowSizeToRemember();
+        const closingWidth = closingSize.width;
+        const closingHeight = closingSize.height;
         root.closing = true;
         if (!player.shutdown()) {
             close.accepted = false;
             root.closing = false;
+        } else {
+            player.remember_window_size(closingWidth, closingHeight);
         }
     }
     Component.onCompleted: {
+        if (!root.initializeWindow(JSON.parse(player.window_options(root.viewport)))) {
+            Qt.quit();
+            return;
+        }
         root.usageReady = true;
         root.recordUsage();
         surface.forceActiveFocus();
@@ -243,8 +249,8 @@ ApplicationWindow {
     }
     Item {
         id: surface
-        width: root.width - (sidebar.open ? root.panelWidth : 0)
-        height: root.height
+        width: root.viewport.width - (sidebar.open ? root.panelWidth : 0)
+        height: root.viewport.height
         focus: true
         signal activity
         signal pointerExited
@@ -555,7 +561,7 @@ ApplicationWindow {
         }
         AnimatedPanel {
             id: guideLoader
-            parent: root.contentItem
+            parent: root.viewport
             anchors.fill: parent
             z: 500
             motion: AnimatedPanel.Fade
@@ -655,7 +661,7 @@ ApplicationWindow {
             sourceComponent: Component {
                 VideoStats {
                     backend: player
-                    viewportSize: Qt.size(video.width, video.height)
+                    viewportSize: Qt.size(video.width * root.uiScale, video.height * root.uiScale)
                     viewportDpr: video.Screen.devicePixelRatio
                     onCloseRequested: root.showStats = false
                 }
@@ -732,6 +738,8 @@ ApplicationWindow {
         onModeRequested: function(mode) { root.requestMode(mode); }
     }
     WindowResizeFrame {
+        // Resize handles retain their screen-space hit area at small sizes.
+        parent: root.contentItem
         anchors.fill: parent
         z: 1000
         targetWindow: root

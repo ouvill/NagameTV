@@ -48,8 +48,8 @@ Popup {
     }
     parent: anchorItem
     width: Math.min(320, windowWidth - 40)
-    x: Math.max(12 - anchorItem.mapToItem(null, 0, 0).x,
-        Math.min(0, windowWidth - anchorItem.mapToItem(null, 0, 0).x - width - 12))
+    x: Math.max(12 - anchorItem.mapToItem(popup.Overlay.overlay, 0, 0).x,
+        Math.min(0, windowWidth - anchorItem.mapToItem(popup.Overlay.overlay, 0, 0).x - width - 12))
     y: -height - 12
     padding: 18
     modal: false

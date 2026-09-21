@@ -6,6 +6,38 @@ use cxx_qt_lib::QString;
 use std::pin::Pin;
 
 impl ffi::Player {
+    /// # Safety
+    /// `item` must be a live QQuickItem on the GUI thread for this call.
+    pub unsafe fn window_options(&self, item: *mut ffi::QQuickItem) -> QString {
+        // SAFETY: The QML caller keeps its viewport alive for this synchronous call.
+        let available = unsafe { ffi::available_window_size(item) }
+            .ok()
+            .and_then(|size| crate::settings::WindowSize::checked(size.width(), size.height()));
+        let Some(available) = available else {
+            tracing::error!("A valid screen work area is required to initialize the window");
+            return QString::from("null");
+        };
+        QString::from(
+            serde_json::json!({
+                "initial": available.startup_in(self.rust().preferences.preferences().window_size),
+                "minimum": available.minimum_in(),
+            })
+            .to_string(),
+        )
+    }
+
+    pub fn remember_window_size(mut self: Pin<&mut Self>, width: i32, height: i32) -> bool {
+        let Some(size) = crate::settings::WindowSize::checked(width, height) else {
+            return false;
+        };
+        self.as_mut()
+            .rust_mut()
+            .preferences
+            .change(crate::settings::Change::WindowSize(size));
+        self.save_settings();
+        true
+    }
+
     pub fn live_buffer_options(&self) -> QString {
         use crate::settings::LiveBuffer;
         QString::from(

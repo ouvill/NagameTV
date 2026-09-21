@@ -62,10 +62,14 @@ pub mod ffi {
         type QImage = cxx_qt_lib::QImage;
         include!("cxx-qt-lib/qfont.h");
         type QFont = cxx_qt_lib::QFont;
+        include!("cxx-qt-lib/qsize.h");
+        type QSize = cxx_qt_lib::QSize;
         include!("subtitle_outline.h");
         #[cxx_name = "subtitleOutlinePath"]
         fn subtitle_outline_path(text: &QString, font: &QFont) -> QString;
         include!("qt_helpers.h");
+        #[cxx_name = "availableWindowSize"]
+        unsafe fn available_window_size(item: *mut QQuickItem) -> Result<QSize>;
         #[cxx_name = "picturesDirectory"]
         fn pictures_directory() -> QString;
         #[cxx_name = "shareScreenshotImage"]
@@ -420,6 +424,10 @@ pub mod ffi {
         fn open_log_folder(self: Pin<&mut Player>) -> bool;
         #[qinvokable]
         fn save_settings(self: Pin<&mut Player>);
+        #[qinvokable]
+        unsafe fn window_options(self: &Player, item: *mut QQuickItem) -> QString;
+        #[qinvokable]
+        fn remember_window_size(self: Pin<&mut Player>, width: i32, height: i32) -> bool;
         #[qinvokable]
         fn configure_autoplay(self: Pin<&mut Player>, enabled: bool);
         #[qinvokable]

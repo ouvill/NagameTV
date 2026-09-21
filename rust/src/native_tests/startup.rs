@@ -16,6 +16,8 @@ use std::{
 
 pub(super) type TestResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
 static UI_WARNINGS: Mutex<Vec<String>> = Mutex::new(Vec::new());
+const SAVED_WINDOW_WIDTH: i32 = 850;
+const SAVED_WINDOW_HEIGHT: i32 = 610;
 
 fn record_qt(level: u8, category: &str, message: &str) {
     if level >= 2 {
@@ -186,8 +188,11 @@ fn check_danmaku_layout(
         (false, 1280, 720, 2.4, 27),
         (false, 1920, 1080, 16. / 9., 54),
         (false, 1920, 1080, 4. / 3., 54),
-        (true, 1100, 720, 16. / 9., 21),
-        (false, 1200, 720, 16. / 9., 34),
+        // Below the reference size the viewport uses logical UI pixels; its
+        // parent scales the fitted picture, captions and comments together.
+        (false, 640, 360, 16. / 9., 36),
+        (true, 1100, 720, 16. / 9., 25),
+        (false, 1200, 720, 16. / 9., 36),
     ] {
         assert!(evaluate(
             engine,
@@ -299,6 +304,18 @@ fn check_screen_navigation(
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../build/navigation-review");
     std::fs::create_dir_all(&review)?;
     let capture = |engine: &mut cxx::UniquePtr<QQmlApplicationEngine>, name: &str| -> TestResult {
+        // QML geometry can settle before the platform surface and render target
+        // are resized. Wait for two presented frames before grabbing pixels.
+        let frames = ffi::watchFrames(engine)?;
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while frames.samples().to_string() == "[]" {
+            if Instant::now() >= deadline {
+                return Err("navigation review frame was not presented".into());
+            }
+            evaluate(engine, "root.update(); true")?;
+            app.process_events();
+            thread::sleep(Duration::from_millis(5));
+        }
         let image = ffi::grabRoot(engine.pin_mut())?;
         let default_quality = -1;
         let png_compression_percent = 60;
@@ -313,7 +330,7 @@ fn check_screen_navigation(
         }
         Ok(())
     };
-    for (width, height) in [(900, 560), (1440, 900)] {
+    for (width, height) in [(640, 360), (960, 540), (1280, 720), (1440, 810)] {
         evaluate(
             engine,
             &format!(
@@ -323,7 +340,7 @@ fn check_screen_navigation(
         wait_for(
             app,
             engine,
-            "sidebar.open && sidebar.reveal === 1 && surface.width === root.width - sidebar.width",
+            "sidebar.open && sidebar.reveal === 1 && surface.width === root.viewport.width - sidebar.width",
         )?;
         capture(engine, &format!("viewing-{width}.png"))?;
         evaluate(
@@ -333,7 +350,7 @@ fn check_screen_navigation(
         wait_for(
             app,
             engine,
-            "guideLoader.item !== null && guideLoader.opacity === 1 && guideLoader.item.width === root.width && !sidebar.visible && !sidebar.enabled",
+            "guideLoader.item !== null && guideLoader.opacity === 1 && guideLoader.item.width === root.viewport.width && !sidebar.visible && !sidebar.enabled",
         )?;
         capture(engine, &format!("guide-{width}.png"))?;
         evaluate(
@@ -369,11 +386,13 @@ fn check_screen_navigation(
             }
             const guideNavigation = find(guideLoader.item, 'guideModeNavigation');
             const settingsNavigation = find(settings.contentItem, 'settingsModeNavigation');
-            const windowEdgeMargin = 18;
+            const windowEdgeMargin = 18 * root.uiScale;
+            const pixelTolerance = 0.01;
             [modeNavigation, guideNavigation, settingsNavigation].every(navigation => {
                 if (!navigation) return false;
                 const corner = navigation.mapToItem(root.contentItem, navigation.width, 0);
-                return corner.x === root.width - windowEdgeMargin && corner.y === windowEdgeMargin
+                return Math.abs(corner.x - (root.width - windowEdgeMargin)) < pixelTolerance
+                    && Math.abs(corner.y - windowEdgeMargin) < pixelTolerance
                     && navigation.width === modeNavigation.width && navigation.height === modeNavigation.height;
             })
         "#,
@@ -383,13 +402,13 @@ fn check_screen_navigation(
         wait_for(
             app,
             engine,
-            "!settings.visible && root.guideVisible && !sidebar.visible && guideLoader.item.width === root.width",
+            "!settings.visible && root.guideVisible && !sidebar.visible && guideLoader.item.width === root.viewport.width",
         )?;
         evaluate(engine, "guideLoader.item.closeRequested(); true")?;
         wait_for(
             app,
             engine,
-            "!root.guideVisible && root.showProgram && sidebar.open && sidebar.reveal === 1 && surface.width === root.width - sidebar.width",
+            "!root.guideVisible && root.showProgram && sidebar.open && sidebar.reveal === 1 && surface.width === root.viewport.width - sidebar.width",
         )?;
         // Direct backend requests and rapid shortcut reversals share the same layout rules.
         evaluate(engine, "player.guide_open(true); true")?;
@@ -401,7 +420,7 @@ fn check_screen_navigation(
         wait_for(
             app,
             engine,
-            "guideLoader.item !== null && guideLoader.item.width === root.width && !sidebar.visible",
+            "guideLoader.item !== null && guideLoader.item.width === root.viewport.width && !sidebar.visible",
         )?;
         evaluate(engine, "root.requestMode(ModeNavigation.Settings); true")?;
         wait_for(app, engine, "settings.opened")?;
@@ -468,7 +487,26 @@ fn window(
         .load(&QUrl::from("qrc:/qt/qml/MinimalViewer/qml/Main.qml"));
     assert_eq!(ffi::root_count(&engine), 1);
     match check {
-        WindowCheck::Startup => {}
+        WindowCheck::Startup => {
+            assert!(evaluate(
+                &mut engine,
+                "root.minimumWidth === 640 && root.minimumHeight === 360"
+            )?);
+            match preferences.window_size {
+                Some(size) => assert!(evaluate(
+                    &mut engine,
+                    &format!(
+                        "root.width === {} && root.height === {}",
+                        size.width(),
+                        size.height()
+                    )
+                )?),
+                None => assert!(evaluate(
+                    &mut engine,
+                    "root.width * 9 === root.height * 16 && root.width <= 1280 && root.height <= 720"
+                )?),
+            }
+        }
         WindowCheck::VideoProcessing => {
             let result = super::video_processing::run(app, &mut engine);
             evaluate(&mut engine, "player.stop(); root.close(); true")?;
@@ -749,6 +787,19 @@ fn window(
         check_recording_recovery(app, &mut engine, "recording-pid-change.ts")?;
         super::timeshift::run(app, &mut engine)?;
     }
+    evaluate(
+        &mut engine,
+        &format!(
+            "root.showNormal(); root.width = {SAVED_WINDOW_WIDTH}; root.height = {SAVED_WINDOW_HEIGHT}; true"
+        ),
+    )?;
+    wait_for(
+        app,
+        &mut engine,
+        &format!(
+            "root.visibility === Window.Windowed && root.width === {SAVED_WINDOW_WIDTH} && root.height === {SAVED_WINDOW_HEIGHT}"
+        ),
+    )?;
     assert!(evaluate(&mut engine, "root.close(); root.closing")?);
     app.process_events();
     drop(engine);
@@ -1231,6 +1282,14 @@ fn checks() -> TestResult {
     );
     launch_window(None)?;
     assert_eq!(server.requests.load(Ordering::Relaxed), 0);
+    let expected_size = settings::WindowSize::checked(SAVED_WINDOW_WIDTH, SAVED_WINDOW_HEIGHT)
+        .ok_or("saved window size")?;
+    assert_eq!(
+        settings::Loaded::open(path.clone())?
+            .preferences()
+            .window_size,
+        Some(expected_size)
+    );
     let mut preferences =
         settings::Loaded::open(path.clone())?.activate(Some(server.url.clone()), Some("2".into()));
     preferences.change(settings::Change::Comments(false));
@@ -1252,6 +1311,7 @@ fn checks() -> TestResult {
         launch_window(launch_override)?;
         assert!(server.requests.load(Ordering::Relaxed) > before);
         let saved = settings::Loaded::open(path.clone())?;
+        assert_eq!(saved.preferences().window_size, Some(expected_size));
         assert_eq!(saved.preferences().server, server.url);
         assert_eq!(saved.preferences().service_id, "2");
         assert_eq!(saved.preferences().autoplay, autoplay);
