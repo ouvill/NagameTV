@@ -1,5 +1,5 @@
 //! Bounded messages and one owned IO worker. No GUI, timers or runtime.
-use crate::{Snapshot, measurement, storage};
+use crate::{Snapshot, build_info::Identity, measurement, storage};
 use serde::Serialize;
 use std::{
     path::PathBuf,
@@ -139,17 +139,20 @@ pub struct Recorder {
     task: Option<JoinHandle<Result<(), Error>>>,
     dropped: Arc<AtomicU64>,
     started: Instant,
-    version: &'static str,
+    identity: Identity,
 }
 impl Recorder {
     /// One recorder per process/directory, matching main's usage-<pid>.jsonl naming.
-    pub fn start_directory(directory: PathBuf, version: &'static str) -> Result<Self, Error> {
-        Self::start_directory_with_history(directory, version, true)
+    pub fn start_directory(
+        directory: PathBuf,
+        identity: impl Into<Identity>,
+    ) -> Result<Self, Error> {
+        Self::start_directory_with_history(directory, identity, true)
     }
 
     pub fn start_directory_with_history(
         directory: PathBuf,
-        version: &'static str,
+        identity: impl Into<Identity>,
         history_enabled: bool,
     ) -> Result<Self, Error> {
         std::fs::create_dir_all(&directory).map_err(storage::Error::Io)?;
@@ -157,7 +160,7 @@ impl Recorder {
         if !history_enabled {
             return Self::start(
                 directory.join(format!("usage-{}.jsonl", std::process::id())),
-                version,
+                identity,
             );
         }
         // Keep sparse samples separately: a burst of GC diagnostics must not
@@ -169,7 +172,7 @@ impl Recorder {
         let mut detail = storage::RotatingWriter::new(directory.join(&name))?;
         let mut history = storage::RotatingWriter::new(history.join(&name))?;
         let mut last_sample = None;
-        Self::spawn(version, move |value| {
+        Self::spawn(identity, move |value| {
             detail.write(value)?;
             if history_due(value, last_sample) {
                 history.write(value)?;
@@ -180,14 +183,15 @@ impl Recorder {
     }
 
     /// Opens the output at startup; all measurement and record writes run on the worker.
-    pub fn start(path: PathBuf, version: &'static str) -> Result<Self, Error> {
+    pub fn start(path: PathBuf, identity: impl Into<Identity>) -> Result<Self, Error> {
         let mut writer = storage::RotatingWriter::new(path)?;
-        Self::spawn(version, move |value| writer.write(value))
+        Self::spawn(identity, move |value| writer.write(value))
     }
     fn spawn(
-        version: &'static str,
+        identity: impl Into<Identity>,
         mut write: impl FnMut(&serde_json::Value) -> Result<(), storage::Error> + Send + 'static,
     ) -> Result<Self, Error> {
+        let identity = identity.into();
         let (sender, receiver) = mpsc::sync_channel::<Message>(QUEUE_SIZE);
         let dropped = Arc::new(AtomicU64::new(0));
         let worker_dropped = dropped.clone();
@@ -195,7 +199,7 @@ impl Recorder {
             .name("viewer-diagnostics".into())
             .spawn(move || {
                 for message in receiver {
-                    let value = match message {
+                    let mut value = match message {
                         Message::Sample(entry) => serde_json::json!({
                         "record": entry,
                         "measured_unix_ms": unix_ms(),
@@ -213,6 +217,12 @@ impl Recorder {
                             "dropped_records": worker_dropped.load(Ordering::Relaxed),
                         }),
                     };
+                    // Include identity in every record, including sparse history
+                    // and GC-only logs, so rotation cannot discard provenance.
+                    if let Some(info) = identity.build_info() {
+                        value["build_info"] =
+                            serde_json::to_value(info).map_err(storage::Error::from)?;
+                    }
                     // An IO error is terminal, so no further writes follow a partial line.
                     write(&value)?;
                 }
@@ -227,7 +237,7 @@ impl Recorder {
             task: Some(task),
             dropped,
             started: Instant::now(),
-            version,
+            identity,
         })
     }
     pub fn record(&self, event: Event, snapshot: Snapshot) -> Enqueue {
@@ -237,7 +247,7 @@ impl Recorder {
         let entry = Entry {
             schema: 1,
             pid: std::process::id(),
-            version: self.version,
+            version: self.identity.version(),
             unix_ms: unix_ms(),
             elapsed_ms: self.started.elapsed().as_millis(),
             event,
@@ -314,15 +324,35 @@ fn unix_ms() -> u128 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::build_info::{BuildInfo, Source, WorktreeState};
+
+    static BUILD: BuildInfo = BuildInfo {
+        version: "test-build",
+        source: Source::Git {
+            commit: "0123456789abcdef0123456789abcdef01234567",
+            worktree: WorktreeState::Dirty,
+        },
+        built_unix_seconds: 1_700_000_000,
+        target: "test-target",
+        profile: "release",
+        rustc: "test-compiler",
+        features: &["DISTRIBUTION"],
+    };
     #[test]
     fn gc_only_directory_does_not_create_history() -> Result<(), Box<dyn std::error::Error>> {
         let dir = tempfile::tempdir()?;
         let recorder =
-            Recorder::start_directory_with_history(dir.path().to_owned(), "gc-only", false)?;
+            Recorder::start_directory_with_history(dir.path().to_owned(), &BUILD, false)?;
         recorder.gc_sink().record(GcCategory::Statistics, "fixture");
         recorder.stop().join()?;
         assert!(!dir.path().join("history").exists());
         assert_eq!(std::fs::read_dir(dir.path())?.count(), 1);
+        let text = std::fs::read_to_string(
+            dir.path()
+                .join(format!("usage-{}.jsonl", std::process::id())),
+        )?;
+        let value: serde_json::Value = serde_json::from_str(text.trim())?;
+        assert_eq!(value["build_info"], serde_json::to_value(&BUILD)?);
         Ok(())
     }
     #[test]
@@ -340,7 +370,7 @@ mod tests {
     fn directory_recording_preserves_history_apart_from_gc()
     -> Result<(), Box<dyn std::error::Error>> {
         let dir = tempfile::tempdir()?;
-        let recorder = Recorder::start_directory(dir.path().to_owned(), "test")?;
+        let recorder = Recorder::start_directory(dir.path().to_owned(), &BUILD)?;
         recorder.record(Event::Sample, Snapshot::default());
         recorder
             .gc_sink()
@@ -356,6 +386,9 @@ mod tests {
         );
         let history = std::fs::read_to_string(dir.path().join("history").join(name))?;
         assert_eq!(history.lines().count(), 1);
+        let value: serde_json::Value = serde_json::from_str(history.trim())?;
+        assert_eq!(value["build_info"], serde_json::to_value(&BUILD)?);
+        assert_eq!(value["record"]["version"], BUILD.version);
         assert_eq!(
             serde_json::from_str::<serde_json::Value>(history.trim())?["record"]["event"],
             "sample"
@@ -483,7 +516,7 @@ mod tests {
         let path = dir.path().join("usage.jsonl");
         let mut writer = storage::RotatingWriter::new(path.clone())?;
         let (written_tx, written_rx) = mpsc::channel();
-        let recorder = Recorder::spawn("rotation-test", move |value| {
+        let recorder = Recorder::spawn(&BUILD, move |value| {
             writer.write(value)?;
             written_tx.send(()).map_err(std::io::Error::other)?;
             Ok(())
@@ -522,6 +555,7 @@ mod tests {
             for line in std::str::from_utf8(&bytes)?.lines() {
                 assert!(!final_snapshot, "snapshot must be the final record");
                 let value: serde_json::Value = serde_json::from_str(line)?;
+                assert_eq!(value["build_info"], serde_json::to_value(&BUILD)?);
                 assert_eq!(value["dropped_records"], 0);
                 if value["kind"] == "qt_gc" {
                     let message = value["message"].as_str().ok_or("missing GC message")?;

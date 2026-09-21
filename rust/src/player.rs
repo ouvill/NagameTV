@@ -246,7 +246,9 @@ pub mod ffi {
         #[qproperty(bool, audio_muted, READ, NOTIFY)]
         #[qproperty(QString, settings_error, READ, NOTIFY)]
         #[qproperty(QString, diagnostics, READ, NOTIFY)]
+        #[qproperty(QString, build_info, READ = build_info, CONSTANT)]
         type Player = super::PlayerRust;
+        fn build_info(self: &Player) -> QString;
         fn autoplay(self: &Player) -> bool;
         fn remote_enabled(self: &Player) -> bool;
         fn remote_address(self: &Player) -> QString;

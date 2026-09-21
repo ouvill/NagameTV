@@ -1,4 +1,5 @@
 mod audio;
+mod build_info;
 mod channels;
 mod comment_model;
 mod danmaku;
@@ -53,6 +54,21 @@ enum StartupError {
 }
 
 fn main() -> std::process::ExitCode {
+    // Information-only commands must work before platform, Qt, GStreamer,
+    // settings and diagnostics initialization, including without any devices.
+    if std::env::args_os().len() == 2 {
+        match std::env::args().nth(1).as_deref() {
+            Some("--build-info") => {
+                println!("{}", build_info::json());
+                return std::process::ExitCode::SUCCESS;
+            }
+            Some("--version" | "-V") => {
+                println!("nagametv {}", build_info::INFO.version);
+                return std::process::ExitCode::SUCCESS;
+            }
+            _ => {}
+        }
+    }
     #[cfg(feature = "native_tests")]
     if std::env::args().nth(1).as_deref() == Some("--native-tests") {
         return std::process::ExitCode::from(native_tests::run().clamp(0, 255) as u8);
@@ -68,6 +84,7 @@ fn main() -> std::process::ExitCode {
         return std::process::ExitCode::from(danmaku_ui_tests::run().clamp(0, 255) as u8);
     }
     logging::init();
+    tracing::info!(build_info = %build_info::json(), "Application build");
     // SAFETY: Logging initialization creates no threads. Before Qt/GStreamer, diagnostics
     // or application workers are initialized. No application thread exists yet.
     #[cfg(target_os = "linux")]

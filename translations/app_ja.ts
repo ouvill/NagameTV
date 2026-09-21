@@ -1582,6 +1582,58 @@
       <translation>リソースの使用状況</translation>
     </message>
     <message>
+      <source>Build information</source>
+      <translation>ビルド情報</translation>
+    </message>
+    <message>
+      <source>Version: %1</source>
+      <translation>バージョン: %1</translation>
+    </message>
+    <message>
+      <source>Git commit: %1</source>
+      <translation>Git コミット: %1</translation>
+    </message>
+    <message>
+      <source>Source state: %1</source>
+      <translation>ソースの状態: %1</translation>
+    </message>
+    <message>
+      <source>Clean</source>
+      <translation>変更なし</translation>
+    </message>
+    <message>
+      <source>Modified</source>
+      <translation>未コミットの変更あり</translation>
+    </message>
+    <message>
+      <source>Unavailable</source>
+      <translation>取得できません</translation>
+    </message>
+    <message>
+      <source>Build time (UTC): %1</source>
+      <translation>ビルド日時（UTC）: %1</translation>
+    </message>
+    <message>
+      <source>Target: %1</source>
+      <translation>対象環境: %1</translation>
+    </message>
+    <message>
+      <source>Profile: %1</source>
+      <translation>プロファイル: %1</translation>
+    </message>
+    <message>
+      <source>Compiler: %1</source>
+      <translation>コンパイラー: %1</translation>
+    </message>
+    <message>
+      <source>Build features: %1</source>
+      <translation>ビルド機能: %1</translation>
+    </message>
+    <message>
+      <source>None</source>
+      <translation>なし</translation>
+    </message>
+    <message>
       <source>Diagnostic display settings apply to this session only.</source>
       <translation>診断の表示設定は、今回の起動中だけ有効です。</translation>
     </message>

@@ -8,6 +8,7 @@ Popup {
     id: root
     enum Page { Connection, Display, Comments, Shortcuts, Diagnostics, Remote, Timeshift }
     required property var backend
+    readonly property var buildInfo: JSON.parse(backend.build_info)
     required property list<ShortcutBinding> shortcutEntries
     required property CommentSubmitPolicy commentSubmitPolicy
     required property Window targetWindow
@@ -605,6 +606,34 @@ Popup {
                             description: qsTranslate("Settings", "Show resolution, frame rate and playback performance while watching.")
                             checked: root.statsVisible
                             onClicked: root.statsRequested(checked)
+                        }
+                        Heading { text: qsTranslate("Settings", "Build information") }
+                        TextArea {
+                            objectName: "buildInformation"
+                            Layout.fillWidth: true
+                            readOnly: true
+                            selectByMouse: true
+                            textFormat: TextEdit.PlainText
+                            wrapMode: TextEdit.Wrap
+                            color: "#b6bab6"
+                            selectionColor: "#344238"
+                            font.pixelSize: 14
+                            padding: 0
+                            background: null
+                            text: [
+                                qsTranslate("Settings", "Version: %1").arg(root.buildInfo.version),
+                                qsTranslate("Settings", "Git commit: %1").arg(root.buildInfo.source.kind === "git"
+                                    ? root.buildInfo.source.commit : qsTranslate("Settings", "Unavailable")),
+                                qsTranslate("Settings", "Source state: %1").arg(root.buildInfo.source.kind === "git"
+                                    ? (root.buildInfo.source.worktree === "clean" ? qsTranslate("Settings", "Clean") : qsTranslate("Settings", "Modified"))
+                                    : qsTranslate("Settings", "Unavailable")),
+                                qsTranslate("Settings", "Build time (UTC): %1").arg(new Date(root.buildInfo.built_unix_seconds * 1000).toISOString()),
+                                qsTranslate("Settings", "Target: %1").arg(root.buildInfo.target),
+                                qsTranslate("Settings", "Profile: %1").arg(root.buildInfo.profile),
+                                qsTranslate("Settings", "Compiler: %1").arg(root.buildInfo.rustc),
+                                qsTranslate("Settings", "Build features: %1").arg(root.buildInfo.features.length
+                                    ? root.buildInfo.features.join(", ") : qsTranslate("Settings", "None"))
+                            ].join("\n")
                         }
                         Heading { text: qsTranslate("Settings", "Logs") }
                         Detail { text: qsTranslate("Settings", "Logs contain technical details to help investigate problems.") }

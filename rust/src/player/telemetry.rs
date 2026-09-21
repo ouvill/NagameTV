@@ -23,6 +23,10 @@ pub(super) struct UiState {
     live_comments: usize,
 }
 impl ffi::Player {
+    pub fn build_info(&self) -> QString {
+        QString::from(crate::build_info::json())
+    }
+
     pub fn record_ui_state(
         mut self: Pin<&mut Self>,
         guide: bool,

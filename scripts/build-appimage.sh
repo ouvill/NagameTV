@@ -37,6 +37,7 @@ if [[ $build_mode == container ]]; then
   [[ -z ${APPIMAGE_BUILD_DIR:-} && -z ${QMAKE:-} ]] || fail "APPIMAGE_BUILD_DIR and QMAKE are native-only options; use --native in a compatible environment."
   image_name=nagametv-appimage-ubuntu24:local
   docker build --target appimage --tag "$image_name" "$project_dir/packaging/appimage"
+  build_source=$(python3 "$project_dir/scripts/build-source-info.py")
   # Keep all compiler/Cargo caches separate from the Workshop's newer ABI.
   # No display sockets, audio sockets or hardware devices are passed through.
   exec docker run --rm --user "$(id -u):$(id -g)" \
@@ -44,6 +45,7 @@ if [[ $build_mode == container ]]; then
     --env APPIMAGE_BUILD_DIR=/project/build/appimage/ubuntu24/native \
     --env CARGO_HOME=/project/build/appimage/ubuntu24/cargo-home \
     --env APPIMAGE_BUILD_JOBS="$build_jobs" \
+    --env NAGAMETV_BUILD_SOURCE="$build_source" --env SOURCE_DATE_EPOCH \
     "$image_name" bash scripts/build-appimage.sh --native
 fi
 for tool in cmake cargo pkg-config curl python3 sha256sum flock desktop-file-validate readelf getconf file; do

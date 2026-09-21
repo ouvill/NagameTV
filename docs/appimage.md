@@ -7,7 +7,8 @@ GitHub Actionsでの自動ビルドと配布は[CIとリリース](ci-release.md
 
 ## パッケージを作る
 
-ホストにはLinux x86_64、Bash、Git、利用可能なDockerデーモンが必要。
+ホストにはLinux x86_64、Bash、Git、Python 3、利用可能なDockerデーモンが必要。
+Pythonは元の作業ツリーのGit情報を取得し、Docker内のビルドへ渡すために使う。
 Canonical Workshopでは既存の`docker-ce` SDKを使う。
 [Dockerfile](../packaging/appimage/Dockerfile)がUbuntu 24.04、Rust 1.98.1、
 Qt 6.8.3の公式SDK、UbuntuのGStreamer 1.24を用意する。
