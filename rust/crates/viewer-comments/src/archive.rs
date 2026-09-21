@@ -48,11 +48,11 @@ pub fn visit<R: Read, E>(
                     json.expect(b'[')?;
                     if !json.consume(b']')? {
                         loop {
-                            if let Some(bytes) = json.captured_value()? {
-                                if let Some(comment) = decode(&bytes, &mut decoder)? {
-                                    sink(comment).map_err(VisitError::Sink)?;
-                                    count += 1;
-                                }
+                            if let Some(bytes) = json.captured_value()?
+                                && let Some(comment) = decode(&bytes, &mut decoder)?
+                            {
+                                sink(comment).map_err(VisitError::Sink)?;
+                                count += 1;
                             }
                             if json.consume(b']')? {
                                 break;

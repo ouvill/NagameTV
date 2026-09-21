@@ -1,26 +1,23 @@
 //! One optional activity request, independent of commentary reception and video playback.
-use crate::{
-    channels::Channel,
-    services::{Job, Network, Progress, Stopping},
+use crate::{channels::Channel, services::Network};
+use std::time::Instant;
+use viewer_comments::{
+    activity::Snapshot,
+    service::{Cancelling, Progress, Request},
 };
-use std::time::{Duration, Instant};
-use viewer_comments::activity::{Error, MAX_RESPONSE_BYTES, Snapshot};
 
 const ENDPOINT: &str = "https://nx-jikkyo.tsukumijima.net/api/v1/channels";
-const REFRESH: Duration = Duration::from_secs(60);
-type Request = Job<Snapshot, Error>;
 #[derive(Default)]
 enum Acquisition {
     #[default]
     Idle,
     Fetching(Request),
-    Cancelling(Stopping),
+    Cancelling(Cancelling),
 }
 #[derive(Default)]
 pub struct Activity {
     enabled: bool,
     acquisition: Acquisition,
-    next: Option<Instant>,
     snapshot: Snapshot,
     pub dirty: bool,
 }
@@ -32,7 +29,6 @@ impl Activity {
         self.enabled = enabled;
         self.snapshot = Snapshot::default();
         self.dirty = true;
-        self.next = None;
         self.acquisition = match std::mem::take(&mut self.acquisition) {
             Acquisition::Fetching(job) => Acquisition::Cancelling(job.cancel()),
             Acquisition::Cancelling(job) => Acquisition::Cancelling(job),
@@ -60,7 +56,6 @@ impl Activity {
                     };
                     self.dirty |= self.snapshot != snapshot;
                     self.snapshot = snapshot;
-                    self.next = Some(now + REFRESH);
                     Acquisition::Idle
                 }
             },
@@ -68,13 +63,9 @@ impl Activity {
         };
         if self.enabled
             && matches!(self.acquisition, Acquisition::Idle)
-            && self.next.is_none_or(|next| now >= next)
+            && let Ok(request) = network.fetch_comment_activity(endpoint.to_owned(), now)
         {
-            self.acquisition = Acquisition::Fetching(network.fetch_json(
-                endpoint.to_owned(),
-                MAX_RESPONSE_BYTES,
-                Snapshot::parse,
-            ));
+            self.acquisition = Acquisition::Fetching(request);
         }
     }
     pub fn program_title(&self, channel: Option<&Channel>) -> &str {
@@ -100,6 +91,8 @@ impl Activity {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Duration;
+    const REFRESH: Duration = Duration::from_secs(60);
     use std::{
         io::{Read, Write},
         net::TcpListener,
@@ -255,10 +248,11 @@ mod tests {
         assert!(!activity.dirty);
         assert!(matches!(activity.acquisition, Acquisition::Idle));
         let (url, server) = response("invalid JSON")?;
-        activity.poll_at(&network, now + REFRESH, &url);
+        let after_refresh = Instant::now() + REFRESH;
+        activity.poll_at(&network, after_refresh, &url);
         wait(&activity)?;
         server.join().map_err(|_| "server panicked")??;
-        activity.poll_at(&network, now + REFRESH, &url);
+        activity.poll_at(&network, after_refresh, &url);
         assert!(activity.dirty);
         assert_eq!(activity.json(&channels)?, "[null]");
         Ok(())
@@ -281,10 +275,14 @@ mod tests {
             response(r#"[{"id":"jk1","threads":[{"status":"ACTIVE","jikkyo_force":0}]}]"#)?;
         activity.poll_at(&network, now, &url);
         assert_eq!(activity.snapshot.get(1), None);
+        assert!(matches!(activity.acquisition, Acquisition::Idle));
+        // Even a discarded success retains the provider-owned refresh interval.
+        let after_refresh = Instant::now() + REFRESH;
+        activity.poll_at(&network, after_refresh, &url);
         assert!(matches!(activity.acquisition, Acquisition::Fetching(_)));
         wait(&activity)?;
         server.join().map_err(|_| "server panicked")??;
-        activity.poll_at(&network, now, &url);
+        activity.poll_at(&network, after_refresh, &url);
         assert_eq!(activity.snapshot.get(1), Some(0));
         activity.configure(false);
         activity.poll_at(&network, now + REFRESH, "unused while disabled");

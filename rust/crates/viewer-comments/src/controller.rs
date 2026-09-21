@@ -2,8 +2,10 @@
 use crate::{
     Comment,
     connection::{Connection, Endpoints, State, Stopping},
+    retry::Operation,
+    service::{Blocked, Client, HttpError},
 };
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use tokio::runtime::Handle;
 
 #[derive(Debug, thiserror::Error)]
@@ -13,7 +15,6 @@ pub enum Error {
 }
 
 pub const MAX_POLL_COMMENTS: usize = 64;
-const RETRY_DELAY: Duration = Duration::from_secs(5);
 
 #[derive(Clone, Debug)]
 pub enum Status {
@@ -33,6 +34,7 @@ enum Phase {
         retry_at: Option<Instant>,
     },
     Waiting(Instant),
+    Blocked,
 }
 
 pub struct Controller {
@@ -65,7 +67,11 @@ impl Controller {
             {
                 Some(self.generation)
             }
-            Phase::Idle | Phase::Waiting(_) | Phase::Stopping { .. } | Phase::Running(_) => None,
+            Phase::Idle
+            | Phase::Waiting(_)
+            | Phase::Stopping { .. }
+            | Phase::Running(_)
+            | Phase::Blocked => None,
         }
     }
     pub fn status(&self) -> &Status {
@@ -92,7 +98,7 @@ impl Controller {
                 task,
                 retry_at: None,
             },
-            _ => Phase::Idle,
+            Phase::Idle | Phase::Waiting(_) | Phase::Blocked => Phase::Idle,
         };
         self.status = if self.desired.is_none() {
             Status::Disabled
@@ -106,7 +112,7 @@ impl Controller {
     pub fn poll(
         &mut self,
         runtime: &Handle,
-        client: &reqwest::Client,
+        client: &Client,
         now: Instant,
     ) -> Result<Vec<Comment>, Error> {
         self.phase = match std::mem::take(&mut self.phase) {
@@ -117,8 +123,7 @@ impl Controller {
                     // The failed generation is fully joined. Report once and
                     // preserve bounded retry instead of restarting in this poll.
                     self.phase = if self.desired.is_some() {
-                        now.checked_add(RETRY_DELAY)
-                            .map_or(Phase::Idle, Phase::Waiting)
+                        Phase::Waiting(now + crate::retry::LIVE_DELAY)
                     } else {
                         Phase::Idle
                     };
@@ -135,13 +140,28 @@ impl Controller {
         if matches!(self.phase, Phase::Idle)
             && let Some(endpoints) = &self.desired
         {
-            self.generation = self.generation.wrapping_add(1);
-            self.dropped = 0;
-            self.phase = Phase::Running(Connection::start(
-                runtime,
-                client.clone(),
-                endpoints.clone(),
-            ));
+            match client.connect(runtime, endpoints.clone(), now) {
+                Ok(connection) => {
+                    self.generation = self.generation.wrapping_add(1);
+                    self.dropped = 0;
+                    self.phase = Phase::Running(connection);
+                }
+                Err(blocked) => {
+                    let state = State::Failed(std::sync::Arc::new(crate::connection::Error::Http(
+                        HttpError::Blocked(blocked.clone()),
+                    )));
+                    match blocked {
+                        Blocked::Waiting(until) => {
+                            self.phase = Phase::Waiting(until);
+                            self.status = Status::Retrying(state);
+                        }
+                        Blocked::Stopped(_) => {
+                            self.phase = Phase::Blocked;
+                            self.status = Status::Connection(state);
+                        }
+                    }
+                }
+            }
         }
         let Phase::Running(connection) = &self.phase else {
             return Ok(Vec::new());
@@ -161,14 +181,29 @@ impl Controller {
         self.status = Status::Connection(state.clone());
         // On ordinary disconnect, deliver the final bounded queue before retry.
         // On configure, stop() has already discarded the old queue immediately.
-        if matches!(state, State::Ended | State::Failed(_)) && comments.len() < MAX_POLL_COMMENTS {
+        if matches!(state, State::Ended(_) | State::Failed(_)) && comments.len() < MAX_POLL_COMMENTS
+        {
+            let endpoints = self.desired.as_ref().expect("running connection target");
+            if matches!(&state, State::Failed(error) if matches!(&**error, crate::connection::Error::WorkerStopped))
+            {
+                client.worker_failed(&endpoints.threads, now);
+            }
+            let blocked = client.check(Operation::Live, &endpoints.threads, now);
+            let retry_at = match &blocked {
+                Err(Blocked::Waiting(until)) => Some(*until),
+                Err(Blocked::Stopped(_)) | Ok(()) => None,
+            };
             if let Phase::Running(connection) = std::mem::take(&mut self.phase) {
                 self.phase = Phase::Stopping {
                     task: connection.stop(),
-                    retry_at: now.checked_add(RETRY_DELAY),
+                    retry_at,
                 };
             }
-            self.status = Status::Retrying(state);
+            self.status = if matches!(blocked, Err(Blocked::Stopped(_))) {
+                Status::Connection(state)
+            } else {
+                Status::Retrying(state)
+            };
         }
         Ok(comments)
     }

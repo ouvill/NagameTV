@@ -94,7 +94,7 @@ impl Comments {
             Status::Connection(State::Receiving) => PresentationStatus::Receiving,
             Status::Connection(State::Failed(error)) => PresentationStatus::Failed(error),
             Status::Retrying(State::Failed(error)) => PresentationStatus::Retrying(Some(error)),
-            Status::Connection(State::Ended) | Status::Retrying(_) => {
+            Status::Connection(State::Ended(_)) | Status::Retrying(_) => {
                 PresentationStatus::Retrying(None)
             }
         }

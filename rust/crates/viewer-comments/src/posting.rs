@@ -3,6 +3,7 @@ mod echo;
 mod protocol;
 mod transport;
 
+use crate::service::Client;
 use futures_util::FutureExt;
 use std::{
     task::{Context, Poll, Waker},
@@ -106,7 +107,7 @@ impl Controller {
     }
 
     /// Refuse overlapping requests; there is no queue to replay after reconnect/selection.
-    pub fn submit(&mut self, runtime: &Handle, text: &str, now: Instant) -> bool {
+    pub fn submit(&mut self, runtime: &Handle, client: &Client, text: &str, now: Instant) -> bool {
         if !self.available(now) {
             return false;
         }
@@ -122,8 +123,15 @@ impl Controller {
             .watch_url
             .clone();
         let text = text.to_owned();
+        let request = match client.post(url, now) {
+            Ok(request) => request,
+            Err(error) => {
+                self.status = Status::Failed(Error::Blocked(error));
+                return false;
+            }
+        };
         self.phase = Phase::Running(Attempt(runtime.spawn(transport::post(
-            url,
+            request,
             text,
             ATTEMPT_TIMEOUT,
             self.echoes.start(now),

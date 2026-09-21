@@ -136,13 +136,15 @@ impl Receiving {
 }
 impl Downloaded {
     #[cfg(test)]
-    pub fn validate(self) -> Result<Validated, (Self, Error)> {
+    pub fn validate(self) -> Result<Validated, (Box<Self>, Error)> {
         self.validate_with(|| false)
     }
+    /// Failure returns ownership for local recovery or explicit discard. Box
+    /// only the failed download so the success path needs no extra allocation.
     pub fn validate_with(
         self,
         mut cancelled: impl FnMut() -> bool,
-    ) -> Result<Validated, (Self, Error)> {
+    ) -> Result<Validated, (Box<Self>, Error)> {
         let result = (|| {
             let file = File::open(self.directory.join("response.json"))?;
             let reader = CancellableReader {
@@ -165,7 +167,7 @@ impl Downloaded {
         };
         match result {
             Ok(()) => Ok(Validated(self)),
-            Err(error) => Err((self, error)),
+            Err(error) => Err((Box::new(self), error)),
         }
     }
     pub fn discard(self) -> Result<(), Error> {
@@ -288,6 +290,12 @@ mod tests {
         let Recovery::Downloaded(file) = recover(dir.path()).unwrap() else {
             panic!("complete response must survive restart")
         };
+        let file = match file.validate_with(|| true) {
+            Err((file, Error::Cancelled)) => *file,
+            _ => panic!("cancelled validation must return the complete download"),
+        };
+        assert_eq!(file.receipt.id, receipt.id);
+        assert!(dir.path().join("response.json").exists());
         let valid = file.validate().map_err(|(_, e)| e).unwrap();
         assert!(matches!(
             valid.import(&mut store, || true),
@@ -311,7 +319,10 @@ mod tests {
         rx.write(br#"{"packet":[],"error":"failed after packet"}"#)
             .unwrap();
         let file = rx.finish().unwrap();
-        assert!(file.validate().is_err());
+        let (file, error) = file.validate().err().expect("invalid archive trailer");
+        assert!(matches!(error, Error::Archive(_)));
+        file.discard().unwrap();
+        assert!(!dir.path().join("response.json").exists());
         assert_eq!(
             store.covered(1, receipt.range, 100_000).unwrap(),
             vec![receipt.range]

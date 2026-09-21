@@ -318,7 +318,7 @@ impl Store {
         let delay = if permanent {
             30 * 60
         } else {
-            (5_i64 * 60 << (failures - 1).min(3)).min(30 * 60)
+            ((5_i64 * 60) << (failures - 1).min(3)).min(30 * 60)
         };
         use std::hash::BuildHasher;
         let jitter =

@@ -38,7 +38,7 @@ Enterでも送信できる。設定は再起動後も復元する。一行入力
 アプリ側の`features/comments`が投稿先を解決し、`player/comment_posting`がQtとの境界を持つ。
 `CommentComposer.qml`は入力と表示を担当する。
 
-送信操作1回につき、既存のTokio runtimeで1つの投稿タスクを開始する。
+送信操作を受け付けると、既存のTokio runtimeで1つの投稿タスクを開始する。
 `/api/v1/channels/jk{id}/ws/watch`に接続して`startWatching`を送信し、
 `serverTime`と`room.vposBaseTime`から10ms単位のvposを計算する。
 サーバー時刻受信後の経過時間は単調時計で補う。投稿先と本文は開始時に固定する。
@@ -51,6 +51,16 @@ WebSocketのPingにはPongを返す。試行完了から最低1秒空けて次�
 接続・投稿の自動再試行や未送信キューは持たない。
 取消し完了を観測するまで新規投稿を受け付けず、旧世代の成功通知は新しい下書きに反映しない。
 Dropでもタスクをabortする。
+
+2026-09-22以降、投稿接続にも[NX-Jikkyo共通の待機制御](nx-jikkyo-network.md)を適用する。
+受信や勢い取得で429などの待機期限を受け取っている場合は、新しい投稿接続を開始しない。
+watch接続時のHTTPエラーも共通の制御へ反映する。待機中の送信操作は理由を表示して拒否し、
+下書きを保持する。期限が来ても自動送信せず、次の送信操作を待つ。
+
+`disconnect`の`END_PROGRAM`・`SERVICE_TEMPORARILY_UNAVAILABLE`と、WebSocketのCloseコード・理由も保持する。
+本文送信前に届けば失敗、送信後で成功応答を未確認なら結果不明とし、自動再送しない。
+スレッド終了通知だけでは、送信済み本文の受理状況を判定しない。
+終了理由ごとの待機共有・停止は[通信仕様](nx-jikkyo-network.md#websocketの終了通知)に従う。
 
 NXは連投制限時に成功応答を返しながらコメントを破棄する場合があるため、
 成功表示は投稿APIの応答確認を意味し、全視聴者への配信を保証しない。

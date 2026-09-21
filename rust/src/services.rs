@@ -38,6 +38,7 @@ pub enum FetchError<E> {
 pub struct Network {
     runtime: tokio::runtime::Runtime,
     client: reqwest::Client,
+    comments: viewer_comments::service::Client,
 }
 
 impl Network {
@@ -63,7 +64,7 @@ impl Network {
     ) -> Result<Vec<viewer_comments::Comment>, viewer_comments::controller::Error> {
         controller.poll(
             self.runtime.handle(),
-            &self.client,
+            &self.comments,
             std::time::Instant::now(),
         )
     }
@@ -73,11 +74,25 @@ impl Network {
         controller: &mut viewer_comments::posting::Controller,
         text: &str,
     ) -> bool {
-        controller.submit(self.runtime.handle(), text, std::time::Instant::now())
+        controller.submit(
+            self.runtime.handle(),
+            &self.comments,
+            text,
+            std::time::Instant::now(),
+        )
+    }
+
+    pub fn fetch_comment_activity(
+        &self,
+        endpoint: String,
+        now: std::time::Instant,
+    ) -> Result<viewer_comments::service::Request, viewer_comments::service::Blocked> {
+        self.comments.activity(self.runtime.handle(), endpoint, now)
     }
 
     pub fn new() -> Result<Self, NetworkError> {
         Ok(Self {
+            comments: viewer_comments::service::Client::new()?,
             runtime: tokio::runtime::Builder::new_multi_thread()
                 .worker_threads(1)
                 .enable_all()

@@ -66,7 +66,12 @@ fn live_echo_is_recognized_before_ack_and_success_notice_expires() -> TestResult
         let listener = TcpListener::bind("127.0.0.1:0").await?;
         let mut controller = Controller::default();
         controller.configure(Some(target(&listener, 1)?));
-        assert!(controller.submit(&Handle::current(), "same text", Instant::now()));
+        assert!(controller.submit(
+            &Handle::current(),
+            &Client::new()?,
+            "same text",
+            Instant::now()
+        ));
         let mut socket = accept(&listener).await?;
         send(
             &mut socket,
@@ -255,7 +260,7 @@ fn posts_with_nx_startup_notifications_in_service_order() -> TestResult {
             let listener = TcpListener::bind("127.0.0.1:0").await?;
             let mut controller = Controller::default();
             controller.configure(Some(target(&listener, 1)?));
-            assert!(controller.submit(&Handle::current(), "local startup test", Instant::now()));
+            assert!(controller.submit(&Handle::current(), &Client::new()?, "local startup test", Instant::now()));
             let mut socket = accept(&listener).await?;
             for message in [
                 json!({"type":"serverTime","data":{"currentMs":"2026-09-13T04:01:02.340000+09:00"}}),
@@ -286,9 +291,10 @@ fn posts_once_handles_both_heartbeats_and_requires_matching_acknowledgement() ->
         let listener = TcpListener::bind("127.0.0.1:0").await?;
         let mut controller = Controller::default();
         controller.configure(Some(target(&listener, 1)?));
-        assert!(!controller.submit(&Handle::current(), "　", Instant::now()));
-        assert!(controller.submit(&Handle::current(), "日本語\n🦀", Instant::now()));
-        assert!(!controller.submit(&Handle::current(), "duplicate", Instant::now()));
+        let client = Client::new()?;
+        assert!(!controller.submit(&Handle::current(), &client, "　", Instant::now()));
+        assert!(controller.submit(&Handle::current(), &client, "日本語\n🦀", Instant::now()));
+        assert!(!controller.submit(&Handle::current(), &client, "duplicate", Instant::now()));
         let mut socket = accept(&listener).await?;
         socket.send(Message::Ping(b"transport".as_slice().into())).await?;
         assert!(matches!(socket.next().await.ok_or("missing pong")??, Message::Pong(_)));
@@ -331,7 +337,12 @@ fn failures_before_and_after_write_are_distinct_and_never_retried() -> TestResul
                 let listener = TcpListener::bind("127.0.0.1:0").await?;
                 let mut controller = Controller::default();
                 controller.configure(Some(target(&listener, 1)?));
-                assert!(controller.submit(&Handle::current(), "local test", Instant::now()));
+                assert!(controller.submit(
+                    &Handle::current(),
+                    &Client::new()?,
+                    "local test",
+                    Instant::now()
+                ));
                 let mut socket = accept(&listener).await?;
                 if mode == "bad_clock" {
                     send(
@@ -406,7 +417,7 @@ fn timeout_includes_handshake_and_acknowledgement_without_resending() -> TestRes
                 let listener = TcpListener::bind("127.0.0.1:0").await?;
                 let url = target(&listener, 1)?.watch_url;
                 let task = tokio::spawn(transport::post(
-                    url,
+                    Client::new()?.post(url, Instant::now())?,
                     "timeout test".into(),
                     Duration::from_millis(100),
                     std::sync::mpsc::sync_channel(1).0,
@@ -437,7 +448,8 @@ fn selection_disable_and_drop_cancel_without_publishing_old_success() -> TestRes
             let listener = TcpListener::bind("127.0.0.1:0").await?;
             let mut controller = Controller::default();
             controller.configure(Some(target(&listener, 1)?));
-            controller.submit(&Handle::current(), "old draft", Instant::now());
+            let client = Client::new()?;
+            controller.submit(&Handle::current(), &client, "old draft", Instant::now());
             let mut socket = accept(&listener).await?;
             if after_write {
                 metadata(&mut socket).await?; next(&mut socket).await?;
@@ -447,7 +459,7 @@ fn selection_disable_and_drop_cancel_without_publishing_old_success() -> TestRes
             // Different broadcast sharing the very same NX endpoint.
             controller.configure(Some(target(&listener, 2)?));
             assert!(controller.busy(), "abort must be joined before a replacement");
-            assert!(!controller.submit(&Handle::current(), "new draft", Instant::now()));
+            assert!(!controller.submit(&Handle::current(), &client, "new draft", Instant::now()));
             assert!(!finished(&mut controller).await, "old acknowledgement cannot clear a new draft");
             assert!(matches!(controller.status(), Status::Idle));
             controller.configure(None);
@@ -456,7 +468,7 @@ fn selection_disable_and_drop_cancel_without_publishing_old_success() -> TestRes
         let listener = TcpListener::bind("127.0.0.1:0").await?;
         let mut controller = Controller::default();
         controller.configure(Some(target(&listener, 1)?));
-        controller.submit(&Handle::current(), "drop test", Instant::now());
+        controller.submit(&Handle::current(), &Client::new()?, "drop test", Instant::now());
         let mut socket = accept(&listener).await?;
         drop(controller);
         let closed = socket.next().await;
@@ -464,4 +476,123 @@ fn selection_disable_and_drop_cancel_without_publishing_old_success() -> TestRes
         Ok::<_, Box<dyn std::error::Error + Send + Sync>>(())
     }).await })??;
     Ok(())
+}
+
+#[test]
+fn disconnect_notices_preserve_delivery_uncertainty_and_share_service_waits() -> TestResult {
+    use crate::{retry::Operation, service::Blocked, termination::Termination};
+    const TEST_TIMEOUT: Duration = Duration::from_secs(3);
+    const NO_RETRY_WINDOW: Duration = Duration::from_millis(20);
+    runtime()?.block_on(async {
+        timeout(TEST_TIMEOUT, async {
+            for notice in [
+                "END_PROGRAM",
+                "SERVICE_TEMPORARILY_UNAVAILABLE",
+                "FUTURE_DISCONNECT_REASON",
+            ] {
+                for after_write in [false, true] {
+                    let listener = TcpListener::bind("127.0.0.1:0").await?;
+                    let client = Client::new()?;
+                    let mut controller = Controller::default();
+                    let now = Instant::now();
+                    controller.configure(Some(target(&listener, 1)?));
+                    assert!(controller.submit(&Handle::current(), &client, "notice test", now));
+                    let mut socket = accept(&listener).await?;
+                    if after_write {
+                        metadata(&mut socket).await?;
+                        assert_eq!(next(&mut socket).await?["type"], "postComment");
+                    }
+                    send(
+                        &mut socket,
+                        json!({"type":"disconnect","data":{"reason":notice}}),
+                    )
+                    .await?;
+                    assert!(!finished(&mut controller).await);
+                    let reason = match controller.status() {
+                        Status::Failed(Error::Terminated(reason)) if !after_write => reason,
+                        Status::Unknown(Error::Terminated(reason)) if after_write => reason,
+                        other => panic!("incorrect delivery state: {other:?}"),
+                    };
+                    assert_eq!(*reason, Termination::from(notice.to_owned()));
+                    for operation in [Operation::Live, Operation::Activity] {
+                        let admission = client.check(operation, "another endpoint", now);
+                        if notice == "SERVICE_TEMPORARILY_UNAVAILABLE" {
+                            assert!(matches!(admission, Err(Blocked::Waiting(_))));
+                        } else {
+                            assert!(admission.is_ok());
+                        }
+                    }
+                    controller.poll(now + Duration::from_secs(3600));
+                    assert!(timeout(NO_RETRY_WINDOW, listener.accept()).await.is_err());
+                }
+            }
+            Ok::<_, Box<dyn std::error::Error + Send + Sync>>(())
+        })
+        .await?
+    })
+}
+
+#[test]
+fn watch_close_frames_preserve_reason_before_and_after_posting() -> TestResult {
+    use crate::{retry::Operation, service::Blocked, termination::Termination};
+    use tokio_tungstenite::tungstenite::protocol::{CloseFrame, frame::coding::CloseCode};
+    const REASON: &str = "watch session rejected";
+    const TEST_TIMEOUT: Duration = Duration::from_secs(3);
+    runtime()?.block_on(async {
+        timeout(TEST_TIMEOUT, async {
+            for code in [
+                CloseCode::Normal,
+                CloseCode::Policy,
+                CloseCode::Protocol,
+                CloseCode::Error,
+            ] {
+                for after_write in [false, true] {
+                    let listener = TcpListener::bind("127.0.0.1:0").await?;
+                    let client = Client::new()?;
+                    let mut controller = Controller::default();
+                    let target = target(&listener, 1)?;
+                    let url = target.watch_url.clone();
+                    let now = Instant::now();
+                    controller.configure(Some(target));
+                    assert!(controller.submit(&Handle::current(), &client, "close test", now));
+                    let mut socket = accept(&listener).await?;
+                    if after_write {
+                        metadata(&mut socket).await?;
+                        next(&mut socket).await?;
+                    }
+                    socket
+                        .close(Some(CloseFrame {
+                            code,
+                            reason: REASON.into(),
+                        }))
+                        .await?;
+                    assert!(!finished(&mut controller).await);
+                    let reason = match controller.status() {
+                        Status::Failed(Error::Terminated(reason)) if !after_write => reason,
+                        Status::Unknown(Error::Terminated(reason)) if after_write => reason,
+                        other => panic!("incorrect close state: {other:?}"),
+                    };
+                    assert_eq!(
+                        *reason,
+                        Termination::Close {
+                            code,
+                            reason: REASON.into()
+                        }
+                    );
+                    let admission = client.check(Operation::Posting, &url, now);
+                    if code == CloseCode::Policy {
+                        assert!(matches!(admission, Err(Blocked::Stopped(_))));
+                    } else {
+                        assert!(matches!(admission, Err(Blocked::Waiting(_))));
+                    }
+                    assert_eq!(
+                        client.check(Operation::Live, "other channel", now).is_err(),
+                        code == CloseCode::Error
+                    );
+                }
+            }
+            Ok::<_, Box<dyn std::error::Error + Send + Sync>>(())
+        })
+        .await?
+    })
 }

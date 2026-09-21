@@ -10,6 +10,12 @@ pub mod danmaku;
 #[cfg(feature = "network")]
 pub mod posting;
 mod protocol;
+#[cfg(feature = "network")]
+mod retry;
+#[cfg(feature = "network")]
+pub mod service;
+#[cfg(feature = "network")]
+pub mod termination;
 pub use protocol::{
     Comment, CommentIdentity, Decoder, Error, Event, Origin, Phase, Position, Style, ThreadId,
 };

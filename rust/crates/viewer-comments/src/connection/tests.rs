@@ -1,4 +1,6 @@
 use super::*;
+use crate::service::Client;
+use std::time::Instant;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::TcpListener,
@@ -30,7 +32,7 @@ async fn request(listener: &TcpListener) -> TestResult<tokio::net::TcpStream> {
 async fn terminal(connection: &Connection) -> State {
     loop {
         let state = connection.state();
-        if matches!(state, State::Ended | State::Failed(_)) {
+        if matches!(state, State::Ended(_) | State::Failed(_)) {
             return state;
         }
         tokio::task::yield_now().await;
@@ -83,9 +85,12 @@ fn receives_history_and_live_comments_without_losing_terminal_status_under_overl
             socket.close(None).await?;
             Ok::<_, Box<dyn std::error::Error + Send + Sync>>(())
         });
-        let connection = Connection::start(&Handle::current(), reqwest::Client::new(), urls);
+        let connection = Client::new()?.connect(&Handle::current(), urls, Instant::now())?;
         let state = timeout(Duration::from_secs(5), terminal(&connection)).await?;
-        assert!(matches!(state, State::Ended), "{state:?}");
+        assert!(
+            matches!(state, State::Ended(Termination::NoStatus)),
+            "{state:?}"
+        );
         let comments: Vec<_> = std::iter::from_fn(|| connection.try_next()).collect();
         assert_eq!(comments.len(), QUEUE_CAPACITY);
         assert_eq!(connection.dropped(), 300 - QUEUE_CAPACITY as u64);
@@ -114,7 +119,7 @@ fn rejects_oversized_http_body_before_websocket_connection() -> TestResult {
             .await?;
             Ok::<_, Box<dyn std::error::Error + Send + Sync>>(())
         });
-        let connection = Connection::start(&Handle::current(), reqwest::Client::new(), urls);
+        let connection = Client::new()?.connect(&Handle::current(), urls, Instant::now())?;
         let State::Failed(error) = timeout(Duration::from_secs(5), terminal(&connection)).await?
         else {
             panic!("expected capacity failure");
@@ -135,7 +140,7 @@ fn cancellation_joins_a_task_waiting_for_http_headers() -> TestResult {
     runtime()?.block_on(async {
         let listener = TcpListener::bind("127.0.0.1:0").await?;
         let urls = endpoints(&listener)?;
-        let connection = Connection::start(&Handle::current(), reqwest::Client::new(), urls);
+        let connection = Client::new()?.connect(&Handle::current(), urls, Instant::now())?;
         let mut http = timeout(Duration::from_secs(5), request(&listener)).await??;
         let stopping = connection.stop();
         timeout(Duration::from_secs(2), stopping.wait()).await??;
@@ -175,11 +180,8 @@ async fn accept_comments(
 fn cancellation_releases_an_idle_websocket() -> TestResult {
     runtime()?.block_on(async {
         let listener = TcpListener::bind("127.0.0.1:0").await?;
-        let connection = Connection::start(
-            &Handle::current(),
-            reqwest::Client::new(),
-            endpoints(&listener)?,
-        );
+        let connection =
+            Client::new()?.connect(&Handle::current(), endpoints(&listener)?, Instant::now())?;
         let mut socket = timeout(Duration::from_secs(5), accept_comments(&listener)).await??;
         timeout(Duration::from_secs(2), connection.stop().wait()).await??;
         // Cancellation drops the transport; it does not wait for a close handshake.
@@ -193,11 +195,8 @@ fn cancellation_releases_an_idle_websocket() -> TestResult {
 fn websocket_size_limit_fails_before_json_decoding() -> TestResult {
     runtime()?.block_on(async {
         let listener = TcpListener::bind("127.0.0.1:0").await?;
-        let connection = Connection::start(
-            &Handle::current(),
-            reqwest::Client::new(),
-            endpoints(&listener)?,
-        );
+        let connection =
+            Client::new()?.connect(&Handle::current(), endpoints(&listener)?, Instant::now())?;
         let mut socket = timeout(Duration::from_secs(5), accept_comments(&listener)).await??;
         socket
             .send(Message::Text("x".repeat(MAX_MESSAGE_BYTES + 1).into()))
@@ -224,8 +223,8 @@ fn real_service_reception_and_stop() -> TestResult {
         comments: std::env::var("COMMENT_STREAM_URL")?,
     };
     runtime()?.block_on(async {
-        let client = reqwest::Client::builder().timeout(IO_TIMEOUT).build()?;
-        let connection = Connection::start(&Handle::current(), client, endpoints);
+        let client = Client::new()?;
+        let connection = client.connect(&Handle::current(), endpoints, Instant::now())?;
         let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
         let mut receiving = false;
         let mut history = 0;
@@ -235,7 +234,7 @@ fn real_service_reception_and_stop() -> TestResult {
             match connection.state() {
                 State::Connecting => {},
                 State::Receiving => receiving = true,
-                State::Ended => { failure = Some("comment stream ended".to_owned()); break; },
+                State::Ended(reason) => { failure = Some(reason.to_string()); break; },
                 State::Failed(error) => { failure = Some(error.to_string()); break; },
             }
             // Match the application's bounded drain; retain only counts, never text.

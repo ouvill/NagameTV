@@ -381,24 +381,21 @@ fn run(directory: PathBuf, endpoint: String, shared: Arc<Shared>) {
                     ..
                 } = &d.source_range
                 {
-                    if let Some(tip) = spans.iter().max_by_key(|s| s.media_end_ms) {
-                        if let Some(range) = tip.interval() {
-                            let at = range.end;
-                            if let Some((old_source, ref key, channel, old_epoch, last)) = observed
-                            {
-                                if old_source == d.source
-                                    && *key == tip.key
-                                    && channel == tip.channel
-                                    && old_epoch == *epoch
-                                    && at > last
-                                {
-                                    if let Some(range) = Interval::new(last, at) {
-                                        store.observe_live(owner, channel, key, range)?;
-                                    }
-                                }
-                            }
-                            observed = Some((d.source, tip.key.clone(), tip.channel, *epoch, at));
+                    if let Some(tip) = spans.iter().max_by_key(|s| s.media_end_ms)
+                        && let Some(range) = tip.interval()
+                    {
+                        let at = range.end;
+                        if let Some((old_source, ref key, channel, old_epoch, last)) = observed
+                            && old_source == d.source
+                            && *key == tip.key
+                            && channel == tip.channel
+                            && old_epoch == *epoch
+                            && at > last
+                            && let Some(range) = Interval::new(last, at)
+                        {
+                            store.observe_live(owner, channel, key, range)?;
                         }
+                        observed = Some((d.source, tip.key.clone(), tip.channel, *epoch, at));
                     }
                 } else {
                     observed = None;
@@ -582,13 +579,13 @@ fn run(directory: PathBuf, endpoint: String, shared: Arc<Shared>) {
                     next_fetch = None;
                 }
             } else {
-                if let Ok(mut output) = shared.output.lock() {
-                    if output.source.take().is_some() {
-                        output.records = Arc::default();
-                        output.view = None;
-                        output.target = None;
-                        output.revision = output.revision.wrapping_add(1);
-                    }
+                if let Ok(mut output) = shared.output.lock()
+                    && output.source.take().is_some()
+                {
+                    output.records = Arc::default();
+                    output.view = None;
+                    output.target = None;
+                    output.revision = output.revision.wrapping_add(1);
                 }
                 if job.is_none() && next_fetch.is_some_and(|until| Instant::now() >= until) {
                     job = Some(Job::start(

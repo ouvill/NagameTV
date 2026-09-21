@@ -70,6 +70,7 @@
 | **[弾幕コアと表示](danmaku.md)** | 弾幕コメントの受信、レイアウト、描画パイプライン |
 | **[コメント表示の仕様](comment-display-redesign.md)** | 横スクロール／ポップ（噴水）表示、文字サイズ、透過度、表示領域 |
 | **[コメント投稿](comment-posting.md)** | NX-Jikkyoへのコメント投稿API連携、自分コメントの強調 |
+| **[NX-Jikkyoの通信と再試行](nx-jikkyo-network.md)** | 障害時の待機延長、Retry-After、受信・勢い取得・投稿の待機共有 |
 | **[実況過去ログの取得・保持](comment-archive-redesign.md)** | タイムシフト再生・録画再生時の過去ログ取得とキャッシュ |
 
 ---

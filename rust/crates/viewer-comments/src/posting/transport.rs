@@ -3,6 +3,8 @@ use super::{
     protocol::{self, Event},
 };
 use crate::MAX_MESSAGE_BYTES;
+use crate::service::{Authorized, ResponseError};
+use crate::termination::Termination;
 use futures_util::{SinkExt, StreamExt};
 use std::time::{Duration, Instant};
 use tokio::time::timeout;
@@ -14,14 +16,16 @@ use tokio_tungstenite::{
 /// Connect only for an explicit post. The whole attempt, including handshake,
 /// control replies and acknowledgement, has one deadline shorter than NX's seat interval.
 pub(super) async fn post(
-    url: String,
+    request: Authorized<String>,
     text: String,
     deadline: Duration,
     echoes: std::sync::mpsc::SyncSender<super::echo::Echo>,
 ) -> Outcome {
+    let (url, attempt) = request.into_parts();
     let mut sent = false;
     let mut acknowledged = false;
     let result = timeout(deadline, async {
+        attempt.check()?;
         let config = WebSocketConfig::default()
             .read_buffer_size(8 * 1024)
             .write_buffer_size(0)
@@ -68,7 +72,7 @@ pub(super) async fn post(
                             return Ok(());
                         }
                         Event::Error { data } => return Err(Error::Rejected(data.message)),
-                        Event::Disconnect { data } => return Err(Error::Rejected(data.reason)),
+                        Event::Disconnect { data } => return Err(Error::Terminated(data.reason)),
                         _ => {}
                     }
                     if !sent
@@ -90,7 +94,9 @@ pub(super) async fn post(
                     }
                 }
                 Message::Ping(_) => socket.flush().await?,
-                Message::Close(_) => return Err(Error::Closed),
+                Message::Close(frame) => {
+                    return Err(Error::Terminated(Termination::from_close(frame)));
+                }
                 _ => {}
             }
         }
@@ -98,6 +104,7 @@ pub(super) async fn post(
     })
     .await;
     if acknowledged {
+        attempt.posting_succeeded();
         return Outcome::Sent;
     }
     match result {
@@ -107,6 +114,29 @@ pub(super) async fn post(
                 Ok(Err(error)) => error,
                 _ => Error::Timeout,
             };
+            // Posting is never automatically retried. Server termination and
+            // handshake limits still affect subsequent NX requests.
+            match &error {
+                Error::WebSocket(tokio_tungstenite::tungstenite::Error::Http(response)) => attempt
+                    .failed(
+                        Some(ResponseError::new(response.status(), response.headers()).failure()),
+                        error.to_string(),
+                    ),
+                Error::Terminated(reason) => {
+                    attempt.failed(Some(reason.failure()), reason.to_string())
+                }
+                Error::Empty
+                | Error::TooLong
+                | Error::WebSocket(_)
+                | Error::Timeout
+                | Error::Closed
+                | Error::Json(_)
+                | Error::Timestamp(_)
+                | Error::Session
+                | Error::Rejected(_)
+                | Error::Worker(_)
+                | Error::Blocked(_) => {}
+            }
             // NX may report INVALID_MESSAGE even after its DB transaction committed.
             // Treat every post-write failure conservatively, except explicit restriction.
             if sent

@@ -1,4 +1,5 @@
 use crate::MAX_COMMENT_BYTES;
+use crate::termination::Termination;
 use serde::Deserialize;
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
@@ -14,6 +15,8 @@ pub enum Error {
     Timeout,
     #[error("Connection closed")]
     Closed,
+    #[error("{0}")]
+    Terminated(#[from] Termination),
     #[error("Invalid posting response: {0}")]
     Json(#[from] serde_json::Error),
     #[error("Invalid server timestamp: {0}")]
@@ -24,6 +27,8 @@ pub enum Error {
     Rejected(String),
     #[error("Posting worker stopped: {0}")]
     Worker(#[source] tokio::task::JoinError),
+    #[error("{0}")]
+    Blocked(#[from] crate::service::Blocked),
 }
 
 pub fn validate_text(text: &str) -> Result<(), Error> {
@@ -104,7 +109,7 @@ pub(super) struct ServerError {
 
 #[derive(Deserialize)]
 pub(super) struct Disconnect {
-    pub reason: String,
+    pub reason: Termination,
 }
 
 #[derive(Deserialize)]

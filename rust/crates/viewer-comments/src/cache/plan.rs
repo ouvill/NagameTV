@@ -185,9 +185,7 @@ impl Planner {
                 Some(target)
             }
         };
-        let Some(candidate) = candidate else {
-            return None;
-        };
+        let candidate = candidate?;
         if let Some(previous) = &self.selected
             && previous.channel == candidate.channel
             && matches!(demand.source_range, Source::Recording(_))

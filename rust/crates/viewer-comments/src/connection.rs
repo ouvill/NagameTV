@@ -1,5 +1,10 @@
 //! One connection generation, driven by the caller's existing Tokio runtime.
 use crate::{Comment, Decoder, Event, MAX_MESSAGE_BYTES, MAX_THREAD_LIST_BYTES, ThreadId};
+use crate::{
+    retry::Failure,
+    service::{Attempt, Authorized, HttpError, ResponseError},
+    termination::Termination,
+};
 use futures_util::{FutureExt, SinkExt, StreamExt};
 use std::{
     sync::{
@@ -11,7 +16,7 @@ use std::{
 };
 use tokio::{runtime::Handle, sync::watch, task::JoinHandle, time::timeout};
 use tokio_tungstenite::{
-    connect_async_with_config,
+    MaybeTlsStream, WebSocketStream, connect_async_with_config,
     tungstenite::{self, Message, protocol::WebSocketConfig},
 };
 
@@ -21,7 +26,7 @@ const IO_TIMEOUT: Duration = Duration::from_secs(10);
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("実況HTTP通信に失敗しました: {0}")]
-    Http(#[from] reqwest::Error),
+    Http(#[from] HttpError),
     #[error("実況WebSocket通信に失敗しました: {0}")]
     WebSocket(#[from] tungstenite::Error),
     #[error("実況通信がタイムアウトしました")]
@@ -30,13 +35,29 @@ pub enum Error {
     Protocol(#[from] crate::Error),
     #[error("実況受信タスクが予期せず終了しました")]
     WorkerStopped,
+    #[error("{0}")]
+    Terminated(#[from] Termination),
+}
+impl Error {
+    pub(crate) fn failure(&self) -> Option<Failure> {
+        match self {
+            Self::Http(error) => error.failure(),
+            Self::WebSocket(tungstenite::Error::Http(response)) => {
+                Some(ResponseError::new(response.status(), response.headers()).failure())
+            }
+            Self::Terminated(reason) => Some(reason.failure()),
+            Self::WebSocket(_) | Self::Timeout(_) | Self::Protocol(_) | Self::WorkerStopped => {
+                Some(Failure::Temporary)
+            }
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
 pub enum State {
     Connecting,
     Receiving,
-    Ended,
+    Ended(Termination),
     Failed(Arc<Error>),
 }
 
@@ -56,17 +77,22 @@ pub struct Connection {
 }
 
 impl Connection {
-    pub fn start(runtime: &Handle, client: reqwest::Client, endpoints: Endpoints) -> Self {
+    pub(crate) fn start(runtime: &Handle, request: Authorized<Endpoints>) -> Self {
         let (tx, comments) = mpsc::sync_channel(QUEUE_CAPACITY);
         let (status, state) = watch::channel(State::Connecting);
         let dropped = Arc::new(AtomicU64::new(0));
         let counter = dropped.clone();
         let task = runtime.spawn(async move {
-            let result = receive(client, endpoints, &tx, &status, &counter).await;
-            status.send_replace(match result {
-                Ok(()) => State::Ended,
-                Err(error) => State::Failed(Arc::new(error)),
-            });
+            let (endpoints, attempt) = request.into_parts();
+            // Record failures before publishing their result. Selection changes
+            // and cancellation cannot discard an already observed server limit.
+            match receive(&attempt, endpoints, &tx, &status, &counter).await {
+                Ok(closing) => closing.finish(&attempt, &status).await,
+                Err(error) => {
+                    attempt.failed(error.failure(), error.to_string());
+                    status.send_replace(State::Failed(Arc::new(error)));
+                }
+            }
         });
         Self {
             task: Some(task),
@@ -151,8 +177,8 @@ impl Stopping {
     }
 }
 
-async fn active_thread(client: &reqwest::Client, url: &str) -> Result<ThreadId, Error> {
-    let mut response = client.get(url).send().await?.error_for_status()?;
+async fn active_thread(attempt: &Attempt) -> Result<ThreadId, Error> {
+    let mut response = attempt.get().await?;
     if response
         .content_length()
         .is_some_and(|len| len > MAX_THREAD_LIST_BYTES as u64)
@@ -163,7 +189,7 @@ async fn active_thread(client: &reqwest::Client, url: &str) -> Result<ThreadId, 
         .into());
     }
     let mut bytes = Vec::new();
-    while let Some(chunk) = response.chunk().await? {
+    while let Some(chunk) = response.chunk().await.map_err(HttpError::from)? {
         if chunk.len() > MAX_THREAD_LIST_BYTES - bytes.len() {
             return Err(crate::Error::TooLarge {
                 limit: MAX_THREAD_LIST_BYTES,
@@ -175,15 +201,37 @@ async fn active_thread(client: &reqwest::Client, url: &str) -> Result<ThreadId, 
     Ok(ThreadId::active_in(&bytes)?)
 }
 
+struct Closing {
+    socket: WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>,
+    reason: Termination,
+}
+impl Closing {
+    async fn finish(mut self, attempt: &Attempt, status: &watch::Sender<State>) {
+        // Commit the received signal before awaiting the close reply. Neither
+        // cancellation nor a failed flush may lose a rejection or server wait.
+        attempt.failed(Some(self.reason.failure()), self.reason.to_string());
+        // Stop advertising uninterrupted reception as soon as the close is
+        // observed, even if its acknowledgement stalls or is cancelled.
+        status.send_replace(if self.reason.graceful() {
+            State::Ended(self.reason)
+        } else {
+            State::Failed(Arc::new(Error::Terminated(self.reason)))
+        });
+        let _ = timeout(IO_TIMEOUT, self.socket.flush()).await;
+    }
+}
+
 async fn receive(
-    client: reqwest::Client,
+    attempt: &Attempt,
     endpoints: Endpoints,
     comments: &mpsc::SyncSender<Comment>,
     status: &watch::Sender<State>,
     dropped: &AtomicU64,
-) -> Result<(), Error> {
+) -> Result<Closing, Error> {
     // Bound the entire HTTP body transfer, not only response headers.
-    let thread = timeout(IO_TIMEOUT, active_thread(&client, &endpoints.threads)).await??;
+    let thread = timeout(IO_TIMEOUT, active_thread(attempt)).await??;
+    // Another NX endpoint may have returned 429 during the thread-list request.
+    attempt.check().map_err(HttpError::from)?;
     let config = WebSocketConfig::default()
         .read_buffer_size(8 * 1024)
         .write_buffer_size(0)
@@ -201,6 +249,7 @@ async fn receive(
     )
     .await??;
     status.send_replace(State::Receiving);
+    let _reception = attempt.receiving();
     let mut decoder = Decoder::default();
     while let Some(message) = socket.next().await {
         match message? {
@@ -213,7 +262,12 @@ async fn receive(
                         Err(mpsc::TrySendError::Full(_)) => {
                             dropped.fetch_add(1, Ordering::Relaxed);
                         }
-                        Err(mpsc::TrySendError::Disconnected(_)) => return Ok(()),
+                        Err(mpsc::TrySendError::Disconnected(_)) => {
+                            return Ok(Closing {
+                                socket,
+                                reason: Termination::NoStatus,
+                            });
+                        }
                     }
                 }
             }
@@ -222,16 +276,19 @@ async fn receive(
             Message::Ping(_) => {
                 timeout(IO_TIMEOUT, socket.flush()).await??;
             }
-            Message::Close(_) => {
-                return match timeout(IO_TIMEOUT, socket.flush()).await? {
-                    Ok(()) | Err(tungstenite::Error::ConnectionClosed) => Ok(()),
-                    Err(error) => Err(error.into()),
-                };
+            Message::Close(frame) => {
+                return Ok(Closing {
+                    socket,
+                    reason: Termination::from_close(frame),
+                });
             }
             _ => {}
         }
     }
-    Ok(())
+    Ok(Closing {
+        socket,
+        reason: Termination::NoStatus,
+    })
 }
 
 #[cfg(test)]

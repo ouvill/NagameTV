@@ -1,4 +1,5 @@
 use super::*;
+use std::time::Duration;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::TcpListener,
@@ -22,7 +23,7 @@ fn rapid_changes_keep_only_last_target_and_disable_cancels_it() -> TestResult {
             let a = TcpListener::bind("127.0.0.1:0").await?;
             let b = TcpListener::bind("127.0.0.1:0").await?;
             let c = TcpListener::bind("127.0.0.1:0").await?;
-            let client = reqwest::Client::new();
+            let client = Client::new()?;
             let now = Instant::now();
             let mut controller = Controller::default();
             controller.configure(Some(endpoint(&a)?));
@@ -87,7 +88,7 @@ fn reconnect_waits_for_deadline_and_repeated_configuration_does_not_reset_it() -
         .block_on(async {
             let listener = TcpListener::bind("127.0.0.1:0").await?;
             let target = endpoint(&listener)?;
-            let client = reqwest::Client::new();
+            let client = Client::new()?;
             let now = Instant::now();
             let mut controller = Controller::default();
             controller.configure(Some(target.clone()));
@@ -112,13 +113,16 @@ fn reconnect_waits_for_deadline_and_repeated_configuration_does_not_reset_it() -
                 Status::Retrying(State::Failed(_))
             ));
             controller.configure(Some(target));
+            let Phase::Waiting(deadline) = controller.phase else {
+                panic!("retry deadline")
+            };
             controller.poll(
                 &Handle::current(),
                 &client,
-                now + RETRY_DELAY - Duration::from_millis(1),
+                deadline - Duration::from_millis(1),
             )?;
             assert!(matches!(controller.phase, Phase::Waiting(_)));
-            controller.poll(&Handle::current(), &client, now + RETRY_DELAY)?;
+            controller.poll(&Handle::current(), &client, deadline)?;
             let (_retry, _) = timeout(Duration::from_secs(2), listener.accept()).await??;
             assert!(matches!(controller.phase, Phase::Running(_)));
             controller.configure(None);
@@ -129,13 +133,16 @@ fn reconnect_waits_for_deadline_and_repeated_configuration_does_not_reset_it() -
 #[test]
 fn normal_close_drains_final_comments_in_bounded_batches() -> TestResult {
     use futures_util::{SinkExt, StreamExt};
-    use tokio_tungstenite::tungstenite::Message;
+    use tokio_tungstenite::tungstenite::{
+        Message,
+        protocol::{CloseFrame, frame::coding::CloseCode},
+    };
     tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()?
         .block_on(async {
             let listener = TcpListener::bind("127.0.0.1:0").await?;
-            let client = reqwest::Client::new();
+            let client = Client::new()?;
             let now = Instant::now();
             let mut controller = Controller::default();
             controller.configure(Some(endpoint(&listener)?));
@@ -163,11 +170,16 @@ fn normal_close_drains_final_comments_in_bounded_batches() -> TestResult {
                     ))
                     .await?;
             }
-            socket.close(None).await?;
+            socket
+                .close(Some(CloseFrame {
+                    code: CloseCode::Normal,
+                    reason: "thread ended".into(),
+                }))
+                .await?;
             timeout(Duration::from_secs(2), async {
                 loop {
                     if let Phase::Running(connection) = &controller.phase
-                        && matches!(connection.state(), State::Ended)
+                        && matches!(connection.state(), State::Ended(_))
                     {
                         break;
                     }
@@ -185,7 +197,7 @@ fn normal_close_drains_final_comments_in_bounded_batches() -> TestResult {
             assert_eq!(&*all[129].text, "129");
             assert!(matches!(
                 controller.status(),
-                Status::Retrying(State::Ended)
+                Status::Retrying(State::Ended(_))
             ));
             controller.configure(None);
             timeout(Duration::from_secs(2), async {
@@ -196,6 +208,103 @@ fn normal_close_drains_final_comments_in_bounded_batches() -> TestResult {
             })
             .await?;
             Ok(())
+        })
+}
+
+#[test]
+fn thread_end_reconnects_to_the_current_thread_and_repeated_short_closes_back_off() -> TestResult {
+    use futures_util::{SinkExt, StreamExt};
+    use tokio_tungstenite::{
+        WebSocketStream,
+        tungstenite::{
+            Message,
+            protocol::{CloseFrame, frame::coding::CloseCode},
+        },
+    };
+    const TEST_TIMEOUT: Duration = Duration::from_secs(3);
+    const FIRST_THREAD: u64 = 11;
+    const NEXT_THREAD: u64 = 12;
+    async fn subscribe(
+        listener: &TcpListener,
+        thread: u64,
+    ) -> Result<WebSocketStream<tokio::net::TcpStream>, Box<dyn std::error::Error + Send + Sync>>
+    {
+        let (mut http, _) = listener.accept().await?;
+        let mut request = Vec::new();
+        while !request.ends_with(b"\r\n\r\n") {
+            request.push(http.read_u8().await?);
+        }
+        let body = format!(r#"[{{"id":{thread},"status":"ACTIVE"}}]"#);
+        http.write_all(
+            format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            )
+            .as_bytes(),
+        )
+        .await?;
+        let (tcp, _) = listener.accept().await?;
+        let mut socket = tokio_tungstenite::accept_async(tcp).await?;
+        let subscription = socket.next().await.ok_or("missing subscription")??;
+        let value: serde_json::Value = serde_json::from_str(subscription.to_text()?)?;
+        assert_eq!(value[2]["thread"]["thread"], thread.to_string());
+        Ok(socket)
+    }
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()?
+        .block_on(async {
+            timeout(TEST_TIMEOUT, async {
+                let listener = TcpListener::bind("127.0.0.1:0").await?;
+                let client = Client::new()?;
+                let mut controller = Controller::default();
+                let mut now = Instant::now();
+                controller.configure(Some(endpoint(&listener)?));
+                for (thread, expected_minimum) in [
+                    (FIRST_THREAD, Duration::from_secs(5)),
+                    (NEXT_THREAD, Duration::from_secs(10)),
+                ] {
+                    controller.poll(&Handle::current(), &client, now)?;
+                    let mut socket = subscribe(&listener, thread).await?;
+                    socket
+                        .send(Message::Text(
+                            format!(r#"{{"chat":{{"content":"thread-{thread}"}}}}"#).into(),
+                        ))
+                        .await?;
+                    socket
+                        .close(Some(CloseFrame {
+                            code: CloseCode::Normal,
+                            reason: "thread ended".into(),
+                        }))
+                        .await?;
+                    let mut delivered = Vec::new();
+                    let until = loop {
+                        delivered.extend(controller.poll(&Handle::current(), &client, now)?);
+                        if let Phase::Waiting(until) = controller.phase {
+                            break until;
+                        }
+                        tokio::task::yield_now().await;
+                    };
+                    assert_eq!(delivered.len(), 1);
+                    assert_eq!(delivered[0].text.as_ref(), format!("thread-{thread}"));
+                    assert_eq!(delivered[0].phase, crate::Phase::History);
+                    assert!(until >= now + expected_minimum);
+                    assert!(matches!(
+                        controller.status(),
+                        Status::Retrying(State::Ended(_))
+                    ));
+                    controller.poll(
+                        &Handle::current(),
+                        &client,
+                        until - Duration::from_millis(1),
+                    )?;
+                    assert!(matches!(controller.phase, Phase::Waiting(_)));
+                    now = until;
+                }
+                controller.configure(None);
+                Ok::<_, Box<dyn std::error::Error + Send + Sync>>(())
+            })
+            .await?
         })
 }
 
@@ -233,7 +342,7 @@ fn websocket_disconnect_drains_final_comments_and_reconnects_with_fresh_history(
         .build()?
         .block_on(async {
             let listener = TcpListener::bind("127.0.0.1:0").await?;
-            let client = reqwest::Client::new();
+            let client = Client::new()?;
             let now = Instant::now();
             let mut controller = Controller::default();
             controller.configure(Some(endpoint(&listener)?));
@@ -296,14 +405,16 @@ fn websocket_disconnect_drains_final_comments_and_reconnects_with_fresh_history(
                 controller.status(),
                 Status::Retrying(State::Failed(_))
             ));
-            // Injected monotonic time: verify the real controller's five-second gate.
+            // Injected monotonic time: verify the deadline including jitter.
+            let Phase::Waiting(retry) = controller.phase else {
+                panic!("retry deadline")
+            };
             controller.poll(
                 &Handle::current(),
                 &client,
-                now + RETRY_DELAY - Duration::from_millis(1),
+                retry - Duration::from_millis(1),
             )?;
             assert!(matches!(controller.phase, Phase::Waiting(_)));
-            let retry = now + RETRY_DELAY;
             controller.poll(&Handle::current(), &client, retry)?;
             let mut socket =
                 timeout(Duration::from_secs(2), accept_subscription(&listener)).await??;

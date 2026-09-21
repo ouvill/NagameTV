@@ -162,7 +162,7 @@ fn sent_response_finishes_after_source_change_while_live_saving_continues() {
         origin: Origin::Nx,
         phase: Phase::Live,
         unix_seconds: 200005,
-        timestamp_micros: Some(200005_000_000),
+        timestamp_micros: Some(200_005_000_000),
         style: Default::default(),
     };
     controller
