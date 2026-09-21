@@ -8,6 +8,15 @@ mutation APIs narrow enough that callers cannot bypass these guarantees.
 Use the development and test commands in [docs/development.md](docs/development.md).
 Preserve existing work in the shared workspace.
 
+## Documentation updates
+
+In OpenCode, delegate documentation creation and updates, including README files,
+`docs/`, and contributor instructions, to the
+[`writer` subagent](.opencode/agents/writer.md).
+Give `writer` the requested scope, relevant implementation changes, and verification
+results, then review its edits for accuracy. When acting as `writer`, perform the
+documentation edits directly without delegating them again.
+
 ## Workshop hardware requirements
 
 This project runs inside a container; display, GPU, camera and audio access must
