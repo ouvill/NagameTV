@@ -11,6 +11,8 @@
 ネイティブ版のRustはWorkshopのRust SDK、開発・パッケージ用のUbuntuパッケージは
 [プロジェクトSDKのsetup-base](../.workshop/nagametv/hooks/setup-base)で導入します。
 GitHub CLI（`gh`）もプロジェクトSDKに含まれます。
+OpenCodeはCanonical提供の[OpenCode SDK](https://github.com/canonical/opencode-sdk)を
+`latest/stable`チャンネルから導入します。
 配布用AppImageは別のUbuntu 24.04 Docker環境を使います。
 依存パッケージを追加するときはこの一覧と[check-health](../.workshop/nagametv/hooks/check-health)を更新します。
 check-healthはコマンド・開発ライブラリー・QML・GStreamerプラグインファイルの存在を確認し、

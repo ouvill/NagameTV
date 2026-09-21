@@ -1,8 +1,9 @@
 name: dev
 base: ubuntu@26.04
 sdks:
-  - name: flutter
   - name: codex
+  - name: opencode
+    channel: latest/stable
   - name: rust
   - name: docker-ce
     channel: latest/stable
