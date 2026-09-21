@@ -121,6 +121,17 @@ chmod +x ./nagametv-0.1.0-x86_64.AppImage
 
 ---
 
+## アンインストール
+
+削除方法と保存データの扱いは、導入した形式の手順を参照してください。
+
+- [Ubuntu debパッケージ](docs/deb.md#インストール更新削除)
+- [Flatpakパッケージ](docs/flatpak.md#アンインストール)
+- [AppImageパッケージ](docs/appimage.md#更新削除)
+- [手動ビルド・手動配置のネイティブ版](docs/development.md#手動ビルド版の削除)
+
+---
+
 ## 基本操作
 
 ### 1. 初回設定（Mirakurunへの接続）

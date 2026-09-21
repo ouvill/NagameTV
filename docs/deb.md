@@ -36,12 +36,15 @@ sudo apt install ./nagametv_0.1.0-1ubuntu26.04_amd64.deb
 Ubuntuを24.04から26.04へ更新したら、26.04用のdebも導入する。
 同じ`nagametv`パッケージとして置き換わり、24.04用の同梱ファイルは削除される。
 
+削除する場合は、起動中のながめTVをすべて終了してから実行する。
+
 ```sh
 sudo apt remove nagametv
 ```
 
 ユーザー設定はネイティブ版・AppImage版と共通の`~/.config/nagametv/`。
 削除・更新でユーザー設定を消さない。Flatpak版とは設定先が異なる。
+設定・キャッシュも削除する場合は[ネイティブ版の保存データの削除](development.md#ネイティブ版の保存データの削除)を参照。
 
 GUIと再生にはデスクトップ、実GPUによるOpenGL、利用できる音声サーバーが必要。
 24.04用はAppImageと同じX11／XWaylandを使用する。

@@ -21,11 +21,26 @@ flatpak run io.github.ouvill.nagametv
 このファイル配布にはアプリ用の更新サーバーを設定していないため、
 `flatpak update`だけでアプリ本体の新しい版を取得することはできない。
 
-削除する場合:
+## アンインストール
+
+起動中のながめTVをすべて終了してから、次を実行する。
+この文書の手順でユーザー単位にインストールした場合:
 
 ```sh
 flatpak uninstall --user io.github.ouvill.nagametv
 ```
+
+通常の削除では、設定・キャッシュなどのアプリデータは`~/.var/app/io.github.ouvill.nagametv/`に残る。
+このデータとPortalの権限情報も削除する場合は、代わりに次を実行する。
+
+```sh
+flatpak uninstall --user --delete-data io.github.ouvill.nagametv
+```
+
+システム全体へインストールした場合は、`--user`を`--system`に置き換える。
+`--delete-data`が削除するデータは、コマンドを実行するユーザーのもの。
+別の場所へ保存したスクリーンショットや手元の録画ファイルは、必要に応じて保存先で整理する。
+ダウンロードした`.flatpak`ファイルだけを削除しても、インストール済みのアプリは削除されない。
 
 ## パッケージを作る
 
