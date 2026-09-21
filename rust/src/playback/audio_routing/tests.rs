@@ -1,5 +1,5 @@
 use super::*;
-use std::{sync::mpsc, time::Duration};
+use std::sync::mpsc;
 type TestResult = Result<(), Box<dyn std::error::Error>>;
 
 #[test]
@@ -75,12 +75,13 @@ fn native_transform_routes_shared_buffers_without_changing_timing_or_input() -> 
         .field("rate", 48000_i32)
         .field("channels", 2_i32)
         .build();
-    let source = gst::ElementFactory::make("appsrc")
-        .property("caps", &caps)
-        .property("format", gst::Format::Time)
-        .build()?;
-    // Explicit CPU fixture. No device is selected or used.
+    // Explicit CPU fixture. A handoff notification does not mean appsrc's
+    // streaming task has finished pushing the buffer; flushing then can race
+    // with that task. Drive the filter synchronously so buffer processing has
+    // completed before testing its flush contract. No device is used.
     let sink = gst::ElementFactory::make("fakesink")
+        .property("async", false)
+        .property("sync", false)
         .property("signal-handoffs", true)
         .build()?;
     let (tx, rx) = mpsc::sync_channel(1);
@@ -93,19 +94,24 @@ fn native_transform_routes_shared_buffers_without_changing_timing_or_input() -> 
         }
         None
     });
-    pipeline.0.add_many([&source, filter.upcast_ref(), &sink])?;
-    gst::Element::link_many([&source, filter.upcast_ref(), &sink])?;
+    pipeline.0.add_many([filter.upcast_ref(), &sink])?;
+    filter.link(&sink)?;
     pipeline.0.set_state(gst::State::Playing)?;
+    let input_pad = filter
+        .static_pad("sink")
+        .ok_or("audio filter sink pad missing")?;
+    assert!(input_pad.send_event(gst::event::StreamStart::new("dual-mono-test")));
+    assert!(input_pad.send_event(gst::event::Caps::new(&caps)));
+    let segment = gst::FormattedSegment::<gst::ClockTime>::new();
+    assert!(input_pad.send_event(gst::event::Segment::new(&segment)));
     let original = [0, 0, 0x80, 0x3f, 0, 0, 0, 0x40];
     let mut input = gst::Buffer::from_mut_slice(original.to_vec());
     let buffer = input.get_mut().ok_or("new input unexpectedly shared")?;
     buffer.set_pts(gst::ClockTime::from_mseconds(10));
     buffer.set_duration(gst::ClockTime::from_nseconds(20833));
     let push = || -> Result<gst::Buffer, Box<dyn std::error::Error>> {
-        source
-            .emit_by_name::<gst::FlowReturn>("push-buffer", &[&input])
-            .into_result()?;
-        Ok(rx.recv_timeout(Duration::from_secs(5))?)
+        input_pad.chain(input.clone())?;
+        Ok(rx.try_recv()?)
     };
     assert_eq!(push()?.map_readable()?.as_slice(), original);
     let stream = routing
@@ -127,15 +133,9 @@ fn native_transform_routes_shared_buffers_without_changing_timing_or_input() -> 
     }
     routing.select_for(routing.format(), &stream, Mode::Sub)?;
     let before_flush = routing.format();
-    let pad = source
-        .static_pad("src")
-        .ok_or("appsrc source pad missing")?;
-    // Flush through appsrc so its queue and source task participate as well.
-    // Pushing directly from the pad can leave the source task stopped on FLUSHING.
-    assert!(source.send_event(gst::event::FlushStart::new()));
-    assert!(source.send_event(gst::event::FlushStop::new(false)));
-    let segment = gst::FormattedSegment::<gst::ClockTime>::new();
-    assert!(pad.push_event(gst::event::Segment::new(&segment)));
+    assert!(input_pad.send_event(gst::event::FlushStart::new()));
+    assert!(input_pad.send_event(gst::event::FlushStop::new(false)));
+    assert!(input_pad.send_event(gst::event::Segment::new(&segment)));
     // No new CAPS or STREAM_START: flushing a stream is not a format change.
     assert_eq!(routing.format().mode, Some(Mode::Both));
     assert!(matches!(
