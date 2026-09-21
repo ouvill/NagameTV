@@ -6,10 +6,12 @@ from enum import Enum
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import tempfile
 import unittest
+from urllib.parse import unquote
 
 from package_metadata import UbuntuRelease, deb_filename, debian_version, release_assets
 
@@ -31,7 +33,8 @@ class ReleaseTests(unittest.TestCase):
         self.project = Path(temporary.name)
         for directory in ("scripts", "rust", "packaging/linux", "packaging/flatpak", "assets", "bin"):
             (self.project / directory).mkdir(parents=True)
-        for script in ("check-release-metadata.py", "create-release.sh", "package_metadata.py"):
+        for script in ("check-release-metadata.py", "create-release.sh", "package_metadata.py",
+                       "latest-build-notes.py"):
             shutil.copyfile(ROOT / "scripts" / script, self.project / "scripts" / script)
         subprocess.run(["git", "init", "--quiet", str(self.project)], check=True)
         sources = []
@@ -208,6 +211,26 @@ elif sys.argv[1:3] == ['release', 'view']:
         self.assertEqual(deletions, [["release", "delete-asset", "--yes", "--", "latest-build", name]
                                      for name in stale_assets])
         self.assertIn("--draft=false", publish)
+
+    def test_latest_build_download_links_match_uploaded_assets(self):
+        for version in (VERSION, "1.2.3-rc.1+build.5"):
+            with self.subTest(version=version):
+                self.set_version(version)
+                self.bundles(version)
+                result = self.release(version, mode=ReleaseMode.LATEST_BUILD)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                publish = self.calls()[-1]
+                notes = publish[publish.index("--notes") + 1]
+                prefix = "https://github.com/example/nagametv/releases/download/latest-build/"
+                linked_assets = [unquote(name) for name in re.findall(
+                    re.escape(prefix) + r"([^\s)]+)", notes)]
+                expected = [asset for name in release_assets(version)
+                            for asset in (name, f"{name}.sha256")]
+                self.assertCountEqual(linked_assets, expected)
+                self.assertIn(f"/blob/{self.head}/README.md#インストール", notes)
+                create = next(call for call in reversed(self.calls())
+                              if call[:2] == ["release", "create"])
+                self.assertEqual(create[create.index("--notes") + 1], notes)
 
     def test_latest_build_rerun_repairs_partial_release(self):
         self.bundles()

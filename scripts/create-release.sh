@@ -40,6 +40,8 @@ done <<< "$bundles"
 : "${GH_REPO:?Set GH_REPO to owner/repository}"
 
 if [[ $mode == latest-build ]]; then
+  title="mainの最新開発ビルド (${commit:0:12})"
+  notes=$(python3 "$project_dir/scripts/latest-build-notes.py" "$version" "$commit" "$GH_REPO")
   # The workflow serializes release jobs. Recheck main after taking that lock
   # so an older build or rerun cannot replace a newer published build.
   main_commit=$(gh api "repos/$GH_REPO/git/ref/heads/main" --jq '.object.sha')
@@ -77,8 +79,6 @@ if [[ $mode == latest-build ]]; then
       -f "ref=refs/tags/$tag" -f "sha=$commit"
   fi
 
-  title="Latest main build (${commit:0:12})"
-  notes=$(printf 'Automated pre-release build of main.\n\nVersion: %s\nCommit: %s\n' "$version" "$commit")
   case "$state" in
     '')
       gh release create "$tag" "${assets[@]}" --verify-tag --draft --prerelease \

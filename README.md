@@ -4,6 +4,8 @@
 
 7日分のEPG番組表表示、ARIB規格に準拠した字幕描画、およびNX-Jikkyoと連携した実況コメントの弾幕表示・投稿機能を備えています。
 
+**[最新の開発ビルドをダウンロード（Linux x86_64）](https://github.com/ouvill/NagameTV/releases/tag/latest-build)** · [インストール手順](#インストール)
+
 ![ながめTVの視聴画面。番組情報と再生操作を映像に重ねて表示](docs/media/live.png)
 
 | チャンネル一覧 | 番組表 |
@@ -63,7 +65,23 @@
 
 ## インストール
 
-利用環境に応じて以下の3種類のパッケージ形式から選択します。
+ビルド済みパッケージは[GitHub Releases](https://github.com/ouvill/NagameTV/releases)からダウンロードできます。
+[最新の開発ビルド（プレリリース）](https://github.com/ouvill/NagameTV/releases/tag/latest-build)は、`main`のCI成功後に更新されます。
+正式リリース前の変更を含み、同じバージョン・ファイル名でも内容が更新されます。
+
+リリース説明内のダウンロードリンク、またはページ下部の **Assets** から、環境に合うファイルを1つ取得してください。
+Assetsの一覧が折りたたまれている場合は、見出しをクリックして開きます。
+`Source code (zip)`・`Source code (tar.gz)`はソースコードです。アプリを導入する場合は以下のパッケージを選びます。
+
+| 利用環境・形式 | ダウンロードするファイル（Linux x86_64 / amd64） |
+| --- | --- |
+| Ubuntu 24.04 | `nagametv_…ubuntu24.04_amd64.deb` |
+| Ubuntu 26.04 | `nagametv_…ubuntu26.04_amd64.deb` |
+| Flatpakを導入したLinux | `nagametv-…-x86_64.flatpak` |
+| glibc 2.39以降のLinuxで単一ファイルから起動 | `nagametv-…-x86_64.AppImage` |
+
+以下のコマンドはダウンロード先のフォルダーで実行します。ファイル名は取得したものに合わせて読み替えてください。
+SHA-256を確認する場合は、対応する`.sha256`も同じフォルダーへ保存し、`sha256sum --check ファイル名.sha256`を実行します。
 
 ### 1. Ubuntu debパッケージ（Ubuntu 24.04 / 26.04）
 
@@ -88,7 +106,7 @@ flatpak install --user ./nagametv-0.1.0-x86_64.flatpak
 flatpak run io.github.ouvill.nagametv
 ```
 
-初回起動時に必要なランタイムが自動で取得されます。詳細は [Flatpakの手順](docs/flatpak.md) を参照してください。
+インストール時に必要なランタイムがFlathubから取得されます。詳細は [Flatpakの手順](docs/flatpak.md) を参照してください。
 
 ### 3. AppImageパッケージ
 
