@@ -48,9 +48,11 @@ if [[ $mode == container ]]; then
       options=(--env CARGO_HOME=/project/build/deb/ubuntu26.04/cargo-home)
       ;;
   esac
+  build_source=$(python3 "$project_dir/scripts/build-source-info.py")
   exec docker run --rm --user "$(id -u):$(id -g)" \
     --mount "type=bind,src=$project_dir,dst=/project" \
     --env DEB_BUILD_JOBS="$build_jobs" "${options[@]}" \
+    --env NAGAMETV_BUILD_SOURCE="$build_source" --env SOURCE_DATE_EPOCH \
     "$image" bash scripts/build-deb.sh "$ubuntu" --native
 fi
 

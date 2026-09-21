@@ -1,5 +1,7 @@
 use cxx_qt_build::{CxxQtBuilder, QmlModule};
 
+#[path = "build/build_info.rs"]
+mod build_info;
 #[path = "build/translations.rs"]
 mod translations;
 
@@ -15,6 +17,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "Evaluation-only comment features cannot be included in distribution builds".into(),
         );
     }
+    build_info::generate()?;
     let translations = translations::compile()?;
     // The source directory is the module manifest. A new production component
     // is registered and compiled without a second hand-maintained file list.

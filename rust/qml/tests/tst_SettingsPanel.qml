@@ -76,6 +76,8 @@ Item {
                 function configure_autoplay(value) { autoplay = value; }
                 property string settings_error: ""
                 property string diagnostics: ""
+                property string build_info: JSON.stringify({version: "0.1.0", source: {kind: "git", commit: "a".repeat(40), worktree: "dirty"},
+                    built_unix_seconds: 1700000000, target: "x86_64-unknown-linux-gnu", profile: "release", rustc: "rustc 1.98.1", features: ["DISTRIBUTION"]})
                 property string status: ""
                 property string language: "en"
                 property string subtitle_status: ""
@@ -667,6 +669,19 @@ Item {
                     {tag: "English", text: "Subtitles: subscriptions 8, pending 128, received 18446744073709551615 | EPG: tasks 1, programs 50000, stopping Yes"},
                     {tag: "Japanese", text: "字幕: 購読 8, 待機 128, 受信 18446744073709551615 | EPG: タスク 1, 番組 50000, 停止待ち はい"}
                 ];
+            }
+            function test_build_information_is_selectable_plain_text() {
+                selectPage(SettingsPanel.Diagnostics);
+                const details = findChild(panel.contentItem, "buildInformation");
+                verify(details !== null);
+                compare(details.readOnly, true);
+                compare(details.textFormat, TextEdit.PlainText);
+                verify(details.text.includes("a".repeat(40)));
+                verify(details.text.includes("2023-11-14T22:13:20.000Z"));
+                details.selectAll();
+                compare(details.selectedText, details.text);
+                verify(details.width <= findChild(panel.contentItem, "settingsScroll").width);
+                tryVerify(() => details.height >= details.contentHeight);
             }
             function test_diagnostics_remain_readable(data) {
                 backend.diagnostics = data.text;

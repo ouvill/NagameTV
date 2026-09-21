@@ -111,6 +111,10 @@ fn checks() -> TestResult {
     let directory = tempfile::tempdir()?;
     let path = directory.path().join("settings.toml");
     let mut player = ffi::new_player();
+    assert_eq!(
+        player.build_info(),
+        QString::from(crate::build_info::json())
+    );
     player.pin_mut().rust_mut().preferences =
         settings::Loaded::open(path.clone())?.activate(None, None);
     assert!(

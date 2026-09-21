@@ -1,4 +1,5 @@
 //! Bounded resource accounting and log storage, independent of Qt and playback.
+pub mod build_info;
 pub mod measurement;
 pub mod recorder;
 mod snapshot;

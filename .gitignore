@@ -1,5 +1,9 @@
 .workshop.lock
 build/
+# Cargo build-script modules are source files.
+!rust/build/
+rust/build/*
+!rust/build/*.rs
 build-host/
 target/
 memory-*.csv

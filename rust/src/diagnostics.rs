@@ -103,7 +103,7 @@ pub fn start(directory: PathBuf, isolated: bool) -> Result<Option<Client>, Error
     );
     let recorder = Recorder::start_directory_with_history(
         directory.join("usage"),
-        env!("CARGO_PKG_VERSION"),
+        &crate::build_info::INFO,
         samples,
     )?;
     GC_SINK
