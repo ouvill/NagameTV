@@ -187,19 +187,28 @@ RSSなどの資源使用量は診断JSONLに記録します。[メモリー分�
 
 ## 開発資料
 
-- [UIデザイン方針](ui-design.md)
-- [構成と資源の所有関係](architecture.md)
-- [ショートカットと共通操作](shortcut-actions-design.md)
-- [共通TS入力・ライブ振り返り](ts-input-implementation.md)
+ドキュメント全体のポータルは **[ドキュメント一覧 (docs/README.md)](README.md)** を参照してください。
+
+### アーキテクチャ・設計仕様
+- [構成と資源の所有関係 (アーキテクチャ)](architecture.md)
+- [UIデザイン方針](ui-design.md)・[操作への反応](ui-feedback.md)
+- [ショートカットとウィンドウ・キー操作](shortcut-actions-design.md)
+- [チャンネル選局とブラウザー](channel-browser.md)
+- [共通TS入力とタイムシフト再生](ts-input-implementation.md)
+- [音声機能と出力制御](audio-output.md)
 - [TS録画の再生](recording-playback.md)
-- [録画シーク・TS番組情報取得のロードマップ](recording-seek-roadmap.md)
-- [遠隔操作API・Protobufとドキュメント生成](remote-control.md)
-- [番組表](guide-calendar.md)・[EPGの更新](epg-event-stream.md)
-- [弾幕表示](danmaku.md)・[字幕描画](subtitle-rendering.md)・[音声切り替え](audio-selection.md)
-- [実況過去ログの取得・保存仕様](comment-archive-fetch-design.md)
-- [実況過去ログの取得・保持 再設計と検証](comment-archive-redesign.md)
-- [動画統計](video-statistics.md)・[操作への反応](ui-feedback.md)
+- [番組表 (EPG)](guide-calendar.md)・[現在番組情報](current-program.md)
+- [弾幕表示の仕様](comment-display-redesign.md)・[弾幕のコアと表示](danmaku.md)
+- [コメント特許調査と対応方針](comment-patent-review.md)
+- [実況過去ログの取得・保持](comment-archive-redesign.md)
+- [遠隔操作API・Protobuf](remote-control.md)
+- [字幕描画](subtitle-rendering.md)・[動画統計](video-statistics.md)
+- [GPU映像処理](gpu-video.md)・[デスクトップメディア連携](desktop-media.md)
+
+### 開発・検証履歴
 - [検証の記録](verification.md)・[実装移行の経緯](feature-migration.md)
+- [録画シーク・TS番組情報取得のロードマップ](recording-seek-roadmap.md)
+
 
 開発資料には実装途中の検証記録も含まれます。現在の動作と過去の状態は、各資料の更新日・追記を確認してください。
 改名前の検証記録にある`mirakurun-viewer`・`litv`・`MIRAKURUN_`は当時の名称です。
