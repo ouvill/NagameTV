@@ -196,7 +196,7 @@ impl ffi::TestOutlineProvider {
         let calls = self.rust().calls + 1;
         self.as_mut().rust_mut().calls = calls;
         self.as_mut().calls_changed();
-        crate::player::ffi::subtitle_outline_path(text, font)
+        crate::qt::ffi::subtitle_outline_path(text, font)
     }
 }
 

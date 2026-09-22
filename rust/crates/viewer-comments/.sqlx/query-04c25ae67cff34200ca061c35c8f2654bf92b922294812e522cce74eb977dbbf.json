@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO coverage(channel,start,end,fetched,last_used,published,bytes,settled,target_key) VALUES(?1,?2,?3,?4,?5,1,0,?6,?7)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 7
+    },
+    "nullable": []
+  },
+  "hash": "04c25ae67cff34200ca061c35c8f2654bf92b922294812e522cce74eb977dbbf"
+}

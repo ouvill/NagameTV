@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM live_comments WHERE owner=?1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "67ae22c1980c6754cbea4bb9380f09f5c1dd070bbd00705d65025e172287c45e"
+}

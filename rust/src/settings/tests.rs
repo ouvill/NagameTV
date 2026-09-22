@@ -228,8 +228,8 @@ fn subtitle_visibility_uses_the_existing_key_and_survives_restart()
         let mut session = open(path.clone())?;
         assert_eq!(session.preferences().show_subtitles, visible);
         // Legacy feature-disable flags cannot disable the normal launch's workers.
-        let plan = crate::features::LaunchPlan::parse([])?;
-        assert!(plan.subtitles && plan.epg);
+        let plan = crate::features::LaunchPlan::Preferences;
+        assert!(plan.subtitles() && plan.epg());
         session.change(Change::SubtitleDisplay(!visible));
         assert_eq!(session.flush()?, SaveStatus::Saved);
         let restored = open(path.clone())?;

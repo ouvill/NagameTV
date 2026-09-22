@@ -18,70 +18,91 @@ mod startup;
 mod timeshift;
 mod video_processing;
 
-pub fn run() -> i32 {
-    let mut arguments = std::env::args().skip(2);
-    let suite = arguments.next();
-    if matches!(
-        suite.as_deref(),
-        Some("recording-audit" | "recording-probe")
+use clap::{Parser, Subcommand};
+use std::{ffi::OsString, path::PathBuf};
+
+#[derive(Parser)]
+#[command(name = "nagametv --native-tests")]
+struct Arguments {
+    #[command(subcommand)]
+    suite: Suite,
+}
+
+#[derive(Subcommand)]
+enum Suite {
+    Localization,
+    MissingCatalog,
+    SubtitleOutline,
+    PointerActivity,
+    #[cfg(target_os = "linux")]
+    DesktopMedia,
+    Connection,
+    Startup,
+    StartupWindow,
+    Timeshift,
+    VideoProcessing,
+    ScreenshotPlayback,
+    RecordingPidChange,
+    RecordingAudit {
+        path: PathBuf,
+    },
+    RecordingProbe {
+        path: PathBuf,
+    },
+    #[cfg(target_os = "linux")]
+    PortalDialogs,
+    SubtitleRendering {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        arguments: Vec<String>,
+    },
+    Screenshots {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        arguments: Vec<String>,
+    },
+}
+
+pub fn run(arguments: Vec<OsString>) -> i32 {
+    let args = match Arguments::try_parse_from(
+        std::iter::once(OsString::from("nagametv --native-tests")).chain(arguments),
     ) {
-        let Some(path) = arguments.next() else {
-            eprintln!("recording-audit / recording-probe requires a TS path");
-            return 2;
-        };
-        if arguments.next().is_some() {
-            eprintln!("recording-audit accepts one fixture path");
-            return 2;
+        Ok(args) => args,
+        Err(error) => {
+            let _ = error.print();
+            return error.exit_code();
         }
-        return if suite.as_deref() == Some("recording-probe") {
-            startup::run_recording_probe(path.into())
-        } else {
-            startup::run_recording_audit(path.into())
-        };
-    }
-    if !matches!(suite.as_deref(), Some("subtitle-rendering" | "screenshots"))
-        && arguments.next().is_some()
-    {
-        eprintln!("Only subtitle-rendering and screenshots accept Qt Quick Test arguments");
-        return 2;
-    }
-    match suite.as_deref() {
-        Some("localization") => localization::run(false),
-        Some("missing-catalog") => localization::run(true),
-        Some("subtitle-outline") => outline::run(),
-        Some("pointer-activity") => pointer::run(),
+    };
+    match args.suite {
+        Suite::Localization => localization::run(false),
+        Suite::MissingCatalog => localization::run(true),
+        Suite::SubtitleOutline => outline::run(),
+        Suite::PointerActivity => pointer::run(),
         #[cfg(target_os = "linux")]
-        Some("desktop-media") => desktop_media::run(),
-        Some("connection") => crate::player::connection_checks::run(),
-        Some("startup") => startup::run(),
-        Some("startup-window") => startup::run_window(),
-        Some("timeshift") => startup::run_timeshift(),
-        Some("video-processing") => startup::run_video_processing(),
-        Some("screenshot-playback") => startup::run_screenshots(),
-        Some("recording-pid-change") => startup::run_pid_change(),
+        Suite::DesktopMedia => desktop_media::run(),
+        Suite::Connection => crate::player::connection_checks::run(),
+        Suite::Startup => startup::run(),
+        Suite::StartupWindow => startup::run_window(),
+        Suite::Timeshift => startup::run_timeshift(),
+        Suite::VideoProcessing => startup::run_video_processing(),
+        Suite::ScreenshotPlayback => startup::run_screenshots(),
+        Suite::RecordingPidChange => startup::run_pid_change(),
+        Suite::RecordingAudit { path } => startup::run_recording_audit(path),
+        Suite::RecordingProbe { path } => startup::run_recording_probe(path),
         #[cfg(target_os = "linux")]
-        Some("portal-dialogs") => portal_dialogs::run(),
-        Some("subtitle-rendering") => {
+        Suite::PortalDialogs => portal_dialogs::run(),
+        Suite::SubtitleRendering { arguments } => {
             let mut qt_arguments = vec!["viewer-subtitle-tests".to_owned()];
             qt_arguments.extend(arguments);
             crate::danmaku_ui_tests::run_with_arguments(&qt_arguments)
         }
-        Some("screenshots") => {
+        Suite::Screenshots { arguments } => {
             crate::features::PLAN
-                .set(
-                    crate::features::LaunchPlan::parse(["--features=none".into()])
-                        .expect("test plan"),
-                )
+                .set(crate::features::LaunchPlan::Restricted(
+                    "none".parse().expect("test plan"),
+                ))
                 .expect("test plan initialized once");
             let mut qt_arguments = vec!["viewer-screenshot-tests".to_owned()];
             qt_arguments.extend(arguments);
             crate::danmaku_ui_tests::run_with_arguments(&qt_arguments)
-        }
-        _ => {
-            eprintln!(
-                "Expected --native-tests localization|missing-catalog|subtitle-outline|pointer-activity|subtitle-rendering|screenshots|connection|startup|screenshot-playback|recording-pid-change|recording-audit PATH|portal-dialogs"
-            );
-            2
         }
     }
 }

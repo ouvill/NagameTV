@@ -1,5 +1,6 @@
 use super::spool::Receipt;
 use super::*;
+use futures_lite::future::block_on;
 use std::{
     io::{BufWriter, Read, Write},
     net::{TcpListener, TcpStream},
@@ -279,9 +280,9 @@ fn large_response_without_content_length_is_fetched_once_and_all_rows_reach_disk
         Outcome::Complete
     ));
     server.join().unwrap();
-    let db = rusqlite::Connection::open(dir.path().join("cache.sqlite3")).unwrap();
+    let mut db = super::super::test_database::open(dir.path().join("cache.sqlite3")).unwrap();
     assert_eq!(
-        db.query_row("SELECT count(*) FROM comments", [], |r| r.get::<_, i64>(0))
+        block_on(sqlx::query_scalar::<_, i64>("SELECT count(*) FROM comments").fetch_one(&mut db))
             .unwrap(),
         COUNT as i64
     );
@@ -412,7 +413,7 @@ fn recent_program_adds_only_available_tail_when_view_approaches_or_program_finis
         target: target.clone(),
         focus: Some(START),
     };
-    let Planned::Ready(request) = next(&store, &owner.name, &acquisition, NOW).unwrap() else {
+    let Planned::Ready(request) = next(&mut store, &owner.name, &acquisition, NOW).unwrap() else {
         panic!("initial prefix")
     };
     assert_eq!(request.range.end, archive_end(NOW));
@@ -441,11 +442,11 @@ fn recent_program_adds_only_available_tail_when_view_approaches_or_program_finis
     assert_eq!(store.covered(4, target.range, NOW).unwrap(), vec![prefix]);
     let later = NOW + COLLECTION_SECONDS;
     assert!(matches!(
-        next(&store, &owner.name, &acquisition, later).unwrap(),
+        next(&mut store, &owner.name, &acquisition, later).unwrap(),
         Planned::Complete
     ));
     acquisition.focus = Some(prefix.end - plan::PROGRAM_PADDING_SECONDS);
-    let Planned::Ready(tail) = next(&store, &owner.name, &acquisition, later).unwrap() else {
+    let Planned::Ready(tail) = next(&mut store, &owner.name, &acquisition, later).unwrap() else {
         panic!("near tail")
     };
     assert_eq!(
@@ -454,7 +455,7 @@ fn recent_program_adds_only_available_tail_when_view_approaches_or_program_finis
     );
     acquisition.focus = Some(START);
     let ended = target.range.end + ARCHIVE_DELAY_SECONDS + COLLECTION_SECONDS;
-    let Planned::Ready(tail) = next(&store, &owner.name, &acquisition, ended).unwrap() else {
+    let Planned::Ready(tail) = next(&mut store, &owner.name, &acquisition, ended).unwrap() else {
         panic!("completed program tail")
     };
     assert_eq!(

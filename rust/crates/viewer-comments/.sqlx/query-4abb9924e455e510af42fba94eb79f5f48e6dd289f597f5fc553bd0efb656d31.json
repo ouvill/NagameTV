@@ -1,0 +1,28 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT MIN(start) AS \"start!: i64\", MAX(end) AS \"end!: i64\"\nFROM (\n    SELECT start, end FROM live_coverage\n    WHERE owner = ?1 AND channel = ?2 AND clock = ?3 AND start <= ?4 AND end >= ?5\n    UNION ALL SELECT ?5, ?4\n)\n",
+  "describe": {
+    "columns": [
+      {
+        "name": "start!: i64",
+        "ordinal": 0,
+        "type_info": "Null",
+        "origin": "Expression"
+      },
+      {
+        "name": "end!: i64",
+        "ordinal": 1,
+        "type_info": "Null",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Right": 5
+    },
+    "nullable": [
+      true,
+      true
+    ]
+  },
+  "hash": "4abb9924e455e510af42fba94eb79f5f48e6dd289f597f5fc553bd0efb656d31"
+}

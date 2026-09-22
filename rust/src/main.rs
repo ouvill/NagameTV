@@ -1,6 +1,7 @@
 mod audio;
 mod build_info;
 mod channels;
+mod cli;
 mod comment_model;
 mod danmaku;
 #[cfg(feature = "qml_tests")]
@@ -16,6 +17,7 @@ mod native_tests;
 mod platform;
 mod playback;
 mod player;
+mod qt;
 mod remote;
 mod screenshots;
 mod services;
@@ -25,145 +27,50 @@ mod transport;
 #[cfg(feature = "video_item_tests")]
 mod video_item_tests;
 
-use cxx_qt_lib::{QGuiApplication, QQmlApplicationEngine, QUrl};
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering},
-};
-
-#[derive(Debug, thiserror::Error)]
-enum StartupError {
-    #[error("Allocator initialization failed: {0}")]
-    Allocator(&'static str),
-    #[error("{0}")]
-    Arguments(#[source] features::ParseError),
-    #[error("Feature plan was already initialized")]
-    PlanAlreadyInitialized,
-    #[error("Diagnostics initialization failed: {0}")]
-    Diagnostics(#[from] diagnostics::Error),
-    #[error("Could not create the Qt application")]
-    Application,
-    #[error("Could not create the Qt QML engine")]
-    Engine,
-    #[error("Playback initialization failed: {0}")]
-    Playback(#[source] playback::Error),
-    #[error("Could not load UI translation")]
-    Translation,
-    #[error("Could not load the Qt interface")]
-    Interface,
-}
-
 fn main() -> std::process::ExitCode {
-    // Information-only commands must work before platform, Qt, GStreamer,
-    // settings and diagnostics initialization, including without any devices.
-    if std::env::args_os().len() == 2 {
-        match std::env::args().nth(1).as_deref() {
-            Some("--build-info") => {
-                println!("{}", build_info::json());
-                return std::process::ExitCode::SUCCESS;
-            }
-            Some("--version" | "-V") => {
-                println!("nagametv {}", build_info::INFO.version);
-                return std::process::ExitCode::SUCCESS;
-            }
-            _ => {}
+    // No platform, settings, diagnostics, Qt or GStreamer side effects before parsing.
+    let command = match cli::Command::parse_from(std::env::args_os()) {
+        Ok(command) => command,
+        Err(error) => {
+            let _ = error.print();
+            return std::process::ExitCode::from(error.exit_code() as u8);
         }
-    }
-    #[cfg(feature = "native_tests")]
-    if std::env::args().nth(1).as_deref() == Some("--native-tests") {
-        return std::process::ExitCode::from(native_tests::run().clamp(0, 255) as u8);
-    }
-    // GUI integration checks must run on the process main thread, not libtest.
-    #[cfg(feature = "video_item_tests")]
-    if std::env::args().nth(1).as_deref() == Some("--video-item-tests") {
-        return std::process::ExitCode::from(video_item_tests::run() as u8);
-    }
-    // Qt must run on the process main thread, not a libtest worker.
-    #[cfg(feature = "qml_tests")]
-    if std::env::args().nth(1).as_deref() == Some("--qml-tests") {
-        return std::process::ExitCode::from(danmaku_ui_tests::run().clamp(0, 255) as u8);
-    }
+    };
+    let plan = match command {
+        cli::Command::Launch(plan) => plan,
+        cli::Command::BuildInfo => {
+            println!("{}", build_info::json());
+            return std::process::ExitCode::SUCCESS;
+        }
+        #[cfg(feature = "native_tests")]
+        cli::Command::NativeTests(arguments) => {
+            return std::process::ExitCode::from(native_tests::run(arguments).clamp(0, 255) as u8);
+        }
+        #[cfg(feature = "video_item_tests")]
+        cli::Command::VideoItemTests => {
+            return std::process::ExitCode::from(video_item_tests::run().clamp(0, 255) as u8);
+        }
+        #[cfg(feature = "qml_tests")]
+        cli::Command::QmlTests => {
+            return std::process::ExitCode::from(danmaku_ui_tests::run().clamp(0, 255) as u8);
+        }
+    };
     logging::init();
     tracing::info!(build_info = %build_info::json(), "Application build");
-    // SAFETY: Logging initialization creates no threads. Before Qt/GStreamer, diagnostics
-    // or application workers are initialized. No application thread exists yet.
+    // SAFETY: Logging creates no threads; Qt, GStreamer and workers have not started.
     #[cfg(target_os = "linux")]
     unsafe {
         platform::configure_at_startup();
     }
-    match run() {
-        Ok(()) => std::process::ExitCode::SUCCESS,
+    // SAFETY: This is the main thread; no application workers have started.
+    match unsafe { qt::application::load(plan) } {
+        Ok(application) => {
+            application.exec();
+            std::process::ExitCode::SUCCESS
+        }
         Err(error) => {
             tracing::error!("{error}");
-            if matches!(error, StartupError::Arguments(_)) {
-                std::process::ExitCode::from(2)
-            } else {
-                std::process::ExitCode::FAILURE
-            }
+            std::process::ExitCode::FAILURE
         }
     }
-}
-
-// Returning errors unwinds local ownership normally: the QML engine (and its
-// Player) is destroyed before QGuiApplication, including failed UI creation.
-fn run() -> Result<(), StartupError> {
-    // SAFETY: Still before Qt, GStreamer, diagnostics or worker initialization.
-    #[cfg(target_os = "linux")]
-    let dialogs = unsafe { platform::DialogSetup::prepare() };
-    memory::configure().map_err(StartupError::Allocator)?;
-    let plan =
-        features::LaunchPlan::parse(std::env::args().skip(1)).map_err(StartupError::Arguments)?;
-    tracing::info!("Feature plan: {plan:?}");
-    features::PLAN
-        .set(plan)
-        .map_err(|_| StartupError::PlanAlreadyInitialized)?;
-    player::ffi::install_qt_logging(logging::record_qt);
-    if diagnostics::requested(plan.locked) {
-        player::ffi::install_qt_gc_logging(diagnostics::record_qt_gc);
-    }
-    cxx_qt::init_qml_module!("MinimalViewer");
-    player::ffi::configure_qt_quick_open_gl();
-    let mut app = QGuiApplication::new();
-    // qml6glsink registers its QML video type before loading the UI.
-    if app.is_null() {
-        return Err(StartupError::Application);
-    }
-    #[cfg(target_os = "linux")]
-    dialogs.finish(&app);
-    let _preloaded = playback::preload().map_err(StartupError::Playback)?;
-    // Reverse local drop order keeps diagnostics alive through engine destruction.
-    let _diagnostics = diagnostics::Lifetime::new()?;
-    let mut engine = QQmlApplicationEngine::new();
-    {
-        let mut engine = engine.as_mut().ok_or(StartupError::Engine)?;
-        // Match main: resolve the startup language before constructing QML.
-        // Player loads the complete settings session and reports load errors separately.
-        let language = if plan.locked {
-            settings::Language::System
-        } else {
-            settings::settings_path()
-                .and_then(settings::Loaded::open)
-                .map(|session| session.preferences().language)
-                .unwrap_or_default()
-        };
-        if !player::ffi::initialize_ui_language(
-            engine.as_mut(),
-            &cxx_qt_lib::QString::from(language.code()),
-        ) {
-            return Err(StartupError::Translation);
-        }
-        let failed = Arc::new(AtomicBool::new(false));
-        let flag = failed.clone();
-        let _connection = engine.as_mut().on_object_creation_failed(move |_, _| {
-            flag.store(true, Ordering::Relaxed);
-        });
-        engine
-            .as_mut()
-            .load(&QUrl::from("qrc:/qt/qml/MinimalViewer/qml/Main.qml"));
-        if failed.load(Ordering::Relaxed) {
-            return Err(StartupError::Interface);
-        }
-    }
-    app.as_mut().ok_or(StartupError::Application)?.exec();
-    Ok(())
 }

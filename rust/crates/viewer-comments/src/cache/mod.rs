@@ -31,7 +31,9 @@ pub enum Error {
     #[error("コメントを保存できません: {0}")]
     Io(#[from] std::io::Error),
     #[error("コメントDBを操作できません: {0}")]
-    Database(#[from] rusqlite::Error),
+    Database(#[from] sqlx::Error),
+    #[error("コメントDBのデータを変換できません: {0}")]
+    Payload(#[from] serde_json::Error),
     #[error("{0}")]
     Archive(#[from] crate::archive::Error),
     #[error("コメントキャッシュの形式が不正です: {0}")]
@@ -244,3 +246,6 @@ mod tests {
         assert!(range(22, 10, 22, 15).missing(received).is_empty());
     }
 }
+
+#[cfg(test)]
+mod test_database;

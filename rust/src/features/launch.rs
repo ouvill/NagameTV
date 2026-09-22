@@ -1,111 +1,73 @@
-//! Startup feature selection, independent of Qt and feature workers.
+//! Startup policy, independent of Qt, command-line syntax and feature workers.
+use std::str::FromStr;
+
 #[derive(Debug, PartialEq, Eq, thiserror::Error)]
-pub enum ParseError {
-    #[error("--features=none|subtitles|epg|comments の形式で指定してください")]
-    MissingEquals,
-    #[error("--features は一度だけ指定してください")]
-    RepeatedOption,
-    #[error("不正な機能指定: {0}（none / subtitles / epg / comments）")]
-    InvalidFeature(String),
+#[error("invalid or repeated feature: {0} (expected none / subtitles / epg / comments)")]
+pub struct FeatureError(String);
+
+/// Independent feature choices. Only a validated allowlist can construct this value.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FeatureSet {
+    subtitles: bool,
+    epg: bool,
+    comments: bool,
 }
 
-/// Parsed before Qt/GStreamer initialization. CLI explicitly limits available features.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct LaunchPlan {
-    pub subtitles: bool,
-    pub epg: bool,
-    pub comments: bool,
-    pub locked: bool,
-}
-impl LaunchPlan {
-    pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Self, ParseError> {
-        let mut plan = Self {
+impl FromStr for FeatureSet {
+    type Err = FeatureError;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        let mut features = Self {
             subtitles: false,
             epg: false,
             comments: false,
-            locked: false,
         };
-        for arg in args {
-            if arg == "--features" {
-                return Err(ParseError::MissingEquals);
-            }
-            let Some(value) = arg.strip_prefix("--features=") else {
-                continue;
-            };
-            if plan.locked {
-                return Err(ParseError::RepeatedOption);
-            }
-            plan.locked = true;
-            if value == "none" {
-                continue;
-            }
-            for name in value.split(',') {
-                match name {
-                    "subtitles" if !plan.subtitles => plan.subtitles = true,
-                    "epg" if !plan.epg => plan.epg = true,
-                    "comments" if !plan.comments => plan.comments = true,
-                    _ => {
-                        return Err(ParseError::InvalidFeature(name.to_owned()));
-                    }
-                }
+        if value == "none" {
+            return Ok(features);
+        }
+        for name in value.split(',') {
+            match name {
+                "subtitles" if !features.subtitles => features.subtitles = true,
+                "epg" if !features.epg => features.epg = true,
+                "comments" if !features.comments => features.comments = true,
+                _ => return Err(FeatureError(name.to_owned())),
             }
         }
-        if !plan.locked {
-            plan.subtitles = true;
-            plan.epg = true;
-            plan.comments = true;
-        }
-        Ok(plan)
+        Ok(features)
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn normal_launch_enables_features_and_development_allowlist_is_strict() -> Result<(), ParseError>
-    {
-        let parse = |args: &[&str]| LaunchPlan::parse(args.iter().map(|s| s.to_string()));
-        assert_eq!(
-            parse(&[])?,
-            LaunchPlan {
-                subtitles: true,
-                epg: true,
-                comments: true,
-                locked: false
-            }
-        );
-        assert_eq!(
-            parse(&["--features=none"])?,
-            LaunchPlan {
-                subtitles: false,
-                epg: false,
-                comments: false,
-                locked: true
-            }
-        );
-        assert!(parse(&["--features=subtitles,epg"])?.epg);
-        assert!(matches!(
-            parse(&["--features=comments"]),
-            Ok(LaunchPlan { comments: true, .. })
-        ));
-        assert!(parse(&["--features=subtitles,epg,comments"])?.comments);
-        assert_eq!(parse(&["--features"]), Err(ParseError::MissingEquals));
-        for (arg, name) in [
-            ("--features=", ""),
-            ("--features=none,epg", "none"),
-            ("--features=comments,comments", "comments"),
-            ("--features=epg,epg", "epg"),
-        ] {
-            assert_eq!(
-                parse(&[arg]),
-                Err(ParseError::InvalidFeature(name.to_owned()))
-            );
+/// Normal startup loads preferences; restricted startup uses transient settings.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum LaunchPlan {
+    #[default]
+    Preferences,
+    Restricted(FeatureSet),
+}
+
+impl LaunchPlan {
+    pub fn locked(self) -> bool {
+        match self {
+            Self::Preferences => false,
+            Self::Restricted(_) => true,
         }
-        assert_eq!(
-            parse(&["--features=none", "--features=epg"]),
-            Err(ParseError::RepeatedOption)
-        );
-        Ok(())
+    }
+    pub fn subtitles(self) -> bool {
+        match self {
+            Self::Preferences => true,
+            Self::Restricted(features) => features.subtitles,
+        }
+    }
+    pub fn epg(self) -> bool {
+        match self {
+            Self::Preferences => true,
+            Self::Restricted(features) => features.epg,
+        }
+    }
+    pub fn comments(self, preference: bool) -> bool {
+        match self {
+            Self::Preferences => preference,
+            Self::Restricted(features) => features.comments,
+        }
     }
 }

@@ -23,6 +23,8 @@ for suite in scripts/test-*.py; do
   python3 "$suite"
 done
 
+python3 scripts/check-comment-sql.py
+
 cargo test --manifest-path rust/Cargo.toml --release --locked
 # Cargo does not run tests belonging to path dependencies of the application.
 for crate in viewer-comments viewer-epg-events viewer-diagnostics viewer-remote tsreadex; do
@@ -35,6 +37,7 @@ for crate in viewer-comments viewer-epg-events viewer-diagnostics viewer-remote 
 done
 
 bash scripts/test-connection.sh
+python3 scripts/check-cli.py "$CARGO_TARGET_DIR/release/nagametv"
 bash scripts/test-desktop-media.sh
 bash scripts/test-localization.sh
 bash scripts/test-subtitle-outline.sh

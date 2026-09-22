@@ -1,4 +1,5 @@
 use super::*;
+use futures_lite::future::block_on;
 use std::{
     io::{Read, Write},
     net::TcpListener,
@@ -79,8 +80,8 @@ fn cached_seek_is_readable_while_an_archive_writer_holds_the_database() {
 
     // WAL permits reading the published cache throughout an import. Neither
     // unchanged pins nor last-used bookkeeping may delay the new position.
-    let writer = rusqlite::Connection::open(dir.path().join("cache.sqlite3")).unwrap();
-    writer.execute_batch("BEGIN IMMEDIATE").unwrap();
+    let mut writer = super::super::test_database::open(dir.path().join("cache.sqlite3")).unwrap();
+    block_on(sqlx::raw_sql("BEGIN IMMEDIATE").execute(&mut writer)).unwrap();
     let mut seeking = current.clone();
     seeking.view = None;
     controller.configure(Some(seeking));
@@ -110,7 +111,7 @@ fn cached_seek_is_readable_while_an_archive_writer_holds_the_database() {
         );
         thread::sleep(POLL_INTERVAL);
     }
-    writer.execute_batch("ROLLBACK").unwrap();
+    block_on(sqlx::raw_sql("ROLLBACK").execute(&mut writer)).unwrap();
     controller.shutdown();
 }
 #[test]
@@ -189,12 +190,12 @@ fn sent_response_finishes_after_source_change_while_live_saving_continues() {
     finish_tx.send(()).unwrap();
     server.join().unwrap();
     let deadline = Instant::now() + Duration::from_secs(3);
-    let db = rusqlite::Connection::open(dir.path().join("cache.sqlite3")).unwrap();
-    while db
-        .query_row("SELECT count(*) FROM coverage WHERE published=1", [], |r| {
-            r.get::<_, i64>(0)
-        })
-        .unwrap()
+    let mut db = super::super::test_database::open(dir.path().join("cache.sqlite3")).unwrap();
+    while block_on(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM coverage WHERE published=1")
+            .fetch_one(&mut db),
+    )
+    .unwrap()
         != 1
     {
         assert!(Instant::now() < deadline, "old response was not saved");
@@ -305,9 +306,9 @@ fn whole_program_uses_one_request_across_playback_seeks_and_restart() {
         thread::sleep(Duration::from_millis(5));
     }
     thread::sleep(SEEK_SETTLE + POLL + POLL);
-    let db = rusqlite::Connection::open(dir.path().join("cache.sqlite3")).unwrap();
+    let mut db = super::super::test_database::open(dir.path().join("cache.sqlite3")).unwrap();
     assert_eq!(
-        db.query_row("SELECT count(*) FROM requests", [], |r| r.get::<_, i64>(0))
+        block_on(sqlx::query_scalar::<_, i64>("SELECT count(*) FROM requests").fetch_one(&mut db))
             .unwrap(),
         1
     );

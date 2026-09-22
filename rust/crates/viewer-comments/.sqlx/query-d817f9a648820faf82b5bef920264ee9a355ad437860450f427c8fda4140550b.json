@@ -1,0 +1,38 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT id,published AS \"published: bool\" FROM coverage WHERE receipt=?1",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "coverage",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "name": "published: bool",
+        "ordinal": 1,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "coverage",
+            "name": "published"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "d817f9a648820faf82b5bef920264ee9a355ad437860450f427c8fda4140550b"
+}

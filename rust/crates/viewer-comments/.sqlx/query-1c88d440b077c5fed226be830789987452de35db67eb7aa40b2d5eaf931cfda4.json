@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT started FROM requests ORDER BY started",
+  "describe": {
+    "columns": [
+      {
+        "name": "started",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "requests",
+            "name": "started"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "1c88d440b077c5fed226be830789987452de35db67eb7aa40b2d5eaf931cfda4"
+}

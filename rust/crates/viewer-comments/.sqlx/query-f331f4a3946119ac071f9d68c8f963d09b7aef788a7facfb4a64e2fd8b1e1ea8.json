@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE live_comments SET clock=?1 WHERE owner=?2 AND channel=?3 AND clock IS NULL AND time>=?4 AND time<?5",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 5
+    },
+    "nullable": []
+  },
+  "hash": "f331f4a3946119ac071f9d68c8f963d09b7aef788a7facfb4a64e2fd8b1e1ea8"
+}

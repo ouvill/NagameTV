@@ -1,5 +1,5 @@
 use super::bridge::ffi;
-use crate::player::ffi::{
+use crate::qt::ffi::{
     apply_ui_language, current_ui_language, initialize_ui_language, translate_backend,
 };
 use cxx_qt_lib::{

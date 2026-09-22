@@ -66,7 +66,7 @@ impl Prepared {
     ) -> Result<PathBuf, Error> {
         let format = encoding.format();
         if image.is_null()
-            || !crate::player::ffi::save_screenshot_image(
+            || !crate::qt::ffi::save_screenshot_image(
                 image,
                 &QString::from(self.temporary.path().to_string_lossy().as_ref()),
                 &QString::from(format.key()),
@@ -122,7 +122,7 @@ impl Captured {
             .checked_mul(image.height() as usize)
             .and_then(|pixels| pixels.checked_mul(4))
             .ok_or(Error::Capacity)?;
-        let image = crate::player::ffi::share_screenshot_image(image);
+        let image = crate::qt::ffi::share_screenshot_image(image);
         Ok(Self::new(bytes, move || Ok(image)))
     }
     fn new(bytes: usize, pixels: impl FnOnce() -> Result<QImage, Error> + Send + 'static) -> Self {

@@ -1,6 +1,6 @@
 //! Real Qt portal plugin against a private D-Bus protocol fixture, with a real GUI.
 use super::bridge::ffi;
-use crate::{platform, player};
+use crate::platform;
 use cxx_qt_lib::{QByteArray, QGuiApplication, QQmlApplicationEngine, QString, QUrl};
 use std::time::{Duration, Instant};
 
@@ -35,7 +35,9 @@ pub(super) fn wait_for(
 
 pub fn run() -> i32 {
     crate::features::PLAN
-        .set(crate::features::LaunchPlan::parse(["--features=none".into()]).unwrap())
+        .set(crate::features::LaunchPlan::Restricted(
+            "none".parse().unwrap(),
+        ))
         .expect("test launch plan");
     let directory = std::path::PathBuf::from(
         std::env::var_os("VIEWER_PORTAL_TEST_DIR").expect("Run scripts/test-portal-dialogs.sh"),
@@ -48,7 +50,7 @@ pub fn run() -> i32 {
         .to_owned();
     // SAFETY: Fresh main-thread test process, before Qt or any worker starts.
     let dialogs = unsafe { platform::DialogSetup::prepare() };
-    player::ffi::configure_qt_quick_open_gl();
+    crate::qt::ffi::configure_qt_quick_open_gl();
     let app = QGuiApplication::new();
     assert!(!app.is_null());
     assert_eq!(dialogs.finish(&app), platform::DialogBackend::Portal);

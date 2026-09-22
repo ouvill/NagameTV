@@ -1,6 +1,6 @@
 //! Load the production Main.qml, Player and video item using validated hardware.
 use super::bridge::ffi;
-use crate::{features, playback, player, settings};
+use crate::{features, playback, settings};
 use cxx_qt_lib::{QGuiApplication, QQmlApplicationEngine, QString, QUrl};
 use gstreamer::glib;
 use std::{
@@ -319,7 +319,7 @@ fn check_screen_navigation(
         let image = ffi::grabRoot(engine.pin_mut())?;
         let default_quality = -1;
         let png_compression_percent = 60;
-        if !player::ffi::save_screenshot_image(
+        if !crate::qt::ffi::save_screenshot_image(
             &image,
             &QString::from(review.join(name).to_string_lossy().as_ref()),
             &QString::from("png"),
@@ -478,7 +478,7 @@ fn window(
 ) -> TestResult {
     let _preloaded = playback::preload()?;
     let mut engine = QQmlApplicationEngine::new();
-    assert!(player::ffi::initialize_ui_language(
+    assert!(crate::qt::ffi::initialize_ui_language(
         engine.pin_mut(),
         &QString::from("en")
     ));
@@ -1100,7 +1100,7 @@ fn check_shortcuts(
     let review = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../build/audio-review");
     std::fs::create_dir_all(&review)?;
     let image = ffi::grabRoot(engine.pin_mut())?;
-    assert!(player::ffi::save_screenshot_image(
+    assert!(crate::qt::ffi::save_screenshot_image(
         &image,
         &QString::from(review.join("audio-panel.png").to_string_lossy().as_ref()),
         &QString::from("png"),
@@ -1392,11 +1392,11 @@ fn run_window_check(check: WindowCheck) -> i32 {
     );
     let result = (|| -> TestResult {
         features::PLAN
-            .set(features::LaunchPlan::parse([])?)
+            .set(features::LaunchPlan::Preferences)
             .map_err(|_| "plan already initialized")?;
-        player::ffi::install_qt_logging(record_qt);
+        crate::qt::ffi::install_qt_logging(record_qt);
         cxx_qt::init_qml_module!("MinimalViewer");
-        player::ffi::configure_qt_quick_open_gl();
+        crate::qt::ffi::configure_qt_quick_open_gl();
         let app = QGuiApplication::new();
         assert!(!app.is_null());
         #[cfg(target_os = "linux")]

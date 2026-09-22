@@ -6,7 +6,7 @@ use cxx_qt_lib::QString;
 use std::pin::Pin;
 
 pub(super) fn tr(source: &'static str) -> QString {
-    ffi::translate_backend(&QString::from(source))
+    crate::qt::ffi::translate_backend(&QString::from(source))
 }
 
 pub(super) fn with_detail(source: &'static str, detail: impl std::fmt::Display) -> QString {

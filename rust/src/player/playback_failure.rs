@@ -16,7 +16,7 @@ impl Player {
                 .map_err(|error| error.to_string())
                 .and_then(|()| {
                     let path = QString::from(log.directory().to_string_lossy().as_ref());
-                    if super::ffi::open_local_directory(&path) {
+                    if crate::qt::ffi::open_local_directory(&path) {
                         Ok(())
                     } else {
                         // A translation source for the QML boundary, like playback_message.

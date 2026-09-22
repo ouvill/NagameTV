@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE live_comments SET media_ms=?1+(time/1000-?2) WHERE owner=?3 AND clock=?4\n                AND media_ms IS NULL AND time>=?2*1000 AND time<?5*1000",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 5
+    },
+    "nullable": []
+  },
+  "hash": "59c16406f94b13c0f47c15af98589199f5209e3ba3d2e22dceb7eaf17b6eba6e"
+}

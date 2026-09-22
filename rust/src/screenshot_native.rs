@@ -16,7 +16,7 @@ pub mod ffi {
     unsafe extern "C++" {
         include!("screenshot_observer.h");
         #[namespace = ""]
-        type QQuickItem = crate::player::ffi::QQuickItem;
+        type QQuickItem = crate::qt::ffi::QQuickItem;
         unsafe fn observePresentation(item: *mut QQuickItem, observer: Box<Observer>);
     }
     extern "Rust" {

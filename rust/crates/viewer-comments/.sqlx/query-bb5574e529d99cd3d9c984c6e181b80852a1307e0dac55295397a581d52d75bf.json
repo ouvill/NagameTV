@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO pins(owner,channel,start,end) VALUES(?1,?2,?3,?4)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "bb5574e529d99cd3d9c984c6e181b80852a1307e0dac55295397a581d52d75bf"
+}

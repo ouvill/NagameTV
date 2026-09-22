@@ -11,8 +11,9 @@
 ## 所有関係
 
 ```text
-main::run
+main → cli::Command → qt::application::LoadedApplication
  ├ QGuiApplication
+ ├ playback::Preloaded
  ├ diagnostics::Lifetime    記録ワーカーをQML engineの破棄後まで保持
  └ QQmlApplicationEngine
     └ PlayerRust（Qtへの投影と開始・停止順序）
@@ -42,6 +43,16 @@ EPG設定による番組通信・番組表示の無効化は維持する。[音�
 TS/PAT/PMTの構文とPSI再構成・PAT集約は`transport`で録画検証と字幕機能が共有する。
 字幕用フレーミング・PES解析・字幕ES選択は字幕モジュールにある。
 READYで停止してplaybinを再利用する方針を保持するが、パイプライン全体が最小版と同一ではない。
+
+起動引数は`cli`がclapで解析し、`LaunchPlan::Preferences`または検証済み許可リストを持つ
+`Restricted`へ変換する。Qtの共通FFIは`qt.rs`、アプリ全体の初期化は`qt/application.rs`に置く。
+`LoadedApplication`はQML読込成功時だけ構築でき、`exec(self)`が起動権を消費する。
+破棄はengineとPlayer、診断資源、事前作成した再生資源、QGuiApplicationの順になる。
+PlayerのFFIにはQML公開APIと必要な型の参照を残し、他のモジュールはQt共通処理を直接参照する。
+
+コメントDBは`viewer-comments::cache::store`がSQLx接続を所有する。
+専用ワーカー内での待機、トランザクション、SQL検査情報の更新手順は
+[開発手順](development.md#コメントdbのsql検査)を参照。
 
 ## 状態変更とQtへの通知（2026-09-15）
 
@@ -179,19 +190,16 @@ EPG固有のエラー型を依存させない。元のHTTP・JSON・GStreamerエ
 字幕デコーダーの生成可否しか得られない既存の境界は `DecoderUnavailable` で表し、
 下位の具体的な原因を保持できるようになったと見せかけない。
 
-EPGのparseは変換・検証のみとし、メモリー容量のログは結果を受理する箇所へ分離した。
-起動引数は`features/launch.rs`へ分離し、`ParseError`で指定形式不正、オプション重複、
-不正な機能名を区別する。`StartupError::Arguments`は元の型をsourceとして保持し、
-終了コード2の判断は従来どおり外側の種類で行う。既存の引数の受理・拒否条件、
-エラー文言、Qt/GStreamer初期化より前に解析する順序は維持する。
+EPGのparseは変換・検証のみとし、メモリー容量のログは結果を受理する箇所へ分離する。
+起動引数は`cli.rs`が`clap::Error`で指定形式不正・オプション重複・未知の引数を報告する。
+許可リストの内容は`FeatureSet`が検証し、機能名の誤りや重複を`FeatureError`として返す。
+引数エラーは終了コード2、ヘルプ・バージョン表示は0で終了する。説明文はclapの形式に従う。
+いずれも設定・ログ・Qt/GStreamerの初期化前に終了する。
 allocator設定の小さなエラーAPIは引き続き固定文字列で返す。
 
-2026-09-07の起動引数整理では、既存解析テストをエラーvariantまで確認する形に更新し成功。
-全ターゲットClippy警告なし、リリースビルド成功。製品バイナリーへ不正引数を5通り渡し、
-いずれも終了コード2・従来と同じ標準エラー文言・標準出力なしを確認した。
-記録はgit管理外の`benchmark/launch-errors/check.py`と`result.json`。
-通常経路のexpectも点検し、PLANの事前初期化、静的な音声pad定義、排他的に操作する
-待機キューの長さという各不変条件のコメントを確認。これらは今回変更していない。
+Portalの問い合わせとコメントDBの操作・JSON変換もthiserrorのエラー型で原因を保持する。
+SQLiteの型変換が成功しても、区間の前後関係や失敗回数の範囲はRust側で検証する。
+CLIの実行ファイル試験とSQL検査の手順は[開発手順](development.md)を参照。
 
 ## 診断と検証の限界
 

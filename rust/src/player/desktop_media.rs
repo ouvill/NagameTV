@@ -15,7 +15,7 @@ pub(super) enum Registration {
     #[default]
     Pending,
     Unavailable,
-    Registered(cxx::UniquePtr<ffi::DesktopMedia>),
+    Registered(cxx::UniquePtr<crate::qt::ffi::DesktopMedia>),
 }
 
 #[derive(Serialize)]
@@ -74,7 +74,7 @@ impl ffi::Player {
 
     pub(super) fn poll_desktop_media(mut self: Pin<&mut Self>) {
         if matches!(self.rust().desktop_media, Registration::Pending) {
-            let registration = match ffi::connect_desktop_media() {
+            let registration = match crate::qt::ffi::connect_desktop_media() {
                 Ok(session) => Registration::Registered(session),
                 Err(error) => {
                     tracing::warn!("Desktop media controls unavailable: {error}");

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO live_comments(owner,channel,clock,media_ms,time,payload,own) VALUES(?1,?2,?3,?4,?5,?6,?7)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 7
+    },
+    "nullable": []
+  },
+  "hash": "cf566a1873046278d9d45ea45d3777453797f566c54e8eb191dd6163de99f975"
+}

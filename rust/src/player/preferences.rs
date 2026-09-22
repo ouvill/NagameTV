@@ -8,9 +8,9 @@ use std::pin::Pin;
 impl ffi::Player {
     /// # Safety
     /// `item` must be a live QQuickItem on the GUI thread for this call.
-    pub unsafe fn window_options(&self, item: *mut ffi::QQuickItem) -> QString {
+    pub unsafe fn window_options(&self, item: *mut crate::qt::ffi::QQuickItem) -> QString {
         // SAFETY: The QML caller keeps its viewport alive for this synchronous call.
-        let available = unsafe { ffi::available_window_size(item) }
+        let available = unsafe { crate::qt::ffi::available_window_size(item) }
             .ok()
             .and_then(|size| crate::settings::WindowSize::checked(size.width(), size.height()));
         let Some(available) = available else {

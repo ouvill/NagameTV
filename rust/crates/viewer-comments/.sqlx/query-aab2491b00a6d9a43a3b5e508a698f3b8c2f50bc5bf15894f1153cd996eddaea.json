@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT generation FROM provider WHERE id=1",
+  "describe": {
+    "columns": [
+      {
+        "name": "generation",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "provider",
+            "name": "generation"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "aab2491b00a6d9a43a3b5e508a698f3b8c2f50bc5bf15894f1153cd996eddaea"
+}

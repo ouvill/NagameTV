@@ -5,5 +5,5 @@ pub(crate) mod subscriptions;
 pub mod subtitles;
 
 mod launch;
-pub use launch::{LaunchPlan, ParseError};
+pub use launch::{FeatureSet, LaunchPlan};
 pub static PLAN: std::sync::OnceLock<LaunchPlan> = std::sync::OnceLock::new();

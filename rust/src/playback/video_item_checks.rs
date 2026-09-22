@@ -6,8 +6,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 /// # Safety
 /// The fixture owns both GUI-thread items until this function returns.
 pub(crate) unsafe fn check(
-    ordinary: *mut crate::player::ffi::QQuickItem,
-    video: *mut crate::player::ffi::QQuickItem,
+    ordinary: *mut crate::qt::ffi::QQuickItem,
+    video: *mut crate::qt::ffi::QQuickItem,
 ) {
     // Construction and NULL teardown do not open an audio device or stream.
     let mut playback = Playback::new().unwrap();

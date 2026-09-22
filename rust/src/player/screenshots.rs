@@ -13,7 +13,9 @@ impl ffi::Player {
         directory: &ScreenshotDirectory,
     ) -> Result<PathBuf, Error> {
         directory
-            .resolve(&PathBuf::from(ffi::pictures_directory().to_string()))
+            .resolve(&PathBuf::from(
+                crate::qt::ffi::pictures_directory().to_string(),
+            ))
             .ok_or(Error::Directory)
     }
 
@@ -92,7 +94,7 @@ impl ffi::Player {
         match directory {
             Ok(directory) => {
                 let path = QString::from(directory.to_string_lossy().as_ref());
-                if ffi::open_local_directory(&path) {
+                if crate::qt::ffi::open_local_directory(&path) {
                     self.set_screenshot_error(QString::default());
                     true
                 } else {
@@ -126,7 +128,9 @@ impl ffi::Player {
         });
         if let Some(directory) = directory
             && directory.is_dir()
-            && ffi::open_local_directory(&QString::from(directory.to_string_lossy().as_ref()))
+            && crate::qt::ffi::open_local_directory(&QString::from(
+                directory.to_string_lossy().as_ref(),
+            ))
         {
             self.set_screenshot_error(QString::default());
             return true;

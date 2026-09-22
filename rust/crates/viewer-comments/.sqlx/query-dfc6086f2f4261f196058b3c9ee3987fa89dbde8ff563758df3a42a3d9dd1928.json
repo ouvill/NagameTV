@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO comments(coverage,time,payload) VALUES(?1,?2,?3)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "dfc6086f2f4261f196058b3c9ee3987fa89dbde8ff563758df3a42a3d9dd1928"
+}

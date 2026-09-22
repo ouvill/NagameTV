@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM coverage WHERE published=0 AND (?1 IS NULL OR receipt<>?1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "6316cb192e95f98de167b30e5df8189ca6bcbd9d68ca5340704224411f7f0217"
+}

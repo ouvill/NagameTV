@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM live_coverage WHERE owner=?1 AND channel=?2 AND clock=?3 AND start<=?4 AND end>=?5",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 5
+    },
+    "nullable": []
+  },
+  "hash": "1e670a3c444c7d3e77f848fd717ed3dcd37acaf4b9ae2150892600a4159ed824"
+}

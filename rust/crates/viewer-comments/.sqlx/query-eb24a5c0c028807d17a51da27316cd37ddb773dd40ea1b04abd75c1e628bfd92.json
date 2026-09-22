@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE coverage\nSET published = 1, settled = ?2, target_key = ?3,\n    bytes = ?5 + COALESCE((SELECT SUM(length(payload) + ?4) FROM comments WHERE coverage = ?1), 0)\nWHERE id = ?1\n",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 5
+    },
+    "nullable": []
+  },
+  "hash": "eb24a5c0c028807d17a51da27316cd37ddb773dd40ea1b04abd75c1e628bfd92"
+}

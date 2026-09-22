@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO targets(key, channel, start, end, last_used) VALUES(?1, ?2, ?3, ?4, ?5)\nON CONFLICT(key) DO UPDATE\nSET start = excluded.start, end = excluded.end, last_used = excluded.last_used\n",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 5
+    },
+    "nullable": []
+  },
+  "hash": "ff262dbe3a879c1eb593abf17c81dec13d6f5d14e1bc5a996fde940eba05c059"
+}

@@ -1,0 +1,38 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT start,end FROM coverage WHERE published=1 AND channel=?1 AND start<?2 AND end>?3 AND (?4=0 OR settled=1) ORDER BY start",
+  "describe": {
+    "columns": [
+      {
+        "name": "start",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "coverage",
+            "name": "start"
+          }
+        }
+      },
+      {
+        "name": "end",
+        "ordinal": 1,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "coverage",
+            "name": "end"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "4d9500045d451a1b1b9f028b6fa1f9a17e8f8ca15a3d28e1988f6a7dab1e576d"
+}

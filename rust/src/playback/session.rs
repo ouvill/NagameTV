@@ -334,7 +334,7 @@ impl Session {
     /// # Safety
     /// Same live-item, GUI-thread and shutdown-before-item-destruction contract
     /// as Playback::attach. Ownership of the Qt item does not transfer.
-    pub unsafe fn attach(&mut self, item: *mut crate::player::ffi::QQuickItem) -> Result<()> {
+    pub unsafe fn attach(&mut self, item: *mut crate::qt::ffi::QQuickItem) -> Result<()> {
         let playback = self.playback.as_mut().ok_or(Error::Unavailable)?;
         // SAFETY: The caller supplies the item lifetime/thread guarantees above.
         unsafe { playback.attach(item) }

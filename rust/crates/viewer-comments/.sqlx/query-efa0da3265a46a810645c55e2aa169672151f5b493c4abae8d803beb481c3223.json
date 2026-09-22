@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE coverage SET bytes=bytes+?1 WHERE id=?2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "efa0da3265a46a810645c55e2aa169672151f5b493c4abae8d803beb481c3223"
+}

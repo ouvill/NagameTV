@@ -1,6 +1,6 @@
 //! Hardware-free MPRIS wire contract on a private session bus. The fixture is
 //! synthetic media metadata; actual transport is exercised by the startup suite.
-use crate::player::ffi;
+use crate::qt::ffi;
 use cxx_qt_lib::{QCoreApplication, QString};
 use serde_json::json;
 use std::{

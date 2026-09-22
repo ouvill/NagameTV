@@ -5,6 +5,11 @@ or changing code. Actively use enums for exclusive states and Typestate for
 operations with prerequisites or ordering constraints. Keep constructors and
 mutation APIs narrow enough that callers cannot bypass these guarantees.
 
+Use clap for startup argument parsing, thiserror for Rust error types, and sqlx
+checked queries for SQLite access. Keep shared native Qt services in `qt` and
+QObject presentation APIs in their adapters; see the conventions for ownership,
+offline SQL metadata and validation requirements.
+
 Use the development and test commands in [docs/development.md](docs/development.md).
 Preserve existing work in the shared workspace.
 

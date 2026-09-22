@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO sessions(owner) VALUES (?1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "549de7ecc035ef4c7818fdf88f05db85025fa32c95c6b0ea8f7fb1f6ae21f5e7"
+}

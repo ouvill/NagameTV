@@ -1,0 +1,38 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT start,end FROM live_coverage WHERE owner=?1 AND channel=?2 AND clock=?3 AND start<?4 AND end>?5",
+  "describe": {
+    "columns": [
+      {
+        "name": "start",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "live_coverage",
+            "name": "start"
+          }
+        }
+      },
+      {
+        "name": "end",
+        "ordinal": 1,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "live_coverage",
+            "name": "end"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 5
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "2982d7824afda10a6c035a64c83e22618396e0468077dc45271b7d6dad4c58a1"
+}

@@ -83,18 +83,18 @@ fn refresh_splits_existing_coverage_and_keeps_outside_comments_and_empty_success
             .is_empty()
     );
     assert_eq!(
-        store
-            .db
-            .query_row("SELECT count(*) FROM coverage WHERE published=1", [], |r| r
-                .get::<_, i64>(0))
-            .unwrap(),
+        block_on(
+            sqlx::query_scalar::<_, i64>("SELECT count(*) FROM coverage WHERE published=1")
+                .fetch_one(&mut store.db)
+        )
+        .unwrap(),
         3
     );
     assert_eq!(
-        store
-            .db
-            .query_row("SELECT count(*) FROM comments", [], |r| r.get::<_, i64>(0))
-            .unwrap(),
+        block_on(
+            sqlx::query_scalar::<_, i64>("SELECT count(*) FROM comments").fetch_one(&mut store.db)
+        )
+        .unwrap(),
         3
     );
 }
@@ -146,7 +146,7 @@ fn pending_import_survives_real_sql_failure_and_reuses_download() {
     rx.write(br#"{"packet":[{"chat":{"date":100010,"content":"saved once"}}]}"#)
         .unwrap();
     let ready = rx.finish().unwrap().validate().map_err(|(_, e)| e).unwrap();
-    store.db.execute_batch("CREATE TRIGGER write_failure BEFORE INSERT ON comments BEGIN SELECT RAISE(ABORT,'injected disk write failure'); END;").unwrap();
+    block_on(sqlx::raw_sql("CREATE TRIGGER write_failure BEFORE INSERT ON comments BEGIN SELECT RAISE(ABORT,'injected disk write failure'); END;").execute(&mut store.db)).unwrap();
     assert!(matches!(
         ready.import(&mut store, || false),
         Err(Error::Database(_))
@@ -158,10 +158,7 @@ fn pending_import_survives_real_sql_failure_and_reuses_download() {
             .is_empty()
     );
     assert!(dir.path().join("response.json").exists());
-    store
-        .db
-        .execute_batch("DROP TRIGGER write_failure")
-        .unwrap();
+    block_on(sqlx::raw_sql("DROP TRIGGER write_failure").execute(&mut store.db)).unwrap();
     ready.import(&mut store, || false).unwrap();
     ready.finish().unwrap();
     assert_eq!(
@@ -189,21 +186,20 @@ fn protected_recording_survives_quota_and_clear_then_becomes_evictable() {
         range,
         r#"{"packet":[]}"#,
     );
-    store
-        .db
-        .execute("UPDATE coverage SET bytes=?1", [DEFAULT_CACHE_BYTES + 1])
-        .unwrap();
+    block_on(
+        sqlx::query("UPDATE coverage SET bytes=?1")
+            .bind(DEFAULT_CACHE_BYTES + 1)
+            .execute(&mut store.db),
+    )
+    .unwrap();
     store.cleanup(BASE + SETTLED_SECONDS * 3, false).unwrap();
     store.cleanup(BASE + SETTLED_SECONDS * 3, true).unwrap();
     assert_eq!(
-        store
-            .db
-            .query_row(
-                "SELECT last_used FROM coverage WHERE published=1",
-                [],
-                |row| row.get::<_, i64>(0)
-            )
-            .unwrap(),
+        block_on(
+            sqlx::query_scalar::<_, i64>("SELECT last_used FROM coverage WHERE published=1")
+                .fetch_one(&mut store.db)
+        )
+        .unwrap(),
         BASE + SETTLED_SECONDS * 3,
         "maintenance must record use even when window reads perform no writes"
     );
@@ -243,11 +239,11 @@ fn live_data_exceeding_memory_limits_remains_seekable_until_ts_expires() {
     }
     store.cleanup(BASE + SETTLED_SECONDS * 3, true).unwrap();
     assert_eq!(
-        store
-            .db
-            .query_row("SELECT count(*) FROM live_comments", [], |r| r
-                .get::<_, i64>(0))
-            .unwrap(),
+        block_on(
+            sqlx::query_scalar::<_, i64>("SELECT count(*) FROM live_comments")
+                .fetch_one(&mut store.db)
+        )
+        .unwrap(),
         COUNT as i64
     );
     assert!(
@@ -396,7 +392,7 @@ fn eighteen_fragments_are_completed_by_one_envelope_and_reused_after_reopening()
     assert_eq!(request.range, target.range);
     import_plan(&mut store, dir.path(), request, now, r#"{"packet":[]}"#);
     drop(store);
-    let store = Store::open(dir.path()).unwrap();
+    let mut store = Store::open(dir.path()).unwrap();
     assert!(matches!(
         store
             .planned("test", &target, now + SETTLED_SECONDS * 365)
@@ -488,23 +484,21 @@ fn overlapping_snapshots_keep_maximum_multiplicity_and_empty_does_not_delete_pos
 #[test]
 fn old_database_migration_preserves_empty_coverage_and_request_waiting() {
     let dir = tempfile::tempdir().unwrap();
-    let db = Connection::open(dir.path().join("cache.sqlite3")).unwrap();
-    db.execute_batch(include_str!("../schema.sql")).unwrap();
-    db.execute_batch("PRAGMA user_version=1; INSERT INTO coverage(channel,start,end,fetched,last_used,receipt,published,bytes)
+    let mut db = super::super::test_database::open(dir.path().join("cache.sqlite3")).unwrap();
+    block_on(sqlx::raw_sql(include_str!("../schema.sql")).execute(&mut db)).unwrap();
+    block_on(sqlx::raw_sql("PRAGMA user_version=1; INSERT INTO coverage(channel,start,end,fetched,last_used,receipt,published,bytes)
         VALUES(1,100000,100060,300000,300000,'legacy',1,0);
         UPDATE provider SET wait_until=400000;
-        INSERT INTO requests(started) VALUES(300000);").unwrap();
+        INSERT INTO requests(started) VALUES(300000);").execute(&mut db)).unwrap();
     drop(db);
     let mut store = Store::open(dir.path()).unwrap();
     let range = Interval::new(BASE, BASE + 60).unwrap();
     assert_eq!(store.covered(1, range, 500000).unwrap(), vec![range]);
     assert!(store.imported("legacy").unwrap());
     assert_eq!(
-        store
-            .db
-            .query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
+        block_on(sqlx::query_scalar::<_, i64>("PRAGMA user_version").fetch_one(&mut store.db))
             .unwrap(),
-        SCHEMA_VERSION
+        2
     );
     let lease = store.try_provider().unwrap().unwrap();
     assert!(matches!(
@@ -603,10 +597,11 @@ fn copied_legacy_cache_is_preserved_and_completed_as_one_program() {
         std::env::var_os("NAGAMETV_COMMENT_CACHE_PROBE").expect("NAGAMETV_COMMENT_CACHE_PROBE");
     let dir = tempfile::tempdir().unwrap();
     std::fs::copy(path, dir.path().join("cache.sqlite3")).unwrap();
-    let before = Connection::open(dir.path().join("cache.sqlite3")).unwrap();
-    let count: i64 = before
-        .query_row("SELECT count(*) FROM comments", [], |row| row.get(0))
-        .unwrap();
+    let mut before = super::super::test_database::open(dir.path().join("cache.sqlite3")).unwrap();
+    let count: i64 = block_on(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM comments").fetch_one(&mut before),
+    )
+    .unwrap();
     drop(before);
     let mut store = Store::open(dir.path()).unwrap();
     // 2026-09-18 21:00 JST, 114-minute EIT from the supplied recording.
@@ -620,10 +615,10 @@ fn copied_legacy_cache_is_preserved_and_completed_as_one_program() {
     };
     assert_eq!(request.range, target.range);
     import_plan(&mut store, dir.path(), request, now, r#"{"packet":[]}"#);
-    let after: i64 = store
-        .db
-        .query_row("SELECT count(*) FROM comments", [], |row| row.get(0))
-        .unwrap();
+    let after: i64 = block_on(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM comments").fetch_one(&mut store.db),
+    )
+    .unwrap();
     assert_eq!(after, count, "empty refresh removed valid legacy comments");
     assert!(matches!(
         store.planned("probe", &target, now).unwrap(),
@@ -637,4 +632,74 @@ fn copied_legacy_cache_is_preserved_and_completed_as_one_program() {
         target.range.start,
         target.range.end
     );
+}
+
+#[test]
+fn unsupported_database_identity_is_preserved() {
+    const FOREIGN_APPLICATION: i64 = 12345;
+    const FUTURE_VERSION: i64 = 999;
+    for (pragma, value) in [
+        ("application_id", FOREIGN_APPLICATION),
+        ("user_version", FUTURE_VERSION),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("cache.sqlite3");
+        let mut db = super::super::test_database::open(&path).unwrap();
+        // Fixed fixture identifiers and integer values, never application input.
+        block_on(sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
+            "PRAGMA {pragma}={value}; CREATE TABLE marker(value TEXT); INSERT INTO marker VALUES('preserve');"
+        ))).execute(&mut db)).unwrap();
+        assert!(matches!(Store::open(dir.path()), Err(Error::Format(_))));
+        let marker: String =
+            block_on(sqlx::query_scalar("SELECT value FROM marker").fetch_one(&mut db)).unwrap();
+        assert_eq!(marker, "preserve");
+        let mode: String =
+            block_on(sqlx::query_scalar("PRAGMA journal_mode").fetch_one(&mut db)).unwrap();
+        assert_eq!(
+            mode, "delete",
+            "reject before changing the database's journal mode"
+        );
+    }
+}
+
+#[test]
+fn migration_failure_rolls_back_schema_changes_and_can_be_retried() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut db = super::super::test_database::open(dir.path().join("cache.sqlite3")).unwrap();
+    block_on(sqlx::raw_sql(include_str!("../schema.sql")).execute(&mut db)).unwrap();
+    // The second ALTER in v2 will fail, after the first has succeeded.
+    block_on(sqlx::raw_sql("PRAGMA user_version=1; ALTER TABLE coverage ADD COLUMN target_key TEXT;
+        INSERT INTO coverage(channel,start,end,fetched,last_used,published,bytes) VALUES(1,100,200,1000,1000,1,0);").execute(&mut db)).unwrap();
+    assert!(matches!(Store::open(dir.path()), Err(Error::Database(_))));
+    let settled_columns: i64 = block_on(
+        sqlx::query_scalar(
+            "SELECT COUNT(*) FROM pragma_table_info('coverage') WHERE name='settled'",
+        )
+        .fetch_one(&mut db),
+    )
+    .unwrap();
+    assert_eq!(settled_columns, 0, "the first ALTER must roll back");
+    let version: i64 =
+        block_on(sqlx::query_scalar("PRAGMA user_version").fetch_one(&mut db)).unwrap();
+    assert_eq!(version, 1);
+    block_on(sqlx::raw_sql("ALTER TABLE coverage DROP COLUMN target_key;").execute(&mut db))
+        .unwrap();
+    let mut store = Store::open(dir.path()).unwrap();
+    assert_eq!(
+        store
+            .covered(1, Interval::new(100, 200).unwrap(), 1000)
+            .unwrap(),
+        vec![Interval::new(100, 200).unwrap()]
+    );
+}
+
+#[test]
+fn invalid_provider_failure_count_is_rejected_before_backoff_calculation() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut store = Store::open(dir.path()).unwrap();
+    block_on(sqlx::query("UPDATE provider SET failures=-1").execute(&mut store.db)).unwrap();
+    assert!(matches!(
+        store.failed(false, None, BASE),
+        Err(Error::Format(_))
+    ));
 }

@@ -14,7 +14,7 @@ use std::{
 mod ffi {
     unsafe extern "C++" {
         include!(<QtQuick/QQuickItem>);
-        type QQuickItem = crate::player::ffi::QQuickItem;
+        type QQuickItem = crate::qt::ffi::QQuickItem;
     }
     extern "RustQt" {
         #[qobject]
@@ -58,7 +58,7 @@ impl Drop for AttachedSink {
 }
 
 unsafe fn check_items(ordinary: *mut ffi::QQuickItem, video: *mut ffi::QQuickItem) {
-    use crate::player::ffi::qml6_video_item_pointer;
+    use crate::qt::ffi::qml6_video_item_pointer;
     assert!(!ordinary.is_null());
     assert!(!video.is_null());
     // SAFETY: Both items belong to the synchronous fixture; null is accepted.

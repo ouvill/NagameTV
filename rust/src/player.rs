@@ -62,81 +62,8 @@ pub mod ffi {
         type QImage = cxx_qt_lib::QImage;
         include!("cxx-qt-lib/qfont.h");
         type QFont = cxx_qt_lib::QFont;
-        include!("cxx-qt-lib/qsize.h");
-        type QSize = cxx_qt_lib::QSize;
-        include!("subtitle_outline.h");
-        #[cxx_name = "subtitleOutlinePath"]
-        fn subtitle_outline_path(text: &QString, font: &QFont) -> QString;
-        include!("qt_helpers.h");
-        #[cxx_name = "availableWindowSize"]
-        unsafe fn available_window_size(item: *mut QQuickItem) -> Result<QSize>;
-        #[cxx_name = "picturesDirectory"]
-        fn pictures_directory() -> QString;
-        #[cxx_name = "shareScreenshotImage"]
-        fn share_screenshot_image(image: &QImage) -> QImage;
-        #[cxx_name = "saveScreenshotImage"]
-        fn save_screenshot_image(
-            image: &QImage,
-            path: &QString,
-            format: &QString,
-            quality: i32,
-            compression: i32,
-        ) -> bool;
-        #[cxx_name = "playbackLogDirectory"]
-        fn playback_log_directory() -> QString;
-        #[cxx_name = "openLocalDirectory"]
-        fn open_local_directory(path: &QString) -> bool;
-        #[cxx_name = "installQtLogging"]
-        fn install_qt_logging(callback: fn(level: u8, category: &str, message: &str));
-        #[cxx_name = "installQtGcLogging"]
-        fn install_qt_gc_logging(callback: fn(category: &str, message: &str));
-        include!("cxx-qt-lib/qqmlapplicationengine.h");
-        type QQmlApplicationEngine = cxx_qt_lib::QQmlApplicationEngine;
-        include!("localization.h");
-        #[cxx_name = "initializeUiLanguage"]
-        fn initialize_ui_language(
-            engine: Pin<&mut QQmlApplicationEngine>,
-            preference: &QString,
-        ) -> bool;
-        #[cxx_name = "applyUiLanguage"]
-        fn apply_ui_language(preference: &QString) -> QString;
-        #[cxx_name = "currentUiLanguage"]
-        fn current_ui_language() -> QString;
-        #[cxx_name = "translateBackend"]
-        fn translate_backend(source: &QString) -> QString;
-        type QQuickItem;
-        include!("pointer_activity.h");
-        #[cxx_name = "installPointerActivity"]
-        unsafe fn install_pointer_activity(item: *mut QQuickItem);
-        #[cxx_name = "configureQtQuickOpenGl"]
-        fn configure_qt_quick_open_gl();
-        #[cfg(target_os = "linux")]
-        #[cxx_name = "useQtQuickDialogs"]
-        fn use_qt_quick_dialogs();
-        include!("desktop_media.h");
-        #[cfg(target_os = "linux")]
-        type DesktopMedia;
-        #[cfg(target_os = "linux")]
-        #[cxx_name = "connectDesktopMedia"]
-        fn connect_desktop_media() -> Result<UniquePtr<DesktopMedia>>;
-        #[cfg(target_os = "linux")]
-        #[cxx_name = "takeCommand"]
-        fn take_command(self: Pin<&mut DesktopMedia>) -> QString;
-        #[cfg(target_os = "linux")]
-        fn publish(self: Pin<&mut DesktopMedia>, json: &QString);
-        include!("portal.h");
-        #[cfg(target_os = "linux")]
-        #[cxx_name = "portalThemeLoaded"]
-        fn portal_theme_loaded() -> bool;
-        #[cfg(target_os = "linux")]
-        #[cxx_name = "portalFileChooserVersion"]
-        fn portal_file_chooser_version() -> Result<u32>;
-        #[cfg(target_os = "linux")]
-        #[cxx_name = "portalRetrieveRecording"]
-        fn portal_retrieve_recording(key: &QString) -> Result<QString>;
-        include!("video_item.h");
-        #[cxx_name = "qml6VideoItemPointer"]
-        unsafe fn qml6_video_item_pointer(item: *mut QQuickItem) -> *mut u8;
+        include!("QtQuick/QQuickItem");
+        type QQuickItem = crate::qt::ffi::QQuickItem;
     }
     unsafe extern "RustQt" {
         #[qobject]
@@ -814,7 +741,7 @@ impl ffi::Player {
     /// The item must not be destroyed during this call. On success, its QML owner
     /// must obtain a successful shutdown before destroying it. Native types must use truthful Qt
     /// meta-objects; the GStreamer QML module must come from the installed plugin.
-    pub unsafe fn attach(mut self: Pin<&mut Self>, item: *mut ffi::QQuickItem) -> bool {
+    pub unsafe fn attach(mut self: Pin<&mut Self>, item: *mut crate::qt::ffi::QQuickItem) -> bool {
         // SAFETY: The QML caller supplies the lifetime/thread guarantees above.
         // The session validates the concrete type before passing it to Gst.
         let result = unsafe { self.as_mut().rust_mut().media.attach(item) };
@@ -825,9 +752,9 @@ impl ffi::Player {
         true
     }
     /// The QML GUI-thread item owns the observer and declares activity().
-    pub unsafe fn observe_pointer(&self, item: *mut ffi::QQuickItem) {
+    pub unsafe fn observe_pointer(&self, item: *mut crate::qt::ffi::QQuickItem) {
         // The caller guarantees a live item; the native helper accepts null.
-        unsafe { ffi::install_pointer_activity(item) };
+        unsafe { crate::qt::ffi::install_pointer_activity(item) };
     }
 }
 

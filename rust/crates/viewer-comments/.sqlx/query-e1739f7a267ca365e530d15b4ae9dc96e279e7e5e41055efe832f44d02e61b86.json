@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "WITH old AS (\n    SELECT c.time, c.payload,\n           ROW_NUMBER() OVER(PARTITION BY c.time, c.payload ORDER BY c.id) AS occurrence\n    FROM comments c JOIN coverage v ON v.id = c.coverage\n    WHERE v.published = 1 AND v.channel = ?1 AND c.time >= ?2 AND c.time < ?3\n), incoming AS (\n    SELECT time, payload,\n           ROW_NUMBER() OVER(PARTITION BY time, payload ORDER BY id) AS occurrence\n    FROM comments WHERE coverage = ?4\n)\nINSERT INTO comments(coverage, time, payload)\nSELECT ?4, old.time, old.payload\nFROM old LEFT JOIN incoming\n    ON old.time = incoming.time AND old.payload = incoming.payload\n       AND old.occurrence = incoming.occurrence\nWHERE incoming.occurrence IS NULL\n",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "e1739f7a267ca365e530d15b4ae9dc96e279e7e5e41055efe832f44d02e61b86"
+}

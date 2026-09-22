@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM live_coverage WHERE owner=?1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "e9d954e8727336cbb980da3f36de7b162baaf77ba3232a22990ff89105ab910b"
+}

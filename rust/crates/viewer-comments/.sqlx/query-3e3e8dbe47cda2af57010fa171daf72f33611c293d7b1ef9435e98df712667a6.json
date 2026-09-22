@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM live_comments WHERE owner=?1 AND media_ms<?2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "3e3e8dbe47cda2af57010fa171daf72f33611c293d7b1ef9435e98df712667a6"
+}

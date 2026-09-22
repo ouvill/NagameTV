@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE provider SET failures=?1,wait_until=MAX(wait_until,?2) WHERE id=1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "7a03d4a7d5baedb871830cefbd93179292ba8cb7ddee61c9512912d678e8202c"
+}

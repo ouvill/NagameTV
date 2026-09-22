@@ -154,6 +154,42 @@ Linuxでは、実行ファイルを削除しても動作中のプロセスが終
 別の場所へ保存したスクリーンショットや手元の録画ファイルは、必要に応じて保存先で整理してください。
 Flatpak版は[専用の削除手順](flatpak.md#アンインストール)を参照してください。
 
+## 起動引数
+
+`./build/nagametv --help`で起動オプションを確認できます。`--version`（`-V`）と
+`--build-info`は、それぞれバージョンとビルド情報JSONを出力します。これらの情報表示と
+引数エラーは画面・GPU・音声・保存設定を使用しません。未知の引数は終了コード2になります。
+
+検証用の`--features=none`または`--features=subtitles,epg,comments`は従来どおり
+その実行で許可する機能を指定します。重複しない任意の組み合わせを使えます。
+`=`は必須で、空値・重複・`none`との混在を拒否します。表示方式の指定には
+`QT_QPA_PLATFORM`を使用してください。Qt固有の未定義の起動引数は受け付けません。
+ビルドした実行ファイルは`python3 scripts/check-cli.py build/nagametv`で機器を使わず検証できます。
+ヘルプ・ビルド情報・引数エラーがQt初期化前に終了し、保存データを作らないことを確認します。
+
+## コメントDBのSQL検査
+
+コメントキャッシュのSQLite操作はSQLxの検査付きマクロを使います。
+`rust/crates/viewer-comments/.sqlx/`の検査情報を同梱しているため、通常ビルドに
+`DATABASE_URL`や検証用DBは不要です。ビルド環境の`DATABASE_URL`を参照させたくない場合は
+`SQLX_OFFLINE=true`を指定します。
+
+SQLまたはスキーマを変更した場合は、Python標準ライブラリーのSQLiteで一時DBを作り、
+クエリをコンパイルして検査情報を更新します。利用中のキャッシュは操作しません。
+
+```sh
+python3 scripts/check-comment-sql.py --update
+python3 scripts/check-comment-sql.py
+CARGO_TARGET_DIR=build/cargo cargo test --manifest-path rust/crates/viewer-comments/Cargo.toml --release --locked --features network
+python3 scripts/flatpak-cargo-sources.py
+```
+
+引数なしのSQL検査は、保存済みの検査情報と新規スキーマとの一致を確認します。CIでも実行します。
+DBは専用ワーカーが接続を所有し、SQLxのSQLite処理をそこで待機します。プールや追加の
+Tokioランタイムは作りません。行の先読みを1件に制限し、コメントの読み出しは既存の
+件数・バイト上限に従ってストリーム処理します。旧DBの移行、書き込み失敗時のロールバック、
+WALでの読み書きの並行実行は機器不要のテストで確認します。
+
 ## テストと診断
 
 GitHub Actionsでの自動テストと配布ビルド、`main`へのpushに伴う最新Pre-releaseの更新、

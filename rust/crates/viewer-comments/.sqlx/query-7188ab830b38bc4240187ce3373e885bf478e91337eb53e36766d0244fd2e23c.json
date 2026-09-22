@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE coverage SET settled=(fetched>=end+?1),bytes=bytes+?2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "7188ab830b38bc4240187ce3373e885bf478e91337eb53e36766d0244fd2e23c"
+}

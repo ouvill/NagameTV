@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE coverage\nSET last_used = ?1\nWHERE published = 1 AND last_used < ?1 AND EXISTS (\n    SELECT 1 FROM pins p\n    WHERE p.channel = coverage.channel AND p.start < coverage.end AND p.end > coverage.start\n)\n",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "050edee9b801fc76af5d87747dccdd79360c4cbc5b657defd39839dbecee87e7"
+}

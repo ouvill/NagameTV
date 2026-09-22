@@ -1,0 +1,50 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT wait_until,observed,generation FROM provider WHERE id=1",
+  "describe": {
+    "columns": [
+      {
+        "name": "wait_until",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "provider",
+            "name": "wait_until"
+          }
+        }
+      },
+      {
+        "name": "observed",
+        "ordinal": 1,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "provider",
+            "name": "observed"
+          }
+        }
+      },
+      {
+        "name": "generation",
+        "ordinal": 2,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "provider",
+            "name": "generation"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "c754b54b68a86f98cbb75f10efb2fad084fdf92b8e3fe5c42a4f284eb0616898"
+}

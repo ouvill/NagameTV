@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE targets SET completed_refresh=MAX(completed_refresh,?2),failures=0,retry_at=0,stopped=0,failure=NULL WHERE key=?1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "cd694c08e47f4be3ff44719c7c24cc0384eec519013a6c83616cc1417959ff01"
+}

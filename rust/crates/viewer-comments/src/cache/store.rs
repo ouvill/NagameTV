@@ -1,13 +1,12 @@
 use super::*;
-use rusqlite::{Connection, OptionalExtension, params};
+use futures_lite::{StreamExt, future::block_on};
+use sqlx::{Connection, SqliteConnection};
+mod database;
 use std::{
     fs::{self, File, OpenOptions},
     path::{Path, PathBuf},
-    time::Duration,
 };
 
-const SCHEMA_VERSION: i64 = 2;
-const APPLICATION_ID: i64 = 0x4e434d54;
 const ROW_CHARGE: i64 = 128;
 const COVERAGE_CHARGE: i64 = 512;
 #[cfg(test)]
@@ -15,7 +14,7 @@ mod tests;
 pub(super) const IMPORT_BATCH: usize = 512;
 
 pub(super) struct Store {
-    db: Connection,
+    db: SqliteConnection,
     directory: PathBuf,
     cache_bytes: i64,
 }
@@ -82,37 +81,7 @@ impl Store {
     pub fn open(directory: &Path) -> Result<Self, Error> {
         fs::create_dir_all(directory)?;
         fs::create_dir_all(directory.join("sessions"))?;
-        let mut db = Connection::open(directory.join("cache.sqlite3"))?;
-        db.busy_timeout(Duration::from_secs(2))?;
-        if db.query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))? == 0 {
-            db.execute_batch("PRAGMA auto_vacuum=INCREMENTAL;")?;
-        }
-        db.execute_batch(
-            "PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;
-            PRAGMA cache_size=-2048; PRAGMA mmap_size=0; PRAGMA temp_store=FILE;",
-        )?;
-        let version: i64 = db.query_row("PRAGMA user_version", [], |row| row.get(0))?;
-        let app: i64 = db.query_row("PRAGMA application_id", [], |row| row.get(0))?;
-        if !(0..=SCHEMA_VERSION).contains(&version) || (app != 0 && app != APPLICATION_ID) {
-            return Err(Error::Format("unsupported database version".into()));
-        }
-        if version < SCHEMA_VERSION {
-            let tx = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-            tx.execute_batch(include_str!("schema.sql"))?;
-            // Recheck under the migration lock: another process may have won.
-            let current: i64 = tx.pragma_query_value(None, "user_version", |r| r.get(0))?;
-            if current < SCHEMA_VERSION {
-                tx.execute_batch("ALTER TABLE coverage ADD COLUMN settled INTEGER NOT NULL DEFAULT 0;
-                    ALTER TABLE coverage ADD COLUMN target_key TEXT REFERENCES targets(key) ON DELETE SET NULL;")?;
-                tx.execute(
-                    "UPDATE coverage SET settled=(fetched>=end+?1),bytes=bytes+?2",
-                    params![SETTLED_SECONDS, COVERAGE_CHARGE],
-                )?;
-                tx.pragma_update(None, "application_id", APPLICATION_ID)?;
-                tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
-            }
-            tx.commit()?;
-        }
+        let db = database::open(&directory.join("cache.sqlite3"))?;
         Ok(Self {
             db,
             directory: directory.to_owned(),
@@ -146,8 +115,9 @@ impl Store {
             .expect("temporary filename")
             .to_string_lossy()
             .into_owned();
-        self.db
-            .execute("INSERT INTO sessions(owner) VALUES (?1)", [&name])?;
+        block_on(
+            sqlx::query!("INSERT INTO sessions(owner) VALUES (?1)", &name).execute(&mut self.db),
+        )?;
         Ok(SessionLease {
             name,
             _file: file,
@@ -155,12 +125,10 @@ impl Store {
         })
     }
     pub fn reap_sessions(&mut self) -> Result<(), Error> {
-        let names = self
-            .db
-            .prepare("SELECT owner FROM sessions")?
-            .query_map([], |r| r.get::<_, String>(0))?
-            .collect::<Result<Vec<_>, _>>()?;
+        let names =
+            block_on(sqlx::query_scalar!("SELECT owner FROM sessions").fetch_all(&mut self.db))?;
         for name in names {
+            let name = name.ok_or_else(|| Error::Format("null session owner".into()))?;
             if !name.starts_with("session-") || name.contains(['/', '\\']) {
                 return Err(Error::Format("invalid session owner".into()));
             }
@@ -187,39 +155,47 @@ impl Store {
         Ok(())
     }
     pub fn release_session(&mut self, owner: &str) -> Result<(), Error> {
-        self.db
-            .execute("DELETE FROM sessions WHERE owner=?1", [owner])?;
+        block_on(sqlx::query!("DELETE FROM sessions WHERE owner=?1", owner).execute(&mut self.db))?;
         Ok(())
     }
     pub fn reset_source(&mut self, owner: &str) -> Result<(), Error> {
-        let tx = self.db.transaction()?;
-        tx.execute("DELETE FROM pins WHERE owner=?1", [owner])?;
-        tx.execute("DELETE FROM live_comments WHERE owner=?1", [owner])?;
-        tx.execute("DELETE FROM live_coverage WHERE owner=?1", [owner])?;
-        tx.commit()?;
+        let mut tx = block_on(self.db.begin())?;
+        block_on(sqlx::query!("DELETE FROM pins WHERE owner=?1", owner).execute(&mut *tx))?;
+        block_on(
+            sqlx::query!("DELETE FROM live_comments WHERE owner=?1", owner).execute(&mut *tx),
+        )?;
+        block_on(
+            sqlx::query!("DELETE FROM live_coverage WHERE owner=?1", owner).execute(&mut *tx),
+        )?;
+        block_on(tx.commit())?;
         Ok(())
     }
     pub fn pin(&mut self, owner: &str, spans: &[ClockSpan], now: i64) -> Result<(), Error> {
-        let tx = self.db.transaction()?;
-        tx.execute("DELETE FROM pins WHERE owner=?1", [owner])?;
+        let mut tx = block_on(self.db.begin())?;
+        block_on(sqlx::query!("DELETE FROM pins WHERE owner=?1", owner).execute(&mut *tx))?;
         for span in spans {
             if let Some(range) = span.interval() {
-                tx.execute(
-                    "INSERT INTO pins(owner,channel,start,end) VALUES(?1,?2,?3,?4)",
-                    params![owner, span.channel, range.start, range.end],
+                block_on(
+                    sqlx::query!(
+                        "INSERT INTO pins(owner,channel,start,end) VALUES(?1,?2,?3,?4)",
+                        owner,
+                        span.channel,
+                        range.start,
+                        range.end
+                    )
+                    .execute(&mut *tx),
                 )?;
             }
         }
-        touch_pinned(&tx, now)?;
-        tx.commit()?;
+        touch_pinned(&mut tx, now)?;
+        block_on(tx.commit())?;
         Ok(())
     }
-    pub fn generation(&self) -> Result<i64, Error> {
-        Ok(self
-            .db
-            .query_row("SELECT generation FROM provider WHERE id=1", [], |r| {
-                r.get(0)
-            })?)
+    pub fn generation(&mut self) -> Result<i64, Error> {
+        Ok(block_on(
+            sqlx::query_scalar!("SELECT generation FROM provider WHERE id=1")
+                .fetch_one(&mut self.db),
+        )?)
     }
     #[cfg(test)]
     pub fn reserve<'a>(
@@ -262,27 +238,31 @@ impl Store {
         if plan.is_none() && range.missing(self.covered(channel, range, now)?).is_empty() {
             return Ok(Reservation::Ready);
         }
-        let tx = self
-            .db
-            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-        let (wait, observed, generation): (i64, i64, i64) = tx.query_row(
-            "SELECT wait_until,observed,generation FROM provider WHERE id=1",
-            [],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        let mut tx = block_on(self.db.begin_with("BEGIN IMMEDIATE"))?;
+        let provider = block_on(
+            sqlx::query!("SELECT wait_until,observed,generation FROM provider WHERE id=1")
+                .fetch_one(&mut *tx),
         )?;
+        let (wait, observed, generation) =
+            (provider.wait_until, provider.observed, provider.generation);
         // A backwards wall clock must never replenish request slots after restart.
         if observed > now {
             return Ok(Reservation::Waiting(observed.max(wait)));
         }
-        tx.execute("UPDATE provider SET observed=?1 WHERE id=1", [now])?;
-        tx.execute(
-            "DELETE FROM requests WHERE started<=?1",
-            [now - REQUEST_WINDOW_SECONDS],
+        block_on(
+            sqlx::query!("UPDATE provider SET observed=?1 WHERE id=1", now).execute(&mut *tx),
         )?;
-        let starts = tx
-            .prepare("SELECT started FROM requests ORDER BY started")?
-            .query_map([], |r| r.get::<_, i64>(0))?
-            .collect::<Result<Vec<_>, _>>()?;
+        block_on(
+            sqlx::query!(
+                "DELETE FROM requests WHERE started<=?1",
+                now - REQUEST_WINDOW_SECONDS
+            )
+            .execute(&mut *tx),
+        )?;
+        let starts = block_on(
+            sqlx::query_scalar!("SELECT started FROM requests ORDER BY started")
+                .fetch_all(&mut *tx),
+        )?;
         let mut until = wait;
         if let Some(last) = starts.last() {
             until = until.max(last + REQUEST_SPACING_SECONDS);
@@ -291,11 +271,11 @@ impl Store {
             until = until.max(starts[starts.len() - REQUESTS_PER_WINDOW] + REQUEST_WINDOW_SECONDS);
         }
         if until > now {
-            tx.commit()?;
+            block_on(tx.commit())?;
             return Ok(Reservation::Waiting(until));
         }
-        tx.execute("INSERT INTO requests(started) VALUES(?1)", [now])?;
-        tx.commit()?;
+        block_on(sqlx::query!("INSERT INTO requests(started) VALUES(?1)", now).execute(&mut *tx))?;
+        block_on(tx.commit())?;
         Ok(Reservation::Granted(EligibleRequest {
             lease,
             channel,
@@ -311,9 +291,11 @@ impl Store {
         retry_after: Option<i64>,
         now: i64,
     ) -> Result<(), Error> {
-        let failures: u32 =
-            self.db
-                .query_row("SELECT failures FROM provider WHERE id=1", [], |r| r.get(0))?;
+        let failures = block_on(
+            sqlx::query_scalar!("SELECT failures FROM provider WHERE id=1").fetch_one(&mut self.db),
+        )?;
+        let failures = u32::try_from(failures)
+            .map_err(|_| Error::Format("invalid provider failure count".into()))?;
         let failures = failures.saturating_add(1).min(16);
         let delay = if permanent {
             30 * 60
@@ -324,14 +306,18 @@ impl Store {
         let jitter =
             (std::collections::hash_map::RandomState::new().hash_one((now, failures)) % 31) as i64;
         let until = (now + delay + jitter).max(retry_after.unwrap_or(0));
-        self.db.execute(
-            "UPDATE provider SET failures=?1,wait_until=MAX(wait_until,?2) WHERE id=1",
-            params![failures, until],
+        block_on(
+            sqlx::query!(
+                "UPDATE provider SET failures=?1,wait_until=MAX(wait_until,?2) WHERE id=1",
+                failures,
+                until
+            )
+            .execute(&mut self.db),
         )?;
         Ok(())
     }
     pub fn covered(
-        &self,
+        &mut self,
         channel: u16,
         wanted: Interval,
         now: i64,
@@ -339,40 +325,62 @@ impl Store {
         let _ = now; // Successful data never expires for playback or ordinary reuse.
         self.coverage(channel, wanted, false)
     }
-    pub fn is_settled(&self, channel: u16, range: Interval) -> Result<bool, Error> {
+    pub fn is_settled(&mut self, channel: u16, range: Interval) -> Result<bool, Error> {
         Ok(range
             .missing(self.coverage(channel, range, true)?)
             .is_empty())
     }
     fn coverage(
-        &self,
+        &mut self,
         channel: u16,
         wanted: Interval,
         settled_only: bool,
     ) -> Result<Vec<Interval>, Error> {
-        self.db.prepare("SELECT start,end FROM coverage WHERE published=1 AND channel=?1 AND start<?2 AND end>?3 AND (?4=0 OR settled=1) ORDER BY start")?
-            .query_map(params![channel,wanted.end,wanted.start,settled_only], |r| Ok((r.get::<_,i64>(0)?,r.get::<_,i64>(1)?)))?
-            .map(|row| { let (start,end)=row?; Interval::new(start,end).ok_or_else(|| Error::Format("invalid coverage".into())) }).collect()
+        block_on(sqlx::query!("SELECT start,end FROM coverage WHERE published=1 AND channel=?1 AND start<?2 AND end>?3 AND (?4=0 OR settled=1) ORDER BY start", channel, wanted.end, wanted.start, settled_only).fetch_all(&mut self.db))?
+            .into_iter().map(|row| Interval::new(row.start, row.end).ok_or_else(|| Error::Format("invalid coverage".into()))).collect()
     }
     pub fn register_target(&mut self, target: &plan::Target, now: i64) -> Result<(), Error> {
-        self.db.execute("INSERT INTO targets(key,channel,start,end,last_used) VALUES(?1,?2,?3,?4,?5)
-            ON CONFLICT(key) DO UPDATE SET start=excluded.start,end=excluded.end,last_used=excluded.last_used",
-            params![target.key(),target.channel,target.range.start,target.range.end,now])?;
+        block_on(
+            sqlx::query_file!(
+                "src/cache/store/queries/register_target.sql",
+                target.key(),
+                target.channel,
+                target.range.start,
+                target.range.end,
+                now
+            )
+            .execute(&mut self.db),
+        )?;
         Ok(())
     }
     pub fn request_refresh(&mut self, target: &plan::Target, now: i64) -> Result<(), Error> {
         self.register_target(target, now)?;
-        let tx = self.db.transaction()?;
-        tx.execute("UPDATE targets SET refresh=completed_refresh+1,failures=0,stopped=0,failure=NULL WHERE key=?1",[target.key()])?;
-        tx.execute("UPDATE provider SET revision=revision+1 WHERE id=1", [])?;
-        tx.commit()?;
+        let mut tx = block_on(self.db.begin())?;
+        block_on(sqlx::query!("UPDATE targets SET refresh=completed_refresh+1,failures=0,stopped=0,failure=NULL WHERE key=?1", target.key()).execute(&mut *tx))?;
+        block_on(
+            sqlx::query!("UPDATE provider SET revision=revision+1 WHERE id=1").execute(&mut *tx),
+        )?;
+        block_on(tx.commit())?;
         Ok(())
     }
-    pub fn planned(&self, owner: &str, target: &plan::Target, now: i64) -> Result<Planned, Error> {
-        let state = self.db.query_row("SELECT refresh,completed_refresh,stopped,retry_at,failure FROM targets WHERE key=?1", [target.key()],
-            |r| Ok((r.get::<_,i64>(0)?, r.get::<_,i64>(1)?, r.get::<_,bool>(2)?, r.get::<_,i64>(3)?,r.get::<_,Option<String>>(4)?))).optional()?;
-        let (refresh, completed, stopped, retry_at, failure) =
-            state.unwrap_or((0, 0, false, 0, None));
+    pub fn planned(
+        &mut self,
+        owner: &str,
+        target: &plan::Target,
+        now: i64,
+    ) -> Result<Planned, Error> {
+        let state = block_on(sqlx::query!(r#"SELECT refresh,completed_refresh,stopped AS "stopped: bool",retry_at,failure FROM targets WHERE key=?1"#, target.key()).fetch_optional(&mut self.db))?;
+        let (refresh, completed, stopped, retry_at, failure) = state
+            .map(|row| {
+                (
+                    row.refresh,
+                    row.completed_refresh,
+                    row.stopped,
+                    row.retry_at,
+                    row.failure,
+                )
+            })
+            .unwrap_or((0, 0, false, 0, None));
         if stopped {
             return Ok(Planned::Failed(
                 failure.unwrap_or_else(|| "実況の再取得が必要です".into()),
@@ -445,14 +453,20 @@ impl Store {
         range: Interval,
         now: i64,
     ) -> Result<(), Error> {
-        let tx = self.db.transaction()?;
-        tx.execute("DELETE FROM pins WHERE owner=?1", [owner])?;
-        tx.execute(
-            "INSERT INTO pins(owner,channel,start,end) VALUES(?1,?2,?3,?4)",
-            params![owner, channel, range.start, range.end],
+        let mut tx = block_on(self.db.begin())?;
+        block_on(sqlx::query!("DELETE FROM pins WHERE owner=?1", owner).execute(&mut *tx))?;
+        block_on(
+            sqlx::query!(
+                "INSERT INTO pins(owner,channel,start,end) VALUES(?1,?2,?3,?4)",
+                owner,
+                channel,
+                range.start,
+                range.end
+            )
+            .execute(&mut *tx),
         )?;
-        touch_pinned(&tx, now)?;
-        tx.commit()?;
+        touch_pinned(&mut tx, now)?;
+        block_on(tx.commit())?;
         Ok(())
     }
     pub fn fail_target(
@@ -465,32 +479,37 @@ impl Store {
     ) -> Result<Option<i64>, Error> {
         self.register_target(target, now)?;
         self.failed(permanent, retry_after, now)?;
-        let failures: i64 = self.db.query_row(
-            "SELECT failures FROM targets WHERE key=?1",
-            [target.key()],
-            |r| r.get(0),
+        let failures = block_on(
+            sqlx::query_scalar!("SELECT failures FROM targets WHERE key=?1", target.key())
+                .fetch_one(&mut self.db),
         )?;
         let failures = failures + 1;
         let stopped = permanent || failures >= 3;
         let until =
             (now + if failures == 1 { 5 * 60 } else { 30 * 60 }).max(retry_after.unwrap_or(0));
-        self.db.execute(
-            "UPDATE targets SET failures=?2,retry_at=?3,stopped=?4,failure=?5 WHERE key=?1",
-            params![target.key(), failures, until, stopped, message],
+        block_on(
+            sqlx::query!(
+                "UPDATE targets SET failures=?2,retry_at=?3,stopped=?4,failure=?5 WHERE key=?1",
+                target.key(),
+                failures,
+                until,
+                stopped,
+                message
+            )
+            .execute(&mut self.db),
         )?;
         Ok((!stopped).then_some(until))
     }
 
     pub fn live_covered(
-        &self,
+        &mut self,
         owner: &str,
         channel: u16,
         key: &str,
         wanted: Interval,
     ) -> Result<Vec<Interval>, Error> {
-        self.db.prepare("SELECT start,end FROM live_coverage WHERE owner=?1 AND channel=?2 AND clock=?3 AND start<?4 AND end>?5")?
-            .query_map(params![owner,channel,key,wanted.end,wanted.start], |r| Ok((r.get::<_,i64>(0)?,r.get::<_,i64>(1)?)))?
-            .map(|row| { let (a,b)=row?; Interval::new(a,b).ok_or_else(|| Error::Format("invalid live coverage".into())) }).collect()
+        block_on(sqlx::query!("SELECT start,end FROM live_coverage WHERE owner=?1 AND channel=?2 AND clock=?3 AND start<?4 AND end>?5", owner, channel, key, wanted.end, wanted.start).fetch_all(&mut self.db))?
+            .into_iter().map(|row| Interval::new(row.start, row.end).ok_or_else(|| Error::Format("invalid live coverage".into()))).collect()
     }
     pub fn observe_live(
         &mut self,
@@ -499,16 +518,33 @@ impl Store {
         key: &str,
         range: Interval,
     ) -> Result<(), Error> {
-        let tx = self.db.transaction()?;
-        let (a,b): (i64,i64) = tx.query_row("SELECT MIN(start),MAX(end) FROM (
-            SELECT start,end FROM live_coverage WHERE owner=?1 AND channel=?2 AND clock=?3 AND start<=?4 AND end>=?5
-            UNION ALL SELECT ?5,?4)", params![owner,channel,key,range.end,range.start], |r| Ok((r.get(0)?,r.get(1)?)))?;
-        tx.execute("DELETE FROM live_coverage WHERE owner=?1 AND channel=?2 AND clock=?3 AND start<=?4 AND end>=?5", params![owner,channel,key,b,a])?;
-        tx.execute(
-            "INSERT INTO live_coverage(owner,channel,clock,start,end) VALUES(?1,?2,?3,?4,?5)",
-            params![owner, channel, key, a, b],
+        let mut tx = block_on(self.db.begin())?;
+        // The UNION includes the requested range, so both aggregates are non-null.
+        let merged = block_on(
+            sqlx::query_file!(
+                "src/cache/store/queries/merge_live_coverage.sql",
+                owner,
+                channel,
+                key,
+                range.end,
+                range.start
+            )
+            .fetch_one(&mut *tx),
         )?;
-        tx.commit()?;
+        let (a, b) = (merged.start, merged.end);
+        block_on(sqlx::query!("DELETE FROM live_coverage WHERE owner=?1 AND channel=?2 AND clock=?3 AND start<=?4 AND end>=?5", owner, channel, key, b, a).execute(&mut *tx))?;
+        block_on(
+            sqlx::query!(
+                "INSERT INTO live_coverage(owner,channel,clock,start,end) VALUES(?1,?2,?3,?4,?5)",
+                owner,
+                channel,
+                key,
+                a,
+                b
+            )
+            .execute(&mut *tx),
+        )?;
+        block_on(tx.commit())?;
         Ok(())
     }
     pub fn insert_live(
@@ -518,28 +554,19 @@ impl Store {
         clock: Option<&ClockSpan>,
         comments: &[(Comment, bool)],
     ) -> Result<(), Error> {
-        let tx = self.db.transaction()?;
+        let mut tx = block_on(self.db.begin())?;
         {
-            let mut insert = tx.prepare("INSERT INTO live_comments(owner,channel,clock,media_ms,time,payload,own) VALUES(?1,?2,?3,?4,?5,?6,?7)")?;
             for (comment, own) in comments {
                 let Some(time) = comment.timestamp_micros.and_then(|t| i64::try_from(t).ok())
                 else {
                     continue;
                 };
-                let payload = serde_json::to_vec(&StoredComment::from(comment.clone()))
-                    .map_err(|e| Error::Format(e.to_string()))?;
-                insert.execute(params![
-                    owner,
-                    channel,
-                    clock.map(|c| c.key.as_str()),
-                    clock.and_then(|c| c.media_ms(time as u64)),
-                    time,
-                    payload,
-                    own
-                ])?;
+                let payload = serde_json::to_vec(&StoredComment::from(comment.clone()))?;
+                block_on(sqlx::query!("INSERT INTO live_comments(owner,channel,clock,media_ms,time,payload,own) VALUES(?1,?2,?3,?4,?5,?6,?7)",
+                    owner, channel, clock.map(|c| c.key.as_str()), clock.and_then(|c| c.media_ms(time as u64)), time, payload, own).execute(&mut *tx))?;
             }
         }
-        tx.commit()?;
+        block_on(tx.commit())?;
         Ok(())
     }
     pub fn retain_live(
@@ -548,7 +575,7 @@ impl Store {
         earliest_ms: i64,
         spans: &[ClockSpan],
     ) -> Result<(), Error> {
-        let tx = self.db.transaction()?;
+        let mut tx = block_on(self.db.begin())?;
         for span in spans {
             let end = span
                 .utc_start_ms
@@ -562,73 +589,67 @@ impl Store {
                     .filter(|other| other.key != span.key)
                     .filter_map(ClockSpan::interval);
                 for unique in range.missing(others) {
-                    tx.execute("UPDATE live_comments SET clock=?1 WHERE owner=?2 AND channel=?3 AND clock IS NULL AND time>=?4 AND time<?5",
-                        params![span.key,owner,span.channel,unique.start*1_000_000,unique.end*1_000_000])?;
+                    block_on(sqlx::query!("UPDATE live_comments SET clock=?1 WHERE owner=?2 AND channel=?3 AND clock IS NULL AND time>=?4 AND time<?5", span.key, owner, span.channel, unique.start*1_000_000, unique.end*1_000_000).execute(&mut *tx))?;
                 }
             }
             // A known clock key also protects comments ahead of received video.
-            tx.execute(
-                "UPDATE live_comments SET media_ms=?1+(time/1000-?2) WHERE owner=?3 AND clock=?4
-                AND media_ms IS NULL AND time>=?2*1000 AND time<?5*1000",
-                params![span.media_start_ms, span.utc_start_ms, owner, span.key, end],
-            )?;
+            block_on(sqlx::query!("UPDATE live_comments SET media_ms=?1+(time/1000-?2) WHERE owner=?3 AND clock=?4
+                AND media_ms IS NULL AND time>=?2*1000 AND time<?5*1000", span.media_start_ms, span.utc_start_ms, owner, span.key, end).execute(&mut *tx))?;
         }
-        tx.execute(
-            "DELETE FROM live_comments WHERE owner=?1 AND media_ms<?2",
-            params![owner, earliest_ms.saturating_sub(LOOKBACK_SECONDS * 1000)],
+        block_on(
+            sqlx::query!(
+                "DELETE FROM live_comments WHERE owner=?1 AND media_ms<?2",
+                owner,
+                earliest_ms.saturating_sub(LOOKBACK_SECONDS * 1000)
+            )
+            .execute(&mut *tx),
         )?;
         // Do not remove an unmapped comment by its UTC age. A later clock or the
         // end of its TS-owning session decides its lifetime.
-        tx.commit()?;
+        block_on(tx.commit())?;
         Ok(())
     }
     pub fn begin_import(&mut self, receipt: &spool::Receipt) -> Result<i64, Error> {
         if let Some(plan) = &receipt.plan {
             self.register_target(&plan.target, receipt.fetched)?;
         }
-        let tx = self.db.transaction()?;
-        let existing: Option<(i64, bool)> = tx
-            .query_row(
-                "SELECT id,published FROM coverage WHERE receipt=?1",
-                [&receipt.id],
-                |r| Ok((r.get(0)?, r.get(1)?)),
+        let mut tx = block_on(self.db.begin())?;
+        let existing = block_on(
+            sqlx::query!(
+                r#"SELECT id,published AS "published: bool" FROM coverage WHERE receipt=?1"#,
+                receipt.id
             )
-            .optional()?;
+            .fetch_optional(&mut *tx),
+        )?
+        .map(|row| (row.id, row.published));
         if let Some((id, true)) = existing {
             return Ok(id);
         }
         if let Some((id, false)) = existing {
-            tx.execute("DELETE FROM coverage WHERE id=?1", [id])?;
+            block_on(sqlx::query!("DELETE FROM coverage WHERE id=?1", id).execute(&mut *tx))?;
         }
-        tx.execute("INSERT INTO coverage(channel,start,end,fetched,last_used,receipt,published,bytes) VALUES(?1,?2,?3,?4,?4,?5,0,?6)",
-            params![receipt.channel,receipt.range.start,receipt.range.end,receipt.fetched,receipt.id,COVERAGE_CHARGE])?;
-        let id = tx.last_insert_rowid();
-        tx.commit()?;
+        let inserted = block_on(sqlx::query!("INSERT INTO coverage(channel,start,end,fetched,last_used,receipt,published,bytes) VALUES(?1,?2,?3,?4,?4,?5,0,?6)", receipt.channel, receipt.range.start, receipt.range.end, receipt.fetched, receipt.id, COVERAGE_CHARGE).execute(&mut *tx))?;
+        let id = inserted.last_insert_rowid();
+        block_on(tx.commit())?;
         Ok(id)
     }
-    pub fn imported(&self, receipt: &str) -> Result<bool, Error> {
-        Ok(self.db.query_row(
-            "SELECT EXISTS(SELECT 1 FROM coverage WHERE receipt=?1 AND published=1)",
-            [receipt],
-            |r| r.get(0),
-        )?)
+    pub fn imported(&mut self, receipt: &str) -> Result<bool, Error> {
+        Ok(block_on(sqlx::query_scalar!(r#"SELECT EXISTS(SELECT 1 FROM coverage WHERE receipt=?1 AND published=1) AS "exists!: bool""#, receipt).fetch_one(&mut self.db))?)
     }
-    pub fn can_publish(&self, receipt: &spool::Receipt) -> Result<bool, Error> {
-        Ok(self.generation()? == receipt.generation
-            || self.db.query_row(
-                "SELECT EXISTS(SELECT 1 FROM pins WHERE channel=?1 AND start<?2 AND end>?3)",
-                params![receipt.channel, receipt.range.end, receipt.range.start],
-                |r| r.get::<_, bool>(0),
-            )?)
+    pub fn can_publish(&mut self, receipt: &spool::Receipt) -> Result<bool, Error> {
+        Ok(self.generation()? == receipt.generation || block_on(sqlx::query_scalar!(r#"SELECT EXISTS(SELECT 1 FROM pins WHERE channel=?1 AND start<?2 AND end>?3) AS "exists!: bool""#, receipt.channel, receipt.range.end, receipt.range.start).fetch_one(&mut self.db))?)
     }
     pub fn discard_staged(
         &mut self,
         _lease: &ProviderLease,
         keep: Option<&str>,
     ) -> Result<(), Error> {
-        self.db.execute(
-            "DELETE FROM coverage WHERE published=0 AND (?1 IS NULL OR receipt<>?1)",
-            [keep],
+        block_on(
+            sqlx::query!(
+                "DELETE FROM coverage WHERE published=0 AND (?1 IS NULL OR receipt<>?1)",
+                keep
+            )
+            .execute(&mut self.db),
         )?;
         Ok(())
     }
@@ -638,11 +659,9 @@ impl Store {
         range: Interval,
         comments: &mut Vec<Comment>,
     ) -> Result<(), Error> {
-        let tx = self.db.transaction()?;
+        let mut tx = block_on(self.db.begin())?;
         let mut bytes = 0;
         {
-            let mut insert =
-                tx.prepare("INSERT INTO comments(coverage,time,payload) VALUES(?1,?2,?3)")?;
             for comment in comments.iter() {
                 let Some(time) = comment
                     .timestamp_micros
@@ -651,56 +670,72 @@ impl Store {
                 else {
                     continue;
                 };
-                let payload = serde_json::to_vec(&StoredComment::from(comment.clone()))
-                    .map_err(|e| Error::Format(e.to_string()))?;
+                let payload = serde_json::to_vec(&StoredComment::from(comment.clone()))?;
                 bytes += payload.len() as i64 + ROW_CHARGE;
-                insert.execute(params![id, time, payload])?;
+                block_on(
+                    sqlx::query!(
+                        "INSERT INTO comments(coverage,time,payload) VALUES(?1,?2,?3)",
+                        id,
+                        time,
+                        payload
+                    )
+                    .execute(&mut *tx),
+                )?;
             }
         }
-        tx.execute(
-            "UPDATE coverage SET bytes=bytes+?1 WHERE id=?2",
-            params![bytes, id],
+        block_on(
+            sqlx::query!("UPDATE coverage SET bytes=bytes+?1 WHERE id=?2", bytes, id)
+                .execute(&mut *tx),
         )?;
-        tx.commit()?;
+        block_on(tx.commit())?;
         comments.clear();
         Ok(())
     }
     pub fn publish(&mut self, id: i64, receipt: &spool::Receipt) -> Result<(), Error> {
-        let tx = self
-            .db
-            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-        let generation: i64 =
-            tx.query_row("SELECT generation FROM provider WHERE id=1", [], |r| {
-                r.get(0)
-            })?;
-        let pinned: bool = tx.query_row(
-            "SELECT EXISTS(SELECT 1 FROM pins WHERE channel=?1 AND start<?2 AND end>?3)",
-            params![receipt.channel, receipt.range.end, receipt.range.start],
-            |r| r.get(0),
+        let mut tx = block_on(self.db.begin_with("BEGIN IMMEDIATE"))?;
+        let generation = block_on(
+            sqlx::query_scalar!("SELECT generation FROM provider WHERE id=1").fetch_one(&mut *tx),
         )?;
+        let pinned = block_on(sqlx::query_scalar!(r#"SELECT EXISTS(SELECT 1 FROM pins WHERE channel=?1 AND start<?2 AND end>?3) AS "exists!: bool""#, receipt.channel, receipt.range.end, receipt.range.start).fetch_one(&mut *tx))?;
         if receipt.generation != generation && !pinned {
-            tx.execute("DELETE FROM coverage WHERE id=?1", [id])?;
-            tx.commit()?;
+            block_on(sqlx::query!("DELETE FROM coverage WHERE id=?1", id).execute(&mut *tx))?;
+            block_on(tx.commit())?;
             return Ok(());
         }
         let range = receipt.range;
         // Responses overlap intentionally. Preserve the maximum multiplicity
         // across snapshots, including genuine identical posts in one response.
         // SQL's sort spills to disk rather than buffering a programme in RAM.
-        tx.execute("WITH old AS (
-            SELECT c.time,c.payload,ROW_NUMBER() OVER(PARTITION BY c.time,c.payload ORDER BY c.id) AS occurrence
-            FROM comments c JOIN coverage v ON v.id=c.coverage
-            WHERE v.published=1 AND v.channel=?1 AND c.time>=?2 AND c.time<?3
-        ), incoming AS (
-            SELECT time,payload,ROW_NUMBER() OVER(PARTITION BY time,payload ORDER BY id) AS occurrence
-            FROM comments WHERE coverage=?4
-        ) INSERT INTO comments(coverage,time,payload)
-            SELECT ?4,old.time,old.payload FROM old LEFT JOIN incoming
-            ON old.time=incoming.time AND old.payload=incoming.payload AND old.occurrence=incoming.occurrence
-            WHERE incoming.occurrence IS NULL", params![receipt.channel,range.start*1_000_000,range.end*1_000_000,id])?;
-        let overlap=tx.prepare("SELECT id,start,end,fetched,last_used,settled,target_key FROM coverage WHERE published=1 AND channel=?1 AND start<?2 AND end>?3 AND id<>?4")?
-            .query_map(params![receipt.channel,range.end,range.start,id],|r|Ok((r.get::<_,i64>(0)?,r.get::<_,i64>(1)?,r.get::<_,i64>(2)?,r.get::<_,i64>(3)?,r.get::<_,i64>(4)?,r.get::<_,bool>(5)?,r.get::<_,Option<String>>(6)?)))?.collect::<Result<Vec<_>,_>>()?;
-        for (old, start, end, fetched, used, settled, target) in overlap {
+        block_on(
+            sqlx::query_file!(
+                "src/cache/store/queries/merge_comments.sql",
+                receipt.channel,
+                range.start * 1_000_000,
+                range.end * 1_000_000,
+                id
+            )
+            .execute(&mut *tx),
+        )?;
+        let overlap = block_on(
+            sqlx::query_file!(
+                "src/cache/store/queries/overlapping_coverage.sql",
+                receipt.channel,
+                range.end,
+                range.start,
+                id
+            )
+            .fetch_all(&mut *tx),
+        )?;
+        for row in overlap {
+            let (old, start, end, fetched, used, settled, target) = (
+                row.id,
+                row.start,
+                row.end,
+                row.fetched,
+                row.last_used,
+                row.settled,
+                row.target_key,
+            );
             for remain in [
                 Interval::new(start, range.start.min(end)),
                 Interval::new(range.end.max(start), end),
@@ -708,15 +743,12 @@ impl Store {
             .into_iter()
             .flatten()
             {
-                tx.execute("INSERT INTO coverage(channel,start,end,fetched,last_used,published,bytes,settled,target_key) VALUES(?1,?2,?3,?4,?5,1,0,?6,?7)",params![receipt.channel,remain.start,remain.end,fetched,used,settled,target])?;
-                let kept = tx.last_insert_rowid();
-                tx.execute(
-                    "UPDATE comments SET coverage=?1 WHERE coverage=?2 AND time>=?3 AND time<?4",
-                    params![kept, old, remain.start * 1_000_000, remain.end * 1_000_000],
-                )?;
-                tx.execute("UPDATE coverage SET bytes=?3+COALESCE((SELECT SUM(length(payload)+?1) FROM comments WHERE coverage=?2),0) WHERE id=?2",params![ROW_CHARGE,kept,COVERAGE_CHARGE])?;
+                let inserted = block_on(sqlx::query!("INSERT INTO coverage(channel,start,end,fetched,last_used,published,bytes,settled,target_key) VALUES(?1,?2,?3,?4,?5,1,0,?6,?7)", receipt.channel, remain.start, remain.end, fetched, used, settled, target).execute(&mut *tx))?;
+                let kept = inserted.last_insert_rowid();
+                block_on(sqlx::query!("UPDATE comments SET coverage=?1 WHERE coverage=?2 AND time>=?3 AND time<?4", kept, old, remain.start * 1_000_000, remain.end * 1_000_000).execute(&mut *tx))?;
+                block_on(sqlx::query!("UPDATE coverage SET bytes=?3+COALESCE((SELECT SUM(length(payload)+?1) FROM comments WHERE coverage=?2),0) WHERE id=?2", ROW_CHARGE, kept, COVERAGE_CHARGE).execute(&mut *tx))?;
             }
-            tx.execute("DELETE FROM coverage WHERE id=?1", [old])?;
+            block_on(sqlx::query!("DELETE FROM coverage WHERE id=?1", old).execute(&mut *tx))?;
         }
         let settled = receipt.fetched
             >= receipt
@@ -725,108 +757,112 @@ impl Store {
                 .map_or(range.end, |p| p.target.range.end)
                 .saturating_add(SETTLED_SECONDS);
         let target_key = receipt.plan.as_ref().map(|p| p.target.key());
-        tx.execute("UPDATE coverage SET published=1,settled=?2,target_key=?3,
-            bytes=?5+COALESCE((SELECT SUM(length(payload)+?4) FROM comments WHERE coverage=?1),0) WHERE id=?1",
-            params![id,settled,target_key,ROW_CHARGE,COVERAGE_CHARGE])?;
-        if let Some(plan) = &receipt.plan {
-            tx.execute("UPDATE targets SET completed_refresh=MAX(completed_refresh,?2),failures=0,retry_at=0,stopped=0,failure=NULL WHERE key=?1",params![plan.target.key(),plan.refresh])?;
-        }
-        tx.execute(
-            "UPDATE provider SET failures=0,wait_until=0,revision=revision+1 WHERE id=1",
-            [],
+        block_on(
+            sqlx::query_file!(
+                "src/cache/store/queries/publish_coverage.sql",
+                id,
+                settled,
+                target_key,
+                ROW_CHARGE,
+                COVERAGE_CHARGE
+            )
+            .execute(&mut *tx),
         )?;
-        tx.commit()?;
+        if let Some(plan) = &receipt.plan {
+            block_on(sqlx::query!("UPDATE targets SET completed_refresh=MAX(completed_refresh,?2),failures=0,retry_at=0,stopped=0,failure=NULL WHERE key=?1", plan.target.key(), plan.refresh).execute(&mut *tx))?;
+        }
+        block_on(
+            sqlx::query!(
+                "UPDATE provider SET failures=0,wait_until=0,revision=revision+1 WHERE id=1"
+            )
+            .execute(&mut *tx),
+        )?;
+        block_on(tx.commit())?;
         Ok(())
     }
-    pub fn revision(&self) -> Result<i64, Error> {
-        Ok(self
-            .db
-            .query_row("SELECT revision FROM provider WHERE id=1", [], |r| r.get(0))?)
+    pub fn revision(&mut self) -> Result<i64, Error> {
+        Ok(block_on(
+            sqlx::query_scalar!("SELECT revision FROM provider WHERE id=1").fetch_one(&mut self.db),
+        )?)
     }
-    pub fn read(&self, owner: &str, channel: u16, view: &View) -> Result<Vec<Record>, Error> {
-        let mut statement=self.db.prepare("SELECT id,time,payload,own,origin,media_ms FROM (
-            SELECT c.id,c.time,c.payload,0 AS own,0 AS origin,NULL AS media_ms FROM comments c JOIN coverage v ON v.id=c.coverage
-                WHERE v.published=1 AND v.channel=?1 AND c.time>=?2 AND c.time<?3
-            UNION ALL SELECT id,time,payload,own,1 AS origin,media_ms FROM live_comments
-                WHERE owner=?4 AND channel=?1 AND clock=?5 AND time>=?2 AND time<?3)
-            ORDER BY time,origin DESC,id LIMIT ?6")?;
-        let mut rows = statement.query(params![
+    pub fn read(&mut self, owner: &str, channel: u16, view: &View) -> Result<Vec<Record>, Error> {
+        let start = view.interval.start * 1_000_000;
+        let end = view.interval.end * 1_000_000;
+        let limit = WORKING_COMMENTS as i64;
+        let query = sqlx::query_file!(
+            "src/cache/store/queries/read_window.sql",
             channel,
-            view.interval.start * 1_000_000,
-            view.interval.end * 1_000_000,
+            start,
+            end,
             owner,
             view.clock_key,
-            WORKING_COMMENTS as i64
-        ])?;
+            limit
+        );
+        let mut rows = query.fetch(&mut self.db);
         let mut records = Vec::new();
         let mut bytes = 0;
-        while let Some(row) = rows.next()? {
-            let payload: Vec<u8> = row.get(2)?;
-            bytes += payload.len() + std::mem::size_of::<Record>();
+        // Stream rows to retain the working-set budget, including large payloads.
+        // The connection's one-row buffer bounds read-ahead in SQLx's worker.
+        while let Some(row) = block_on(rows.next()) {
+            let row = row?;
+            bytes += row.payload.len() + std::mem::size_of::<Record>();
             if bytes > WORKING_BYTES {
                 break;
             }
-            let stored: StoredComment =
-                serde_json::from_slice(&payload).map_err(|e| Error::Format(e.to_string()))?;
-            let id: i64 = row.get(0)?;
-            let live: bool = row.get(4)?;
+            let stored: StoredComment = serde_json::from_slice(&row.payload)?;
             records.push(Record {
-                id: (id as u64) * 2 + u64::from(live),
+                id: (row.id as u64) * 2 + u64::from(row.origin),
                 comment: stored.into(),
-                own: row.get(3)?,
-                origin: if live {
+                own: row.own,
+                origin: if row.origin {
                     RecordOrigin::Live
                 } else {
                     RecordOrigin::Archive
                 },
-                media_ms: row.get(5)?,
+                media_ms: row.media_ms,
             });
         }
-        // Reading a published window must not acquire a write lock. Usage is
-        // refreshed with the retained ranges, at pinning and maintenance.
+        // Reading a published window never acquires a write lock. Pinning and
+        // maintenance update usage independently of this read.
         Ok(records)
     }
     pub fn cleanup(&mut self, now: i64, clear: bool) -> Result<(), Error> {
-        let tx = self.db.transaction()?;
-        touch_pinned(&tx, now)?;
+        let mut tx = block_on(self.db.begin())?;
+        touch_pinned(&mut tx, now)?;
         if clear {
-            tx.execute(
-                "UPDATE provider SET generation=generation+1,revision=revision+1 WHERE id=1",
-                [],
+            block_on(
+                sqlx::query!(
+                    "UPDATE provider SET generation=generation+1,revision=revision+1 WHERE id=1"
+                )
+                .execute(&mut *tx),
             )?;
         }
-        let candidates = tx
-            .prepare(
-                "SELECT COALESCE(v.target_key,'legacy:'||v.id),SUM(v.bytes),MAX(v.last_used)
-            FROM coverage v WHERE v.published=1 GROUP BY COALESCE(v.target_key,'legacy:'||v.id)
-            HAVING NOT EXISTS(SELECT 1 FROM coverage member JOIN pins p
-                ON p.channel=member.channel AND p.start<member.end AND p.end>member.start
-                WHERE member.published=1 AND (member.target_key=v.target_key OR member.id=v.id))
-            ORDER BY MAX(v.last_used),MIN(v.id)",
-            )?
-            .query_map([], |r| {
-                Ok((
-                    r.get::<_, String>(0)?,
-                    r.get::<_, i64>(1)?,
-                    r.get::<_, i64>(2)?,
-                ))
-            })?
-            .collect::<Result<Vec<_>, _>>()?;
-        let mut bytes: i64 = tx.query_row(
-            "SELECT COALESCE(SUM(bytes),0) FROM coverage WHERE published=1",
-            [],
-            |r| r.get(0),
+        let candidates = block_on(
+            sqlx::query_file!("src/cache/store/queries/eviction_candidates.sql")
+                .fetch_all(&mut *tx),
         )?;
-        for (id, charge, _used) in candidates {
+        let mut bytes = block_on(
+            sqlx::query_scalar!(
+                r#"SELECT COALESCE(SUM(bytes),0) AS "bytes!: i64" FROM coverage WHERE published=1"#
+            )
+            .fetch_one(&mut *tx),
+        )?;
+        for row in candidates {
+            let (id, charge) = (row.key, row.bytes);
             if clear || bytes > self.cache_bytes {
-                tx.execute("DELETE FROM coverage WHERE published=1 AND COALESCE(target_key,'legacy:'||id)=?1", [id])?;
+                block_on(sqlx::query!("DELETE FROM coverage WHERE published=1 AND COALESCE(target_key,'legacy:'||id)=?1", id).execute(&mut *tx))?;
                 bytes -= charge;
-                tx.execute("UPDATE provider SET revision=revision+1 WHERE id=1", [])?;
+                block_on(
+                    sqlx::query!("UPDATE provider SET revision=revision+1 WHERE id=1")
+                        .execute(&mut *tx),
+                )?;
             }
         }
-        tx.commit()?;
-        self.db
-            .execute_batch("PRAGMA incremental_vacuum; PRAGMA wal_checkpoint(TRUNCATE);")?;
+        block_on(tx.commit())?;
+        block_on(
+            sqlx::raw_sql("PRAGMA incremental_vacuum; PRAGMA wal_checkpoint(TRUNCATE);")
+                .execute(&mut self.db),
+        )?;
         Ok(())
     }
     pub fn disk_bytes(&self) -> u64 {
@@ -843,11 +879,7 @@ impl Store {
     }
 }
 
-fn touch_pinned(db: &Connection, now: i64) -> Result<(), Error> {
-    db.execute(
-        "UPDATE coverage SET last_used=?1 WHERE published=1 AND last_used<?1 AND EXISTS
-        (SELECT 1 FROM pins p WHERE p.channel=coverage.channel AND p.start<coverage.end AND p.end>coverage.start)",
-        [now],
-    )?;
+fn touch_pinned(db: &mut SqliteConnection, now: i64) -> Result<(), Error> {
+    block_on(sqlx::query_file!("src/cache/store/queries/touch_pinned.sql", now).execute(&mut *db))?;
     Ok(())
 }

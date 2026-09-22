@@ -104,7 +104,7 @@ fn saved_server(path: &Path) -> String {
 
 fn checks() -> TestResult {
     features::PLAN
-        .set(features::LaunchPlan::parse(["--features=none".into()])?)
+        .set(features::LaunchPlan::Restricted("none".parse()?))
         .map_err(|_| "test plan already initialized")?;
     let app = QCoreApplication::new();
     assert!(!app.is_null());
@@ -312,7 +312,10 @@ fn check_transport_messages() {
     use cxx_qt_lib::QQmlApplicationEngine;
 
     let mut engine = QQmlApplicationEngine::new();
-    assert!(ffi::initialize_ui_language(engine.pin_mut(), &"en".into()));
+    assert!(crate::qt::ffi::initialize_ui_language(
+        engine.pin_mut(),
+        &"en".into()
+    ));
     let mut player = ffi::new_player();
     assert!(player.rust().media.playback().is_none());
     assert!(player.transport_error().is_empty());

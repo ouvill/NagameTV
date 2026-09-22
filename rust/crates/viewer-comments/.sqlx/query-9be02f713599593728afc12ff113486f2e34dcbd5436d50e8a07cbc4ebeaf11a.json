@@ -1,0 +1,98 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT id, start, end, fetched, last_used, settled AS \"settled: bool\", target_key\nFROM coverage\nWHERE published = 1 AND channel = ?1 AND start < ?2 AND end > ?3 AND id <> ?4\n",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "coverage",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "name": "start",
+        "ordinal": 1,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "coverage",
+            "name": "start"
+          }
+        }
+      },
+      {
+        "name": "end",
+        "ordinal": 2,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "coverage",
+            "name": "end"
+          }
+        }
+      },
+      {
+        "name": "fetched",
+        "ordinal": 3,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "coverage",
+            "name": "fetched"
+          }
+        }
+      },
+      {
+        "name": "last_used",
+        "ordinal": 4,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "coverage",
+            "name": "last_used"
+          }
+        }
+      },
+      {
+        "name": "settled: bool",
+        "ordinal": 5,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "coverage",
+            "name": "settled"
+          }
+        }
+      },
+      {
+        "name": "target_key",
+        "ordinal": 6,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "coverage",
+            "name": "target_key"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "9be02f713599593728afc12ff113486f2e34dcbd5436d50e8a07cbc4ebeaf11a"
+}

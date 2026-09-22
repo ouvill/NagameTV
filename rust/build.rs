@@ -86,6 +86,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "../assets/fonts/LICENSE-Rounded-Mplus-1m-for-ARIB.txt",
     ])
     .file("src/player.rs")
+    .file("src/qt.rs")
     .file("src/screenshot_native.rs")
     .file("src/screenshot_overlay.rs")
     .file("src/danmaku.rs")

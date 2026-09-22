@@ -20,6 +20,7 @@ video_item_tests = []
 native_tests = ["qml_tests", "dep:tonic"]
 
 [dependencies]
+clap = { version = "4.6", features = ["derive"] }
 tsreadex = { path = "crates/tsreadex" }
 viewer-remote = { path = "crates/viewer-remote" }
 tonic = { version = "0.14", optional = true }

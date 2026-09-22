@@ -293,7 +293,7 @@ impl Playback {
     /// alive through this call and, on success, until shutdown stops the sink.
     /// Qt meta-objects must identify their real native classes, and the video
     /// type must belong to the installed GStreamer plugin. No ownership transfers.
-    unsafe fn attach(&mut self, item: *mut crate::player::ffi::QQuickItem) -> Result<()> {
+    unsafe fn attach(&mut self, item: *mut crate::qt::ffi::QQuickItem) -> Result<()> {
         // qml6glsink's widget setter shares its interface pointer with the
         // streaming thread without locking. Never replace an active binding.
         match self.video_output {
@@ -308,7 +308,7 @@ impl Playback {
         }
         // SAFETY: The caller guarantees a live item. The helper checks thread
         // affinity and meta-casts to the exact base type required by qml6glsink.
-        let widget = unsafe { crate::player::ffi::qml6_video_item_pointer(item) };
+        let widget = unsafe { crate::qt::ffi::qml6_video_item_pointer(item) };
         if widget.is_null() {
             return Err(Error::InvalidVideoItem);
         }

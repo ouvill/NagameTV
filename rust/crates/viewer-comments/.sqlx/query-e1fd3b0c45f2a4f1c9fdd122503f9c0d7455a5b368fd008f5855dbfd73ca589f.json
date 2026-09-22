@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE comments SET coverage=?1 WHERE coverage=?2 AND time>=?3 AND time<?4",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "e1fd3b0c45f2a4f1c9fdd122503f9c0d7455a5b368fd008f5855dbfd73ca589f"
+}

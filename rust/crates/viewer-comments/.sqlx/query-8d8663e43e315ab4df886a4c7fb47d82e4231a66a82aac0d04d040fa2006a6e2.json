@@ -1,0 +1,74 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT refresh,completed_refresh,stopped AS \"stopped: bool\",retry_at,failure FROM targets WHERE key=?1",
+  "describe": {
+    "columns": [
+      {
+        "name": "refresh",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "targets",
+            "name": "refresh"
+          }
+        }
+      },
+      {
+        "name": "completed_refresh",
+        "ordinal": 1,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "targets",
+            "name": "completed_refresh"
+          }
+        }
+      },
+      {
+        "name": "stopped: bool",
+        "ordinal": 2,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "targets",
+            "name": "stopped"
+          }
+        }
+      },
+      {
+        "name": "retry_at",
+        "ordinal": 3,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "targets",
+            "name": "retry_at"
+          }
+        }
+      },
+      {
+        "name": "failure",
+        "ordinal": 4,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "targets",
+            "name": "failure"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "8d8663e43e315ab4df886a4c7fb47d82e4231a66a82aac0d04d040fa2006a6e2"
+}

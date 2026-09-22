@@ -8,19 +8,19 @@ use std::time::Instant;
 impl Default for PlayerRust {
     fn default() -> Self {
         // main sets PLAN before registering/constructing any Qt Player object.
-        let mut plan = *features::PLAN
+        let plan = *features::PLAN
             .get()
             .expect("LaunchPlan initialized before Qt");
-        let (preferences, settings_error) = if plan.locked {
+        let (preferences, settings_error) = if plan.locked() {
             (
                 settings::Loaded::transient(settings::Preferences {
                     server: String::new(),
                     volume: settings::Volume::from(50.0),
-                    show_subtitles: plan.subtitles,
-                    comments_enabled: plan.comments,
+                    show_subtitles: plan.subtitles(),
+                    comments_enabled: plan.comments(false),
                     // Explicit feature experiments enable the commentary display
                     // as before, independently of normal startup defaults.
-                    danmaku_enabled: plan.comments,
+                    danmaku_enabled: plan.comments(false),
                     ..Default::default()
                 }),
                 String::new(),
@@ -41,9 +41,6 @@ impl Default for PlayerRust {
             std::env::var("NAGAMETV_SERVER").ok(),
             std::env::var("NAGAMETV_SERVICE_ID").ok(),
         );
-        if !plan.locked {
-            plan.comments = preferences.preferences().comments_enabled;
-        }
         let autoplay_pending = settings::autoplay_requested(
             preferences.preferences().autoplay,
             std::env::var("NAGAMETV_AUTOPLAY").ok().as_deref(),
@@ -64,7 +61,7 @@ impl Default for PlayerRust {
             ),
         };
         let error_log = crate::error_log::ErrorLog::new(
-            super::ffi::playback_log_directory().to_string().into(),
+            crate::qt::ffi::playback_log_directory().to_string().into(),
         );
         let mut log_error = error_log
             .as_ref()
@@ -72,7 +69,7 @@ impl Default for PlayerRust {
             .map(ToString::to_string)
             .unwrap_or_default();
         let diagnostic_recorder = match &error_log {
-            Ok(log) => match crate::diagnostics::start(log.directory().to_owned(), plan.locked) {
+            Ok(log) => match crate::diagnostics::start(log.directory().to_owned(), plan.locked()) {
                 Ok(recorder) => recorder,
                 Err(error) => {
                     log_error = error.to_string();
@@ -86,7 +83,7 @@ impl Default for PlayerRust {
             #[cfg(target_os = "linux")]
             desktop_media: Default::default(),
             language: QString::from(preferences.preferences().language.code()),
-            ui_language: super::ffi::current_ui_language(),
+            ui_language: crate::qt::ffi::current_ui_language(),
             diagnostic_recorder,
             diagnostic_ui: Default::default(),
             subtitle_cells: 0,
@@ -114,10 +111,10 @@ impl Default for PlayerRust {
             transport_message: super::transport::Message::None,
             recording_loader: Default::default(),
             file_error: QString::default(),
-            subtitles_enabled: plan.subtitles,
-            epg_enabled: plan.epg,
-            comments_enabled: plan.comments,
-            comments_allowed: !plan.locked || plan.comments,
+            subtitles_enabled: plan.subtitles(),
+            epg_enabled: plan.epg(),
+            comments_enabled: plan.comments(preferences.preferences().comments_enabled),
+            comments_allowed: !plan.locked() || plan.comments(false),
             danmaku_enabled: preferences.preferences().danmaku_enabled,
             comment_font_size: preferences.preferences().comment_font_size.into(),
             comment_opacity: preferences.preferences().comment_opacity.into(),
@@ -171,7 +168,7 @@ impl Default for PlayerRust {
             request: Default::default(),
             channel_refresh: Default::default(),
             network: network.ok(),
-            remote: crate::remote::Control::load(plan.locked),
+            remote: crate::remote::Control::load(plan.locked()),
             media,
             entries: vec![],
         };

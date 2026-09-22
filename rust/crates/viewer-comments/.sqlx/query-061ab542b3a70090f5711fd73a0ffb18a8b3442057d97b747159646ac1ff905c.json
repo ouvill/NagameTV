@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM pins WHERE owner=?1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "061ab542b3a70090f5711fd73a0ffb18a8b3442057d97b747159646ac1ff905c"
+}

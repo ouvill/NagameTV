@@ -52,7 +52,7 @@ fn retrieve_transfer(key: &str) -> Result<PathBuf, Error> {
     }
     #[cfg(target_os = "linux")]
     {
-        crate::player::ffi::portal_retrieve_recording(&cxx_qt_lib::QString::from(key))
+        crate::qt::ffi::portal_retrieve_recording(&cxx_qt_lib::QString::from(key))
             .map(|path| PathBuf::from(path.to_string()))
             .map_err(|error| Error::Portal(error.to_string()))
     }

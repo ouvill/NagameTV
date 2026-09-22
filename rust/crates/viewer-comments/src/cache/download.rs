@@ -114,7 +114,7 @@ pub(super) struct Acquisition {
     pub focus: Option<i64>,
 }
 
-fn next(store: &Store, owner: &str, demand: &Acquisition, now: i64) -> Result<Planned, Error> {
+fn next(store: &mut Store, owner: &str, demand: &Acquisition, now: i64) -> Result<Planned, Error> {
     let plan = store.planned(owner, &demand.target, now)?;
     if let Planned::Ready(request) = &plan
         && demand.target.range.end > archive_end(now)
@@ -191,7 +191,7 @@ fn run_progress(
                 let Some(demand) = &demand else {
                     return Ok(Outcome::Idle);
                 };
-                let request = match next(&store, &owner, demand, now)? {
+                let request = match next(&mut store, &owner, demand, now)? {
                     Planned::Complete => return Ok(Outcome::Idle),
                     Planned::Waiting(until) => return Ok(Outcome::Waiting(until)),
                     Planned::Failed(message) => {

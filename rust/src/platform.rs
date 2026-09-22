@@ -54,7 +54,7 @@ impl DialogSetup {
                 Err(reason) => {
                     // Qt's portal plugin can fall back to the desktop's GTK3
                     // dialogs. Avoid that path when portal support is unavailable.
-                    crate::player::ffi::use_qt_quick_dialogs();
+                    crate::qt::ffi::use_qt_quick_dialogs();
                     tracing::info!(%reason, "Desktop portal unavailable; using Qt Quick dialogs");
                     DialogBackend::QtQuick
                 }
@@ -63,18 +63,25 @@ impl DialogSetup {
     }
 }
 
-fn portal_available() -> Result<(), String> {
-    if !crate::player::ffi::portal_theme_loaded() {
-        return Err("Qt xdgdesktopportal platform theme is not loaded".into());
+#[derive(Debug, thiserror::Error)]
+enum PortalError {
+    #[error("Qt xdgdesktopportal platform theme is not loaded")]
+    ThemeUnavailable,
+    #[error("Could not query FileChooser portal: {0}")]
+    Query(#[from] cxx::Exception),
+    #[error("FileChooser portal version {0} does not support folders")]
+    UnsupportedVersion(u32),
+}
+
+fn portal_available() -> Result<(), PortalError> {
+    if !crate::qt::ffi::portal_theme_loaded() {
+        return Err(PortalError::ThemeUnavailable);
     }
-    let version =
-        crate::player::ffi::portal_file_chooser_version().map_err(|error| error.to_string())?;
+    let version = crate::qt::ffi::portal_file_chooser_version()?;
     // FileChooser version 3 introduced directory selection, which is needed by
     // the screenshot folder picker as well as the recording file picker.
     if version < 3 {
-        return Err(format!(
-            "FileChooser portal version {version} does not support folders"
-        ));
+        return Err(PortalError::UnsupportedVersion(version));
     }
     Ok(())
 }

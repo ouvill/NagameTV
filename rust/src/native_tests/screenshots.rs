@@ -77,7 +77,7 @@ pub(super) fn capture(
         .ok_or_else(|| "saved image could not be decoded".into())
 }
 fn save(image: &QImage, path: &Path) -> TestResult {
-    if !crate::player::ffi::save_screenshot_image(
+    if !crate::qt::ffi::save_screenshot_image(
         image,
         &QString::from(path.to_string_lossy().as_ref()),
         &QString::from("png"),

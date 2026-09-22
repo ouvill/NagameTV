@@ -1,0 +1,28 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT COALESCE(v.target_key, 'legacy:' || v.id) AS \"key!: String\",\n       SUM(v.bytes) AS \"bytes!: i64\"\nFROM coverage v\nWHERE v.published = 1\nGROUP BY COALESCE(v.target_key, 'legacy:' || v.id)\nHAVING NOT EXISTS (\n    SELECT 1 FROM coverage member JOIN pins p\n        ON p.channel = member.channel AND p.start < member.end AND p.end > member.start\n    WHERE member.published = 1 AND (member.target_key = v.target_key OR member.id = v.id)\n)\nORDER BY MAX(v.last_used), MIN(v.id)\n",
+  "describe": {
+    "columns": [
+      {
+        "name": "key!: String",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "name": "bytes!: i64",
+        "ordinal": 1,
+        "type_info": "Integer",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      true,
+      false
+    ]
+  },
+  "hash": "883a8b3f8dc1e34ecb6873bb612e88e3cc3b31807141a61f6725be86074fb724"
+}

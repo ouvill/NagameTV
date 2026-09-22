@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE targets SET refresh=completed_refresh+1,failures=0,stopped=0,failure=NULL WHERE key=?1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "f8598710a8f100c899a6923e96b2df93f6d0fda3b9e585e72a18982448f377e3"
+}

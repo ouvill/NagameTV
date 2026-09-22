@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE provider SET generation=generation+1,revision=revision+1 WHERE id=1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": []
+  },
+  "hash": "50add975e8b46aaaff8247cc137aab67ef20ba67b0b5c1995f38c3459e1d18e6"
+}

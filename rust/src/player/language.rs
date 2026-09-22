@@ -7,7 +7,7 @@ impl ffi::Player {
         let Some(preference) = crate::settings::Language::parse(&language.to_string()) else {
             return false;
         };
-        let effective = ffi::apply_ui_language(&QString::from(preference.code()));
+        let effective = crate::qt::ffi::apply_ui_language(&QString::from(preference.code()));
         if effective.is_empty() {
             return false;
         }

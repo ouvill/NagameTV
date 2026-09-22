@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM coverage WHERE published=1 AND COALESCE(target_key,'legacy:'||id)=?1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "8f75a1e24f9f772781deab785e2965565e7c0130b620818a8d68c218f20bb31d"
+}
