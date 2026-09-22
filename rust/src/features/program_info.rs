@@ -20,7 +20,7 @@ const REFRESH: Duration = Duration::from_secs(300);
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("番組JSONの解析失敗: {0}")]
-    Json(#[from] serde_json::Error),
+    Json(#[from] crate::json::Error),
     #[error("番組数が上限を超えています（{actual} > {limit}）")]
     TooManyPrograms { actual: usize, limit: usize },
 }

@@ -219,6 +219,32 @@ fn schedule_fixture() -> Result<Snapshot, Error> {
 }
 
 #[test]
+fn malformed_program_reports_its_index_and_field_and_rejects_trailing_data() {
+    let error = match parse(
+        br#"[
+        {"id":1,"networkId":10,"serviceId":1,"startAt":100,"duration":"invalid"}
+    ]"#,
+    ) {
+        Err(error) => error,
+        Ok(_) => panic!("invalid duration accepted"),
+    };
+    let Error::Json(crate::json::Error::Decode {
+        ref path,
+        ref source,
+    }) = error
+    else {
+        panic!("expected a schema error: {error:?}");
+    };
+    assert_eq!(path.to_string(), "[0].duration");
+    assert!(source.is_data());
+    assert!(error.to_string().contains("[0].duration"));
+    assert!(matches!(
+        parse(b"[] []"),
+        Err(Error::Json(crate::json::Error::Trailing(_)))
+    ));
+}
+
+#[test]
 fn current_program_boundaries_gaps_and_missing_metadata() -> Result<(), Box<dyn std::error::Error>>
 {
     let snapshot = schedule_fixture()?;

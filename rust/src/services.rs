@@ -144,11 +144,10 @@ mod tests {
     fn fetch_preserves_http_parse_and_capacity_failures() -> Result<(), Box<dyn std::error::Error>>
     {
         use std::error::Error as _;
-        use std::{
-            io::{Read, Write},
-            net::TcpListener,
-            thread,
-            time::Instant,
+        use std::{thread, time::Instant};
+        use wiremock::{
+            Mock, MockServer, ResponseTemplate,
+            matchers::{method, path},
         };
 
         let network = Network::new()?;
@@ -158,38 +157,15 @@ mod tests {
             (200, "[]", 1),
             (200, "[]", 2),
         ] {
-            let listener = TcpListener::bind("127.0.0.1:0")?;
-            listener.set_nonblocking(true)?;
-            let url = format!("http://{}/api/services", listener.local_addr()?);
-            let server = thread::spawn(move || -> std::io::Result<()> {
-                let deadline = Instant::now() + Duration::from_secs(3);
-                let mut stream = loop {
-                    match listener.accept() {
-                        Ok((stream, _)) => break stream,
-                        Err(e)
-                            if e.kind() == std::io::ErrorKind::WouldBlock
-                                && Instant::now() < deadline =>
-                        {
-                            thread::sleep(Duration::from_millis(1))
-                        }
-                        Err(e) => return Err(e),
-                    }
-                };
-                stream.set_read_timeout(Some(Duration::from_secs(1)))?;
-                let mut header = Vec::new();
-                while !header.ends_with(b"\r\n\r\n") {
-                    assert!(header.len() < 4096);
-                    let mut byte = [0];
-                    stream.read_exact(&mut byte)?;
-                    header.push(byte[0]);
-                }
-                write!(
-                    stream,
-                    "HTTP/1.1 {status} Test\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-                    body.len()
-                )?;
-                Ok(())
-            });
+            let server = network.runtime.block_on(MockServer::start());
+            network.runtime.block_on(
+                Mock::given(method("GET"))
+                    .and(path("/api/services"))
+                    .respond_with(ResponseTemplate::new(status).set_body_string(body))
+                    .expect(1)
+                    .mount(&server),
+            );
+            let url = format!("{}/api/services", server.uri());
             let mut job = network.fetch_json(url, limit, channels::parse);
             let deadline = Instant::now() + Duration::from_secs(3);
             let outcome = loop {
@@ -200,7 +176,7 @@ mod tests {
                 assert!(Instant::now() < deadline, "request did not finish");
                 thread::sleep(Duration::from_millis(1));
             };
-            server.join().map_err(|_| "test server panicked")??;
+            network.runtime.block_on(server.verify());
             if status == 200 && limit == 2 {
                 assert!(outcome?.is_empty());
                 continue;
@@ -211,7 +187,14 @@ mod tests {
                     assert_eq!(source.status().map(|status| status.as_u16()), Some(503));
                     assert!(error.source().and_then(|source| source.source()).is_some());
                 }
-                (200, 1024, FetchError::Parse(channels::Error::Json(source))) => {
+                (
+                    200,
+                    1024,
+                    FetchError::Parse(channels::Error::Json(crate::json::Error::Decode {
+                        source,
+                        ..
+                    })),
+                ) => {
                     assert!(source.is_syntax());
                     assert!(error.source().and_then(|source| source.source()).is_some());
                 }

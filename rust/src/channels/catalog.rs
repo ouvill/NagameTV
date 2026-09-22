@@ -2,6 +2,9 @@
 use super::Channel;
 use std::sync::Arc;
 
+#[cfg(test)]
+mod properties;
+
 #[derive(Clone, Default)]
 enum Selection {
     #[default]

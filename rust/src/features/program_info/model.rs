@@ -61,7 +61,7 @@ impl Storage {
 pub struct Snapshot(Vec<Program>);
 
 pub(super) fn parse(bytes: &[u8]) -> Result<Snapshot, Error> {
-    let mut entries: Vec<Program> = serde_json::from_slice(bytes)?;
+    let mut entries: Vec<Program> = crate::json::from_slice(bytes)?;
     if entries.len() > MAX_PROGRAMS {
         return Err(Error::TooManyPrograms {
             actual: entries.len(),

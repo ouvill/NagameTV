@@ -73,6 +73,7 @@ fn rejects_invalid_schema_but_accepts_valid_empty_catalog() {
     for bytes in [
         b"broken".as_slice(),
         b"{}",
+        b"[] []",
         br#"[{"id":1,"type":1}]"#,
         br#"[{"id":1,"name":"TV","type":1,"serviceId":65536}]"#,
     ] {
@@ -81,4 +82,27 @@ fn rejects_invalid_schema_but_accepts_valid_empty_catalog() {
     for bytes in [b"[]".as_slice(), br#"[{"id":1,"name":"Radio","type":2}]"#] {
         assert!(parse(bytes).is_ok_and(|channels| channels.is_empty()));
     }
+}
+
+#[test]
+fn schema_errors_identify_the_service_and_nested_field() {
+    let error = parse(
+        br#"[
+        {"id":1,"name":"TV","type":1},
+        {"id":2,"name":"TV","type":1,"channel":{"channel":42}}
+    ]"#,
+    )
+    .unwrap_err();
+    let Error::Json(ref json_error) = error;
+    let crate::json::Error::Decode { path, source } = json_error else {
+        panic!("expected a schema error: {error:?}");
+    };
+    assert_eq!(path.to_string(), "[1].channel.channel");
+    assert!(source.is_data());
+    assert!(error.to_string().contains("[1].channel.channel"));
+    assert!(
+        std::error::Error::source(json_error)
+            .unwrap()
+            .is::<serde_json::Error>()
+    );
 }

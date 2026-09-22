@@ -9,6 +9,7 @@ use std::{
     time::{Duration, Instant},
 };
 use tokio::{runtime::Handle, sync::watch, task::JoinHandle};
+use tokio_util::sync::CancellationToken;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -57,7 +58,7 @@ const TIMING: Timing = Timing {
 };
 
 pub struct Subscription {
-    task: Option<JoinHandle<()>>,
+    task: Task,
     pending: Arc<AtomicBool>,
     state: watch::Receiver<State>,
 }
@@ -70,9 +71,17 @@ impl Subscription {
         let output = pending.clone();
         let (state_tx, state) = watch::channel(State::Connecting);
         let client = client.0.clone();
-        let task = runtime.spawn(async move { run(client, url, output, state_tx, timing).await });
+        let stop = CancellationToken::new();
+        let stopping = stop.clone();
+        let job = runtime.spawn(async move {
+            tokio::select! {
+                biased;
+                () = stopping.cancelled() => {},
+                () = run(client, url, output, state_tx, timing) => {},
+            }
+        });
         Self {
-            task: Some(task),
+            task: Task { stop, job },
             pending,
             state,
         }
@@ -82,30 +91,34 @@ impl Subscription {
         self.pending.swap(false, Ordering::AcqRel)
     }
     pub fn state(&self) -> State {
-        if self.task.as_ref().is_none_or(JoinHandle::is_finished) {
+        if self.task.job.is_finished() {
             State::WorkerStopped
         } else {
             self.state.borrow().clone()
         }
     }
     /// Consuming the subscription makes its old notifications inaccessible immediately.
-    pub fn stop(mut self) -> Stopping {
-        let task = self.task.take();
-        if let Some(task) = &task {
-            task.abort();
-        }
-        Stopping(task)
+    pub fn stop(self) -> Stopping {
+        self.task.stop.cancel();
+        Stopping(Some(self.task))
     }
 }
-impl Drop for Subscription {
+
+// Explicit stop cooperates with the worker; abandoning either the subscription
+// or its stopping handle also aborts it. Keep the handle owned across await so
+// dropping the wait future cannot detach a still-running task.
+struct Task {
+    stop: CancellationToken,
+    job: JoinHandle<()>,
+}
+impl Drop for Task {
     fn drop(&mut self) {
-        if let Some(task) = &self.task {
-            task.abort();
-        }
+        self.stop.cancel();
+        self.job.abort();
     }
 }
 #[must_use = "Wait for termination before starting a replacement subscription"]
-pub struct Stopping(Option<JoinHandle<()>>);
+pub struct Stopping(Option<Task>);
 impl Stopping {
     /// Nonblocking completion for a GUI-driven poll loop. Pending retains ownership.
     pub fn try_finish(&mut self) -> Option<Result<(), tokio::task::JoinError>> {
@@ -113,7 +126,7 @@ impl Stopping {
             return Some(Ok(()));
         };
         let mut context = std::task::Context::from_waker(std::task::Waker::noop());
-        match task.poll_unpin(&mut context) {
+        match task.job.poll_unpin(&mut context) {
             std::task::Poll::Pending => None,
             std::task::Poll::Ready(result) => {
                 self.0 = None;
@@ -125,11 +138,11 @@ impl Stopping {
         }
     }
     pub fn is_finished(&self) -> bool {
-        self.0.as_ref().is_none_or(JoinHandle::is_finished)
+        self.0.as_ref().is_none_or(|task| task.job.is_finished())
     }
     pub async fn wait(mut self) -> Result<(), tokio::task::JoinError> {
-        if let Some(task) = self.0.take() {
-            match task.await {
+        if let Some(task) = self.0.as_mut() {
+            match (&mut task.job).await {
                 Err(error) if error.is_cancelled() => Ok(()),
                 result => result,
             }
@@ -138,14 +151,6 @@ impl Stopping {
         }
     }
 }
-impl Drop for Stopping {
-    fn drop(&mut self) {
-        if let Some(task) = &self.0 {
-            task.abort();
-        }
-    }
-}
-
 async fn run(
     client: reqwest::Client,
     url: String,
@@ -223,6 +228,55 @@ mod tests {
         time::timeout,
     };
     type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+    #[tokio::test(start_paused = true)]
+    async fn retry_obeys_deadline_and_stop_waits_for_worker_completion() -> TestResult {
+        // Invalid URLs fail without I/O, isolating retry scheduling from sockets
+        // and the OS clock. Exercise production timings without a real wait.
+        let subscription =
+            Subscription::start(&Handle::current(), &Client::new()?, "invalid URL".into());
+        let mut state = subscription.state.clone();
+        state
+            .wait_for(|state| matches!(state, State::Retrying(_)))
+            .await?;
+        state.borrow_and_update();
+        tokio::time::advance(TIMING.retry - TIMING.tick).await;
+        assert!(!state.has_changed()?, "retried before its deadline");
+        tokio::time::advance(TIMING.tick).await;
+        state.changed().await?;
+        assert!(matches!(*state.borrow_and_update(), State::Retrying(_)));
+
+        let mut stopping = subscription.stop();
+        assert!(!stopping.is_finished(), "cancellation is not completion");
+        assert!(stopping.try_finish().is_none());
+        stopping.wait().await?;
+        tokio::time::advance(TIMING.retry).await;
+        assert!(
+            state.changed().await.is_err(),
+            "stopped worker published another state"
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn dropping_a_pending_stop_wait_aborts_its_owned_task() -> TestResult {
+        let job = tokio::spawn(std::future::pending());
+        let handle = job.abort_handle();
+        let stopping = Stopping(Some(Task {
+            stop: CancellationToken::new(),
+            job,
+        }));
+        let mut wait = Box::pin(stopping.wait());
+        assert!(futures_util::poll!(&mut wait).is_pending());
+        drop(wait);
+        tokio::task::yield_now().await;
+        assert!(
+            handle.is_finished(),
+            "dropping the waiter detached its task"
+        );
+        Ok(())
+    }
+
     #[tokio::test]
     #[ignore = "manual real-server subscription; requires NAGAMETV_EVENT_URL"]
     async fn real_server_subscription_stays_open_and_stops() -> TestResult {

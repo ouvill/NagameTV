@@ -7,7 +7,7 @@ pub mod catalog;
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("チャンネルJSONの解析失敗: {0}")]
-    Json(#[from] serde_json::Error),
+    Json(#[from] crate::json::Error),
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -89,7 +89,7 @@ struct ServiceChannel {
 }
 
 pub fn parse(bytes: &[u8]) -> Result<Vec<Channel>, Error> {
-    let services: Vec<Service> = serde_json::from_slice(bytes)?;
+    let services: Vec<Service> = crate::json::from_slice(bytes)?;
     let mut seen = HashSet::new();
     let mut channels: Vec<_> = services
         .into_iter()

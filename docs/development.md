@@ -203,6 +203,20 @@ GitHub Actionsでの自動テストと配布ビルド、`main`へのpushに伴�
 CARGO_TARGET_DIR=build/cargo cargo test --manifest-path rust/Cargo.toml --release --locked
 ```
 
+チャンネル選択の操作列は`proptest`、HTTP応答と要求回数は`wiremock`で検証します。
+どちらもテスト用の依存です。`proptest`が失敗時に保存した再現用シードは、
+修正後も回帰試験に使うためリポジトリーへ含めます。
+
+EPGイベント接続の停止・再試行は、機器不要の独立したクレートでも検証します。
+Tokioの仮想時間を使う試験では、実時間の待機を省いて期限前後の動作を確認します。
+
+```sh
+CARGO_TARGET_DIR=build/cargo cargo test --manifest-path rust/crates/viewer-epg-events/Cargo.toml --release --locked --features network
+```
+
+依存を変更した場合は`python3 scripts/flatpak-cargo-sources.py`で配布用のソース一覧を更新し、
+`python3 scripts/flatpak-cargo-sources.py --check`でロックファイルとの一致を確認します。
+
 Clippyは通常構成とQt統合テスト構成の両方で、警告をエラーとして検査します。
 
 ```sh

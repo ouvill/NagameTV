@@ -42,12 +42,17 @@ reqwest = { version = "0.13", default-features = false, features = ["rustls"] }
 tokio = { version = "1.47", features = ["rt-multi-thread", "time"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+serde_path_to_error = "0.1"
 thiserror = "2.0"
 url = "2.5"
 toml = "0.9"
 tempfile = "3.27"
 bitfield = "0.19.5"
 local-ip-address = "0.6.13"
+
+[dev-dependencies]
+proptest = { version = "1", default-features = false, features = ["std"] }
+wiremock = "0.6"
 
 [build-dependencies]
 cxx-qt-build = { version = "0.10", features = ["link_qt_object_files"] }

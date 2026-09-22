@@ -10,6 +10,7 @@ mod danmaku_ui_tests;
 mod diagnostics;
 mod error_log;
 mod features;
+mod json;
 mod logging;
 mod memory;
 #[cfg(feature = "native_tests")]
