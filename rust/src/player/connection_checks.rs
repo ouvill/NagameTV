@@ -76,7 +76,7 @@ impl Response {
                 .connect_server(QString::from(self.url.as_str()))
         );
         assert!(player.loading());
-        player.pin_mut().poll_channels()?;
+        player.pin_mut().poll_channels();
         self.received.recv_timeout(Duration::from_secs(5))?;
         Ok(())
     }
@@ -86,7 +86,7 @@ impl Response {
         let deadline = Instant::now() + Duration::from_secs(5);
         while player.loading() || player.rust().request.is_busy() {
             assert!(Instant::now() < deadline, "connection did not finish");
-            player.pin_mut().poll_channels()?;
+            player.pin_mut().poll_channels();
             thread::sleep(Duration::from_millis(1));
         }
         assert!(player.rust().pending_server.is_none());
@@ -223,6 +223,7 @@ fn checks() -> TestResult {
     // Play cannot replenish the one automatic retry of an active attempt.
     check_stream_state(&mut player)?;
     check_viewing_channel()?;
+    crate::channel_model::checks::run()?;
     check_playback_actions(&mut player)?;
     check_recording_input(&mut player)?;
     check_recording_notifications(&mut player)?;
@@ -459,7 +460,10 @@ fn check_stream_state(player: &mut cxx::UniquePtr<ffi::Player>) -> TestResult {
             .unwrap()
             .push((player.connecting(), player.playing()));
     });
-    let attempt = Attempt::new(&player.rust().entries[0], Retention::Memory.into());
+    let attempt = Attempt::new(
+        &player.rust().catalog.channels()[0],
+        Retention::Memory.into(),
+    );
     player
         .pin_mut()
         .update_stream_state(State::Connecting(attempt));
@@ -519,17 +523,28 @@ fn check_viewing_channel() -> TestResult {
         let index = p.viewing_channel();
         if index >= 0 {
             assert!(p.media_active() && !p.recording());
-            assert_eq!(p.rust().entries[index as usize].id, u64::MAX);
-            let rows: serde_json::Value =
-                serde_json::from_str(&p.channel_data().to_string()).unwrap();
+            assert_eq!(p.rust().catalog.channels()[index as usize].id, u64::MAX);
+            let row = p
+                .rust()
+                .channel_model
+                .row(index)
+                .value::<cxx_qt_lib::QMap<cxx_qt_lib::QMapPair_QString_QVariant>>()
+                .unwrap();
             assert_eq!(
-                rows[index as usize]["label"],
-                p.rust().entries[index as usize].label
+                row.get(&QString::from("label"))
+                    .unwrap()
+                    .value::<QString>()
+                    .unwrap()
+                    .to_string(),
+                p.rust().catalog.channels()[index as usize].label
             );
         }
         changes.lock().unwrap().push(index);
     });
-    let attempt = Attempt::new(&player.rust().entries[1], Retention::Memory.into());
+    let attempt = Attempt::new(
+        &player.rust().catalog.channels()[1],
+        Retention::Memory.into(),
+    );
     player
         .pin_mut()
         .update_stream_state(State::Connecting(attempt));
@@ -557,7 +572,7 @@ fn check_viewing_channel() -> TestResult {
         // reconfiguring the active stream. Each fixture owns its local endpoint.
         let server = crate::services::ServerUrl::parse(&response.url)?;
         player.pin_mut().rust_mut().request.request(server);
-        player.pin_mut().poll_channels()?;
+        player.pin_mut().poll_channels();
         response.received.recv_timeout(Duration::from_secs(5))?;
         response.finish(&mut player)?;
         assert_eq!(player.viewing_channel(), expected);
@@ -583,14 +598,14 @@ fn check_viewing_channel() -> TestResult {
 fn check_playback_actions(player: &mut cxx::UniquePtr<ffi::Player>) -> TestResult {
     use super::stream_state::{Attempt, State};
     use crate::playback::input::Retention;
-    let selected = *player.selected();
+    let selected = player.selected();
     let observed = Arc::new(Mutex::new(Vec::new()));
     let changes = observed.clone();
     let _signal = player.pin_mut().on_playback_action_changed(move |p| {
         let expected: ffi::PlaybackAction = p
             .rust()
             .stream_state
-            .playback_action(*p.selected() >= 0)
+            .playback_action(p.selected() >= 0)
             .into();
         assert!(p.playback_action() == expected);
         changes
@@ -598,15 +613,19 @@ fn check_playback_actions(player: &mut cxx::UniquePtr<ffi::Player>) -> TestResul
             .unwrap()
             .push((p.playback_action().repr, p.playing()));
     });
-    player.pin_mut().set_selected(-1);
+    let restored_catalog = player.rust().catalog.clone();
+    let server = player.server().to_string();
+    player
+        .pin_mut()
+        .replace_catalog(crate::channels::catalog::Catalog::default(), "");
     assert!(player.playback_action() == ffi::PlaybackAction::Unavailable);
     player.pin_mut().toggle_playback();
     assert!(!player.connecting());
-    player.pin_mut().set_selected(selected);
+    player.pin_mut().replace_catalog(restored_catalog, &server);
     assert!(player.playback_action() == ffi::PlaybackAction::Play);
     // A previously displayed Play action must use the new state when triggered.
     let attempt = Attempt::new(
-        &player.rust().entries[selected as usize],
+        &player.rust().catalog.channels()[selected as usize],
         Retention::Off.into(),
     );
     player
@@ -774,7 +793,7 @@ fn check_live_buffer() -> TestResult {
 
 fn check_recording_input(player: &mut cxx::UniquePtr<ffi::Player>) -> TestResult {
     use super::stream_state::{Attempt, State};
-    let channel = &player.rust().entries[0];
+    let channel = &player.rust().catalog.channels()[0];
     let attempt = Attempt::new(channel, Default::default());
     let service = channel.id;
     player
@@ -881,7 +900,7 @@ fn check_recording_notifications(player: &mut cxx::UniquePtr<ffi::Player>) -> Te
     );
     assert_eq!(player.recording_name().to_string(), "subtitle-clock.ts");
     observed.lock().unwrap().clear();
-    let attempt = Attempt::new(&player.rust().entries[0], Default::default());
+    let attempt = Attempt::new(&player.rust().catalog.channels()[0], Default::default());
     player
         .pin_mut()
         .update_stream_state(State::Connecting(attempt));

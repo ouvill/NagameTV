@@ -92,7 +92,7 @@ impl ffi::Player {
             guide_open: this.diagnostic_ui.guide,
             channels_open: this.diagnostic_ui.channels,
             live_comments: this.diagnostic_ui.live_comments,
-            channel_count: this.entries.len(),
+            channel_count: this.catalog.channels().len(),
             epg_programs: programs,
             epg_text_capacity_bytes: this.epg.text_capacity_bytes,
             comment_history_count: history,

@@ -1,6 +1,7 @@
 import QtQuick
 import QtTest
 import "../../rust/qml" as Viewer
+import "../../rust/qml/tests" as Fixtures
 
 TestCase {
     id: testCase
@@ -41,6 +42,8 @@ TestCase {
     Component {
         id: browserComponent
         Viewer.ChannelBrowser {
+            property alias rows: fixture.rows
+            channels: Fixtures.ChannelFixture { id: fixture }
             width: 960
             height: 304
             iconDirectory: Qt.resolvedUrl("../../assets/icons/")
@@ -49,7 +52,11 @@ TestCase {
 
     Component {
         id: sidebarComponent
-        Viewer.SidebarChannels { width: 320; height: 360 }
+        Viewer.SidebarChannels {
+            property alias rows: fixture.rows
+            channels: Fixtures.ChannelFixture { id: fixture }
+            width: 320; height: 360
+        }
     }
 
     function test_browser_scrolls_small_angle_events_data() {

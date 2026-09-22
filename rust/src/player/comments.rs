@@ -187,9 +187,9 @@ impl ffi::Player {
                     .comment_cache_limit_mib
                     .bytes(),
             );
-            let channel = usize::try_from(this.selected)
-                .ok()
-                .and_then(|index| this.entries.get(index))
+            let channel = this
+                .catalog
+                .selected()
                 .filter(|_| this.stream_state.recording().is_none());
             let reset = this.comments.configure(this.comments_enabled, channel);
             let accepting = this.comment_replay.can_receive();
@@ -292,9 +292,9 @@ impl ffi::Player {
         self.as_mut().history_model().append(comments);
         let title = {
             let this = self.rust();
-            let channel = usize::try_from(this.selected)
-                .ok()
-                .and_then(|index| this.entries.get(index))
+            let channel = this
+                .catalog
+                .selected()
                 .filter(|_| this.stream_state.recording().is_none());
             QString::from(this.activity.program_title(channel))
         };
@@ -319,13 +319,13 @@ impl ffi::Player {
             let mut this = self.as_mut().rust_mut();
             let this = &mut *this;
             this.activity
-                .configure(this.comments_enabled && !this.entries.is_empty());
+                .configure(this.comments_enabled && !this.catalog.channels().is_empty());
             if let Some(network) = &this.network {
                 this.activity.poll(network);
             }
             if this.activity.dirty {
                 this.activity.dirty = false;
-                Some(this.activity.json(&this.entries))
+                Some(this.activity.json(this.catalog.channels()))
             } else {
                 None
             }

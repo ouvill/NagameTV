@@ -20,7 +20,8 @@ impl PlayerRust {
     }
 
     fn remote_channels(&self) -> Vec<model::Channel> {
-        self.entries
+        self.catalog
+            .channels()
             .iter()
             .map(|channel| model::Channel {
                 id: channel.id,
@@ -97,10 +98,7 @@ impl PlayerRust {
                 duration_ms: program.duration,
             });
         model::State {
-            selected_channel_id: usize::try_from(self.selected)
-                .ok()
-                .and_then(|index| self.entries.get(index))
-                .map(|channel| channel.id),
+            selected_channel_id: self.catalog.selected().map(|channel| channel.id),
             playback,
             volume: model::Volume::new(self.audio_output.volume().fraction())
                 .expect("validated application volume"),
@@ -206,11 +204,11 @@ impl ffi::Player {
         let Some(session) = self.rust().remote.session() else {
             return;
         };
-        let channels_changed = session.channels().len() != self.rust().entries.len()
+        let channels_changed = session.channels().len() != self.rust().catalog.channels().len()
             || session
                 .channels()
                 .iter()
-                .zip(&self.rust().entries)
+                .zip(self.rust().catalog.channels())
                 .any(|(a, b)| {
                     a.id != b.id
                         || a.name != b.name
@@ -229,7 +227,8 @@ impl ffi::Player {
             Command::SelectChannel(id) => {
                 let index = self
                     .rust()
-                    .entries
+                    .catalog
+                    .channels()
                     .iter()
                     .position(|channel| channel.id == id)
                     .ok_or(CommandError::ChannelNotFound)?;
@@ -242,8 +241,7 @@ impl ffi::Player {
                 if !self.recording() {
                     self.remote_live_ready()?;
                 }
-                if !self.recording() && self.rust().entries.get(*self.selected() as usize).is_none()
-                {
+                if !self.recording() && self.rust().catalog.selected().is_none() {
                     return Err(CommandError::NotReady("no channel selected"));
                 }
                 self.as_mut().play();

@@ -11,6 +11,8 @@ TestCase {
     Component {
         id: component
         Viewer.ProgramGuide {
+            property alias rows: fixture.rows
+            channels: ChannelFixture { id: fixture }
             width: 600; height: 460
             targetWindow: guideWindow
             iconDirectory: Qt.resolvedUrl("../../../assets/icons/")
@@ -48,7 +50,7 @@ TestCase {
         verify((timeline.cursorColumn + 1) * timeline.channelWidth <= view.contentX + view.width + 1)
         guide.visibilityJson = "[0,1,3]"
         tryCompare(timeline, "cursorColumn", 2)
-        compare(timeline.rows[2].index, 23)
+        compare(timeline.channels.row(2).channelIndex, 23)
         guide.band = "GR"
         guide.openGuide()
         tryCompare(guide, "band", "BS")
@@ -329,20 +331,20 @@ TestCase {
             {index: 3, band: "BS", label: "Satellite"}
         ]
         guide.band = "GR"
-        compare(guide.visibleRows.length, 3)
+        compare(guide.visibleChannels.count, 3)
         guide.visibilityJson = "[0,2,3]"
         const timeline = findChild(guide, "guideTimeline").parent
-        compare(timeline.rows.length, 2)
-        compare(timeline.rows[1].index, 2)
+        compare(timeline.channels.count, 2)
+        compare(timeline.channels.row(1).channelIndex, 2)
         guide.selectedProgram = {name:"Old details", startAt:0, duration:1}
         guide.visibilityJson = "[0,1,2,3]"
         compare(guide.selectedProgram, null)
-        compare(timeline.rows.length, 3)
+        compare(timeline.channels.count, 3)
         guide.band = "BS"
-        compare(timeline.rows.length, 1)
-        compare(timeline.rows[0].index, 3)
+        compare(timeline.channels.count, 1)
+        compare(timeline.channels.row(0).channelIndex, 3)
         guide.visibilityJson = "[]"
-        compare(timeline.rows.length, 0)
+        compare(timeline.channels.count, 0)
     }
     function test_current_time_badge_tracks_scrolling_and_selected_day() {
         const view = findChild(guide, "guideTimeline")

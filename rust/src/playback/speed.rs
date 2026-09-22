@@ -121,8 +121,11 @@ mod audio_tests {
                 let map = sample.buffer().ok_or("buffer")?.map_readable()?;
                 pcm.extend(
                     map.as_slice()
-                        .chunks_exact(4)
-                        .map(|b| f32::from_le_bytes(b.try_into().unwrap())),
+                        .as_chunks::<{ size_of::<f32>() }>()
+                        .0
+                        .iter()
+                        .copied()
+                        .map(f32::from_le_bytes),
                 );
             }
             assert!(sink.is_eos(), "rate {rate}: no EOS");

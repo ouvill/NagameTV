@@ -95,14 +95,13 @@ impl Default for PlayerRust {
             lifecycle_status,
             playback_error: QString::default(),
             playback_message: QString::default(),
-            channel_data: QString::from("[]"),
+            channel_model: crate::channel_model::ffi::make_channel_model(),
             channel_program_data: QString::from("[]"),
             channel_visibility_data: QString::from("[]"),
             guide_visibility_data: QString::from("null"),
             channel_program_now: 0.0,
             browser_projection: None,
-            selected: -1,
-            catalog_selection: Default::default(),
+            catalog: Default::default(),
             stream_state: Default::default(),
             timeline: Default::default(),
             speed: Default::default(),
@@ -170,7 +169,6 @@ impl Default for PlayerRust {
             network: network.ok(),
             remote: crate::remote::Control::load(plan.locked()),
             media,
-            entries: vec![],
         };
         player.start_remote_if_requested();
         player

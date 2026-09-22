@@ -8,10 +8,13 @@ qmltyperegistrarを実行していた。Rustにwatch_program invokableを追加�
 GDBの該当位置は生成Main.qml.cppのinitCallObjectPropertyLookup(154, ..., 34)。
 
 rust/vendor/qt-build-utilsは公開0.10.0のmanifestとsrcを保持し、型登録をAOT生成より前に
-移動する修正だけを適用した。Cargo.tomlのpatchでビルド依存に使う。上流ライセンスと
+移動する修正を適用した。Cargo.tomlのpatchでビルド依存に使う。上流ライセンスと
 出典・チェックサム・差分は同ディレクトリーに置く。レジストリーの共有キャッシュは編集しない。
 AOTの無効化、実行時環境変数、ユーザーの全ビルドキャッシュの削除に依存しない。
-上流版の生成順序が修正されたことを検証できたらローカルpatchを除去できる。
+加えてQtCoreのmetatypes JSONを`qmltyperegistrar --foreign-types`へ渡す。
+これがないと`QML_FOREIGN(QSortFilterProxyModel)`の継承関係と`sourceModel`が型情報から
+欠落する。使用中のQtの`qtpaths`で配置先を取得し、ファイルの欠落はビルドエラーにする。
+生成順序と外部型情報の両方が上流版で修正されたことを検証できたらローカルpatchを除去できる。
 
 修正後は生成コードの同じlookupが35となり、実放送でPLAYINGと正常終了を確認した。
 証跡はGit対象外のbenchmark/viewing-design/guide-watch-recovered.log。

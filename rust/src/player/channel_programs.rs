@@ -31,7 +31,7 @@ impl ffi::Player {
             };
             let current_time = if this.epg_enabled { now } else { None };
             this.epg
-                .browser_presentation(projection, &this.entries, current_time)
+                .browser_presentation(projection, this.catalog.channels(), current_time)
         };
         match update {
             Ok(Some(json)) => {

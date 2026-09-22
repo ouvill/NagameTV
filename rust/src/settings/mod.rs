@@ -172,7 +172,10 @@ pub enum SaveStatus {
 }
 enum Persistence {
     Transient,
-    File { path: PathBuf, saved: Preferences },
+    File {
+        path: PathBuf,
+        saved: Box<Preferences>,
+    },
 }
 impl Loaded {
     pub fn open(path: PathBuf) -> Result<Self, Error> {
@@ -180,7 +183,7 @@ impl Loaded {
         Ok(Self(Session {
             persistence: Persistence::File {
                 path,
-                saved: preferences.clone(),
+                saved: Box::new(preferences.clone()),
             },
             preferences,
         }))
@@ -245,11 +248,11 @@ impl Session {
         match &mut self.persistence {
             Persistence::Transient => Ok(SaveStatus::Transient),
             Persistence::File { path, saved } => {
-                if *saved == self.preferences {
+                if saved.as_ref() == &self.preferences {
                     return Ok(SaveStatus::Unchanged);
                 }
                 save(path, &self.preferences)?;
-                saved.clone_from(&self.preferences);
+                saved.as_mut().clone_from(&self.preferences);
                 Ok(SaveStatus::Saved)
             }
         }

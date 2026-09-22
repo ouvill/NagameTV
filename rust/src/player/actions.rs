@@ -67,7 +67,7 @@ impl ffi::Player {
     pub fn playback_action(&self) -> ffi::PlaybackAction {
         self.rust()
             .stream_state
-            .playback_action(*self.selected() >= 0)
+            .playback_action(self.selected() >= 0)
             .into()
     }
 
@@ -75,7 +75,7 @@ impl ffi::Player {
         match self
             .rust()
             .stream_state
-            .playback_action(*self.selected() >= 0)
+            .playback_action(self.selected() >= 0)
         {
             PlaybackAction::Unavailable => {}
             PlaybackAction::Play => self.play(),

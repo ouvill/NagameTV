@@ -1,25 +1,37 @@
 pragma ComponentBehavior: Bound
 import QtQuick
+import MinimalViewer
 import QtQuick.Controls
 import QtQuick.Layouts
 
 Pane {
     id: root
     enum Motion { Positioning, Idle, Scrolling, Snapping }
-    required property var rows
+    required property ChannelModel channels
     required property int selected
     property int viewingIndex: -1
     readonly property int openingIndex: viewingIndex >= 0 ? viewingIndex : selected
     property url iconDirectory: "qrc:/qt/qml/MinimalViewer/assets/icons/"
     property string visibilityJson: "[]"
-    readonly property var visibleIndices: new Set(JSON.parse(visibilityJson))
+    readonly property list<int> visibleIndices: JSON.parse(visibilityJson)
     property string activityJson: "[]"
     readonly property var activity: JSON.parse(activityJson)
     property string programsJson: "[]"
     property real now: 0
     readonly property var programs: JSON.parse(programsJson)
     property string band: "GR"
-    readonly property var filteredRows: rows.filter(row => row.band === band && (row.index === openingIndex || !visibleIndices.size || visibleIndices.has(row.index)))
+    readonly property alias filteredChannels: channelFilter
+    ChannelFilterModel {
+        id: channelFilter
+        sourceModel: root.channels
+        band: root.band
+        visible_indices: root.visibleIndices
+        visibility: root.visibleIndices.length ? ChannelFilterModel.Listed : ChannelFilterModel.All
+        opening_index: root.openingIndex
+    }
+    // Let ListView apply row removals before restoring the cursor.
+    Connections { target: channelFilter; function onChanged() { Qt.callLater(root.resetCursor); } }
+    Connections { target: root.channels; function onChanged() { root.restoreSelection(); } }
     signal selectRequested(int index)
     signal closeRequested
     function focusBrowser() {
@@ -30,29 +42,28 @@ Pane {
         focusBrowser();
     }
     function restoreSelection() {
-        if (!rows)
+        if (!channels)
             return;
-        const current = rows.find(row => row.index === openingIndex) || rows[0];
-        if (current)
+        const current = channels.row(Math.max(0, channels.row_for_channel(openingIndex)));
+        if (current.band)
             band = current.band;
         resetCursor();
     }
     function resetCursor() {
         // Required inputs may arrive before the derived binding and child view
         // are initialized. Component.onCompleted performs the initial selection.
-        if (!list || !filteredRows)
+        if (!list || !channelFilter)
             return;
-        const selectedRow = filteredRows.findIndex(row => row.index === openingIndex);
-        list.resetPosition(selectedRow >= 0 ? selectedRow : (filteredRows.length ? 0 : -1));
+        const selectedRow = channelFilter.row_for_channel(openingIndex);
+        list.resetPosition(selectedRow >= 0 ? selectedRow : (channelFilter.count ? 0 : -1));
     }
     function selectCurrent() {
-        const row = filteredRows[list.currentIndex];
-        if (row)
-            selectRequested(row.index);
+        const row = channelFilter.row(list.currentIndex);
+        if (row.channelIndex !== undefined)
+            selectRequested(row.channelIndex);
     }
-    onFilteredRowsChanged: resetCursor()
     onOpeningIndexChanged: restoreSelection()
-    onRowsChanged: restoreSelection()
+    onChannelsChanged: restoreSelection()
     Component.onCompleted: openBrowser()
     implicitHeight: 304
     leftPadding: 24
@@ -101,7 +112,7 @@ Pane {
                 id: bands
                 objectName: "browserBand"
                 anchors.verticalCenter: parent.verticalCenter
-                rows: root.rows
+                channels: root.channels
                 value: root.band
                 directionalNavigation: true
                 onDownRequested: root.focusBrowser()
@@ -122,7 +133,7 @@ Pane {
                 clip: true
                 // Keep the extra half-card visible at the viewport edges.
                 cacheBuffer: extraCardWidth / 2
-                model: root.filteredRows
+                model: channelFilter
                 // ListView resets currentIndex when a new filtered model is
                 // installed, after the source's change handlers have run.
                 onModelChanged: Qt.callLater(root.resetCursor)
@@ -248,7 +259,9 @@ Pane {
                 }
                 delegate: Item {
                     id: slot
-                    required property var modelData
+                    required property int channelIndex
+                    required property string label
+                    required property string logo
                     required property int index
                     width: list.baseCardWidth
                     height: 164
@@ -260,7 +273,9 @@ Pane {
                         }
                         hoverEnabled: true
                         objectName: "browserChannelCard"
-                        readonly property var modelData: slot.modelData
+                        readonly property int channelIndex: slot.channelIndex
+                        readonly property string label: slot.label
+                        readonly property string logo: slot.logo
                         readonly property int index: slot.index
                         x: list.cardOffset(index)
                         readonly property real expansion: list.expansion(index)
@@ -268,7 +283,7 @@ Pane {
                         height: 164
                         padding: 14
                         highlighted: slot.ListView.isCurrentItem
-                        onClicked: root.selectRequested(modelData.index)
+                        onClicked: root.selectRequested(channelIndex)
                         background: Rectangle {
                             scale: card.feedbackScale
                             radius: 16
@@ -285,7 +300,7 @@ Pane {
                                 height: 32
                                 spacing: 8
                                 ChannelLogo {
-                                    logoUrl: card.modelData.logo || ""
+                                    logoUrl: card.logo || ""
                                     Layout.preferredWidth: 56
                                     Layout.preferredHeight: 32
                                 }
@@ -299,7 +314,7 @@ Pane {
                                         anchors.verticalCenter: parent.verticalCenter
                                         width: Math.min(implicitWidth, Math.max(0, parent.width
                                             - (watching.visible ? watching.width + parent.indicatorGap : 0)))
-                                        text: card.modelData.label.replace(/^\d+\s+/, "")
+                                        text: card.label.replace(/^\d+\s+/, "")
                                         color: "#b6bab6"
                                         font.pixelSize: 12
                                         textFormat: Text.PlainText
@@ -308,13 +323,13 @@ Pane {
                                     WatchingIndicator {
                                         id: watching
                                         objectName: "browserWatchingIndicator"
-                                        visible: card.modelData.index === root.viewingIndex
+                                        visible: card.channelIndex === root.viewingIndex
                                         x: channelName.width + parent.indicatorGap
                                         anchors.verticalCenter: parent.verticalCenter
                                     }
                                 }
                                 Label {
-                                    readonly property string force: root.activity[card.modelData.index] ?? ""
+                                    readonly property string force: root.activity[card.channelIndex] ?? ""
                                     text: force.length ? qsTranslate("Main", "Activity ") + force : ""
                                     visible: text.length > 0
                                     color: "#9caf9f"; font.pixelSize: 11; font.bold: true
@@ -329,7 +344,7 @@ Pane {
                                     bottom: parent.bottom
                                     bottomMargin: -6
                                 }
-                                program: root.programs[card.modelData.index] || null
+                                program: root.programs[card.channelIndex] || null
                                 now: root.now
                                 emphasized: card.highlighted
                             }

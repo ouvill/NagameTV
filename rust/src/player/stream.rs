@@ -3,7 +3,7 @@
 //! Delegate resource ordering to playback::Session and retain the single
 //! fresh-connection retry here. Feature workers own their own lifecycles.
 use super::stream_state::{Attempt, State};
-use super::{PlaybackStatus, StatusFailure, channel_refresh, ffi, subtitle_status};
+use super::{PlaybackStatus, channel_refresh, ffi, subtitle_status};
 use crate::playback;
 use cxx_qt::CxxQtType;
 use cxx_qt_lib::QString;
@@ -269,7 +269,7 @@ impl ffi::Player {
             self.begin_recording(request);
             return;
         }
-        let Some(entry) = self.rust().entries.get(*self.selected() as usize) else {
+        let Some(entry) = self.rust().catalog.selected() else {
             return;
         };
         if self.rust().stream_state.requested(entry.id) {
@@ -393,12 +393,7 @@ impl ffi::Player {
     }
     fn poll_player(mut self: Pin<&mut Self>) {
         self.as_mut().refresh_channels_if_due();
-        if let Err(error) = self.as_mut().poll_channels() {
-            self.as_mut()
-                .status_error(StatusFailure::ChannelPresentation, error);
-            self.finish_connection(false);
-            return;
-        }
+        self.as_mut().poll_channels();
         self.as_mut().poll_recording();
         let result = self.as_mut().rust_mut().media.poll();
         let notice = self.as_mut().rust_mut().media.take_notice();

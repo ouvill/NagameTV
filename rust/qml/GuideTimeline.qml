@@ -1,11 +1,12 @@
 pragma ComponentBehavior: Bound
 import QtQuick
+import MinimalViewer
 import QtQuick.Controls
 
 Item {
     id: root
     enum ProgramLayout { NoText, OneLine, Full }
-    required property var rows
+    required property ChannelFilterModel channels
     required property string programsJson
     required property double dayStart
     required property double dayEnd
@@ -18,7 +19,7 @@ Item {
     readonly property real channelHeaderSpacing: 6
     readonly property real channelLogoWidth: 52
     readonly property real minimumChannelWidth: 172
-    readonly property int visibleChannelCount: Math.max(1, Math.min(rows.length,
+    readonly property int visibleChannelCount: Math.max(1, Math.min(channels.count,
         Math.floor(timelineView.width / minimumChannelWidth)))
     readonly property real channelWidth: Math.max(minimumChannelWidth, timelineView.width / visibleChannelCount)
     readonly property real dividerWidth: 1
@@ -57,12 +58,15 @@ Item {
     // null means navigation has not started. An empty channel or a replaced
     // program can have no cursorProgram while still retaining a chosen time.
     property var cursorTime: null
-    readonly property var cursorProgram: cursorColumn < rows.length && cursorKey.length
-        ? schedule(rows[cursorColumn].index).find(program => program.watchKey === cursorKey) || null : null
+    readonly property var cursorProgram: {
+        channels.revision;
+        return cursorColumn < channels.count && cursorKey.length
+            ? schedule(channels.row(cursorColumn).channelIndex).find(program => program.watchKey === cursorKey) || null : null;
+    }
     function chooseProgram(time) {
         cursorTime = time
-        if (cursorColumn >= rows.length) return
-        const programs = schedule(rows[cursorColumn].index)
+        if (cursorColumn >= channels.count) return
+        const programs = schedule(channels.row(cursorColumn).channelIndex)
         let closest = null
         let distance = Number.POSITIVE_INFINITY
         for (const program of programs) {
@@ -86,14 +90,14 @@ Item {
             timelineView.contentY = Math.max(0, Math.min(Math.max(0, timelineView.contentHeight - timelineView.height), top - channelHeaderHeight))
     }
     function navigate(key) {
-        if (!rows.length) return
+        if (!channels.count) return
         if (!cursorProgram) chooseProgram(cursorTime === null ? (today ? now : dayStart) : cursorTime)
         if (key === Qt.Key_Left || key === Qt.Key_Right) {
             const time = cursorTime
-            cursorColumn = Math.max(0, Math.min(rows.length - 1, cursorColumn + (key === Qt.Key_Left ? -1 : 1)))
+            cursorColumn = Math.max(0, Math.min(channels.count - 1, cursorColumn + (key === Qt.Key_Left ? -1 : 1)))
             chooseProgram(time)
         } else if (key === Qt.Key_Up || key === Qt.Key_Down) {
-            const programs = schedule(rows[cursorColumn].index)
+            const programs = schedule(channels.row(cursorColumn).channelIndex)
             const index = programs.findIndex(program => program.watchKey === cursorKey)
             // Rust projects programs in start-time order; do not sort/copy them per key.
             if (index >= 0) {
@@ -105,7 +109,7 @@ Item {
         revealCursor()
         if ((key === Qt.Key_Return || key === Qt.Key_Enter) && cursorProgram) {
             const top = channelHeaderHeight + (Math.max(dayStart, cursorProgram.startAt) - dayStart) / 60000 * pixelsPerMinute
-            selected(cursorProgram, Qt.point(timelineView.x + cursorColumn * channelWidth - timelineView.contentX, top - timelineView.contentY), rows[cursorColumn].label)
+            selected(cursorProgram, Qt.point(timelineView.x + cursorColumn * channelWidth - timelineView.contentX, top - timelineView.contentY), channels.row(cursorColumn).label)
         }
     }
     Keys.onPressed: function(event) {
@@ -147,19 +151,21 @@ Item {
         horizontalScroll.stop()
         wheelInput.cancelGesture()
         timelineView.cancelFlick()
-        const index = rows.findIndex(row => row.index === openingIndex)
+        const index = channels.row_for_channel(openingIndex)
         cursorColumn = index >= 0 ? index : 0
         cursorKey = ""
         cursorTime = null
         timelineView.contentX = Math.max(0, Math.min(timelineView.contentWidth - timelineView.width, cursorColumn * channelWidth))
     }
     onDayStartChanged: { cursorKey = ""; cursorTime = null; Qt.callLater(resetPosition) }
-    onRowsChanged: {
+    function resetChannels() {
         cursorColumn = 0
         cursorKey = ""
         cursorTime = null
         Qt.callLater(revealOpeningChannel)
     }
+    onChannelsChanged: resetChannels()
+    Connections { target: root.channels; function onChanged() { root.resetChannels(); } }
     Component.onCompleted: resetPosition()
     Timer { interval: 1000; repeat: true; running: root.visible; onTriggered: root.now = Date.now() }
     Item {
@@ -216,7 +222,7 @@ Item {
         id: timelineView
         objectName: "guideTimeline"
         x: root.timeRulerWidth; width: Math.max(0, parent.width - root.timeRulerWidth); height: parent.height; clip: true
-        contentWidth: Math.max(width, root.rows.length * root.channelWidth)
+        contentWidth: Math.max(width, root.channels.count * root.channelWidth)
         contentHeight: root.channelHeaderHeight + root.dayDuration / 60000 * root.pixelsPerMinute
         boundsBehavior: Flickable.StopAtBounds
         maximumFlickVelocity: wheelInput.maximumFlickSpeedPixelsPerSecond
@@ -231,11 +237,13 @@ Item {
             }
         }
         Repeater {
-            model: root.rows
+            model: root.channels
             Loader {
                 id: column
                 required property int index
-                required property var modelData
+                required property int channelIndex
+                required property string label
+                required property string logo
                 objectName: "guideColumn" + index
                 x: index * root.channelWidth
                 width: root.channelWidth; height: timelineView.contentHeight
@@ -245,7 +253,7 @@ Item {
                     width: column.width; height: column.height
                     color: root.dividerColor
                     Repeater {
-                        model: root.schedule(column.modelData.index)
+                        model: root.schedule(column.channelIndex)
                         Rectangle {
                             id: cell
                             required property var modelData
@@ -315,7 +323,7 @@ Item {
                                 root.cursorKey = cell.modelData.watchKey || ""
                                 root.cursorTime = Math.max(root.dayStart, cell.modelData.startAt)
                                 root.forceActiveFocus()
-                                root.selected(cell.modelData, cell.mapToItem(root, 0, 0), column.modelData.label)
+                                root.selected(cell.modelData, cell.mapToItem(root, 0, 0), column.label)
                             } }
                         }
                     }
@@ -329,17 +337,17 @@ Item {
                             anchors.verticalCenter: parent.verticalCenter; spacing: root.channelHeaderSpacing
                             Rectangle {
                                 width: root.channelLogoWidth; height: 32; radius: 2
-                                color: column.modelData.logo ? "#ffffff" : "transparent"
+                                color: column.logo ? "#ffffff" : "transparent"
                                 ChannelLogo {
                                     anchors.centerIn: parent
                                     width: 48; height: 27
-                                    logoUrl: column.modelData.logo || ""
+                                    logoUrl: column.logo || ""
                                 }
                             }
                             Label {
                                 width: column.width - root.channelLogoWidth - root.channelHeaderSpacing - root.channelHeaderPadding * 2
                                 anchors.verticalCenter: parent.verticalCenter
-                                text: column.modelData.label.replace(/^\d+\s+/, "")
+                                text: column.label.replace(/^\d+\s+/, "")
                                 textFormat: Text.PlainText; color: "#e6e8e6"
                                 font.pixelSize: 11; font.bold: true
                                 wrapMode: Text.Wrap; maximumLineCount: 2; elide: Text.ElideRight

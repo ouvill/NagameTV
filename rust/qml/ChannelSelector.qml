@@ -1,19 +1,20 @@
 import QtQuick
+import MinimalViewer
 import QtQuick.Controls
 import QtQuick.Layouts
 
 RowLayout {
     id: root
-    required property var rows
+    required property ChannelModel channels
     required property int selected
     signal selectRequested(int index)
     property string band: "ALL"
-    readonly property var filteredRows: band === "ALL" ? rows : rows.filter(row => row.band === band)
+    ChannelFilterModel { id: channelFilter; sourceModel: root.channels; band: root.band }
 
     // Changing a view filter never starts playback. Previous/next and restored
     // selections outside this filter reveal the selected channel in the full list.
     onSelectedChanged: {
-        if (selected >= 0 && selected < rows.length && band !== "ALL" && rows[selected].band !== band)
+        if (selected >= 0 && selected < channels.count && band !== "ALL" && channels.row(selected).band !== band)
             band = "ALL"
     }
     ComboBox {
@@ -35,9 +36,9 @@ RowLayout {
     ComboBox {
         objectName: "channelSelector"
         Layout.fillWidth: true
-        model: root.filteredRows
+        model: channelFilter
         textRole: "label"
-        valueRole: "index"
+        valueRole: "channelIndex"
         currentValue: root.selected
         displayText: currentIndex >= 0 ? currentText : (count === 0 ? qsTranslate("Viewer", "No matching channels") : qsTranslate("Viewer", "Choose a channel"))
         enabled: count > 0

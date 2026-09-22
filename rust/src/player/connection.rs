@@ -1,6 +1,6 @@
 //! Qt orchestration for server changes, channel acquisition and selection.
 //! Pure catalog projection and identity rules remain in `channels`.
-use super::{PlaybackStatus, StatusFailure, channel_refresh, channels, ffi};
+use super::{PlaybackStatus, StatusFailure, channel_refresh, ffi};
 use crate::services;
 use cxx_qt::CxxQtType;
 use cxx_qt_lib::QString;
@@ -76,7 +76,6 @@ impl ffi::Player {
         }
 
         self.as_mut().rust_mut().epg_events.configure(None);
-        self.as_mut().rust_mut().catalog_selection = channels::SelectionPolicy::Initial;
         self.as_mut().rust_mut().channel_refresh = channel_refresh::Refresh::Disabled;
         self.as_mut().rust_mut().comments.configure(false, None);
         self.as_mut().set_comment_draft(QString::default());
@@ -96,9 +95,8 @@ impl ffi::Player {
             return false;
         }
         self.as_mut().set_channel_program_data(QString::from("[]"));
-        self.as_mut().rust_mut().entries.clear();
-        self.as_mut().set_channel_data(QString::from("[]"));
-        self.as_mut().set_selected(-1);
+        self.as_mut()
+            .replace_catalog(crate::channels::catalog::Catalog::default(), "");
 
         // Keep the candidate separate from persisted preferences until the HTTP
         // response has been parsed successfully. Other settings and shutdown may
@@ -118,14 +116,14 @@ impl ffi::Player {
             return;
         }
         self.as_mut().cancel_connection();
-        let count = i32::try_from(self.rust().entries.len()).unwrap_or(i32::MAX);
+        let count = i32::try_from(self.rust().catalog.channels().len()).unwrap_or(i32::MAX);
         self.as_mut().connection_finished(success, count);
     }
     pub fn select(mut self: Pin<&mut Self>, index: i32) {
-        if index < 0 || index as usize >= self.rust().entries.len() {
+        if index < 0 || index as usize >= self.rust().catalog.channels().len() {
             return;
         }
-        let id = self.rust().entries[index as usize].id;
+        let id = self.rust().catalog.channels()[index as usize].id;
         self.as_mut()
             .rust_mut()
             .preferences
@@ -134,14 +132,14 @@ impl ffi::Player {
         self.record_diagnostic(viewer_diagnostics::recorder::Event::ChannelSelected);
         self.as_mut().save_settings();
         let attempt = super::stream_state::Attempt::new(
-            &self.rust().entries[index as usize],
+            &self.rust().catalog.channels()[index as usize],
             self.rust().preferences.preferences().timeshift_policy(),
         );
         self.as_mut().clear_playback_failure();
         self.start_stream(attempt);
     }
-    /// Publish a complete catalog or report a projection error to the UI poll loop.
-    pub(super) fn poll_channels(mut self: Pin<&mut Self>) -> Result<(), serde_json::Error> {
+    /// Accept domain results and publish their Qt presentation on the owning thread.
+    pub(super) fn poll_channels(mut self: Pin<&mut Self>) {
         let fetched = {
             let mut this = self.as_mut().rust_mut();
             let this = &mut *this;
@@ -152,28 +150,27 @@ impl ffi::Player {
         if let Some(result) = fetched {
             match result {
                 Ok(verified) => {
-                    let entries = verified.channels();
-                    // Validate the presentation before committing the candidate.
-                    let presentation = (self.rust().entries != entries)
-                        .then(|| channels::presentation(entries, verified.url().as_str()))
-                        .transpose()?;
+                    let changed = self.rust().catalog.channels() != verified.channels();
                     if self.rust().pending_server.is_some() {
                         self.as_mut().confirm_server(&verified);
                     }
-                    // Unchanged catalogs must not rebuild the guide or browser payloads.
-                    if let Some(presentation) = presentation {
+                    // Unchanged catalogs do not reset views or disturb their cursors.
+                    if changed {
+                        let server = verified.url().as_str().to_owned();
+                        let preferred = self
+                            .rust()
+                            .preferences
+                            .preferences()
+                            .service_id
+                            .parse()
+                            .ok();
+                        let before_selected = self.selected();
                         let before_viewing = self.viewing_channel();
-                        let presentation = QString::from(presentation);
-                        let selected = channels::selected_after_update(
-                            self.rust().catalog_selection,
-                            &self.rust().entries,
-                            self.rust().selected,
-                            entries,
-                            self.rust().preferences.preferences(),
-                        )
-                        .and_then(|index| i32::try_from(index).ok())
-                        .unwrap_or(-1);
-                        self.as_mut().rust_mut().entries = verified.into_channels();
+                        let before_action = self.playback_action();
+                        self.as_mut()
+                            .rust_mut()
+                            .catalog
+                            .replace(verified.into_channels(), preferred);
                         self.as_mut().rust_mut().activity.dirty = true;
                         self.as_mut().rust_mut().guide_dirty = true;
                         // Physical channel metadata also affects subchannel visibility.
@@ -182,23 +179,21 @@ impl ffi::Player {
                             self.as_mut().rust_mut().browser_projection = Some(Default::default());
                         }
                         self.as_mut().rust_mut().next_current_program = Instant::now();
-                        self.as_mut().set_channel_data(presentation);
-                        self.as_mut().set_selected(selected);
+                        self.as_mut().publish_catalog(&server);
+                        if before_selected != self.selected() {
+                            self.as_mut().selected_changed();
+                        }
+                        if before_action != self.playback_action() {
+                            self.as_mut().playback_action_changed();
+                        }
                         if before_viewing != self.viewing_channel() {
                             self.as_mut().viewing_channel_changed();
                         }
                         self.as_mut().configure_epg();
                     }
-                    if !self.rust().entries.is_empty() {
-                        self.as_mut().rust_mut().catalog_selection =
-                            channels::SelectionPolicy::Preserve;
-                    }
-                    let status = if self.rust().entries.is_empty() {
+                    let status = if self.rust().catalog.channels().is_empty() {
                         PlaybackStatus::Empty
-                    } else if usize::try_from(self.rust().selected)
-                        .ok()
-                        .is_some_and(|index| index < self.rust().entries.len())
-                    {
+                    } else if self.rust().catalog.selected().is_some() {
                         PlaybackStatus::Ready
                     } else {
                         PlaybackStatus::Select
@@ -207,7 +202,7 @@ impl ffi::Player {
                         self.as_mut().update_status(status);
                     }
                     self.as_mut().finish_connection(true);
-                    if self.rust().autoplay_pending && self.rust().selected >= 0 {
+                    if self.rust().autoplay_pending && self.selected() >= 0 {
                         self.as_mut().rust_mut().autoplay_pending = false;
                         self.as_mut().play();
                     }
@@ -226,6 +221,5 @@ impl ffi::Player {
                 }
             }
         }
-        Ok(())
     }
 }

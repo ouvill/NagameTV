@@ -13,6 +13,8 @@ TestCase {
     Component {
         id: component
         BroadcastTabs {
+            property alias rows: fixture.rows
+            channels: ChannelFixture { id: fixture }
             x: 10; y: 10
             rows: [{band: "GR"}, {band: "BS"}, {band: "CS"}]
             value: "GR"

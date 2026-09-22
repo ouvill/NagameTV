@@ -12,6 +12,8 @@ TestCase {
     Component {
         id: component
         Viewer.ChannelSelector {
+            property alias rows: fixture.rows
+            channels: ChannelFixture { id: fixture }
             width: 600
             rows: [
                 { index: 0, label: "01 GR", band: "GR" },
@@ -72,6 +74,15 @@ TestCase {
         selector.selected = 0
         compare(channel().currentValue, 0)
         compare(channel().currentText, "Replacement")
+        compare(selection.count, 0)
+    }
+    function test_same_size_update_refreshes_label_without_selecting() {
+        const updated = selector.rows.slice()
+        updated[0] = { index: 0, label: "Renamed station", band: "GR" }
+        selector.rows = updated
+        compare(channel().count, 4)
+        compare(channel().currentValue, 0)
+        compare(channel().currentText, "Renamed station")
         compare(selection.count, 0)
     }
 }

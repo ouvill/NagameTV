@@ -1,30 +1,41 @@
 pragma ComponentBehavior: Bound
 import QtQuick
+import MinimalViewer
 import QtQuick.Controls
 
 Item {
     id: root
-    required property var rows
+    required property ChannelModel channels
     required property int selected
     property int viewingIndex: -1
     readonly property int openingIndex: viewingIndex >= 0 ? viewingIndex : selected
     property string visibilityJson: "[]"
-    readonly property var visibleIndices: new Set(JSON.parse(visibilityJson))
+    readonly property list<int> visibleIndices: JSON.parse(visibilityJson)
     property string activityJson: "[]"
     readonly property var activity: JSON.parse(activityJson)
     property string programsJson: "[]"
     property real now: 0
     property string band: "GR"
     readonly property var programs: JSON.parse(programsJson)
-    readonly property var filtered: rows.filter(row => row.band === band && (row.index === openingIndex || !visibleIndices.size || visibleIndices.has(row.index)))
+    readonly property alias filteredChannels: channelFilter
+    ChannelFilterModel {
+        id: channelFilter
+        sourceModel: root.channels
+        band: root.band
+        visible_indices: root.visibleIndices
+        visibility: root.visibleIndices.length ? ChannelFilterModel.Listed : ChannelFilterModel.All
+        opening_index: root.openingIndex
+    }
+    Connections { target: channelFilter; function onChanged() { Qt.callLater(root.resetCursor); } }
+    Connections { target: root.channels; function onChanged() { root.openBrowser(); } }
     signal selectRequested(int index)
     function resetCursor() {
-        if (!list || !filtered)
+        if (!list || !channelFilter)
             return;
         if (wheelInput) wheelInput.cancelGesture();
         list.cancelFlick();
-        const index = filtered.findIndex(row => row.index === openingIndex);
-        list.currentIndex = index >= 0 ? index : (filtered.length ? 0 : -1);
+        const index = channelFilter.row_for_channel(openingIndex);
+        list.currentIndex = index >= 0 ? index : (channelFilter.count ? 0 : -1);
         Qt.callLater(revealCursor);
     }
     function revealCursor() {
@@ -33,14 +44,13 @@ Item {
             list.positionViewAtIndex(list.currentIndex, ListView.Contain);
     }
     function openBrowser() {
-        const current = rows.find(row => row.index === openingIndex) || rows[0];
-        if (current)
+        const current = channels.row(Math.max(0, channels.row_for_channel(openingIndex)));
+        if (current.band)
             band = current.band;
         resetCursor();
     }
-    onFilteredChanged: resetCursor()
     onOpeningIndexChanged: openBrowser()
-    onRowsChanged: openBrowser()
+    onChannelsChanged: openBrowser()
     Component.onCompleted: openBrowser()
     Flickable {
         id: tabsArea
@@ -56,7 +66,7 @@ Item {
         BroadcastTabs {
             id: tabs
             x: Math.max(0, (tabsArea.width - width) / 2)
-            rows: root.rows
+            channels: root.channels
             value: root.band
             onSelected: function (band) {
                 root.band = band;
@@ -77,13 +87,13 @@ Item {
         spacing: 12
         clip: true
         cacheBuffer: 0
-        model: root.filtered
+        model: channelFilter
         onModelChanged: Qt.callLater(root.resetCursor)
         activeFocusOnTab: true
-        Keys.onReturnPressed: if (root.filtered[currentIndex])
-            root.selectRequested(root.filtered[currentIndex].index)
-        Keys.onEnterPressed: if (root.filtered[currentIndex])
-            root.selectRequested(root.filtered[currentIndex].index)
+        Keys.onReturnPressed: if (currentIndex >= 0)
+            root.selectRequested(channelFilter.row(currentIndex).channelIndex)
+        Keys.onEnterPressed: if (currentIndex >= 0)
+            root.selectRequested(channelFilter.row(currentIndex).channelIndex)
         delegate: ItemDelegate {
             id: card
             property real feedbackScale: down ? 0.985 : 1
@@ -92,15 +102,17 @@ Item {
             }
             hoverEnabled: true
             objectName: "sidebarChannelCard"
-            required property var modelData
+            required property int channelIndex
+            required property string label
+            required property string logo
             required property int index
-            readonly property var program: root.programs[modelData.index] || null
+            readonly property var program: root.programs[channelIndex] || null
             readonly property real progress: program && program.duration > 0 ? Math.max(0, Math.min(1, (root.now - program.startAt) / program.duration)) : 0
             width: ListView.view.width
             height: 150
             padding: 14
-            highlighted: modelData.index === root.selected
-            onClicked: root.selectRequested(modelData.index)
+            highlighted: channelIndex === root.selected
+            onClicked: root.selectRequested(channelIndex)
             background: Rectangle {
                 scale: card.feedbackScale
                 radius: 14
@@ -118,7 +130,7 @@ Item {
                     ChannelLogo {
                         width: 56
                         height: 32
-                        logoUrl: card.modelData.logo
+                        logoUrl: card.logo
                     }
                     Item {
                         width: Math.max(0, card.width - 28 - 64 - (activityLabel.visible ? activityLabel.width + 8 : 0))
@@ -129,7 +141,7 @@ Item {
                             anchors.verticalCenter: parent.verticalCenter
                             width: Math.min(implicitWidth, Math.max(0, parent.width
                                 - (watching.visible ? watching.width + parent.indicatorGap : 0)))
-                            text: card.modelData.label.replace(/^\d+\s+/, "")
+                            text: card.label.replace(/^\d+\s+/, "")
                             color: "#f4f5f3"
                             font.bold: true
                             elide: Text.ElideRight
@@ -138,14 +150,14 @@ Item {
                         WatchingIndicator {
                             id: watching
                             objectName: "sidebarWatchingIndicator"
-                            visible: card.modelData.index === root.viewingIndex
+                            visible: card.channelIndex === root.viewingIndex
                             x: channelName.width + parent.indicatorGap
                             anchors.verticalCenter: parent.verticalCenter
                         }
                     }
                     Label {
                         id: activityLabel
-                        readonly property string force: root.activity[card.modelData.index] ?? ""
+                        readonly property string force: root.activity[card.channelIndex] ?? ""
                         text: force.length ? qsTranslate("Main", "Activity ") + force : ""
                         visible: text.length > 0
                         height: 32; verticalAlignment: Text.AlignVCenter

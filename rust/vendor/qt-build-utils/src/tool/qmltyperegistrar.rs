@@ -3,7 +3,7 @@
 //
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-use crate::{utils, QmlUri, QtInstallation, QtTool};
+use crate::{utils, QmlUri, QtInstallation, QtTool, QtToolQtPaths};
 use semver::Version;
 use std::{
     path::{Path, PathBuf},
@@ -13,6 +13,7 @@ use std::{
 /// A wrapper around the [qmltyperegistrar](https://www.qt.io/blog/qml-type-registration-in-qt-5.15) tool
 pub struct QtToolQmlTypeRegistrar {
     executable: PathBuf,
+    core_metatypes: Option<PathBuf>,
 }
 
 impl QtToolQmlTypeRegistrar {
@@ -25,7 +26,26 @@ impl QtToolQmlTypeRegistrar {
         // Ensure that the executable works
         utils::check_executable_help(&executable).unwrap();
 
-        Self { executable }
+        // QtCore classes such as QSortFilterProxyModel are not all exported by
+        // QtQml.Models. QML_FOREIGN needs the actual Qt metadata to resolve their
+        // inheritance and properties before qmlcachegen and qmllint consume it.
+        let core_metatypes = (qt_installation.version().major >= 6).then(|| {
+            let archdata = QtToolQtPaths::new(qt_installation)
+                .query("QT_INSTALL_ARCHDATA")
+                .expect("Could not locate Qt architecture data");
+            let path = PathBuf::from(archdata).join("metatypes/qt6core_metatypes.json");
+            assert!(
+                path.is_file(),
+                "QtCore metatypes are missing: {}",
+                path.display()
+            );
+            println!("cargo::rerun-if-changed={}", path.display());
+            path
+        });
+        Self {
+            executable,
+            core_metatypes,
+        }
     }
 
     /// Run [qmltyperegistrar](https://www.qt.io/blog/qml-type-registration-in-qt-5.15)
@@ -72,6 +92,9 @@ impl QtToolQmlTypeRegistrar {
             "-o".to_owned(),
             qmltyperegistrar_output_path.to_string_lossy().into_owned(),
         ];
+        if let Some(path) = &self.core_metatypes {
+            args.push(format!("--foreign-types={}", path.display()));
+        }
         args.extend(metatypes_json);
         let cmd = Command::new(&self.executable)
             .args(args)

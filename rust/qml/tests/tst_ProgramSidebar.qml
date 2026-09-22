@@ -23,6 +23,7 @@ Item {
                 id: panel
                 width: 360
                 sourceComponent: ProgramSidebar {
+                channelModel: ChannelFixture {}
                     targetWindow: host
                     programJson: testCase.programData
                     commentModel: comments

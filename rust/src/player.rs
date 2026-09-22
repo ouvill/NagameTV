@@ -52,6 +52,8 @@ pub mod ffi {
         fn new_player() -> UniquePtr<Player>;
     }
     unsafe extern "C++" {
+        include!("nagametv/src/channel_model.cxxqt.h");
+        type ChannelModel = crate::channel_model::ffi::ChannelModel;
         include!("nagametv/src/comment_model.cxxqt.h");
         type CommentModel = crate::comment_model::ffi::CommentModel;
         include!("cxx-qt-lib/qstring.h");
@@ -90,12 +92,12 @@ pub mod ffi {
         #[qproperty(QString, playback_error, READ, NOTIFY)]
         #[qproperty(QString, playback_message, READ, NOTIFY)]
         #[qproperty(QString, log_error, READ, NOTIFY)]
-        #[qproperty(QString, channel_data, READ, NOTIFY)]
+        #[qproperty(*mut ChannelModel, channels, READ = channels, CONSTANT)]
         #[qproperty(QString, channel_program_data, READ, NOTIFY)]
         #[qproperty(QString, channel_visibility_data, READ, NOTIFY)]
         #[qproperty(QString, guide_visibility_data, READ, NOTIFY)]
         #[qproperty(f64, channel_program_now, READ, NOTIFY)]
-        #[qproperty(i32, selected, READ, NOTIFY)]
+        #[qproperty(i32, selected, READ = selected, NOTIFY)]
         #[qproperty(i32, viewing_channel, READ = viewing_channel, NOTIFY)]
         #[qproperty(bool, loading, READ = loading, NOTIFY)]
         #[qproperty(bool, connecting, READ = connecting, NOTIFY)]
@@ -175,6 +177,8 @@ pub mod ffi {
         #[qproperty(QString, diagnostics, READ, NOTIFY)]
         #[qproperty(QString, build_info, READ = build_info, CONSTANT)]
         type Player = super::PlayerRust;
+        fn channels(self: &Player) -> *mut ChannelModel;
+        fn selected(self: &Player) -> i32;
         fn build_info(self: &Player) -> QString;
         fn autoplay(self: &Player) -> bool;
         fn remote_enabled(self: &Player) -> bool;
@@ -433,14 +437,13 @@ pub struct PlayerRust {
     diagnostic_ui: telemetry::UiState,
     subtitle_cells: usize,
     error_log: Result<crate::error_log::ErrorLog, crate::error_log::Error>,
-    channel_data: QString,
+    channel_model: cxx::UniquePtr<crate::channel_model::ffi::ChannelModel>,
     channel_program_data: QString,
     channel_visibility_data: QString,
     guide_visibility_data: QString,
     channel_program_now: f64,
     browser_projection: Option<crate::features::program_info::browser::Projection>,
-    selected: i32,
-    catalog_selection: channels::SelectionPolicy,
+    catalog: crate::channels::catalog::Catalog,
     stream_state: stream_state::State,
     timeline: playback::timeline::Snapshot,
     speed: playback::speed::Snapshot,
@@ -508,7 +511,6 @@ pub struct PlayerRust {
     remote: crate::remote::Control,
     network: Option<services::Network>,
     media: playback::Session,
-    entries: Vec<crate::channels::Channel>,
 }
 
 macro_rules! property_setter {
@@ -633,12 +635,6 @@ impl ffi::Player {
         QString
     );
     property_setter!(
-        set_channel_data,
-        channel_data,
-        channel_data_changed,
-        QString
-    );
-    property_setter!(
         set_channel_program_data,
         channel_program_data,
         channel_program_data_changed,
@@ -650,14 +646,27 @@ impl ffi::Player {
         channel_program_now_changed,
         f64
     );
+    pub fn channels(&self) -> *mut crate::channel_model::ffi::ChannelModel {
+        self.rust().channel_model.as_ptr().cast_mut()
+    }
+    pub fn selected(&self) -> i32 {
+        self.rust()
+            .catalog
+            .selected_index()
+            .and_then(|i| i32::try_from(i).ok())
+            .unwrap_or(-1)
+    }
     fn set_selected(mut self: Pin<&mut Self>, value: i32) {
-        if self.rust().selected != value {
-            let before = self.playback_action();
-            self.as_mut().rust_mut().selected = value;
+        let before_selected = self.selected();
+        let before_action = self.playback_action();
+        if let Ok(index) = usize::try_from(value) {
+            self.as_mut().rust_mut().catalog.select(index);
+        }
+        if self.selected() != before_selected {
             self.as_mut().selected_changed();
-            if before != self.playback_action() {
-                self.playback_action_changed();
-            }
+        }
+        if before_action != self.playback_action() {
+            self.playback_action_changed();
         }
     }
     property_setter!(

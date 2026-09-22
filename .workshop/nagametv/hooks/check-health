@@ -65,6 +65,10 @@ qt_plugins_dir=$(qtpaths6 --query QT_INSTALL_PLUGINS 2>/dev/null || true)
 qt_host_bins=$(qtpaths6 --query QT_HOST_BINS 2>/dev/null || true)
 qt_host_libexecs=$(qtpaths6 --query QT_HOST_LIBEXECS 2>/dev/null || true)
 qt_qml_dir=$(qtpaths6 --query QT_INSTALL_QML 2>/dev/null || true)
+qt_archdata=$(qtpaths6 --query QT_INSTALL_ARCHDATA 2>/dev/null || true)
+if [[ -z "$qt_archdata" || ! -f "$qt_archdata/metatypes/qt6core_metatypes.json" ]]; then
+  missing+=("Qt6Core:metatypes (qt6-base-dev)")
+fi
 if [[ -z "$qt_host_libexecs" || ! -x "$qt_host_libexecs/qmlimportscanner" ]]; then
   missing+=("Qt6:qmlimportscanner (qt6-declarative-dev-tools)")
 fi

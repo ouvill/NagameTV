@@ -92,6 +92,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     .file("src/danmaku.rs")
     .file("src/shortcut_key.rs")
     .file("src/comment_model.rs")
+    .file("src/channel_model.rs")
+    .cpp_file("src/channel_model_types.h")
     .include_dir("src")
     .qt_module("Quick");
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("linux") {

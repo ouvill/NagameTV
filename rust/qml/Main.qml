@@ -49,7 +49,10 @@ ViewerWindow {
     onCommentaryVisibleChanged: player.comments_open(commentaryVisible)
     onSummariesVisibleChanged: player.browser_open(summariesVisible)
     readonly property real panelWidth: Math.min(408, Math.max(320, viewport.width * 0.32))
-    readonly property var channelRows: JSON.parse(player.channel_data)
+    readonly property var selectedChannel: {
+        player.channels.revision;
+        return player.channels.row(player.selected);
+    }
     Player {
         id: player
     }
@@ -91,7 +94,7 @@ ViewerWindow {
                 setup.open();
             } else if (player.recording && player.selected >= 0) {
                 player.select(player.selected);
-            } else if (player.recording || root.channelRows.length === 0) {
+            } else if (player.recording || player.channels.count === 0) {
                 root.chooseConnectedChannel();
             }
             break;
@@ -362,7 +365,7 @@ ViewerWindow {
                 playbackMessage: player.playback_message
                 canPlay: player.recording || player.selected >= 0
                 recording: player.recording
-                hasChannels: root.channelRows.length > 0
+                hasChannels: player.channels.count > 0
                 hasServer: player.server_configured
                 loading: player.loading || player.connecting
                 onPlayRequested: viewerActions.playbackToggle.trigger()
@@ -424,8 +427,8 @@ ViewerWindow {
                     root.sidebarPage = ProgramSidebar.Program;
                     root.showProgram = true;
                 }
-                channelLabel: player.recording ? (program && program.station || player.recording_name) : player.selected >= 0 && player.selected < root.channelRows.length ? root.channelRows[player.selected].label : ""
-                logoUrl: !player.recording && player.selected >= 0 && player.selected < root.channelRows.length ? root.channelRows[player.selected].logo : ""
+                channelLabel: player.recording ? (program && program.station || player.recording_name) : player.selected >= 0 && player.selected < player.channels.count ? root.selectedChannel.label : ""
+                logoUrl: !player.recording && player.selected >= 0 && player.selected < player.channels.count ? root.selectedChannel.logo : ""
             }
         }
         Label {
@@ -579,7 +582,7 @@ ViewerWindow {
                     }
                     targetWindow: root
                     onModeRequested: function(mode) { root.requestMode(mode); }
-                    rows: root.channelRows
+                    channels: player.channels
                     selected: player.selected
                     viewingIndex: player.viewing_channel
                     programsJson: "[]"
@@ -598,7 +601,7 @@ ViewerWindow {
                         function onGuide_visibility_dataChanged() { guidePanel.refreshSnapshot(); }
                         function onEpg_statusChanged() { guidePanel.refreshSnapshot(); }
                     }
-                    channel: player.selected >= 0 && player.selected < root.channelRows.length ? root.channelRows[player.selected].label : ""
+                    channel: player.selected >= 0 && player.selected < player.channels.count ? root.selectedChannel.label : ""
                     onDayRequested: function (start, end) {
                         player.guide_day(start, end);
                     }
@@ -635,7 +638,7 @@ ViewerWindow {
                     item.openBrowser();
             }
             sourceComponent: ChannelBrowser {
-                rows: root.channelRows
+                channels: player.channels
                 activityJson: player.activity_data
                 programsJson: player.channel_program_data
                 visibilityJson: player.channel_visibility_data
@@ -703,7 +706,7 @@ ViewerWindow {
             commentStatus: player.comment_status
             commentProgramTitle: player.comment_program_title
             page: root.sidebarPage
-            channelRows: root.channelRows
+            channelModel: player.channels
             selectedChannel: player.selected
             viewingIndex: player.viewing_channel
             activityJson: player.activity_data
@@ -722,8 +725,8 @@ ViewerWindow {
             progress: player.program_progress
             recording: player.recording
             fallbackTitle: player.recording_name
-            channelLabel: player.recording ? (program && program.station || player.recording_name) : player.selected >= 0 && player.selected < root.channelRows.length ? root.channelRows[player.selected].label : ""
-            logoUrl: !player.recording && player.selected >= 0 && player.selected < root.channelRows.length ? root.channelRows[player.selected].logo : ""
+            channelLabel: player.recording ? (program && program.station || player.recording_name) : player.selected >= 0 && player.selected < player.channels.count ? root.selectedChannel.label : ""
+            logoUrl: !player.recording && player.selected >= 0 && player.selected < player.channels.count ? root.selectedChannel.logo : ""
             onCloseRequested: root.showProgram = false
         }
     }

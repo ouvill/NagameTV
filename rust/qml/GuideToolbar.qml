@@ -1,12 +1,13 @@
 pragma ComponentBehavior: Bound
 import QtQuick
+import MinimalViewer
 import QtQuick.Controls
 import QtQuick.Layouts
 
 Rectangle {
     id: root
     objectName: "guideToolbar"
-    required property var rows
+    required property ChannelModel channels
     required property var days
     required property int dayOffset
     property string uiLanguage: Qt.uiLanguage
@@ -63,7 +64,7 @@ Rectangle {
         BroadcastTabs {
             id: broadcastTabs
             Layout.preferredWidth: implicitWidth
-            rows: root.rows; value: root.band; uiLanguage: root.uiLanguage
+            channels: root.channels; value: root.band; uiLanguage: root.uiLanguage
             onSelected: function(band) { root.bandRequested(band) }
         }
         GuideDateSelector {

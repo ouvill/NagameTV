@@ -10,7 +10,6 @@ use std::pin::Pin;
 pub(super) enum Failure {
     Server,
     Network,
-    ChannelPresentation,
     ChannelFetch,
 }
 
@@ -48,7 +47,6 @@ impl Status {
                 match kind {
                     Failure::Server => "Invalid server settings: %1",
                     Failure::Network => "Network initialization failed: %1",
-                    Failure::ChannelPresentation => "Could not prepare the channel display: %1",
                     Failure::ChannelFetch => "Could not load channels: %1",
                 },
                 detail,

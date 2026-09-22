@@ -8,7 +8,13 @@ TestCase {
     visible: true
     width: 400
     height: 480
-    SidebarChannels { id: view; anchors.fill: parent; rows: []; selected: -1 }
+    SidebarChannels {
+        id: view
+        anchors.fill: parent
+        property alias rows: fixture.rows
+        channels: ChannelFixture { id: fixture }
+        selected: -1
+    }
     SignalSpy { id: selections; target: view; signalName: "selectRequested" }
     function init() {
         failOnWarning(/.*/);
@@ -43,11 +49,12 @@ TestCase {
         view.visibilityJson = "[1,3]";
         view.openBrowser();
         tryCompare(list, "currentIndex", 2);
-        compare(list.currentItem.modelData.index, 47);
+        compare(list.currentItem.channelIndex, 47);
         compare(selections.count, 0);
         view.viewingIndex = -1;
         tryCompare(view, "band", "GR");
         tryCompare(list, "currentIndex", 0);
+        tryVerify(function() { return list.currentItem !== null; });
         verify(!findChild(list.currentItem, "sidebarWatchingIndicator").visible);
     }
     function test_filter_keyboard_and_virtualized_catalog() {
@@ -66,6 +73,8 @@ TestCase {
         view.band = "BS";
         compare(selections.count, 1);
         compare(list.count, 250);
+        // Native row changes settle before the view restores its cursor.
+        tryCompare(list, "currentIndex", 0);
         list.forceActiveFocus();
         keyClick(Qt.Key_Return);
         compare(selections.signalArguments[1][0], 1);
@@ -75,7 +84,7 @@ TestCase {
         verify(cards.length > 0 && cards.length < 20, "virtualized delegates: " + cards.length);
         view.visibilityJson = "[1,5,7]";
         compare(list.count, 3);
-        compare(view.filtered[1].index, 5);
+        compare(view.filteredChannels.row(1).channelIndex, 5);
         view.visibilityJson = "[]";
         compare(list.count, 250);
         view.rows = [];

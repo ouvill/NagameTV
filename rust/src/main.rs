@@ -1,5 +1,6 @@
 mod audio;
 mod build_info;
+mod channel_model;
 mod channels;
 mod cli;
 mod comment_model;

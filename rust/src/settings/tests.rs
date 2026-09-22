@@ -303,23 +303,20 @@ fn failed_replace_keeps_destination_and_cleans_temporary_file()
 }
 
 #[test]
-fn overrides_normalization_and_selection_are_independent_of_io()
--> Result<(), Box<dyn std::error::Error>> {
+fn overrides_and_normalization_are_independent_of_io() -> Result<(), Box<dyn std::error::Error>> {
     let mut prefs: Preferences = toml::from_str("volume = nan\nservice_id = '12'\n")?;
     assert_eq!(prefs.volume, Volume::default());
     assert_eq!(Volume::from(-1.0).fraction(), 0.0);
     assert_eq!(Volume::from(120.0).fraction(), 1.0);
     assert!(Volume::from_fraction(f64::INFINITY).is_none());
-    assert_eq!(prefs.selected_index([10, 12, 14].into_iter()), Some(1));
-    assert_eq!(prefs.selected_index([10, 14].into_iter()), Some(0));
-    assert_eq!(prefs.selected_index([].into_iter()), None);
+    assert_eq!(prefs.service_id, "12");
     prefs.apply_overrides(Some("http://other:40772".into()), None);
     assert!(
         prefs.service_id.is_empty(),
         "saved channel belongs to old server"
     );
     prefs.apply_overrides(None, Some("14".into()));
-    assert_eq!(prefs.selected_index([10, 12, 14].into_iter()), Some(2));
+    assert_eq!(prefs.service_id, "14");
     let mut session = Loaded::transient(prefs).activate(None, None);
     session.change(Change::Volume(Volume::from(30.0)));
     session.flush()?;

@@ -1,5 +1,6 @@
 pragma ComponentBehavior: Bound
 import QtQuick
+import MinimalViewer
 import QtQuick.Controls
 import QtQuick.Layouts
 
@@ -33,7 +34,7 @@ Rectangle {
     property string commentProgramTitle: ""
     property string commentStatus: ""
     property int page: ProgramSidebar.Playback
-    property var channelRows: []
+    required property ChannelModel channelModel
     property int selectedChannel: -1
     property int viewingIndex: -1
     function openChannels() {
@@ -249,7 +250,7 @@ Rectangle {
             active: root.page === ProgramSidebar.Channels
             visible: active
             sourceComponent: SidebarChannels {
-                rows: root.channelRows
+                channels: root.channelModel
                 activityJson: root.activityJson
                 selected: root.selectedChannel
                 viewingIndex: root.viewingIndex

@@ -10,6 +10,25 @@
 
 ## 所有関係
 
+Qt/QMLとRust製QObjectはプレゼンテーション層とする。Qt非依存のRust型が状態と操作の
+判断を所有し、QObjectが表示用データと通知へ変換する。Qtの初期化・描画・OS連携は
+専用の境界に置く。これは段階的な分離方針であり、Player全体の分離が完了したという
+意味ではない。
+
+チャンネル一覧と選択は`channels::catalog::Catalog`が所有する。選択はサービスIDで
+保持し、更新による並べ替え・一時的な消失・空の応答でも別局へ置き換えない。最初の
+空でない一覧だけは、保存された局がなければ先頭を選ぶ。サーバー変更でCatalogを作り直す。
+`ChannelModel`はその読み取り専用のQt投影で、表示用roleと変更通知を提供する。
+QMLはJSON文字列を再構築せず、`ChannelFilterModel`を画面ごとに生成して放送種別と
+表示対象を絞り込む。フィルターの寿命は画面に従うが、確定した選択はCatalogに残る。
+モデルが公開するサービスIDは文字列であり、u64の精度をJavaScriptの数値に依存させない。
+
+一覧は変更時だけモデルを更新する。同じ一覧を取得した場合は通知せず、ユーザーの
+カーソルやスクロール位置を維持する。QMLの`row()`による単一行の参照は`revision`を
+バインディングの依存に含め、件数が同じ更新でもラベルやロゴを再評価する。
+番組情報・字幕などの既存JSON投影と、Main.qmlからの定期pollは今回の一覧分離の対象外。
+新規機能には[コード規約](coding-conventions.md#qt連携の責務)の境界を適用する。
+
 ```text
 main → cli::Command → qt::application::LoadedApplication
  ├ QGuiApplication
@@ -17,6 +36,8 @@ main → cli::Command → qt::application::LoadedApplication
  ├ diagnostics::Lifetime    記録ワーカーをQML engineの破棄後まで保持
  └ QQmlApplicationEngine
     └ PlayerRust（Qtへの投影と開始・停止順序）
+       ├ channels::catalog::Catalog  一覧とサービスIDによる選択
+       ├ ChannelModel       読み取り専用のQt一覧モデル
        ├ playback::Session  再生と字幕世代の共通所有者
        │  ├ Playback        映像・音声、音声カタログ・PMT・主副出力
        │  └ Option<字幕Session> 購読・解析・同期時計

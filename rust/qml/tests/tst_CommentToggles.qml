@@ -37,6 +37,7 @@ Item {
                 onToggled: backend.setDanmaku(checked)
             }
             ProgramSidebar {
+                channelModel: ChannelFixture {}
                 id: sidebar
                 x: 600
                 width: 400

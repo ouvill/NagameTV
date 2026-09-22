@@ -92,6 +92,7 @@ GUIテストは既存のPipeWire／pipewire-pulseaudio／WirePlumberと実GPUを
 - GStreamerの`qml6glsink`、OpenGL関連プラグイン、`tsdemux`、映像・音声デコーダー、音声出力プラグイン、速度変更用の`scaletempo`（Good Plug-insの`audiofx`）
 
 Ubuntuでは`lrelease`は`qt6-l10n-tools`、MPEG-TSの開発ライブラリーは`libgstreamer-plugins-bad1.0-dev`に含まれます。
+Qtモデルの型情報生成には、Qt開発パッケージの`qt6core_metatypes.json`も使用します。
 WebP画像の保存には`qt6-image-formats-plugins`が必要です。
 日本語UIのフォントにはNoto Sans CJK JPを使用します。字幕用ARIBフォントは同梱しています。
 Linuxのファイル・フォルダー選択はPortalを優先します。ネイティブ版で利用するには
@@ -202,7 +203,14 @@ GitHub Actionsでの自動テストと配布ビルド、`main`へのpushに伴�
 CARGO_TARGET_DIR=build/cargo cargo test --manifest-path rust/Cargo.toml --release --locked
 ```
 
-このコマンドは表示・GPU・音声機器を使用しません。
+Clippyは通常構成とQt統合テスト構成の両方で、警告をエラーとして検査します。
+
+```sh
+CARGO_TARGET_DIR=build/cargo SQLX_OFFLINE=true cargo clippy --manifest-path rust/Cargo.toml --release --locked --all-targets -- -D warnings
+CARGO_TARGET_DIR=build/cargo SQLX_OFFLINE=true cargo clippy --manifest-path rust/Cargo.toml --release --locked --all-targets --features native_tests -- -D warnings
+```
+
+これらのコマンドは表示・GPU・音声機器を使用しません。
 音声切り替えのCPU結合試験にはGStreamer Bad Plug-insの`testsrcbin`が必要です。
 Qtの画面試験は別の実行手順で、表示環境などを確認してから起動します。[Qtテスト](qt-tests.md)
 
@@ -216,10 +224,14 @@ bash scripts/test-startup.sh
 
 Linuxのメディア連携テストも機器不要で、専用D-Bus・`python3-dbus`・`python3-gi`を使います。
 [MPRIS連携の仕様と検証範囲](desktop-media.md)を参照してください。
-接続テストは機器を使用せず、Qt通知時の状態の整合性も確認します。起動テストは
+接続テストは機器を使用せず、Qt通知時の状態の整合性と、`QAbstractItemModelTester`による
+チャンネルモデルの更新・絞り込み・元モデルの破棄を確認します。起動テストは
 専用画面・実GPU・起動済みPipeWire上の仮想出力を検証した後、製品の`Main.qml`を読み込み、初回・設定済み起動・
 番組表の開閉・再生エラー・終了を確認します。設定先は一時ディレクトリーです。
 画面部品を変更した場合は、その部品のQMLテストも実行してください。
+`bash scripts/test-danmaku.sh`は`rust/qml/tests/`の部品テストを実行します。
+チャンネル一覧のホイール操作は`bash scripts/test-channel-wheel.sh`で検証します。
+どちらも専用GUI環境を検証し、製品のRust製モデルを登録してから実行します。
 `NAGAMETV_TEST_QPA=wayland bash scripts/test-startup.sh video-processing`で専用Wayland画面を使います。
 `NAGAMETV_TEST_QPA=auto`は表示先の明示指定を外し、Qtの自動選択を検証します。
 省略時の試験は`xcb`（VA-API経路だけ`wayland`）です。
@@ -235,6 +247,20 @@ Wayland試験のサイズ変更・入力フォーカスの制約は[専用GUI環
 `.qml`ファイルを列挙して登録するため、ファイル一覧の追記は不要です。
 例外として`CommentList.qml`は評価用featureでのみ登録し、通常版のリソースには含めません。
 `rust/qml/tests/`のテスト用コンポーネントは製品モジュールへ含めません。
+
+QMLの静的検査では、CXX-Qtが出力した`qml_modules`を`qmllint -I`へ渡します。
+上記の`CARGO_TARGET_DIR=build/cargo`を使ったCargoビルドでは、出力先は
+`rust/build/cargo/cxxqt/qml_modules`です。絶対パスの`CARGO_TARGET_DIR`を使う場合は
+その配下の`cxxqt/qml_modules`になります。使用したビルドの型情報を指定してください。
+例えばチャンネル一覧の検査は次のとおりです。`qmllint`はQtのツールディレクトリーにあります。
+
+```sh
+"$(qtpaths6 --query QT_HOST_BINS)/qmllint" --max-warnings 0 \
+  -I rust/build/cargo/cxxqt/qml_modules \
+  rust/qml/ChannelBrowser.qml rust/qml/SidebarChannels.qml rust/qml/ChannelSelector.qml \
+  rust/qml/BroadcastTabs.qml rust/qml/ProgramGuide.qml rust/qml/GuideTimeline.qml \
+  rust/qml/GuideToolbar.qml rust/qml/ProgramSidebar.qml
+```
 
 通常ログは標準エラーへ出力し、既定は`info`以上です。
 `RUST_LOG=debug`で詳細ログ、`RUST_LOG=info,qt=debug`でQt/QMLのdebugログも表示できます。

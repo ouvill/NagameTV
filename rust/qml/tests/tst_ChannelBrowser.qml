@@ -12,6 +12,8 @@ TestCase {
     Component {
         id: component
         Viewer.ChannelBrowser {
+            property alias rows: fixture.rows
+            channels: ChannelFixture { id: fixture }
             iconDirectory: Qt.resolvedUrl("../../../assets/icons/")
             width: 780
             height: 304
@@ -136,12 +138,12 @@ TestCase {
         compare(picker.band, "BS");
         tryCompare(list, "currentIndex", 67);
         verifyCentered(list);
-        compare(list.currentItem.modelData.index, 87);
+        compare(list.currentItem.channelIndex, 87);
         picker.band = "GR";
         picker.openBrowser();
         tryCompare(list, "currentIndex", 67);
         verifyCentered(list);
-        compare(list.currentItem.modelData.index, 87);
+        compare(list.currentItem.channelIndex, 87);
     }
     function test_open_terrestrial_and_visibility_update_keep_playing_channel() {
         const rows = [];
@@ -154,7 +156,7 @@ TestCase {
         tryCompare(list, "currentIndex", 7);
         picker.visibilityJson = "[0, 2, 4, 6, 7, 8]";
         wait(250);
-        compare(list.currentItem.modelData.index, 7);
+        compare(list.currentItem.channelIndex, 7);
         verifyCentered(list);
     }
     function test_open_and_reopen_have_no_horizontal_transition() {
@@ -172,7 +174,7 @@ TestCase {
         browser.openBrowser();
         for (let frame = 0; frame < 16; ++frame) {
             wait(16);
-            compare(list.currentItem.modelData.index, browser.selected);
+            compare(list.currentItem.channelIndex, browser.selected);
             compare(list.motion, Viewer.ChannelBrowser.Idle);
             const card = findChild(list.currentItem, "browserChannelCard");
             compare(card.width, list.candidateWidth);
@@ -228,7 +230,7 @@ TestCase {
         compare(browser.band, "GR");
         keyClick(Qt.Key_Down);
         verify(list.activeFocus);
-        compare(list.currentItem.modelData.index, 0);
+        compare(list.currentItem.channelIndex, 0);
         keyClick(Qt.Key_Up);
         keyClick(Qt.Key_Right);
         compare(browser.band, "BS");
@@ -236,10 +238,10 @@ TestCase {
         keyClick(Qt.Key_Down);
         verify(list.activeFocus);
         keyClick(Qt.Key_Left);
-        compare(list.currentItem.modelData.index, 1);
+        compare(list.currentItem.channelIndex, 1);
         keyClick(Qt.Key_Up);
         keyClick(Qt.Key_Down);
-        compare(list.currentItem.modelData.index, 1);
+        compare(list.currentItem.channelIndex, 1);
         compare(selection.count, 0);
         keyClick(Qt.Key_Return);
         compare(selection.signalArguments[0][0], 1);
@@ -276,7 +278,7 @@ TestCase {
         browser.openBrowser();
         const list = findChild(browser, "browserList");
         compare(list.count, 2);
-        compare(list.currentItem.modelData.index, 2);
+        compare(list.currentItem.channelIndex, 2);
         verifyCentered(list);
         const start = list.contentX;
         mouseWheel(list, list.width / 2, 60, 0, 120);
@@ -285,7 +287,7 @@ TestCase {
         verifyCentered(list);
         compare(selection.count, 0);
         browser.openBrowser();
-        compare(list.currentItem.modelData.index, 2);
+        compare(list.currentItem.channelIndex, 2);
         verifyCentered(list);
     }
     function test_catalog_arriving_after_open_reveals_selected_band() {
@@ -297,7 +299,7 @@ TestCase {
         const list = findChild(browser, "browserList");
         tryCompare(list, "count", 1);
         verifyCentered(list);
-        compare(list.currentItem.modelData.index, 7);
+        compare(list.currentItem.channelIndex, 7);
     }
     function test_viewing_indicator_stays_with_playback_and_fits_after_channel_name() {
         const list = findChild(browser, "browserList");
@@ -336,7 +338,7 @@ TestCase {
         const list = findChild(browser, "browserList");
         tryCompare(browser, "band", "BS");
         verifyCentered(list);
-        compare(list.currentItem.modelData.index, 2);
+        compare(list.currentItem.channelIndex, 2);
         compare(selection.count, 0);
     }
     function test_large_catalog_is_virtualized_and_replacement_clears() {

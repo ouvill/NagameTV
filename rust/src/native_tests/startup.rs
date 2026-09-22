@@ -562,7 +562,7 @@ fn window(
         wait_for(
             app,
             &mut engine,
-            "!player.loading && root.channelRows.length === 2",
+            "!player.loading && player.channels.count === 2",
         )?;
         let autoplay = settings::autoplay_requested(
             preferences.autoplay,
@@ -612,7 +612,7 @@ fn window(
         wait_for(
             app,
             &mut engine,
-            "guideLoader.item.visibilityJson !== 'null' && guideLoader.item.visibleRows.some(row => row.index === player.selected)",
+            "guideLoader.item.visibilityJson !== 'null' && guideLoader.item.visibleChannels.row_for_channel(player.selected) >= 0",
         )?;
         wait_for(app, &mut engine, "guideLoader.opacity === 1")?;
         assert!(evaluate(
@@ -772,7 +772,7 @@ fn window(
         wait_for(app, &mut engine, "setup.opened")?;
         assert!(evaluate(
             &mut engine,
-            "root.setupRequired && !player.server_configured && !player.loading && !player.server.length && !root.channelRows.length"
+            "root.setupRequired && !player.server_configured && !player.loading && !player.server.length && !player.channels.count"
         )?);
         check_danmaku_layout(app, &mut engine)?;
         // Comments are enabled here with an empty catalog, so shortcut coverage

@@ -118,17 +118,6 @@ impl Preferences {
     pub fn timeshift_policy(&self) -> crate::playback::input::Policy {
         crate::playback::input::Policy::new(self.timeshift, self.timeshift_limits)
     }
-    pub fn selected_index(&self, ids: impl Iterator<Item = u64>) -> Option<usize> {
-        let requested = self.service_id.parse::<u64>().ok();
-        let mut first = None;
-        for (index, id) in ids.enumerate() {
-            first.get_or_insert(index);
-            if Some(id) == requested {
-                return Some(index);
-            }
-        }
-        first
-    }
     pub(super) fn apply_overrides(&mut self, server: Option<String>, service: Option<String>) {
         if let Some(server) = server {
             if self.server != server {

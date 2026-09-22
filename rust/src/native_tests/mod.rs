@@ -51,6 +51,10 @@ enum Suite {
     },
     #[cfg(target_os = "linux")]
     PortalDialogs,
+    ChannelViews {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        arguments: Vec<String>,
+    },
     SubtitleRendering {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         arguments: Vec<String>,
@@ -89,8 +93,8 @@ pub fn run(arguments: Vec<OsString>) -> i32 {
         Suite::RecordingProbe { path } => startup::run_recording_probe(path),
         #[cfg(target_os = "linux")]
         Suite::PortalDialogs => portal_dialogs::run(),
-        Suite::SubtitleRendering { arguments } => {
-            let mut qt_arguments = vec!["viewer-subtitle-tests".to_owned()];
+        Suite::ChannelViews { arguments } | Suite::SubtitleRendering { arguments } => {
+            let mut qt_arguments = vec!["viewer-qml-tests".to_owned()];
             qt_arguments.extend(arguments);
             crate::danmaku_ui_tests::run_with_arguments(&qt_arguments)
         }

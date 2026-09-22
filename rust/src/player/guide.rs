@@ -44,7 +44,10 @@ impl ffi::Player {
         }
         // Only channel indices cross Qt. Reuse the EPG; no card summaries or
         // full schedule serialization is needed when the current broadcast changes.
-        let indices = self.rust().epg.visible_channels(&self.rust().entries, now);
+        let indices = self
+            .rust()
+            .epg
+            .visible_channels(self.rust().catalog.channels(), now);
         match serde_json::to_string(&indices) {
             Ok(json) => self.set_guide_visibility_data(QString::from(json)),
             Err(error) => tracing::error!("Guide channel visibility failed: {error}"),
@@ -83,10 +86,11 @@ impl ffi::Player {
                 .ok()
                 .and_then(|time| u64::try_from(time.as_millis()).ok())
                 .ok_or(Error::Unavailable)?;
-            let index =
-                self.rust()
-                    .epg
-                    .watch_channel(&key.to_string(), &self.rust().entries, now)?;
+            let index = self.rust().epg.watch_channel(
+                &key.to_string(),
+                self.rust().catalog.channels(),
+                now,
+            )?;
             i32::try_from(index).map_err(|_| Error::Unavailable)
         })();
         match result {

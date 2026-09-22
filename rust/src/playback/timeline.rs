@@ -563,34 +563,33 @@ impl Controller {
             let stalled = self
                 .reception
                 .is_some_and(|(_, at)| at.elapsed() >= RECEPTION_STALL);
-            if stalled
+            if (stalled
                 || limited
                 || matches!(
                     self.live_position,
                     LivePosition::Near | LivePosition::ForwardBuffer
-                )
+                ))
+                && let Some(position) = pipeline.query_position::<gst::ClockTime>()
             {
-                if let Some(position) = pipeline.query_position::<gst::ClockTime>() {
-                    tracing::info!(
-                        rate = self.rate.multiplier(),
-                        delay_ms = range.end.saturating_sub(position).mseconds(),
-                        reserve_ms = self.live_buffer.milliseconds(),
-                        limited,
-                        stalled,
-                        "Returning live playback to normal speed"
-                    );
-                    self.start_change(
-                        pipeline,
-                        position,
-                        Resume::Playing,
-                        Rate::NORMAL,
-                        if stalled {
-                            Completion::ReceptionStalled
-                        } else {
-                            Completion::CaughtUp
-                        },
-                    )?;
-                }
+                tracing::info!(
+                    rate = self.rate.multiplier(),
+                    delay_ms = range.end.saturating_sub(position).mseconds(),
+                    reserve_ms = self.live_buffer.milliseconds(),
+                    limited,
+                    stalled,
+                    "Returning live playback to normal speed"
+                );
+                self.start_change(
+                    pipeline,
+                    position,
+                    Resume::Playing,
+                    Rate::NORMAL,
+                    if stalled {
+                        Completion::ReceptionStalled
+                    } else {
+                        Completion::CaughtUp
+                    },
+                )?;
             }
         }
         Ok(())

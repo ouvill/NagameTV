@@ -19,5 +19,6 @@ if [[ $renderer_info == *llvmpipe* || $renderer_info == *softpipe* || $renderer_
     echo "Only a software OpenGL renderer is available; GPU validation failed." >&2
     exit 1
 fi
-qt_bins=$(pkg-config --variable=bindir Qt6Core)
-QT_QPA_PLATFORM=xcb QSG_RHI_BACKEND=opengl "$qt_bins/qmltestrunner" -input tests/channel-wheel "$@"
+# Register the production Rust channel models for these QML component tests.
+QT_QPA_PLATFORM=xcb QSG_RHI_BACKEND=opengl \
+    bash scripts/run-native-tests.sh channel-views -input tests/channel-wheel "$@"

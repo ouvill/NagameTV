@@ -1,5 +1,6 @@
 pragma ComponentBehavior: Bound
 import QtQuick
+import MinimalViewer
 import QtQuick.Controls
 import QtQuick.Layouts
 
@@ -13,12 +14,20 @@ Rectangle {
     property int viewingIndex: -1
     readonly property int openingIndex: viewingIndex >= 0 ? viewingIndex : selected
     property url iconDirectory: "qrc:/qt/qml/MinimalViewer/assets/icons/"
-    property var rows: []
+    required property ChannelModel channels
     // null means the first projection has not arrived; [] is an empty catalog.
     property string visibilityJson: "null"
     readonly property var visibleIndices: JSON.parse(visibilityJson)
-    readonly property var visibleSet: visibleIndices === null ? null : new Set(visibleIndices)
-    readonly property var visibleRows: rows.filter(row => row.band === band && (row.index === openingIndex || visibleSet === null || visibleSet.has(row.index)))
+    readonly property alias visibleChannels: channelFilter
+    ChannelFilterModel {
+        id: channelFilter
+        sourceModel: root.channels
+        band: root.band
+        visible_indices: root.visibleIndices || []
+        visibility: root.visibleIndices === null ? ChannelFilterModel.All : ChannelFilterModel.Listed
+        opening_index: root.openingIndex
+    }
+    Connections { target: root.channels; function onChanged() { root.restoreChannel(); } }
     onVisibilityJsonChanged: selectedProgram = null
     property string band: "GR"
     required property Window targetWindow
@@ -59,8 +68,8 @@ Rectangle {
         dayRequested(selectedWindow.start, selectedWindow.end)
     }
     function restoreChannel() {
-        const current = rows.find(row => row.index === openingIndex) || rows[0]
-        if (current) band = current.band
+        const current = channels.row(Math.max(0, channels.row_for_channel(openingIndex)))
+        if (current.band) band = current.band
         if (timeline) Qt.callLater(timeline.revealOpeningChannel)
     }
     function openGuide() {
@@ -86,7 +95,7 @@ Rectangle {
     }
     onSelectedWindowChanged: requestDay()
     onOpeningIndexChanged: restoreChannel()
-    onRowsChanged: restoreChannel()
+    onChannelsChanged: restoreChannel()
     Component.onCompleted: openGuide()
     onChannelChanged: selectedProgram = null
     Timer { interval: 60000; repeat: true; running: root.visible; onTriggered: root.baseDay = root.midnight() }
@@ -95,7 +104,7 @@ Rectangle {
         GuideToolbar {
             Layout.fillWidth: true
             uiLanguage: root.uiLanguage
-            rows: root.rows; days: root.days; dayOffset: root.dayOffset; band: root.band
+            channels: root.channels; days: root.days; dayOffset: root.dayOffset; band: root.band
             targetWindow: root.targetWindow; iconDirectory: root.iconDirectory
             onCloseRequested: root.closeRequested()
             onModeRequested: function(mode) { root.modeRequested(mode) }
@@ -105,7 +114,7 @@ Rectangle {
         GuideTimeline {
             id: timeline
             Layout.fillWidth: true; Layout.fillHeight: true
-            rows: root.visibleRows
+            channels: channelFilter
             openingIndex: root.openingIndex
             programsJson: root.programsJson
             dayStart: root.selectedWindow.start

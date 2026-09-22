@@ -14,7 +14,7 @@ impl ffi::Player {
     }
     pub(super) fn configure_epg(mut self: Pin<&mut Self>) {
         self.as_mut().configure_epg_events();
-        let server = if self.rust().epg_enabled && !self.rust().entries.is_empty() {
+        let server = if self.rust().epg_enabled && !self.rust().catalog.channels().is_empty() {
             Some(self.server().to_string())
         } else {
             None
@@ -65,8 +65,9 @@ impl ffi::Player {
         }
         let service = self
             .rust()
-            .entries
-            .get(self.rust().selected as usize)
+            .catalog
+            .channels()
+            .get(self.selected() as usize)
             .and_then(|s| s.broadcast)
             .filter(|_| !self.recording());
         self.as_mut().poll_current_program(service);
@@ -79,7 +80,11 @@ impl ffi::Player {
             // All-channel grid data depends on EPG, catalog and day, not selection.
             && (self.rust().guide_revision != self.rust().epg.revision || self.rust().guide_dirty)
         {
-            let data = match self.rust().epg.grid_view(&self.rust().entries, window) {
+            let data = match self
+                .rust()
+                .epg
+                .grid_view(self.rust().catalog.channels(), window)
+            {
                 Ok(data) => {
                     self.as_mut().rust_mut().guide_error = None;
                     data

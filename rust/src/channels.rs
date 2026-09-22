@@ -2,6 +2,8 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
+pub mod catalog;
+
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("チャンネルJSONの解析失敗: {0}")]

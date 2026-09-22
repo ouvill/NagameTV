@@ -55,7 +55,7 @@ impl ffi::Player {
         self.recording()
             || self.timeshift()
             || (!self.media_active()
-                && *self.selected() >= 0
+                && self.selected() >= 0
                 && self.rust().preferences.preferences().timeshift
                     != crate::playback::input::Retention::Off)
     }
@@ -101,9 +101,7 @@ impl ffi::Player {
         let track = self.desktop_track();
         let program: serde_json::Value =
             serde_json::from_str(&self.current_program_data().to_string()).unwrap_or_default();
-        let channel = usize::try_from(*self.selected())
-            .ok()
-            .and_then(|i| self.rust().entries.get(i));
+        let channel = self.rust().catalog.selected();
         let fallback = if self.recording() {
             self.recording_name().to_string()
         } else {
@@ -132,7 +130,7 @@ impl ffi::Player {
             "track": track, "title": title,
             "artist": if self.recording() { "" } else { channel.map_or("", |c| c.name.as_str()) },
             "status": status(&self.rust().stream_state),
-            "can_play": self.recording() || *self.selected() >= 0,
+            "can_play": self.recording() || self.selected() >= 0,
             "can_pause": self.desktop_can_pause(),
             "can_seek": can_seek,
             "seeking": self.seeking(),
