@@ -25,7 +25,7 @@ MouseArea {
             return;
         if (targetWindow.visibility !== Window.Windowed && targetWindow.visibility !== Window.Maximized)
             return;
-        const distance = Qt.styleHints.startDragDistance;
+        const distance = Application.styleHints.startDragDistance;
         if (Math.abs(mouse.x - pressPosition.x) < distance && Math.abs(mouse.y - pressPosition.y) < distance)
             return;
         moveStarted = true;

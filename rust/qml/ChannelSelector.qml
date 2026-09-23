@@ -1,6 +1,5 @@
 import QtQuick
 import MinimalViewer
-import QtQuick.Controls
 import QtQuick.Layouts
 
 RowLayout {
@@ -17,7 +16,7 @@ RowLayout {
         if (selected >= 0 && selected < channels.count && band !== "ALL" && channels.row(selected).band !== band)
             band = "ALL"
     }
-    ComboBox {
+    SettingsChoice {
         objectName: "bandSelector"
         Layout.preferredWidth: 90
         model: [
@@ -33,7 +32,7 @@ RowLayout {
         currentValue: root.band
         onActivated: root.band = currentValue
     }
-    ComboBox {
+    SettingsChoice {
         objectName: "channelSelector"
         Layout.fillWidth: true
         model: channelFilter

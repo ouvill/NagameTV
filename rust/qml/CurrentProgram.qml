@@ -1,5 +1,6 @@
 pragma ComponentBehavior: Bound
 import QtQuick
+import MinimalViewer
 import QtQuick.Controls
 
 Column {
@@ -12,9 +13,9 @@ Column {
     property string logoUrl: ""
     readonly property var program: JSON.parse(programJson)
     signal detailsRequested
-    spacing: 8
+    spacing: Theme.spaceSm
     Row {
-        spacing: 12
+        spacing: Theme.spaceMd
         ChannelLogo {
             width: 64
             height: 36
@@ -23,11 +24,11 @@ Column {
         Label {
             anchors.verticalCenter: parent.verticalCenter
             text: root.channelLabel ? root.channelLabel.replace(/^\d+\s+/, "") : qsTranslate("Main", "Channels")
-            color: "#b6bab6"
-            font.pixelSize: 13
+            color: Theme.textSecondary
+            font.pixelSize: Theme.fontCaption
             textFormat: Text.PlainText
             style: Text.Outline
-            styleColor: "#90000000"
+            styleColor: Theme.textShadow
         }
     }
     AbstractButton {
@@ -41,26 +42,26 @@ Column {
         background: Rectangle {
             color: "transparent"
             border.width: currentButton.visualFocus ? 1 : 0
-            border.color: "#9caf9f"
+            border.color: Theme.accent
         }
         contentItem: Label {
             text: currentButton.text
             textFormat: Text.PlainText
-            color: "#f4f5f3"
-            font.pixelSize: 23
+            color: Theme.textPrimary
+            font.pixelSize: Theme.fontTitle
             font.bold: true
             wrapMode: Text.Wrap
             maximumLineCount: 2
             elide: Text.ElideRight
             style: Text.Outline
-            styleColor: "#a0000000"
+            styleColor: Theme.textShadow
         }
     }
     Label {
         text: root.program && root.program.startAt !== null && root.program.duration !== null ? Qt.formatDateTime(new Date(root.program.startAt), root.recording ? "yyyy/MM/dd hh:mm" : "hh:mm") + " – " + Qt.formatDateTime(new Date(root.program.startAt + root.program.duration), "hh:mm") : ""
-        color: "#d7d7d6"
-        font.pixelSize: 12
+        color: Theme.textSecondary
+        font.pixelSize: Theme.fontCaption
         style: Text.Outline
-        styleColor: "#90000000"
+        styleColor: Theme.textShadow
     }
 }

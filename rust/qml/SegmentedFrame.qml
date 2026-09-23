@@ -1,9 +1,10 @@
 import QtQuick
+import MinimalViewer
 
 Rectangle {
-    readonly property real outerCornerRadius: 12
-    readonly property real segmentCornerRadius: 8
+    readonly property real outerCornerRadius: Theme.panelRadius
+    readonly property real segmentCornerRadius: Theme.controlRadius
     radius: outerCornerRadius
-    color: "#b8171918"
-    border.color: "#32ffffff"
+    color: Theme.overlaySurface
+    border.color: Theme.overlayBorder
 }

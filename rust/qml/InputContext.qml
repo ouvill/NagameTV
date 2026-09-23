@@ -24,7 +24,7 @@ Item {
     // Query the actual focus object; the shortcut scope is not an IME policy.
     function updateInputMethod() {
         if (targetWindow && targetWindow.active)
-            Qt.inputMethod.update(Qt.ImEnabled);
+            InputMethod.update(Qt.ImEnabled);
     }
     onFocusItemChanged: Qt.callLater(root.updateInputMethod)
     Component.onCompleted: Qt.callLater(root.updateInputMethod)

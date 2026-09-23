@@ -1,5 +1,6 @@
 pragma ComponentBehavior: Bound
 import QtQuick
+import MinimalViewer
 import QtQuick.Controls
 import QtQuick.Layouts
 
@@ -9,8 +10,8 @@ ColumnLayout {
     property string placementMode: "sequential"
     property bool evaluationCollision: false
     signal selected(string displayMode, string placementMode)
-    spacing: 6
-    Label { text: qsTranslate("Main", "Comment motion"); color: "#b6bab6"; font.pixelSize: 12 }
+    spacing: Theme.spaceSm
+    Label { text: qsTranslate("Main", "Comment motion"); color: Theme.textSecondary; font.pixelSize: Theme.fontCaption }
     SegmentedControl {
         objectName: "commentMotion"
         objectNamePrefix: "motion-"
@@ -24,7 +25,7 @@ ColumnLayout {
     }
     Label {
         Layout.topMargin: 8
-        text: qsTranslate("Main", "Comment placement"); color: "#b6bab6"; font.pixelSize: 12
+        text: qsTranslate("Main", "Comment placement"); color: Theme.textSecondary; font.pixelSize: Theme.fontCaption
     }
     SegmentedControl {
         objectName: "commentPlacement"

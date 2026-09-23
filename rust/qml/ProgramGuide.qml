@@ -44,7 +44,7 @@ Rectangle {
     onSelectedProgramChanged: watchError = ""
     readonly property var days: calendarDays(baseDay)
     readonly property var selectedWindow: days[dayOffset]
-    color: "#0b0c0b"
+    color: Theme.canvas
     function midnight() {
         const date = new Date()
         date.setHours(0, 0, 0, 0)
@@ -137,7 +137,7 @@ Rectangle {
         text: root.status
         textFormat: Text.PlainText
         horizontalAlignment: Text.AlignHCenter
-        color: "#b6bab6"; font.pixelSize: 12
+        color: Theme.textSecondary; font.pixelSize: Theme.fontCaption
         wrapMode: Text.Wrap
     }
     // Block the grid behind the card, keeping main's toolbar usable.

@@ -50,7 +50,7 @@ jobs:
           echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  $RUNNER_TEMP/actionlint.tar.gz" | sha256sum --check
           tar -xzf "$RUNNER_TEMP/actionlint.tar.gz" -C "$RUNNER_TEMP" actionlint
           "$RUNNER_TEMP/actionlint" -color
-          shellcheck scripts/ci.sh scripts/create-release.sh scripts/build-appimage.sh scripts/build-flatpak.sh scripts/build-deb.sh scripts/test-deb.sh scripts/run-native-tests.sh
+          shellcheck scripts/ci.sh scripts/check-qml.sh scripts/create-release.sh scripts/build-appimage.sh scripts/build-flatpak.sh scripts/build-deb.sh scripts/test-deb.sh scripts/run-native-tests.sh
 
   appimage:
     name: Tests, AppImage and deb (Ubuntu 24.04, x86_64)

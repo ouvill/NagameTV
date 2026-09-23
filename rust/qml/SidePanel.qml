@@ -1,4 +1,5 @@
 import QtQuick
+import MinimalViewer
 
 Loader {
     id: panel
@@ -12,7 +13,7 @@ Loader {
     enabled: open && !shuttingDown
     Behavior on reveal {
         NumberAnimation {
-            duration: 220
+            duration: Theme.panelDuration
             easing.type: Easing.OutCubic
         }
     }

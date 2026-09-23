@@ -2,7 +2,6 @@ import QtQuick
 import QtQuick.Controls
 import QtTest
 import MinimalViewer 1.0
-import ".."
 
 Item {
     ApplicationWindow {

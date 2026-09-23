@@ -1,5 +1,6 @@
 pragma ComponentBehavior: Bound
 import QtQuick
+import MinimalViewer
 import QtQuick.Controls
 import QtQuick.Layouts
 
@@ -15,7 +16,7 @@ ColumnLayout {
     property bool detailsVisible: false
     readonly property bool busy: phase === ConnectionForm.Checking || backend.loading
     signal completed
-    spacing: 16
+    spacing: Theme.spaceLg
 
     function reset() {
         phase = ConnectionForm.Idle;
@@ -56,13 +57,13 @@ ColumnLayout {
         Layout.fillWidth: true
         textFormat: Text.PlainText
         wrapMode: Text.Wrap
-        color: "#b6bab6"
-        font.pixelSize: 14
+        color: Theme.textSecondary
+        font.pixelSize: Theme.fontBody
     }
     Detail {
         text: qsTranslate("Settings", "Server URL")
-        color: "#f4f5f3"
-        font.pixelSize: 16
+        color: Theme.textPrimary
+        font.pixelSize: Theme.fontControl
         font.bold: true
     }
     SettingsField {
@@ -89,12 +90,12 @@ ColumnLayout {
         implicitWidth: 40; implicitHeight: 40
         visible: root.phase === ConnectionForm.Checking
         running: visible
-        palette.dark: "#9caf9f"
+        palette.dark: Theme.accent
     }
     Detail {
         objectName: "connectionResult"
         visible: root.phase !== ConnectionForm.Idle
-        color: root.phase === ConnectionForm.Failed || root.phase === ConnectionForm.SaveFailed ? "#ffb080" : "#b6c6b8"
+        color: root.phase === ConnectionForm.Failed || root.phase === ConnectionForm.SaveFailed ? Theme.warning : Theme.accentHover
         text: {
             switch (root.phase) {
             case ConnectionForm.Checking:
@@ -115,7 +116,7 @@ ColumnLayout {
         visible: root.presentation === ConnectionForm.Setup && root.phase === ConnectionForm.Ready
         text: qsTranslate("Connection", "Choose a channel to start watching. You can change subtitles and comments later in Settings.")
     }
-    TextAction {
+    ActionButton {
         objectName: "connectionDetailsToggle"
         visible: root.errorDetails.length > 0
         text: root.detailsVisible ? qsTranslate("Settings", "Hide details") : qsTranslate("Settings", "Show details")
@@ -126,11 +127,11 @@ ColumnLayout {
         visible: root.detailsVisible
         text: root.errorDetails
     }
-    SettingsAction {
+    ActionButton {
         id: action
         objectName: "connectServer"
         Layout.fillWidth: root.presentation === ConnectionForm.Setup
-        emphasis: SettingsAction.Primary
+        emphasis: ActionButton.Primary
         enabled: !root.busy && server.text.trim().length > 0
         text: root.phase === ConnectionForm.Ready ? qsTranslate("Viewer", "Choose a channel")
             : root.phase === ConnectionForm.Checking ? qsTranslate("Connection", "Checking the connection…")
@@ -142,7 +143,7 @@ ColumnLayout {
             else root.connectToServer();
         }
     }
-    TextAction {
+    ActionButton {
         objectName: "serverSetupHelp"
         visible: root.presentation === ConnectionForm.Setup
         Layout.alignment: Qt.AlignHCenter

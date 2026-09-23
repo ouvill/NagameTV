@@ -1,7 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtTest
-import ".." as Viewer
+import MinimalViewer as Viewer
 import MinimalViewer 1.0
 
 Item {

@@ -1,5 +1,6 @@
 pragma ComponentBehavior: Bound
 import QtQuick
+import MinimalViewer
 import QtQuick.Controls
 import QtQuick.Layouts
 
@@ -26,13 +27,13 @@ ScrollView {
 
     ColumnLayout {
         width: root.availableWidth
-        spacing: 24
+        spacing: Theme.spaceXl
         RowLayout {
             Layout.fillWidth: true
             enabled: root.commentsEnabled
             Label {
                 text: qsTranslate("Main", "Danmaku comments")
-                color: "#f4f5f3"; font.pixelSize: 14
+                color: Theme.textPrimary; font.pixelSize: Theme.fontBody
                 Layout.fillWidth: true
                 wrapMode: Text.Wrap
             }
@@ -64,7 +65,7 @@ ScrollView {
             enabled: root.commentsEnabled
             Label {
                 text: qsTranslate("Settings", "Drop shadow")
-                color: "#f4f5f3"; font.pixelSize: 14
+                color: Theme.textPrimary; font.pixelSize: Theme.fontBody
                 Layout.fillWidth: true; wrapMode: Text.Wrap
             }
             ToggleSwitch {
@@ -74,26 +75,19 @@ ScrollView {
                 onToggled: root.shadowRequested(checked)
             }
         }
-        Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: "#343c35" }
-        TextAction {
+        Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.divider }
+        ActionButton {
             id: timeshift
             objectName: "playbackTimeshiftSettings"
             Layout.fillWidth: true
             text: qsTranslate("Viewer", "Timeshift settings…")
-            background: Rectangle {
-                scale: timeshift.feedbackScale
-                radius: 8
-                color: timeshift.down ? "#303c32" : timeshift.hovered ? "#28302a" : "#1c201d"
-                border.color: timeshift.visualFocus ? "#9caf9f" : "#343c35"
-                Behavior on color { ColorAnimation { duration: 100 } }
-            }
             onClicked: root.timeshiftSettingsRequested()
         }
         RowLayout {
             Layout.fillWidth: true
             Label {
                 text: qsTranslate("Main", "Stats for nerds")
-                color: "#f4f5f3"; font.pixelSize: 14
+                color: Theme.textPrimary; font.pixelSize: Theme.fontBody
                 Layout.fillWidth: true; wrapMode: Text.Wrap
             }
             ToggleSwitch {

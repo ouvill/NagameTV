@@ -1,7 +1,8 @@
 import QtQuick
 import QtTest
 import MinimalViewer 1.0
-import ".."
+// This evaluation-only view is deliberately absent from the normal module.
+import ".." as Evaluation
 
 TestCase {
     id: testCase
@@ -12,7 +13,7 @@ TestCase {
     visible: true
     Component {
         id: fixture
-        CommentList {
+        Evaluation.CommentList {
             width: 360
             height: 280
             commentModel: CommentModel {}
@@ -24,7 +25,7 @@ TestCase {
         Loader {
             width: 360
             height: 280
-            sourceComponent: CommentList {
+            sourceComponent: Evaluation.CommentList {
                 commentModel: CommentModel {}
                 status: "Waiting"
             }

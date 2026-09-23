@@ -28,7 +28,7 @@ Rectangle {
     readonly property bool twoRows: width < sideMargin * 2 + heading.width + navigation.width + helpButton.width + controlSpacing
         + bandWidth + compactDateWidth + controlSpacing * 2
     implicitHeight: singleRowHeight + (twoRows ? secondRowHeight : 0)
-    color: "#151715"
+    color: Theme.surface
     Loader {
         anchors.fill: parent
         active: root.targetWindow !== null
@@ -50,7 +50,7 @@ Rectangle {
         Label {
             visible: root.width >= 900
             anchors.verticalCenter: parent.verticalCenter
-            text: qsTranslate("Main", "Program guide"); color: "#e6e8e6"; font.pixelSize: 18; font.bold: true
+            text: qsTranslate("Main", "Program guide"); color: Theme.textPrimary; font.pixelSize: Theme.fontHeading; font.bold: true
         }
     }
     RowLayout {
@@ -105,13 +105,13 @@ Rectangle {
         x: root.width - width - root.sideMargin
         y: root.height
         width: Math.min(420, root.width - root.sideMargin * 2)
-        padding: 12
+        padding: Theme.spaceMd
         focus: true
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
-        background: Rectangle { radius: 8; color: "#151715"; border.color: "#38ffffff" }
+        background: Rectangle { radius: Theme.controlRadius; color: Theme.surface; border.color: Theme.overlayBorder }
         contentItem: Label {
             text: qsTranslate("Main", "←→ Channels   ↑↓ Time   Enter Details")
-            color: "#e6e8e6"; font.pixelSize: 12
+            color: Theme.textPrimary; font.pixelSize: Theme.fontCaption
             wrapMode: Text.Wrap
         }
     }

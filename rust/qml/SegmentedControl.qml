@@ -1,5 +1,6 @@
 pragma ComponentBehavior: Bound
 import QtQuick
+import MinimalViewer
 import QtQuick.Controls
 
 SegmentedFrame {
@@ -14,7 +15,7 @@ SegmentedFrame {
     readonly property real segmentWidth: (width - 6) / Math.max(1, options.length)
     implicitWidth: options.length * 130 + 6
     implicitHeight: 40
-    opacity: enabled ? 1 : 0.42
+    opacity: enabled ? 1 : Theme.disabledOpacity
     function focusCurrent() {
         const tab = tabs.itemAt(Math.max(0, selectedIndex));
         if (tab) tab.forceActiveFocus(Qt.TabFocusReason);
@@ -28,8 +29,8 @@ SegmentedFrame {
         y: 3; width: root.segmentWidth; height: root.height - 6
         radius: root.segmentCornerRadius
         visible: root.selectedIndex >= 0
-        color: "#429caf9f"; border.color: "#9caf9f"
-        Behavior on x { NumberAnimation { duration: 170; easing.type: Easing.OutCubic } }
+        color: Theme.selection; border.color: Theme.accent
+        Behavior on x { NumberAnimation { duration: Theme.moveDuration; easing.type: Easing.OutCubic } }
     }
     Row {
         x: 3; width: parent.width - 6; height: parent.height
@@ -53,14 +54,15 @@ SegmentedFrame {
                 Keys.onUpPressed: function(event) { event.accepted = root.directionalNavigation; }
                 contentItem: Label {
                     text: tab.modelData.label
+                    font.pixelSize: Theme.fontBody
                     horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
-                    color: tab.checked ? "#f4f5f3" : "#d5d8d5"
+                    color: tab.checked ? Theme.textPrimary : Theme.textSecondary
                     font.bold: tab.checked
                     elide: Text.ElideRight
                 }
                 background: Rectangle {
                     color: "transparent"; radius: root.segmentCornerRadius
-                    border.width: tab.visualFocus ? 1 : 0; border.color: "#9caf9f"
+                    border.width: tab.visualFocus ? 1 : 0; border.color: Theme.accent
                 }
             }
         }

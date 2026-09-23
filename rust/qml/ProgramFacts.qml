@@ -1,5 +1,6 @@
 pragma ComponentBehavior: Bound
 import QtQuick
+import MinimalViewer
 import QtQuick.Controls
 
 Flow {
@@ -11,7 +12,7 @@ Flow {
         : now < program.startAt + program.duration ? ProgramFacts.OnAir : ProgramFacts.Finished
     readonly property var facts: labels()
     readonly property int minuteMs: 60000
-    spacing: 6
+    spacing: Theme.spaceSm
 
     function labels() {
         if (!program) return []
@@ -44,14 +45,14 @@ Flow {
             objectName: "programFact" + index
             width: Math.min(root.width, label.implicitWidth + 20)
             height: label.implicitHeight + 10
-            radius: 8
-            color: index === 0 && root.broadcastState === ProgramFacts.OnAir ? "#36533f" : "#263029"
+            radius: Theme.controlRadius
+            color: index === 0 && root.broadcastState === ProgramFacts.OnAir ? Theme.surfaceSelected : Theme.surfaceRaised
             Label {
                 id: label
                 x: 10; y: 5; width: parent.width - 20
                 text: fact.modelData; textFormat: Text.PlainText
-                color: fact.index === 0 && root.broadcastState === ProgramFacts.OnAir ? "#d8f0df" : "#c5d0c8"
-                font.pixelSize: 12; wrapMode: Text.Wrap
+                color: fact.index === 0 && root.broadcastState === ProgramFacts.OnAir ? Theme.textSecondary : Theme.textSecondary
+                font.pixelSize: Theme.fontCaption; wrapMode: Text.Wrap
             }
         }
     }

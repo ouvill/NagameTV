@@ -1,5 +1,6 @@
 pragma ComponentBehavior: Bound
 import QtQuick
+import MinimalViewer
 import QtQuick.Controls
 
 Item {
@@ -38,14 +39,14 @@ Item {
         Rectangle {
             anchors.centerIn: parent
             width: 1; height: 24
-            color: "#343c35"
+            color: Theme.divider
         }
     }
     Row {
         id: leftControls
         objectName: "volumeControls"
         anchors { left: parent.left; verticalCenter: parent.verticalCenter; verticalCenterOffset: root.stacked ? 24 : 0 }
-        spacing: 6
+        spacing: Theme.spaceSm
         PlayerVolumeButton {
             id: volume
             actions: root.actions
@@ -59,31 +60,21 @@ Item {
             tip: action.text
             action: root.actions.returnToLive
         }
-        TextAction {
+        ActionButton {
             id: speedButton
+            surface: ActionButton.VideoOverlay
+            selected: speedPanel.visible
+            highlighted: root.backend.playback_rate !== 10
             objectName: "playbackSpeedButton"
             visible: root.backend.media_active
             implicitWidth: 58; implicitHeight: 42
-            padding: 6
+            padding: Theme.spaceSm
             text: "x" + (root.backend.playback_rate / 10).toFixed(1)
             Accessible.name: qsTranslate("Viewer", "Playback speed: %1").arg(text)
-            background: Rectangle {
-                radius: 21
-                scale: speedButton.feedbackScale
-                color: speedButton.down ? "#589caf9f" : speedButton.hovered || speedPanel.visible ? "#28ffffff" : "transparent"
-                border.color: speedButton.visualFocus ? "#9caf9f" : "transparent"
-                Behavior on color { ColorAnimation { duration: 100 } }
+            ThemedToolTip {
+                visible: speedButton.hovered && !speedPanel.visible
+                text: speedButton.Accessible.name
             }
-            contentItem: Label {
-                text: speedButton.text
-                color: root.backend.playback_rate === 10 ? "#f4f5f3" : "#9caf9f"
-                font.pixelSize: 13
-                horizontalAlignment: Text.AlignHCenter
-                verticalAlignment: Text.AlignVCenter
-                scale: speedButton.feedbackScale
-            }
-            ToolTip.visible: hovered && !speedPanel.visible
-            ToolTip.text: Accessible.name
             onClicked: speedPanel.toggle()
         }
     }
@@ -101,7 +92,7 @@ Item {
         objectName: "transportControls"
         anchors.horizontalCenter: parent.horizontalCenter
         y: root.stacked ? 0 : (root.height - height) / 2
-        spacing: 12
+        spacing: Theme.spaceMd
         IconAction {
             objectName: "skipBackButton"
             flat: true
@@ -193,15 +184,16 @@ Item {
                     y: -height - 8
                     x: parent.width - width
                     width: 264
-                    padding: 8
+                    padding: Theme.spaceSm
                     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutsideParent
-                    background: Rectangle { radius: 12; color: "#f21a1c1a"; border.color: "#343c35" }
+                    background: Rectangle { radius: Theme.panelRadius; color: Theme.popupSurface; border.color: Theme.divider }
                     component Entry: MenuItem {
+                        id: menuEntry
                         implicitHeight: 48
-                        icon.width: 24; icon.height: 24; icon.color: "#f4f5f3"
-                        palette.text: "#f4f5f3"
-                        palette.buttonText: "#f4f5f3"
-                        background: Rectangle { radius: 8; color: parent.highlighted ? "#303c32" : "transparent" }
+                        icon.width: 24; icon.height: 24; icon.color: Theme.textPrimary
+                        palette.text: Theme.textPrimary
+                        palette.buttonText: Theme.textPrimary
+                        background: Rectangle { radius: Theme.controlRadius; color: menuEntry.highlighted ? Theme.surfacePressed : "transparent" }
                     }
                     Entry {
                         objectName: "overflowSubtitles"

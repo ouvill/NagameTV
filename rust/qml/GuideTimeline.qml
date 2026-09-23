@@ -23,11 +23,11 @@ Item {
         Math.floor(timelineView.width / minimumChannelWidth)))
     readonly property real channelWidth: Math.max(minimumChannelWidth, timelineView.width / visibleChannelCount)
     readonly property real dividerWidth: 1
-    readonly property color dividerColor: "#e4e7e4"
-    readonly property color headerColor: "#202721"
-    readonly property color headerDividerColor: "#465049"
-    readonly property color timeGridColor: "#39453d"
-    readonly property color currentTimeColor: "#b44b3f"
+    readonly property color dividerColor: GuidePalette.cellDivider
+    readonly property color headerColor: Theme.surfaceRaised
+    readonly property color headerDividerColor: Theme.border
+    readonly property color timeGridColor: Theme.divider
+    readonly property color currentTimeColor: Theme.live
     readonly property real cellPadding: 8
     readonly property real cellTopPadding: 4
     readonly property real textSpacing: 2
@@ -39,7 +39,7 @@ Item {
     readonly property int minutesPerHour: 60
     readonly property int timeTickMinutes: 30
     readonly property int timeBandHours: 3
-    readonly property var timeBandColors: ["#00337f", "#00667f", "#007f66", "#667f00", "#7f6600", "#7f3300", "#7f0066", "#66007f"]
+    readonly property var timeBandColors: GuidePalette.timeBands
     readonly property var columns: JSON.parse(programsJson)
     property double now: Date.now()
     readonly property bool today: now >= dayStart && now < dayEnd
@@ -120,8 +120,8 @@ Item {
         }
     }
     function genreColor(genre) {
-        const colors = ["#ffffe0", "#e0e0ff", "#ffe0f0", "#ffe0e0", "#e0ffe0", "#e0ffff", "#fff0e0", "#ffe0ff", "#ffffe0", "#fff0e0", "#e0f0ff", "#e0f0ff"]
-        return Number.isInteger(genre) && genre >= 0 && genre < colors.length ? colors[genre] : "#f0f0f0"
+        const colors = GuidePalette.genres
+        return Number.isInteger(genre) && genre >= 0 && genre < colors.length ? colors[genre] : GuidePalette.defaultGenre
     }
     function schedule(index) {
         const column = columns.find(column => column.index === index)
@@ -139,7 +139,7 @@ Item {
         horizontalScroll.start()
         event.accepted = true
     }
-    NumberAnimation { id: horizontalScroll; target: timelineView; property: "contentX"; duration: 150; easing.type: Easing.OutCubic }
+    NumberAnimation { id: horizontalScroll; target: timelineView; property: "contentX"; duration: Theme.moveDuration; easing.type: Easing.OutCubic }
     function resetPosition() {
         wheelInput.cancelGesture()
         horizontalScroll.stop()
@@ -194,8 +194,8 @@ Item {
                     width: parent.width; y: root.cellTopPadding
                     text: Qt.formatTime(new Date(timeTick.time), "hh\nmm")
                     horizontalAlignment: Text.AlignHCenter
-                    color: "#ffffff"
-                    font.pixelSize: timeTick.index % 2 === 0 ? 12 : 10
+                    color: Theme.textPrimary
+                    font.pixelSize: timeTick.index % 2 === 0 ? Theme.fontCaption : Theme.fontMicro
                     font.bold: timeTick.index % 2 === 0
                     lineHeightMode: Text.FixedHeight; lineHeight: 13
                 }
@@ -210,7 +210,7 @@ Item {
                 anchors.centerIn: parent
                 text: Qt.formatTime(new Date(root.now), "hh\nmm")
                 horizontalAlignment: Text.AlignHCenter
-                color: "#ffffff"; font.pixelSize: 11; font.bold: true
+                color: Theme.textPrimary; font.pixelSize: Theme.fontCaption; font.bold: true
             }
         }
         Rectangle {
@@ -273,7 +273,7 @@ Item {
                             readonly property bool highlighted: modelData === root.selectedProgram
                                 || (root.activeFocus && column.index === root.cursorColumn && root.cursorKey.length > 0 && modelData.watchKey === root.cursorKey)
                             border.width: highlighted ? 2 : 0
-                            border.color: "#9caf9f"
+                            border.color: Theme.accent
                             Label {
                                 objectName: "guideShortProgram"
                                 visible: cell.layoutMode === GuideTimeline.OneLine
@@ -281,7 +281,7 @@ Item {
                                 width: parent.width - x * 2; height: parent.height
                                 text: cell.startLabel + " " + cell.title
                                 textFormat: Text.PlainText; elide: Text.ElideRight
-                                color: "#252a31"; font.pixelSize: 11; font.weight: Font.Medium
+                                color: GuidePalette.programText; font.pixelSize: Theme.fontCaption; font.weight: Font.Medium
                                 verticalAlignment: Text.AlignVCenter
                             }
                             Item {
@@ -293,13 +293,13 @@ Item {
                                     id: startLabel
                                     width: parent.width; height: root.timeLabelHeight
                                     text: cell.startLabel
-                                    color: "#4e5651"; font.pixelSize: 10
+                                    color: GuidePalette.programSecondary; font.pixelSize: Theme.fontMicro
                                 }
                                 Label {
                                     id: titleLabel
                                     y: startLabel.height + root.textSpacing
                                     width: parent.width; text: cell.title
-                                    color: "#252a31"; font.pixelSize: 13; font.weight: Font.DemiBold
+                                    color: GuidePalette.programText; font.pixelSize: Theme.fontCaption; font.weight: Font.DemiBold
                                     textFormat: Text.PlainText; wrapMode: Text.Wrap
                                     lineHeightMode: Text.FixedHeight; lineHeight: root.titleLineHeight
                                     maximumLineCount: Math.max(1, Math.min(5, Math.floor((parent.height - y) / root.titleLineHeight)))
@@ -312,7 +312,7 @@ Item {
                                     width: parent.width; height: Math.max(0, parent.height - y)
                                     visible: height >= descriptionLineHeight * 2
                                     text: cell.modelData.description || ""
-                                    color: "#4e5651"; font.pixelSize: 11
+                                    color: GuidePalette.programSecondary; font.pixelSize: Theme.fontCaption
                                     textFormat: Text.PlainText; wrapMode: Text.Wrap; elide: Text.ElideRight
                                     lineHeightMode: Text.FixedHeight; lineHeight: descriptionLineHeight
                                     maximumLineCount: Math.max(1, Math.floor(height / descriptionLineHeight))
@@ -336,8 +336,8 @@ Item {
                             anchors.left: parent.left; anchors.leftMargin: root.channelHeaderPadding
                             anchors.verticalCenter: parent.verticalCenter; spacing: root.channelHeaderSpacing
                             Rectangle {
-                                width: root.channelLogoWidth; height: 32; radius: 2
-                                color: column.logo ? "#ffffff" : "transparent"
+                                width: root.channelLogoWidth; height: 32; radius: Theme.indicatorRadius
+                                color: column.logo ? GuidePalette.logoBackground : "transparent"
                                 ChannelLogo {
                                     anchors.centerIn: parent
                                     width: 48; height: 27
@@ -348,8 +348,8 @@ Item {
                                 width: column.width - root.channelLogoWidth - root.channelHeaderSpacing - root.channelHeaderPadding * 2
                                 anchors.verticalCenter: parent.verticalCenter
                                 text: column.label.replace(/^\d+\s+/, "")
-                                textFormat: Text.PlainText; color: "#e6e8e6"
-                                font.pixelSize: 11; font.bold: true
+                                textFormat: Text.PlainText; color: Theme.textPrimary
+                                font.pixelSize: Theme.fontCaption; font.bold: true
                                 wrapMode: Text.Wrap; maximumLineCount: 2; elide: Text.ElideRight
                             }
                         }

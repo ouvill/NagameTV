@@ -1,5 +1,6 @@
 pragma ComponentBehavior: Bound
 import QtQuick
+import MinimalViewer
 import QtQuick.Controls
 
 Column {
@@ -54,7 +55,7 @@ Column {
                 text: section.modelData.heading
                 textFormat: Text.PlainText
                 wrapMode: Text.Wrap
-                color: "#b7cdbd"; font.pixelSize: 14; font.bold: true
+                color: Theme.textSecondary; font.pixelSize: Theme.fontBody; font.bold: true
             }
             Label {
                 objectName: "programExtendedText" + section.index
@@ -62,7 +63,7 @@ Column {
                 text: section.modelData.text
                 textFormat: Text.PlainText
                 wrapMode: Text.Wrap
-                color: "#e0e5e0"; font.pixelSize: 14; lineHeight: 1.25
+                color: Theme.textPrimary; font.pixelSize: Theme.fontBody; lineHeight: 1.25
             }
         }
     }
@@ -71,18 +72,18 @@ Column {
         width: root.width
         implicitHeight: broadcast.implicitHeight + 32
         visible: root.broadcastFields.length > 0
-        radius: 12
-        color: "#1e2821"
+        radius: Theme.panelRadius
+        color: Theme.surfaceRaised
         Column {
             id: broadcast
             x: 16; y: 16
             width: parent.width - 32
-            spacing: 14
+            spacing: Theme.spaceLg
             Label {
                 width: parent.width
                 text: qsTranslate("Viewer", "Broadcast information")
                 wrapMode: Text.Wrap
-                color: "#b7cdbd"; font.pixelSize: 13; font.bold: true
+                color: Theme.textSecondary; font.pixelSize: Theme.fontCaption; font.bold: true
             }
             Repeater {
                 model: root.broadcastFields
@@ -92,17 +93,17 @@ Column {
                     required property int index
                     objectName: "programBroadcastField" + index
                     width: broadcast.width
-                    spacing: 4
+                    spacing: Theme.spaceXs
                     Label {
                         width: parent.width
                         text: field.modelData.heading; textFormat: Text.PlainText
-                        color: "#a4b3a8"; font.pixelSize: 12; wrapMode: Text.Wrap
+                        color: Theme.textSecondary; font.pixelSize: Theme.fontCaption; wrapMode: Text.Wrap
                     }
                     Label {
                         objectName: "programBroadcastValue" + field.index
                         width: parent.width
                         text: field.modelData.text; textFormat: Text.PlainText
-                        color: "#e0e5e0"; font.pixelSize: 14; wrapMode: Text.Wrap
+                        color: Theme.textPrimary; font.pixelSize: Theme.fontBody; wrapMode: Text.Wrap
                     }
                 }
             }

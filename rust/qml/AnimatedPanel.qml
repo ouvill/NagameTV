@@ -1,4 +1,5 @@
 import QtQuick
+import MinimalViewer
 
 // The visible lifetime owns the loaded subtree, including interrupted closes.
 Loader {
@@ -17,7 +18,7 @@ Loader {
         ScreenFade {
             entering: panel.open
             duration: panel.motion === AnimatedPanel.Fade
-                ? (entering ? enterDurationMs : exitDurationMs) : 160
+                ? (entering ? enterDurationMs : exitDurationMs) : Theme.moveDuration
             easing.type: panel.motion === AnimatedPanel.Fade ? Easing.Linear : Easing.OutCubic
         }
     }
@@ -27,7 +28,7 @@ Loader {
         Behavior on slideY {
             enabled: !panel.shuttingDown && panel.motion === AnimatedPanel.Slide
             NumberAnimation {
-                duration: 240
+                duration: Theme.panelDuration
                 easing.type: Easing.OutCubic
             }
         }

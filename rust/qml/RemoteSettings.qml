@@ -1,5 +1,6 @@
 pragma ComponentBehavior: Bound
 import QtQuick
+import MinimalViewer
 import QtQuick.Controls
 import QtQuick.Layouts
 
@@ -7,7 +8,7 @@ ColumnLayout {
     id: root
     required property var backend
     property bool invalidInput: false
-    spacing: 16
+    spacing: Theme.spaceLg
     function reset() {
         addressField.text = backend.remote_address;
         portField.text = String(backend.remote_port);
@@ -28,8 +29,8 @@ ColumnLayout {
 
     component Detail: Label {
         Layout.fillWidth: true
-        color: "#b6bab6"
-        font.pixelSize: 14
+        color: Theme.textSecondary
+        font.pixelSize: Theme.fontBody
         textFormat: Text.PlainText
         wrapMode: Text.Wrap
     }
@@ -52,14 +53,14 @@ ColumnLayout {
         visible: root.backend.remote_session_only
         text: qsTranslate("Remote", "These settings apply to this launch only and will not be saved.")
     }
-    Detail { text: qsTranslate("Remote", "Listen address"); color: "#f4f5f3" }
+    Detail { text: qsTranslate("Remote", "Listen address"); color: Theme.textPrimary }
     Field {
         id: addressField
         objectName: "remoteAddress"
         Accessible.name: qsTranslate("Remote", "Listen address")
     }
     Detail { text: qsTranslate("Remote", "The default 0.0.0.0 accepts connections on all IPv4 interfaces.") }
-    Detail { text: qsTranslate("Remote", "Port"); color: "#f4f5f3" }
+    Detail { text: qsTranslate("Remote", "Port"); color: Theme.textPrimary }
     Field {
         id: portField
         objectName: "remotePort"
@@ -67,22 +68,22 @@ ColumnLayout {
         inputMethodHints: Qt.ImhDigitsOnly
         validator: IntValidator { bottom: 1; top: 65535 }
     }
-    SettingsAction {
+    ActionButton {
         id: applyButton
         objectName: "applyRemote"
         text: qsTranslate("Remote", "Apply / retry")
-        emphasis: SettingsAction.Primary
+        emphasis: ActionButton.Primary
         onClicked: root.apply(root.backend.remote_enabled)
     }
     Detail {
         objectName: "remoteInvalidInput"
         visible: root.invalidInput
-        color: "#ffb080"
+        color: Theme.warning
         text: qsTranslate("Remote", "Enter a valid IP address and a port between 1 and 65535.")
     }
     Detail {
         objectName: "remoteStatus"
-        color: root.backend.remote_status === "failed" ? "#ffb080" : "#9caf9f"
+        color: root.backend.remote_status === "failed" ? Theme.warning : Theme.accent
         text: {
             switch (root.backend.remote_status) {
             case "disabled": return qsTranslate("Remote", "Remote control is off.");
@@ -98,18 +99,18 @@ ColumnLayout {
         objectName: "remoteError"
         visible: text.length > 0
         text: root.backend.remote_error
-        color: "#ffb080"
+        color: Theme.warning
     }
     Detail {
         objectName: "remoteSaveError"
         visible: root.backend.remote_save_error.length > 0
         text: qsTranslate("Remote", "Could not save the remote settings: %1").arg(root.backend.remote_save_error)
-        color: "#ffb080"
+        color: Theme.warning
     }
     Detail {
         visible: root.backend.remote_endpoints.length > 0
         text: qsTranslate("Remote", "Connection addresses")
-        color: "#f4f5f3"
+        color: Theme.textPrimary
     }
     TextArea {
         objectName: "remoteEndpoints"
@@ -120,9 +121,9 @@ ColumnLayout {
         readOnly: true
         selectByMouse: true
         wrapMode: TextEdit.WrapAnywhere
-        color: "#f4f5f3"
-        font.pixelSize: 16
-        padding: 12
-        background: Rectangle { color: "#1c1f1c"; radius: 8 }
+        color: Theme.textPrimary
+        font.pixelSize: Theme.fontControl
+        padding: Theme.spaceMd
+        background: Rectangle { color: Theme.surfaceRaised; radius: Theme.controlRadius }
     }
 }

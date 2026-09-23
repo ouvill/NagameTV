@@ -1,5 +1,6 @@
 pragma ComponentBehavior: Bound
 import QtQuick
+import MinimalViewer
 import QtQuick.Controls
 import QtQuick.Layouts
 
@@ -13,16 +14,16 @@ Item {
     required property real value
     signal moved(real value)
     implicitHeight: Math.max(56, row.implicitHeight + 24)
-    opacity: enabled ? 1 : 0.42
     RowLayout {
         id: row
         anchors { left: parent.left; right: parent.right; verticalCenter: parent.verticalCenter }
-        spacing: 16
+        spacing: Theme.spaceLg
         Label {
             Layout.fillWidth: true
             text: root.text
-            color: "#f4f5f3"
-            font.pixelSize: 16
+            opacity: root.enabled ? 1 : Theme.disabledOpacity
+            color: Theme.textPrimary
+            font.pixelSize: Theme.fontControl
             wrapMode: Text.Wrap
         }
         ThemedSlider {
@@ -36,14 +37,15 @@ Item {
         Label {
             Layout.preferredWidth: 72
             text: root.valueText
-            color: "#9caf9f"
-            font.pixelSize: 14
+            opacity: root.enabled ? 1 : Theme.disabledOpacity
+            color: Theme.accent
+            font.pixelSize: Theme.fontBody
             horizontalAlignment: Text.AlignRight
         }
     }
     Rectangle {
         anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
         height: 1
-        color: "#1c1f1c"
+        color: Theme.surfaceRaised
     }
 }

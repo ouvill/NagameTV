@@ -1,5 +1,6 @@
 pragma ComponentBehavior: Bound
 import QtQuick
+import MinimalViewer
 import QtQuick.Controls
 import QtQuick.Layouts
 
@@ -24,7 +25,7 @@ Popup {
     x: Math.max(24, Math.min(parent.width - width - 24,
         cellPosition.x > parent.width / 2 ? cellPosition.x - width - 28 : cellPosition.x + channelWidth + 24))
     y: Math.max(20, Math.min(parent.height - height - 20, cellPosition.y))
-    padding: 24
+    padding: Theme.spaceXl
     margins: 0
     modal: false
     dim: false
@@ -32,39 +33,34 @@ Popup {
     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
     transformOrigin: Popup.Center
     enter: Transition {
-        NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 150; easing.type: Easing.OutCubic }
-        NumberAnimation { property: "scale"; from: 0.97; to: 1; duration: 180; easing.type: Easing.OutBack }
+        NumberAnimation { property: "opacity"; from: 0; to: 1; duration: Theme.moveDuration; easing.type: Easing.OutCubic }
+        NumberAnimation { property: "scale"; from: 0.97; to: 1; duration: Theme.moveDuration; easing.type: Easing.OutBack }
     }
     exit: Transition {
-        NumberAnimation { property: "opacity"; to: 0; duration: 150; easing.type: Easing.OutCubic }
-        NumberAnimation { property: "scale"; to: 0.97; duration: 180; easing.type: Easing.OutBack }
+        NumberAnimation { property: "opacity"; to: 0; duration: Theme.moveDuration; easing.type: Easing.OutCubic }
+        NumberAnimation { property: "scale"; to: 0.97; duration: Theme.moveDuration; easing.type: Easing.OutBack }
     }
     Component.onCompleted: open()
     onAboutToShow: now = Date.now()
     Timer { interval: 1000; repeat: true; running: popup.opened; onTriggered: popup.now = Date.now() }
-    background: Rectangle { radius: 18; color: "#151c17"; border.color: "#627c69" }
+    background: PanelSurface {}
     contentItem: ColumnLayout {
-        spacing: 16
+        spacing: Theme.spaceLg
         RowLayout {
             Layout.fillWidth: true
             Label {
                 text: qsTranslate("Viewer", "Program details")
-                color: "#b7cdbd"; font.pixelSize: 13
+                color: Theme.textSecondary; font.pixelSize: Theme.fontCaption
                 Layout.fillWidth: true
             }
-            ToolButton {
-                id: closeButton
+            IconAction {
                 objectName: "closeGuideProgramDetails"
-                Layout.preferredWidth: 32; Layout.preferredHeight: 32
-                Accessible.name: qsTranslate("Main", "Close")
-                background: Rectangle {
-                    radius: 8
-                    color: closeButton.down ? "#354b3c" : closeButton.hovered ? "#293a2f" : "transparent"
-                    border.width: closeButton.visualFocus ? 1 : 0
-                    border.color: "#9caf9f"
-                    Behavior on color { ColorAnimation { duration: 100 } }
-                }
-                contentItem: Image { source: popup.iconDirectory + "x.svg"; sourceSize: Qt.size(16, 16); fillMode: Image.Pad }
+                Layout.preferredWidth: Theme.compactControlHeight
+                Layout.preferredHeight: Theme.compactControlHeight
+                iconSource: popup.iconDirectory + "x.svg"
+                tip: qsTranslate("Main", "Close")
+                iconSize: Theme.smallIconSize
+                flat: true
                 onClicked: popup.close()
             }
         }
@@ -72,13 +68,13 @@ Popup {
             id: detailsScroll
             Layout.fillWidth: true
             Layout.fillHeight: true
-            rightPadding: 12
+            rightPadding: Theme.spaceMd
             clip: true
             focus: true
             ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
             ScrollBar.vertical.policy: detailsFlick.contentHeight > detailsFlick.height
                 ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
-            ScrollBar.vertical.palette.mid: "#8c918c"
+            ScrollBar.vertical.palette.mid: Theme.textMuted
             contentItem: Flickable {
                 id: detailsFlick
                 objectName: "programDetailsFlickable"
@@ -89,7 +85,7 @@ Popup {
                 Column {
                     id: body
                     width: detailsFlick.width
-                    spacing: 18
+                    spacing: Theme.spaceLg
                     Label {
                         objectName: "programDateTime"
                         width: parent.width
@@ -102,7 +98,7 @@ Popup {
                             return start.toLocaleString(locale, format) + " – "
                                 + end.toLocaleString(locale, start.toDateString() === end.toDateString() ? "hh:mm" : format)
                         }
-                        color: "#b7cdbd"; font.pixelSize: 13
+                        color: Theme.textSecondary; font.pixelSize: Theme.fontCaption
                         wrapMode: Text.Wrap
                     }
                     Label {
@@ -110,14 +106,14 @@ Popup {
                         width: parent.width
                         text: popup.program ? (popup.program.name || qsTranslate("Viewer", "No program information")) : ""
                         textFormat: Text.PlainText
-                        color: "#e6e8e6"; font.pixelSize: 22; font.bold: true
+                        color: Theme.textPrimary; font.pixelSize: Theme.fontTitle; font.bold: true
                         wrapMode: Text.Wrap; lineHeight: 1.15
                     }
                     Label {
                         objectName: "programChannel"
                         width: parent.width
                         text: popup.channelLabel; textFormat: Text.PlainText
-                        color: "#b6bab6"; wrapMode: Text.Wrap
+                        color: Theme.textSecondary; wrapMode: Text.Wrap
                     }
                     ProgramFacts {
                         objectName: "programFacts"
@@ -125,14 +121,14 @@ Popup {
                         program: popup.program
                         now: popup.now
                     }
-                    Rectangle { width: parent.width; height: 1; color: "#20ffffff" }
+                    Rectangle { width: parent.width; height: 1; color: Theme.overlayBorder }
                     Label {
                         objectName: "programDescription"
                         width: parent.width
                         text: popup.program ? (popup.program.description || "") : ""
-                        textFormat: Text.PlainText; color: "#d9dcda"
+                        textFormat: Text.PlainText; color: Theme.textPrimary
                         visible: text.length > 0
-                        wrapMode: Text.Wrap; font.pixelSize: 14; lineHeight: 1.25
+                        wrapMode: Text.Wrap; font.pixelSize: Theme.fontBody; lineHeight: 1.25
                     }
                     ProgramMetadata {
                         objectName: "programMetadata"
@@ -145,7 +141,7 @@ Popup {
                         visible: popup.watchError !== ""
                         width: parent.width
                         text: popup.watchError ? qsTranslate("Backend", popup.watchError) : ""; textFormat: Text.PlainText
-                        wrapMode: Text.Wrap; color: "#ffb4ab"
+                        wrapMode: Text.Wrap; color: Theme.error
                         onTextChanged: function(text) { if (text) revealError.restart() }
                     }
                 }
@@ -160,24 +156,14 @@ Popup {
                 }
             }
         }
-        Button {
+        ActionButton {
+            emphasis: ActionButton.Primary
             id: watchButton
             objectName: "watchGuideProgram"
             visible: popup.live
             Layout.preferredWidth: 168
             Layout.preferredHeight: 44
             text: qsTranslate("Viewer", "Watch this program")
-            background: Rectangle {
-                radius: 12
-                color: watchButton.down ? "#8eae99" : watchButton.hovered ? "#bdd6c4" : "#a8c4b0"
-                border.width: watchButton.visualFocus ? 2 : 0
-                border.color: "#e0f0e5"
-                Behavior on color { ColorAnimation { duration: 100 } }
-            }
-            contentItem: Label {
-                text: watchButton.text; color: "#17201a"; font.bold: true
-                horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
-            }
             onClicked: popup.watchRequested(popup.program.watchKey)
         }
     }

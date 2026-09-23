@@ -18,6 +18,7 @@ getent passwd "$(id -u)" >/dev/null || {
 
 cargo fmt --manifest-path rust/Cargo.toml --check
 python3 scripts/check-release-metadata.py
+python3 scripts/check-ui-style.py
 python3 scripts/flatpak-cargo-sources.py --check
 for suite in scripts/test-*.py; do
   python3 "$suite"
@@ -26,6 +27,7 @@ done
 python3 scripts/check-comment-sql.py
 
 cargo test --manifest-path rust/Cargo.toml --release --locked
+bash scripts/check-qml.sh
 # Cargo does not run tests belonging to path dependencies of the application.
 for crate in viewer-comments viewer-epg-events viewer-diagnostics viewer-remote tsreadex; do
   manifest="rust/crates/$crate/Cargo.toml"

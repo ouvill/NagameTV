@@ -1,4 +1,5 @@
 import QtQuick
+import MinimalViewer
 import QtQuick.Controls
 
 Item {
@@ -21,7 +22,7 @@ Item {
         anchors.centerIn: parent
         visible: image.status !== Image.Ready
         text: qsTranslate("Main", "Channel logo")
-        font.pixelSize: 9
-        color: "#b6bab6"
+        font.pixelSize: Theme.fontMicro
+        color: Theme.textSecondary
     }
 }

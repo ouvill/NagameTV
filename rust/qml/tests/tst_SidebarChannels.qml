@@ -1,6 +1,6 @@
 import QtQuick
 import QtTest
-import ".."
+import MinimalViewer
 TestCase {
     id: testCase
     name: "SidebarChannels"

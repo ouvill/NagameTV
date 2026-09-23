@@ -1,4 +1,4 @@
-use cxx_qt_build::{CxxQtBuilder, QmlModule};
+use cxx_qt_build::{CxxQtBuilder, QmlFile, QmlModule};
 
 #[path = "build/build_info.rs"]
 mod build_info;
@@ -37,7 +37,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     qml_files.sort();
     let mut module = QmlModule::new("MinimalViewer");
     for path in &qml_files {
-        module = module.qml_file(path);
+        let singleton = std::fs::read_to_string(path)?
+            .lines()
+            .any(|line| line.trim() == "pragma Singleton");
+        module = module.qml_file(QmlFile::from(path).singleton(singleton));
     }
     let mut builder = CxxQtBuilder::new_qml_module(
         module

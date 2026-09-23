@@ -1,5 +1,6 @@
 pragma ComponentBehavior: Bound
 import QtQuick
+import MinimalViewer
 import QtQuick.Controls
 import QtQuick.Layouts
 
@@ -40,8 +41,8 @@ ColumnLayout {
             text: root.timeLabel(slider.pressed ? slider.value : root.backend.position_ms)
                 + " / " + (root.backend.duration_estimated === true ? "≈" : "") + root.timeLabel(root.backend.duration_ms)
 
-            color: "#f4f5f3"
-            font.pixelSize: 12
+            color: Theme.textPrimary
+            font.pixelSize: Theme.fontCaption
             font.family: "monospace"
         }
         Label {
@@ -52,8 +53,8 @@ ColumnLayout {
                 : root.backend.paused ? qsTranslate("Backend", "Paused") : "")
             textFormat: Text.PlainText
             elide: Text.ElideRight
-            color: root.backend.transport_error ? "#ffb4ab" : "#b6bab6"
-            font.pixelSize: 12
+            color: root.backend.transport_error ? Theme.error : Theme.textSecondary
+            font.pixelSize: Theme.fontCaption
         }
     }
     ThemedSlider {
@@ -76,7 +77,7 @@ ColumnLayout {
                 objectName: "programTrack"
                 anchors.verticalCenter: parent.verticalCenter
                 anchors.alignWhenCentered: false
-                width: parent.width; height: 4; radius: 2; color: "#42ffffff"
+                width: parent.width; height: 4; radius: Theme.indicatorRadius; color: Theme.overlayBorder
             }
             Rectangle {
                 objectName: "programProgressFill"
@@ -84,7 +85,7 @@ ColumnLayout {
                 width: Math.max(0, root.fraction(root.progressEnd) - root.fraction(root.progressStart)) * parent.width
                 anchors.verticalCenter: parent.verticalCenter
                 anchors.alignWhenCentered: false
-                height: 3; radius: height / 2; color: "#f4f5f3"
+                height: 3; radius: height / 2; color: Theme.textPrimary
             }
         }
         handle: Rectangle {
@@ -92,9 +93,9 @@ ColumnLayout {
             y: slider.topPadding + slider.availableHeight / 2 - height / 2
             implicitWidth: 12; implicitHeight: 12; radius: width / 2
             visible: root.backend.seekable
-            color: "#f4f5f3"
+            color: Theme.textPrimary
             scale: slider.pressed || root.hovered || slider.visualFocus ? 1.2 : 1
-            border.width: slider.visualFocus ? 2 : 0; border.color: "#9caf9f"
+            border.width: slider.visualFocus ? 2 : 0; border.color: Theme.accent
         }
         property var pendingTarget: null
         onEnabledChanged: if (!enabled) pendingTarget = null
@@ -119,7 +120,7 @@ ColumnLayout {
             restoreMode: Binding.RestoreNone
         }
         HoverHandler { id: seekHover }
-        ToolTip {
+        ThemedToolTip {
             id: preview
             objectName: "recordingSeekPreview"
             parent: slider
@@ -134,18 +135,8 @@ ColumnLayout {
             x: Math.max(0, Math.min(slider.width - implicitWidth,
                 seekHover.point.position.x - implicitWidth / 2))
             y: -implicitHeight - 6
-            padding: 9
-            contentItem: Label {
-                text: preview.text
-                color: "#f4f5f3"
-                font.pixelSize: 12
-                font.family: "monospace"
-            }
-            background: Rectangle {
-                radius: 8
-                color: "#e61b1d1b"
-                border.color: "#38ffffff"
-            }
+            padding: Theme.spaceSm
+            font.family: "monospace"
         }
     }
 }

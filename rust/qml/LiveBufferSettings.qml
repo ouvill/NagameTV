@@ -1,5 +1,6 @@
 pragma ComponentBehavior: Bound
 import QtQuick
+import MinimalViewer
 import QtQuick.Controls
 import QtQuick.Layouts
 
@@ -10,7 +11,7 @@ ColumnLayout {
     enum EditState { Synced, Pending, Saving }
     property int editState: LiveBufferSettings.Synced
     readonly property int coalesceMilliseconds: 300
-    spacing: 12
+    spacing: Theme.spaceMd
 
     function syncSaved() {
         number.value = saved.milliseconds;
@@ -45,11 +46,11 @@ ColumnLayout {
     }
     RowLayout {
         Layout.fillWidth: true
-        spacing: 12
+        spacing: Theme.spaceMd
         Label {
             Layout.fillWidth: true
             text: qsTranslate("Settings", "Live playback buffer")
-            color: "#f4f5f3"; font.pixelSize: 16
+            color: Theme.textPrimary; font.pixelSize: Theme.fontControl
             wrapMode: Text.Wrap
         }
         ThemedSpinBox {
@@ -71,16 +72,16 @@ ColumnLayout {
                 function onEditingFinished() { root.finishEdit(); }
             }
         }
-        Label { text: "ms"; color: "#9caf9f"; font.pixelSize: 16 }
+        Label { text: "ms"; color: Theme.accent; font.pixelSize: Theme.fontControl }
     }
     Label {
         Layout.fillWidth: true
         text: qsTranslate("Settings", "Increase if audio cuts out. Applies from the next live playback.")
-        color: "#b6bab6"; font.pixelSize: 14
+        color: Theme.textSecondary; font.pixelSize: Theme.fontBody
         wrapMode: Text.Wrap
     }
-    SettingsAction {
-        emphasis: SettingsAction.Quiet
+    ActionButton {
+        emphasis: ActionButton.Quiet
         objectName: "resetLiveBuffer"
         text: qsTranslate("Settings", "Reset to %1 ms").arg(root.saved.default_ms)
         onClicked: {

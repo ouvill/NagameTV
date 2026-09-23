@@ -1,4 +1,5 @@
 import QtQuick
+import MinimalViewer
 import QtQuick.Controls
 import QtQuick.Layouts
 
@@ -13,8 +14,8 @@ ColumnLayout {
         objectName: "cardProgramTitle"
         Layout.fillWidth: true
         text: root.program ? (root.program.name || qsTranslate("Viewer", "Program title unavailable")) : qsTranslate("Viewer", "No current program information")
-        color: "#f4f5f3"
-        font.pixelSize: root.emphasized ? 16 : 14
+        color: Theme.textPrimary
+        font.pixelSize: root.emphasized ? Theme.fontControl : Theme.fontBody
         font.bold: true
         textFormat: Text.PlainText
         wrapMode: Text.Wrap
@@ -24,8 +25,8 @@ ColumnLayout {
     Label {
         Layout.fillWidth: true
         text: root.program ? Qt.formatDateTime(new Date(root.program.startAt), "hh:mm") + " – " + Qt.formatDateTime(new Date(root.program.startAt + root.program.duration), "hh:mm") : ""
-        color: "#b6bab6"
-        font.pixelSize: 11
+        color: Theme.textSecondary
+        font.pixelSize: Theme.fontCaption
     }
     Label {
         objectName: "cardNextProgram"
@@ -35,8 +36,8 @@ ColumnLayout {
         text: nextProgram ? qsTranslate("Viewer", "Next %1 %2")
             .arg(Qt.formatDateTime(new Date(nextProgram.startAt), "hh:mm"))
             .arg(nextProgram.name || qsTranslate("Viewer", "Program title unavailable")) : ""
-        color: "#b6bab6"
-        font.pixelSize: 11
+        color: Theme.textSecondary
+        font.pixelSize: Theme.fontCaption
         textFormat: Text.PlainText
         elide: Text.ElideRight
     }
@@ -47,15 +48,15 @@ ColumnLayout {
         Layout.fillWidth: true
         Layout.preferredHeight: 3
         background: Rectangle {
-            color: "#32ffffff"
-            radius: 2
+            color: Theme.overlayBorder
+            radius: Theme.indicatorRadius
         }
         contentItem: Item {
             Rectangle {
                 width: parent.width * root.progress
                 height: parent.height
-                radius: 2
-                color: "#9caf9f"
+                radius: Theme.indicatorRadius
+                color: Theme.accent
             }
         }
         from: 0

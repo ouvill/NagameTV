@@ -1,5 +1,6 @@
 pragma ComponentBehavior: Bound
 import QtQuick
+import MinimalViewer
 import QtQuick.Controls
 import QtQuick.Layouts
 
@@ -27,8 +28,8 @@ ColumnLayout {
     readonly property real playheadSize: 16
     readonly property real boundaryHeight: 18
     readonly property real liveMarkerSize: 8
-    readonly property color primaryColor: "#f4f5f3"
-    readonly property color secondaryColor: "#b6bab6"
+    readonly property color primaryColor: Theme.textPrimary
+    readonly property color secondaryColor: Theme.textSecondary
     spacing: 0
 
     function fraction(time) {
@@ -101,7 +102,7 @@ ColumnLayout {
                 + " · " + (root.viewingProgram ? root.viewingProgram.title : qsTranslate("Viewer", "Program information unavailable")) : ""
             textFormat: Text.PlainText
             elide: Text.ElideRight
-            font.pixelSize: 11
+            font.pixelSize: Theme.fontCaption
             color: root.primaryColor
         }
         Label {
@@ -114,7 +115,7 @@ ColumnLayout {
             Layout.fillWidth: true
             Layout.maximumWidth: expiredMarker.visible ? root.width / 2 : root.width
             horizontalAlignment: Text.AlignRight
-            font.pixelSize: 11; color: root.backend.transport_error ? "#ffb4ab" : root.secondaryColor
+            font.pixelSize: Theme.fontCaption; color: root.backend.transport_error ? Theme.error : root.secondaryColor
         }
     }
     Item {
@@ -139,7 +140,7 @@ ColumnLayout {
                 elide: Text.ElideRight
                 verticalAlignment: Text.AlignVCenter
                 horizontalAlignment: slider.mirrored ? Text.AlignRight : Text.AlignLeft
-                font.pixelSize: 12
+                font.pixelSize: Theme.fontCaption
                 font.weight: role === LiveTimeline.Watching ? Font.DemiBold : Font.Normal
                 color: role === LiveTimeline.Watching ? root.primaryColor : root.secondaryColor
             }
@@ -152,7 +153,7 @@ ColumnLayout {
             text: qsTranslate("Viewer", "Program information unavailable")
             verticalAlignment: Text.AlignVCenter
             elide: Text.ElideRight
-            font.pixelSize: 12; color: root.secondaryColor
+            font.pixelSize: Theme.fontCaption; color: root.secondaryColor
         }
     }
     ThemedSlider {
@@ -201,7 +202,7 @@ ColumnLayout {
             Rectangle {
                 objectName: "programTrack"
                 anchors.verticalCenter: parent.verticalCenter; anchors.alignWhenCentered: false
-                width: parent.width; height: 4; radius: 2; color: "#9468716b"
+                width: parent.width; height: 4; radius: Theme.indicatorRadius; color: Theme.track
             }
             Repeater {
                 objectName: "retainedRanges"
@@ -212,7 +213,7 @@ ColumnLayout {
                     anchors.verticalCenter: parent.verticalCenter; anchors.alignWhenCentered: false
                     x: track.startX(modelData.start, modelData.end)
                     width: Math.max(0, root.fraction(modelData.end) - root.fraction(modelData.start)) * track.width
-                    height: track.height; radius: height / 2; color: "#9caf9f"
+                    height: track.height; radius: height / 2; color: Theme.accent
                 }
             }
             Rectangle {
@@ -232,7 +233,7 @@ ColumnLayout {
                     objectName: "programBoundaryTick"
                     x: track.position(modelData) - width / 2
                     anchors.verticalCenter: parent.verticalCenter; anchors.alignWhenCentered: false
-                    width: 1; height: root.boundaryHeight; color: "#7af4f5f3"
+                    width: 1; height: root.boundaryHeight; color: Theme.trackSelection
                 }
             }
             Rectangle {
@@ -240,7 +241,7 @@ ColumnLayout {
                 visible: root.snapshot !== null
                 x: root.snapshot ? track.position(root.snapshot.live.position) - width / 2 : 0
                 anchors.verticalCenter: parent.verticalCenter; anchors.alignWhenCentered: false
-                width: root.liveMarkerSize; height: width; rotation: 45; color: "#d2e2d5"
+                width: root.liveMarkerSize; height: width; rotation: 45; color: Theme.textSecondary
             }
             Rectangle {
                 objectName: "livePlayhead"
@@ -254,7 +255,7 @@ ColumnLayout {
                 visible: root.snapshot !== null && root.snapshot.seekTarget !== null
                 x: visible ? track.position(root.snapshot.seekTarget) - width / 2 : 0
                 anchors.verticalCenter: parent.verticalCenter; anchors.alignWhenCentered: false
-                width: 14; height: 14; radius: width / 2; color: "transparent"; border.width: 2; border.color: "#9caf9f"
+                width: 14; height: 14; radius: width / 2; color: "transparent"; border.width: 2; border.color: Theme.accent
             }
         }
         handle: Rectangle {
@@ -266,7 +267,7 @@ ColumnLayout {
             border.color: root.primaryColor
         }
         HoverHandler { id: seekHover }
-        ToolTip {
+        ThemedToolTip {
             id: preview
             objectName: "liveSeekPreview"
             parent: slider
@@ -276,9 +277,7 @@ ColumnLayout {
             visible: root.visible && root.hovered && root.snapshot !== null
             text: root.previewLabel(slider.pressed ? slider.value : target)
             x: Math.max(0, Math.min(slider.width - implicitWidth, seekHover.point.position.x - implicitWidth / 2))
-            y: -implicitHeight - 6; padding: 9
-            contentItem: Label { text: preview.text; textFormat: Text.PlainText; color: "#f4f5f3"; font.pixelSize: 12 }
-            background: Rectangle { radius: 8; color: "#e61b1d1b"; border.color: "#38ffffff" }
+            y: -implicitHeight - 6; padding: Theme.spaceSm
         }
     }
     Item {
@@ -304,7 +303,7 @@ ColumnLayout {
                 text: root.boundaryLabel(modelData)
                 verticalAlignment: Text.AlignVCenter
                 horizontalAlignment: slider.mirrored ? Text.AlignRight : Text.AlignLeft
-                font.pixelSize: 10; color: root.secondaryColor
+                font.pixelSize: Theme.fontMicro; color: root.secondaryColor
             }
         }
         Label {
@@ -316,7 +315,7 @@ ColumnLayout {
             x: root.snapshot ? Math.max(0, Math.min(parent.width - width, track.x + track.position(root.snapshot.live.position) - width / 2)) : 0
             height: root.clockHeight
             verticalAlignment: Text.AlignVCenter
-            font.pixelSize: 10; font.bold: true; color: "#d2e2d5"
+            font.pixelSize: Theme.fontMicro; font.bold: true; color: Theme.textSecondary
         }
         Label {
             id: endLabel
@@ -327,7 +326,7 @@ ColumnLayout {
             text: root.axis ? root.boundaryLabel(root.axis.end) : "--:--"
             verticalAlignment: Text.AlignVCenter
             horizontalAlignment: slider.mirrored ? Text.AlignLeft : Text.AlignRight
-            font.pixelSize: 10; color: "#939d94"
+            font.pixelSize: Theme.fontMicro; color: Theme.textMuted
         }
     }
 }

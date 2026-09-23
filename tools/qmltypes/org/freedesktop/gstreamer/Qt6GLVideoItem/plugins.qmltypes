@@ -1,0 +1,32 @@
+import QtQuick.tooling 1.2
+
+// Static tooling metadata only. The real type is registered by qml6glsink.
+// Public QML API from GStreamer 1.24.12 ext/qt6/qt6glitem.h and gstqt6element.cc:
+// https://github.com/GStreamer/gstreamer/tree/1.24.12/subprojects/gst-plugins-good/ext/qt6
+Module {
+    Component {
+        name: "Qt6GLVideoItem"
+        prototype: "QQuickItem"
+        exports: ["org.freedesktop.gstreamer.Qt6GLVideoItem/GstGLQt6VideoItem 1.0"]
+        exportMetaObjectRevisions: [256]
+        Property {
+            name: "itemInitialized"
+            type: "bool"
+            isReadonly: true
+            read: "itemInitialized"
+            notify: "itemInitializedChanged"
+        }
+        Property {
+            name: "forceAspectRatio"
+            type: "bool"
+            read: "getForceAspectRatio"
+            write: "setForceAspectRatio"
+            notify: "forceAspectRatioChanged"
+        }
+        Signal { name: "itemInitializedChanged" }
+        Signal {
+            name: "forceAspectRatioChanged"
+            Parameter { type: "bool" }
+        }
+    }
+}

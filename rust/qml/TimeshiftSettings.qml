@@ -1,5 +1,6 @@
 pragma ComponentBehavior: Bound
 import QtQuick
+import MinimalViewer
 import QtQuick.Controls
 import QtQuick.Layouts
 
@@ -85,7 +86,7 @@ ColumnLayout {
     readonly property real estimateSeconds: Math.min(capacityMiB * mibBytes / bytesPerSecond, minutes.value * secondsPerMinute)
     readonly property string estimateTime: qsTranslate("Viewer", "%1 min %2 sec")
         .arg(Math.floor(estimateSeconds / secondsPerMinute)).arg(Math.floor(estimateSeconds % secondsPerMinute))
-    spacing: 20
+    spacing: Theme.spaceXl
 
     SettingsToggle {
         id: enabledToggle
@@ -95,8 +96,8 @@ ColumnLayout {
         onClicked: root.commit()
     }
     ColumnLayout {
-        Layout.fillWidth: true; spacing: 12
-        Label { text: qsTranslate("Viewer", "Storage"); color: "#f4f5f3"; font.pixelSize: 16 }
+        Layout.fillWidth: true; spacing: Theme.spaceMd
+        Label { text: qsTranslate("Viewer", "Storage"); color: Theme.textPrimary; font.pixelSize: Theme.fontControl }
         SegmentedControl {
             id: storage
             objectName: "timeshiftStorage"
@@ -114,19 +115,19 @@ ColumnLayout {
             text: root.storageValue === "memory"
                 ? qsTranslate("Viewer", "Uses RAM to retain recent video.")
                 : qsTranslate("Viewer", "Uses disk space. Files are deleted when playback stops.")
-            color: "#b6bab6"; font.pixelSize: 14
+            color: Theme.textSecondary; font.pixelSize: Theme.fontBody
         }
     }
     ColumnLayout {
         Layout.fillWidth: true
-        spacing: 12
+        spacing: Theme.spaceMd
         RowLayout {
             Layout.fillWidth: true
-            spacing: 12
+            spacing: Theme.spaceMd
             Label {
                 Layout.fillWidth: true; wrapMode: Text.Wrap
                 text: root.storageValue === "memory" ? qsTranslate("Viewer", "Maximum TS memory") : qsTranslate("Viewer", "Maximum temporary files")
-                color: "#f4f5f3"; font.pixelSize: 16
+                color: Theme.textPrimary; font.pixelSize: Theme.fontControl
             }
             BudgetSpinBox {
                 id: memory; objectName: "timeshiftMemoryLimit"
@@ -140,24 +141,24 @@ ColumnLayout {
                 from: root.saved.min_mib; to: root.saved.max_mib
                 Accessible.name: qsTranslate("Viewer", "Maximum temporary files (MiB)")
             }
-            Label { text: "MiB"; color: "#b6bab6"; font.pixelSize: 14 }
+            Label { text: "MiB"; color: Theme.textSecondary; font.pixelSize: Theme.fontBody }
         }
         Label {
             objectName: "timeshiftEstimate"
             Layout.fillWidth: true; wrapMode: Text.Wrap
             text: qsTranslate("Viewer", "About %1 of history").arg(root.estimateTime)
-            color: "#9caf9f"; font.pixelSize: 16
+            color: Theme.accent; font.pixelSize: Theme.fontControl
         }
         Label {
             Layout.fillWidth: true; wrapMode: Text.Wrap
             text: root.measured ? qsTranslate("Viewer", "Estimated from the current broadcast.")
                 : qsTranslate("Viewer", "Estimate assumes %1 Mbps until a broadcast is playing.").arg(root.assumedMegabitsPerSecond)
-            color: "#9ea79f"; font.pixelSize: 13
+            color: Theme.textSecondary; font.pixelSize: Theme.fontCaption
         }
     }
     RowLayout {
-        Layout.fillWidth: true; spacing: 16
-        Label { Layout.fillWidth: true; wrapMode: Text.Wrap; text: qsTranslate("Viewer", "Maximum retention (minutes)"); color: "#f4f5f3"; font.pixelSize: 16 }
+        Layout.fillWidth: true; spacing: Theme.spaceLg
+        Label { Layout.fillWidth: true; wrapMode: Text.Wrap; text: qsTranslate("Viewer", "Maximum retention (minutes)"); color: Theme.textPrimary; font.pixelSize: Theme.fontControl }
         BudgetSpinBox {
             id: minutes; objectName: "timeshiftMinutes"
             enabled: enabledToggle.checked
@@ -168,18 +169,18 @@ ColumnLayout {
     Label {
         Layout.fillWidth: true; wrapMode: Text.Wrap
         text: qsTranslate("Viewer", "When either limit is reached, older video is discarded. Playback resumes if a paused position expires.")
-        color: "#9ea79f"; font.pixelSize: 13
+        color: Theme.textSecondary; font.pixelSize: Theme.fontCaption
     }
     Label {
         Layout.fillWidth: true; wrapMode: Text.Wrap
         text: qsTranslate("Viewer", "Changing storage or turning timeshift off clears history and returns to live playback.")
-        color: "#9ea79f"; font.pixelSize: 13
+        color: Theme.textSecondary; font.pixelSize: Theme.fontCaption
     }
     Label {
         objectName: "timeshiftSaveError"
         Layout.fillWidth: true; wrapMode: Text.Wrap
         visible: text.length > 0
         text: root.saveError
-        color: "#ffb080"; font.pixelSize: 13
+        color: Theme.warning; font.pixelSize: Theme.fontCaption
     }
 }

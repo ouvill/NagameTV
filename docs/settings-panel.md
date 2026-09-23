@@ -100,7 +100,7 @@ URLは「保存して接続」または入力欄のEnterで反映する。
 `SettingsPanel.qml`が構成とバックエンド接続を担当する。
 行全体で操作できるスイッチ、スライダー行、言語選択は
 `SettingsToggle.qml`、`SettingsSlider.qml`、`SettingsChoice.qml`に分けている。
-操作ボタンは`SettingsAction.qml`、接続先の入力欄は`SettingsField.qml`を共用する。
+操作ボタンは`ActionButton.qml`、接続先の入力欄は`SettingsField.qml`を共用する。
 旧`SettingsDrawer.qml`とそのテストは置き換えた。
 
 2026-09-23の見た目と説明量の整理では、専用GUI環境でQML全体308件成功、18件スキップ。

@@ -1,4 +1,5 @@
 import QtQuick
+import MinimalViewer
 import QtQuick.Controls
 
 ToolButton {
@@ -7,36 +8,39 @@ ToolButton {
     required property string tip
     property string iconLabel: ""
     property bool active: false
-    property bool primary: false
+    enum Emphasis { Secondary, Destructive }
+    property int emphasis: IconAction.Secondary
+    property int iconSize: Theme.iconSize
     property bool toolTipEnabled: true
     // Player overlays use bare icons until hover, focus, or selection.
     flat: false
     // Animate the visuals; keep the hit area still while the pointer is down.
-    property real feedbackScale: down ? 0.90 : hovered || visualFocus ? 1.06 : 1
+    property real feedbackScale: down ? Theme.pressScale : 1
     Behavior on feedbackScale {
-        NumberAnimation { duration: control.down ? 65 : 150; easing.type: Easing.OutCubic }
+        NumberAnimation { duration: control.down ? Theme.pressDuration : Theme.moveDuration; easing.type: Easing.OutCubic }
     }
     hoverEnabled: true
-    opacity: enabled ? 1 : 0.38
-    implicitWidth: 42
-    implicitHeight: 42
+    opacity: enabled ? 1 : Theme.disabledOpacity
+    implicitWidth: Theme.iconButtonSize
+    implicitHeight: Theme.iconButtonSize
     Accessible.name: tip
     background: Rectangle {
         scale: control.feedbackScale
-        radius: 21
-        color: control.primary ? (control.down ? "#cbd8ce" : control.hovered ? "#ffffff" : "#eeeeec")
-            : control.down ? "#589caf9f" : control.hovered ? "#28ffffff" : control.active ? "#389caf9f" : control.flat ? "transparent" : "#17000000"
-        border.color: control.visualFocus ? "#9caf9f" : control.flat ? "transparent" : (control.primary ? "#80ffffff" : (control.active ? "#9caf9f" : "#16ffffff"))
-        Behavior on color { ColorAnimation { duration: 100 } }
-        Behavior on border.color { ColorAnimation { duration: 100 } }
+        radius: height / 2
+        color: control.emphasis === IconAction.Destructive && (control.down || control.hovered) ? Theme.destructive
+            : control.down ? Theme.overlayPressed : control.hovered ? Theme.overlayHover
+            : control.active ? Theme.selection : control.flat ? "transparent" : Theme.overlaySurface
+        border.color: control.visualFocus || control.active ? Theme.accent : control.flat ? "transparent" : Theme.overlayBorder
+        Behavior on color { ColorAnimation { duration: Theme.colorDuration } }
+        Behavior on border.color { ColorAnimation { duration: Theme.colorDuration } }
     }
     contentItem: Item {
         scale: control.feedbackScale
         Image {
             anchors.centerIn: parent
-            width: 24
-            height: 24
-            sourceSize: Qt.size(24, 24)
+            width: control.iconSize
+            height: control.iconSize
+            sourceSize: Qt.size(control.iconSize, control.iconSize)
             source: control.iconSource
         }
         Label {
@@ -44,12 +48,12 @@ ToolButton {
             anchors.verticalCenterOffset: -1
             text: control.iconLabel
             visible: text.length > 0
-            color: "#f4f5f3"
-            font.pixelSize: 8
+            color: Theme.textPrimary
+            font.pixelSize: Theme.fontMicro
             font.bold: true
         }
     }
-    ToolTip {
+    ThemedToolTip {
         objectName: "actionToolTip"
         parent: control
         visible: control.toolTipEnabled && control.hovered
@@ -58,16 +62,6 @@ ToolButton {
         timeout: 3000
         x: (control.width - implicitWidth) / 2
         y: -implicitHeight - 10
-        padding: 9
-        contentItem: Label {
-            text: control.tip
-            color: "#f4f5f3"
-            font.pixelSize: 12
-        }
-        background: Rectangle {
-            radius: 8
-            color: "#e61b1d1b"
-            border.color: "#38ffffff"
-        }
+        padding: Theme.spaceSm
     }
 }

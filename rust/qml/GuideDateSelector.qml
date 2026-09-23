@@ -1,5 +1,6 @@
 pragma ComponentBehavior: Bound
 import QtQuick
+import MinimalViewer
 import QtQuick.Controls
 
 SegmentedFrame {
@@ -52,13 +53,13 @@ SegmentedFrame {
         contentHeight: height
         boundsBehavior: Flickable.StopAtBounds
         flickableDirection: Flickable.HorizontalFlick
-        NumberAnimation { id: scroll; target: flick; property: "contentX"; duration: 170; easing.type: Easing.OutCubic }
+        NumberAnimation { id: scroll; target: flick; property: "contentX"; duration: Theme.moveDuration; easing.type: Easing.OutCubic }
         Rectangle {
             x: root.itemX(root.currentIndex); y: 3
             width: root.itemWidth(root.currentIndex); height: flick.height - 6
-            radius: root.segmentCornerRadius; color: "#429caf9f"; border.color: "#9caf9f"
-            Behavior on x { NumberAnimation { duration: 170; easing.type: Easing.OutCubic } }
-            Behavior on width { NumberAnimation { duration: 170; easing.type: Easing.OutCubic } }
+            radius: root.segmentCornerRadius; color: Theme.selection; border.color: Theme.accent
+            Behavior on x { NumberAnimation { duration: Theme.moveDuration; easing.type: Easing.OutCubic } }
+            Behavior on width { NumberAnimation { duration: Theme.moveDuration; easing.type: Easing.OutCubic } }
         }
         Row {
             x: 3; height: flick.height
@@ -69,7 +70,7 @@ SegmentedFrame {
                     required property int index
                     objectName: "guideDate" + index
                     width: root.itemWidth(index); height: flick.height
-                    Label { anchors.centerIn: parent; text: root.label(day.index); color: root.currentIndex === day.index ? "#e6e8e6" : "#d5d8d5"; font.pixelSize: 12; font.bold: root.currentIndex === day.index }
+                    Label { anchors.centerIn: parent; text: root.label(day.index); color: root.currentIndex === day.index ? Theme.textPrimary : Theme.textSecondary; font.pixelSize: Theme.fontCaption; font.bold: root.currentIndex === day.index }
                     MouseArea { anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.selectDay(day.index) }
                 }
             }
@@ -77,11 +78,11 @@ SegmentedFrame {
     }
     Item {
         anchors.fill: parent; visible: root.compact
-        Label { id: compactLabel; anchors.centerIn: parent; text: root.label(root.currentIndex); color: "#e6e8e6"; font.pixelSize: 12; font.bold: true }
+        Label { id: compactLabel; anchors.centerIn: parent; text: root.label(root.currentIndex); color: Theme.textPrimary; font.pixelSize: Theme.fontCaption; font.bold: true }
         SequentialAnimation {
             id: fade
-            NumberAnimation { target: compactLabel; property: "opacity"; to: .35; duration: 70; easing.type: Easing.InCubic }
-            NumberAnimation { target: compactLabel; property: "opacity"; to: 1; duration: 120; easing.type: Easing.OutCubic }
+            NumberAnimation { target: compactLabel; property: "opacity"; to: .35; duration: Theme.pressDuration; easing.type: Easing.InCubic }
+            NumberAnimation { target: compactLabel; property: "opacity"; to: 1; duration: Theme.fadeInDuration; easing.type: Easing.OutCubic }
         }
         Repeater {
             model: 2
@@ -92,9 +93,9 @@ SegmentedFrame {
                 x: index === 0 ? 0 : root.width - width
                 width: 44; height: root.height
                 enabled: index === 0 ? root.currentIndex > 0 : root.currentIndex < root.days.length - 1
-                opacity: enabled ? 1 : .35
+                opacity: enabled ? 1 : Theme.disabledOpacity
                 Accessible.name: index === 0 ? qsTranslate("Viewer", "Previous day") : qsTranslate("Viewer", "Next day")
-                background: Rectangle { radius: root.outerCornerRadius; color: arrow.hovered && arrow.enabled ? "#28ffffff" : "transparent" }
+                background: Rectangle { radius: root.outerCornerRadius; color: arrow.hovered && arrow.enabled ? Theme.overlayHover : "transparent" }
                 contentItem: Item { Image { anchors.centerIn: parent; width: 16; height: 16; source: root.iconDirectory + "chevron-left.svg"; mirror: arrow.index === 1 } }
                 onClicked: root.selectDay(root.currentIndex + (index === 0 ? -1 : 1))
             }

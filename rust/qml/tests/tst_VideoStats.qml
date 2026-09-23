@@ -1,7 +1,7 @@
 import QtQuick
 import QtQuick.Window
 import QtTest
-import ".." as Viewer
+import MinimalViewer as Viewer
 
 // Match Main.qml's unbound Loader scope: a helper named video in VideoStats
 // must not shadow the enclosing video item used by these property bindings.

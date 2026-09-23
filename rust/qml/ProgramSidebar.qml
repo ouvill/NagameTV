@@ -56,12 +56,12 @@ Rectangle {
     property real progress: 0
     readonly property var program: JSON.parse(programJson)
     signal closeRequested
-    color: "#151715"
+    color: Theme.surface
     clip: true
     Rectangle {
         width: 1
         height: parent.height
-        color: "#20ffffff"
+        color: Theme.overlayBorder
     }
     WindowDragArea {
         anchors { left: parent.left; right: parent.right; top: parent.top }
@@ -73,15 +73,15 @@ Rectangle {
         y: 88
         width: parent.width - 48
         height: parent.height - 112
-        spacing: 16
+        spacing: Theme.spaceLg
         RowLayout {
             Layout.fillWidth: true
             Label {
                 objectName: "sidebarHeading"
                 text: root.page === ProgramSidebar.Playback ? qsTranslate("Main", "Playback settings")
                     : root.page === ProgramSidebar.Channels ? qsTranslate("Main", "Channels") : qsTranslate("Main", "Program information")
-                color: "#f4f5f3"
-                font.pixelSize: 22
+                color: Theme.textPrimary
+                font.pixelSize: Theme.fontTitle
                 font.bold: true
                 Layout.fillWidth: true
                 elide: Text.ElideRight
@@ -113,7 +113,7 @@ Rectangle {
                     }
                     Label {
                         text: root.channelLabel.replace(/^\d+\s+/, "") || qsTranslate("Main", "Channels")
-                        color: "#f4f5f3"
+                        color: Theme.textPrimary
                         font.weight: Font.DemiBold
                         textFormat: Text.PlainText
                         Layout.fillWidth: true
@@ -124,8 +124,8 @@ Rectangle {
                     objectName: "programTitle"
                     Layout.fillWidth: true
                     text: root.program ? (root.program.name || root.fallbackTitle || qsTranslate("Viewer", "Program title unavailable")) : root.programStatus === "pending" ? qsTranslate("Viewer", "Acquiring program information…") : root.programStatus === "failed" ? qsTranslate("Viewer", "Could not read program information") : qsTranslate("Main", "No program information")
-                    color: "#f4f5f3"
-                    font.pixelSize: 23
+                    color: Theme.textPrimary
+                    font.pixelSize: Theme.fontTitle
                     font.bold: true
                     wrapMode: Text.Wrap
                     textFormat: Text.PlainText
@@ -133,8 +133,8 @@ Rectangle {
                 Label {
                     Layout.fillWidth: true
                     text: root.program && root.program.startAt !== null && root.program.duration !== null ? Qt.formatDateTime(new Date(root.program.startAt), root.recording ? "yyyy/MM/dd hh:mm" : "hh:mm") + " – " + Qt.formatDateTime(new Date(root.program.startAt + root.program.duration), "hh:mm") : ""
-                    color: "#d4d4d3"
-                    font.pixelSize: 13
+                    color: Theme.textPrimary
+                    font.pixelSize: Theme.fontCaption
                 }
                 Label {
                     visible: root.recording && !!root.program && !!root.program.genres && root.program.genres.length > 0
@@ -142,8 +142,8 @@ Rectangle {
                     readonly property var names: [qsTranslate("Viewer", "News"), qsTranslate("Viewer", "Sports"), qsTranslate("Viewer", "Information"), qsTranslate("Viewer", "Drama"), qsTranslate("Viewer", "Music"), qsTranslate("Viewer", "Variety"), qsTranslate("Viewer", "Film"), qsTranslate("Viewer", "Animation"), qsTranslate("Viewer", "Documentary"), qsTranslate("Viewer", "Theater"), qsTranslate("Viewer", "Education"), qsTranslate("Viewer", "Welfare")]
                     text: visible ? root.program.genres.map(genre => names[genre[0]] || qsTranslate("Viewer", "Other")).join(" / ") : ""
                     wrapMode: Text.Wrap
-                    color: "#b6bab6"
-                    font.pixelSize: 12
+                    color: Theme.textSecondary
+                    font.pixelSize: Theme.fontCaption
                 }
                 ProgressBar {
                     Layout.fillWidth: true
@@ -151,15 +151,15 @@ Rectangle {
                     value: root.progress
                     background: Rectangle {
                         implicitHeight: 3
-                        radius: 2
-                        color: "#30ffffff"
+                        radius: Theme.indicatorRadius
+                        color: Theme.overlayBorder
                     }
                     contentItem: Item {
                         Rectangle {
                             width: parent.width * root.progress
                             height: 3
-                            radius: 2
-                            color: "#9caf9f"
+                            radius: Theme.indicatorRadius
+                            color: Theme.accent
                         }
                     }
                 }
@@ -169,16 +169,16 @@ Rectangle {
                     Layout.fillWidth: true
                     Layout.topMargin: 14
                     Layout.bottomMargin: 14
-                    padding: 16
-                    background: Rectangle { radius: 12; color: "#1c201d" }
+                    padding: Theme.spaceLg
+                    background: Rectangle { radius: Theme.panelRadius; color: Theme.surfaceRaised }
                     contentItem: ColumnLayout {
-                        spacing: 16
+                        spacing: Theme.spaceLg
                         Label {
                             objectName: "sidebarCommentStatus"
                             Layout.fillWidth: true
                             text: "NX-Jikkyo · " + root.commentStatus
                             textFormat: Text.PlainText
-                            color: "#9caf9f"; font.pixelSize: 12
+                            color: Theme.accent; font.pixelSize: Theme.fontCaption
                             wrapMode: Text.Wrap
                         }
                         Label {
@@ -187,7 +187,7 @@ Rectangle {
                             text: root.commentProgramTitle || qsTranslate("Viewer", "Program title unavailable")
                             textFormat: Text.PlainText
                             wrapMode: Text.Wrap
-                            color: "#f4f5f3"; font.pixelSize: 16; font.bold: true
+                            color: Theme.textPrimary; font.pixelSize: Theme.fontControl; font.bold: true
                         }
                     }
                 }
@@ -214,15 +214,15 @@ Rectangle {
                 }
                 Label {
                     text: qsTranslate("Main", "Summary")
-                    color: "#b6bab6"
+                    color: Theme.textSecondary
                     font.weight: Font.DemiBold
                 }
                 Label {
                     objectName: "programDescription"
                     Layout.fillWidth: true
                     text: root.program ? (root.program.description || qsTranslate("Viewer", "No program description")) : qsTranslate("Viewer", "No program description")
-                    color: "#e4e4e3"
-                    font.pixelSize: 15
+                    color: Theme.textPrimary
+                    font.pixelSize: Theme.fontBody
                     wrapMode: Text.Wrap
                     textFormat: Text.PlainText
                     lineHeight: 1.35
@@ -230,15 +230,15 @@ Rectangle {
                 Rectangle {
                     Layout.fillWidth: true
                     Layout.preferredHeight: 1
-                    color: "#18ffffff"
+                    color: Theme.overlayHover
                 }
                 Label {
                     Layout.fillWidth: true
                     text: root.recording ? qsTranslate("Viewer", "Program information from recording TS")
                         : root.program && root.program.source === "broadcast_ts" ? qsTranslate("Viewer", "Program information from broadcast TS")
                         : qsTranslate("Viewer", "Program information provided by Mirakurun")
-                    color: "#929497"
-                    font.pixelSize: 12
+                    color: Theme.textMuted
+                    font.pixelSize: Theme.fontCaption
                     wrapMode: Text.Wrap
                 }
             }
@@ -287,11 +287,11 @@ Rectangle {
         Rectangle {
             Layout.fillWidth: true
             Layout.preferredHeight: 1
-            color: "#18ffffff"
+            color: Theme.overlayHover
         }
         RowLayout {
             Layout.fillWidth: true
-            spacing: 8
+            spacing: Theme.spaceSm
             SidebarTab {
                 Layout.fillWidth: true
                 objectName: "playbackSidebarTab"

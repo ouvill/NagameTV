@@ -1,5 +1,6 @@
 pragma ComponentBehavior: Bound
 import QtQuick
+import MinimalViewer
 import QtQuick.Controls
 
 Rectangle {
@@ -20,15 +21,15 @@ Rectangle {
     signal settingsRequested
     signal reconnectRequested
     signal openFileRequested
-    color: "#141516"
+    color: Theme.surface
     Column {
         anchors.centerIn: parent
-        spacing: 14
+        spacing: Theme.spaceLg
         Label {
             anchors.horizontalCenter: parent.horizontalCenter
             text: root.playbackError.length ? qsTranslate("Viewer", "Playback unavailable") : root.recording ? qsTranslate("Recording", "Recording") : qsTranslate("Main", "Live TV")
-            color: "#f4f5f3"
-            font.pixelSize: root.playbackError.length ? 26 : 32
+            color: Theme.textPrimary
+            font.pixelSize: root.playbackError.length ? Theme.fontTitle : Theme.fontDisplay
             font.bold: true
         }
         Label {
@@ -39,7 +40,7 @@ Rectangle {
             wrapMode: Text.Wrap
             textFormat: Text.PlainText
             text: root.playbackError.length ? (root.playbackMessage.length ? qsTranslate("Backend", root.playbackMessage) : qsTranslate("Viewer", "Could not play the video. Retry or check the channel and connection settings.")) : root.status
-            color: "#b6bab6"
+            color: Theme.textSecondary
         }
         BusyIndicator {
             objectName: "stoppedLoading"
@@ -48,11 +49,12 @@ Rectangle {
             implicitHeight: 44
             visible: root.loading
             running: visible
-            palette.dark: "#9caf9f"
-            palette.text: "#9caf9f"
+            palette.dark: Theme.accent
+            palette.text: Theme.accent
             Accessible.name: qsTranslate("Viewer", "Loading\u2026")
         }
-        Button {
+        ActionButton {
+            emphasis: ActionButton.Primary
             id: action
             objectName: "stoppedAction"
             anchors.horizontalCenter: parent.horizontalCenter
@@ -61,17 +63,6 @@ Rectangle {
             visible: !root.loading
             enabled: !root.loading
             text: root.canPlay ? (root.playbackError.length ? qsTranslate("Main", "Retry") : root.recording ? qsTranslate("Viewer", "Play") : qsTranslate("Main", "Watch")) : root.hasChannels ? qsTranslate("Viewer", "Choose a channel") : root.hasServer ? qsTranslate("Connection", "Reconnect") : qsTranslate("Main", "Connection settings")
-            contentItem: Label {
-                text: action.text
-                color: "#191a1b"
-                font.bold: true
-                horizontalAlignment: Text.AlignHCenter
-                verticalAlignment: Text.AlignVCenter
-            }
-            background: Rectangle {
-                radius: 22
-                color: "#9caf9f"
-            }
             onClicked: {
                 if (root.canPlay)
                     root.playRequested();
@@ -83,13 +74,13 @@ Rectangle {
                     root.settingsRequested();
             }
         }
-        TextAction {
+        ActionButton {
             objectName: "openRecording"
             anchors.horizontalCenter: parent.horizontalCenter
             text: qsTranslate("Recording", "Open TS file")
             onClicked: root.openFileRequested()
         }
-        TextAction {
+        ActionButton {
             objectName: "changeConnection"
             anchors.horizontalCenter: parent.horizontalCenter
             visible: root.hasServer && !root.hasChannels && !root.loading
@@ -98,17 +89,17 @@ Rectangle {
         }
         Row {
             anchors.horizontalCenter: parent.horizontalCenter
-            spacing: 8
+            spacing: Theme.spaceSm
             visible: root.playbackError.length > 0
-            TextAction {
+            ActionButton {
                 text: qsTranslate("Viewer", "Choose a channel")
                 onClicked: root.channelsRequested()
             }
-            TextAction {
+            ActionButton {
                 text: qsTranslate("Main", "Connection settings")
                 onClicked: root.settingsRequested()
             }
-            TextAction {
+            ActionButton {
                 objectName: "errorDetailsAction"
                 text: qsTranslate("Main", "Error details")
                 onClicked: root.showDetails = true

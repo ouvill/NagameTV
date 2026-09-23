@@ -1,5 +1,6 @@
 pragma ComponentBehavior: Bound
 import QtQuick
+import MinimalViewer
 import QtQuick.Controls
 import QtQuick.Layouts
 
@@ -24,7 +25,7 @@ Popup {
     Connections {
         target: popup.contentItem.Window.window
         function onActiveFocusItemChanged() {
-            const item = target.activeFocusItem;
+            const item = popup.contentItem.Window.window.activeFocusItem;
             // Qt restores the pre-popup focus at the end of an exit transition.
             // Preserve a new outside target chosen while that transition runs.
             if (dismissal.phase === AudioSettings.Closing && popup.visible
@@ -42,8 +43,8 @@ Popup {
     signal volumeRequested(real fraction)
     signal muteRequested(bool muted)
     signal saveRequested
-    readonly property int touchTarget: 44
-    readonly property int motionDuration: 140
+    readonly property int touchTarget: Theme.controlHeight
+    readonly property int motionDuration: Theme.moveDuration
     property string tracksJson: "[]"
     // Backend error translation source, not diagnostic text.
     property string errorText: ""
@@ -66,7 +67,7 @@ Popup {
     height: Math.min(contentItem.implicitHeight + topPadding + bottomPadding, windowHeight - 80)
     x: anchorItem ? 0 : 24
     y: anchorItem ? -height - 12 : Math.max(20, windowHeight - height - 100)
-    padding: 20
+    padding: Theme.spaceXl
     modal: false
     dim: false
     focus: true
@@ -101,19 +102,15 @@ Popup {
         running: popup.opened
         onTriggered: popup.refreshRequested()
     }
-    background: Rectangle {
-        radius: 18
-        color: "#f21a1c1a"
-        border.color: "#42ffffff"
-    }
+    background: PanelSurface {}
     contentItem: ColumnLayout {
-        spacing: 12
+        spacing: Theme.spaceMd
         RowLayout {
             Layout.fillWidth: true
             Label {
                 text: qsTranslate("Viewer", "Audio")
-                color: "#f4f5f3"
-                font.pixelSize: 17
+                color: Theme.textPrimary
+                font.pixelSize: Theme.fontHeading
                 font.bold: true
                 Layout.fillWidth: true
             }
@@ -127,7 +124,7 @@ Popup {
         }
         RowLayout {
             Layout.fillWidth: true
-            spacing: 12
+            spacing: Theme.spaceMd
             IconAction {
                 objectName: "muteButton"
                 implicitWidth: popup.touchTarget
@@ -151,17 +148,17 @@ Popup {
             Label {
                 Layout.preferredWidth: 44
                 text: Math.round(popup.volumeLevel * 100) + "%"
-                color: popup.muted ? "#b6bab6" : "#f4f5f3"
-                font.pixelSize: 12
+                color: popup.muted ? Theme.textSecondary : Theme.textPrimary
+                font.pixelSize: Theme.fontCaption
                 horizontalAlignment: Text.AlignRight
                 Accessible.ignored: true
             }
         }
-        Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: "#343c35" }
+        Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.divider }
         Label {
             text: qsTranslate("Main", "Audio selection")
-            color: "#b6bab6"
-            font.pixelSize: 12
+            color: Theme.textSecondary
+            font.pixelSize: Theme.fontCaption
         }
         ScrollView {
             id: scroll
@@ -173,11 +170,14 @@ Popup {
             ColumnLayout {
                 id: options
                 width: scroll.availableWidth
-                spacing: 6
+                spacing: Theme.spaceSm
                 Repeater {
                     model: popup.tracks
-                    delegate: TextAction {
+                    delegate: ActionButton {
                         id: option
+                        selected: modelData.selected === true
+                        textAlignment: Text.AlignLeft
+                        wrapText: true
                         objectName: "audioOption" + index
                         required property int index
                         required property var modelData
@@ -187,20 +187,6 @@ Popup {
                         Accessible.checked: modelData.selected === true
                         enabled: popup.playing && modelData.enabled !== false && popup.tracks.length > 1
                         text: popup.trackLabel(modelData, index)
-                        contentItem: Label {
-                            text: option.text
-                            textFormat: Text.PlainText
-                            color: "#f4f5f3"
-                            font.pixelSize: 12
-                            wrapMode: Text.Wrap
-                        }
-                        background: Rectangle {
-                            radius: 12
-                            scale: option.feedbackScale
-                            color: option.down ? "#589caf9f" : option.modelData.selected ? "#389caf9f" : option.hovered ? "#28302a" : "#1c1f1c"
-                            Behavior on color { ColorAnimation { duration: 100 } }
-                            border.color: option.modelData.selected || option.visualFocus ? "#9caf9f" : "#28ffffff"
-                        }
                         onClicked: popup.selectRequested(modelData.id)
                     }
                 }
@@ -208,9 +194,9 @@ Popup {
                     visible: popup.tracks.length === 0
                     Layout.fillWidth: true
                     text: qsTranslate("Main", "No audio tracks are available yet.")
-                    color: "#b6bab6"
+                    color: Theme.textSecondary
                     wrapMode: Text.Wrap
-                    font.pixelSize: 12
+                    font.pixelSize: Theme.fontCaption
                 }
             }
         }
@@ -218,9 +204,9 @@ Popup {
             Layout.fillWidth: true
             visible: popup.tracks.length === 1
             text: qsTranslate("Main", "This broadcast has one audio option.")
-            color: "#b6bab6"
+            color: Theme.textSecondary
             wrapMode: Text.Wrap
-            font.pixelSize: 11
+            font.pixelSize: Theme.fontCaption
         }
         Label {
             Layout.fillWidth: true
@@ -228,9 +214,9 @@ Popup {
             visible: popup.errorText.length > 0
             text: popup.errorText.length ? qsTranslate("Backend", popup.errorText) : ""
             textFormat: Text.PlainText
-            color: "#f4f5f3"
+            color: Theme.textPrimary
             wrapMode: Text.Wrap
-            font.pixelSize: 12
+            font.pixelSize: Theme.fontCaption
         }
     }
 }

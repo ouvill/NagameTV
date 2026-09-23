@@ -1,4 +1,5 @@
 import QtQuick
+import MinimalViewer
 import QtQuick.Controls
 import QtQuick.Layouts
 
@@ -11,9 +12,9 @@ ColumnLayout {
     spacing: 0
     RowLayout {
         Layout.fillWidth: true
-        Label { text: qsTranslate("Main", "Text size"); color: "#b6bab6"; font.pixelSize: 14 }
+        Label { text: qsTranslate("Main", "Text size"); color: Theme.textSecondary; font.pixelSize: Theme.fontBody }
         Item { Layout.fillWidth: true }
-        Label { text: Math.round(root.textSize) + " px"; color: "#f4f5f3"; font.pixelSize: 14 }
+        Label { text: Math.round(root.textSize) + " px"; color: Theme.textPrimary; font.pixelSize: Theme.fontBody }
     }
     ThemedSlider {
         objectName: "danmakuTextSize"
@@ -26,9 +27,9 @@ ColumnLayout {
     RowLayout {
         Layout.topMargin: 24
         Layout.fillWidth: true
-        Label { text: qsTranslate("Main", "Opacity"); color: "#b6bab6"; font.pixelSize: 14 }
+        Label { text: qsTranslate("Main", "Opacity"); color: Theme.textSecondary; font.pixelSize: Theme.fontBody }
         Item { Layout.fillWidth: true }
-        Label { text: Math.round((root.textOpacity) * 100) + "%"; color: "#f4f5f3"; font.pixelSize: 14 }
+        Label { text: Math.round((root.textOpacity) * 100) + "%"; color: Theme.textPrimary; font.pixelSize: Theme.fontBody }
     }
     ThemedSlider {
         Layout.fillWidth: true
@@ -40,9 +41,9 @@ ColumnLayout {
     RowLayout {
         Layout.topMargin: 24
         Layout.fillWidth: true
-        Label { text: qsTranslate("Main", "Speed"); color: "#b6bab6"; font.pixelSize: 14 }
+        Label { text: qsTranslate("Main", "Speed"); color: Theme.textSecondary; font.pixelSize: Theme.fontBody }
         Item { Layout.fillWidth: true }
-        Label { text: (root.speed).toFixed(1) + "×"; color: "#f4f5f3"; font.pixelSize: 14 }
+        Label { text: (root.speed).toFixed(1) + "×"; color: Theme.textPrimary; font.pixelSize: Theme.fontBody }
     }
     ThemedSlider {
         Layout.fillWidth: true

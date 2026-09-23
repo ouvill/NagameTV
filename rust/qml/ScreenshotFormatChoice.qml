@@ -1,5 +1,6 @@
 pragma ComponentBehavior: Bound
 import QtQuick
+import MinimalViewer
 import QtQuick.Controls
 import QtQuick.Layouts
 
@@ -13,7 +14,7 @@ ColumnLayout {
         : value === "jpg" ? parameters.jpg_quality : parameters.webp_quality
     readonly property string parameterLabel: value === "png"
         ? qsTranslate("Settings", "Compression level") : qsTranslate("Settings", "Image quality")
-    spacing: 14
+    spacing: Theme.spaceLg
 
     function changeParameter(value) {
         backend.configure_screenshot_options(root.value, value, lossless);
@@ -35,8 +36,8 @@ ColumnLayout {
             : root.value === "jpg"
             ? qsTranslate("Settings", "Smaller files; text edges may look blurred.")
             : qsTranslate("Settings", "Compact files, with optional lossless saving.")
-        color: "#b6bab6"
-        font.pixelSize: 14
+        color: Theme.textSecondary
+        font.pixelSize: Theme.fontBody
         wrapMode: Text.Wrap
     }
     SettingsToggle {
@@ -51,14 +52,14 @@ ColumnLayout {
     ColumnLayout {
         Layout.fillWidth: true
         visible: root.value !== "webp" || !root.lossless
-        spacing: 8
+        spacing: Theme.spaceSm
         RowLayout {
             Layout.fillWidth: true
-            spacing: 16
+            spacing: Theme.spaceLg
             Label {
                 Layout.fillWidth: true
                 text: root.parameterLabel
-                color: "#f4f5f3"; font.pixelSize: 16
+                color: Theme.textPrimary; font.pixelSize: Theme.fontControl
             }
             ThemedSpinBox {
                 id: number
@@ -85,7 +86,7 @@ ColumnLayout {
             text: root.value === "png"
                 ? qsTranslate("Settings", "Higher compression saves space but takes longer.")
                 : qsTranslate("Settings", "Higher quality increases file size.")
-            color: "#9ea79f"; font.pixelSize: 13
+            color: Theme.textSecondary; font.pixelSize: Theme.fontCaption
             wrapMode: Text.Wrap
         }
     }

@@ -12,7 +12,7 @@ AppImage、Flatpak、Ubuntu 24.04用および26.04用debのビルドを実行す
 | ジョブ | 確認する内容 |
 | --- | --- |
 | Release metadata | Cargo.toml・Cargo.lock・AppStreamのバージョン、FlatpakのCargo依存一覧とサブモジュールの固定コミット、リリース処理の回帰テスト、actionlint・ShellCheck |
-| Tests, AppImage and deb (Ubuntu 24.04, x86_64) | アプリのRust書式、Rustテスト、独立crateのテスト、Pythonテスト、機器不要のQt試験、AppImageの生成と全ELFのglibc上限検査、24.04用debの生成・導入・依存解決・削除 |
+| Tests, AppImage and deb (Ubuntu 24.04, x86_64) | アプリのRust書式、Rustテスト、独立crateのテスト、Pythonテスト、本体全QMLの静的検査、UI共通ルールの検査、機器不要のQt試験、AppImageの生成と全ELFのglibc上限検査、24.04用debの生成・導入・依存解決・削除 |
 | deb (Ubuntu 26.04, amd64) | Ubuntu 26.04のQt/GStreamerでビルドし、debの生成・導入・依存解決・削除 |
 | Flatpak (x86_64) | KDE SDK内でのオフラインコンパイル、FlatpakとSHA-256の生成 |
 
@@ -26,6 +26,8 @@ Flatpakのビルド状態をキャッシュする。ホストのコンパイル�
 Rustテストはアプリに加えて`viewer-comments`・`viewer-epg-events`（どちらも`network`付き）、
 `viewer-diagnostics`・`viewer-remote`・`tsreadex`を各lockfileの`--locked`で実行する。
 Qt試験は接続・翻訳・字幕アウトラインが対象。
+本体QMLは生成した型情報を使って全ファイルを`qmllint`で検査し、警告0件を合格条件とする。
+評価用部品も静的検査に含める。色・寸法・動きの共通化は`check-ui-style.py`で検査する。
 CIでは`NAGAMETV_TEST_PROFILE=release`でQt試験もリリースプロファイルを使い、
 デバッグ用依存ライブラリーの二重ビルドを避ける。通常の開発用スクリプトの既定は`dev`。
 debの導入試験は開発パッケージのない対象Ubuntuコンテナーで行い、

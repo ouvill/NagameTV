@@ -1,9 +1,22 @@
 pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls
+import MinimalViewer
 
 ApplicationWindow {
     id: root
+    font.pixelSize: Theme.fontBody
+    palette.window: Theme.surface
+    palette.windowText: Theme.textPrimary
+    palette.base: Theme.surfaceRaised
+    palette.text: Theme.textPrimary
+    palette.button: Theme.surfaceRaised
+    palette.buttonText: Theme.textPrimary
+    palette.highlight: Theme.accent
+    palette.highlightedText: Theme.textOnAccent
+    palette.placeholderText: Theme.textMuted
+    palette.toolTipBase: Theme.popupSurface
+    palette.toolTipText: Theme.textPrimary
     enum Startup { Uninitialized, Ready }
     readonly property size referenceSize: Qt.size(1280, 720)
     readonly property real uiScale: Math.min(1, width / referenceSize.width, height / referenceSize.height)

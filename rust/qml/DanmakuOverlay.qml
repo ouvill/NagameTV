@@ -160,19 +160,19 @@ Item {
         id: flowRows
         width: overlay.width
         y: backend.flow_origin
-        Behavior on y { enabled: backend.active_count > 0; NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
+        Behavior on y { enabled: backend.active_count > 0; NumberAnimation { duration: Theme.moveDuration; easing.type: Easing.OutCubic } }
     }
     Item {
         id: topRows
         width: overlay.width
         y: backend.top_origin
-        Behavior on y { enabled: backend.active_count > 0; NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
+        Behavior on y { enabled: backend.active_count > 0; NumberAnimation { duration: Theme.moveDuration; easing.type: Easing.OutCubic } }
     }
     Item {
         id: bottomRows
         width: overlay.width
         y: backend.bottom_origin
-        Behavior on y { enabled: backend.active_count > 0; NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
+        Behavior on y { enabled: backend.active_count > 0; NumberAnimation { duration: Theme.moveDuration; easing.type: Easing.OutCubic } }
     }
     Item { id: popRows; width: overlay.width; height: overlay.height }
     Component {
@@ -193,8 +193,8 @@ Item {
             readonly property real shadowViewportWidth: overlay.width * Math.abs(tiltCos) + overlay.height * Math.abs(tiltSin)
             readonly property real shadowViewportLeft: -(x + width / 2) * tiltCos - (y + height / 2) * tiltSin
                 + width / 2 + Math.min(0, overlay.width * tiltCos) + Math.min(0, overlay.height * tiltSin)
-            readonly property var captureShadow: shadow.active && shadow.item
-                ? {offset: shadow.x - leftPadding, radius: shadow.item.blurRadius} : null
+            readonly property var captureShadow: shadow.active && shadow.view
+                ? {offset: shadow.x - leftPadding, radius: shadow.view.blurRadius} : null
             function relayout(newWidth, fromX, toX, newY, remaining) {
                 width = newWidth;
                 startX = fromX;
@@ -218,6 +218,7 @@ Item {
             bottomPadding: own ? 1 : 0
             Loader {
                 id: shadow
+                readonly property DanmakuShadow view: item as DanmakuShadow
                 objectName: "commentShadow"
                 active: overlay.shadowEnabled
                 visible: active

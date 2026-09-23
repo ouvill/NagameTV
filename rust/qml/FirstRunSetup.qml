@@ -1,5 +1,6 @@
 pragma ComponentBehavior: Bound
 import QtQuick
+import MinimalViewer
 import QtQuick.Controls
 import QtQuick.Layouts
 
@@ -19,7 +20,7 @@ Popup {
     dim: false
     focus: true
     closePolicy: Popup.NoAutoClose
-    background: Rectangle { color: "#151715" }
+    background: Rectangle { color: Theme.surface }
     onAboutToShow: form.reset()
     onOpened: form.focusInput()
     onClosed: form.phase = ConnectionForm.Idle
@@ -52,27 +53,27 @@ Popup {
             ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
             ColumnLayout {
                 width: scroll.availableWidth
-                spacing: 24
+                spacing: Theme.spaceXl
                 Label {
                     Layout.fillWidth: true
                     text: qsTranslate("Connection", "Connect to Mirakurun")
-                    color: "#f4f5f3"
-                    font.pixelSize: 30; font.bold: true
+                    color: Theme.textPrimary
+                    font.pixelSize: Theme.fontDisplay; font.bold: true
                     wrapMode: Text.Wrap
                 }
                 Label {
                     Layout.fillWidth: true
                     text: qsTranslate("Connection", "To watch TV, you need a configured Mirakurun server. Enter its URL to get started.")
-                    color: "#b6bab6"
-                    font.pixelSize: 16
+                    color: Theme.textSecondary
+                    font.pixelSize: Theme.fontControl
                     wrapMode: Text.Wrap
                 }
                 Label {
                     Layout.fillWidth: true
                     visible: root.backend.settings_error.length > 0
                     text: qsTranslate("Settings", "Could not read or save settings. Your changes may not be available the next time you open the app.")
-                    color: "#ffb080"
-                    font.pixelSize: 14
+                    color: Theme.warning
+                    font.pixelSize: Theme.fontBody
                     wrapMode: Text.Wrap
                 }
                 ConnectionForm {
@@ -85,7 +86,7 @@ Popup {
                         root.completed();
                     }
                 }
-                TextAction {
+                ActionButton {
                     objectName: "setupOpenRecording"
                     Layout.alignment: Qt.AlignHCenter
                     text: qsTranslate("Recording", "Open TS file")

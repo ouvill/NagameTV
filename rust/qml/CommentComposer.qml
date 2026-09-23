@@ -1,5 +1,6 @@
 pragma ComponentBehavior: Bound
 import QtQuick
+import MinimalViewer
 import QtQuick.Controls
 
 Rectangle {
@@ -22,9 +23,9 @@ Rectangle {
     signal sendRequested
     implicitWidth: 760
     implicitHeight: 46
-    radius: 14
-    color: "#d1171819"
-    border.color: editor.activeFocus ? "#9caf9f" : "#7a69716d"
+    radius: Theme.panelRadius
+    color: Theme.overlaySurface
+    border.color: editor.activeFocus ? Theme.accent : Theme.border
     onStatusChanged: showFeedback = status.length > 0
 
     function focusEditor() { editor.forceActiveFocus(); }
@@ -52,11 +53,11 @@ Rectangle {
             : qsTranslate("Backend", "Comments are unavailable for this channel")
         Accessible.name: qsTranslate("Main", "Enter a comment…")
         Accessible.description: root.sendHint
-        color: "#f4f5f3"
-        placeholderTextColor: "#b8b6bab6"
-        selectionColor: "#9caf9f"
-        selectedTextColor: "#17201a"
-        font.pixelSize: 18
+        color: Theme.textPrimary
+        placeholderTextColor: Theme.textSecondary
+        selectionColor: Theme.accent
+        selectedTextColor: Theme.textOnAccent
+        font.pixelSize: Theme.fontHeading
         verticalAlignment: TextInput.AlignVCenter
         selectByMouse: true
         readOnly: root.busy
@@ -104,12 +105,13 @@ Rectangle {
         }
         width: 80
         text: editor.length + " / " + root.maximumLength
-        color: "#b88c918c"
-        font.pixelSize: 13
+        color: Theme.textMuted
+        font.pixelSize: Theme.fontCaption
         horizontalAlignment: Text.AlignRight
     }
     IconAction {
         id: sendButton
+        flat: true
         objectName: "sendComment"
         anchors { right: parent.right; rightMargin: 8; verticalCenter: parent.verticalCenter }
         implicitWidth: 46
@@ -117,12 +119,6 @@ Rectangle {
         iconSource: root.iconDirectory + "send.svg"
         tip: qsTranslate("Main", "Send") + " · " + root.sendHint
         enabled: root.available && !root.busy && editor.text.trim().length > 0 && !root.composing
-        opacity: enabled ? 1 : 0.4
-        background: Rectangle {
-            radius: 10
-            color: sendButton.hovered ? "#28ffffff" : "transparent"
-            border.color: sendButton.visualFocus ? "#9caf9f" : "transparent"
-        }
         onClicked: { root.send(); root.focusEditor(); }
     }
     Label {
@@ -132,10 +128,10 @@ Rectangle {
         visible: root.showFeedback && root.status.length > 0
         text: root.status
         textFormat: Text.PlainText
-        color: "#f4f5f3"
-        font.pixelSize: 12
+        color: Theme.textPrimary
+        font.pixelSize: Theme.fontCaption
         wrapMode: Text.Wrap
-        padding: 8
-        background: Rectangle { radius: 8; color: "#e6171819" }
+        padding: Theme.spaceSm
+        background: Rectangle { radius: Theme.controlRadius; color: Theme.overlaySurface }
     }
 }

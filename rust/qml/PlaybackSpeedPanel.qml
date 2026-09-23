@@ -1,5 +1,6 @@
 pragma ComponentBehavior: Bound
 import QtQuick
+import MinimalViewer
 import QtQuick.Controls
 import QtQuick.Layouts
 
@@ -18,7 +19,7 @@ Popup {
     Connections {
         target: popup.contentItem.Window.window
         function onActiveFocusItemChanged() {
-            const item = target.activeFocusItem;
+            const item = popup.contentItem.Window.window.activeFocusItem;
             if (popup.dismissal === PlaybackSpeedPanel.Closing && popup.visible
                     && item && item !== popup.anchorItem && !popup.containsFocusItem(item))
                 popup.outsideFocusTarget = item;
@@ -51,7 +52,7 @@ Popup {
     x: Math.max(12 - anchorItem.mapToItem(popup.Overlay.overlay, 0, 0).x,
         Math.min(0, windowWidth - anchorItem.mapToItem(popup.Overlay.overlay, 0, 0).x - width - 12))
     y: -height - 12
-    padding: 18
+    padding: Theme.spaceLg
     modal: false
     dim: false
     focus: true
@@ -79,25 +80,25 @@ Popup {
         function onSelectedChanged() { popup.close(); }
     }
     opacity: 0
-    enter: Transition { NumberAnimation { property: "opacity"; to: 1; duration: 140; easing.type: Easing.OutCubic } }
-    exit: Transition { NumberAnimation { property: "opacity"; to: 0; duration: 140; easing.type: Easing.OutCubic } }
-    background: Rectangle { radius: 18; color: "#f21a1c1a"; border.color: "#42ffffff" }
+    enter: Transition { NumberAnimation { property: "opacity"; to: 1; duration: Theme.moveDuration; easing.type: Easing.OutCubic } }
+    exit: Transition { NumberAnimation { property: "opacity"; to: 0; duration: Theme.moveDuration; easing.type: Easing.OutCubic } }
+    background: PanelSurface {}
     contentItem: ColumnLayout {
-        spacing: 12
+        spacing: Theme.spaceMd
         RowLayout {
             Layout.fillWidth: true
-            Label { text: qsTranslate("Viewer", "Playback speed"); color: "#f4f5f3"; font.pixelSize: 17; font.bold: true; Layout.fillWidth: true }
-            Label { objectName: "speedValue"; text: popup.label(popup.draft); color: "#9caf9f"; font.pixelSize: 17 }
+            Label { text: qsTranslate("Viewer", "Playback speed"); color: Theme.textPrimary; font.pixelSize: Theme.fontHeading; font.bold: true; Layout.fillWidth: true }
+            Label { objectName: "speedValue"; text: popup.label(popup.draft); color: Theme.accent; font.pixelSize: Theme.fontHeading }
         }
         RowLayout {
             Layout.fillWidth: true
-            spacing: 4
-            TextAction {
+            spacing: Theme.spaceXs
+            ActionButton {
                 objectName: "speedDecrease"
                 text: "−"
                 implicitWidth: popup.touchTarget; implicitHeight: popup.touchTarget
                 enabled: popup.backend.speed_available && popup.draft > popup.backend.minimum_playback_rate
-                opacity: enabled ? 1 : 0.38
+                opacity: enabled ? 1 : Theme.disabledOpacity
                 Accessible.name: qsTranslate("Viewer", "Decrease playback speed")
                 onClicked: popup.apply(popup.draft - popup.rateStep)
             }
@@ -111,7 +112,7 @@ Popup {
                 snapMode: Slider.SnapAlways
                 value: popup.draft
                 enabled: popup.backend.speed_available
-                opacity: enabled ? 1 : 0.38
+                opacity: enabled ? 1 : Theme.disabledOpacity
                 Layout.fillWidth: true
                 Layout.preferredHeight: popup.touchTarget
                 Accessible.name: qsTranslate("Viewer", "Playback speed")
@@ -132,56 +133,50 @@ Popup {
                 }
                 Keys.onEscapePressed: function(event) { cancelGesture(); popup.close(); event.accepted = true; }
             }
-            TextAction {
+            ActionButton {
                 objectName: "speedIncrease"
                 text: "+"
                 implicitWidth: popup.touchTarget; implicitHeight: popup.touchTarget
                 enabled: popup.backend.speed_available && popup.draft < popup.backend.maximum_playback_rate
-                opacity: enabled ? 1 : 0.38
+                opacity: enabled ? 1 : Theme.disabledOpacity
                 Accessible.name: qsTranslate("Viewer", "Increase playback speed")
                 onClicked: popup.apply(popup.draft + popup.rateStep)
             }
         }
         RowLayout {
             Layout.fillWidth: true
-            Label { text: popup.label(popup.backend.minimum_playback_rate); color: "#b6bab6"; font.pixelSize: 11; Layout.fillWidth: true }
-            Label { text: popup.label(popup.backend.maximum_playback_rate); color: "#b6bab6"; font.pixelSize: 11 }
+            Label { text: popup.label(popup.backend.minimum_playback_rate); color: Theme.textSecondary; font.pixelSize: Theme.fontCaption; Layout.fillWidth: true }
+            Label { text: popup.label(popup.backend.maximum_playback_rate); color: Theme.textSecondary; font.pixelSize: Theme.fontCaption }
         }
         RowLayout {
             Layout.fillWidth: true
-            spacing: 6
+            spacing: Theme.spaceSm
             Repeater {
                 objectName: "speedPresets"
                 model: popup.presets
-                delegate: TextAction {
+                delegate: ActionButton {
                     id: presetAction
+                    selected: popup.backend.requested_playback_rate === modelData
                     required property int modelData
                     objectName: "speedPreset" + modelData
                     Layout.fillWidth: true
                     implicitHeight: popup.touchTarget
                     text: popup.label(modelData)
                     enabled: popup.backend.speed_available
-                    opacity: enabled ? 1 : 0.38
+                    opacity: enabled ? 1 : Theme.disabledOpacity
                     Accessible.checkable: true
                     Accessible.checked: popup.backend.requested_playback_rate === modelData
-                    background: Rectangle {
-                        radius: 12
-                        scale: presetAction.feedbackScale
-                        color: presetAction.down ? "#589caf9f" : presetAction.Accessible.checked ? "#389caf9f" : presetAction.hovered ? "#28302a" : "#1c1f1c"
-                        border.color: presetAction.Accessible.checked || presetAction.visualFocus ? "#9caf9f" : "#28ffffff"
-                        Behavior on color { ColorAnimation { duration: 100 } }
-                    }
                     onClicked: popup.apply(modelData)
                 }
             }
         }
-        TextAction {
+        ActionButton {
             objectName: "speedReset"
             Layout.fillWidth: true
             implicitHeight: popup.touchTarget
             text: qsTranslate("Viewer", "Reset to normal speed")
             enabled: popup.backend.speed_available && popup.draft !== popup.normalRate
-            opacity: enabled ? 1 : 0.38
+            opacity: enabled ? 1 : Theme.disabledOpacity
             onClicked: popup.apply(popup.normalRate)
         }
         Label {
@@ -192,8 +187,8 @@ Popup {
                 : popup.changing ? qsTranslate("Viewer", "Changing to %1…").arg(popup.label(popup.backend.requested_playback_rate)) : "")
             textFormat: Text.PlainText
             wrapMode: Text.Wrap
-            color: "#b6bab6"
-            font.pixelSize: 12
+            color: Theme.textSecondary
+            font.pixelSize: Theme.fontCaption
         }
     }
 }

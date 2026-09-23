@@ -249,6 +249,21 @@ Linuxのメディア連携テストも機器不要で、専用D-Bus・`python3-d
 番組表の開閉・再生エラー・終了を確認します。設定先は一時ディレクトリーです。
 画面部品を変更した場合は、その部品のQMLテストも実行してください。
 `bash scripts/test-danmaku.sh`は`rust/qml/tests/`の部品テストを実行します。
+共通テーマや部品を変更した場合は、次の検査と部品一覧も実行します。
+
+```sh
+python3 scripts/check-ui-style.py
+python3 scripts/test-ui-style.py
+bash scripts/test-ui-style.sh
+```
+
+Pythonの2つの検査は機器不要で、CIにも含めます。部品一覧は専用画面・実GPU・仮想音声出力を
+自動検証してから起動し、通常・押下・選択・無効の各状態、ホバー、キーボード操作と
+選択欄の開閉を確認します。1280×720、640×360、フォーカス・ホバー・選択欄の画像を
+`build/ui-review/controls-*.png`へ出力します。ファイルはGit対象外です。
+主要画面は`bash scripts/test-startup.sh`でも確認し、画像を`build/navigation-review/`へ保存します。
+比較する際は前回の画像を別のディレクトリーへ退避し、同じサイズ・言語・表示内容で見比べます。
+
 チャンネル一覧のホイール操作は`bash scripts/test-channel-wheel.sh`で検証します。
 どちらも専用GUI環境を検証し、製品のRust製モデルを登録してから実行します。
 `NAGAMETV_TEST_QPA=wayland bash scripts/test-startup.sh video-processing`で専用Wayland画面を使います。
@@ -264,22 +279,34 @@ Wayland試験のサイズ変更・入力フォーカスの制約は[専用GUI環
 
 製品のQMLコンポーネントは`rust/qml/`直下に置きます。`rust/build.rs`がこのディレクトリーの
 `.qml`ファイルを列挙して登録するため、ファイル一覧の追記は不要です。
+`pragma Singleton`を持つファイルはsingletonとして登録します。`Theme.qml`などの共有値は
+`import MinimalViewer`で参照し、画面のローカルな状態をそこへ保存しないでください。
 例外として`CommentList.qml`は評価用featureでのみ登録し、通常版のリソースには含めません。
 `rust/qml/tests/`のテスト用コンポーネントは製品モジュールへ含めません。
+部品テストも`import MinimalViewer`で製品モジュールを読み込みます。`import ".."`で同じ部品を
+別の型として読み込むと、required propertyへ渡すQML型が一致しなくなるため使用しません。
+通常の製品モジュールに含まれない評価用`CommentList`だけは、テスト内で`Evaluation`という
+別名を付けてソースから読み込みます。
+QMLの変更後はテスト用バイナリーを再ビルドしてください。公開テストスクリプトは自動でビルドします。
 
-QMLの静的検査では、CXX-Qtが出力した`qml_modules`を`qmllint -I`へ渡します。
-上記の`CARGO_TARGET_DIR=build/cargo`を使ったCargoビルドでは、出力先は
-`rust/build/cargo/cxxqt/qml_modules`です。絶対パスの`CARGO_TARGET_DIR`を使う場合は
-その配下の`cxxqt/qml_modules`になります。使用したビルドの型情報を指定してください。
-例えばチャンネル一覧の検査は次のとおりです。`qmllint`はQtのツールディレクトリーにあります。
+QMLの静的検査は、ビルド後に次のコマンドで実行します。ビルドと検査には同じ
+`CARGO_TARGET_DIR`とQtを指定してください。`QMAKE`を指定したビルドでは、検査にも
+同じ値を渡します。省略時は`qmake6`でQtのツールを選びます。
 
 ```sh
-"$(qtpaths6 --query QT_HOST_BINS)/qmllint" --max-warnings 0 \
-  -I rust/build/cargo/cxxqt/qml_modules \
-  rust/qml/ChannelBrowser.qml rust/qml/SidebarChannels.qml rust/qml/ChannelSelector.qml \
-  rust/qml/BroadcastTabs.qml rust/qml/ProgramGuide.qml rust/qml/GuideTimeline.qml \
-  rust/qml/GuideToolbar.qml rust/qml/ProgramSidebar.qml
+CARGO_TARGET_DIR=build/cargo bash scripts/check-qml.sh
 ```
+
+`check-qml.sh`は`rust/qml/`直下の全QMLを列挙し、評価用部品も含めて
+`qmllint --max-warnings 0`で検査します。テスト用QMLはこの静的検査の対象外です。
+変更ファイルだけに絞らず、警告が1件でもあれば失敗します。CIでもRustビルド後に実行します。
+これは機器不要の検査で、GUIの動作テストとは別に結果を確認します。
+
+CXX-Qtが生成する`qml_modules`の場所はCargoから取得します。GStreamerの映像部品は
+実行時に型を登録するため、静的検査には[`tools/qmltypes`](../tools/qmltypes/)の型記述も渡します。
+この型記述は検査専用で、アプリの読み込み先や配布物には加えません。GStreamer更新時は
+上流の公開QML APIとの一致も確認してください。検査設定による警告の格下げや既存警告の
+許容リストは設けません。
 
 通常ログは標準エラーへ出力し、既定は`info`以上です。
 `RUST_LOG=debug`で詳細ログ、`RUST_LOG=info,qt=debug`でQt/QMLのdebugログも表示できます。

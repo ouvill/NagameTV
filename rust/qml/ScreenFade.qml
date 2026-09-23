@@ -1,9 +1,10 @@
 import QtQuick
+import MinimalViewer
 
 NumberAnimation {
     property bool entering: true
-    readonly property int enterDurationMs: 120
-    readonly property int exitDurationMs: 100
+    readonly property int enterDurationMs: Theme.fadeInDuration
+    readonly property int exitDurationMs: Theme.fadeOutDuration
     property: "opacity"
     duration: entering ? enterDurationMs : exitDurationMs
     easing.type: Easing.Linear

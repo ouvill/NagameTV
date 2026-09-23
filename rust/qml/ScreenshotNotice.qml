@@ -1,5 +1,6 @@
 pragma ComponentBehavior: Bound
 import QtQuick
+import MinimalViewer
 import QtQuick.Controls
 import QtQuick.Layouts
 
@@ -56,7 +57,7 @@ Control {
     visible: kind !== ScreenshotNotice.Hidden
     enabled: visible
     onVisibleChanged: refreshTimeout()
-    padding: 14
+    padding: Theme.spaceLg
     implicitHeight: contentItem.implicitHeight + topPadding + bottomPadding
     Accessible.role: Accessible.AlertMessage
     Accessible.name: message
@@ -70,14 +71,14 @@ Control {
         onTriggered: root.dismiss()
     }
     contentItem: RowLayout {
-        spacing: 12
+        spacing: Theme.spaceMd
         Label {
             Layout.fillWidth: true
             text: root.message
             textFormat: Text.PlainText
             wrapMode: Text.Wrap
-            color: "#f4f5f3"
-            font.pixelSize: 14
+            color: Theme.textPrimary
+            font.pixelSize: Theme.fontBody
         }
         IconAction {
             id: folder
@@ -90,5 +91,5 @@ Control {
             onClicked: root.openFolderRequested(root.savedFile)
         }
     }
-    background: Rectangle { color: "#f21a1c1a"; radius: 10; border.color: "#42ffffff" }
+    background: PanelSurface {}
 }

@@ -1,4 +1,5 @@
 import QtQuick
+import MinimalViewer
 import QtQuick.Controls
 
 ToolButton {
@@ -7,10 +8,10 @@ ToolButton {
     property bool selected: false
     implicitHeight: 54
     background: Rectangle {
-        radius: 12
-        color: root.selected ? "#249caf9f" : "transparent"
+        radius: Theme.panelRadius
+        color: root.selected ? Theme.selection : "transparent"
         border.width: root.visualFocus ? 1 : 0
-        border.color: "#9caf9f"
+        border.color: Theme.accent
     }
     contentItem: Item {
         Column {
@@ -27,8 +28,8 @@ ToolButton {
             Label {
                 anchors.horizontalCenter: parent.horizontalCenter
                 text: root.text
-                color: root.selected ? "#f4f5f3" : "#b6bab6"
-                font.pixelSize: 10
+                color: root.selected ? Theme.textPrimary : Theme.textSecondary
+                font.pixelSize: Theme.fontMicro
             }
         }
     }

@@ -1,4 +1,5 @@
 import QtQuick
+import MinimalViewer
 import QtQuick.Controls
 import QtQuick.Layouts
 
@@ -11,24 +12,20 @@ Popup {
     height: Math.min(420, parent.height - 80)
     modal: true
     focus: true
-    padding: 20
+    padding: Theme.spaceXl
     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
-    background: Rectangle {
-        radius: 18
-        color: "#151715"
-        border.color: "#42ffffff"
-    }
+    background: PanelSurface {}
     contentItem: ColumnLayout {
-        spacing: 12
+        spacing: Theme.spaceMd
         RowLayout {
             Layout.fillWidth: true
             Label {
                 text: qsTranslate("Main", "Error details")
-                color: "#f4f5f3"
-                font.pixelSize: 18
+                color: Theme.textPrimary
+                font.pixelSize: Theme.fontHeading
                 Layout.fillWidth: true
             }
-            TextAction {
+            ActionButton {
                 text: qsTranslate("Main", "Close")
                 onClicked: root.close()
             }
@@ -45,11 +42,11 @@ Popup {
                 readOnly: true
                 selectByMouse: true
                 wrapMode: TextEdit.Wrap
-                color: "#b6bab6"
-                font.pixelSize: 12
+                color: Theme.textSecondary
+                font.pixelSize: Theme.fontCaption
                 background: Rectangle {
-                    color: "#1c1f1c"
-                    radius: 8
+                    color: Theme.surfaceRaised
+                    radius: Theme.controlRadius
                 }
             }
         }

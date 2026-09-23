@@ -1,5 +1,6 @@
 pragma ComponentBehavior: Bound
 import QtQuick
+import MinimalViewer
 import QtQuick.Controls
 
 ListView {
@@ -101,20 +102,20 @@ ListView {
         Label {
             x: 0; y: 16; width: 62
             text: row.time
-            color: "#929497"; font.pixelSize: 10
+            color: Theme.textMuted; font.pixelSize: Theme.fontMicro
         }
         Label {
             id: body
             x: 70; y: 13; width: parent.width - 70
             text: row.text; textFormat: Text.PlainText
-            color: "#e5e5e4"; font.pixelSize: 14; wrapMode: Text.Wrap
+            color: Theme.textPrimary; font.pixelSize: Theme.fontBody; wrapMode: Text.Wrap
         }
         Label {
             anchors.right: parent.right; anchors.bottom: parent.bottom; anchors.bottomMargin: 5
             text: row.source; textFormat: Text.PlainText
-            color: "#b6bab6"; font.pixelSize: 9
+            color: Theme.textSecondary; font.pixelSize: Theme.fontMicro
         }
-        Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: "#12ffffff" }
+        Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: Theme.overlayHover }
     }
     Label {
         anchors.centerIn: parent
@@ -122,6 +123,6 @@ ListView {
         width: parent.width - 24
         horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap
         text: root.status; textFormat: Text.PlainText
-        color: "#b6bab6"; font.pixelSize: 13
+        color: Theme.textSecondary; font.pixelSize: Theme.fontCaption
     }
 }

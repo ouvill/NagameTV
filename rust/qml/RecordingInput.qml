@@ -1,5 +1,6 @@
 pragma ComponentBehavior: Bound
 import QtQuick
+import MinimalViewer
 import QtQuick.Controls
 import QtQuick.Dialogs as FileDialogs
 
@@ -33,15 +34,19 @@ Item {
         parent: Overlay.overlay
         anchors.centerIn: parent
         visible: root.backend.recording_loading
+        padding: Theme.spaceXl
+        background: PanelSurface {}
         closePolicy: Popup.NoAutoClose
         contentItem: Row {
-            spacing: 12
+            spacing: Theme.spaceMd
             BusyIndicator { running: root.backend.recording_loading }
             Label {
                 anchors.verticalCenter: parent.verticalCenter
                 text: qsTranslate("Recording", "Opening TS file…")
+                color: Theme.textPrimary
+                font.pixelSize: Theme.fontBody
             }
-            Button {
+            ActionButton {
                 objectName: "cancelRecordingOpen"
                 anchors.verticalCenter: parent.verticalCenter
                 text: qsTranslate("Recording", "Cancel")
@@ -71,7 +76,25 @@ Item {
         modal: true
         title: qsTranslate("Recording", "Could not open recording")
         standardButtons: Dialog.Ok
+        padding: Theme.spaceXl
+        background: PanelSurface {}
+        header: Label {
+            text: errorDialog.title
+            padding: Theme.spaceXl
+            color: Theme.textPrimary
+            font.pixelSize: Theme.fontHeading
+            wrapMode: Text.Wrap
+        }
+        footer: DialogButtonBox {
+            standardButtons: errorDialog.standardButtons
+            delegate: ActionButton {}
+            background: Item {}
+            padding: Theme.spaceLg
+            onAccepted: errorDialog.accept()
+        }
         contentItem: Label {
+            color: Theme.textPrimary
+            font.pixelSize: Theme.fontBody
             text: root.backend.file_error.length ? root.backend.file_error : root.backend.playback_error
             textFormat: Text.PlainText
             wrapMode: Text.Wrap

@@ -84,7 +84,7 @@ Item {
             topMargin: 14
             bottom: parent.bottom
         }
-        spacing: 12
+        spacing: Theme.spaceMd
         clip: true
         cacheBuffer: 0
         model: channelFilter
@@ -96,9 +96,9 @@ Item {
             root.selectRequested(channelFilter.row(currentIndex).channelIndex)
         delegate: ItemDelegate {
             id: card
-            property real feedbackScale: down ? 0.985 : 1
+            property real feedbackScale: down ? Theme.cardPressScale : 1
             Behavior on feedbackScale {
-                NumberAnimation { duration: card.down ? 65 : 150; easing.type: Easing.OutCubic }
+                NumberAnimation { duration: card.down ? Theme.pressDuration : Theme.moveDuration; easing.type: Easing.OutCubic }
             }
             hoverEnabled: true
             objectName: "sidebarChannelCard"
@@ -110,22 +110,20 @@ Item {
             readonly property real progress: program && program.duration > 0 ? Math.max(0, Math.min(1, (root.now - program.startAt) / program.duration)) : 0
             width: ListView.view.width
             height: 150
-            padding: 14
+            padding: Theme.spaceLg
             highlighted: channelIndex === root.selected
             onClicked: root.selectRequested(channelIndex)
-            background: Rectangle {
+            background: CardSurface {
                 scale: card.feedbackScale
-                radius: 14
-                color: card.down ? "#344238" : card.highlighted ? "#26302a" : card.hovered ? "#272d28" : "#1c1f1c"
-                border.color: card.highlighted || card.hovered || card.visualFocus ? "#9caf9f" : "#24ffffff"
-                Behavior on color { ColorAnimation { duration: 120 } }
-                Behavior on border.color { ColorAnimation { duration: 120 } }
+                selected: card.highlighted
+                hovered: card.hovered
+                pressed: card.down
             }
             contentItem: Item {
                 scale: card.feedbackScale
                 Row {
                     id: heading
-                    spacing: 8
+                    spacing: Theme.spaceSm
                     height: 32
                     ChannelLogo {
                         width: 56
@@ -142,7 +140,7 @@ Item {
                             width: Math.min(implicitWidth, Math.max(0, parent.width
                                 - (watching.visible ? watching.width + parent.indicatorGap : 0)))
                             text: card.label.replace(/^\d+\s+/, "")
-                            color: "#f4f5f3"
+                            color: Theme.textPrimary
                             font.bold: true
                             elide: Text.ElideRight
                             textFormat: Text.PlainText
@@ -161,7 +159,7 @@ Item {
                         text: force.length ? qsTranslate("Main", "Activity ") + force : ""
                         visible: text.length > 0
                         height: 32; verticalAlignment: Text.AlignVCenter
-                        color: "#9caf9f"; font.pixelSize: 11; font.bold: true
+                        color: Theme.accent; font.pixelSize: Theme.fontCaption; font.bold: true
                     }
                 }
                 Label {
@@ -173,7 +171,7 @@ Item {
                         topMargin: 8
                     }
                     text: card.program ? (card.program.name || qsTranslate("Viewer", "Program title unavailable")) : qsTranslate("Main", "No program information")
-                    color: "#f4f5f3"
+                    color: Theme.textPrimary
                     font.bold: true
                     elide: Text.ElideRight
                     textFormat: Text.PlainText
@@ -187,8 +185,8 @@ Item {
                         topMargin: 8
                     }
                     text: card.program ? Qt.formatDateTime(new Date(card.program.startAt), "hh:mm") + " – " + Qt.formatDateTime(new Date(card.program.startAt + card.program.duration), "hh:mm") : ""
-                    color: "#b6bab6"
-                    font.pixelSize: 11
+                    color: Theme.textSecondary
+                    font.pixelSize: Theme.fontCaption
                 }
                 Label {
                     objectName: "sidebarNextProgram"
@@ -203,8 +201,8 @@ Item {
                     text: nextProgram ? qsTranslate("Viewer", "Next %1 %2")
                         .arg(Qt.formatDateTime(new Date(nextProgram.startAt), "hh:mm"))
                         .arg(nextProgram.name || qsTranslate("Viewer", "Program title unavailable")) : ""
-                    color: "#b6bab6"
-                    font.pixelSize: 11
+                    color: Theme.textSecondary
+                    font.pixelSize: Theme.fontCaption
                     textFormat: Text.PlainText
                     elide: Text.ElideRight
                 }
@@ -216,13 +214,13 @@ Item {
                         bottomMargin: -4
                     }
                     height: 3
-                    radius: 2
-                    color: "#32ffffff"
+                    radius: Theme.indicatorRadius
+                    color: Theme.overlayBorder
                     Rectangle {
                         width: parent.width * card.progress
                         height: parent.height
-                        radius: 2
-                        color: "#9caf9f"
+                        radius: Theme.indicatorRadius
+                        color: Theme.accent
                     }
                 }
             }

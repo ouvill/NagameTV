@@ -1,6 +1,6 @@
 import QtQuick
 import QtTest
-import ".." as Viewer
+import MinimalViewer as Viewer
 
 TestCase {
     id: testCase
@@ -200,7 +200,7 @@ TestCase {
         compare(findChild(list.currentItem, "browserChannelCard"), previous);
         compare(selection.count, 0);
     }
-    function test_gap_stays_fourteen_during_expansion_and_reversal() {
+    function test_gap_stays_at_theme_spacing_during_expansion_and_reversal() {
         const list = findChild(browser, "browserList");
         verifyCentered(list);
         browser.focusBrowser();
@@ -212,7 +212,7 @@ TestCase {
             const right = findChild(list.itemAtIndex(1), "browserChannelCard");
             verify(left !== null && right !== null);
             const gap = right.mapToItem(list, 0, 0).x - left.mapToItem(list, left.width, 0).x;
-            verify(Math.abs(gap - 14) < 1, "gap during animation: " + gap);
+            verify(Math.abs(gap - Viewer.Theme.spaceLg) < 1, "gap during animation: " + gap);
         }
         verifyCentered(list);
         compare(selection.count, 0);

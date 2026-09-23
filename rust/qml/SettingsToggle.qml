@@ -1,5 +1,6 @@
 pragma ComponentBehavior: Bound
 import QtQuick
+import MinimalViewer
 import QtQuick.Controls
 import QtQuick.Layouts
 
@@ -8,21 +9,21 @@ ToggleSwitch {
     property string description: ""
     implicitHeight: Math.max(56, contentItem.implicitHeight + 24)
     leftPadding: 0
-    rightPadding: 4
-    topPadding: 12
-    bottomPadding: 12
+    rightPadding: Theme.spaceXs
+    topPadding: Theme.spaceMd
+    bottomPadding: Theme.spaceMd
     Accessible.description: description
     contentItem: RowLayout {
-        spacing: 24
+        spacing: Theme.spaceXl
         ColumnLayout {
             Layout.fillWidth: true
-            spacing: 4
+            spacing: Theme.spaceXs
             Label {
                 Layout.fillWidth: true
                 text: control.text
                 textFormat: Text.PlainText
-                color: "#f4f5f3"
-                font.pixelSize: 16
+                color: Theme.textPrimary
+                font.pixelSize: Theme.fontControl
                 wrapMode: Text.Wrap
             }
             Label {
@@ -30,8 +31,8 @@ ToggleSwitch {
                 visible: text.length > 0
                 text: control.description
                 textFormat: Text.PlainText
-                color: "#9ea79f"
-                font.pixelSize: 13
+                color: Theme.textSecondary
+                font.pixelSize: Theme.fontCaption
                 wrapMode: Text.Wrap
             }
         }
@@ -41,14 +42,14 @@ ToggleSwitch {
         }
     }
     background: Rectangle {
-        color: control.down ? "#189caf9f" : control.hovered ? "#0affffff" : "transparent"
-        radius: 8
-        border.color: control.visualFocus ? "#9caf9f" : "transparent"
-        Behavior on color { ColorAnimation { duration: 100 } }
+        color: control.down ? Theme.selection : control.hovered ? Theme.overlayHover : "transparent"
+        radius: Theme.controlRadius
+        border.color: control.visualFocus ? Theme.accent : "transparent"
+        Behavior on color { ColorAnimation { duration: Theme.colorDuration } }
         Rectangle {
             anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
             height: 1
-            color: "#1c1f1c"
+            color: Theme.surfaceRaised
         }
     }
 }

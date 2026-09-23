@@ -1,6 +1,6 @@
 import QtQuick
 import QtTest
-import ".." as Viewer
+import MinimalViewer as Viewer
 
 TestCase {
     name: "VideoCommentBounds"

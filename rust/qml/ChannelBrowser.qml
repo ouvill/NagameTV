@@ -66,32 +66,32 @@ Pane {
     onChannelsChanged: restoreSelection()
     Component.onCompleted: openBrowser()
     implicitHeight: 304
-    leftPadding: 24
-    rightPadding: 24
-    topPadding: 20
+    leftPadding: Theme.spaceXl
+    rightPadding: Theme.spaceXl
+    topPadding: Theme.spaceXl
     bottomPadding: 38
     font.family: "Noto Sans CJK JP"
     background: Rectangle {
         gradient: Gradient {
             GradientStop {
                 position: 0
-                color: "#06000000"
+                color: Theme.videoShadeStart
             }
             GradientStop {
                 position: 0.35
-                color: "#52000000"
+                color: Theme.videoShadeMiddle
             }
             GradientStop {
                 position: 1
-                color: "#d6000000"
+                color: Theme.videoShade
             }
         }
     }
     contentItem: ColumnLayout {
-        spacing: 14
+        spacing: Theme.spaceLg
         Row {
             Layout.fillWidth: true
-            spacing: 14
+            spacing: Theme.spaceLg
             BrowserCollapseButton {
                 objectName: "browserCloseButton"
                 iconDirectory: root.iconDirectory
@@ -99,8 +99,8 @@ Pane {
             }
             Label {
                 text: qsTranslate("Main", "Channels")
-                color: "#f4f5f3"
-                font.pixelSize: 22
+                color: Theme.textPrimary
+                font.pixelSize: Theme.fontTitle
                 font.bold: true
                 anchors.verticalCenter: parent.verticalCenter
             }
@@ -129,7 +129,7 @@ Pane {
                 objectName: "browserList"
                 anchors.fill: parent
                 orientation: ListView.Horizontal
-                spacing: 14
+                spacing: Theme.spaceLg
                 clip: true
                 // Keep the extra half-card visible at the viewport edges.
                 cacheBuffer: extraCardWidth / 2
@@ -150,7 +150,7 @@ Pane {
                 readonly property real focusFraction: focusPosition - focusLeftIndex
                 readonly property real focusBlend: focusFraction * focusFraction * (3 - 2 * focusFraction)
                 readonly property int nearestIndex: count ? Math.round(focusPosition) : -1
-                readonly property int snapDurationMs: 180
+                readonly property int snapDurationMs: Theme.moveDuration
                 property int motion: ChannelBrowser.Idle
                 // The scroll geometry stays fixed. The two central cards share
                 // the extra width; shifting their neighbors preserves the gap
@@ -267,9 +267,9 @@ Pane {
                     height: 164
                     ItemDelegate {
                         id: card
-                        property real feedbackScale: down ? 0.985 : 1
+                        property real feedbackScale: down ? Theme.cardPressScale : 1
                         Behavior on feedbackScale {
-                            NumberAnimation { duration: card.down ? 65 : 150; easing.type: Easing.OutCubic }
+                            NumberAnimation { duration: card.down ? Theme.pressDuration : Theme.moveDuration; easing.type: Easing.OutCubic }
                         }
                         hoverEnabled: true
                         objectName: "browserChannelCard"
@@ -281,16 +281,14 @@ Pane {
                         readonly property real expansion: list.expansion(index)
                         width: list.baseCardWidth + list.extraCardWidth * expansion
                         height: 164
-                        padding: 14
+                        padding: Theme.spaceLg
                         highlighted: slot.ListView.isCurrentItem
                         onClicked: root.selectRequested(channelIndex)
-                        background: Rectangle {
+                        background: CardSurface {
                             scale: card.feedbackScale
-                            radius: 16
-                            color: card.down ? "#344238" : card.highlighted ? "#26302a" : card.hovered ? "#272d28" : "#1c1f1c"
-                            border.color: card.highlighted || card.hovered ? "#9caf9f" : "#30ffffff"
-                            Behavior on color { ColorAnimation { duration: 120 } }
-                            Behavior on border.color { ColorAnimation { duration: 120 } }
+                            selected: card.highlighted
+                            hovered: card.hovered
+                            pressed: card.down
                         }
                         contentItem: Item {
                             scale: card.feedbackScale
@@ -298,7 +296,7 @@ Pane {
                                 id: channelHeading
                                 width: parent.width
                                 height: 32
-                                spacing: 8
+                                spacing: Theme.spaceSm
                                 ChannelLogo {
                                     logoUrl: card.logo || ""
                                     Layout.preferredWidth: 56
@@ -315,8 +313,8 @@ Pane {
                                         width: Math.min(implicitWidth, Math.max(0, parent.width
                                             - (watching.visible ? watching.width + parent.indicatorGap : 0)))
                                         text: card.label.replace(/^\d+\s+/, "")
-                                        color: "#b6bab6"
-                                        font.pixelSize: 12
+                                        color: Theme.textSecondary
+                                        font.pixelSize: Theme.fontCaption
                                         textFormat: Text.PlainText
                                         elide: Text.ElideRight
                                     }
@@ -332,7 +330,7 @@ Pane {
                                     readonly property string force: root.activity[card.channelIndex] ?? ""
                                     text: force.length ? qsTranslate("Main", "Activity ") + force : ""
                                     visible: text.length > 0
-                                    color: "#9caf9f"; font.pixelSize: 11; font.bold: true
+                                    color: Theme.accent; font.pixelSize: Theme.fontCaption; font.bold: true
                                 }
                             }
                             ChannelProgram {
@@ -353,8 +351,8 @@ Pane {
                             anchors.fill: parent
                             color: "transparent"
                             border.width: 2
-                            radius: 16
-                            border.color: "#9caf9f"
+                            radius: Theme.panelRadius
+                            border.color: Theme.accent
                             visible: list.activeFocus && list.currentIndex === card.index
                         }
                     }
@@ -363,7 +361,7 @@ Pane {
                     anchors.centerIn: parent
                     visible: list.count === 0
                     text: qsTranslate("Viewer", "No matching channels")
-                    color: "#cccccc"
+                    color: Theme.textSecondary
                 }
             }
             ChannelWheelArea {

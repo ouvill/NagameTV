@@ -1,5 +1,6 @@
 pragma ComponentBehavior: Bound
 import QtQuick
+import MinimalViewer
 
 Row {
     id: root
@@ -12,10 +13,10 @@ Row {
     readonly property real headerHeight: height + edgeMargin * 2
     signal modeRequested(int mode)
     anchors { right: parent.right; top: parent.top; margins: root.edgeMargin }
-    spacing: 12
+    spacing: Theme.spaceMd
 
     Row {
-        spacing: 4
+        spacing: Theme.spaceXs
         IconAction {
             objectName: "liveModeButton"
             iconSource: root.iconDirectory + "tv.svg"

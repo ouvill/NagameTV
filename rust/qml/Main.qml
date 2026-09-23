@@ -1,3 +1,4 @@
+pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -7,16 +8,16 @@ import MinimalViewer 1.0
 ViewerWindow {
     id: root
     flags: Qt.Window | Qt.FramelessWindowHint
-    title: player.recording ? player.recording_name : programIdentity.item && programIdentity.item.program && programIdentity.item.program.name
-        ? programIdentity.item.program.name : qsTranslate("Main", "NagameTV")
-    color: "#0b0c0b"
+    title: player.recording ? player.recording_name : programIdentity.view && programIdentity.view.program && programIdentity.view.program.name
+        ? programIdentity.view.program.name : qsTranslate("Main", "NagameTV")
+    color: Theme.canvas
     font.family: "Noto Sans CJK JP"
     property bool closing: false
     readonly property bool setupRequired: !player.server_configured
     property bool usageReady: false
     function recordUsage() {
         if (usageReady && !closing)
-            player.record_ui_state(showGuide, showChannels, danmaku.item ? danmaku.item.activeCount : 0);
+            player.record_ui_state(showGuide, showChannels, danmaku.view ? danmaku.view.activeCount : 0);
     }
     onShowGuideChanged: recordUsage()
     onShowChannelsChanged: recordUsage()
@@ -204,10 +205,10 @@ ViewerWindow {
         function onAfterAnimating() {
             if (root.closing || !player.media_active || video.width <= 0 || video.height <= 0) return;
             const layers = [];
-            if (danmaku.active && danmaku.item && danmaku.visible && danmaku.item.visible)
-                layers.push(danmaku.item.screenshotLayer(video));
-            if (captions.active && captions.item && captions.visible && captions.item.visible)
-                layers.push(captions.item.screenshotLayer(video));
+            if (danmaku.active && danmaku.view && danmaku.visible && danmaku.view.visible)
+                layers.push(danmaku.view.screenshotLayer(video));
+            if (captions.active && captions.view && captions.visible && captions.view.visible)
+                layers.push(captions.view.screenshotLayer(video));
             player.stage_screenshot(JSON.stringify({width: video.width, height: video.height, layers: layers}));
         }
     }
@@ -262,7 +263,7 @@ ViewerWindow {
         Component.onCompleted: player.observe_pointer(surface)
         Rectangle {
             id: videoPicture
-            color: "#0b0c0b"
+            color: Theme.canvas
             width: parent.width
             height: sidebar.open ? Math.min(parent.height, width * 9 / 16) : parent.height
             anchors.verticalCenter: parent.verticalCenter
@@ -279,6 +280,7 @@ ViewerWindow {
             }
             Loader {
                 id: danmaku
+                readonly property DanmakuOverlay view: item as DanmakuOverlay
                 x: commentBounds.x
                 y: commentBounds.y
                 width: commentBounds.width
@@ -327,6 +329,7 @@ ViewerWindow {
             Loader {
                 // Match a 16:9 broadcast's letterboxed video area.
                 id: captions
+                readonly property SubtitleOverlay view: item as SubtitleOverlay
                 anchors.centerIn: parent
                 width: Math.min(parent.width, parent.height * 16 / 9)
                 height: width * 9 / 16
@@ -400,16 +403,17 @@ ViewerWindow {
             gradient: Gradient {
                 GradientStop {
                     position: 0
-                    color: "#a8000000"
+                    color: Theme.scrim
                 }
                 GradientStop {
                     position: 1
-                    color: "#00000000"
+                    color: "transparent"
                 }
             }
         }
         Loader {
             id: programIdentity
+            readonly property CurrentProgram view: item as CurrentProgram
             anchors {
                 left: parent.left
                 top: parent.top
@@ -437,8 +441,8 @@ ViewerWindow {
             visible: player.recording && player.current_program_data === "null" && overlayVisibility.controlsVisible && !root.showGuide
             text: player.recording_name
             textFormat: Text.PlainText
-            color: "#f4f5f3"
-            font.pixelSize: 23
+            color: Theme.textPrimary
+            font.pixelSize: Theme.fontTitle
             font.bold: true
             wrapMode: Text.Wrap
             maximumLineCount: 2
@@ -479,11 +483,11 @@ ViewerWindow {
             gradient: Gradient {
                 GradientStop {
                     position: 0
-                    color: "#00000000"
+                    color: "transparent"
                 }
                 GradientStop {
                     position: 1
-                    color: "#d6000000"
+                    color: Theme.videoShade
                 }
             }
         }
@@ -501,7 +505,7 @@ ViewerWindow {
             opacity: enabled ? 1 : 0
             Behavior on opacity {
                 NumberAnimation {
-                    duration: 130
+                    duration: Theme.moveDuration
                     easing.type: Easing.OutCubic
                 }
             }
@@ -509,7 +513,7 @@ ViewerWindow {
                 y: root.showChannels ? 20 : 0
                 Behavior on y {
                     NumberAnimation {
-                        duration: 180
+                        duration: Theme.moveDuration
                         easing.type: Easing.OutCubic
                     }
                 }
@@ -564,14 +568,23 @@ ViewerWindow {
         }
         AnimatedPanel {
             id: guideLoader
+            readonly property ProgramGuide view: item as ProgramGuide
+            // Closing clears Rust's projection before its visibility signal.
+            // Retain the last frame only for the fade lifetime.
+            function refreshSnapshot() {
+                if (!view || !player.guide_visible) return;
+                view.visibilityJson = player.guide_visibility_data;
+                view.programsJson = player.epg_data;
+                view.status = player.epg_status;
+            }
             parent: root.viewport
             anchors.fill: parent
             z: 500
             motion: AnimatedPanel.Fade
             open: root.guideVisible
             shuttingDown: root.closing
-            onLoaded: item.refreshSnapshot()
-            onOpenChanged: if (open && item) item.openGuide()
+            onLoaded: refreshSnapshot()
+            onOpenChanged: if (open && view) view.openGuide()
             sourceComponent: Component {
                 ProgramGuide {
                     id: guidePanel
@@ -587,19 +600,11 @@ ViewerWindow {
                     viewingIndex: player.viewing_channel
                     programsJson: "[]"
                     status: ""
-                    // Closing clears Rust's projection before its visibility
-                    // signal. Retain the last frame only for the fade lifetime.
-                    function refreshSnapshot() {
-                        if (!player.guide_visible) return;
-                        visibilityJson = player.guide_visibility_data;
-                        programsJson = player.epg_data;
-                        status = player.epg_status;
-                    }
                     Connections {
                         target: player
-                        function onEpg_dataChanged() { guidePanel.refreshSnapshot(); }
-                        function onGuide_visibility_dataChanged() { guidePanel.refreshSnapshot(); }
-                        function onEpg_statusChanged() { guidePanel.refreshSnapshot(); }
+                        function onEpg_dataChanged() { guideLoader.refreshSnapshot(); }
+                        function onGuide_visibility_dataChanged() { guideLoader.refreshSnapshot(); }
+                        function onEpg_statusChanged() { guideLoader.refreshSnapshot(); }
                     }
                     channel: player.selected >= 0 && player.selected < player.channels.count ? root.selectedChannel.label : ""
                     onDayRequested: function (start, end) {
@@ -623,6 +628,7 @@ ViewerWindow {
         }
         AnimatedPanel {
             id: channelPanel
+            readonly property ChannelBrowser view: item as ChannelBrowser
             anchors {
                 left: parent.left
                 right: parent.right
@@ -632,10 +638,10 @@ ViewerWindow {
             open: root.showChannels
             shuttingDown: root.closing
             z: 6
-            onLoaded: item.openBrowser()
+            onLoaded: if (view) view.openBrowser()
             onOpenChanged: {
-                if (open && item)
-                    item.openBrowser();
+                if (open && view)
+                    view.openBrowser();
             }
             sourceComponent: ChannelBrowser {
                 channels: player.channels
@@ -673,11 +679,12 @@ ViewerWindow {
     }
     SidePanel {
         id: sidebar
+        readonly property ProgramSidebar view: item as ProgramSidebar
         width: root.panelWidth
         open: root.showProgram && !root.guideVisible
         visible: active && !root.guideVisible
         shuttingDown: root.closing
-        onOpenChanged: if (open && item) item.openChannels()
+        onOpenChanged: if (open && view) view.openChannels()
         sourceComponent: ProgramSidebar {
             evaluationCommentList: player.evaluation_comment_list
             evaluationCollision: player.evaluation_collision_layout

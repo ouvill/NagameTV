@@ -1,5 +1,6 @@
 pragma ComponentBehavior: Bound
 import QtQuick
+import MinimalViewer
 import QtQuick.Controls
 import QtQuick.Layouts
 
@@ -11,9 +12,9 @@ Rectangle {
     property url closeIcon: "../assets/icons/x.svg"
     signal closeRequested
     property var snapshot: ({})
-    color: "#ed151715"
-    border.color: "#42ffffff"
-    radius: 12
+    color: Theme.overlaySurface
+    border.color: Theme.overlayBorder
+    radius: Theme.panelRadius
     implicitHeight: content.implicitHeight + 28
     function number(value, digits) { return typeof value === "number" && isFinite(value) ? value.toFixed(digits) : "—" }
     function formatVideo(format) {
@@ -55,7 +56,7 @@ Rectangle {
         spacing: 7
         RowLayout {
             Layout.fillWidth: true
-            Label { text: qsTranslate("Main", "Stats for nerds"); font.pixelSize: 14; font.bold: true; color: "#f4f5f3"; Layout.fillWidth: true }
+            Label { text: qsTranslate("Main", "Stats for nerds"); font.pixelSize: Theme.fontBody; font.bold: true; color: Theme.textPrimary; Layout.fillWidth: true }
             IconAction {
                 iconSource: panel.closeIcon
                 tip: qsTranslate("Main", "Close stats for nerds")
@@ -75,13 +76,13 @@ Rectangle {
                 id: metricRow
                 required property var modelData
                 Layout.fillWidth: true
-                Label { text: metricRow.modelData[0]; color: "#b6bab6"; Layout.preferredWidth: 142; font.pixelSize: 11; wrapMode: Text.Wrap }
-                Label { text: panel.metric(metricRow.modelData[1]); color: "#f4f5f3"; Layout.fillWidth: true; wrapMode: Text.Wrap; font.pixelSize: 11 }
+                Label { text: metricRow.modelData[0]; color: Theme.textSecondary; Layout.preferredWidth: 142; font.pixelSize: Theme.fontCaption; wrapMode: Text.Wrap }
+                Label { text: panel.metric(metricRow.modelData[1]); color: Theme.textPrimary; Layout.fillWidth: true; wrapMode: Text.Wrap; font.pixelSize: Theme.fontCaption }
             }
         }
         Label {
             text: qsTranslate("Main", "Updated every second. Sink frame counts do not measure actual screen presentations. Queue time is not live latency.")
-            color: "#b6bab6"; font.pixelSize: 10; wrapMode: Text.Wrap; Layout.fillWidth: true
+            color: Theme.textSecondary; font.pixelSize: Theme.fontMicro; wrapMode: Text.Wrap; Layout.fillWidth: true
         }
     }
 }

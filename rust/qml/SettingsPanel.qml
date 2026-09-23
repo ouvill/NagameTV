@@ -1,5 +1,6 @@
 pragma ComponentBehavior: Bound
 import QtQuick
+import MinimalViewer
 import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Dialogs
@@ -46,7 +47,7 @@ Popup {
     NumberAnimation {
         id: pageRevealMotion
         target: root; property: "pageReveal"
-        from: 0; to: 1; duration: 180
+        from: 0; to: 1; duration: Theme.moveDuration
         easing.type: Easing.OutCubic
     }
     onAboutToShow: {
@@ -71,27 +72,27 @@ Popup {
     dim: false
     focus: true
     closePolicy: Popup.CloseOnEscape
-    background: Rectangle { color: "#151715" }
+    background: Rectangle { color: Theme.surface }
     enter: Transition { ScreenFade { entering: true; from: 0; to: 1 } }
     exit: Transition { ScreenFade { entering: false; from: 1; to: 0 } }
 
     component Heading: Label {
         Layout.fillWidth: true
-        color: "#f4f5f3"
-        font.pixelSize: 16
+        color: Theme.textPrimary
+        font.pixelSize: Theme.fontControl
         font.bold: true
         wrapMode: Text.Wrap
     }
     component Detail: Label {
         Layout.fillWidth: true
         textFormat: Text.PlainText
-        color: "#b6bab6"
-        font.pixelSize: 14
+        color: Theme.textSecondary
+        font.pixelSize: Theme.fontBody
         wrapMode: Text.Wrap
     }
     component Notice: Detail {
-        padding: 16
-        background: Rectangle { color: "#24211d"; radius: 8 }
+        padding: Theme.spaceLg
+        background: Rectangle { color: Theme.warningSurface; radius: Theme.controlRadius }
     }
     component Problem: ColumnLayout {
         id: problem
@@ -101,23 +102,20 @@ Popup {
         onDetailsChanged: expanded = false
         onVisibleChanged: if (!visible) expanded = false
         Layout.fillWidth: true
-        spacing: 8
-        Notice { text: problem.message; color: "#ffb080" }
-        Button {
-            id: detailsButton
+        spacing: Theme.spaceSm
+        Notice { text: problem.message; color: Theme.warning }
+        ActionButton {
             objectName: "problemDetailsToggle"
             visible: problem.details.length > 0
             text: problem.expanded ? qsTranslate("Settings", "Hide details") : qsTranslate("Settings", "Show details")
+            emphasis: ActionButton.Quiet
             onClicked: problem.expanded = !problem.expanded
-            padding: 8
-            contentItem: Label { text: detailsButton.text; color: "#9caf9f"; font.pixelSize: 13 }
-            background: Rectangle { radius: 6; color: detailsButton.hovered ? "#1c1f1c" : "transparent"; border.color: detailsButton.visualFocus ? "#9caf9f" : "transparent" }
         }
         Detail {
             objectName: "problemDetails"
             visible: problem.expanded
             text: problem.details
-            font.pixelSize: 13
+            font.pixelSize: Theme.fontCaption
         }
     }
     component ShortcutRow: Item {
@@ -129,25 +127,25 @@ Popup {
         RowLayout {
             id: shortcutRow
             anchors { left: parent.left; right: parent.right; verticalCenter: parent.verticalCenter }
-            spacing: 16
+            spacing: Theme.spaceLg
             Label {
                 Layout.fillWidth: true
                 text: shortcut.text
-                color: "#f4f5f3"
-                font.pixelSize: 16
+                color: Theme.textPrimary
+                font.pixelSize: Theme.fontControl
                 wrapMode: Text.Wrap
             }
             Label {
                 text: shortcut.keys
-                color: "#9caf9f"
-                font.pixelSize: 14
-                padding: 8
-                background: Rectangle { radius: 6; color: "#222622" }
+                color: Theme.accent
+                font.pixelSize: Theme.fontBody
+                padding: Theme.spaceSm
+                background: Rectangle { radius: Theme.controlRadius; color: Theme.surfaceRaised }
             }
         }
         Rectangle {
             anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
-            height: 1; color: "#1c1f1c"
+            height: 1; color: Theme.surfaceRaised
         }
     }
 
@@ -162,8 +160,8 @@ Popup {
             x: root.navLeft + 16
             y: 80
             text: qsTranslate("Main", "Settings")
-            color: "#f4f5f3"
-            font.pixelSize: 24
+            color: Theme.textPrimary
+            font.pixelSize: Theme.fontTitle
             font.bold: true
         }
         Flickable {
@@ -181,11 +179,11 @@ Popup {
             Rectangle {
                 y: root.page * root.navStep
                 width: parent.width; height: 40
-                radius: 8
-                color: "#269caf9f"
+                radius: Theme.controlRadius
+                color: Theme.selection
                 Behavior on y {
                     enabled: root.opened
-                    NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
+                    NumberAnimation { duration: Theme.moveDuration; easing.type: Easing.OutCubic }
                 }
             }
             Repeater {
@@ -198,7 +196,7 @@ Popup {
                     y: index * root.navStep
                     width: navigation.width
                     height: 40
-                    leftPadding: 16; rightPadding: 16
+                    leftPadding: Theme.spaceLg; rightPadding: Theme.spaceLg
                     checked: root.page === index
                     Accessible.role: Accessible.PageTab
                     hoverEnabled: true
@@ -207,21 +205,21 @@ Popup {
                     contentItem: Label {
                         transform: Translate {
                             x: category.down ? 3 : category.hovered && !category.checked ? 2 : 0
-                            Behavior on x { NumberAnimation { duration: 100; easing.type: Easing.OutCubic } }
+                            Behavior on x { NumberAnimation { duration: Theme.colorDuration; easing.type: Easing.OutCubic } }
                         }
                         text: category.text
-                        color: category.checked ? "#f4f5f3" : "#b6bab6"
-                        font.pixelSize: 16
+                        color: category.checked ? Theme.textPrimary : Theme.textSecondary
+                        font.pixelSize: Theme.fontControl
                         font.bold: category.checked
                         verticalAlignment: Text.AlignVCenter
                         elide: Text.ElideRight
-                        Behavior on color { ColorAnimation { duration: 120 } }
+                        Behavior on color { ColorAnimation { duration: Theme.fadeInDuration } }
                     }
                     background: Rectangle {
-                        radius: 8
-                        color: category.down ? "#289caf9f" : category.hovered && !category.checked ? "#10ffffff" : "transparent"
-                        border.color: category.visualFocus ? "#9caf9f" : "transparent"
-                        Behavior on color { ColorAnimation { duration: 100 } }
+                        radius: Theme.controlRadius
+                        color: category.down ? Theme.selection : category.hovered && !category.checked ? Theme.overlayHover : "transparent"
+                        border.color: category.visualFocus ? Theme.accent : "transparent"
+                        Behavior on color { ColorAnimation { duration: Theme.colorDuration } }
                     }
                 }
             }
@@ -234,8 +232,8 @@ Popup {
             y: 80
             width: root.pageWidth
             text: root.page === SettingsPanel.Connection ? qsTranslate("Settings", "Mirakurun connection") : root.categories[root.page]
-            color: "#f4f5f3"
-            font.pixelSize: 24
+            color: Theme.textPrimary
+            font.pixelSize: Theme.fontTitle
             font.bold: true
             wrapMode: Text.Wrap
         }
@@ -247,11 +245,11 @@ Popup {
             width: root.pageWidth + rightPadding
             anchors { left: parent.left; leftMargin: root.contentLeft
                 top: pageTitle.bottom; topMargin: 24; bottom: footer.top; bottomMargin: 20 }
-            rightPadding: 20
+            rightPadding: Theme.spaceXl
             clip: true
             ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
             ScrollBar.vertical.policy: pageFlick.contentHeight > pageFlick.height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
-            ScrollBar.vertical.palette.mid: "#8c918c"
+            ScrollBar.vertical.palette.mid: Theme.textMuted
             contentItem: Flickable {
                 id: pageFlick
                 objectName: "settingsFlickable"
@@ -261,7 +259,7 @@ Popup {
                 ColumnLayout {
                     id: pages
                     width: pageFlick.width
-                    spacing: 20
+                    spacing: Theme.spaceXl
                     Problem {
                         objectName: "settingsError"
                         visible: details.length > 0
@@ -271,7 +269,7 @@ Popup {
                     ColumnLayout {
                         visible: root.page === SettingsPanel.Connection
                         Layout.fillWidth: true
-                        spacing: 16
+                        spacing: Theme.spaceLg
                         ConnectionForm {
                             id: connectionForm
                             Layout.fillWidth: true
@@ -313,14 +311,14 @@ Popup {
                     ColumnLayout {
                         visible: root.page === SettingsPanel.Display
                         Layout.fillWidth: true
-                        spacing: 16
+                        spacing: Theme.spaceLg
                         RowLayout {
                             Layout.fillWidth: true
-                            spacing: 24
+                            spacing: Theme.spaceXl
                             Detail {
                                 text: qsTranslate("Settings", "Display language")
-                                color: "#f4f5f3"
-                                font.pixelSize: 16
+                                color: Theme.textPrimary
+                                font.pixelSize: Theme.fontControl
                             }
                             SettingsChoice {
                                 id: languageBox
@@ -341,7 +339,7 @@ Popup {
                             objectName: "languageError"
                             visible: false
                             text: qsTranslate("Settings", "Could not change the language. The previous language is still in use.")
-                            color: "#ffb080"
+                            color: Theme.warning
                         }
                         ColumnLayout {
                             Layout.topMargin: 8
@@ -371,13 +369,13 @@ Popup {
                         Detail {
                             objectName: "screenshotDirectoryPath"
                             text: root.backend.screenshot_directory
-                            color: "#f4f5f3"
+                            color: Theme.textPrimary
                             wrapMode: Text.WrapAnywhere
                         }
                         Flow {
                             Layout.fillWidth: true
-                            spacing: 12
-                            SettingsAction {
+                            spacing: Theme.spaceMd
+                            ActionButton {
                                 objectName: "chooseScreenshotDirectory"
                                 text: qsTranslate("Settings", "Change folder")
                                 onClicked: {
@@ -385,14 +383,14 @@ Popup {
                                     screenshotFolderDialog.open();
                                 }
                             }
-                            SettingsAction {
+                            ActionButton {
                                 objectName: "openScreenshotDirectory"
                                 text: qsTranslate("Settings", "Open folder")
                                 onClicked: root.backend.open_screenshot_directory()
                             }
-                            SettingsAction {
+                            ActionButton {
                                 objectName: "resetScreenshotDirectory"
-                                emphasis: SettingsAction.Quiet
+                                emphasis: ActionButton.Quiet
                                 text: qsTranslate("Settings", "Use default folder")
                                 onClicked: root.backend.reset_screenshot_directory()
                             }
@@ -405,13 +403,13 @@ Popup {
                             objectName: "screenshotFolderError"
                             visible: text.length > 0
                             text: root.backend.screenshot_error
-                            color: "#ffb080"
+                            color: Theme.warning
                         }
                     }
                     ColumnLayout {
                         visible: root.page === SettingsPanel.Comments
                         Layout.fillWidth: true
-                        spacing: 16
+                        spacing: Theme.spaceLg
                         ColumnLayout {
                             Layout.fillWidth: true
                             spacing: 0
@@ -484,11 +482,11 @@ Popup {
                         RowLayout {
                             Layout.topMargin: 20
                             Layout.fillWidth: true
-                            spacing: 24
+                            spacing: Theme.spaceXl
                             Detail {
                                 text: qsTranslate("Settings", "Send with")
-                                color: "#f4f5f3"
-                                font.pixelSize: 16
+                                color: Theme.textPrimary
+                                font.pixelSize: Theme.fontControl
                             }
                             SettingsChoice {
                                 id: sendKey
@@ -507,7 +505,7 @@ Popup {
                         ColumnLayout {
                             Layout.topMargin: 20
                             Layout.fillWidth: true
-                            spacing: 8
+                            spacing: Theme.spaceSm
                             Heading { text: qsTranslate("Settings", "Saved comments") }
                             RowLayout {
                                 Layout.fillWidth: true
@@ -527,14 +525,14 @@ Popup {
                             }
                             Flow {
                                 Layout.fillWidth: true
-                                spacing: 8
-                                SettingsAction {
+                                spacing: Theme.spaceSm
+                                ActionButton {
                                     objectName: "refreshRecordingComments"
                                     text: qsTranslate("Settings", "Fetch this program's comments again")
                                     enabled: root.backend.recording && root.backend.comments_enabled && root.backend.danmaku_enabled
                                     onClicked: root.backend.refresh_recording_comments()
                                 }
-                                SettingsAction {
+                                ActionButton {
                                     objectName: "clearCommentCache"
                                     text: qsTranslate("Settings", "Clear unused comments")
                                     onClicked: root.backend.clear_comment_cache()
@@ -545,7 +543,7 @@ Popup {
                     ColumnLayout {
                         visible: root.page === SettingsPanel.Shortcuts
                         Layout.fillWidth: true
-                        spacing: 24
+                        spacing: Theme.spaceXl
                         ColumnLayout {
                             Layout.fillWidth: true
                             spacing: 0
@@ -567,7 +565,7 @@ Popup {
                     ColumnLayout {
                         visible: root.page === SettingsPanel.Diagnostics
                         Layout.fillWidth: true
-                        spacing: 24
+                        spacing: Theme.spaceXl
                         SettingsToggle {
                             objectName: "statsVisible"
                             Layout.fillWidth: true
@@ -583,9 +581,9 @@ Popup {
                             selectByMouse: true
                             textFormat: TextEdit.PlainText
                             wrapMode: TextEdit.Wrap
-                            color: "#b6bab6"
-                            selectionColor: "#344238"
-                            font.pixelSize: 14
+                            color: Theme.textSecondary
+                            selectionColor: Theme.surfacePressed
+                            font.pixelSize: Theme.fontBody
                             padding: 0
                             background: null
                             text: [
@@ -604,7 +602,7 @@ Popup {
                             ].join("\n")
                         }
                         Heading { text: qsTranslate("Settings", "Logs") }
-                        SettingsAction {
+                        ActionButton {
                             objectName: "openLogFolder"
                             text: qsTranslate("Main", "Open log folder")
                             onClicked: root.backend.open_log_folder()
@@ -643,17 +641,17 @@ Popup {
             anchors { left: parent.left; leftMargin: root.contentLeft
                 bottom: parent.bottom; bottomMargin: 24 }
             height: 40
-            spacing: 24
+            spacing: Theme.spaceXl
             Label {
                 Layout.fillWidth: true
                 text: root.page === SettingsPanel.Diagnostics
                     ? qsTranslate("Settings", "Diagnostic display settings apply to this session only.")
                     : ""
-                color: "#8c918c"
-                font.pixelSize: 13
+                color: Theme.textMuted
+                font.pixelSize: Theme.fontCaption
                 wrapMode: Text.Wrap
             }
-            SettingsAction {
+            ActionButton {
                 objectName: "closeSettings"
                 text: qsTranslate("Settings", "Back to viewing")
                 onClicked: root.close()
