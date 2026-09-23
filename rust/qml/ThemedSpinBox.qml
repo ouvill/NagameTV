@@ -7,7 +7,7 @@ SpinBox {
     implicitWidth: 180; implicitHeight: 44
     editable: true
     leftPadding: 40; rightPadding: 40
-    font.pixelSize: 18
+    font.pixelSize: 16
     opacity: enabled ? 1 : 0.42
     contentItem: TextInput {
         text: control.textFromValue(control.value, control.locale)
@@ -20,7 +20,7 @@ SpinBox {
         selectByMouse: true
     }
     background: Rectangle {
-        radius: 10; color: "#222622"
+        radius: 8; color: "#222622"
         border.color: control.activeFocus ? "#9caf9f" : "#3b423c"
     }
     component Step: Rectangle {

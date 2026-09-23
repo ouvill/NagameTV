@@ -33,20 +33,8 @@ ColumnLayout {
         textFormat: Text.PlainText
         wrapMode: Text.Wrap
     }
-    component Field: TextField {
-        id: field
+    component Field: SettingsField {
         Layout.fillWidth: true
-        implicitHeight: 48
-        color: "#f4f5f3"
-        font.pixelSize: 16
-        selectByMouse: true
-        leftPadding: 14; rightPadding: 14
-        selectionColor: "#527359"
-        background: Rectangle {
-            radius: 8
-            color: "#1c1f1c"
-            border.color: field.activeFocus ? "#9caf9f" : "#8c918c"
-        }
         onTextEdited: root.invalidInput = false
         onAccepted: root.apply(root.backend.remote_enabled)
     }
@@ -79,15 +67,11 @@ ColumnLayout {
         inputMethodHints: Qt.ImhDigitsOnly
         validator: IntValidator { bottom: 1; top: 65535 }
     }
-    Detail { text: qsTranslate("Remote", "The default port is 50051. Use a different port for each additional viewer.") }
-    Button {
+    SettingsAction {
         id: applyButton
         objectName: "applyRemote"
         text: qsTranslate("Remote", "Apply / retry")
-        implicitHeight: 48
-        leftPadding: 24; rightPadding: 24
-        contentItem: Label { text: applyButton.text; color: "#0b0c0b"; font.pixelSize: 16; font.bold: true; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-        background: Rectangle { radius: 8; color: applyButton.down ? "#8da793" : "#9caf9f"; border.color: applyButton.visualFocus ? "#f4f5f3" : "transparent" }
+        emphasis: SettingsAction.Primary
         onClicked: root.apply(root.backend.remote_enabled)
     }
     Detail {

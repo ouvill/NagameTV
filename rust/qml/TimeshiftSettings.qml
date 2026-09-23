@@ -87,19 +87,18 @@ ColumnLayout {
     readonly property real estimateSeconds: Math.min(capacityMiB * mibBytes / bytesPerSecond, minutes.value * secondsPerMinute)
     readonly property string estimateTime: qsTranslate("Viewer", "%1 min %2 sec")
         .arg(Math.floor(estimateSeconds / secondsPerMinute)).arg(Math.floor(estimateSeconds % secondsPerMinute))
-    spacing: 24
+    spacing: 20
 
     SettingsToggle {
         id: enabledToggle
         objectName: "timeshiftEnabled"
         Layout.fillWidth: true
         text: qsTranslate("Viewer", "Enable timeshift")
-        description: qsTranslate("Viewer", "Pause and rewind live TV.")
         onClicked: root.commit()
     }
     ColumnLayout {
         Layout.fillWidth: true; spacing: 12
-        Label { text: qsTranslate("Viewer", "Storage"); color: "#f4f5f3"; font.pixelSize: 18 }
+        Label { text: qsTranslate("Viewer", "Storage"); color: "#f4f5f3"; font.pixelSize: 16 }
         SegmentedControl {
             id: storage
             objectName: "timeshiftStorage"
@@ -115,53 +114,47 @@ ColumnLayout {
             objectName: "timeshiftStorageDescription"
             Layout.fillWidth: true; wrapMode: Text.Wrap
             text: root.storageValue === "memory"
-                ? qsTranslate("Viewer", "Memory keeps rewinding quick without writing to storage. Choose a limit that leaves room for your other apps.")
-                : qsTranslate("Viewer", "Temporary files keep longer history with less RAM. They use storage space and continuous disk writes, and are deleted when playback stops.")
+                ? qsTranslate("Viewer", "Uses RAM to retain recent video.")
+                : qsTranslate("Viewer", "Uses disk space. Files are deleted when playback stops.")
             color: "#b6bab6"; font.pixelSize: 14
         }
     }
-    Rectangle {
+    ColumnLayout {
         Layout.fillWidth: true
-        implicitHeight: budget.implicitHeight + 40
-        radius: 14; color: "#1c201d"; border.color: "#343c35"
-        ColumnLayout {
-            id: budget
-            anchors { left: parent.left; right: parent.right; top: parent.top; margins: 20 }
-            spacing: 16
+        spacing: 12
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: 12
             Label {
                 Layout.fillWidth: true; wrapMode: Text.Wrap
                 text: root.storageValue === "memory" ? qsTranslate("Viewer", "Maximum TS memory") : qsTranslate("Viewer", "Maximum temporary files")
-                color: "#f4f5f3"; font.pixelSize: 18
+                color: "#f4f5f3"; font.pixelSize: 16
             }
-            RowLayout {
-                spacing: 12
-                BudgetSpinBox {
-                    id: memory; objectName: "timeshiftMemoryLimit"
-                    visible: root.storageValue === "memory"; enabled: enabledToggle.checked
-                    from: root.saved.min_mib; to: root.saved.max_mib
-                    Accessible.name: qsTranslate("Viewer", "Maximum TS memory (MiB)")
-                }
-                BudgetSpinBox {
-                    id: files; objectName: "timeshiftFileLimit"
-                    visible: root.storageValue === "filesystem"; enabled: enabledToggle.checked
-                    from: root.saved.min_mib; to: root.saved.max_mib
-                    Accessible.name: qsTranslate("Viewer", "Maximum temporary files (MiB)")
-                }
-                Label { text: "MiB"; color: "#b6bab6"; font.pixelSize: 14 }
+            BudgetSpinBox {
+                id: memory; objectName: "timeshiftMemoryLimit"
+                visible: root.storageValue === "memory"; enabled: enabledToggle.checked
+                from: root.saved.min_mib; to: root.saved.max_mib
+                Accessible.name: qsTranslate("Viewer", "Maximum TS memory (MiB)")
             }
-            Label {
-                objectName: "timeshiftEstimate"
-                Layout.fillWidth: true; wrapMode: Text.Wrap
-                text: qsTranslate("Viewer", "About %1 of history").arg(root.estimateTime)
-                color: "#bcd3c0"; font.pixelSize: 22; font.bold: true
+            BudgetSpinBox {
+                id: files; objectName: "timeshiftFileLimit"
+                visible: root.storageValue === "filesystem"; enabled: enabledToggle.checked
+                from: root.saved.min_mib; to: root.saved.max_mib
+                Accessible.name: qsTranslate("Viewer", "Maximum temporary files (MiB)")
             }
-            Label {
-                Layout.fillWidth: true; wrapMode: Text.Wrap
-                text: (root.measured ? qsTranslate("Viewer", "Estimated from the current broadcast.")
-                    : qsTranslate("Viewer", "Estimate assumes %1 Mbps until a broadcast is playing.").arg(root.assumedMegabitsPerSecond))
-                    + " " + qsTranslate("Viewer", "Actual duration varies with the broadcast and the time limit below.")
-                color: "#9ea79f"; font.pixelSize: 13
-            }
+            Label { text: "MiB"; color: "#b6bab6"; font.pixelSize: 14 }
+        }
+        Label {
+            objectName: "timeshiftEstimate"
+            Layout.fillWidth: true; wrapMode: Text.Wrap
+            text: qsTranslate("Viewer", "About %1 of history").arg(root.estimateTime)
+            color: "#9caf9f"; font.pixelSize: 16
+        }
+        Label {
+            Layout.fillWidth: true; wrapMode: Text.Wrap
+            text: root.measured ? qsTranslate("Viewer", "Estimated from the current broadcast.")
+                : qsTranslate("Viewer", "Estimate assumes %1 Mbps until a broadcast is playing.").arg(root.assumedMegabitsPerSecond)
+            color: "#9ea79f"; font.pixelSize: 13
         }
     }
     RowLayout {
@@ -176,12 +169,12 @@ ColumnLayout {
     }
     Label {
         Layout.fillWidth: true; wrapMode: Text.Wrap
-        text: qsTranslate("Viewer", "Old data is discarded at either limit. If your paused position expires, playback resumes from the retained range. Memory limits cover retained TS data; decoding uses additional memory.")
+        text: qsTranslate("Viewer", "When either limit is reached, older video is discarded. Playback resumes if a paused position expires.")
         color: "#9ea79f"; font.pixelSize: 13
     }
     Label {
         Layout.fillWidth: true; wrapMode: Text.Wrap
-        text: qsTranslate("Viewer", "Changes are saved automatically. Reducing limits moves playback only if its position is no longer retained. Changing storage or turning timeshift off clears history and returns to live playback.")
+        text: qsTranslate("Viewer", "Changing storage or turning timeshift off clears history and returns to live playback.")
         color: "#9ea79f"; font.pixelSize: 13
     }
     Label {

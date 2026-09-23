@@ -51,7 +51,7 @@ ColumnLayout {
         Label {
             Layout.fillWidth: true
             text: qsTranslate("Settings", "Live playback buffer")
-            color: "#f4f5f3"; font.pixelSize: 18
+            color: "#f4f5f3"; font.pixelSize: 16
             wrapMode: Text.Wrap
         }
         ThemedSpinBox {
@@ -77,11 +77,12 @@ ColumnLayout {
     }
     Label {
         Layout.fillWidth: true
-        text: qsTranslate("Settings", "Lower values reduce live delay. Increase this if audio cuts out. Applies when starting playback, changing channels, or returning to live.")
+        text: qsTranslate("Settings", "Increase if audio cuts out. Applies from the next live playback.")
         color: "#b6bab6"; font.pixelSize: 14
         wrapMode: Text.Wrap
     }
-    TextAction {
+    SettingsAction {
+        emphasis: SettingsAction.Quiet
         objectName: "resetLiveBuffer"
         text: qsTranslate("Settings", "Reset to %1 ms").arg(root.saved.default_ms)
         onClicked: {

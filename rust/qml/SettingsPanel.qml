@@ -17,11 +17,13 @@ Popup {
     property real pageReveal: 1
     property url iconDirectory: "qrc:/qt/qml/MinimalViewer/assets/icons/"
     readonly property bool compact: width < 1200 || height < 700
-    readonly property real navLeft: compact ? 24 : 36
-    readonly property real navWidth: Math.min(310, Math.max(196, width * 0.2153))
-    readonly property real navStep: compact ? 56 : 64
-    readonly property real contentLeft: navLeft + navWidth + (compact ? 40 : 64)
-    readonly property real sideMargin: compact ? 32 : 80
+    readonly property real navLeft: 24
+    readonly property real navWidth: compact ? 184 : 208
+    readonly property real navStep: 48
+    readonly property real sideMargin: compact ? 32 : 48
+    readonly property real contentStart: navLeft + navWidth + (compact ? 32 : 48)
+    readonly property real pageWidth: Math.min(880, width - contentStart - sideMargin)
+    readonly property real contentLeft: contentStart + Math.max(0, (width - contentStart - sideMargin - pageWidth) / 2)
     readonly property var categories: [
         qsTranslate("Settings", "Connection"), qsTranslate("Settings", "Display"),
         qsTranslate("Main", "Comments"), qsTranslate("Settings", "Shortcuts"),
@@ -76,7 +78,7 @@ Popup {
     component Heading: Label {
         Layout.fillWidth: true
         color: "#f4f5f3"
-        font.pixelSize: 21
+        font.pixelSize: 16
         font.bold: true
         wrapMode: Text.Wrap
     }
@@ -88,8 +90,8 @@ Popup {
         wrapMode: Text.Wrap
     }
     component Notice: Detail {
-        padding: 24
-        background: Rectangle { color: "#24211d"; radius: 12; border.color: "#8c918c" }
+        padding: 16
+        background: Rectangle { color: "#24211d"; radius: 8 }
     }
     component Problem: ColumnLayout {
         id: problem
@@ -118,42 +120,12 @@ Popup {
             font.pixelSize: 13
         }
     }
-    component Action: Button {
-        id: action
-        property bool primary: false
-        property real feedbackScale: down ? 0.97 : 1
-        Behavior on feedbackScale {
-            NumberAnimation { duration: action.down ? 65 : 150; easing.type: Easing.OutCubic }
-        }
-        hoverEnabled: true
-        implicitWidth: Math.max(180, contentItem.implicitWidth + 40)
-        implicitHeight: 56
-        leftPadding: 20; rightPadding: 20
-        opacity: enabled ? 1 : 0.45
-        contentItem: Label {
-            scale: action.feedbackScale
-            text: action.text
-            color: action.primary ? "#0b0c0b" : "#f4f5f3"
-            font.pixelSize: 16
-            font.bold: true
-            verticalAlignment: Text.AlignVCenter
-            horizontalAlignment: Text.AlignHCenter
-        }
-        background: Rectangle {
-            scale: action.feedbackScale
-            radius: 10
-            color: action.primary ? (action.down ? "#8da793" : action.hovered ? "#b6c6b8" : "#9caf9f")
-                : (action.down ? "#344238" : action.hovered ? "#2b2926" : "#1c1f1c")
-            border.color: action.visualFocus ? "#f4f5f3" : "#8c918c"
-            Behavior on color { ColorAnimation { duration: 100 } }
-        }
-    }
     component ShortcutRow: Item {
         id: shortcut
         required property string text
         required property string keys
         Layout.fillWidth: true
-        implicitHeight: Math.max(64, shortcutRow.implicitHeight + 24)
+        implicitHeight: Math.max(52, shortcutRow.implicitHeight + 16)
         RowLayout {
             id: shortcutRow
             anchors { left: parent.left; right: parent.right; verticalCenter: parent.verticalCenter }
@@ -170,7 +142,7 @@ Popup {
                 color: "#9caf9f"
                 font.pixelSize: 14
                 padding: 8
-                background: Rectangle { radius: 6; color: "#2b2926" }
+                background: Rectangle { radius: 6; color: "#222622" }
             }
         }
         Rectangle {
@@ -188,30 +160,29 @@ Popup {
         }
         Label {
             x: root.navLeft + 16
-            y: root.compact ? 40 : 48
+            y: 80
             text: qsTranslate("Main", "Settings")
             color: "#f4f5f3"
-            font.pixelSize: root.compact ? 30 : 34
+            font.pixelSize: 24
             font.bold: true
         }
         Flickable {
             id: navigation
             objectName: "settingsNavigation"
             x: root.navLeft
-            y: root.compact ? 136 : 160
+            y: 136
             width: root.navWidth
             height: Math.min(contentHeight, parent.height - y - root.navLeft)
-            contentHeight: (root.categories.length - 1) * root.navStep + 48
+            contentHeight: (root.categories.length - 1) * root.navStep + 40
             clip: true
             flickableDirection: Flickable.VerticalFlick
             boundsBehavior: Flickable.StopAtBounds
             ScrollBar.vertical: ScrollBar { policy: navigation.contentHeight > navigation.height ? ScrollBar.AsNeeded : ScrollBar.AlwaysOff }
             Rectangle {
                 y: root.page * root.navStep
-                width: parent.width; height: 48
-                radius: 10
-                color: "#2b2926"
-                border.color: "#8c918c"
+                width: parent.width; height: 40
+                radius: 8
+                color: "#269caf9f"
                 Behavior on y {
                     enabled: root.opened
                     NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
@@ -226,8 +197,8 @@ Popup {
                     objectName: "settingsCategory" + index
                     y: index * root.navStep
                     width: navigation.width
-                    height: 48
-                    leftPadding: 26; rightPadding: 18
+                    height: 40
+                    leftPadding: 16; rightPadding: 16
                     checked: root.page === index
                     Accessible.role: Accessible.PageTab
                     hoverEnabled: true
@@ -240,14 +211,14 @@ Popup {
                         }
                         text: category.text
                         color: category.checked ? "#f4f5f3" : "#b6bab6"
-                        font.pixelSize: 18
-                        font.weight: category.checked ? Font.DemiBold : Font.Normal
+                        font.pixelSize: 16
+                        font.bold: category.checked
                         verticalAlignment: Text.AlignVCenter
                         elide: Text.ElideRight
                         Behavior on color { ColorAnimation { duration: 120 } }
                     }
                     background: Rectangle {
-                        radius: 10
+                        radius: 8
                         color: category.down ? "#289caf9f" : category.hovered && !category.checked ? "#10ffffff" : "transparent"
                         border.color: category.visualFocus ? "#9caf9f" : "transparent"
                         Behavior on color { ColorAnimation { duration: 100 } }
@@ -260,11 +231,11 @@ Popup {
             opacity: 0.84 + 0.16 * root.pageReveal
             transform: Translate { y: 6 * (1 - root.pageReveal) }
             x: root.contentLeft
-            y: 72
-            width: root.width - x - root.sideMargin
+            y: 80
+            width: root.pageWidth
             text: root.page === SettingsPanel.Connection ? qsTranslate("Settings", "Mirakurun connection") : root.categories[root.page]
             color: "#f4f5f3"
-            font.pixelSize: root.compact ? 26 : 30
+            font.pixelSize: 24
             font.bold: true
             wrapMode: Text.Wrap
         }
@@ -273,8 +244,9 @@ Popup {
             opacity: 0.84 + 0.16 * root.pageReveal
             transform: Translate { y: 10 * (1 - root.pageReveal) }
             objectName: "settingsScroll"
-            anchors { left: parent.left; leftMargin: root.contentLeft; right: parent.right; rightMargin: root.sideMargin - 20
-                top: pageTitle.bottom; topMargin: 28; bottom: footer.top; bottomMargin: 28 }
+            width: root.pageWidth + rightPadding
+            anchors { left: parent.left; leftMargin: root.contentLeft
+                top: pageTitle.bottom; topMargin: 24; bottom: footer.top; bottomMargin: 20 }
             rightPadding: 20
             clip: true
             ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
@@ -299,10 +271,11 @@ Popup {
                     ColumnLayout {
                         visible: root.page === SettingsPanel.Connection
                         Layout.fillWidth: true
-                        spacing: 20
+                        spacing: 16
                         ConnectionForm {
                             id: connectionForm
                             Layout.fillWidth: true
+                            presentation: ConnectionForm.Settings
                             backend: root.backend
                             onCompleted: {
                                 root.close();
@@ -310,18 +283,17 @@ Popup {
                             }
                         }
                         Detail { text: qsTranslate("Settings", "Changing the server stops playback and loads the new channel list.") }
-                        Heading { Layout.topMargin: 20; text: qsTranslate("Settings", "Startup") }
                         SettingsToggle {
                             objectName: "autoplaySetting"
+                            Layout.topMargin: 12
                             Layout.fillWidth: true
                             text: qsTranslate("Settings", "Play automatically on startup")
-                            description: qsTranslate("Settings", "Start playing the last selected channel when you open the app. Applies from the next launch.")
                             checked: root.backend.autoplay
                             onClicked: root.backend.configure_autoplay(checked)
                         }
-                        Heading { Layout.topMargin: 20; text: qsTranslate("Settings", "Live playback") }
                         LiveBufferSettings {
                             id: liveBufferSettings
+                            Layout.topMargin: 12
                             Layout.fillWidth: true
                             backend: root.backend
                         }
@@ -342,18 +314,26 @@ Popup {
                         visible: root.page === SettingsPanel.Display
                         Layout.fillWidth: true
                         spacing: 16
-                        Heading { text: qsTranslate("Settings", "Display language") }
-                        SettingsChoice {
-                            id: languageBox
-                            objectName: "languageSetting"
+                        RowLayout {
                             Layout.fillWidth: true
-                            dropdownIcon: root.iconDirectory + "chevron-down.svg"
-                            Accessible.name: qsTranslate("Settings", "Display language")
-                            model: [qsTranslate("Settings", "Use system language"), "日本語", "English"]
-                            currentIndex: ["system", "ja", "en"].indexOf(root.backend.language)
-                            onActivated: function(index) {
-                                languageError.visible = !root.backend.request_language(["system", "ja", "en"][index]);
-                                currentIndex = Qt.binding(function() { return ["system", "ja", "en"].indexOf(root.backend.language); });
+                            spacing: 24
+                            Detail {
+                                text: qsTranslate("Settings", "Display language")
+                                color: "#f4f5f3"
+                                font.pixelSize: 16
+                            }
+                            SettingsChoice {
+                                id: languageBox
+                                objectName: "languageSetting"
+                                Layout.preferredWidth: Math.min(280, pageFlick.width * 0.52)
+                                dropdownIcon: root.iconDirectory + "chevron-down.svg"
+                                Accessible.name: qsTranslate("Settings", "Display language")
+                                model: [qsTranslate("Settings", "Use system language"), "日本語", "English"]
+                                currentIndex: ["system", "ja", "en"].indexOf(root.backend.language)
+                                onActivated: function(index) {
+                                    languageError.visible = !root.backend.request_language(["system", "ja", "en"][index]);
+                                    currentIndex = Qt.binding(function() { return ["system", "ja", "en"].indexOf(root.backend.language); });
+                                }
                             }
                         }
                         Detail {
@@ -363,31 +343,31 @@ Popup {
                             text: qsTranslate("Settings", "Could not change the language. The previous language is still in use.")
                             color: "#ffb080"
                         }
-                        Heading { Layout.topMargin: 20; text: qsTranslate("Viewer", "Subtitles") }
-                        SettingsToggle {
-                            objectName: "subtitleDisplay"
+                        ColumnLayout {
+                            Layout.topMargin: 8
                             Layout.fillWidth: true
-                            text: qsTranslate("Settings", "Show subtitles")
-                            description: root.backend.subtitles_enabled
-                                ? qsTranslate("Settings", "Show subtitles when available in the program. You can also change this from the playback controls.")
-                                : qsTranslate("Settings", "Subtitles are disabled by the launch options.")
-                            checked: root.backend.subtitles_enabled && root.backend.subtitle_display
-                            enabled: root.backend.subtitles_enabled
-                            onClicked: root.backend.display_subtitles(checked)
-                        }
-                        SettingsToggle {
-                            objectName: "subtitleForceOutline"
-                            Layout.fillWidth: true
-                            text: qsTranslate("Settings", "Always outline subtitles")
-                            description: qsTranslate("Settings", "Add a black outline when the broadcast does not provide one.")
-                            checked: root.backend.subtitle_force_outline
-                            enabled: root.backend.subtitles_enabled
-                            onClicked: root.backend.configure_subtitle_outline(checked)
+                            spacing: 0
+                            SettingsToggle {
+                                objectName: "subtitleDisplay"
+                                Layout.fillWidth: true
+                                text: qsTranslate("Settings", "Show subtitles")
+                                description: root.backend.subtitles_enabled
+                                    ? ""
+                                    : qsTranslate("Settings", "Subtitles are disabled by the launch options.")
+                                checked: root.backend.subtitles_enabled && root.backend.subtitle_display
+                                enabled: root.backend.subtitles_enabled
+                                onClicked: root.backend.display_subtitles(checked)
+                            }
+                            SettingsToggle {
+                                objectName: "subtitleForceOutline"
+                                Layout.fillWidth: true
+                                text: qsTranslate("Settings", "Always outline subtitles")
+                                checked: root.backend.subtitle_force_outline
+                                enabled: root.backend.subtitles_enabled
+                                onClicked: root.backend.configure_subtitle_outline(checked)
+                            }
                         }
                         Heading { Layout.topMargin: 20; text: qsTranslate("Settings", "Screenshots") }
-                        Detail {
-                            text: qsTranslate("Settings", "Save a screenshot to this folder with the camera button or Ctrl + S.")
-                        }
                         Detail {
                             objectName: "screenshotDirectoryPath"
                             text: root.backend.screenshot_directory
@@ -397,7 +377,7 @@ Popup {
                         Flow {
                             Layout.fillWidth: true
                             spacing: 12
-                            Action {
+                            SettingsAction {
                                 objectName: "chooseScreenshotDirectory"
                                 text: qsTranslate("Settings", "Change folder")
                                 onClicked: {
@@ -405,21 +385,18 @@ Popup {
                                     screenshotFolderDialog.open();
                                 }
                             }
-                            Action {
+                            SettingsAction {
                                 objectName: "openScreenshotDirectory"
                                 text: qsTranslate("Settings", "Open folder")
                                 onClicked: root.backend.open_screenshot_directory()
                             }
-                            Action {
+                            SettingsAction {
                                 objectName: "resetScreenshotDirectory"
+                                emphasis: SettingsAction.Quiet
                                 text: qsTranslate("Settings", "Use default folder")
                                 onClicked: root.backend.reset_screenshot_directory()
                             }
                         }
-                        Detail {
-                            text: qsTranslate("Settings", "By default, screenshots are saved in the app's folder inside Pictures.")
-                        }
-                        Heading { Layout.topMargin: 8; text: qsTranslate("Settings", "Image format") }
                         ScreenshotFormatChoice {
                             Layout.fillWidth: true
                             backend: root.backend
@@ -443,7 +420,7 @@ Popup {
                                 Layout.fillWidth: true
                                 text: qsTranslate("Settings", "Enable live comments")
                                 description: root.backend.comments_allowed
-                                    ? qsTranslate("Settings", "Receive and post NX-Jikkyo comments on supported channels.")
+                                    ? ""
                                     : qsTranslate("Settings", "Live comments are disabled by the launch options.")
                                 checked: root.backend.comments_enabled === true
                                 enabled: root.backend.comments_allowed === true
@@ -453,7 +430,6 @@ Popup {
                                 objectName: "danmakuEnabled"
                                 Layout.fillWidth: true
                                 text: qsTranslate("Settings", "Show comments over the video")
-                                description: qsTranslate("Settings", "When off, you can still read the comment list and post comments.")
                                 checked: root.backend.danmaku_enabled === true
                                 enabled: root.backend.comments_enabled === true
                                 onClicked: root.backend.configure_danmaku(checked, root.backend.comment_font_size, root.backend.comment_opacity, root.backend.comment_speed)
@@ -502,7 +478,6 @@ Popup {
                             Layout.fillWidth: true
                             enabled: root.backend.comments_enabled
                             text: qsTranslate("Settings", "Drop shadow")
-                            description: qsTranslate("Settings", "Add a subtle shadow behind comments over the video.")
                             checked: root.backend.comment_shadow_enabled
                             onClicked: root.backend.configure_comment_shadow(checked)
                         }
@@ -510,15 +485,10 @@ Popup {
                             Layout.topMargin: 20
                             Layout.fillWidth: true
                             spacing: 24
-                            ColumnLayout {
-                                Layout.fillWidth: true
-                                spacing: 8
-                                Heading { text: qsTranslate("Settings", "Comment posting") }
-                                Detail {
-                                    text: root.backend.comment_send_on_enter
-                                        ? qsTranslate("Settings", "Press Enter to send. Ctrl + Enter also works.")
-                                        : qsTranslate("Settings", "Press Ctrl + Enter to send. Enter alone does not send.")
-                                }
+                            Detail {
+                                text: qsTranslate("Settings", "Send with")
+                                color: "#f4f5f3"
+                                font.pixelSize: 16
                             }
                             SettingsChoice {
                                 id: sendKey
@@ -542,7 +512,7 @@ Popup {
                             RowLayout {
                                 Layout.fillWidth: true
                                 Detail { text: qsTranslate("Settings", "Storage target (MiB)") }
-                                SpinBox {
+                                ThemedSpinBox {
                                     objectName: "commentCacheLimit"
                                     from: 64; to: 65536; stepSize: 64
                                     editable: true
@@ -555,20 +525,20 @@ Popup {
                                 objectName: "commentCacheUsage"
                                 text: qsTranslate("Settings", "Disk usage: %1 MiB").arg((root.backend.comment_cache_bytes / (1024 * 1024)).toFixed(1))
                             }
-                            Detail {
+                            Flow {
                                 Layout.fillWidth: true
-                                text: qsTranslate("Settings", "Comments for the open recording and retained live video are kept when unused data is cleared.")
-                            }
-                            Button {
-                                objectName: "refreshRecordingComments"
-                                text: qsTranslate("Settings", "Fetch this program's comments again")
-                                enabled: root.backend.recording && root.backend.comments_enabled && root.backend.danmaku_enabled
-                                onClicked: root.backend.refresh_recording_comments()
-                            }
-                            Button {
-                                objectName: "clearCommentCache"
-                                text: qsTranslate("Settings", "Clear unused comments")
-                                onClicked: root.backend.clear_comment_cache()
+                                spacing: 8
+                                SettingsAction {
+                                    objectName: "refreshRecordingComments"
+                                    text: qsTranslate("Settings", "Fetch this program's comments again")
+                                    enabled: root.backend.recording && root.backend.comments_enabled && root.backend.danmaku_enabled
+                                    onClicked: root.backend.refresh_recording_comments()
+                                }
+                                SettingsAction {
+                                    objectName: "clearCommentCache"
+                                    text: qsTranslate("Settings", "Clear unused comments")
+                                    onClicked: root.backend.clear_comment_cache()
+                                }
                             }
                         }
                     }
@@ -576,7 +546,6 @@ Popup {
                         visible: root.page === SettingsPanel.Shortcuts
                         Layout.fillWidth: true
                         spacing: 24
-                        Detail { text: qsTranslate("Settings", "Shortcuts for watching TV. Channel and guide shortcuts are inactive while typing.") }
                         ColumnLayout {
                             Layout.fillWidth: true
                             spacing: 0
@@ -603,7 +572,6 @@ Popup {
                             objectName: "statsVisible"
                             Layout.fillWidth: true
                             text: qsTranslate("Settings", "Show video statistics")
-                            description: qsTranslate("Settings", "Show resolution, frame rate and playback performance while watching.")
                             checked: root.statsVisible
                             onClicked: root.statsRequested(checked)
                         }
@@ -636,8 +604,7 @@ Popup {
                             ].join("\n")
                         }
                         Heading { text: qsTranslate("Settings", "Logs") }
-                        Detail { text: qsTranslate("Settings", "Logs contain technical details to help investigate problems.") }
-                        Action {
+                        SettingsAction {
                             objectName: "openLogFolder"
                             text: qsTranslate("Main", "Open log folder")
                             onClicked: root.backend.open_log_folder()
@@ -672,21 +639,21 @@ Popup {
         RowLayout {
             id: footer
             objectName: "settingsFooter"
-            anchors { left: parent.left; leftMargin: root.contentLeft; right: parent.right; rightMargin: root.sideMargin
-                bottom: parent.bottom; bottomMargin: root.compact ? 24 : 44 }
-            height: 56
+            width: root.pageWidth
+            anchors { left: parent.left; leftMargin: root.contentLeft
+                bottom: parent.bottom; bottomMargin: 24 }
+            height: 40
             spacing: 24
             Label {
                 Layout.fillWidth: true
                 text: root.page === SettingsPanel.Diagnostics
                     ? qsTranslate("Settings", "Diagnostic display settings apply to this session only.")
-                    : root.page === SettingsPanel.Display || root.page === SettingsPanel.Comments
-                        ? qsTranslate("Settings", "Changes take effect immediately.") : ""
+                    : ""
                 color: "#8c918c"
                 font.pixelSize: 13
                 wrapMode: Text.Wrap
             }
-            Action {
+            SettingsAction {
                 objectName: "closeSettings"
                 text: qsTranslate("Settings", "Back to viewing")
                 onClicked: root.close()

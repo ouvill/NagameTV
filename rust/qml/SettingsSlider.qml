@@ -12,7 +12,7 @@ Item {
     required property real stepSize
     required property real value
     signal moved(real value)
-    implicitHeight: Math.max(72, row.implicitHeight + 28)
+    implicitHeight: Math.max(56, row.implicitHeight + 24)
     opacity: enabled ? 1 : 0.42
     RowLayout {
         id: row
@@ -22,7 +22,7 @@ Item {
             Layout.fillWidth: true
             text: root.text
             color: "#f4f5f3"
-            font.pixelSize: 18
+            font.pixelSize: 16
             wrapMode: Text.Wrap
         }
         ThemedSlider {
@@ -37,7 +37,7 @@ Item {
             Layout.preferredWidth: 72
             text: root.valueText
             color: "#9caf9f"
-            font.pixelSize: 16
+            font.pixelSize: 14
             horizontalAlignment: Text.AlignRight
         }
     }

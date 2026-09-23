@@ -6,6 +6,8 @@ import QtQuick.Layouts
 ColumnLayout {
     id: root
     required property var backend
+    enum Presentation { Setup, Settings }
+    property int presentation: ConnectionForm.Setup
     enum Phase { Idle, Checking, Failed, Empty, Ready, SaveFailed }
     property int phase: ConnectionForm.Idle
     property int channelCount: 0
@@ -63,23 +65,14 @@ ColumnLayout {
         font.pixelSize: 16
         font.bold: true
     }
-    TextField {
+    SettingsField {
         id: server
         objectName: "serverField"
         Layout.fillWidth: true
-        implicitHeight: 58
         text: root.backend.server
         readOnly: root.busy
         placeholderText: "http://192.168.1.100:40772"
-        color: "#f4f5f3"
-        placeholderTextColor: "#8c918c"
-        font.pixelSize: 18
-        leftPadding: 16; rightPadding: 16
         Accessible.name: qsTranslate("Settings", "Server URL")
-        background: Rectangle {
-            radius: 10; color: "#2b2926"
-            border.color: server.activeFocus ? "#9caf9f" : "#8c918c"
-        }
         onAccepted: root.connectToServer()
         onTextEdited: {
             root.phase = ConnectionForm.Idle;
@@ -87,7 +80,10 @@ ColumnLayout {
             root.detailsVisible = false;
         }
     }
-    Detail { text: qsTranslate("Settings", "Enter the Mirakurun server address starting with http:// or https://.") }
+    Detail {
+        visible: root.presentation === ConnectionForm.Setup
+        text: qsTranslate("Settings", "Enter the Mirakurun server address starting with http:// or https://.")
+    }
     BusyIndicator {
         Layout.alignment: Qt.AlignHCenter
         implicitWidth: 40; implicitHeight: 40
@@ -116,7 +112,7 @@ ColumnLayout {
         }
     }
     Detail {
-        visible: root.phase === ConnectionForm.Ready
+        visible: root.presentation === ConnectionForm.Setup && root.phase === ConnectionForm.Ready
         text: qsTranslate("Connection", "Choose a channel to start watching. You can change subtitles and comments later in Settings.")
     }
     TextAction {
@@ -130,11 +126,11 @@ ColumnLayout {
         visible: root.detailsVisible
         text: root.errorDetails
     }
-    Button {
+    SettingsAction {
         id: action
         objectName: "connectServer"
-        Layout.fillWidth: true
-        implicitHeight: 54
+        Layout.fillWidth: root.presentation === ConnectionForm.Setup
+        emphasis: SettingsAction.Primary
         enabled: !root.busy && server.text.trim().length > 0
         text: root.phase === ConnectionForm.Ready ? qsTranslate("Viewer", "Choose a channel")
             : root.phase === ConnectionForm.Checking ? qsTranslate("Connection", "Checking the connection…")
@@ -145,21 +141,10 @@ ColumnLayout {
             if (root.phase === ConnectionForm.Ready) root.completed();
             else root.connectToServer();
         }
-        contentItem: Label {
-            text: action.text
-            color: "#0b0c0b"
-            font.pixelSize: 16; font.bold: true
-            horizontalAlignment: Text.AlignHCenter
-            verticalAlignment: Text.AlignVCenter
-        }
-        background: Rectangle {
-            radius: 10
-            color: action.down ? "#8da793" : action.hovered ? "#b6c6b8" : "#9caf9f"
-            border.color: action.visualFocus ? "#f4f5f3" : "#8c918c"
-        }
     }
     TextAction {
         objectName: "serverSetupHelp"
+        visible: root.presentation === ConnectionForm.Setup
         Layout.alignment: Qt.AlignHCenter
         text: qsTranslate("Connection", "Need to set up a Mirakurun server?")
         onClicked: Qt.openUrlExternally("https://github.com/Chinachu/Mirakurun/blob/master/doc/Platforms.md")

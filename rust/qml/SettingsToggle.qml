@@ -6,23 +6,23 @@ import QtQuick.Layouts
 ToggleSwitch {
     id: control
     property string description: ""
-    implicitHeight: Math.max(72, contentItem.implicitHeight + 28)
+    implicitHeight: Math.max(56, contentItem.implicitHeight + 24)
     leftPadding: 0
     rightPadding: 4
-    topPadding: 14
-    bottomPadding: 14
+    topPadding: 12
+    bottomPadding: 12
     Accessible.description: description
     contentItem: RowLayout {
         spacing: 24
         ColumnLayout {
             Layout.fillWidth: true
-            spacing: 6
+            spacing: 4
             Label {
                 Layout.fillWidth: true
                 text: control.text
                 textFormat: Text.PlainText
                 color: "#f4f5f3"
-                font.pixelSize: 18
+                font.pixelSize: 16
                 wrapMode: Text.Wrap
             }
             Label {
@@ -30,7 +30,7 @@ ToggleSwitch {
                 visible: text.length > 0
                 text: control.description
                 textFormat: Text.PlainText
-                color: "#b6bab6"
+                color: "#9ea79f"
                 font.pixelSize: 13
                 wrapMode: Text.Wrap
             }

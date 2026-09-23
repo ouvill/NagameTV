@@ -31,10 +31,10 @@ ColumnLayout {
         objectName: "screenshotFormatDescription"
         Layout.fillWidth: true
         text: root.value === "png"
-            ? qsTranslate("Settings", "Saves video, subtitles and comments without losing image quality. Files tend to be larger.")
+            ? qsTranslate("Settings", "Lossless, with larger files.")
             : root.value === "jpg"
-            ? qsTranslate("Settings", "Saves smaller files. The edges of subtitles and comments may look blurred.")
-            : qsTranslate("Settings", "Often saves smaller files than JPG at similar image quality. Lossless saving is also available.")
+            ? qsTranslate("Settings", "Smaller files; text edges may look blurred.")
+            : qsTranslate("Settings", "Compact files, with optional lossless saving.")
         color: "#b6bab6"
         font.pixelSize: 14
         wrapMode: Text.Wrap
@@ -83,8 +83,8 @@ ColumnLayout {
             objectName: "screenshotParameterDescription"
             Layout.fillWidth: true
             text: root.value === "png"
-                ? qsTranslate("Settings", "Higher values spend more time saving to reduce file size. Image quality stays the same.")
-                : qsTranslate("Settings", "Higher values improve image quality and increase file size.")
+                ? qsTranslate("Settings", "Higher compression saves space but takes longer.")
+                : qsTranslate("Settings", "Higher quality increases file size.")
             color: "#9ea79f"; font.pixelSize: 13
             wrapMode: Text.Wrap
         }

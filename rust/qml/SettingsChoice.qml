@@ -6,10 +6,10 @@ ComboBox {
     id: control
     hoverEnabled: true
     property url dropdownIcon: "qrc:/qt/qml/MinimalViewer/assets/icons/chevron-down.svg"
-    implicitHeight: 54
-    leftPadding: 20
-    rightPadding: 44
-    palette.button: "#2b2926"
+    implicitHeight: 44
+    leftPadding: 14
+    rightPadding: 40
+    palette.button: "#222622"
     palette.buttonText: "#f4f5f3"
     palette.base: "#151715"
     palette.text: "#f4f5f3"
@@ -18,7 +18,7 @@ ComboBox {
     contentItem: Label {
         text: control.displayText
         color: "#f4f5f3"
-        font.pixelSize: 17
+        font.pixelSize: 16
         verticalAlignment: Text.AlignVCenter
         elide: Text.ElideRight
     }
@@ -31,9 +31,9 @@ ComboBox {
         Behavior on rotation { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
     }
     background: Rectangle {
-        radius: 10
-        color: control.down ? "#353b34" : control.hovered ? "#34352f" : "#2b2926"
-        border.color: control.activeFocus ? "#9caf9f" : "#8c918c"
+        radius: 8
+        color: control.down ? "#344238" : control.hovered ? "#2a302b" : "#222622"
+        border.color: control.activeFocus ? "#9caf9f" : "#3b423c"
         Behavior on color { ColorAnimation { duration: 100 } }
         Behavior on border.color { ColorAnimation { duration: 100 } }
     }
@@ -71,7 +71,7 @@ ComboBox {
         }
         exit: Transition { NumberAnimation { property: "opacity"; to: 0; duration: 80 } }
         implicitHeight: contentItem.implicitHeight + topPadding + bottomPadding
-        background: Rectangle { radius: 10; color: "#151715"; border.color: "#8c918c" }
+        background: Rectangle { radius: 8; color: "#222622"; border.color: "#3b423c" }
         contentItem: ListView {
             clip: true
             implicitHeight: contentHeight
