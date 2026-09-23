@@ -24,12 +24,14 @@ TestCase {
     }
     RecordingInput { id: input; anchors.fill: parent; backend: backend }
     SignalSpy { id: started; target: input; signalName: "started" }
+    SignalSpy { id: library; target: input; signalName: "libraryRequested" }
     function init() {
         failOnWarning(/.*/);
         backend.calls = 0;
         backend.accept = true;
         backend.recording_loading = false;
         started.clear();
+        library.clear();
     }
     function cleanup() {
         findChild(input, "recordingSource").close();
@@ -46,6 +48,16 @@ TestCase {
         backend.recording_loading = false;
         backend.recordingOpened(true);
         compare(started.count, 1);
+    }
+    function test_browse_library_closes_source_without_changing_playback() {
+        input.open();
+        const dialog = findChild(input, "recordingSource");
+        tryCompare(dialog, "opened", true);
+        mouseClick(findChild(input, "recordingBrowseEpgstation"));
+        tryCompare(dialog, "visible", false);
+        compare(library.count, 1);
+        compare(backend.calls, 0);
+        compare(started.count, 0);
     }
     function test_url_dialog_submission_and_cancel() {
         input.open();

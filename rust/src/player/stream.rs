@@ -395,6 +395,7 @@ impl ffi::Player {
         self.as_mut().refresh_channels_if_due();
         self.as_mut().poll_channels();
         self.as_mut().poll_recording();
+        self.as_mut().poll_recording_library();
         let result = self.as_mut().rust_mut().media.poll();
         let notice = self.as_mut().rust_mut().media.take_notice();
         self.poll_audio_choice();
@@ -465,6 +466,7 @@ impl ffi::Player {
         self.as_mut().poll_features();
     }
     pub fn shutdown(mut self: Pin<&mut Self>) -> bool {
+        self.as_mut().cancel_epgstation();
         self.as_mut().cancel_recording_open();
         // Retained native screenshot buffers may still need the GL context for
         // readback. Complete accepted work before stopping that context.

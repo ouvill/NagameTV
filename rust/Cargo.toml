@@ -17,13 +17,14 @@ qml_tests = []
 # Main-thread Qt/GStreamer integration checks, implemented in Rust.
 video_item_tests = []
 # Rust runners for Qt translation, raster geometry, pointer and QML checks.
-native_tests = ["qml_tests", "dep:tonic"]
+native_tests = ["qml_tests", "dep:tonic", "dep:wiremock"]
 
 [dependencies]
 clap = { version = "4.6", features = ["derive"] }
 tsreadex = { path = "crates/tsreadex" }
 viewer-remote = { path = "crates/viewer-remote" }
 tonic = { version = "0.14", optional = true }
+wiremock = { version = "0.6", optional = true }
 viewer-epg-events = { path = "crates/viewer-epg-events", features = ["network"] }
 viewer-diagnostics = { path = "crates/viewer-diagnostics" }
 viewer-comments = { path = "crates/viewer-comments", features = ["network"] }
@@ -38,7 +39,7 @@ gstreamer-app = { version = "0.25", features = ["v1_24"] }
 gstreamer-base = { version = "0.25", features = ["v1_24"] }
 gstreamer-video = { version = "0.25", features = ["v1_24"] }
 gstreamer-mpegts = { version = "0.25.2", features = ["v1_24"] }
-reqwest = { version = "0.13", default-features = false, features = ["rustls"] }
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "cookies"] }
 tokio = { version = "1.47", features = ["rt-multi-thread", "time"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"

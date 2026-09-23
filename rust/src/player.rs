@@ -19,6 +19,9 @@ use lifecycle::{Failure as StatusFailure, Status as PlaybackStatus};
 mod playback_failure;
 mod preferences;
 mod program_info;
+mod recording_library;
+#[cfg(feature = "native_tests")]
+mod recording_library_checks;
 mod recordings;
 mod remote;
 #[cfg(feature = "native_tests")]
@@ -54,6 +57,8 @@ pub mod ffi {
     unsafe extern "C++" {
         include!("nagametv/src/channel_model.cxxqt.h");
         type ChannelModel = crate::channel_model::ffi::ChannelModel;
+        include!("nagametv/src/recording_model.cxxqt.h");
+        type RecordingModel = crate::recording_model::ffi::RecordingModel;
         include!("nagametv/src/comment_model.cxxqt.h");
         type CommentModel = crate::comment_model::ffi::CommentModel;
         include!("cxx-qt-lib/qstring.h");
@@ -93,6 +98,15 @@ pub mod ffi {
         #[qproperty(QString, playback_message, READ, NOTIFY)]
         #[qproperty(QString, log_error, READ, NOTIFY)]
         #[qproperty(*mut ChannelModel, channels, READ = channels, CONSTANT)]
+        #[qproperty(*mut RecordingModel, recordings, READ = recordings, CONSTANT)]
+        #[qproperty(QString, epgstation_server, READ = epgstation_server, NOTIFY = epgstation_changed)]
+        #[qproperty(bool, epgstation_busy, READ = epgstation_busy, NOTIFY = epgstation_changed)]
+        #[qproperty(bool, epgstation_loaded, READ = epgstation_loaded, NOTIFY = epgstation_changed)]
+        #[qproperty(QString, epgstation_error, READ = epgstation_error, NOTIFY = epgstation_changed)]
+        #[qproperty(QString, epgstation_total, READ = epgstation_total, NOTIFY = epgstation_changed)]
+        #[qproperty(QString, epgstation_page, READ = epgstation_page, NOTIFY = epgstation_changed)]
+        #[qproperty(bool, epgstation_previous, READ = epgstation_previous, NOTIFY = epgstation_changed)]
+        #[qproperty(bool, epgstation_next, READ = epgstation_next, NOTIFY = epgstation_changed)]
         #[qproperty(QString, channel_program_data, READ, NOTIFY)]
         #[qproperty(QString, channel_visibility_data, READ, NOTIFY)]
         #[qproperty(QString, guide_visibility_data, READ, NOTIFY)]
@@ -178,6 +192,32 @@ pub mod ffi {
         #[qproperty(QString, build_info, READ = build_info, CONSTANT)]
         type Player = super::PlayerRust;
         fn channels(self: &Player) -> *mut ChannelModel;
+        fn recordings(self: &Player) -> *mut RecordingModel;
+        fn epgstation_server(self: &Player) -> QString;
+        fn epgstation_busy(self: &Player) -> bool;
+        fn epgstation_loaded(self: &Player) -> bool;
+        fn epgstation_error(self: &Player) -> QString;
+        fn epgstation_total(self: &Player) -> QString;
+        fn epgstation_page(self: &Player) -> QString;
+        fn epgstation_previous(self: &Player) -> bool;
+        fn epgstation_next(self: &Player) -> bool;
+        #[qsignal]
+        fn epgstation_changed(self: Pin<&mut Player>);
+        #[qinvokable]
+        fn browse_epgstation(self: Pin<&mut Player>, server: QString, keyword: QString) -> bool;
+        #[qinvokable]
+        fn login_epgstation(
+            self: Pin<&mut Player>,
+            server: QString,
+            name: QString,
+            password: QString,
+        ) -> bool;
+        #[qinvokable]
+        fn epgstation_change_page(self: Pin<&mut Player>, forward: bool);
+        #[qinvokable]
+        fn cancel_epgstation(self: Pin<&mut Player>);
+        #[qinvokable]
+        fn play_epgstation(self: Pin<&mut Player>, id: QString) -> bool;
         fn selected(self: &Player) -> i32;
         fn build_info(self: &Player) -> QString;
         fn autoplay(self: &Player) -> bool;
@@ -438,6 +478,9 @@ pub struct PlayerRust {
     subtitle_cells: usize,
     error_log: Result<crate::error_log::ErrorLog, crate::error_log::Error>,
     channel_model: cxx::UniquePtr<crate::channel_model::ffi::ChannelModel>,
+    recording_model: cxx::UniquePtr<crate::recording_model::ffi::RecordingModel>,
+    recording_library: crate::epgstation::Library,
+    epgstation_input_error: QString,
     channel_program_data: QString,
     channel_visibility_data: QString,
     guide_visibility_data: QString,

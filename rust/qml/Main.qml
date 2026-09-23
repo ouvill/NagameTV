@@ -77,6 +77,7 @@ ViewerWindow {
         z: 100
         backend: player
         enabled: !root.closing
+        onLibraryRequested: recordingLibrary.open()
         onStarted: {
             setup.close();
             root.closeSettings();
@@ -85,6 +86,10 @@ ViewerWindow {
             root.showProgram = false;
             root.closeCommentComposer();
         }
+    }
+    RecordingLibrary {
+        id: recordingLibrary
+        backend: player
     }
     function openConnectionSettings() {
         if (root.setupRequired) setup.open();

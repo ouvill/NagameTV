@@ -9,6 +9,7 @@ Item {
     id: root
     required property var backend
     signal started
+    signal libraryRequested
 
     function open() { sourceDialog.open(); }
     function openFile() { sourceDialog.close(); picker.open(); }
@@ -53,11 +54,21 @@ Item {
         }
         contentItem: ColumnLayout {
             spacing: Theme.spaceLg
-            ActionButton {
-                objectName: "recordingChooseFile"
-                text: qsTranslate("Recording", "Open TS file")
+            RowLayout {
                 Layout.fillWidth: true
-                onClicked: root.openFile()
+                spacing: Theme.spaceMd
+                ActionButton {
+                    objectName: "recordingChooseFile"
+                    text: qsTranslate("Recording", "Open TS file")
+                    Layout.fillWidth: true
+                    onClicked: root.openFile()
+                }
+                ActionButton {
+                    objectName: "recordingBrowseEpgstation"
+                    text: qsTranslate("RecordingLibrary", "EPGStation recordings")
+                    Layout.fillWidth: true
+                    onClicked: { sourceDialog.close(); root.libraryRequested(); }
+                }
             }
             Label {
                 text: qsTranslate("Recording", "Recording URL")

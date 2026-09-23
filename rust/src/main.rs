@@ -8,6 +8,7 @@ mod danmaku;
 #[cfg(feature = "qml_tests")]
 mod danmaku_ui_tests;
 mod diagnostics;
+mod epgstation;
 mod error_log;
 mod features;
 mod json;
@@ -20,6 +21,7 @@ mod platform;
 mod playback;
 mod player;
 mod qt;
+mod recording_model;
 mod remote;
 mod screenshots;
 mod services;

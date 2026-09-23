@@ -210,6 +210,9 @@ impl Session {
         self.preferences
             .apply_overrides(Some(server.url().as_str().to_owned()), None);
     }
+    pub fn confirm_epgstation(&mut self, server: &crate::epgstation::VerifiedEndpoint) {
+        self.preferences.epgstation_server = server.as_str().to_owned();
+    }
     pub fn change(&mut self, change: Change) {
         let preferences = &mut self.preferences;
         match change {

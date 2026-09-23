@@ -42,6 +42,12 @@ pub struct Network {
 }
 
 impl Network {
+    pub fn job<T: Send + 'static, E: Send + 'static>(
+        &self,
+        operation: impl std::future::Future<Output = Result<T, FetchError<E>>> + Send + 'static,
+    ) -> Job<T, E> {
+        Job::spawn(self.runtime.handle(), operation)
+    }
     pub fn start_remote(
         &self,
         bound: viewer_remote::Bound,

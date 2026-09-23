@@ -351,6 +351,14 @@
   <context>
     <name>Backend</name>
     <message>
+      <source>Authentication failed. Check your username and password, then sign in again.</source>
+      <translation>認証できません。ユーザー名とパスワードを確認し、ログインしてください。</translation>
+    </message>
+    <message>
+      <source>Network is unavailable.</source>
+      <translation>ネットワークを利用できません。</translation>
+    </message>
+    <message>
       <source>Start playback to change its speed.</source>
       <translation>再生を開始すると速度を変更できます。</translation>
     </message>
@@ -1897,4 +1905,91 @@
         <translation>録画</translation>
     </message>
 </context>
+  <context>
+    <name>RecordingLibrary</name>
+    <message>
+      <source>EPGStation recordings</source>
+      <translation>EPGStationの録画</translation>
+    </message>
+    <message>
+      <source>EPGStation URL</source>
+      <translation>EPGStationのURL</translation>
+    </message>
+    <message>
+      <source>Connect</source>
+      <translation>接続する</translation>
+    </message>
+    <message>
+      <source>Sign in…</source>
+      <translation>ログイン…</translation>
+    </message>
+    <message>
+      <source>Search recordings</source>
+      <translation>録画を検索</translation>
+    </message>
+    <message>
+      <source>Search</source>
+      <translation>検索</translation>
+    </message>
+    <message>
+      <source>Recording in progress</source>
+      <translation>録画中</translation>
+    </message>
+    <message>
+      <source>No recorded TS file</source>
+      <translation>録画済みTSファイルがありません</translation>
+    </message>
+    <message>
+      <source>Play</source>
+      <translation>再生</translation>
+    </message>
+    <message>
+      <source>No recordings found</source>
+      <translation>録画が見つかりません</translation>
+    </message>
+    <message>
+      <source>Connect to EPGStation to browse recordings.</source>
+      <translation>EPGStationに接続すると録画一覧を表示します。</translation>
+    </message>
+    <message>
+      <source>Previous</source>
+      <translation>前へ</translation>
+    </message>
+    <message>
+      <source>Next</source>
+      <translation>次へ</translation>
+    </message>
+    <message>
+      <source>Close</source>
+      <translation>閉じる</translation>
+    </message>
+    <message>
+      <source>Page %1 · %2 recordings</source>
+      <translation>%1ページ・全%2件</translation>
+    </message>
+    <message>
+      <source>Sign in to EPGStation (stuayu)</source>
+      <translation>EPGStation（stuayu版）にログイン</translation>
+    </message>
+    <message>
+      <source>Username</source>
+      <translation>ユーザー名</translation>
+    </message>
+    <message>
+      <source>Password</source>
+      <translation>パスワード</translation>
+    </message>
+    <message>
+      <source>Your password is not saved. Sign in again after restarting the app.</source>
+      <translation>パスワードは保存しません。アプリの再起動後は再度ログインしてください。</translation>
+    </message>
+    <message>
+      <source>Cancel</source>
+      <translation>キャンセル</translation>
+    </message>
+    <message>
+      <source>Sign in</source>
+      <translation>ログイン</translation>
+    </message>
+  </context>
 </TS>

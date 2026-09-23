@@ -42,6 +42,8 @@ main → cli::Command → qt::application::LoadedApplication
        │  ├ Playback        映像・音声、音声カタログ・PMT・主副出力
        │  └ Option<字幕Session> 購読・解析・同期時計
        ├ recording::Loader ローカル／HTTP録画TS検証・取消し待ち・最新要求の所有
+       ├ epgstation::Library 録画一覧・検索・認証セッション・取消し待ち
+       ├ RecordingModel    録画一覧の読み取り専用Qt投影
        ├ Acquisition        /api/servicesの取得・取消し待ち
        ├ ProgramInfo        /api/programsの取得・現行スナップショット
        ├ EPG Controller     番組変更通知の購読・停止待ち

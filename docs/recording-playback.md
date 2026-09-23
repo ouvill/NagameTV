@@ -19,6 +19,9 @@
 
 ### EPGStationの録画URL
 
+「録画を開く」→「EPGStationの録画」では、接続先を保存して録画一覧から再生できます。
+stuayu版の認証付き接続も含め、[録画一覧の操作方法](epgstation.md)を参照してください。
+
 録画済みTSファイルを直接返すHTTP/HTTPS URLを指定します。EPGStationの例は
 `http://epgstation:8888/api/videos/123`です。`123`は録画IDではなくビデオファイルIDです。
 [EPGStationのビデオ取得API](https://github.com/l3tnun/EPGStation/blob/master/src/model/service/api/videos/%7BvideoFileId%7D.ts)を参照してください。
@@ -89,7 +92,6 @@ flowchart LR
 - **未実装機能**:
   - 再生位置（レジューム位置）の保存と次回再開
   - 複数サービスが混在するTSにおけるサービス手動選択UI（現在はPAT内の最小サービスIDを自動選択）
-  - EPGStation等の録画サーバー連携一覧取得
   - 詳細なバックログは [未実装機能・改善候補](backlog.md) を参照してください。
 
 ---

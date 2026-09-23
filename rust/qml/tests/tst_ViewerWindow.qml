@@ -69,9 +69,13 @@ Item {
                 tryCompare(host, "uiScale", scale);
                 host.update();
                 verify(waitForRendering(host.contentItem), "render " + width + "x" + height);
-                const corner = host.viewport.mapToItem(host.contentItem, host.viewport.width, host.viewport.height);
-                fuzzyCompare(corner.x, width, pixelTolerance);
-                fuzzyCompare(corner.y, height, pixelTolerance);
+                // A presented frame can precede the anchor/layout update caused
+                // by the resize. Wait for the same geometry invariant itself.
+                tryVerify(function() {
+                    const corner = host.viewport.mapToItem(host.contentItem, host.viewport.width, host.viewport.height);
+                    return Math.abs(corner.x - width) <= pixelTolerance
+                        && Math.abs(corner.y - height) <= pixelTolerance;
+                }, 5000, "viewport follows the resized window");
                 compare(host.windowSizeToRemember(), Qt.size(width, height));
             }
             function clickInWindow(item) {

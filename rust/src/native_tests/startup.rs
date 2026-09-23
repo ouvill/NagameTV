@@ -78,7 +78,29 @@ impl Server {
                     socket.read_exact(&mut byte)?;
                     header.push(byte[0]);
                 }
-                if header.starts_with(b"GET /api/videos/123 ") {
+                if header.starts_with(b"POST /protected/api/auth/login ") {
+                    let body = r#"{"user":{"id":1,"name":"viewer"}}"#;
+                    write!(
+                        socket,
+                        "HTTP/1.1 200 OK\r\nSet-Cookie: epgstation_session=fixture; Path=/protected; HttpOnly\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                        body.len()
+                    )?;
+                    continue;
+                }
+                let request = String::from_utf8_lossy(&header);
+                if (header.starts_with(b"GET /protected/api/recorded?")
+                    || header.starts_with(b"GET /protected/api/auth/media-token "))
+                    && !request.contains("epgstation_session=fixture")
+                {
+                    write!(
+                        socket,
+                        "HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                    )?;
+                    continue;
+                }
+                if header.starts_with(b"GET /api/videos/123 ")
+                    || header.starts_with(b"GET /protected/api/videos/123?token=playback-fixture ")
+                {
                     let bytes = include_bytes!("../../../tests/fixtures/recording-seek.ts");
                     let headers = String::from_utf8_lossy(&header).to_ascii_lowercase();
                     let range = headers
@@ -107,6 +129,12 @@ impl Server {
                         {"id":2,"networkId":10,"serviceId":2,"name":"Saved TV","type":1,"channel":{"type":"GR"}}]"#
                 } else if header.starts_with(b"GET /api/programs ") {
                     &programs
+                } else if header.starts_with(b"GET /api/recorded?")
+                    || header.starts_with(b"GET /protected/api/recorded?")
+                {
+                    r#"{"records":[{"id":7,"name":"EPGStation recording","channelName":"Test TV","startAt":1000,"endAt":61000,"isRecording":false,"videoFiles":[{"id":123,"type":"ts","size":1880}]}],"total":1}"#
+                } else if header.starts_with(b"GET /protected/api/auth/media-token ") {
+                    r#"{"token":"playback-fixture"}"#
                 } else {
                     "[]"
                 };
@@ -319,39 +347,47 @@ fn check_danmaku_layout(
     Ok(())
 }
 
-fn check_screen_navigation(
+fn capture_navigation(
     app: &QGuiApplication,
     engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
+    name: &str,
 ) -> TestResult {
     let review =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../build/navigation-review");
     std::fs::create_dir_all(&review)?;
-    let capture = |engine: &mut cxx::UniquePtr<QQmlApplicationEngine>, name: &str| -> TestResult {
-        // QML geometry can settle before the platform surface and render target
-        // are resized. Wait for two presented frames before grabbing pixels.
-        let frames = ffi::watchFrames(engine)?;
-        let deadline = Instant::now() + Duration::from_secs(5);
-        while frames.samples().to_string() == "[]" {
-            if Instant::now() >= deadline {
-                return Err("navigation review frame was not presented".into());
-            }
-            evaluate(engine, "root.update(); true")?;
-            app.process_events();
-            thread::sleep(Duration::from_millis(5));
+    // QML geometry can settle before the platform surface and render target
+    // are resized. Wait for two presented frames before grabbing pixels.
+    let frames = ffi::watchFrames(engine)?;
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while frames.samples().to_string() == "[]" {
+        if Instant::now() >= deadline {
+            return Err("navigation review frame was not presented".into());
         }
-        let image = ffi::grabRoot(engine.pin_mut())?;
-        let default_quality = -1;
-        let png_compression_percent = 60;
-        if !crate::qt::ffi::save_screenshot_image(
-            &image,
-            &QString::from(review.join(name).to_string_lossy().as_ref()),
-            &QString::from("png"),
-            default_quality,
-            png_compression_percent,
-        ) {
-            return Err("could not save navigation review image".into());
-        }
-        Ok(())
+        evaluate(engine, "root.update(); true")?;
+        app.process_events();
+        thread::sleep(Duration::from_millis(5));
+    }
+    let image = ffi::grabRoot(engine.pin_mut())?;
+    let default_quality = -1;
+    let png_compression_percent = 60;
+    if !crate::qt::ffi::save_screenshot_image(
+        &image,
+        &QString::from(review.join(name).to_string_lossy().as_ref()),
+        &QString::from("png"),
+        default_quality,
+        png_compression_percent,
+    ) {
+        return Err("could not save navigation review image".into());
+    }
+    Ok(())
+}
+
+fn check_screen_navigation(
+    app: &QGuiApplication,
+    engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
+) -> TestResult {
+    let capture = |engine: &mut cxx::UniquePtr<QQmlApplicationEngine>, name: &str| {
+        capture_navigation(app, engine, name)
     };
     for (width, height) in [(640, 360), (960, 540), (1280, 720), (1440, 810)] {
         evaluate(
@@ -831,11 +867,122 @@ fn window(
     Ok(())
 }
 
+fn check_epgstation_library(
+    app: &QGuiApplication,
+    engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
+    server: &Server,
+    authenticated: bool,
+) -> TestResult {
+    let endpoint = if authenticated {
+        format!("{}/protected", server.url)
+    } else {
+        server.url.clone()
+    };
+    let endpoint = serde_json::to_string(&endpoint)?;
+    const FIND: &str = r#"
+        function find(item, name) {
+            if (!item) return null;
+            if (item.objectName === name) return item;
+            for (const child of item.children || []) { const found = find(child, name); if (found) return found; }
+            for (const child of item.contentData || []) { const found = find(child, name); if (found) return found; }
+            if (item.contentItem) return find(item.contentItem, name);
+            return null;
+        }
+    "#;
+    evaluate(engine, "recordingInput.libraryRequested(); true")?;
+    wait_for(app, engine, "recordingLibrary.opened")?;
+    evaluate(
+        engine,
+        &format!("{FIND} find(recordingLibrary, 'epgstationServer').text = {endpoint}; true"),
+    )?;
+    if authenticated {
+        evaluate(
+            engine,
+            &format!("{FIND} find(recordingLibrary, 'epgstationLogin').clicked(); true"),
+        )?;
+        wait_for(
+            app,
+            engine,
+            &format!("{FIND} find(recordingLibrary, 'epgstationLoginDialog').opened"),
+        )?;
+        evaluate(
+            engine,
+            &format!(
+                r#"{FIND}
+            find(recordingLibrary, 'epgstationUsername').text = 'viewer';
+            find(recordingLibrary, 'epgstationPassword').text = 'fixture-password';
+            find(recordingLibrary, 'epgstationSubmitLogin').clicked(); true
+        "#
+            ),
+        )?;
+        wait_for(
+            app,
+            engine,
+            &format!(
+                "{FIND} !find(recordingLibrary, 'epgstationLoginDialog').visible && find(recordingLibrary, 'epgstationPassword').text.length === 0"
+            ),
+        )?;
+    } else {
+        evaluate(
+            engine,
+            &format!("{FIND} find(recordingLibrary, 'epgstationConnect').clicked(); true"),
+        )?;
+    }
+    wait_for(
+        app,
+        engine,
+        "!player.epgstation_busy && player.epgstation_loaded && player.recordings.count === 1",
+    )?;
+    for (width, height) in [(640, 360), (960, 540)] {
+        evaluate(
+            engine,
+            &format!("root.width = {width}; root.height = {height}; true"),
+        )?;
+        wait_for(
+            app,
+            engine,
+            &format!(
+                "{FIND} const list = find(recordingLibrary, 'epgstationRecordings'); list.height > 0 && list.itemAtIndex(0) !== null"
+            ),
+        )?;
+        capture_navigation(
+            app,
+            engine,
+            &format!(
+                "epgstation-{}-{width}.png",
+                if authenticated {
+                    "authenticated"
+                } else {
+                    "anonymous"
+                }
+            ),
+        )?;
+    }
+    assert!(evaluate(
+        engine,
+        &format!(
+            "{FIND} const play = find(recordingLibrary, 'epgstationPlay'); const enabled = play.enabled; play.clicked(); enabled"
+        )
+    )?);
+    wait_for(
+        app,
+        engine,
+        "!recordingLibrary.visible && player.playing && player.recording && JSON.parse(player.video_stats()).rendered > 0",
+    )?;
+    evaluate(engine, "player.stop(); true")?;
+    println!(
+        "EPGStation UI: authenticated={authenticated}, catalogue, playback and small window passed"
+    );
+    Ok(())
+}
+
 fn check_http_recording(
     app: &QGuiApplication,
     engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
 ) -> TestResult {
     let server = Server::new()?;
+    check_epgstation_library(app, engine, &server, false)?;
+    check_epgstation_library(app, engine, &server, true)?;
     let url = serde_json::to_string(&format!("{}/api/videos/123", server.url))?;
     evaluate(engine, "recordingInput.open(); true")?;
     let dialog =

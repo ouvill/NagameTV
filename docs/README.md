@@ -15,6 +15,7 @@
 | **[Flatpakパッケージ](flatpak.md)** | Flatpak版の導入手順とポータル（FileTransfer等）仕様 |
 | **[AppImageパッケージ](appimage.md)** | AppImage版の実行方法、glibc互換性、システム要件 |
 | **[TS録画の再生](recording-playback.md)** | ローカルTSファイルの再生機能、対応形式、シーク操作、番組情報連携 |
+| **[EPGStation連携](epgstation.md)** | 録画一覧・検索・TS再生、stuayu版のパスワード認証と対応範囲 |
 | **[遠隔操作API](remote-control.md)** | 家庭内LANから本アプリを操作するgRPC / gRPC-Webの概要と設定方法 |
 | **[APIリファレンス (Protocol Buffers)](api/remote-control.md)** | `viewer.v1.PlayerService` の詳細なRPC・メッセージ定義 |
 | **[未実装機能・改善候補 (バックログ)](backlog.md)** | 実装検討中の機能や今後のロードマップ |

@@ -11,6 +11,19 @@ pub enum Progress<P, T> {
 }
 
 impl<T: Send + 'static, E: Send + 'static> Job<T, E> {
+    pub(super) fn spawn(
+        runtime: &tokio::runtime::Handle,
+        operation: impl std::future::Future<Output = Result<T, FetchError<E>>> + Send + 'static,
+    ) -> Self {
+        let (tx, rx) = mpsc::sync_channel(1);
+        let task = runtime.spawn(async move {
+            let _ = tx.try_send(operation.await);
+        });
+        Self {
+            task: Task(task),
+            rx,
+        }
+    }
     pub(super) fn start(
         runtime: &tokio::runtime::Handle,
         client: &reqwest::Client,
