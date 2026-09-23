@@ -17,5 +17,11 @@ The QML type registrar also receives QtCore's installed metatypes JSON via
 `--foreign-types`. Without it, `QML_FOREIGN(QSortFilterProxyModel)` loses its
 QObject inheritance and sourceModel property in plugin.qmltypes. The path comes
 from the selected installation's qtpaths, and a missing file fails the build.
-This change is verified on Linux with Qt 6.10; other Qt installations must also
-provide `QT_INSTALL_ARCHDATA/metatypes/qt6core_metatypes.json`.
+The official Qt 6.8.3 SDK used by AppImage CI names this file
+`qt6core_relwithdebinfo_metatypes.json`; the Linux Qt 6.10 packages use
+`qt6core_metatypes.json`. Search `QT_INSTALL_ARCHDATA/metatypes` for the
+unqualified filename first, then the standard CMake configuration suffixes
+(`relwithdebinfo`, `release`, `minsizerel`, `debug`). Report the attempted paths
+if no file is found. All paths come from the selected Qt installation.
+Keep the foreign-type input mandatory so missing metadata cannot silently weaken
+QML type checking.

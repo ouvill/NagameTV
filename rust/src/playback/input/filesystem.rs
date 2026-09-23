@@ -215,7 +215,7 @@ mod tests {
     }
 
     #[test]
-    fn slots_recycle_without_corrupting_history_and_release_disk_blocks() -> io::Result<()> {
+    fn slots_recycle_without_corrupting_history_and_clear_removed_bytes() -> io::Result<()> {
         const RETAINED_SEGMENTS: u64 = 4;
         const RECEIVED_SEGMENTS: u64 = RETAINED_SEGMENTS * 8;
         let root = tempfile::tempdir()?;
@@ -237,13 +237,17 @@ mod tests {
             assert_eq!(buffer.file.as_raw_fd(), fd);
             assert_eq!(buffer.file.metadata()?.nlink(), 0);
         }
-        buffer.file.sync_all()?;
-        let before = buffer.file.metadata()?.blocks();
         for start in RECEIVED_SEGMENTS - RETAINED_SEGMENTS..RECEIVED_SEGMENTS - 1 {
+            let slot = buffer.slot(start)?;
             buffer.remove(start)?;
+            assert!(buffer.read(start, 0, 1).is_err());
+            // Check the hole's contents directly. Anonymous files on some
+            // filesystems report a fixed st_blocks value even after fsync.
+            buffer.file.seek(SeekFrom::Start(slot))?;
+            let mut released = vec![0xff; SEGMENT_BYTES];
+            buffer.file.read_exact(&mut released)?;
+            assert!(released.iter().all(|byte| *byte == 0));
         }
-        buffer.file.sync_all()?;
-        assert!(buffer.file.metadata()?.blocks() < before);
         assert!(buffer.read(0, 0, 1).is_err());
         assert_eq!(
             buffer.read(RECEIVED_SEGMENTS - 1, 0, SEGMENT_BYTES)?,

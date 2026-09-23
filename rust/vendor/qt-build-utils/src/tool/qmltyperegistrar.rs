@@ -33,14 +33,27 @@ impl QtToolQmlTypeRegistrar {
             let archdata = QtToolQtPaths::new(qt_installation)
                 .query("QT_INSTALL_ARCHDATA")
                 .expect("Could not locate Qt architecture data");
-            let path = PathBuf::from(archdata).join("metatypes/qt6core_metatypes.json");
-            assert!(
-                path.is_file(),
-                "QtCore metatypes are missing: {}",
-                path.display()
-            );
+            let directory = PathBuf::from(archdata).join("metatypes");
+            // Qt 6.8 SDKs include the build configuration in the filename;
+            // newer Qt versions and Linux distribution packages omit it.
+            // Prefer the unqualified metadata, then optimized configurations.
+            let candidates = ["", "_relwithdebinfo", "_release", "_minsizerel", "_debug"]
+                .map(|config| directory.join(format!("qt6core{config}_metatypes.json")));
+            let path = candidates
+                .iter()
+                .find(|path| path.is_file())
+                .unwrap_or_else(|| {
+                    panic!(
+                        "QtCore metatypes are missing; checked: {}",
+                        candidates
+                            .iter()
+                            .map(|path| path.display().to_string())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    )
+                });
             println!("cargo::rerun-if-changed={}", path.display());
-            path
+            path.clone()
         });
         Self {
             executable,
