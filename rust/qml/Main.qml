@@ -13,6 +13,20 @@ ViewerWindow {
     color: Theme.canvas
     font.family: "Noto Sans CJK JP"
     property bool closing: false
+    readonly property SettingsPanel settings: settingsLoader.item as SettingsPanel
+    function openSettings(page) {
+        if (root.closing) return;
+        // Construction is synchronous so the first click opens the popup.
+        // Retain it after first use to preserve edits and fast repeated opens.
+        settingsLoader.active = true;
+        settings.open();
+        // aboutToShow resets the default page on an unconfigured installation.
+        // An explicit destination must win, including the timeshift shortcut.
+        if (page !== undefined) settings.page = page;
+    }
+    function closeSettings() {
+        if (settings) settings.close();
+    }
     readonly property bool setupRequired: !player.server_configured
     property bool usageReady: false
     function recordUsage() {
@@ -65,7 +79,7 @@ ViewerWindow {
         enabled: !root.closing
         onStarted: {
             setup.close();
-            settings.close();
+            root.closeSettings();
             player.guide_open(false);
             root.showChannels = false;
             root.showProgram = false;
@@ -75,8 +89,7 @@ ViewerWindow {
     function openConnectionSettings() {
         if (root.setupRequired) setup.open();
         else {
-            settings.page = SettingsPanel.Connection;
-            settings.open();
+            root.openSettings(SettingsPanel.Connection);
         }
     }
     function chooseConnectedChannel() {
@@ -88,7 +101,7 @@ ViewerWindow {
         overlayVisibility.reveal();
         switch (mode) {
         case ModeNavigation.Live:
-            settings.close();
+            root.closeSettings();
             player.cancel_recording_open();
             player.guide_open(false);
             if (root.setupRequired) {
@@ -106,12 +119,12 @@ ViewerWindow {
             break;
         case ModeNavigation.Guide:
             if (!player.epg_enabled) break;
-            if (settings.visible) player.guide_open(true);
+            if (settings && settings.visible) player.guide_open(true);
             else viewerActions.toggleGuide.trigger();
-            settings.close();
+            root.closeSettings();
             break;
         case ModeNavigation.Settings:
-            settings.open();
+            root.openSettings();
             break;
         }
     }
@@ -448,19 +461,22 @@ ViewerWindow {
             maximumLineCount: 2
             elide: Text.ElideRight
         }
-        SettingsPanel {
-            id: settings
-            shortcutEntries: shortcutBindings.entries
-            commentSubmitPolicy: commentSubmitPolicy
-            targetWindow: root
-            onClosed: if (!root.closing) player.save_settings()
-            backend: player
-            statsVisible: root.showStats
-            onStatsRequested: function (visible) {
-                root.showStats = visible;
+        Loader {
+            id: settingsLoader
+            active: false
+            sourceComponent: SettingsPanel {
+                shortcutEntries: shortcutBindings.entries
+                commentSubmitPolicy: commentSubmitPolicy
+                targetWindow: root
+                onClosed: if (!root.closing) player.save_settings()
+                backend: player
+                statsVisible: root.showStats
+                onStatsRequested: function (visible) {
+                    root.showStats = visible;
+                }
+                onConnectionAccepted: root.chooseConnectedChannel()
+                onModeRequested: function(mode) { root.requestMode(mode); }
             }
-            onConnectionAccepted: root.chooseConnectedChannel()
-            onModeRequested: function(mode) { root.requestMode(mode); }
         }
         FirstRunSetup {
             id: setup
@@ -708,7 +724,7 @@ ViewerWindow {
             }
             statsVisible: root.showStats
             onStatsRequested: function(visible) { root.showStats = visible; }
-            onTimeshiftSettingsRequested: { settings.open(); settings.page = SettingsPanel.Timeshift; }
+            onTimeshiftSettingsRequested: root.openSettings(SettingsPanel.Timeshift)
             commentModel: player.comment_model
             commentStatus: player.comment_status
             commentProgramTitle: player.comment_program_title
@@ -742,7 +758,7 @@ ViewerWindow {
         z: 20
         targetWindow: root
         enabled: !root.closing
-        visible: !root.showGuide && !settings.visible && (root.showProgram || overlayVisibility.controlsVisible)
+        visible: !root.showGuide && !(root.settings && root.settings.visible) && (root.showProgram || overlayVisibility.controlsVisible)
         mode: player.recording ? ModeNavigation.Recording : ModeNavigation.Live
         guideEnabled: player.epg_enabled
         onModeRequested: function(mode) { root.requestMode(mode); }

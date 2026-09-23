@@ -13,6 +13,7 @@ const HEIGHT: i32 = 1080;
 const INPUT_FPS: f64 = 25.0;
 const CAPTURE_SAMPLE_STEP: usize = 8;
 const MIN_CAPTURE_CONTRAST: i32 = 128;
+const MAX_MPEG2_DECODE_THREADS: i64 = 6;
 
 fn generate(path: &Path, interlaced: bool) -> TestResult {
     let mut args = vec![
@@ -99,6 +100,21 @@ pub(super) fn run(
         }
         let stats = json(engine, "JSON.parse(player.video_stats())")?;
         eprintln!("Video processing ({mode:?}, interlaced={is_interlaced}): {stats}");
+        // Check playbin's dynamically created decoder, not only a standalone
+        // factory: the budget must be installed before every stream starts.
+        if stats["decoders"]
+            .as_array()
+            .is_some_and(|names| names.iter().any(|name| name == "avdec_mpeg2video"))
+        {
+            let threads = stats["decoder_thread_limits"]["avdec_mpeg2video"]
+                .as_i64()
+                .expect("libav decoder thread limit must be reported");
+            assert!((1..=MAX_MPEG2_DECODE_THREADS).contains(&threads));
+            // CPU filtering must precede the conversion to upload memory.
+            if matches!(mode, Mode::Yadif | Mode::Linear) {
+                assert_eq!(stats["input"]["pixel_format"], "I420");
+            }
+        }
         assert_eq!(stats["output"]["memory"], "memory:GLMemory");
         assert_eq!(stats["output"]["width"], WIDTH);
         assert_eq!(stats["output"]["height"], HEIGHT);

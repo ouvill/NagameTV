@@ -3,6 +3,7 @@ use gst::prelude::*;
 use gstreamer as gst;
 use gstreamer_base::{BaseSink, prelude::BaseSinkExt};
 use serde::Serialize;
+use std::collections::BTreeMap;
 
 /// Sink rendering calls, not proof that Qt presented a new image on screen.
 /// Native counters can reset on stream changes or flushes; these are not
@@ -84,6 +85,7 @@ pub struct VideoStats {
     queue_ms: f64,
     gstreamer: String,
     decoders: Vec<String>,
+    decoder_thread_limits: BTreeMap<String, i32>,
     processor_passthrough: Option<bool>,
 }
 
@@ -106,6 +108,11 @@ pub fn snapshot(
         }
     };
     let stats = active.then(|| sink_stats(sink)).flatten();
+    let (decoders, decoder_thread_limits) = if active {
+        decoder_details(player)
+    } else {
+        Default::default()
+    };
     VideoStats {
         state: format!("{state:?}"),
         input: VideoFormat::from_caps(caps(processor).as_deref()),
@@ -121,11 +128,8 @@ pub fn snapshot(
         queue_bytes: queue.property("current-level-bytes"),
         queue_ms: queue.property::<u64>("current-level-time") as f64 / 1_000_000.0,
         gstreamer: gst::version_string().to_string(),
-        decoders: if active {
-            decoder_names(player)
-        } else {
-            Vec::new()
-        },
+        decoders,
+        decoder_thread_limits,
         processor_passthrough: active
             .then(|| {
                 processor
@@ -136,11 +140,12 @@ pub fn snapshot(
     }
 }
 
-fn decoder_names(player: &gst::Element) -> Vec<String> {
+fn decoder_details(player: &gst::Element) -> (Vec<String>, BTreeMap<String, i32>) {
     let Some(bin) = player.downcast_ref::<gst::Bin>() else {
-        return Vec::new();
+        return Default::default();
     };
     let mut names = Vec::new();
+    let mut threads = BTreeMap::new();
     let mut elements = bin.iterate_recurse();
     while let Ok(Some(element)) = elements.next() {
         if let Some(factory) = element.factory()
@@ -148,11 +153,16 @@ fn decoder_names(player: &gst::Element) -> Vec<String> {
                 .has_type(gst::ElementFactoryType::DECODER | gst::ElementFactoryType::MEDIA_VIDEO)
         {
             names.push(factory.name().to_string());
+            if factory.plugin_name().as_deref() == Some("libav")
+                && element.find_property("max-threads").is_some()
+            {
+                threads.insert(factory.name().to_string(), element.property("max-threads"));
+            }
         }
     }
     names.sort();
     names.dedup();
-    names
+    (names, threads)
 }
 
 #[cfg(test)]

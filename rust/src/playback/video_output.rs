@@ -107,16 +107,23 @@ impl Validated {
             .property("max-size-buffers", QUEUE_BUFFERS)
             .property("max-size-bytes", 0_u32)
             .property("max-size-time", 0_u64)
+            .property("silent", true)
             .build()?;
         let upload = gst::ElementFactory::make("glupload").build()?;
         let convert = gst::ElementFactory::make("glcolorconvert").build()?;
         let mut elements = match mode {
-            // videoconvert negotiates CPU I420->NV12 when needed; its ANY
-            // feature template also passes GPU memory through unchanged.
-            // Removing it breaks off-mode NV12 for software-decoded I420.
+            // Deinterlace I420 before converting it into glupload's NV12 pool.
+            // This keeps temporal filter history in ordinary decoded memory,
+            // while retaining conversion/read-ahead upstream of GL upload.
+            // Formats already matching the sink can pass through unchanged.
+            // videoconvert's ANY feature template still passes GPU memory
+            // through in off mode; CPU I420 needs conversion for NV12 output.
             Mode::Yadif | Mode::Linear | Mode::Off => vec![
+                // Negotiate unsupported input formats without converting I420
+                // prematurely: deinterlace itself cannot process every format.
                 gst::ElementFactory::make("videoconvert").build()?,
                 processor.clone(),
+                gst::ElementFactory::make("videoconvert").build()?,
                 queue.clone(),
                 upload,
                 convert,

@@ -194,10 +194,7 @@ pub(super) fn run(
         engine,
         "player.server_configured && !player.loading && player.selected >= 0",
     )?;
-    evaluate(
-        engine,
-        "settings.open(); settings.page = SettingsPanel.Timeshift; true",
-    )?;
+    evaluate(engine, "root.openSettings(SettingsPanel.Timeshift); true")?;
     wait_for(app, engine, "settings.opened")?;
     evaluate(engine, "settings.close(); true")?;
     for backend in ["memory", "filesystem"] {

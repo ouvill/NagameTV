@@ -127,6 +127,7 @@ fn stream_error(message: &gst::message::Error) -> Error {
 }
 
 static PRELOADED: OnceLock<Weak<Mutex<Option<Playback>>>> = OnceLock::new();
+mod resources;
 mod session;
 pub use session::{Session, SubtitleStart};
 
@@ -236,18 +237,22 @@ impl Playback {
         let playbin = clock::Policy::from_environment()?.build_playbin()?;
         let program_number = Arc::new(std::sync::atomic::AtomicI32::new(-1));
         let program = program_number.clone();
+        let decoder_policy = resources::DecoderPolicy::new();
         playbin.connect("element-setup", false, move |values| {
             if let Some(element) = values
                 .get(1)
                 .and_then(|value| value.get::<gst::Element>().ok())
-                && element
+            {
+                decoder_policy.configure(&element);
+                if element
                     .factory()
                     .is_some_and(|factory| factory.name() == "tsdemux")
-            {
-                element.set_property(
-                    "program-number",
-                    program.load(std::sync::atomic::Ordering::Relaxed),
-                );
+                {
+                    element.set_property(
+                        "program-number",
+                        program.load(std::sync::atomic::Ordering::Relaxed),
+                    );
+                }
             }
             None
         });

@@ -486,6 +486,7 @@ fn window(
         .pin_mut()
         .load(&QUrl::from("qrc:/qt/qml/MinimalViewer/qml/Main.qml"));
     assert_eq!(ffi::root_count(&engine), 1);
+    assert!(evaluate(&mut engine, "root.settings === null")?);
     match check {
         WindowCheck::Startup => {
             assert!(evaluate(
@@ -738,10 +739,7 @@ fn window(
             &format!("player.configure_remote(true, '127.0.0.1', {port})")
         )?);
         wait_for(app, &mut engine, "player.remote_status === 'listening'")?;
-        evaluate(
-            &mut engine,
-            "settings.open(); settings.page = SettingsPanel.Remote; true",
-        )?;
+        evaluate(&mut engine, "root.openSettings(SettingsPanel.Remote); true")?;
         wait_for(app, &mut engine, "settings.opened")?;
         assert!(evaluate(
             &mut engine,
@@ -1190,7 +1188,7 @@ fn check_shortcuts(
     }
     evaluate(
         engine,
-        "player.edit_comment_draft(''); settings.open(); true",
+        "player.edit_comment_draft(''); root.openSettings(); true",
     )?;
     wait_for(app, engine, "settings.opened && inputContext.popupOpen")?;
     ffi::clickRootKey(engine.pin_mut(), &QString::from("Escape"))?;
