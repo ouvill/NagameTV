@@ -1,4 +1,4 @@
-//! A readable local or HTTP transport stream, validated before replacing playback.
+//! Inspected local/HTTP media. Only transport streams carry a TS service and index.
 mod http;
 #[cfg(test)]
 pub(super) use http::tests::serve_ts;
@@ -16,8 +16,14 @@ use std::{
     time::Instant,
 };
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Recording {
+    Transport(TransportStream),
+    Media(MediaFile),
+}
+
 #[derive(Clone, Debug)]
-pub struct Recording {
+pub struct TransportStream {
     source: Source,
     name: String,
     service: u16,
@@ -33,18 +39,43 @@ pub(super) struct Inspection {
     pub framing: crate::transport::framing::Framing,
     pub deadline: Instant,
 }
-impl PartialEq for Recording {
+impl PartialEq for TransportStream {
     fn eq(&self, other: &Self) -> bool {
         self.source.location() == other.source.location()
             && self.service == other.service
             && self.name == other.name
     }
 }
-impl Eq for Recording {}
+impl Eq for TransportStream {}
+
+#[derive(Clone, Debug)]
+pub struct MediaFile {
+    source: Source,
+    name: String,
+    size: u64,
+    caps: gstreamer::Caps,
+}
+impl PartialEq for MediaFile {
+    fn eq(&self, other: &Self) -> bool {
+        self.source.location() == other.source.location()
+            && self.name == other.name
+            && self.size == other.size
+            && self.caps == other.caps
+    }
+}
+impl Eq for MediaFile {}
+impl MediaFile {
+    pub(in crate::playback) fn source(&self) -> &Source {
+        &self.source
+    }
+    pub(in crate::playback) fn size(&self) -> u64 {
+        self.size
+    }
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("Select a local TS file.")]
+    #[error("Select a local video file.")]
     NotLocal,
     #[error("Enter a local file URL or a recording URL starting with http:// or https://.")]
     InvalidUrl,
@@ -52,18 +83,22 @@ pub enum Error {
     ParseUrl(#[from] url::ParseError),
     #[error("{0}")]
     Http(#[from] http::Error),
-    #[error("Could not receive the dropped file: {0}. Use Open TS file to select it.")]
+    #[error("Could not receive the dropped file: {0}. Use Open video file to select it.")]
     Portal(String),
-    #[error("Could not read the TS file: {0}")]
+    #[error("Could not read the video file: {0}")]
     Read(#[from] std::io::Error),
-    #[error("No transport stream program was found in the beginning of this file.")]
+    #[error("No supported TS, MP4 or Matroska video was found in this file.")]
     MissingProgram,
-    #[error("TS file inspection reached its time limit. Try opening the file again.")]
+    #[error("Video inspection reached its time limit. Try opening the file again.")]
     TimedOut,
-    #[error("TS file inspection was cancelled.")]
+    #[error("Video inspection was cancelled.")]
     Cancelled,
-    #[error("The TS file inspection worker stopped unexpectedly.")]
+    #[error("The video inspection worker stopped unexpectedly.")]
     WorkerStopped,
+    #[error("Could not initialize media inspection: {0}")]
+    Initialization(#[from] gstreamer::glib::Error),
+    #[error("The video file is too large")]
+    TooLarge,
 }
 
 impl Recording {
@@ -107,6 +142,10 @@ impl Recording {
                 )
             }
         };
+        if size > i64::MAX as u64 {
+            return Err(Error::TooLarge);
+        }
+        let file_size = size;
         let deadline = Instant::now() + super::input::EXPLORATION_TIMEOUT;
         // Bound memory and check cancellation between reads. Filesystem syscalls
         // themselves cannot be interrupted portably; the UI never waits on them.
@@ -128,6 +167,19 @@ impl Recording {
                 break;
             }
             prefix.extend_from_slice(&chunk[..size]);
+            // Inspect content, never a filename or the server's MIME header. EPGStation
+            // URLs contain only an ID, and a .ts filename can contain encoded media.
+            if let Some(caps) = media_caps(&prefix)? {
+                if cancelled.load(Ordering::Relaxed) {
+                    return Err(Error::Cancelled);
+                }
+                return Ok(Self::Media(MediaFile {
+                    source,
+                    name,
+                    size: file_size,
+                    caps,
+                }));
+            }
             if crate::transport::recording_service(&prefix).is_some() {
                 break;
             }
@@ -144,7 +196,7 @@ impl Recording {
         })?;
         let framing =
             crate::transport::framing::Framing::detect(&prefix).ok_or(Error::MissingProgram)?;
-        Ok(Self {
+        Ok(Self::Transport(TransportStream {
             source,
             name,
             service,
@@ -154,30 +206,58 @@ impl Recording {
                 framing,
                 deadline,
             },
-        })
+        }))
     }
-
-    pub(super) fn source(&self) -> &Source {
-        &self.source
+    pub fn name(&self) -> &str {
+        match self {
+            Self::Transport(file) => &file.name,
+            Self::Media(file) => &file.name,
+        }
+    }
+    fn source(&self) -> &Source {
+        match self {
+            Self::Transport(file) => &file.source,
+            Self::Media(file) => &file.source,
+        }
+    }
+    pub fn replay(&self) -> Request {
+        Request::replay(self.source().location())
     }
     #[cfg(feature = "native_tests")]
     pub fn local_path(&self) -> Option<&std::path::Path> {
-        match &self.source {
+        match self.source() {
             Source::Local(path) => Some(path),
             Source::Http(_) => None,
         }
     }
+}
+
+// Typefinding parses headers only; no decoder or hardware resource is started.
+fn media_caps(prefix: &[u8]) -> Result<Option<gstreamer::Caps>, Error> {
+    gstreamer::init()?;
+    let Ok((caps, probability)) =
+        gstreamer_base::type_find_helper_for_data(None::<&gstreamer::Object>, prefix)
+    else {
+        return Ok(None);
+    };
+    let supported = caps.structure(0).is_some_and(|s| {
+        matches!(
+            s.name().as_str(),
+            "video/quicktime" | "video/x-matroska" | "video/webm"
+        )
+    });
+    Ok((supported && probability >= gstreamer::TypeFindProbability::Likely).then_some(caps))
+}
+
+impl TransportStream {
+    pub(super) fn source(&self) -> &Source {
+        &self.source
+    }
     pub(super) fn inspection(&self) -> &Inspection {
         &self.inspection
     }
-    pub fn name(&self) -> &str {
-        &self.name
-    }
     pub fn service(&self) -> u16 {
         self.service
-    }
-    pub fn replay(&self) -> Request {
-        Request::replay(self.source.location())
     }
 }
 
@@ -193,7 +273,7 @@ mod tests {
             include_bytes!("../../../tests/fixtures/subtitle-clock.ts"),
         )?;
         let recording = Recording::open(&path)?;
-        assert_eq!(recording.source.location(), Location::Local(path.clone()));
+        assert_eq!(recording.source().location(), Location::Local(path.clone()));
         assert_eq!(recording.name(), "録画 #100%.ts");
         std::fs::write(&path, b"not a TS")?;
         assert!(matches!(Recording::open(&path), Err(Error::MissingProgram)));

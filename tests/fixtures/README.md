@@ -200,3 +200,21 @@ the decoder is not an established fix. No playback backend change is included.
 Validation: 216 Rust tests passed, 3 intentionally ignored; release Clippy for all
 targets passed with warnings denied. Generation is deterministic and requires no
 original broadcast recording.
+
+## General media fixtures
+
+`media-h264.mp4`, `media-h264.mkv`, `media-hevc.mp4` and `media-hevc.mkv`
+contain 12 seconds of synthetic 160×96, 25 fps, 8-bit SDR video and stereo AAC
+(48 kHz test tone). They contain no broadcast material. Regenerate with
+`python3 scripts/fixtures/general-media.py`; this uses CPU OpenH264/x265 and
+libav AAC encoders with file outputs, without display, GPU or audio devices.
+H.264 MP4 keeps its `moov` index at the end; HEVC MP4 uses faststart.
+
+The hardware-free `playback::media` tests use explicit CPU decoders and memory
+outputs to check both local and HTTP Range input, both tracks, paused forward
+and backward seeks, playback rate, content detection independent of extensions,
+and replay validation. A CPU-only `playbin3` test also covers automatic
+typefinding, the source-setup callback and paused seeking for all four files.
+The startup suite additionally uses the real product
+window and validated GPU/virtual audio output for source switching, EOF,
+EPGStation file selection and token-authenticated playback.

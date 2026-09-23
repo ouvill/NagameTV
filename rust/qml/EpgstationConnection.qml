@@ -16,6 +16,7 @@ Item {
     signal recordingsRequested
     implicitWidth: content.implicitWidth
     implicitHeight: content.implicitHeight
+    readonly property bool inputFocused: serverField.activeFocus
 
     function reset() { serverField.text = serverUrl; loginDialog.close(); }
     function focusInput() { serverField.forceActiveFocus(); }

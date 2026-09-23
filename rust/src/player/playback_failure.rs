@@ -37,7 +37,9 @@ impl Player {
         self.as_mut()
             .change_stream_state(super::stream_state::State::stop_failed);
         // Store only a static translation source plus the existing latest diagnostics.
-        let hint = if self.recording() {
+        let hint = if error.hint() == crate::playback::failure::Hint::MissingDecoder {
+            error.hint()
+        } else if self.recording() {
             crate::playback::failure::Hint::Recording
         } else {
             error.hint()

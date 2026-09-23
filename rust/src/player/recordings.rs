@@ -15,7 +15,7 @@ impl ffi::Player {
             Ok(request) => request,
             Err(error) => {
                 self.set_file_error(super::status::with_detail(
-                    "Could not open the TS file: %1",
+                    "Could not open the video file: %1",
                     error,
                 ));
                 return false;
@@ -33,7 +33,7 @@ impl ffi::Player {
             Ok(request) => request,
             Err(error) => {
                 self.set_file_error(super::status::with_detail(
-                    "Could not open the TS file: %1",
+                    "Could not open the video file: %1",
                     error,
                 ));
                 return false;
@@ -72,7 +72,7 @@ impl ffi::Player {
                 Err(error) => {
                     match purpose {
                         Purpose::Open => self.as_mut().set_file_error(super::status::with_detail(
-                            "Could not open the TS file: %1",
+                            "Could not open the video file: %1",
                             error,
                         )),
                         Purpose::Replay => self.as_mut().playback_failed(error.into()),

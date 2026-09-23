@@ -8,7 +8,9 @@ audioresample
 autodetect
 coreelements
 deinterlace
+isomp4
 libav
+matroska
 mpegtsdemux
 nvcodec
 opengl

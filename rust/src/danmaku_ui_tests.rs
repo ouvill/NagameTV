@@ -2,6 +2,8 @@
 #[cxx_qt::bridge]
 mod ffi {
     unsafe extern "C++" {
+        include!("nagametv/src/video_file_model.cxxqt.h");
+        type VideoFileModel = crate::video_file_model::ffi::VideoFileModel;
         include!("cxx-qt-lib/qstring.h");
         type QString = cxx_qt_lib::QString;
         include!("nagametv/src/danmaku_test.h");
@@ -16,6 +18,16 @@ mod ffi {
         fn run_qml_test_args(arguments: &[String]) -> i32;
     }
     unsafe extern "RustQt" {
+        #[qobject]
+        #[qml_element]
+        #[qproperty(*mut VideoFileModel, files, READ = files, CONSTANT)]
+        type TestRecordingFiles = super::RecordingFilesFixture;
+        fn files(self: &TestRecordingFiles) -> *mut VideoFileModel;
+        #[qinvokable]
+        fn populate(self: Pin<&mut TestRecordingFiles>);
+        #[qinvokable]
+        fn clear(self: Pin<&mut TestRecordingFiles>);
+
         // Inspect compile-time features without constructing Player, whose
         // startup plan and persistent resources belong to the native tests.
         #[qobject]
@@ -82,4 +94,50 @@ pub fn run() -> i32 {
     cxx_qt::init_qml_module!("MinimalViewer");
     let path = cxx_qt_lib::QString::from(concat!(env!("CARGO_MANIFEST_DIR"), "/qml/tests"));
     ffi::run_qml_tests(&path)
+}
+
+pub struct RecordingFilesFixture {
+    model: cxx::UniquePtr<crate::video_file_model::ffi::VideoFileModel>,
+}
+impl Default for RecordingFilesFixture {
+    fn default() -> Self {
+        Self {
+            model: crate::video_file_model::ffi::make_video_file_model(),
+        }
+    }
+}
+impl ffi::TestRecordingFiles {
+    pub fn files(&self) -> *mut crate::video_file_model::ffi::VideoFileModel {
+        use cxx_qt::CxxQtType;
+        self.rust().model.as_ptr().cast_mut()
+    }
+    pub fn populate(mut self: std::pin::Pin<&mut Self>) {
+        use crate::epgstation::{Video, VideoType};
+        use cxx_qt::CxxQtType;
+        self.as_mut().rust_mut().model.pin_mut().replace(
+            vec![
+                Video {
+                    id: 123,
+                    name: String::new(),
+                    filename: "original.ts".into(),
+                    kind: VideoType::Ts,
+                },
+                Video {
+                    id: u64::MAX,
+                    name: "<b>HEVC</b>".into(),
+                    filename: "日本語.mkv".into(),
+                    kind: VideoType::Encoded,
+                },
+            ]
+            .into(),
+        );
+    }
+    pub fn clear(mut self: std::pin::Pin<&mut Self>) {
+        use cxx_qt::CxxQtType;
+        self.as_mut()
+            .rust_mut()
+            .model
+            .pin_mut()
+            .replace(Default::default());
+    }
 }

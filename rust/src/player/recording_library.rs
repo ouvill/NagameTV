@@ -6,6 +6,37 @@ use cxx_qt_lib::{QString, QUrl};
 use std::pin::Pin;
 
 impl ffi::Player {
+    pub fn recording_files(&self) -> *mut crate::video_file_model::ffi::VideoFileModel {
+        self.rust().video_file_model.as_ptr().cast_mut()
+    }
+    pub fn choose_epgstation(mut self: Pin<&mut Self>, id: QString) -> bool {
+        let files = id
+            .to_string()
+            .parse::<u64>()
+            .ok()
+            .map(|id| self.rust().recording_library.files(id))
+            .unwrap_or_default();
+        let available = !files.is_empty();
+        self.as_mut()
+            .rust_mut()
+            .video_file_model
+            .pin_mut()
+            .replace(files);
+        available
+    }
+    pub fn play_epgstation_file(self: Pin<&mut Self>, id: QString, video: QString) -> bool {
+        let url = id
+            .to_string()
+            .parse::<u64>()
+            .ok()
+            .zip(video.to_string().parse::<u64>().ok())
+            .and_then(|(id, video)| self.rust().recording_library.video_url(id, video));
+        match url {
+            Some(url) => self.open_recording(QUrl::from(url.as_str())),
+            None => false,
+        }
+    }
+
     pub fn recordings(&self) -> *mut crate::recording_model::ffi::RecordingModel {
         self.rust().recording_model.as_ptr().cast_mut()
     }
@@ -159,6 +190,11 @@ impl ffi::Player {
     }
     fn publish_recording_library(mut self: Pin<&mut Self>) {
         let rows = self.rust().recording_library.rows();
+        self.as_mut()
+            .rust_mut()
+            .video_file_model
+            .pin_mut()
+            .replace(Default::default());
         self.as_mut()
             .rust_mut()
             .recording_model

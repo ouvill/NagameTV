@@ -93,7 +93,7 @@ pub(in crate::playback) struct Input {
 impl Input {
     pub fn recording(
         playbin: &gst::Element,
-        recording: &crate::playback::recording::Recording,
+        recording: &crate::playback::recording::TransportStream,
         programs: bool,
     ) -> Result<Self, Error> {
         let (reader, worker) = file_reader_inspected(

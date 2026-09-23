@@ -24,6 +24,11 @@ Rectangle {
         if (backend.epgstation_server.length && !backend.epgstation_loaded && !backend.epgstation_busy) search();
         keywordField.forceActiveFocus();
     }
+    RecordingFiles {
+        id: filesDialog
+        files: root.backend.recording_files
+        onFileChosen: function(recordedId, videoId) { root.backend.play_epgstation_file(recordedId, videoId); }
+    }
     Item {
         id: header
         anchors { left: parent.left; right: parent.right; top: parent.top }
@@ -73,7 +78,7 @@ Rectangle {
             }
             ActionButton {
                 objectName: "libraryOpenFile"
-                text: qsTranslate("Recording", "Open TS file")
+                text: qsTranslate("Recording", "Open video file")
                 onClicked: root.fileRequested()
             }
             ActionButton {
@@ -143,6 +148,7 @@ Rectangle {
                     required property real startMs
                     required property real endMs
                     required property string description
+                    required property int fileCount
                     required property bool playable
                     required property string unavailableReason
                     width: list.width
@@ -179,7 +185,7 @@ Rectangle {
                                 visible: text.length > 0
                                 text: row.playable ? row.description : row.unavailableReason === "recording"
                                       ? qsTranslate("RecordingLibrary", "Recording in progress")
-                                      : qsTranslate("RecordingLibrary", "No recorded TS file")
+                                      : qsTranslate("RecordingLibrary", "No recorded video file")
                                 color: Theme.textSecondary
                                 font.pixelSize: Theme.fontCaption
                                 textFormat: Text.PlainText
@@ -190,7 +196,13 @@ Rectangle {
                             objectName: "epgstationPlay"
                             text: qsTranslate("RecordingLibrary", "Play")
                             enabled: row.playable && !root.backend.recording_loading
-                            onClicked: root.backend.play_epgstation(row.recordedId)
+                            onClicked: {
+                                if (row.fileCount === 1) root.backend.play_epgstation(row.recordedId);
+                                else if (root.backend.choose_epgstation(row.recordedId)) {
+                                    filesDialog.recordedId = row.recordedId;
+                                    filesDialog.open();
+                                }
+                            }
                         }
                     }
                 }

@@ -303,7 +303,10 @@ fn malformed_and_unplayable_recordings_are_distinguished() -> TestResult {
     )?)?;
     assert_eq!(parsed.rows[0].id, u64::MAX);
     assert_eq!(parsed.rows[0].availability, Availability::Recording);
-    assert_eq!(parsed.rows[1].availability, Availability::NoTsFile);
+    assert_eq!(
+        parsed.rows[1].availability.files()[0].kind,
+        VideoType::Encoded
+    );
     for body in [
         json!({"records":[recording.clone(),recording],"total":2}),
         json!({"records":[record(1,2)],"total":0}),
@@ -385,4 +388,56 @@ proptest::proptest! {
         let actual = url.query_pairs().find(|(key,_)| key == "keyword").map(|(_,value)| value.into_owned()).unwrap_or_default();
         proptest::prop_assert_eq!(actual, keyword);
     }
+}
+
+#[test]
+fn encoded_candidates_keep_stable_ids_and_reject_stale_or_unrelated_choices() -> TestResult {
+    let fixture = Fixture::new()?;
+    let mut row = record(7, 123);
+    row["videoFiles"] = json!([
+        {"id":234,"type":"encoded","name":"HEVC","filename":"日本語.mkv","size":2048},
+        {"id":123,"type":"ts","size":1880},
+        {"id":345,"type":"encoded","name":"H.264","filename":"日本語.mp4","size":2048},
+        {"id":456,"type":"encoded","size":0},
+        {"id":567,"type":"future","size":2048}
+    ]);
+    fixture.mount(
+        Mock::given(method("GET"))
+            .and(path("/api/recorded"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(json!({"records":[row.clone(),record(8,999)],"total":2})),
+            ),
+    );
+    let mut library = Library::default();
+    library.open(&fixture.network, &fixture.server.uri(), "", Login::Current)?;
+    fixture.finish(&mut library).ok_or("catalogue")?;
+    assert_eq!(
+        library
+            .files(7)
+            .iter()
+            .map(|file| file.id)
+            .collect::<Vec<_>>(),
+        [123, 234, 345]
+    );
+    assert_eq!(library.files(7)[1].filename, "日本語.mkv");
+    assert_eq!(
+        library.video_url(7, 234),
+        Some(format!("{}/api/videos/234", fixture.server.uri()))
+    );
+    for id in [456, 567, 999] {
+        assert!(library.video_url(7, id).is_none());
+    }
+    library.open(
+        &fixture.network,
+        &fixture.server.uri(),
+        "changed",
+        Login::Current,
+    )?;
+    assert!(library.video_url(7, 234).is_none());
+    assert!(library.files(7).is_empty());
+    row["videoFiles"] =
+        json!([{"id":123,"type":"ts","size":100},{"id":123,"type":"encoded","size":100}]);
+    assert!(parse(&serde_json::to_vec(&json!({"records":[row],"total":1}))?).is_err());
+    Ok(())
 }

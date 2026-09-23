@@ -19,7 +19,7 @@ pub(super) fn run() -> Result<(), Box<dyn std::error::Error>> {
         .build()?;
     let server = runtime.block_on(MockServer::start());
     let record = json!({"id":u64::MAX,"name":"録画一覧","startAt":1000,"endAt":2000,
-        "isRecording":false,"videoFiles":[{"id":123,"type":"ts","size":1880}]});
+        "isRecording":false,"videoFiles":[{"id":123,"type":"ts","size":1880},{"id":u64::MAX,"type":"encoded","size":2048,"name":"H.264","filename":"番組.mp4"}]});
     runtime.block_on(
         Mock::given(method("GET"))
             .and(path("/api/recorded"))
@@ -42,6 +42,9 @@ pub(super) fn run() -> Result<(), Box<dyn std::error::Error>> {
     player.pin_mut().rust_mut().preferences =
         crate::settings::Loaded::open(settings_path.clone())?.activate(None, None);
     crate::recording_model::ffi::check_model(player.pin_mut().rust_mut().recording_model.pin_mut());
+    crate::video_file_model::ffi::check_video_model(
+        player.pin_mut().rust_mut().video_file_model.pin_mut(),
+    );
     let _notification = player.pin_mut().on_epgstation_changed(|player| {
         assert_eq!(
             player.rust().recording_model.count() as usize,
@@ -98,6 +101,35 @@ pub(super) fn run() -> Result<(), Box<dyn std::error::Error>> {
         !player.pin_mut().play_epgstation(QString::from("123")),
         "video ID cannot select a recording"
     );
+    assert!(
+        player
+            .pin_mut()
+            .choose_epgstation(QString::from(u64::MAX.to_string()))
+    );
+    let files = &player.rust().video_file_model;
+    assert_eq!(files.count(), 2);
+    let video_role = files
+        .role_names()
+        .iter()
+        .find(|(_, name)| name.to_string() == "videoId")
+        .map(|(role, _)| *role)
+        .unwrap();
+    assert_eq!(
+        files
+            .data(
+                &files.model_index(1, 0, &QModelIndex::default()),
+                video_role
+            )
+            .value::<QString>()
+            .unwrap()
+            .to_string(),
+        u64::MAX.to_string()
+    );
+    assert!(
+        !player
+            .pin_mut()
+            .play_epgstation_file(QString::from(u64::MAX.to_string()), QString::from("999"))
+    );
     let saved = crate::settings::Loaded::open(settings_path.clone())?;
     assert_eq!(saved.preferences().epgstation_server, server.uri());
     assert!(
@@ -111,6 +143,7 @@ pub(super) fn run() -> Result<(), Box<dyn std::error::Error>> {
     finish(&mut player);
     assert!(!player.epgstation_error().is_empty());
     assert_eq!(player.rust().recording_model.count(), 0);
+    assert_eq!(player.rust().video_file_model.count(), 0);
     assert_eq!(
         crate::settings::Loaded::open(settings_path)?
             .preferences()

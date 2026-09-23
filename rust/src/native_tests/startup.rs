@@ -64,7 +64,14 @@ impl Server {
                 "channelName": "Test TV", "startAt": 1000, "endAt": 61000,
                 "description": "Recorded programme with a description for browsing.",
                 "isRecording": false,
-                "videoFiles": [{"id": 123, "type": "ts", "size": 1880}]
+                "videoFiles": match index {
+                    1 => serde_json::json!([
+                        {"id":123,"type":"ts","size":1880,"filename":"original.ts"},
+                        {"id":124,"type":"encoded","size":include_bytes!("../../../tests/fixtures/media-h264.mp4").len(),"name":"H.264","filename":"番組.mp4"}
+                    ]),
+                    2 => serde_json::json!([{"id":125,"type":"encoded","size":include_bytes!("../../../tests/fixtures/media-hevc.mkv").len(),"name":"HEVC","filename":"番組.mkv"}]),
+                    _ => serde_json::json!([{"id":123,"type":"ts","size":1880}]),
+                }
             })).collect::<Vec<_>>(),
             "total": LIBRARY_RECORDINGS
         })
@@ -110,10 +117,29 @@ impl Server {
                     )?;
                     continue;
                 }
-                if header.starts_with(b"GET /api/videos/123 ")
-                    || header.starts_with(b"GET /protected/api/videos/123?token=playback-fixture ")
-                {
-                    let bytes = include_bytes!("../../../tests/fixtures/recording-seek.ts");
+                let video_bytes: Option<&[u8]> = [
+                    (
+                        123,
+                        include_bytes!("../../../tests/fixtures/recording-seek.ts").as_slice(),
+                    ),
+                    (
+                        124,
+                        include_bytes!("../../../tests/fixtures/media-h264.mp4").as_slice(),
+                    ),
+                    (
+                        125,
+                        include_bytes!("../../../tests/fixtures/media-hevc.mkv").as_slice(),
+                    ),
+                ]
+                .into_iter()
+                .find_map(|(id, bytes)| {
+                    (request.starts_with(&format!("GET /api/videos/{id} "))
+                        || request.starts_with(&format!(
+                            "GET /protected/api/videos/{id}?token=playback-fixture "
+                        )))
+                    .then_some(bytes)
+                });
+                if let Some(bytes) = video_bytes {
                     let headers = String::from_utf8_lossy(&header).to_ascii_lowercase();
                     let range = headers
                         .lines()
@@ -210,7 +236,10 @@ pub(super) fn wait_for(
             return Ok(());
         }
         if Instant::now() >= deadline {
-            return Err(format!("Timed out: {source}").into());
+            let state = ffi::evaluate_root(engine.pin_mut(), &QString::from(
+                "JSON.stringify({playing: player.playing, loading: player.recording_loading, fileError: player.file_error, playbackError: player.playback_error, duration: player.duration_ms, position: player.position_ms, seekable: player.seekable, subtitles: player.subtitles_active, program: player.current_program_data, video: JSON.parse(player.video_stats())})",
+            ))?.value::<QString>().ok_or("missing timeout snapshot")?;
+            return Err(format!("Timed out: {source}; playback: {state}").into());
         }
         thread::sleep(Duration::from_millis(5));
     }
@@ -906,6 +935,7 @@ fn window(
         check_recording_recovery(app, &mut engine, "recording-clock-reset.ts")?;
         check_recording_recovery(app, &mut engine, "recording-pid-change.ts")?;
         check_http_recording(app, &mut engine)?;
+        check_general_media(app, &mut engine)?;
         super::timeshift::run(app, &mut engine)?;
     }
     evaluate(
@@ -1081,6 +1111,112 @@ fn check_epgstation_library(
         engine,
         "!recordingLibrary.visible && player.playing && player.recording && JSON.parse(player.video_stats()).rendered > 0",
     )?;
+    // Multiple files require an explicit stable video ID. Cancelling the chooser
+    // leaves TS playback intact; single encoded recordings play immediately.
+    evaluate(engine, "root.requestMode(ModeNavigation.Recording); true")?;
+    wait_for(
+        app,
+        engine,
+        &format!(
+            "{FIND} const list = find(recordingLibrary, 'epgstationRecordings'); list.positionViewAtIndex(1, ListView.Contain); list.itemAtIndex(1) !== null"
+        ),
+    )?;
+    evaluate(
+        engine,
+        &format!(
+            "{FIND} find(find(recordingLibrary, 'epgstationRecordings').itemAtIndex(1), 'epgstationPlay').clicked(); true"
+        ),
+    )?;
+    wait_for(
+        app,
+        engine,
+        &format!(
+            "{FIND} find(recordingLibrary, 'recordingFiles').opened && player.recording_files.count === 2 && player.playing"
+        ),
+    )?;
+    capture_navigation(
+        app,
+        engine,
+        &format!(
+            "epgstation-files-{}.png",
+            if authenticated {
+                "authenticated"
+            } else {
+                "anonymous"
+            }
+        ),
+    )?;
+    evaluate(
+        engine,
+        &format!("{FIND} find(recordingLibrary, 'recordingFiles').reject(); true"),
+    )?;
+    wait_for(
+        app,
+        engine,
+        "player.playing && player.duration_ms > 59000 && !inputContext.popupOpen",
+    )?;
+    evaluate(
+        engine,
+        &format!(
+            "{FIND} find(find(recordingLibrary, 'epgstationRecordings').itemAtIndex(1), 'epgstationPlay').clicked(); true"
+        ),
+    )?;
+    wait_for(
+        app,
+        engine,
+        &format!(
+            "{FIND} const dialog = find(recordingLibrary, 'recordingFiles'); dialog.opened && dialog.contentItem.itemAtIndex(1) !== null"
+        ),
+    )?;
+    evaluate(
+        engine,
+        &format!(
+            "{FIND} find(recordingLibrary, 'recordingFiles').contentItem.itemAtIndex(1).clicked(); true"
+        ),
+    )?;
+    wait_for(
+        app,
+        engine,
+        "!recordingLibrary.visible && player.playing && player.seekable && player.duration_ms > 11900 && player.duration_ms < 13000 && !player.subtitles_active && player.current_program_data === 'null' && JSON.parse(player.video_stats()).rendered > 0",
+    )?;
+    assert!(evaluate(engine, "player.pause() && player.seek_to(8000)")?);
+    wait_for(
+        app,
+        engine,
+        "player.paused && !player.seeking && Math.abs(player.position_ms - 8000) < 250",
+    )?;
+    assert!(evaluate(engine, "player.set_playback_rate(15)")?);
+    wait_for(
+        app,
+        engine,
+        "player.paused && !player.seeking && player.playback_rate === 15",
+    )?;
+    evaluate(engine, "root.requestMode(ModeNavigation.Recording); true")?;
+    wait_for(
+        app,
+        engine,
+        &format!(
+            "{FIND} const list = find(recordingLibrary, 'epgstationRecordings'); list.positionViewAtIndex(2, ListView.Contain); list.itemAtIndex(2) !== null"
+        ),
+    )?;
+    evaluate(
+        engine,
+        &format!(
+            "{FIND} find(find(recordingLibrary, 'epgstationRecordings').itemAtIndex(2), 'epgstationPlay').clicked(); true"
+        ),
+    )?;
+    wait_for(
+        app,
+        engine,
+        "!recordingLibrary.visible && !player.recording_loading && player.playing && player.playback_rate === 10 && player.seekable && player.duration_ms < 13000 && JSON.parse(player.video_stats()).rendered > 0",
+    )?;
+    // Return to TS without stopping first, covering source callbacks and subtitle ownership.
+    assert!(evaluate(engine, "player.play_epgstation('1')")?);
+    wait_for(
+        app,
+        engine,
+        "player.playing && player.duration_ms > 59000 && player.subtitles_active && JSON.parse(player.video_stats()).rendered > 0",
+    )?;
     // Browsing during playback and leaving the page must retain both the
     // existing stream and the search editor, without fetching another catalogue.
     evaluate(engine, "root.requestMode(ModeNavigation.Recording); true")?;
@@ -1174,6 +1310,75 @@ fn check_http_recording(
     println!(
         "HTTP recording: URL dialog, playback, paused forward/backward seeks, failed replacement and replay passed"
     );
+    Ok(())
+}
+
+fn check_general_media(
+    app: &QGuiApplication,
+    engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
+) -> TestResult {
+    for name in [
+        "media-h264.mp4",
+        "media-h264.mkv",
+        "media-hevc.mp4",
+        "media-hevc.mkv",
+    ] {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../tests/fixtures")
+            .join(name)
+            .canonicalize()?;
+        let url = url::Url::from_file_path(path).map_err(|_| "file URL")?;
+        assert!(evaluate(
+            engine,
+            &format!(
+                "player.open_recording({})",
+                serde_json::to_string(url.as_str())?
+            )
+        )?);
+        wait_for(
+            app,
+            engine,
+            &format!(
+                "!player.recording_loading && player.recording_name === {} && player.playing && player.seekable && player.duration_ms > 11900 && player.duration_ms < 13000 && !player.subtitles_active && player.current_program_data === 'null' && JSON.parse(player.video_stats()).rendered > 0",
+                serde_json::to_string(name)?
+            ),
+        )?;
+        assert!(evaluate(engine, "player.pause() && player.paused")?);
+        for target in [8000, 2000] {
+            assert!(evaluate(engine, &format!("player.seek_to({target})"))?);
+            wait_for(
+                app,
+                engine,
+                &format!(
+                    "!player.seeking && player.paused && Math.abs(player.position_ms - {target}) < 250"
+                ),
+            )?;
+        }
+        assert!(evaluate(engine, "player.set_playback_rate(15)")?);
+        wait_for(
+            app,
+            engine,
+            "!player.seeking && player.paused && player.playback_rate === 15",
+        )?;
+        evaluate(engine, "player.play(); true")?;
+        wait_for(app, engine, "player.playing && player.position_ms > 2300")?;
+        evaluate(engine, "player.stop(); player.play(); true")?;
+        wait_for(
+            app,
+            engine,
+            "!player.recording_loading && player.playing && player.playback_rate === 10 && player.position_ms < 2000 && JSON.parse(player.video_stats()).rendered > 0",
+        )?;
+        assert!(evaluate(engine, "player.seek_to(11000)")?);
+        wait_for(app, engine, "player.ended && !player.playback_error.length")?;
+        assert!(evaluate(engine, "player.seek_to(3000)")?);
+        wait_for(
+            app,
+            engine,
+            "!player.ended && !player.seeking && Math.abs(player.position_ms - 3000) < 1000",
+        )?;
+        println!("General media: {name}, playback, pause, seek, rate, replay and EOF passed");
+    }
+    evaluate(engine, "player.stop(); true")?;
     Ok(())
 }
 

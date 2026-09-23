@@ -59,7 +59,7 @@ Item {
                 spacing: Theme.spaceMd
                 ActionButton {
                     objectName: "recordingChooseFile"
-                    text: qsTranslate("Recording", "Open TS file")
+                    text: qsTranslate("Recording", "Open video file")
                     Layout.fillWidth: true
                     onClicked: root.openFile()
                 }
@@ -86,7 +86,7 @@ Item {
             }
             Label {
                 Layout.fillWidth: true
-                text: qsTranslate("Recording", "Paste the direct URL of a recorded TS file.")
+                text: qsTranslate("Recording", "Paste the direct URL of a recorded video file.")
                 color: Theme.textSecondary
                 font.pixelSize: Theme.fontCaption
                 wrapMode: Text.Wrap
@@ -121,7 +121,7 @@ Item {
             BusyIndicator { running: root.backend.recording_loading }
             Label {
                 anchors.verticalCenter: parent.verticalCenter
-                text: qsTranslate("Recording", "Opening TS file…")
+                text: qsTranslate("Recording", "Opening video file…")
                 color: Theme.textPrimary
                 font.pixelSize: Theme.fontBody
             }
@@ -141,9 +141,9 @@ Item {
     FileDialogs.FileDialog {
         id: picker
         objectName: "recordingPicker"
-        title: qsTranslate("Recording", "Open TS file")
+        title: qsTranslate("Recording", "Open video file")
         fileMode: FileDialogs.FileDialog.OpenFile
-        nameFilters: [qsTranslate("Recording", "Transport streams (*.ts *.TS *.m2ts *.M2TS)"), qsTranslate("Recording", "All files (*)")]
+        nameFilters: [qsTranslate("Recording", "Video files (*.ts *.TS *.m2ts *.M2TS *.mp4 *.MP4 *.mkv *.MKV *.webm *.WEBM *.mov *.MOV)"), qsTranslate("Recording", "All files (*)")]
         onAccepted: root.openUrl(selectedFile)
     }
     Dialog {

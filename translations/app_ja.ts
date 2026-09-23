@@ -717,16 +717,20 @@
       <translation>送信結果を確認できませんでした。再送する前にコメントを確認してください。</translation>
     </message>
       <message>
-        <source>Could not open the TS file: %1</source>
-        <translation>TSファイルを開けませんでした: %1</translation>
+        <source>Could not open the video file: %1</source>
+        <translation>動画ファイルを開けませんでした: %1</translation>
     </message>
     <message>
         <source>Playback finished</source>
         <translation>再生が終了しました</translation>
     </message>
     <message>
-        <source>Could not play this TS file. Check that it is readable and contains supported video and audio.</source>
-        <translation>このTSファイルを再生できませんでした。読み取り可能で、対応する映像・音声が含まれているか確認してください。</translation>
+        <source>A decoder required for this video or audio is missing. See the error details for the format.</source>
+        <translation>この映像または音声に必要なデコーダーがありません。形式はエラーの詳細で確認できます。</translation>
+    </message>
+    <message>
+        <source>Could not play this video file. Check that it is readable and contains supported video and audio.</source>
+        <translation>この動画ファイルを再生できませんでした。読み取り可能で、対応する映像・音声が含まれているか確認してください。</translation>
     </message>
     <message>
         <source>Too many screenshots are waiting to save. Try again shortly.</source>
@@ -1873,24 +1877,24 @@
         <translation>URLを開く</translation>
     </message>
     <message>
-        <source>Paste the direct URL of a recorded TS file.</source>
-        <translation>録画済みTSファイルのURLを貼り付けてください。</translation>
+        <source>Paste the direct URL of a recorded video file.</source>
+        <translation>録画済み動画ファイルのURLを貼り付けてください。</translation>
     </message>
     <message>
-        <source>Opening TS file…</source>
-        <translation>TSファイルを開いています…</translation>
+        <source>Opening video file…</source>
+        <translation>動画ファイルを開いています…</translation>
     </message>
     <message>
         <source>Cancel</source>
         <translation>キャンセル</translation>
     </message>
     <message>
-        <source>Open TS file</source>
-        <translation>TSファイルを開く</translation>
+        <source>Open video file</source>
+        <translation>動画ファイルを開く</translation>
     </message>
     <message>
-        <source>Transport streams (*.ts *.TS *.m2ts *.M2TS)</source>
-        <translation>TSファイル (*.ts *.TS *.m2ts *.M2TS)</translation>
+        <source>Video files (*.ts *.TS *.m2ts *.M2TS *.mp4 *.MP4 *.mkv *.MKV *.webm *.WEBM *.mov *.MOV)</source>
+        <translation>動画ファイル (*.ts *.TS *.m2ts *.M2TS *.mp4 *.MP4 *.mkv *.MKV *.webm *.WEBM *.mov *.MOV)</translation>
     </message>
     <message>
         <source>All files (*)</source>
@@ -1907,6 +1911,9 @@
 </context>
   <context>
     <name>RecordingLibrary</name>
+    <message><source>Choose a video file</source><translation>再生するファイルを選択</translation></message>
+    <message><source>Original TS</source><translation>元TS</translation></message>
+    <message><source>Encoded video</source><translation>エンコード済み動画</translation></message>
     <message>
       <source>EPGStation connection</source>
       <translation>EPGStation接続</translation>
@@ -1964,8 +1971,8 @@
       <translation>録画中</translation>
     </message>
     <message>
-      <source>No recorded TS file</source>
-      <translation>録画済みTSファイルがありません</translation>
+      <source>No recorded video file</source>
+      <translation>録画済み動画ファイルがありません</translation>
     </message>
     <message>
       <source>Play</source>

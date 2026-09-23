@@ -71,6 +71,8 @@ pub enum Error {
     OutputNotReady,
     #[error("Missing GStreamer bus")]
     MissingBus,
+    #[error("Missing video or audio decoder: {0}")]
+    MissingDecoder(String),
     #[error("配信が終了しました")]
     EndOfStream,
     #[error("{0}")]
@@ -126,7 +128,27 @@ fn stream_error(message: &gst::message::Error) -> Error {
     }
 }
 
+// GStreamer's documented missing-plugin message carries the unhandled caps.
+// ARIB/private data and subtitle decoders are optional; missing A/V is a failure,
+// including when playbin could otherwise continue with only the remaining track.
+fn missing_decoder(message: &gst::MessageRef) -> Option<Error> {
+    let structure = message.structure()?;
+    if structure.name() != "missing-plugin" || structure.get::<&str>("type").ok()? != "decoder" {
+        return None;
+    }
+    let caps = structure.get::<gst::Caps>("detail").ok()?;
+    let name = caps.structure(0)?.name();
+    (name.starts_with("video/") || name.starts_with("audio/")).then(|| {
+        Error::MissingDecoder(
+            structure
+                .get::<String>("name")
+                .unwrap_or_else(|_| caps.to_string()),
+        )
+    })
+}
+
 static PRELOADED: OnceLock<Weak<Mutex<Option<Playback>>>> = OnceLock::new();
+mod media;
 mod resources;
 mod session;
 pub use session::{Session, SubtitleStart};
@@ -430,6 +452,11 @@ impl Playback {
                 tracing::error!("Audio selection: {error}");
             }
             match message.view() {
+                gst::MessageView::Element(_) => {
+                    if failure.is_none() {
+                        failure = missing_decoder(&message);
+                    }
+                }
                 gst::MessageView::NewClock(message) => {
                     if let Some(clock) = message.clock() {
                         tracing::info!("Playback clock selected: {}", clock.name());
@@ -539,6 +566,26 @@ fn stop_stream(playbin: &gst::Element) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn missing_av_decoders_fail_while_optional_subtitle_data_does_not() {
+        gst::init().unwrap();
+        for (caps, required) in [
+            ("video/x-h265", true),
+            ("audio/x-opus", true),
+            ("subpicture/x-dvb", false),
+            ("private/section", false),
+        ] {
+            let message = gst::message::Element::new(
+                gst::Structure::builder("missing-plugin")
+                    .field("type", "decoder")
+                    .field("detail", gst::Caps::builder(caps).build())
+                    .field("name", "Test decoder")
+                    .build(),
+            );
+            assert_eq!(missing_decoder(&message).is_some(), required);
+        }
+    }
 
     #[test]
     fn recovery_is_limited_to_http_source_seek_errors() {

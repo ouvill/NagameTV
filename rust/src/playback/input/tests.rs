@@ -12,6 +12,9 @@ fn recording_metadata_probe_uses_bounded_io_and_stays_idle()
     let path = std::env::var_os("NAGAMETV_RECORDING_PROBE").ok_or("NAGAMETV_RECORDING_PROBE")?;
     let started = Instant::now();
     let recording = crate::playback::recording::Recording::open(Path::new(&path))?;
+    let crate::playback::recording::Recording::Transport(recording) = recording else {
+        panic!("TS fixture")
+    };
     let (mut reader, _worker) = file_reader_inspected(
         recording.source(),
         recording.service(),
@@ -140,6 +143,9 @@ fn normalized_raw_input_seeks_across_pid_changes_without_losing_pause()
                     "HTTP recording inspection timeout"
                 );
                 std::thread::sleep(TEST_POLL);
+            };
+            let super::super::recording::Recording::Transport(recording) = recording else {
+                panic!("TS fixture")
             };
             file_reader_inspected(
                 recording.source(),
@@ -354,6 +360,9 @@ fn file_framing_preserves_packets_for_ts_m2ts_and_parity_frames()
             .collect();
         std::fs::write(&path, bytes)?;
         let recording = super::super::recording::Recording::open(&path)?;
+        let super::super::recording::Recording::Transport(recording) = recording else {
+            panic!("TS fixture")
+        };
         let (mut reader, _worker) = file_reader(&path, recording.service(), true)?;
         let mut output = Vec::new();
         loop {

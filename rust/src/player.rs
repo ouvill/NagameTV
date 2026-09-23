@@ -59,6 +59,8 @@ pub mod ffi {
         type ChannelModel = crate::channel_model::ffi::ChannelModel;
         include!("nagametv/src/recording_model.cxxqt.h");
         type RecordingModel = crate::recording_model::ffi::RecordingModel;
+        include!("nagametv/src/video_file_model.cxxqt.h");
+        type VideoFileModel = crate::video_file_model::ffi::VideoFileModel;
         include!("nagametv/src/comment_model.cxxqt.h");
         type CommentModel = crate::comment_model::ffi::CommentModel;
         include!("cxx-qt-lib/qstring.h");
@@ -99,6 +101,7 @@ pub mod ffi {
         #[qproperty(QString, log_error, READ, NOTIFY)]
         #[qproperty(*mut ChannelModel, channels, READ = channels, CONSTANT)]
         #[qproperty(*mut RecordingModel, recordings, READ = recordings, CONSTANT)]
+        #[qproperty(*mut VideoFileModel, recording_files, READ = recording_files, CONSTANT)]
         #[qproperty(QString, epgstation_server, READ = epgstation_server, NOTIFY = epgstation_changed)]
         #[qproperty(bool, epgstation_busy, READ = epgstation_busy, NOTIFY = epgstation_changed)]
         #[qproperty(bool, epgstation_loaded, READ = epgstation_loaded, NOTIFY = epgstation_changed)]
@@ -218,6 +221,11 @@ pub mod ffi {
         fn cancel_epgstation(self: Pin<&mut Player>);
         #[qinvokable]
         fn play_epgstation(self: Pin<&mut Player>, id: QString) -> bool;
+        #[qinvokable]
+        fn choose_epgstation(self: Pin<&mut Player>, id: QString) -> bool;
+        #[qinvokable]
+        fn play_epgstation_file(self: Pin<&mut Player>, id: QString, video: QString) -> bool;
+        fn recording_files(self: &Player) -> *mut VideoFileModel;
         fn selected(self: &Player) -> i32;
         fn build_info(self: &Player) -> QString;
         fn autoplay(self: &Player) -> bool;
@@ -479,6 +487,7 @@ pub struct PlayerRust {
     error_log: Result<crate::error_log::ErrorLog, crate::error_log::Error>,
     channel_model: cxx::UniquePtr<crate::channel_model::ffi::ChannelModel>,
     recording_model: cxx::UniquePtr<crate::recording_model::ffi::RecordingModel>,
+    video_file_model: cxx::UniquePtr<crate::video_file_model::ffi::VideoFileModel>,
     recording_library: crate::epgstation::Library,
     epgstation_input_error: QString,
     channel_program_data: QString,

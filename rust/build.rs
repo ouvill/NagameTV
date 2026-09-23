@@ -97,6 +97,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     .file("src/comment_model.rs")
     .file("src/channel_model.rs")
     .file("src/recording_model.rs")
+    .file("src/video_file_model.rs")
     .cpp_file("src/channel_model_types.h")
     .include_dir("src")
     .qt_module("Quick");

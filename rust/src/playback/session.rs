@@ -12,11 +12,25 @@ pub struct Session {
 
 enum Input {
     Idle,
+    Media {
+        source: super::media::Input,
+        controller: Box<super::timeline::Controller>,
+    },
     Active {
         source: super::input::Input,
         controller: Box<super::timeline::Controller>,
         projection: Projection,
     },
+}
+
+impl Input {
+    fn suspend(&self, suspended: bool) {
+        match self {
+            Self::Idle => {}
+            Self::Active { source, .. } => source.suspend(suspended),
+            Self::Media { source, .. } => source.suspend(suspended),
+        }
+    }
 }
 
 enum Projection {
@@ -69,6 +83,27 @@ pub enum SubtitleStart {
     Failed(subtitles::Error),
 }
 
+// A media file cannot accidentally start a transport-stream subtitle parser.
+enum SubtitleInput {
+    Disabled,
+    Live(Option<BroadcastService>),
+    Recording(u16),
+}
+impl SubtitleInput {
+    fn start(
+        self,
+        element: &gstreamer::Element,
+    ) -> Option<std::result::Result<subtitles::Session, subtitles::Error>> {
+        match self {
+            Self::Disabled => None,
+            Self::Live(broadcast) => Some(subtitles::Session::start(element, broadcast)),
+            Self::Recording(service) => {
+                Some(subtitles::Session::start_recording(element, service, true))
+            }
+        }
+    }
+}
+
 impl Session {
     pub fn new(playback: Option<Playback>, live_buffer: crate::settings::LiveBuffer) -> Self {
         Self {
@@ -102,7 +137,10 @@ impl Session {
         &mut self,
     ) -> std::result::Result<TransportControl<'_>, super::timeline::Error> {
         match (&self.playback, &mut self.input) {
-            (Some(playback), Input::Active { controller, .. }) => Ok(TransportControl {
+            (
+                Some(playback),
+                Input::Active { controller, .. } | Input::Media { controller, .. },
+            ) => Ok(TransportControl {
                 playback,
                 controller,
             }),
@@ -113,7 +151,7 @@ impl Session {
     pub fn take_notice(&mut self) -> Option<super::timeline::Notice> {
         match &mut self.input {
             Input::Active { controller, .. } => controller.take_notice(),
-            Input::Idle => None,
+            Input::Idle | Input::Media { .. } => None,
         }
     }
     pub fn metadata(
@@ -122,13 +160,13 @@ impl Session {
     ) -> crate::transport::programs::catalog::View {
         match &self.input {
             Input::Active { source, .. } => source.metadata(position.nseconds()),
-            Input::Idle => Default::default(),
+            Input::Idle | Input::Media { .. } => Default::default(),
         }
     }
     pub fn source_identity(&self) -> Option<u64> {
         match &self.input {
             Input::Active { source, .. } => Some(source.identity()),
-            Input::Idle => None,
+            Input::Idle | Input::Media { .. } => None,
         }
     }
     pub fn comment_source(
@@ -146,7 +184,7 @@ impl Session {
                 controller.snapshot().position.map(|p| p.nseconds()),
                 reception,
             ),
-            Input::Idle => None,
+            Input::Idle | Input::Media { .. } => None,
         }
     }
     /// Audio follows the same sampled output position as transport, including pause.
@@ -168,13 +206,13 @@ impl Session {
                     ))
                 }
             },
-            Input::Idle => None,
+            Input::Idle | Input::Media { .. } => None,
         }
     }
     pub fn speed(&self) -> super::speed::Snapshot {
         match &self.input {
             Input::Idle => super::speed::Snapshot::default(),
-            Input::Active { controller, .. } => {
+            Input::Active { controller, .. } | Input::Media { controller, .. } => {
                 let mut snapshot = controller.speed();
                 if self
                     .playback
@@ -190,14 +228,16 @@ impl Session {
 
     pub fn timeline(&self) -> Option<(super::timeline::Phase, super::timeline::Snapshot)> {
         match &self.input {
-            Input::Active { controller, .. } => Some((controller.phase(), controller.snapshot())),
+            Input::Active { controller, .. } | Input::Media { controller, .. } => {
+                Some((controller.phase(), controller.snapshot()))
+            }
             Input::Idle => None,
         }
     }
     pub fn timeshift_bytes_per_second(&self) -> Option<f64> {
         match &self.input {
             Input::Active { source, .. } => source.bytes_per_second(),
-            Input::Idle => None,
+            Input::Idle | Input::Media { .. } => None,
         }
     }
     pub fn configure_timeshift(&mut self, policy: super::input::Policy) -> Result<()> {
@@ -212,6 +252,7 @@ impl Session {
                 }
             }
             Input::Idle
+            | Input::Media { .. }
             | Input::Active {
                 projection: Projection::Recording,
                 ..
@@ -235,7 +276,8 @@ impl Session {
                 projection: Projection::Recording,
                 ..
             }
-            | Input::Idle => None,
+            | Input::Idle
+            | Input::Media { .. } => None,
         }
     }
     pub fn timeline_preview(&self, session: &str, milliseconds: f64) -> String {
@@ -248,7 +290,8 @@ impl Session {
                 projection: Projection::Recording,
                 ..
             }
-            | Input::Idle => "null".into(),
+            | Input::Idle
+            | Input::Media { .. } => "null".into(),
         }
     }
     pub fn seek_timeline(
@@ -273,6 +316,7 @@ impl Session {
                 target.seek(controller.prepare(playback.element())?)
             }
             Input::Idle
+            | Input::Media { .. }
             | Input::Active {
                 projection: Projection::Recording,
                 ..
@@ -308,25 +352,35 @@ impl Session {
             source.check()?;
         }
         let mut event = playback.poll()?;
-        if let Input::Active {
-            controller, source, ..
-        } = &mut self.input
-        {
-            controller.set_estimated(source.duration_estimated());
+        let controller = match &mut self.input {
+            Input::Idle => None,
+            Input::Media { controller, .. } => Some(controller),
+            Input::Active {
+                controller, source, ..
+            } => {
+                controller.set_estimated(source.duration_estimated());
+                Some(controller)
+            }
+        };
+        if let Some(controller) = controller {
             if let super::Event::Ended(sequence) = event
                 && !controller.ended(sequence)?
             {
                 event = super::Event::Idle;
             }
             controller.poll(playback.element())?;
-            if let Some(window) = source.live_window() {
-                controller.retained(
-                    playback.element(),
-                    window,
-                    source.take_expired(),
-                    source.read_progress()?,
-                )?;
-            }
+        }
+        if let Input::Active {
+            controller, source, ..
+        } = &mut self.input
+            && let Some(window) = source.live_window()
+        {
+            controller.retained(
+                playback.element(),
+                window,
+                source.take_expired(),
+                source.read_progress()?,
+            )?;
         }
         Ok(event)
     }
@@ -344,15 +398,11 @@ impl Session {
         self.stop_with(Playback::stop)
     }
     fn stop_with(&mut self, stop: impl FnOnce(&Playback) -> Result<()>) -> Result<Stopped<'_>> {
-        if let Input::Active { source, .. } = &self.input {
-            source.suspend(true);
-        }
+        self.input.suspend(true);
         if let Some(playback) = &self.playback
             && let Err(error) = stop(playback)
         {
-            if let Input::Active { source, .. } = &self.input {
-                source.suspend(false);
-            }
+            self.input.suspend(false);
             return Err(error);
         }
         // A failed native transition cannot reach either resource release or
@@ -362,9 +412,7 @@ impl Session {
         Ok(Stopped(self))
     }
     pub fn shutdown(&mut self) -> Result<()> {
-        if let Input::Active { source, .. } = &self.input {
-            source.suspend(true);
-        }
+        self.input.suspend(true);
         if let Some(playback) = &mut self.playback {
             playback.shutdown()?;
         }
@@ -373,9 +421,7 @@ impl Session {
         Ok(())
     }
     pub fn shutdown_before_drop(&mut self) {
-        if let Input::Active { source, .. } = &self.input {
-            source.suspend(true);
-        }
+        self.input.suspend(true);
         if let Some(playback) = &mut self.playback {
             playback.shutdown_before_drop();
         }
@@ -414,8 +460,11 @@ impl Stopped<'_> {
         self.start_uri(
             "appsrc://",
             (service != 0).then_some(service),
-            |element| subtitles::Session::start(element, broadcast),
-            subtitles_enabled,
+            if subtitles_enabled {
+                SubtitleInput::Live(broadcast)
+            } else {
+                SubtitleInput::Disabled
+            },
             input,
         )
     }
@@ -423,6 +472,30 @@ impl Stopped<'_> {
     pub fn start_file(
         self,
         file: &super::recording::Recording,
+        subtitles_enabled: bool,
+        programs_enabled: bool,
+    ) -> Result<SubtitleStart> {
+        match file {
+            super::recording::Recording::Transport(file) => {
+                self.start_transport(file, subtitles_enabled, programs_enabled)
+            }
+            super::recording::Recording::Media(file) => {
+                let playback = self.0.playback.as_ref().ok_or(Error::Unavailable)?;
+                let input = Input::Media {
+                    source: super::media::Input::new(playback.element(), file),
+                    controller: Box::new(super::timeline::Controller::new(
+                        &playback.sink,
+                        super::timeline::StartPosition::Beginning,
+                    )?),
+                };
+                self.start_uri("appsrc://", None, SubtitleInput::Disabled, input)
+            }
+        }
+    }
+
+    fn start_transport(
+        self,
+        file: &super::recording::TransportStream,
         subtitles_enabled: bool,
         programs_enabled: bool,
     ) -> Result<SubtitleStart> {
@@ -438,10 +511,11 @@ impl Stopped<'_> {
         self.start_uri(
             "appsrc://",
             Some(file.service()),
-            |element| {
-                subtitles::Session::start_recording(element, file.service(), subtitles_enabled)
+            if subtitles_enabled {
+                SubtitleInput::Recording(file.service())
+            } else {
+                SubtitleInput::Disabled
             },
-            subtitles_enabled,
             input,
         )
     }
@@ -450,24 +524,17 @@ impl Stopped<'_> {
         self,
         uri: &str,
         service: Option<u16>,
-        start_subtitles: impl FnOnce(
-            &gstreamer::Element,
-        )
-            -> std::result::Result<subtitles::Session, subtitles::Error>,
-        subtitles_enabled: bool,
+        subtitle_input: SubtitleInput,
         input: Input,
     ) -> Result<SubtitleStart> {
         let playback = self.0.playback.as_ref().ok_or(Error::Unavailable)?;
-        let subtitles = if subtitles_enabled {
-            match start_subtitles(playback.element()) {
-                Ok(session) => {
-                    self.0.subtitles = Some(session);
-                    SubtitleStart::Parsing
-                }
-                Err(error) => SubtitleStart::Failed(error),
+        let subtitles = match subtitle_input.start(playback.element()) {
+            None => SubtitleStart::Disabled,
+            Some(Ok(session)) => {
+                self.0.subtitles = Some(session);
+                SubtitleStart::Parsing
             }
-        } else {
-            SubtitleStart::Disabled
+            Some(Err(error)) => SubtitleStart::Failed(error),
         };
         self.0.input = input;
         if let Err(error) = playback.play(uri, service) {

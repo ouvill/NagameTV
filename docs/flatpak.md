@@ -101,7 +101,7 @@ GNOME/GTK系・KDE系が使用する標準MIME形式と、旧GTKのMIME形式を
 （Portalの応答待ちは最大1秒）。録画本体の検査は非同期で行い、キャンセルに対応する。
 一度に開くファイルは1件で、`.ts`と`.m2ts`に対応する。
 送信元のファイルマネージャーがPortal転送に対応せず、サンドボックス外のパスだけを渡す場合は、
-「TSファイルを開く」（Ctrl+O）から選択する。
+「動画ファイルを開く」（Ctrl+O）から選択する。
 [FileTransfer Portalの仕様](https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.portal.FileTransfer.html)
 に従い、この方法で受け取ったファイルのアクセス権はアプリのセッション中だけ有効となる。
 

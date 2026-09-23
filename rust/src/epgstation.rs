@@ -58,9 +58,25 @@ impl VerifiedEndpoint {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Availability {
-    Recorded { video_id: u64 },
+    Recorded { files: Arc<[Video]> },
     Recording,
-    NoTsFile,
+    NoVideoFile,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Video {
+    pub id: u64,
+    pub name: String,
+    pub filename: String,
+    pub kind: VideoType,
+}
+impl Availability {
+    pub fn files(&self) -> Arc<[Video]> {
+        match self {
+            Self::Recorded { files } => files.clone(),
+            Self::Recording | Self::NoVideoFile => Arc::default(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -99,11 +115,17 @@ struct WireVideo {
     #[serde(rename = "type")]
     kind: VideoType,
     size: u64,
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    filename: String,
 }
-#[derive(Deserialize)]
-enum VideoType {
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+pub enum VideoType {
     #[serde(rename = "ts")]
     Ts,
+    #[serde(rename = "encoded")]
+    Encoded,
     #[serde(other)]
     Unsupported,
 }
@@ -131,13 +153,33 @@ fn parse(bytes: &[u8]) -> Result<Page, Error> {
             let availability = if record.is_recording {
                 Availability::Recording
             } else {
-                record
+                let mut ids = std::collections::HashSet::new();
+                let mut files = record
                     .video_files
                     .into_iter()
-                    .find(|file| matches!(file.kind, VideoType::Ts) && file.size > 0)
-                    .map_or(Availability::NoTsFile, |file| Availability::Recorded {
-                        video_id: file.id,
+                    .filter(|file| file.kind != VideoType::Unsupported && file.size > 0)
+                    .map(|file| {
+                        if !ids.insert(file.id) {
+                            return Err(Error::InvalidCatalogue("duplicate video ID"));
+                        }
+                        Ok(Video {
+                            id: file.id,
+                            name: file.name,
+                            filename: file.filename,
+                            kind: file.kind,
+                        })
                     })
+                    .collect::<Result<Vec<_>, Error>>()?;
+                // Preserve existing one-click TS playback; encoded-only recordings
+                // use their first completed file. The chooser exposes every candidate.
+                files.sort_by_key(|file| file.kind != VideoType::Ts);
+                if files.is_empty() {
+                    Availability::NoVideoFile
+                } else {
+                    Availability::Recorded {
+                        files: files.into(),
+                    }
+                }
             };
             Ok(Recording {
                 id: record.id,
@@ -391,23 +433,26 @@ impl Library {
         }
         None
     }
-    /// Resolve a stable recording ID only in the currently displayed server/page.
-    pub fn playback_url(&self, id: u64) -> Option<String> {
+    pub fn files(&self, id: u64) -> Arc<[Video]> {
         if self.busy() {
-            return None;
+            return Arc::default();
         }
-        match &self.catalogue {
-            Catalogue::Empty => None,
-            Catalogue::Loaded {
-                page, connection, ..
-            } => page
-                .rows
-                .iter()
-                .find(|row| row.id == id)
-                .and_then(|row| match row.availability {
-                    Availability::Recorded { video_id } => Some(connection.video_url(video_id)),
-                    Availability::Recording | Availability::NoTsFile => None,
-                }),
+        self.rows()
+            .iter()
+            .find(|row| row.id == id)
+            .map(|row| row.availability.files())
+            .unwrap_or_default()
+    }
+    /// Resolve both IDs in the current server/page. A stale chooser cannot play
+    /// a file from another recording or reuse an old server's authentication.
+    pub fn video_url(&self, id: u64, video: u64) -> Option<String> {
+        let file = self.files(id).iter().any(|file| file.id == video);
+        match (&self.catalogue, file) {
+            (Catalogue::Loaded { connection, .. }, true) => Some(connection.video_url(video)),
+            _ => None,
         }
+    }
+    pub fn playback_url(&self, id: u64) -> Option<String> {
+        self.video_url(id, self.files(id).first()?.id)
     }
 }

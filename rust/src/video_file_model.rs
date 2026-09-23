@@ -1,18 +1,13 @@
 //! Read-only Qt projection of the EPGStation catalogue.
-use crate::epgstation::{Availability, Recording};
+use crate::epgstation::{Video, VideoType};
 use cxx_qt::CxxQtType;
 use cxx_qt_lib::{QByteArray, QHash, QHashPair_i32_QByteArray, QModelIndex, QString, QVariant};
 use std::{pin::Pin, sync::Arc};
 
 const ID: i32 = 256;
 const NAME: i32 = 257;
-const CHANNEL: i32 = 258;
-const START: i32 = 259;
-const END: i32 = 260;
-const DESCRIPTION: i32 = 261;
-const PLAYABLE: i32 = 262;
-const REASON: i32 = 263;
-const FILE_COUNT: i32 = 264;
+const FILENAME: i32 = 258;
+const ORIGINAL: i32 = 259;
 
 #[cxx_qt::bridge]
 pub mod ffi {
@@ -25,43 +20,43 @@ pub mod ffi {
         type QVariant = cxx_qt_lib::QVariant;
         include!("cxx-qt-lib/qhash.h");
         type QHash_i32_QByteArray = cxx_qt_lib::QHash<cxx_qt_lib::QHashPair_i32_QByteArray>;
-        include!("recording_model_helpers.h");
-        #[rust_name = "make_recording_model"]
-        fn makeRecordingModel() -> UniquePtr<RecordingModel>;
+        include!("video_file_model_helpers.h");
+        #[rust_name = "make_video_file_model"]
+        fn makeVideoFileModel() -> UniquePtr<VideoFileModel>;
     }
     #[cfg(feature = "native_tests")]
     unsafe extern "C++" {
         include!("channel_model_test.h");
         #[cxx_name = "checkChannelModel"]
-        fn check_model(model: Pin<&mut RecordingModel>);
+        fn check_video_model(model: Pin<&mut VideoFileModel>);
     }
     unsafe extern "RustQt" {
         #[qobject]
         #[qml_element]
         #[base = QAbstractListModel]
         #[qproperty(i32, count, READ = count, NOTIFY = changed)]
-        type RecordingModel = super::Presentation;
-        fn count(self: &RecordingModel) -> i32;
+        type VideoFileModel = super::VideoFilePresentation;
+        fn count(self: &VideoFileModel) -> i32;
         #[cxx_override]
         #[cxx_name = "rowCount"]
-        fn row_count(self: &RecordingModel, parent: &QModelIndex) -> i32;
+        fn row_count(self: &VideoFileModel, parent: &QModelIndex) -> i32;
         #[cxx_override]
-        fn data(self: &RecordingModel, index: &QModelIndex, role: i32) -> QVariant;
+        fn data(self: &VideoFileModel, index: &QModelIndex, role: i32) -> QVariant;
         #[cxx_override]
         #[cxx_name = "roleNames"]
-        fn role_names(self: &RecordingModel) -> QHash_i32_QByteArray;
+        fn role_names(self: &VideoFileModel) -> QHash_i32_QByteArray;
         #[qsignal]
-        fn changed(self: Pin<&mut RecordingModel>);
+        fn changed(self: Pin<&mut VideoFileModel>);
         #[inherit]
         #[cxx_name = "beginResetModel"]
-        fn begin_reset_model(self: Pin<&mut RecordingModel>);
+        fn begin_reset_model(self: Pin<&mut VideoFileModel>);
         #[inherit]
         #[cxx_name = "endResetModel"]
-        fn end_reset_model(self: Pin<&mut RecordingModel>);
+        fn end_reset_model(self: Pin<&mut VideoFileModel>);
         #[inherit]
         #[cxx_name = "index"]
         fn model_index(
-            self: &RecordingModel,
+            self: &VideoFileModel,
             row: i32,
             column: i32,
             parent: &QModelIndex,
@@ -70,10 +65,10 @@ pub mod ffi {
 }
 
 #[derive(Default)]
-pub struct Presentation {
-    rows: Arc<[Recording]>,
+pub struct VideoFilePresentation {
+    rows: Arc<[Video]>,
 }
-impl ffi::RecordingModel {
+impl ffi::VideoFileModel {
     pub fn count(&self) -> i32 {
         i32::try_from(self.rust().rows.len()).expect("bounded recording page")
     }
@@ -83,15 +78,10 @@ impl ffi::RecordingModel {
     pub fn role_names(&self) -> QHash<QHashPair_i32_QByteArray> {
         let mut roles = QHash::default();
         for (role, name) in [
-            (ID, "recordedId"),
-            (NAME, "programName"),
-            (CHANNEL, "channelName"),
-            (START, "startMs"),
-            (END, "endMs"),
-            (DESCRIPTION, "description"),
-            (PLAYABLE, "playable"),
-            (REASON, "unavailableReason"),
-            (FILE_COUNT, "fileCount"),
+            (ID, "videoId"),
+            (NAME, "displayName"),
+            (FILENAME, "fileName"),
+            (ORIGINAL, "originalTs"),
         ] {
             roles.insert(role, QByteArray::from(name));
         }
@@ -113,25 +103,13 @@ impl ffi::RecordingModel {
         let text = match role {
             ID => row.id.to_string(),
             NAME => row.name.clone(),
-            CHANNEL => row.channel.clone(),
-            DESCRIPTION => row.description.clone(),
-            START => return QVariant::from(&(row.start_ms as f64)),
-            END => return QVariant::from(&(row.end_ms as f64)),
-            PLAYABLE => {
-                return QVariant::from(&matches!(row.availability, Availability::Recorded { .. }));
-            }
-            FILE_COUNT => return QVariant::from(&(row.availability.files().len() as i32)),
-            REASON => match row.availability {
-                Availability::Recorded { .. } => "",
-                Availability::Recording => "recording",
-                Availability::NoVideoFile => "no-video",
-            }
-            .into(),
+            FILENAME => row.filename.clone(),
+            ORIGINAL => return QVariant::from(&(row.kind == VideoType::Ts)),
             _ => return QVariant::default(),
         };
         QVariant::from(&QString::from(text))
     }
-    pub(crate) fn replace(mut self: Pin<&mut Self>, rows: Arc<[Recording]>) {
+    pub(crate) fn replace(mut self: Pin<&mut Self>, rows: Arc<[Video]>) {
         if self.rust().rows == rows {
             return;
         }

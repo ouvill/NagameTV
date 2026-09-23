@@ -50,7 +50,7 @@ fi
 # optional hardware plugins can probe devices during registration.
 gst_plugins_dir=$(pkg-config --variable=pluginsdir gstreamer-1.0 2>/dev/null || true)
 for plugin in app audioconvert audiofx audioparsers audioresample autodetect coreelements \
-  deinterlace libav mpegtsdemux nvcodec opengl playback pulseaudio qml6 soup \
+  deinterlace isomp4 libav matroska mpegtsdemux nvcodec opengl playback pulseaudio qml6 soup \
   typefindfunctions va videoconvertscale videofiltersbad videoparsersbad volume; do
   if [[ -z "$gst_plugins_dir" || ! -f "$gst_plugins_dir/libgst$plugin.so" ]]; then
     missing+=("GStreamer:libgst$plugin.so")

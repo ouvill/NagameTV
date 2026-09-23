@@ -39,8 +39,16 @@ TestCase {
         error.close();
         tryCompare(error, "visible", false);
     }
-    function test_open_preserves_url_and_waits_for_inspection() {
-        const url = "file:///tmp/%E9%8C%B2%E7%94%BB%20%23100%25.ts";
+    function test_open_preserves_url_and_waits_for_inspection_data() {
+        return [
+            {tag: "ts", url: "file:///tmp/%E9%8C%B2%E7%94%BB%20%23100%25.ts"},
+            {tag: "mp4", url: "file:///tmp/%E9%8C%B2%E7%94%BB%20%23100%25.mp4"},
+            {tag: "mkv", url: "file:///tmp/recording.mkv"},
+            {tag: "http", url: "https://example.invalid/api/videos/123?token=private"}
+        ];
+    }
+    function test_open_preserves_url_and_waits_for_inspection(data) {
+        const url = data.url;
         verify(input.openUrl(url));
         compare(backend.lastUrl, url);
         compare(backend.calls, 1);

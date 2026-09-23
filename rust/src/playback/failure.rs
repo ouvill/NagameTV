@@ -14,6 +14,7 @@ pub enum Hint {
     Ended,
     Generic,
     Recording,
+    MissingDecoder,
 }
 
 impl Hint {
@@ -42,8 +43,11 @@ impl Hint {
             Self::Generic => {
                 "Could not play this channel. Try again or choose another channel. See the error details if the problem continues."
             }
+            Self::MissingDecoder => {
+                "A decoder required for this video or audio is missing. See the error details for the format."
+            }
             Self::Recording => {
-                "Could not play this TS file. Check that it is readable and contains supported video and audio."
+                "Could not play this video file. Check that it is readable and contains supported video and audio."
             }
         }
     }
@@ -53,6 +57,7 @@ impl Error {
     pub fn hint(&self) -> Hint {
         match self {
             Self::Recording(_) => Hint::Recording,
+            Self::MissingDecoder(_) => Hint::MissingDecoder,
             // Cleanup must not hide the reason the original stream failed.
             Self::Cleanup { primary, .. } => primary.hint(),
             Self::EndOfStream => Hint::Ended,

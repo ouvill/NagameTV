@@ -28,6 +28,7 @@ mod services;
 mod settings;
 mod shortcut_key;
 mod transport;
+mod video_file_model;
 #[cfg(feature = "video_item_tests")]
 mod video_item_tests;
 

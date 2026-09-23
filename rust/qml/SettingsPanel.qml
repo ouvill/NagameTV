@@ -35,12 +35,19 @@ Popup {
     signal recordingSearchReset
     signal modeRequested(int mode)
     function connectToServer() { connectionForm.connectToServer(); }
+    function revealEpgstationConnection() {
+        if (!root.visible || root.page !== SettingsPanel.Connection || !epgstationConnection.inputFocused) return;
+        // A native resize may update the scaled overlay and nested layouts in
+        // separate passes. Recalculate when either viewport or content settles.
+        pages.ensurePolished();
+        pageFlick.contentY = Math.min(epgstationConnection.mapToItem(pages, 0, 0).y, Math.max(0, pageFlick.contentHeight - pageFlick.height));
+    }
     function focusEpgstationConnection() {
         page = SettingsPanel.Connection;
         Qt.callLater(function() {
             if (!root.visible || root.page !== SettingsPanel.Connection) return;
-            pageFlick.contentY = Math.min(epgstationConnection.mapToItem(pages, 0, 0).y, Math.max(0, pageFlick.contentHeight - pageFlick.height));
             epgstationConnection.focusInput();
+            root.revealEpgstationConnection();
         });
     }
     onPageChanged: {
@@ -266,6 +273,8 @@ Popup {
                 objectName: "settingsFlickable"
                 contentWidth: width
                 contentHeight: pages.implicitHeight
+                onHeightChanged: Qt.callLater(root.revealEpgstationConnection)
+                onContentHeightChanged: Qt.callLater(root.revealEpgstationConnection)
                 boundsBehavior: Flickable.StopAtBounds
                 ColumnLayout {
                     id: pages

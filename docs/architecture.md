@@ -41,9 +41,10 @@ main → cli::Command → qt::application::LoadedApplication
        ├ playback::Session  再生と字幕世代の共通所有者
        │  ├ Playback        映像・音声、音声カタログ・PMT・主副出力
        │  └ Option<字幕Session> 購読・解析・同期時計
-       ├ recording::Loader ローカル／HTTP録画TS検証・取消し待ち・最新要求の所有
+       ├ recording::Loader ローカル／HTTP動画の形式検査・取消し待ち・最新要求の所有
        ├ epgstation::Library 録画一覧・検索・認証セッション・取消し待ち
        ├ RecordingModel    録画一覧の読み取り専用Qt投影
+       ├ VideoFileModel    再生候補ファイルの読み取り専用Qt投影
        ├ Acquisition        /api/servicesの取得・取消し待ち
        ├ ProgramInfo        /api/programsの取得・現行スナップショット
        ├ EPG Controller     番組変更通知の購読・停止待ち
@@ -82,7 +83,7 @@ PlayerのFFIにはQML公開APIと必要な型の参照を残し、他のモジ�
 状態の事実はRustで所有し、QML向けの派生値には書き込み用フィールドを作らない。
 `player/stream_state.rs`の`State`が停止・接続中・再生中・停止失敗を表し、
 稼働中のvariantは再生対象を持つ`Attempt`を必須とする。
-`Attempt::Live`は対象局と自動再試行の権利、`Attempt::File`は検証したローカル／HTTP録画TSを保持する。
+`Attempt::Live`は対象局と自動再試行の権利、`Attempt::File`は検査したローカル／HTTP動画を保持する。
 停止時の`State::Stopped`にも再再生対象を保持し、別フィールドの選択対象との同期を不要にする。
 録画にはHTTP再試行や現在放送中の番組情報を適用しない。
 `playing`・`connecting`・対象局・`recording`・録画名はこの状態から取得する。更新は
@@ -289,3 +290,11 @@ GUIの更新ごとに全PCR索引を走査しない。
 `LiveTimeline.qml` は描画と操作座標を担当し、セッション付きの移動要求をRustへ返す。
 録画は `RecordingTimeline.qml` と既存の録画用モデルを使う。
 仕様・上限・確認項目は [ライブのシークバー](live-timeline-design.md) を参照。
+## 動画入力
+
+`playback::session::Input`はMP4・Matroska用の入力と、TSの索引・番組情報を持つ入力を
+enumで区別する。両者はタイムライン制御と映像・音声出力を共用する。
+録画検査の結果も`Recording::Transport`と`Recording::Media`に分け、TS入力の開始APIは
+`TransportStream`だけを受け取る。EPGStationの候補一覧・ID照合は`epgstation::Library`に置き、
+`VideoFileModel`は選択画面の読み取り専用投影を所有する。選択を確定するときはコアの
+現在の一覧で番組IDと動画IDを照合する。

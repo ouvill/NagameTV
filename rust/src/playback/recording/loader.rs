@@ -166,7 +166,7 @@ impl Job {
         let cancellation = Cancellation(Arc::new(AtomicBool::new(false)));
         let flag = cancellation.0.clone();
         let worker = thread::Builder::new()
-            .name("ts-inspection".into())
+            .name("media-inspection".into())
             .spawn(move || inspect(&flag))?;
         Ok(Self {
             worker,

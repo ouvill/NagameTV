@@ -434,6 +434,21 @@ Item {
                 compare(modes.signalArguments[0][0], ModeNavigation.Recording);
                 compare(connections.count, 0);
             }
+            function test_epgstation_focus_after_resize_uses_current_layout() {
+                const field = findChild(panel.contentItem, "epgstationServer");
+                const flick = findChild(panel.contentItem, "settingsFlickable");
+                try {
+                    for (const size of [Qt.size(640, 360), Qt.size(960, 540)]) {
+                        host.width = size.width;
+                        host.height = size.height;
+                        panel.focusEpgstationConnection();
+                        tryVerify(() => {
+                            const y = field.mapToItem(flick, 0, 0).y;
+                            return field.activeFocus && y >= 0 && y + field.height <= flick.height;
+                        });
+                    }
+                } finally { host.width = 900; host.height = 560; }
+            }
             function test_epgstation_login_and_leaving_settings_clear_the_password() {
                 panel.focusEpgstationConnection();
                 const field = findChild(panel.contentItem, "epgstationServer");
