@@ -1908,6 +1908,34 @@
   <context>
     <name>RecordingLibrary</name>
     <message>
+      <source>EPGStation connection</source>
+      <translation>EPGStation接続</translation>
+    </message>
+    <message>
+      <source>Connected to %1</source>
+      <translation>%1 に接続しました</translation>
+    </message>
+    <message>
+      <source>Open recordings</source>
+      <translation>録画一覧を開く</translation>
+    </message>
+    <message>
+      <source>Set up EPGStation in Settings → Connection to browse recordings.</source>
+      <translation>録画一覧を表示するには、設定の「接続」でEPGStationを設定してください。</translation>
+    </message>
+    <message>
+      <source>Recordings</source>
+      <translation>録画</translation>
+    </message>
+    <message>
+      <source>Back to playback</source>
+      <translation>視聴画面へ戻る</translation>
+    </message>
+    <message>
+      <source>Connection…</source>
+      <translation>接続先…</translation>
+    </message>
+    <message>
       <source>EPGStation recordings</source>
       <translation>EPGStationの録画</translation>
     </message>

@@ -12,6 +12,7 @@ Item {
     property bool composerVisible: false
     property bool statsVisible: false
     property bool programVisible: false
+    property bool libraryVisible: false
     property bool canCapture: false
     readonly property bool fullscreen: targetWindow !== null && targetWindow.visibility === Window.FullScreen
     property int restoreVisibility: Window.Windowed
@@ -24,6 +25,7 @@ Item {
     signal statsVisibilityRequested(bool visible)
     signal programVisibilityRequested(bool visible)
     signal recordingRequested
+    signal libraryCloseRequested
     signal captureRequested
     signal audioRequested
     signal settingsRequested
@@ -109,7 +111,8 @@ Item {
         onTriggered: {
             root.activity();
             // Match stacking order: the guide covers the channel browser.
-            if (root.backend.guide_visible) root.backend.guide_open(false);
+            if (root.libraryVisible) root.libraryCloseRequested();
+            else if (root.backend.guide_visible) root.backend.guide_open(false);
             else if (root.channelsVisible) root.channelsVisibilityRequested(false);
             else if (root.composerVisible) root.composerVisibilityRequested(false);
             else if (root.statsVisible) root.statsVisibilityRequested(false);

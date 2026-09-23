@@ -8,6 +8,7 @@ Item {
     required property Window targetWindow
     property bool playbackControls: false
     property bool guideVisible: false
+    property bool libraryVisible: false
     property bool channelsVisible: false
     readonly property Item focusItem: targetWindow ? targetWindow.activeFocusItem : null
     readonly property int focusKind: focusItem instanceof TextInput || focusItem instanceof TextEdit
@@ -15,8 +16,8 @@ Item {
     readonly property bool editingText: focusKind === InputContext.Text
     // A closed Drawer keeps Overlay visible for edge dragging.
     readonly property bool popupOpen: Overlay.overlay ? Overlay.overlay.children.some(item => item.visible) : false
-    readonly property bool viewing: !guideVisible && !channelsVisible
-    readonly property bool navigationEnabled: enabled && !editingText && !popupOpen
+    readonly property bool viewing: !guideVisible && !libraryVisible && !channelsVisible
+    readonly property bool navigationEnabled: enabled && !libraryVisible && !editingText && !popupOpen
 
     // Qt Wayland can keep text-input enabled when focus moves from an editor
     // to a non-text item in the same window. Update after Qt has finished the

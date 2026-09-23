@@ -21,6 +21,23 @@ Item {
                 id: backend
                 property string server: "http://example.test:40772"
                 property bool loading: false
+                property string epgstation_server: "http://recordings.example:8888"
+                property bool epgstation_busy: false
+                property bool epgstation_loaded: false
+                property string epgstation_error: ""
+                signal catalogueRequested(string url, string keyword)
+                signal loginRequested(string url, string username, string password)
+                function browse_epgstation(url, keyword) {
+                    catalogueRequested(url, keyword);
+                    epgstation_busy = true;
+                    return true;
+                }
+                function login_epgstation(url, username, password) {
+                    loginRequested(url, username, password);
+                    epgstation_busy = true;
+                    return true;
+                }
+                function cancel_epgstation() { epgstation_busy = false; }
                 property bool subtitles_enabled: true
                 property bool subtitle_display: true
                 property bool subtitle_force_outline: false
@@ -144,11 +161,21 @@ Item {
             SignalSpy { id: accepted; target: panel; signalName: "connectionAccepted" }
             SignalSpy { id: remoteRequests; target: backend; signalName: "remoteRequested" }
             SignalSpy { id: modes; target: panel; signalName: "modeRequested" }
+            SignalSpy { id: catalogues; target: backend; signalName: "catalogueRequested" }
+            SignalSpy { id: logins; target: backend; signalName: "loginRequested" }
+            SignalSpy { id: recordingResets; target: panel; signalName: "recordingSearchReset" }
             function init() {
                 failOnWarning(/.*/);
                 host.requestActivate();
                 tryCompare(host, "active", true);
                 backend.loading = false;
+                backend.epgstation_server = "http://recordings.example:8888";
+                backend.epgstation_busy = false;
+                backend.epgstation_loaded = false;
+                backend.epgstation_error = "";
+                catalogues.clear();
+                logins.clear();
+                recordingResets.clear();
                 backend.acceptConnection = false;
                 backend.diagnostics = "";
                 backend.status = "";
@@ -192,6 +219,7 @@ Item {
                 accepted.clear();
                 panel.open();
                 tryCompare(panel, "opened", true);
+                findChild(panel.contentItem, "settingsFlickable").contentY = 0;
             }
             function cleanup() { panel.close(); tryCompare(panel, "visible", false); }
             function test_navigation_keeps_settings_selected_and_respects_guide_availability() {
@@ -341,8 +369,8 @@ Item {
             }
             function test_autoplay_tracks_preference_without_connecting() {
                 const flick = findChild(panel.contentItem, "settingsFlickable");
-                flick.contentY = Math.max(0, flick.contentHeight - flick.height);
                 const toggle = findChild(panel.contentItem, "autoplaySetting");
+                flick.contentY = Math.min(toggle.mapToItem(flick.contentItem, 0, 0).y, Math.max(0, flick.contentHeight - flick.height));
                 compare(toggle.checked, false);
                 mouseClick(toggle);
                 compare(backend.autoplay, true);
@@ -372,6 +400,74 @@ Item {
                 keyClick(Qt.Key_Return);
                 compare(connections.count, 1);
                 compare(connect.enabled, false);
+            }
+            function test_epgstation_has_separate_explicit_connection_and_verified_result() {
+                panel.focusEpgstationConnection();
+                const field = findChild(panel.contentItem, "epgstationServer");
+                tryCompare(field, "activeFocus", true);
+                compare(panel.page, SettingsPanel.Connection);
+                field.text = "http://new-recordings.example:8888";
+                keyClick(Qt.Key_Return);
+                compare(catalogues.count, 1);
+                compare(catalogues.signalArguments[0][0], field.text);
+                compare(catalogues.signalArguments[0][1], "");
+                compare(recordingResets.count, 1);
+                compare(connections.count, 0);
+                compare(backend.server, "http://example.test:40772");
+                compare(backend.epgstation_server, "http://recordings.example:8888");
+                verify(field.readOnly);
+                keyClick(Qt.Key_Return);
+                compare(catalogues.count, 1);
+                backend.epgstation_busy = false;
+                backend.epgstation_error = "Connection failed";
+                compare(findChild(panel.contentItem, "epgstationConnectionError").text, "Connection failed");
+                verify(!findChild(panel.contentItem, "epgstationConnected").visible);
+                keyClick(Qt.Key_Return);
+                backend.epgstation_server = field.text;
+                backend.epgstation_loaded = true;
+                backend.epgstation_error = "";
+                backend.epgstation_busy = false;
+                verify(findChild(panel.contentItem, "epgstationConnected").visible);
+                modes.clear();
+                findChild(panel.contentItem, "epgstationBrowse").clicked();
+                compare(modes.count, 1);
+                compare(modes.signalArguments[0][0], ModeNavigation.Recording);
+                compare(connections.count, 0);
+            }
+            function test_epgstation_login_and_leaving_settings_clear_the_password() {
+                panel.focusEpgstationConnection();
+                const field = findChild(panel.contentItem, "epgstationServer");
+                tryCompare(field, "activeFocus", true);
+                const form = findChild(panel.contentItem, "epgstationConnectionSettings");
+                const dialog = findChild(form, "epgstationLoginDialog");
+                const username = findChild(dialog.contentItem, "epgstationUsername");
+                const password = findChild(dialog.contentItem, "epgstationPassword");
+                field.text = "http://authenticated.example:8888";
+                findChild(form, "epgstationLogin").clicked();
+                tryCompare(dialog, "opened", true);
+                username.text = "viewer";
+                password.text = "test-password";
+                findChild(dialog.contentItem, "epgstationSubmitLogin").clicked();
+                compare(logins.count, 1);
+                compare(logins.signalArguments[0][0], field.text);
+                compare(logins.signalArguments[0][1], "viewer");
+                compare(logins.signalArguments[0][2], "test-password");
+                tryCompare(dialog, "visible", false);
+                compare(password.text, "");
+                compare(recordingResets.count, 1);
+                backend.epgstation_busy = false;
+                findChild(form, "epgstationLogin").clicked();
+                tryCompare(dialog, "opened", true);
+                password.text = "discard-this";
+                panel.close();
+                tryCompare(panel, "visible", false);
+                tryCompare(dialog, "visible", false);
+                compare(password.text, "");
+                panel.open();
+                tryCompare(panel, "opened", true);
+                compare(field.text, backend.epgstation_server);
+                compare(connections.count, 0);
+                compare(logins.count, 1);
             }
             function test_connection_waits_for_response_and_success_requires_continue() {
                 panel.connectToServer();

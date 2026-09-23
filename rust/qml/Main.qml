@@ -13,6 +13,22 @@ ViewerWindow {
     color: Theme.canvas
     font.family: "Noto Sans CJK JP"
     property bool closing: false
+    enum Page { Viewing, Recordings }
+    property int page: Main.Viewing
+    readonly property bool libraryVisible: !closing && page === Main.Recordings
+    function openRecordingLibrary() {
+        if (closing) return;
+        setup.close();
+        closeSettings();
+        player.guide_open(false);
+        page = Main.Recordings;
+        recordingLibrary.activate();
+    }
+    function closeRecordingLibrary() {
+        page = Main.Viewing;
+        surface.forceActiveFocus();
+        overlayVisibility.reveal();
+    }
     readonly property SettingsPanel settings: settingsLoader.item as SettingsPanel
     function openSettings(page) {
         if (root.closing) return;
@@ -33,7 +49,10 @@ ViewerWindow {
         if (usageReady && !closing)
             player.record_ui_state(showGuide, showChannels, danmaku.view ? danmaku.view.activeCount : 0);
     }
-    onShowGuideChanged: recordUsage()
+    onShowGuideChanged: {
+        if (showGuide) page = Main.Viewing;
+        recordUsage();
+    }
     onShowChannelsChanged: recordUsage()
     Timer { interval: 10000; repeat: true; running: root.usageReady && !root.closing; onTriggered: root.recordUsage() }
     Connections {
@@ -77,8 +96,9 @@ ViewerWindow {
         z: 100
         backend: player
         enabled: !root.closing
-        onLibraryRequested: recordingLibrary.open()
+        onLibraryRequested: root.openRecordingLibrary()
         onStarted: {
+            root.closeRecordingLibrary();
             setup.close();
             root.closeSettings();
             player.guide_open(false);
@@ -89,7 +109,19 @@ ViewerWindow {
     }
     RecordingLibrary {
         id: recordingLibrary
+        anchors.fill: parent
+        z: 500
+        visible: root.libraryVisible
         backend: player
+        targetWindow: root
+        onCloseRequested: root.closeRecordingLibrary()
+        onModeRequested: function(mode) { root.requestMode(mode); }
+        onFileRequested: recordingInput.openFile()
+        onUrlRequested: recordingInput.open()
+        onConnectionRequested: {
+            root.openSettings(SettingsPanel.Connection);
+            root.settings.focusEpgstationConnection();
+        }
     }
     function openConnectionSettings() {
         if (root.setupRequired) setup.open();
@@ -98,6 +130,7 @@ ViewerWindow {
         }
     }
     function chooseConnectedChannel() {
+        root.closeRecordingLibrary();
         player.guide_open(false);
         root.showChannels = true;
         overlayVisibility.reveal();
@@ -106,6 +139,7 @@ ViewerWindow {
         overlayVisibility.reveal();
         switch (mode) {
         case ModeNavigation.Live:
+            root.closeRecordingLibrary();
             root.closeSettings();
             player.cancel_recording_open();
             player.guide_open(false);
@@ -118,12 +152,11 @@ ViewerWindow {
             }
             break;
         case ModeNavigation.Recording:
-            // Replace this destination with the recording library when available.
-            // Selection/cancellation leaves the current playback mode unchanged.
-            viewerActions.openRecording.trigger();
+            root.openRecordingLibrary();
             break;
         case ModeNavigation.Guide:
             if (!player.epg_enabled) break;
+            root.closeRecordingLibrary();
             if (settings && settings.visible) player.guide_open(true);
             else viewerActions.toggleGuide.trigger();
             root.closeSettings();
@@ -174,6 +207,8 @@ ViewerWindow {
         composerVisible: root.showCommentComposer
         statsVisible: root.showStats
         programVisible: root.showProgram
+        libraryVisible: root.libraryVisible
+        onLibraryCloseRequested: root.closeRecordingLibrary()
         canCapture: screenshot.canCapture
         onActivity: overlayVisibility.reveal()
         onChannelsVisibilityRequested: function(visible) { root.showChannels = visible; }
@@ -198,6 +233,7 @@ ViewerWindow {
         enabled: !root.closing
         playbackControls: player.recording || player.timeshift
         guideVisible: root.showGuide
+        libraryVisible: root.libraryVisible
         channelsVisible: root.showChannels
     }
     ShortcutBindings {
@@ -271,6 +307,7 @@ ViewerWindow {
     }
     Item {
         id: surface
+        enabled: !root.libraryVisible
         width: root.viewport.width - (sidebar.open ? root.panelWidth : 0)
         height: root.viewport.height
         focus: true
@@ -481,6 +518,7 @@ ViewerWindow {
                 }
                 onConnectionAccepted: root.chooseConnectedChannel()
                 onModeRequested: function(mode) { root.requestMode(mode); }
+                onRecordingSearchReset: recordingLibrary.clearSearch()
             }
         }
         FirstRunSetup {
@@ -702,8 +740,8 @@ ViewerWindow {
         id: sidebar
         readonly property ProgramSidebar view: item as ProgramSidebar
         width: root.panelWidth
-        open: root.showProgram && !root.guideVisible
-        visible: active && !root.guideVisible
+        open: root.showProgram && !root.guideVisible && !root.libraryVisible
+        visible: active && !root.guideVisible && !root.libraryVisible
         shuttingDown: root.closing
         onOpenChanged: if (open && view) view.openChannels()
         sourceComponent: ProgramSidebar {
@@ -763,7 +801,7 @@ ViewerWindow {
         z: 20
         targetWindow: root
         enabled: !root.closing
-        visible: !root.showGuide && !(root.settings && root.settings.visible) && (root.showProgram || overlayVisibility.controlsVisible)
+        visible: !root.libraryVisible && !root.showGuide && !(root.settings && root.settings.visible) && (root.showProgram || overlayVisibility.controlsVisible)
         mode: player.recording ? ModeNavigation.Recording : ModeNavigation.Live
         guideEnabled: player.epg_enabled
         onModeRequested: function(mode) { root.requestMode(mode); }

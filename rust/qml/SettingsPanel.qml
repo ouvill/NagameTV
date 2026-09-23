@@ -32,14 +32,24 @@ Popup {
     ]
     signal statsRequested(bool visible)
     signal connectionAccepted
+    signal recordingSearchReset
     signal modeRequested(int mode)
     function connectToServer() { connectionForm.connectToServer(); }
+    function focusEpgstationConnection() {
+        page = SettingsPanel.Connection;
+        Qt.callLater(function() {
+            if (!root.visible || root.page !== SettingsPanel.Connection) return;
+            pageFlick.contentY = Math.min(epgstationConnection.mapToItem(pages, 0, 0).y, Math.max(0, pageFlick.contentHeight - pageFlick.height));
+            epgstationConnection.focusInput();
+        });
+    }
     onPageChanged: {
         pageFlick.contentY = 0;
         if (page === SettingsPanel.Comments) backend.comments_open(true);
         if (opened) pageRevealMotion.restart();
     }
     onAboutToHide: {
+        epgstationConnection.closeLogin();
         liveBufferSettings.finishEdit();
         pageRevealMotion.complete();
     }
@@ -52,6 +62,7 @@ Popup {
     }
     onAboutToShow: {
         connectionForm.reset();
+        epgstationConnection.reset();
         remoteSettings.reset();
         languageError.visible = false;
         if (!backend.server.length) page = SettingsPanel.Connection;
@@ -231,7 +242,7 @@ Popup {
             x: root.contentLeft
             y: 80
             width: root.pageWidth
-            text: root.page === SettingsPanel.Connection ? qsTranslate("Settings", "Mirakurun connection") : root.categories[root.page]
+            text: root.categories[root.page]
             color: Theme.textPrimary
             font.pixelSize: Theme.fontTitle
             font.bold: true
@@ -270,6 +281,7 @@ Popup {
                         visible: root.page === SettingsPanel.Connection
                         Layout.fillWidth: true
                         spacing: Theme.spaceLg
+                        Heading { text: qsTranslate("Settings", "Mirakurun connection") }
                         ConnectionForm {
                             id: connectionForm
                             Layout.fillWidth: true
@@ -294,6 +306,27 @@ Popup {
                             Layout.topMargin: 12
                             Layout.fillWidth: true
                             backend: root.backend
+                        }
+                        Heading {
+                            Layout.topMargin: Theme.spaceXl
+                            text: qsTranslate("RecordingLibrary", "EPGStation connection")
+                        }
+                        EpgstationConnection {
+                            id: epgstationConnection
+                            objectName: "epgstationConnectionSettings"
+                            Layout.fillWidth: true
+                            serverUrl: root.backend.epgstation_server
+                            busy: root.backend.epgstation_busy
+                            connected: root.backend.epgstation_loaded
+                            error: root.backend.epgstation_error
+                            onConnectRequested: function(server) {
+                                if (root.backend.browse_epgstation(server, "")) root.recordingSearchReset();
+                            }
+                            onLoginRequested: function(server, username, password) {
+                                if (root.backend.login_epgstation(server, username, password)) root.recordingSearchReset();
+                            }
+                            onCancelRequested: root.backend.cancel_epgstation()
+                            onRecordingsRequested: root.modeRequested(ModeNavigation.Recording)
                         }
                     }
                     Loader {

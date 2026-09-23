@@ -35,6 +35,7 @@ Item {
                     readonly property int escapes: escapeSpy.count
                     readonly property int commentRequests: commentSpy.count
                     property int screenshots: 0
+                    property int libraryCloses: 0
                     ActionTestBackend { id: backend }
                     Viewer.ViewerActions {
                         id: actions
@@ -42,6 +43,7 @@ Item {
                         targetWindow: host
                         canCapture: true
                         onCaptureRequested: parent.screenshots++
+                        onLibraryCloseRequested: { parent.libraryCloses++; libraryVisible = false; }
                         onChannelsVisibilityRequested: function(visible) { parent.channelRequests++; }
                     }
                     SignalSpy { id: escapeSpy; target: actions.dismissTopmost; signalName: "triggered" }
@@ -52,6 +54,7 @@ Item {
                         enabled: actions.enabled
                         playbackControls: backend.recording || backend.timeshift
                         guideVisible: actions.backend.guide_visible
+                        libraryVisible: actions.libraryVisible
                         channelsVisible: actions.channelsVisible
                     }
                     Viewer.ShortcutBindings { id: bindings; actions: actions; inputContext: inputContext }
@@ -278,6 +281,34 @@ Item {
                 compare(view.channelRequests, 0);
                 keyClick(Qt.Key_Escape);
                 compare(view.channelRequests, 1);
+            }
+            function test_library_keeps_playback_keys_local_and_escape_returns_to_viewing() {
+                view.backend.recording = true;
+                view.backend.playback_action = Player.Pause;
+                view.actions.libraryVisible = true;
+                compare(view.context.popupOpen, false);
+                verify(!view.context.viewing);
+                keyClick(Qt.Key_Space);
+                keyClick(Qt.Key_Right);
+                keyClick(Qt.Key_PageDown);
+                keyClick(Qt.Key_S);
+                keyClick(Qt.Key_S, Qt.ControlModifier);
+                compare(view.backend.playbackRequests, 0);
+                compare(view.backend.skips.length, 0);
+                compare(view.steps, 0);
+                compare(view.channelRequests, 0);
+                compare(view.screenshots, 0);
+                view.popup.open();
+                tryCompare(view.popup, "opened", true);
+                keyClick(Qt.Key_Escape);
+                tryCompare(view.popup, "visible", false);
+                compare(view.libraryCloses, 0);
+                view.forceActiveFocus();
+                keyClick(Qt.Key_Escape);
+                compare(view.libraryCloses, 1);
+                verify(view.context.viewing);
+                keyClick(Qt.Key_Space);
+                compare(view.backend.playbackRequests, 1);
             }
             function test_fullscreen_restores_window_mode() {
                 const window = host;

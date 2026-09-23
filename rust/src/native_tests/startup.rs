@@ -18,6 +18,7 @@ pub(super) type TestResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
 static UI_WARNINGS: Mutex<Vec<String>> = Mutex::new(Vec::new());
 const SAVED_WINDOW_WIDTH: i32 = 850;
 const SAVED_WINDOW_HEIGHT: i32 = 610;
+const LIBRARY_RECORDINGS: usize = 12;
 
 fn record_qt(level: u8, category: &str, message: &str) {
     if level >= 2 {
@@ -57,6 +58,17 @@ impl Server {
             "audios":[{"componentTag":16,"componentType":3,"isMain":true,"langs":["jpn"],"samplingRate":48000}],
             "series":{"name":"Test series","episode":3,"lastEpisode":12}
         }]).to_string();
+        let recordings = serde_json::json!({
+            "records": (0..LIBRARY_RECORDINGS).map(|index| serde_json::json!({
+                "id": index + 1, "name": format!("EPGStation recording {}", index + 1),
+                "channelName": "Test TV", "startAt": 1000, "endAt": 61000,
+                "description": "Recorded programme with a description for browsing.",
+                "isRecording": false,
+                "videoFiles": [{"id": 123, "type": "ts", "size": 1880}]
+            })).collect::<Vec<_>>(),
+            "total": LIBRARY_RECORDINGS
+        })
+        .to_string();
         let worker = thread::spawn(move || {
             while !stopped.load(Ordering::Relaxed) {
                 let mut socket = match listener.accept() {
@@ -132,7 +144,7 @@ impl Server {
                 } else if header.starts_with(b"GET /api/recorded?")
                     || header.starts_with(b"GET /protected/api/recorded?")
                 {
-                    r#"{"records":[{"id":7,"name":"EPGStation recording","channelName":"Test TV","startAt":1000,"endAt":61000,"isRecording":false,"videoFiles":[{"id":123,"type":"ts","size":1880}]}],"total":1}"#
+                    &recordings
                 } else if header.starts_with(b"GET /protected/api/auth/media-token ") {
                     r#"{"token":"playback-fixture"}"#
                 } else {
@@ -347,14 +359,38 @@ fn check_danmaku_layout(
     Ok(())
 }
 
-fn capture_navigation(
+fn resize_navigation(
     app: &QGuiApplication,
     engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
-    name: &str,
+    width: i32,
+    height: i32,
 ) -> TestResult {
-    let review =
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../build/navigation-review");
-    std::fs::create_dir_all(&review)?;
+    ffi::resizeRoot(engine.pin_mut(), width, height)?;
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        // Let the resized viewport finish QML layout before callers scroll
+        // to a field. Native geometry alone does not guarantee polished items.
+        wait_navigation_frames(app, engine)?;
+        let image = ffi::grabRoot(engine.pin_mut())?;
+        if (image.width(), image.height()) == (width, height)
+            && evaluate(
+                engine,
+                &format!("root.width === {width} && root.height === {height}"),
+            )?
+        {
+            return Ok(());
+        }
+        if Instant::now() >= deadline {
+            return Err("navigation review surface did not reach the requested size".into());
+        }
+        thread::sleep(Duration::from_millis(5));
+    }
+}
+
+fn wait_navigation_frames(
+    app: &QGuiApplication,
+    engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
+) -> TestResult {
     // QML geometry can settle before the platform surface and render target
     // are resized. Wait for two presented frames before grabbing pixels.
     let frames = ffi::watchFrames(engine)?;
@@ -367,6 +403,18 @@ fn capture_navigation(
         app.process_events();
         thread::sleep(Duration::from_millis(5));
     }
+    Ok(())
+}
+
+fn capture_navigation(
+    app: &QGuiApplication,
+    engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
+    name: &str,
+) -> TestResult {
+    let review =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../build/navigation-review");
+    std::fs::create_dir_all(&review)?;
+    wait_navigation_frames(app, engine)?;
     let image = ffi::grabRoot(engine.pin_mut())?;
     let default_quality = -1;
     let png_compression_percent = 60;
@@ -498,13 +546,23 @@ fn check_screen_navigation(
     )?;
     let picker =
         "Array.from(recordingInput.data).find(item => item.objectName === 'recordingSource')";
+    wait_for(
+        app,
+        engine,
+        "recordingLibrary.visible && !settings.visible && !root.showGuide && !sidebar.visible",
+    )?;
+    evaluate(engine, "recordingLibrary.urlRequested(); true")?;
     wait_for(app, engine, &format!("{picker}.visible"))?;
     evaluate(engine, &format!("{picker}.reject(); true"))?;
     wait_for(
         app,
         engine,
-        &format!("!{picker}.visible && settings.opened && !root.showGuide"),
+        &format!("!{picker}.visible && recordingLibrary.visible && !root.showGuide"),
     )?;
+    evaluate(engine, "viewerActions.dismissTopmost.trigger(); true")?;
+    wait_for(app, engine, "!recordingLibrary.visible && sidebar.open")?;
+    evaluate(engine, "root.requestMode(ModeNavigation.Settings); true")?;
+    wait_for(app, engine, "settings.opened")?;
     // Settings opened from viewing can also enter the guide for the first time.
     evaluate(engine, "settings.modeRequested(ModeNavigation.Guide); true")?;
     wait_for(
@@ -760,14 +818,19 @@ fn window(
             &mut engine,
             "guideLoader.item.modeRequested(ModeNavigation.Recording); true",
         )?;
-        let guide_picker =
-            "Array.from(recordingInput.data).find(item => item.objectName === 'recordingSource')";
-        wait_for(app, &mut engine, &format!("{guide_picker}.visible"))?;
-        evaluate(&mut engine, &format!("{guide_picker}.reject(); true"))?;
         wait_for(
             app,
             &mut engine,
-            &format!("!{guide_picker}.visible && root.guideVisible"),
+            "recordingLibrary.visible && !root.guideVisible",
+        )?;
+        evaluate(
+            &mut engine,
+            "recordingLibrary.modeRequested(ModeNavigation.Guide); true",
+        )?;
+        wait_for(
+            app,
+            &mut engine,
+            "!recordingLibrary.visible && root.guideVisible && guideLoader.item !== null",
         )?;
         evaluate(
             &mut engine,
@@ -883,35 +946,53 @@ fn check_epgstation_library(
         function find(item, name) {
             if (!item) return null;
             if (item.objectName === name) return item;
-            for (const child of item.children || []) { const found = find(child, name); if (found) return found; }
-            for (const child of item.contentData || []) { const found = find(child, name); if (found) return found; }
+            for (const child of item.data || item.contentData || item.children || []) { const found = find(child, name); if (found) return found; }
             if (item.contentItem) return find(item.contentItem, name);
             return null;
         }
     "#;
-    evaluate(engine, "recordingInput.libraryRequested(); true")?;
-    wait_for(app, engine, "recordingLibrary.opened")?;
+    evaluate(engine, "root.requestMode(ModeNavigation.Recording); true")?;
+    wait_for(
+        app,
+        engine,
+        "recordingLibrary.visible && !inputContext.popupOpen",
+    )?;
     evaluate(
         engine,
-        &format!("{FIND} find(recordingLibrary, 'epgstationServer').text = {endpoint}; true"),
+        &format!("{FIND} find(recordingLibrary, 'epgstationConnection').clicked(); true"),
+    )?;
+    wait_for(
+        app,
+        engine,
+        "settings.opened && settings.page === SettingsPanel.Connection",
+    )?;
+    assert!(evaluate(
+        engine,
+        &format!(
+            "{FIND} const field = find(settings, 'epgstationServer'); const flick = find(settings, 'settingsFlickable'); const y = field.mapToItem(flick, 0, 0).y; find(recordingLibrary, 'epgstationServer') === null && field.activeFocus && y >= 0 && y + field.height <= flick.height"
+        )
+    )?);
+    evaluate(
+        engine,
+        &format!("{FIND} find(settings, 'epgstationServer').text = {endpoint}; true"),
     )?;
     if authenticated {
         evaluate(
             engine,
-            &format!("{FIND} find(recordingLibrary, 'epgstationLogin').clicked(); true"),
+            &format!("{FIND} find(settings, 'epgstationLogin').clicked(); true"),
         )?;
         wait_for(
             app,
             engine,
-            &format!("{FIND} find(recordingLibrary, 'epgstationLoginDialog').opened"),
+            &format!("{FIND} find(settings, 'epgstationLoginDialog').opened"),
         )?;
         evaluate(
             engine,
             &format!(
                 r#"{FIND}
-            find(recordingLibrary, 'epgstationUsername').text = 'viewer';
-            find(recordingLibrary, 'epgstationPassword').text = 'fixture-password';
-            find(recordingLibrary, 'epgstationSubmitLogin').clicked(); true
+            find(settings, 'epgstationUsername').text = 'viewer';
+            find(settings, 'epgstationPassword').text = 'fixture-password';
+            find(settings, 'epgstationSubmitLogin').clicked(); true
         "#
             ),
         )?;
@@ -919,30 +1000,61 @@ fn check_epgstation_library(
             app,
             engine,
             &format!(
-                "{FIND} !find(recordingLibrary, 'epgstationLoginDialog').visible && find(recordingLibrary, 'epgstationPassword').text.length === 0"
+                "{FIND} !find(settings, 'epgstationLoginDialog').visible && find(settings, 'epgstationPassword').text.length === 0"
             ),
         )?;
     } else {
         evaluate(
             engine,
-            &format!("{FIND} find(recordingLibrary, 'epgstationConnect').clicked(); true"),
+            &format!("{FIND} find(settings, 'epgstationConnect').clicked(); true"),
         )?;
     }
     wait_for(
         app,
         engine,
-        "!player.epgstation_busy && player.epgstation_loaded && player.recordings.count === 1",
+        &format!(
+            "!player.epgstation_busy && player.epgstation_loaded && player.recordings.count === {LIBRARY_RECORDINGS}"
+        ),
+    )?;
+    assert!(evaluate(
+        engine,
+        "!inputContext.viewing && !surface.enabled && settings.opened"
+    )?);
+    for (width, height) in [(640, 360), (960, 540)] {
+        resize_navigation(app, engine, width, height)?;
+        evaluate(engine, "settings.focusEpgstationConnection(); true")?;
+        let visible = wait_for(
+            app,
+            engine,
+            &format!(
+                "{FIND} const field = find(settings, 'epgstationServer'); const flick = find(settings, 'settingsFlickable'); const y = field.mapToItem(flick, 0, 0).y; field.activeFocus && y >= 0 && y + field.height <= flick.height"
+            ),
+        );
+        if let Err(error) = visible {
+            let geometry = ffi::evaluate_root(engine.pin_mut(), &QString::from(format!(
+                "{FIND} const field = find(settings, 'epgstationServer'); const flick = find(settings, 'settingsFlickable'); JSON.stringify({{window: [root.width, root.height], active: root.active, focus: field.activeFocus, fieldY: field.mapToItem(flick, 0, 0).y, fieldHeight: field.height, scrollY: flick.contentY, scrollHeight: flick.height, contentHeight: flick.contentHeight}})"
+            )))?.value::<QString>().ok_or("missing connection layout snapshot")?;
+            capture_navigation(app, engine, "epgstation-settings-failed.png")?;
+            return Err(format!("{error}; connection layout: {geometry}").into());
+        }
+        capture_navigation(app, engine, &format!("epgstation-settings-{width}.png"))?;
+    }
+    evaluate(
+        engine,
+        &format!("{FIND} find(settings, 'epgstationBrowse').clicked(); true"),
+    )?;
+    wait_for(
+        app,
+        engine,
+        "recordingLibrary.visible && !settings.visible && !inputContext.popupOpen",
     )?;
     for (width, height) in [(640, 360), (960, 540)] {
-        evaluate(
-            engine,
-            &format!("root.width = {width}; root.height = {height}; true"),
-        )?;
+        resize_navigation(app, engine, width, height)?;
         wait_for(
             app,
             engine,
             &format!(
-                "{FIND} const list = find(recordingLibrary, 'epgstationRecordings'); list.height > 0 && list.itemAtIndex(0) !== null"
+                "{FIND} const list = find(recordingLibrary, 'epgstationRecordings'); list.height > 0 && list.itemAtIndex(0) !== null && recordingLibrary.width === root.viewport.width && recordingLibrary.height === root.viewport.height"
             ),
         )?;
         capture_navigation(
@@ -968,6 +1080,34 @@ fn check_epgstation_library(
         app,
         engine,
         "!recordingLibrary.visible && player.playing && player.recording && JSON.parse(player.video_stats()).rendered > 0",
+    )?;
+    // Browsing during playback and leaving the page must retain both the
+    // existing stream and the search editor, without fetching another catalogue.
+    evaluate(engine, "root.requestMode(ModeNavigation.Recording); true")?;
+    wait_for(
+        app,
+        engine,
+        "recordingLibrary.visible && player.playing && !inputContext.popupOpen",
+    )?;
+    evaluate(
+        engine,
+        &format!(
+            "{FIND} find(recordingLibrary, 'epgstationKeyword').text = 'retained search'; const retainedScrollOffset = 200; find(recordingLibrary, 'epgstationRecordings').contentY = retainedScrollOffset; recordingLibrary.closeRequested(); true"
+        ),
+    )?;
+    wait_for(app, engine, "!recordingLibrary.visible && player.playing")?;
+    evaluate(engine, "root.requestMode(ModeNavigation.Recording); true")?;
+    assert!(evaluate(
+        engine,
+        &format!(
+            "{FIND} const retainedScrollOffset = 200; find(recordingLibrary, 'epgstationKeyword').text === 'retained search' && find(recordingLibrary, 'epgstationRecordings').contentY === retainedScrollOffset && player.epgstation_loaded && !player.epgstation_busy"
+        )
+    )?);
+    evaluate(
+        engine,
+        &format!(
+            "{FIND} find(recordingLibrary, 'epgstationKeyword').text = ''; recordingLibrary.closeRequested(); true"
+        ),
     )?;
     evaluate(engine, "player.stop(); true")?;
     println!(

@@ -28,6 +28,13 @@ inline QImage grabRoot(QQmlApplicationEngine &engine) {
     if (!window) throw std::runtime_error("QQuickWindow is missing");
     return window->grabWindow();
 }
+inline void resizeRoot(QQmlApplicationEngine &engine, int width, int height) {
+    const auto roots = engine.rootObjects();
+    auto *window = roots.isEmpty() ? nullptr : qobject_cast<QQuickWindow *>(roots.first());
+    if (!window) throw std::runtime_error("QQuickWindow is missing");
+    // Submit one native resize, avoiding intermediate width-only geometry.
+    window->resize(width, height);
+}
 inline void clickRootKey(QQmlApplicationEngine &engine, const QString &sequence) {
     const auto roots = engine.rootObjects();
     auto *window = roots.isEmpty() ? nullptr : qobject_cast<QQuickWindow *>(roots.first());

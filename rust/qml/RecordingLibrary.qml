@@ -4,61 +4,87 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import MinimalViewer
 
-Dialog {
+Rectangle {
     id: root
     objectName: "recordingLibrary"
     required property Player backend
-    parent: Overlay.overlay
-    anchors.centerIn: parent
-    width: Math.min(960, parent.width - Theme.spaceLg * 2)
-    height: Math.min(720, parent.height - Theme.spaceLg * 2)
-    modal: true
-    padding: Theme.spaceLg
-    background: PanelSurface {}
-    title: qsTranslate("RecordingLibrary", "EPGStation recordings")
-    function search() { backend.browse_epgstation(serverField.text, keywordField.text); }
-    onOpened: {
-        if (!serverField.text.length) serverField.text = backend.epgstation_server;
-        if (serverField.text.length && !backend.epgstation_loaded && !backend.epgstation_busy) search();
-        if (serverField.text.length) keywordField.forceActiveFocus();
-        else serverField.forceActiveFocus();
+    required property Window targetWindow
+    signal closeRequested
+    signal modeRequested(int mode)
+    signal fileRequested
+    signal urlRequested
+    signal connectionRequested
+    color: Theme.canvas
+    function clearSearch() { keywordField.clear(); }
+    function search() {
+        if (backend.epgstation_server.length && !backend.epgstation_busy)
+            backend.browse_epgstation(backend.epgstation_server, keywordField.text);
     }
-    onClosed: { backend.cancel_epgstation(); loginDialog.close(); }
-    Connections {
-        target: root.backend
-        function onRecordingOpened(success: bool) { if (success) root.close(); }
+    function activate() {
+        if (backend.epgstation_server.length && !backend.epgstation_loaded && !backend.epgstation_busy) search();
+        keywordField.forceActiveFocus();
     }
-    header: Label {
-        text: root.title
-        padding: Theme.spaceLg
-        color: Theme.textPrimary
-        font.pixelSize: Theme.fontHeading
+    Item {
+        id: header
+        anchors { left: parent.left; right: parent.right; top: parent.top }
+        height: navigation.headerHeight
+        WindowDragArea { anchors.fill: parent; targetWindow: root.targetWindow }
+        Row {
+            anchors { left: parent.left; leftMargin: navigation.edgeMargin; verticalCenter: parent.verticalCenter }
+            spacing: Theme.spaceMd
+            IconAction {
+                objectName: "epgstationClose"
+                flat: true
+                iconSource: "qrc:/qt/qml/MinimalViewer/assets/icons/chevron-left.svg"
+                tip: qsTranslate("RecordingLibrary", "Back to playback")
+                onClicked: root.closeRequested()
+            }
+            Label {
+                anchors.verticalCenter: parent.verticalCenter
+                text: qsTranslate("RecordingLibrary", "Recordings")
+                color: Theme.textPrimary
+                font.pixelSize: Theme.fontTitle
+                font.bold: true
+            }
+        }
+        ModeNavigation {
+            id: navigation
+            objectName: "recordingModeNavigation"
+            targetWindow: root.targetWindow
+            mode: ModeNavigation.Recording
+            guideEnabled: root.backend.epg_enabled
+            onModeRequested: function(mode) { root.modeRequested(mode); }
+        }
     }
-    contentItem: ColumnLayout {
-        spacing: Theme.spaceMd
+    ColumnLayout {
+        anchors {
+            left: parent.left; right: parent.right; top: header.bottom; bottom: parent.bottom
+            margins: Theme.spaceLg
+        }
+        spacing: Theme.spaceLg
         RowLayout {
             Layout.fillWidth: true
             spacing: Theme.spaceMd
-            SettingsField {
-                id: serverField
-                objectName: "epgstationServer"
+            Label {
                 Layout.fillWidth: true
-                placeholderText: "http://epgstation:8888"
-                Accessible.name: qsTranslate("RecordingLibrary", "EPGStation URL")
-                inputMethodHints: Qt.ImhUrlCharactersOnly | Qt.ImhNoPredictiveText
-                onAccepted: root.search()
+                text: qsTranslate("RecordingLibrary", "EPGStation recordings")
+                color: Theme.textPrimary
+                font.pixelSize: Theme.fontHeading
             }
             ActionButton {
-                objectName: "epgstationConnect"
-                text: qsTranslate("RecordingLibrary", "Connect")
-                enabled: serverField.text.trim().length > 0 && !root.backend.epgstation_busy
-                onClicked: root.search()
+                objectName: "libraryOpenFile"
+                text: qsTranslate("Recording", "Open TS file")
+                onClicked: root.fileRequested()
             }
             ActionButton {
-                objectName: "epgstationLogin"
-                text: qsTranslate("RecordingLibrary", "Sign in…")
-                enabled: serverField.text.trim().length > 0 && !root.backend.epgstation_busy
-                onClicked: loginDialog.open()
+                objectName: "libraryOpenUrl"
+                text: qsTranslate("Recording", "Open URL")
+                onClicked: root.urlRequested()
+            }
+            ActionButton {
+                objectName: "epgstationConnection"
+                text: qsTranslate("RecordingLibrary", "Connection…")
+                onClicked: root.connectionRequested()
             }
         }
         RowLayout {
@@ -76,7 +102,7 @@ Dialog {
             ActionButton {
                 objectName: "epgstationSearch"
                 text: qsTranslate("RecordingLibrary", "Search")
-                enabled: serverField.text.trim().length > 0 && !root.backend.epgstation_busy
+                enabled: root.backend.epgstation_server.length > 0 && !root.backend.epgstation_busy
                 onClicked: root.search()
             }
         }
@@ -135,6 +161,8 @@ Dialog {
                                 color: Theme.textPrimary
                                 font.pixelSize: Theme.fontBody
                                 textFormat: Text.PlainText
+                                wrapMode: Text.Wrap
+                                maximumLineCount: 2
                                 elide: Text.ElideRight
                             }
                             Label {
@@ -174,7 +202,7 @@ Dialog {
                 horizontalAlignment: Text.AlignHCenter
                 wrapMode: Text.Wrap
                 text: root.backend.epgstation_loaded ? qsTranslate("RecordingLibrary", "No recordings found")
-                      : qsTranslate("RecordingLibrary", "Connect to EPGStation to browse recordings.")
+                      : qsTranslate("RecordingLibrary", "Set up EPGStation in Settings → Connection to browse recordings.")
                 color: Theme.textSecondary
                 font.pixelSize: Theme.fontBody
             }
@@ -203,77 +231,6 @@ Dialog {
                 text: qsTranslate("RecordingLibrary", "Next")
                 enabled: root.backend.epgstation_next
                 onClicked: root.backend.epgstation_change_page(true)
-            }
-            ActionButton {
-                objectName: "epgstationClose"
-                text: qsTranslate("RecordingLibrary", "Close")
-                onClicked: root.close()
-            }
-        }
-    }
-    Dialog {
-        id: loginDialog
-        objectName: "epgstationLoginDialog"
-        parent: Overlay.overlay
-        anchors.centerIn: parent
-        width: Math.min(480, parent.width - Theme.spaceLg * 2)
-        modal: true
-        padding: Theme.spaceLg
-        background: PanelSurface {}
-        onOpened: username.forceActiveFocus()
-        onClosed: password.clear()
-        function signIn() {
-            if (!username.text.length || !password.text.length) return;
-            if (root.backend.login_epgstation(serverField.text, username.text, password.text)) {
-                keywordField.clear();
-                close();
-            }
-        }
-        contentItem: ColumnLayout {
-            spacing: Theme.spaceMd
-            Label {
-                text: qsTranslate("RecordingLibrary", "Sign in to EPGStation (stuayu)")
-                color: Theme.textPrimary
-                font.pixelSize: Theme.fontHeading
-            }
-            SettingsField {
-                id: username
-                objectName: "epgstationUsername"
-                Layout.fillWidth: true
-                placeholderText: qsTranslate("RecordingLibrary", "Username")
-                Accessible.name: placeholderText
-                onAccepted: password.forceActiveFocus()
-            }
-            SettingsField {
-                id: password
-                objectName: "epgstationPassword"
-                Layout.fillWidth: true
-                placeholderText: qsTranslate("RecordingLibrary", "Password")
-                Accessible.name: placeholderText
-                echoMode: TextInput.Password
-                onAccepted: loginDialog.signIn()
-            }
-            Label {
-                Layout.fillWidth: true
-                text: qsTranslate("RecordingLibrary", "Your password is not saved. Sign in again after restarting the app.")
-                color: Theme.textSecondary
-                font.pixelSize: Theme.fontCaption
-                wrapMode: Text.Wrap
-            }
-            RowLayout {
-                Layout.alignment: Qt.AlignRight
-                spacing: Theme.spaceMd
-                ActionButton {
-                    text: qsTranslate("RecordingLibrary", "Cancel")
-                    onClicked: loginDialog.close()
-                }
-                ActionButton {
-                    objectName: "epgstationSubmitLogin"
-                    text: qsTranslate("RecordingLibrary", "Sign in")
-                    emphasis: ActionButton.Primary
-                    enabled: username.text.length > 0 && password.text.length > 0
-                    onClicked: loginDialog.signIn()
-                }
             }
         }
     }

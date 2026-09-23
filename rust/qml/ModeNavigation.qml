@@ -31,7 +31,7 @@ Row {
             tip: qsTranslate("Recording", "Open recording")
             flat: true
             active: root.mode === ModeNavigation.Recording
-            // The owner opens the recording source dialog.
+            // The owner opens the recording library without changing playback.
             onClicked: root.modeRequested(ModeNavigation.Recording)
         }
         IconAction {
