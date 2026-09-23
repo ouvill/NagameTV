@@ -7,7 +7,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut packet = [0; PACKET_BYTES];
     loop {
         match input.read_exact(&mut packet) {
-            Ok(()) => output.write_all(&filter.push(&packet)?)?,
+            Ok(()) => output.write_all(filter.push(&packet)?)?,
             Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => break,
             Err(error) => return Err(error.into()),
         }

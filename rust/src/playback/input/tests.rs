@@ -589,7 +589,8 @@ fn normalizer_announces_and_feeds_missing_captions_before_broadcast_changes() {
     };
     const NORMALIZED_PMT: Pid = Pid(0x01f0);
     let fixture = include_bytes!("../../../../tests/fixtures/recording-seek.ts");
-    let output = tsreadex::Filter::new(1).unwrap().push(fixture).unwrap();
+    let mut filter = tsreadex::Filter::new(1).unwrap();
+    let output = filter.push(fixture).unwrap();
     let mut sections = std::collections::BTreeMap::<Pid, Sections>::new();
     let mut caption = None;
     let mut payload_seen = false;

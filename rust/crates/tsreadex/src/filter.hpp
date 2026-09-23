@@ -7,7 +7,7 @@ namespace viewer {
 class Filter {
 public:
     explicit Filter(std::uint16_t service);
-    rust::Vec<std::uint8_t> push(rust::Slice<const std::uint8_t> packets);
+    rust::Slice<const std::uint8_t> push(rust::Slice<const std::uint8_t> packets);
 private:
     CServiceFilter filter_;
 };

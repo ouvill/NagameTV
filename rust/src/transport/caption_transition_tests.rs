@@ -164,16 +164,23 @@ fn caption_transition_preserves_media_and_updates_current_crc_checked_tables() {
 
 #[test]
 fn caption_transition_decodes_authored_statements_before_and_after_audio_addition() {
-    let normalized = tsreadex::Filter::new(SERVICE)
-        .unwrap()
-        .push(CHANGED)
-        .unwrap();
-    for bytes in [CHANGED, normalized.as_slice()] {
+    let mut filter = tsreadex::Filter::new(SERVICE).unwrap();
+    let normalized = filter.push(CHANGED).unwrap();
+    for (bytes, chunk_size) in [CHANGED, normalized].into_iter().flat_map(|bytes| {
+        [
+            1,
+            TS_PACKET_SIZE - 1,
+            TS_PACKET_SIZE,
+            TS_PACKET_SIZE + 1,
+            TS_PACKET_SIZE * 256,
+        ]
+        .map(|size| (bytes, size))
+    }) {
         let mut parser = TransportParser::new(true);
         parser.select_service(SERVICE);
         let mut texts = Vec::new();
         let mut previous_pts = None;
-        for raw in bytes.as_chunks::<TS_PACKET_SIZE>().0 {
+        for raw in bytes.chunks(chunk_size) {
             for cue in parser.push(raw) {
                 if cue.text.is_empty() {
                     continue; // Normalizer's initial empty caption management.

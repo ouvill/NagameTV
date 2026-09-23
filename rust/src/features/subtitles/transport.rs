@@ -112,40 +112,64 @@ impl TransportParser {
     }
 
     pub fn push(&mut self, data: &[u8]) -> Vec<SubtitleCue> {
-        self.bytes.extend_from_slice(data);
+        // The old tail is shorter than one packet. Treat it and the caller's
+        // input as a joined view; copy only a packet crossing that boundary.
+        let mut tail = std::mem::take(&mut self.bytes);
+        let tail_len = tail.len();
+        let size = tail_len + data.len();
         let mut texts = Vec::new();
         let mut consumed = 0;
-        while consumed < self.bytes.len() {
-            let Some(sync) = self.bytes[consumed..]
-                .iter()
-                .position(|byte| *byte == SYNC_BYTE)
-            else {
-                consumed = self.bytes.len();
+        while consumed < size {
+            let left = tail.get(consumed..).unwrap_or_default();
+            let right = &data[consumed.saturating_sub(tail_len)..];
+            let Some(sync) = left.iter().chain(right).position(|byte| *byte == SYNC_BYTE) else {
+                consumed = size;
                 break;
             };
             consumed += sync;
-            if self.bytes.len() - consumed < TS_PACKET_SIZE {
+            if size - consumed < TS_PACKET_SIZE {
                 break;
             }
-            if self
-                .bytes
-                .get(consumed + TS_PACKET_SIZE)
+            // The following packet starts past the old tail, if present.
+            if data
+                .get(consumed + TS_PACKET_SIZE - tail_len)
                 .is_some_and(|byte| *byte != SYNC_BYTE)
             {
                 consumed += 1;
                 continue;
             }
-            let mut packet = [0; TS_PACKET_SIZE];
-            packet.copy_from_slice(&self.bytes[consumed..consumed + TS_PACKET_SIZE]);
+            let mut joined;
+            let packet = if consumed < tail_len {
+                joined = [0; TS_PACKET_SIZE];
+                let left = &tail[consumed..];
+                joined[..left.len()].copy_from_slice(left);
+                joined[left.len()..].copy_from_slice(&data[..TS_PACKET_SIZE - left.len()]);
+                &joined
+            } else {
+                let start = consumed - tail_len;
+                data[start..start + TS_PACKET_SIZE]
+                    .try_into()
+                    .expect("complete packet")
+            };
             consumed += TS_PACKET_SIZE;
             let generation = self.caption_generation;
             let previous_cues = texts.len();
-            self.handle_packet(&packet, &mut texts);
+            self.handle_packet(packet, &mut texts);
             if generation != self.caption_generation {
                 texts.drain(..previous_cues);
             }
         }
-        self.bytes.drain(..consumed);
+        if consumed < tail_len {
+            tail.drain(..consumed);
+        } else {
+            tail.clear();
+        }
+        let remainder = &data[consumed.saturating_sub(tail_len)..];
+        if !remainder.is_empty() {
+            tail.reserve_exact(TS_PACKET_SIZE - tail.len());
+            tail.extend_from_slice(remainder);
+        }
+        self.bytes = tail;
         texts
     }
 
@@ -723,6 +747,7 @@ mod tests {
             for chunk in input.chunks(chunk_size) {
                 assert!(parser.push(chunk).is_empty());
                 assert!(parser.bytes.len() < 188);
+                assert!(parser.bytes.capacity() <= super::TS_PACKET_SIZE);
             }
             assert_eq!(
                 parser.pmt_pids,

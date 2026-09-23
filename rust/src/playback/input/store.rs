@@ -1,6 +1,6 @@
 //! Bounded raw TS retention. Logical offsets never refer to reused physical bytes.
 use super::index::Index;
-use std::{collections::VecDeque, time::Duration};
+use std::{collections::VecDeque, ops::Range, sync::Arc, time::Duration};
 
 pub(super) const SEGMENT_BYTES: usize = 1024 * 1024;
 pub(super) const READ_BYTES: usize = super::TS_PACKET_SIZE * 256;
@@ -18,8 +18,36 @@ enum Storage {
     Filesystem(super::filesystem::Buffer),
 }
 enum Bytes {
-    Memory(Vec<u8>),
+    Memory(Arc<Vec<u8>>),
     File,
+}
+impl Bytes {
+    fn writable(&mut self, size: usize) -> bool {
+        match self {
+            Self::Memory(bytes) => size < READ_BYTES && Arc::get_mut(bytes).is_some(),
+            Self::File => size + super::TS_PACKET_SIZE <= SEGMENT_BYTES,
+        }
+    }
+}
+// A live read pins at most READ_BYTES, independently of the retained history.
+// The single Reader releases it after normalization, before returning to appsrc.
+// File reads own their allocation; live reads share bytes without holding Store's
+// mutex. Only the store can obtain mutable access, and only without a reader.
+#[derive(Debug)]
+pub(super) enum ReadBytes {
+    Owned(Vec<u8>),
+    Shared {
+        bytes: Arc<Vec<u8>>,
+        range: Range<usize>,
+    },
+}
+impl AsRef<[u8]> for ReadBytes {
+    fn as_ref(&self) -> &[u8] {
+        match self {
+            Self::Owned(bytes) => bytes,
+            Self::Shared { bytes, range } => &bytes[range.clone()],
+        }
+    }
 }
 struct Segment {
     start: u64,
@@ -29,7 +57,7 @@ struct Segment {
 }
 #[derive(Debug)]
 pub(super) enum ReadResult {
-    Data { bytes: Vec<u8>, reconnected: bool },
+    Data { bytes: ReadBytes, reconnected: bool },
     Awaiting,
     Expired,
     End,
@@ -130,7 +158,7 @@ impl Store {
             let (storage, bytes) = match policy.storage() {
                 Retention::Off | Retention::Memory => (
                     Storage::Memory,
-                    Bytes::Memory(Vec::with_capacity(SEGMENT_BYTES)),
+                    Bytes::Memory(Arc::new(Vec::with_capacity(READ_BYTES))),
                 ),
                 Retention::Filesystem => (Storage::Filesystem(buffer()?), Bytes::File),
             };
@@ -164,24 +192,29 @@ impl Store {
             ));
         }
         let (byte_limit, time_limit) = self.policy.budget();
+        let segment_capacity = match self.storage {
+            Storage::Memory => READ_BYTES,
+            Storage::Filesystem(_) => SEGMENT_BYTES,
+        };
         let mut remaining = packets;
         while !remaining.is_empty() {
             if self
                 .segments
-                .back()
-                .is_none_or(|segment| segment.size + super::TS_PACKET_SIZE > SEGMENT_BYTES)
+                .back_mut()
+                .is_none_or(|segment| !segment.bytes.writable(segment.size))
             {
                 // Free an old allocation before reserving another chunk. The
-                // configured TS capacity also bounds transient ring growth.
+                // ring capacity counts allocations, including unused capacity.
+                // A reader can retain one retired chunk (at most READ_BYTES).
                 if matches!(self.storage, Storage::Memory) {
                     while !self.segments.is_empty()
-                        && (self.segments.len() as u64 + 1) * SEGMENT_BYTES as u64 > byte_limit
+                        && (self.segments.len() as u64 + 1) * READ_BYTES as u64 > byte_limit
                     {
                         self.segments.pop_front();
                     }
                 }
                 let bytes = match &self.storage {
-                    Storage::Memory => Bytes::Memory(Vec::with_capacity(SEGMENT_BYTES)),
+                    Storage::Memory => Bytes::Memory(Arc::new(Vec::with_capacity(READ_BYTES))),
                     Storage::Filesystem(_) => Bytes::File,
                 };
                 self.segments.push_back(Segment {
@@ -193,11 +226,13 @@ impl Store {
             }
             let segment = self.segments.back_mut().expect("segment inserted above");
             let count = remaining.len().min(
-                (SEGMENT_BYTES - segment.size) / super::TS_PACKET_SIZE * super::TS_PACKET_SIZE,
+                (segment_capacity - segment.size) / super::TS_PACKET_SIZE * super::TS_PACKET_SIZE,
             );
             let packets = &remaining[..count];
             match &mut segment.bytes {
-                Bytes::Memory(bytes) => bytes.extend_from_slice(packets),
+                Bytes::Memory(bytes) => Arc::get_mut(bytes)
+                    .expect("writable chunk has no reader")
+                    .extend_from_slice(packets),
                 Bytes::File => {
                     let Storage::Filesystem(buffer) = &mut self.storage else {
                         unreachable!("file segment belongs to filesystem storage")
@@ -243,7 +278,7 @@ impl Store {
         while self.segments.len() > 1
             && self.segments.front().is_some_and(|first| {
                 (match self.storage {
-                    Storage::Memory => self.segments.len() as u64 * SEGMENT_BYTES as u64,
+                    Storage::Memory => self.segments.len() as u64 * READ_BYTES as u64,
                     Storage::Filesystem(_) => self.end - first.start,
                 }) > byte_limit
                     || first.end_ns < earliest
@@ -293,11 +328,10 @@ impl Store {
                 Status::Failed(message) => Err(std::io::Error::other(message.clone())),
             };
         }
-        let segment = self
+        let position = self
             .segments
-            .iter_mut()
-            .find(|segment| offset >= segment.start && offset < segment.start + segment.size as u64)
-            .expect("offset in retained window");
+            .partition_point(|segment| segment.start <= offset);
+        let segment = &mut self.segments[position - 1];
         let within = (offset - segment.start) as usize;
         let until_boundary = self
             .boundaries
@@ -306,12 +340,15 @@ impl Store {
             .map_or(READ_BYTES, |boundary| (*boundary - offset) as usize);
         let count = READ_BYTES.min(segment.size - within).min(until_boundary);
         let bytes = match &mut segment.bytes {
-            Bytes::Memory(bytes) => bytes[within..within + count].to_vec(),
+            Bytes::Memory(bytes) => ReadBytes::Shared {
+                bytes: Arc::clone(bytes),
+                range: within..within + count,
+            },
             Bytes::File => {
                 let Storage::Filesystem(buffer) = &mut self.storage else {
                     unreachable!("file segment belongs to filesystem storage")
                 };
-                buffer.read(segment.start, within, count)?
+                ReadBytes::Owned(buffer.read(segment.start, within, count)?)
             }
         };
         Ok(ReadResult::Data {
@@ -324,6 +361,43 @@ impl Store {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn shared_read_survives_append_eviction_and_store_destruction_without_copying()
+    -> std::io::Result<()> {
+        let mut store = Store::new(Retention::Off, 1, false)?;
+        let first = [0; super::super::TS_PACKET_SIZE];
+        let next = [1; super::super::TS_PACKET_SIZE];
+        store.append(&first)?;
+        let Bytes::Memory(stored) = &store.segments[0].bytes else {
+            unreachable!()
+        };
+        let original = stored.as_ptr();
+        let ReadResult::Data { bytes, .. } = store.read(0)? else {
+            unreachable!()
+        };
+        assert_eq!(bytes.as_ref().as_ptr(), original);
+        // The live writer must neither mutate nor copy-on-write the leased chunk.
+        store.append(&next)?;
+        assert_eq!(store.segments[1].start, first.len() as u64);
+        assert_eq!(bytes.as_ref(), first);
+        let (budget, _) = store.policy.budget();
+        let block = next.repeat(READ_BYTES / next.len());
+        for _ in 0..budget.div_ceil(READ_BYTES as u64) + 1 {
+            store.append(&block)?;
+        }
+        assert!(matches!(store.read(0)?, ReadResult::Expired));
+        assert!(store.segments.len() as u64 * READ_BYTES as u64 <= budget);
+        drop(store);
+        assert_eq!(bytes.as_ref().as_ptr(), original);
+        assert_eq!(bytes.as_ref(), first);
+        let ReadBytes::Shared { bytes, .. } = bytes else {
+            unreachable!()
+        };
+        assert_eq!(Arc::strong_count(&bytes), 1);
+        assert_eq!(bytes.capacity(), READ_BYTES);
+        Ok(())
+    }
+
     #[test]
     fn resizing_live_history_preserves_offsets_and_trims_both_budgets() -> std::io::Result<()> {
         use super::super::{Limits, Policy};
@@ -485,7 +559,7 @@ mod tests {
             assert!(store.end - store.start() <= TEST_BYTES);
             assert!(matches!(store.read(0)?, ReadResult::Expired));
             assert!(
-                matches!(store.read(store.start())?, ReadResult::Data { bytes, .. } if bytes == block)
+                matches!(store.read(store.start())?, ReadResult::Data { bytes, .. } if bytes.as_ref() == block)
             );
             assert!(matches!(store.read(store.end)?, ReadResult::Awaiting));
             store.status = Status::Ended;
@@ -515,7 +589,7 @@ mod reconnect_tests {
         store.append(ts)?;
         let packet_bytes = super::super::TS_PACKET_SIZE as u64;
         assert!(
-            matches!(store.read(boundary - packet_bytes)?, ReadResult::Data { bytes, reconnected: false } if bytes.len() as u64 == packet_bytes)
+            matches!(store.read(boundary - packet_bytes)?, ReadResult::Data { bytes, reconnected: false } if bytes.as_ref().len() as u64 == packet_bytes)
         );
         assert!(matches!(
             store.read(boundary)?,

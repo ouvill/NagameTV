@@ -6,6 +6,7 @@ pub mod limits;
 pub use limits::{Limits, Policy};
 #[cfg(test)]
 mod live_speed_tests;
+mod packet_tail;
 mod source;
 mod store;
 #[cfg(test)]
@@ -313,7 +314,7 @@ impl Reader {
                     ReadResult::End
                 } else {
                     ReadResult::Data {
-                        bytes: data,
+                        bytes: store::ReadBytes::Owned(data),
                         reconnected: false,
                     }
                 }
@@ -332,10 +333,12 @@ impl Reader {
                     self.clock.discontinuity();
                     self.filter = tsreadex::Filter::new(self.service)?;
                 }
-                let mut bytes = self.filter.push(&std::mem::take(&mut self.bootstrap))?;
+                let data = data.as_ref();
+                let mut bytes = Vec::with_capacity(data.len());
+                bytes.extend_from_slice(self.filter.push(&std::mem::take(&mut self.bootstrap))?);
                 let mut time_ns = self.time_ns;
                 let mut discontinuity = false;
-                for (offset, packet) in self.framing.packets(&data) {
+                for (offset, packet) in self.framing.packets(data) {
                     if let Some(anchor) = self.clock.packet(self.offset + offset, packet) {
                         if !bytes.is_empty() {
                             self.pending.push_back(Output::Data {
@@ -349,7 +352,7 @@ impl Reader {
                         discontinuity = self.epoch != anchor.epoch;
                         if discontinuity {
                             self.filter = tsreadex::Filter::new(self.service)?;
-                            bytes.extend(self.filter.push(&anchor.bootstrap)?);
+                            bytes.extend_from_slice(self.filter.push(&anchor.bootstrap)?);
                         }
                         self.epoch = anchor.epoch;
                     }
@@ -357,7 +360,7 @@ impl Reader {
                         self.service = self.clock.service();
                         self.filter = tsreadex::Filter::new(self.service)?;
                     }
-                    bytes.extend(self.filter.push(packet)?);
+                    bytes.extend_from_slice(self.filter.push(packet)?);
                 }
                 if let Shared::File(shared) = &self.shared {
                     let mut state = shared.lock().map_err(|_| Error::Poisoned)?;
@@ -700,18 +703,18 @@ async fn receive(uri: &str, store: &Mutex<Store>) -> Result<(), String> {
         }
         let result = async {
             let mut response = client.get(uri).send().await?.error_for_status()?;
-            let mut pending = Vec::new();
+            let mut pending = packet_tail::PacketTail::default();
             while let Some(chunk) = response.chunk().await? {
                 // Retain less than one packet between reads; incoming HTTP chunks
                 // are consumed in bounded slices before the next await.
                 for bytes in chunk.chunks(READ_BYTES) {
-                    pending.extend_from_slice(bytes);
-                    let complete = pending.len() / TS_PACKET_SIZE * TS_PACKET_SIZE;
-                    store
-                        .lock()
-                        .map_err(|_| ReceiveError::Poisoned)?
-                        .append(&pending[..complete])?;
-                    pending.drain(..complete);
+                    pending.push(bytes, |packets| {
+                        store
+                            .lock()
+                            .map_err(|_| ReceiveError::Poisoned)?
+                            .append(packets)?;
+                        Ok::<_, ReceiveError>(())
+                    })?;
                 }
             }
             Err::<(), ReceiveError>(ReceiveError::Disconnected)
