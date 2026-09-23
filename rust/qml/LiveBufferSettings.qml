@@ -16,15 +16,13 @@ ColumnLayout {
         number.value = saved.milliseconds;
         // Restore invalid/unfinished text without detaching subsequent steps
         // or external setting updates from the SpinBox's value.
-        number.contentItem.text = Qt.binding(function() {
-            return number.textFromValue(number.value, number.locale);
-        });
+        number.restoreInput();
     }
     function commit() {
         saveDelay.stop();
         editState = LiveBufferSettings.Saving;
-        if (number.contentItem.acceptableInput)
-            backend.configure_live_buffer(number.valueFromText(number.contentItem.text, number.locale));
+        if (number.commitInput())
+            backend.configure_live_buffer(number.value);
         syncSaved();
         editState = LiveBufferSettings.Synced;
     }

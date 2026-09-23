@@ -35,6 +35,7 @@ Item {
                 failOnWarning(/.*/);
                 settings.finishEdit();
                 settings.visible = true;
+                number().locale = Qt.locale("en_US");
                 backend.live_buffer_options = JSON.stringify({milliseconds:250, min_ms:1, max_ms:1000, default_ms:250});
                 backend.requests = [];
                 host.requestActivate(); tryCompare(host, "active", true);
@@ -62,10 +63,20 @@ Item {
                 compare(backend.requests.length, 0);
                 tryCompare(backend, "requests", [247]);
             }
-            function test_hiding_page_commits_unfinished_entry() {
-                enterValue(number(), "120");
+            function test_hiding_page_commits_unfinished_entry_data() {
+                return [
+                    {tag: "plain", locale: "en_US", text: "120", value: 120},
+                    {tag: "comma_grouping", locale: "en_US", text: "1,000", value: 1000},
+                    {tag: "period_grouping", locale: "de_DE", text: "1.000", value: 1000}
+                ];
+            }
+            function test_hiding_page_commits_unfinished_entry(data) {
+                number().locale = Qt.locale(data.locale);
+                enterValue(number(), data.text);
+                compare(backend.requests.length, 0);
+                compare(number().contentItem.text, data.text);
                 settings.visible = false;
-                tryCompare(backend, "requests", [120]);
+                tryCompare(backend, "requests", [data.value]);
             }
             function test_destroying_page_commits_unfinished_entry() {
                 const page = extraSettings.createObject(host.contentItem, {backend: backend});
@@ -93,6 +104,11 @@ Item {
                 compare(backend.requests.length, 0);
                 compare(number().value, 250);
                 compare(number().contentItem.text, "250");
+                settings.visible = true;
+                number().forceActiveFocus();
+                keyClick(Qt.Key_Up);
+                tryCompare(backend, "requests", [251]);
+                compare(number().contentItem.text, "251");
             }
         }
     }

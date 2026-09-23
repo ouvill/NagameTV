@@ -34,10 +34,8 @@ ColumnLayout {
     }
     function readNumericEdits() {
         for (const field of [memory, files, minutes]) {
-            if (!field.contentItem.acceptableInput) continue;
-            const value = field.valueFromText(field.contentItem.text, field.locale);
-            if (value !== field.value) {
-                field.value = value;
+            const previous = field.value;
+            if (field.commitInput() && field.value !== previous) {
                 editState = TimeshiftSettings.Pending;
             }
         }

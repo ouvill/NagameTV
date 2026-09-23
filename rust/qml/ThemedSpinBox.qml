@@ -9,8 +9,22 @@ SpinBox {
     leftPadding: 40; rightPadding: 40
     font.pixelSize: 16
     opacity: enabled ? 1 : 0.42
+    function restoreInput(): void {
+        // displayText can still contain a rejected draft when value is unchanged.
+        input.text = Qt.binding(function() {
+            return Number(control.value).toLocaleString(control.locale, "f", 0);
+        });
+    }
+    function commitInput(): bool {
+        if (!input.acceptableInput) return false;
+        // This component edits locale-formatted integers, matching SpinBox's
+        // default conversion and validator even before focus has left the field.
+        value = Number.fromLocaleString(locale, input.text);
+        return true;
+    }
     contentItem: TextInput {
-        text: control.textFromValue(control.value, control.locale)
+        id: input
+        text: control.displayText
         font: control.font
         color: "#f4f5f3"; selectionColor: "#9caf9f"; selectedTextColor: "#151715"
         horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
