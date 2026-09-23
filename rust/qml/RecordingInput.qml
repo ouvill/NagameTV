@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import MinimalViewer
 import QtQuick.Controls
+import QtQuick.Layouts
 import QtQuick.Dialogs as FileDialogs
 
 Item {
@@ -9,7 +10,11 @@ Item {
     required property var backend
     signal started
 
-    function open() { picker.open(); }
+    function open() { sourceDialog.open(); }
+    function openFile() { sourceDialog.close(); picker.open(); }
+    function submitUrl() {
+        if (urlField.text.trim().length && openUrl(urlField.text.trim())) sourceDialog.close();
+    }
     function openTransfer(key) {
         if (backend.open_recording_transfer(key)) return true;
         errorDialog.open();
@@ -27,6 +32,69 @@ Item {
         function onRecordingOpened(success) {
             if (success) root.started();
             else errorDialog.open();
+        }
+    }
+    Dialog {
+        id: sourceDialog
+        objectName: "recordingSource"
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        width: Math.min(560, parent.width - Theme.spaceXl * 2)
+        modal: true
+        title: qsTranslate("Recording", "Open recording")
+        padding: Theme.spaceXl
+        background: PanelSurface {}
+        onOpened: urlField.forceActiveFocus()
+        header: Label {
+            text: sourceDialog.title
+            padding: Theme.spaceXl
+            color: Theme.textPrimary
+            font.pixelSize: Theme.fontHeading
+        }
+        contentItem: ColumnLayout {
+            spacing: Theme.spaceLg
+            ActionButton {
+                objectName: "recordingChooseFile"
+                text: qsTranslate("Recording", "Open TS file")
+                Layout.fillWidth: true
+                onClicked: root.openFile()
+            }
+            Label {
+                text: qsTranslate("Recording", "Recording URL")
+                color: Theme.textPrimary
+                font.pixelSize: Theme.fontBody
+            }
+            SettingsField {
+                id: urlField
+                objectName: "recordingUrl"
+                Layout.fillWidth: true
+                placeholderText: "http://epgstation:8888/api/videos/123"
+                inputMethodHints: Qt.ImhUrlCharactersOnly | Qt.ImhNoPredictiveText
+                Accessible.name: qsTranslate("Recording", "Recording URL")
+                onAccepted: root.submitUrl()
+            }
+            Label {
+                Layout.fillWidth: true
+                text: qsTranslate("Recording", "Paste the direct URL of a recorded TS file.")
+                color: Theme.textSecondary
+                font.pixelSize: Theme.fontCaption
+                wrapMode: Text.Wrap
+            }
+            RowLayout {
+                Layout.alignment: Qt.AlignRight
+                spacing: Theme.spaceMd
+                ActionButton {
+                    text: qsTranslate("Recording", "Cancel")
+                    onClicked: sourceDialog.reject()
+                }
+                ActionButton {
+                    objectName: "recordingOpenUrl"
+                    text: qsTranslate("Recording", "Open URL")
+                    emphasis: ActionButton.Primary
+                    enabled: urlField.text.trim().length > 0
+                    onClicked: root.submitUrl()
+                }
+            }
         }
     }
     Popup {

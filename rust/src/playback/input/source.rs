@@ -97,7 +97,7 @@ impl Input {
         programs: bool,
     ) -> Result<Self, Error> {
         let (reader, worker) = file_reader_inspected(
-            recording.path(),
+            recording.source(),
             recording.service(),
             programs,
             recording.inspection(),

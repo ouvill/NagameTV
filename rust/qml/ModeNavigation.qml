@@ -28,10 +28,10 @@ Row {
         IconAction {
             objectName: "recordingModeButton"
             iconSource: root.iconDirectory + "recording.svg"
-            tip: qsTranslate("Recording", "Open TS file")
+            tip: qsTranslate("Recording", "Open recording")
             flat: true
             active: root.mode === ModeNavigation.Recording
-            // The owner chooses the destination: file picker now, library later.
+            // The owner opens the recording source dialog.
             onClicked: root.modeRequested(ModeNavigation.Recording)
         }
         IconAction {

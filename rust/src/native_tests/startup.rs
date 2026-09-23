@@ -78,6 +78,29 @@ impl Server {
                     socket.read_exact(&mut byte)?;
                     header.push(byte[0]);
                 }
+                if header.starts_with(b"GET /api/videos/123 ") {
+                    let bytes = include_bytes!("../../../tests/fixtures/recording-seek.ts");
+                    let headers = String::from_utf8_lossy(&header).to_ascii_lowercase();
+                    let range = headers
+                        .lines()
+                        .find_map(|line| line.strip_prefix("range: bytes="))
+                        .and_then(|range| range.split_once('-'))
+                        .ok_or_else(|| std::io::Error::other("recording request without Range"))?;
+                    let start: usize = range.0.parse().map_err(std::io::Error::other)?;
+                    let end = range
+                        .1
+                        .parse::<usize>()
+                        .map_err(std::io::Error::other)?
+                        .min(bytes.len() - 1);
+                    write!(
+                        socket,
+                        "HTTP/1.1 206 Partial Content\r\nContent-Type: video/mp2t\r\nContent-Range: bytes {start}-{end}/{}\r\nContent-Length: {}\r\nETag: \"fixture\"\r\nConnection: close\r\n\r\n",
+                        bytes.len(),
+                        end - start + 1
+                    )?;
+                    socket.write_all(&bytes[start..=end])?;
+                    continue;
+                }
                 let body = if header.starts_with(b"GET /api/services ") {
                     count.fetch_add(1, Ordering::Relaxed);
                     r#"[{"id":1,"networkId":10,"serviceId":1,"name":"First TV","type":1,"channel":{"type":"GR"}},
@@ -438,7 +461,7 @@ fn check_screen_navigation(
         "settings.modeRequested(ModeNavigation.Recording); true",
     )?;
     let picker =
-        "Array.from(recordingInput.data).find(item => item.objectName === 'recordingPicker')";
+        "Array.from(recordingInput.data).find(item => item.objectName === 'recordingSource')";
     wait_for(app, engine, &format!("{picker}.visible"))?;
     evaluate(engine, &format!("{picker}.reject(); true"))?;
     wait_for(
@@ -702,7 +725,7 @@ fn window(
             "guideLoader.item.modeRequested(ModeNavigation.Recording); true",
         )?;
         let guide_picker =
-            "Array.from(recordingInput.data).find(item => item.objectName === 'recordingPicker')";
+            "Array.from(recordingInput.data).find(item => item.objectName === 'recordingSource')";
         wait_for(app, &mut engine, &format!("{guide_picker}.visible"))?;
         evaluate(&mut engine, &format!("{guide_picker}.reject(); true"))?;
         wait_for(
@@ -783,6 +806,7 @@ fn window(
         check_recording(app, &mut engine)?;
         check_recording_recovery(app, &mut engine, "recording-clock-reset.ts")?;
         check_recording_recovery(app, &mut engine, "recording-pid-change.ts")?;
+        check_http_recording(app, &mut engine)?;
         super::timeshift::run(app, &mut engine)?;
     }
     evaluate(
@@ -807,6 +831,65 @@ fn window(
     Ok(())
 }
 
+fn check_http_recording(
+    app: &QGuiApplication,
+    engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
+) -> TestResult {
+    let server = Server::new()?;
+    let url = serde_json::to_string(&format!("{}/api/videos/123", server.url))?;
+    evaluate(engine, "recordingInput.open(); true")?;
+    let dialog =
+        "Array.from(recordingInput.data).find(item => item.objectName === 'recordingSource')";
+    wait_for(app, engine, &format!("{dialog}.opened"))?;
+    evaluate(
+        engine,
+        &format!(
+            "Array.from({dialog}.contentItem.children).find(item => item.objectName === 'recordingUrl').text = {url}; recordingInput.submitUrl(); true"
+        ),
+    )?;
+    wait_for(
+        app,
+        engine,
+        "player.playing && player.recording && player.seekable && player.duration_ms > 59000 && JSON.parse(player.video_stats()).rendered > 0",
+    )?;
+    assert!(evaluate(engine, "player.pause() && player.paused")?);
+    for target in [45000, 10000] {
+        assert!(evaluate(engine, &format!("player.seek_to({target})"))?);
+        wait_for(
+            app,
+            engine,
+            &format!(
+                "!player.seeking && player.paused && Math.abs(player.position_ms - {target}) < 1500"
+            ),
+        )?;
+    }
+    let bad_url = serde_json::to_string(&format!("{}/not-a-recording", server.url))?;
+    assert!(evaluate(
+        engine,
+        &format!("player.open_recording({bad_url})")
+    )?);
+    wait_for(
+        app,
+        engine,
+        "!player.recording_loading && player.file_error.length > 0 && player.recording && player.paused",
+    )?;
+    evaluate(
+        engine,
+        "Array.from(recordingInput.data).find(item => item.objectName === 'recordingOpenError').accept(); true",
+    )?;
+    evaluate(engine, "player.stop(); player.play(); true")?;
+    wait_for(
+        app,
+        engine,
+        "!player.recording_loading && player.playing && player.recording && JSON.parse(player.video_stats()).rendered > 0",
+    )?;
+    evaluate(engine, "player.stop(); true")?;
+    println!(
+        "HTTP recording: URL dialog, playback, paused forward/backward seeks, failed replacement and replay passed"
+    );
+    Ok(())
+}
+
 fn check_recording(
     app: &QGuiApplication,
     engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
@@ -828,7 +911,7 @@ fn check_recording(
     evaluate(
         engine,
         &format!(
-            "{picker}.selectedFile = {quoted_url}; modeNavigation.modeRequested(ModeNavigation.Recording); true"
+            "{picker}.selectedFile = {quoted_url}; modeNavigation.modeRequested(ModeNavigation.Recording); recordingInput.openFile(); true"
         ),
     )?;
     wait_for(app, engine, &format!("{picker}.visible"))?;
@@ -909,7 +992,7 @@ fn check_recording(
     // Invalid input and a multiple-file drop must leave the current stream intact.
     assert!(evaluate(
         engine,
-        "!player.open_recording('https://example.invalid/recording.ts') && player.playing && player.recording && player.file_error.length > 0"
+        "!player.open_recording('ftp://example.invalid/recording.ts') && player.playing && player.recording && player.file_error.length > 0"
     )?);
     assert!(!ffi::drop_files_on_root(
         engine.pin_mut(),
@@ -924,7 +1007,7 @@ fn check_recording(
     )?);
     evaluate(
         engine,
-        "modeNavigation.modeRequested(ModeNavigation.Recording); true",
+        "modeNavigation.modeRequested(ModeNavigation.Recording); recordingInput.openFile(); true",
     )?;
     wait_for(app, engine, &format!("{picker}.visible"))?;
     evaluate(engine, &format!("{picker}.accept(); true"))?;

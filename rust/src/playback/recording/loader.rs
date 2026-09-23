@@ -1,6 +1,6 @@
 //! One blocking inspection at a time. A replacement waits for its cancelled
 //! predecessor; only the newest request can publish. No Qt objects cross threads.
-use super::{Error, Recording};
+use super::{Error, Recording, source::Location};
 use crate::services::Progress;
 use std::{
     path::PathBuf,
@@ -18,24 +18,30 @@ pub enum Purpose {
 }
 
 pub struct Request {
-    path: PathBuf,
+    location: Location,
     purpose: Purpose,
 }
 impl Request {
     pub fn open(path: PathBuf) -> Self {
         Self {
-            path,
+            location: Location::Local(path),
             purpose: Purpose::Open,
         }
+    }
+    pub fn from_url(url: &str) -> Result<Self, Error> {
+        Ok(Self {
+            location: Location::from_url(url)?,
+            purpose: Purpose::Open,
+        })
     }
     /// Resolve before acknowledging the drop: KDE retires its transfer when
     /// the drag ends. Only the received path can enter the asynchronous loader.
     pub fn portal_transfer(key: &str) -> Result<Self, Error> {
         retrieve_transfer(key).map(Self::open)
     }
-    pub(super) fn replay(path: PathBuf) -> Self {
+    pub(super) fn replay(location: Location) -> Self {
         Self {
-            path,
+            location,
             purpose: Purpose::Replay,
         }
     }
@@ -102,7 +108,7 @@ impl Loader {
     }
     fn start(request: Request) -> State {
         let purpose = request.purpose;
-        match Job::spawn(move |cancelled| Recording::inspect(&request.path, cancelled)) {
+        match Job::spawn(move |cancelled| Recording::inspect(&request.location, cancelled)) {
             Ok(job) => State::Working { job, purpose },
             Err(error) => State::Ready((purpose, Err(error.into()))),
         }
@@ -155,7 +161,7 @@ struct Job {
 }
 impl Job {
     fn spawn(
-        inspect: impl FnOnce(&AtomicBool) -> Result<Recording, Error> + Send + 'static,
+        inspect: impl FnOnce(&Arc<AtomicBool>) -> Result<Recording, Error> + Send + 'static,
     ) -> std::io::Result<Self> {
         let cancellation = Cancellation(Arc::new(AtomicBool::new(false)));
         let flag = cancellation.0.clone();

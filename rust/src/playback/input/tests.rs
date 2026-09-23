@@ -13,7 +13,7 @@ fn recording_metadata_probe_uses_bounded_io_and_stays_idle()
     let started = Instant::now();
     let recording = crate::playback::recording::Recording::open(Path::new(&path))?;
     let (mut reader, _worker) = file_reader_inspected(
-        recording.path(),
+        recording.source(),
         recording.service(),
         true,
         recording.inspection(),
@@ -115,11 +115,41 @@ fn normalized_raw_input_seeks_across_pid_changes_without_losing_pause()
         "recording-seek.ts",
         "recording-pid-change.ts",
         "recording-clock-reset.ts",
+        "http-recording-seek.ts",
     ] {
         let path = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../tests/fixtures")
-            .join(name);
-        let (reader, worker) = file_reader(&path, 1, true)?;
+            .join(name.strip_prefix("http-").unwrap_or(name));
+        let server = name
+            .starts_with("http-")
+            .then(|| super::super::recording::serve_ts(std::fs::read(&path).unwrap()));
+        let (reader, worker) = if let Some(server) = &server {
+            use super::super::recording::{Loader, Request};
+            let mut loader = Loader::default();
+            loader.begin(Request::from_url(&format!(
+                "{}/api/videos/123",
+                server.uri()
+            ))?);
+            let deadline = Instant::now() + TEST_DEADLINE;
+            let recording = loop {
+                if let Some((_, result)) = loader.poll() {
+                    break result?;
+                }
+                assert!(
+                    Instant::now() < deadline,
+                    "HTTP recording inspection timeout"
+                );
+                std::thread::sleep(TEST_POLL);
+            };
+            file_reader_inspected(
+                recording.source(),
+                recording.service(),
+                true,
+                recording.inspection(),
+            )?
+        } else {
+            file_reader(&path, 1, true)?
+        };
         let shared = reader.shared.clone();
         let deadline = Instant::now() + TEST_DEADLINE;
         while !shared
@@ -164,7 +194,7 @@ fn normalized_raw_input_seeks_across_pid_changes_without_losing_pause()
             .state(gst::ClockTime::from_seconds(TEST_DEADLINE.as_secs()))
             .0?;
         controller.poll(pipeline.upcast_ref())?;
-        let targets: &[u64] = if name == "recording-seek.ts" {
+        let targets: &[u64] = if name.ends_with("recording-seek.ts") {
             &[30_000, 10_000, 45_000, 5_000]
         } else {
             &[4_500, 1_000, 4_500]
@@ -658,8 +688,13 @@ fn inspected_input_construction_never_opens_the_file_on_the_caller() {
         deadline: Instant::now() - EXPLORATION_TIMEOUT,
     };
     let dir = tempfile::tempdir().unwrap();
-    let (reader, _worker) =
-        file_reader_inspected(&dir.path().join("unavailable.ts"), 1, true, &inspection).unwrap();
+    let (reader, _worker) = file_reader_inspected(
+        &super::super::recording::source::Source::Local(dir.path().join("unavailable.ts")),
+        1,
+        true,
+        &inspection,
+    )
+    .unwrap();
     let Shared::File(shared) = reader.shared else {
         unreachable!()
     };

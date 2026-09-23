@@ -41,7 +41,7 @@ main → cli::Command → qt::application::LoadedApplication
        ├ playback::Session  再生と字幕世代の共通所有者
        │  ├ Playback        映像・音声、音声カタログ・PMT・主副出力
        │  └ Option<字幕Session> 購読・解析・同期時計
-       ├ recording::Loader ローカルTS検証・取消し待ち・最新要求の所有
+       ├ recording::Loader ローカル／HTTP録画TS検証・取消し待ち・最新要求の所有
        ├ Acquisition        /api/servicesの取得・取消し待ち
        ├ ProgramInfo        /api/programsの取得・現行スナップショット
        ├ EPG Controller     番組変更通知の購読・停止待ち
@@ -80,7 +80,7 @@ PlayerのFFIにはQML公開APIと必要な型の参照を残し、他のモジ�
 状態の事実はRustで所有し、QML向けの派生値には書き込み用フィールドを作らない。
 `player/stream_state.rs`の`State`が停止・接続中・再生中・停止失敗を表し、
 稼働中のvariantは再生対象を持つ`Attempt`を必須とする。
-`Attempt::Live`は対象局と自動再試行の権利、`Attempt::File`は検証したローカルTSを保持する。
+`Attempt::Live`は対象局と自動再試行の権利、`Attempt::File`は検証したローカル／HTTP録画TSを保持する。
 停止時の`State::Stopped`にも再再生対象を保持し、別フィールドの選択対象との同期を不要にする。
 録画にはHTTP再試行や現在放送中の番組情報を適用しない。
 `playing`・`connecting`・対象局・`recording`・録画名はこの状態から取得する。更新は

@@ -1853,6 +1853,22 @@
 <context>
     <name>Recording</name>
     <message>
+        <source>Open recording</source>
+        <translation>録画を開く</translation>
+    </message>
+    <message>
+        <source>Recording URL</source>
+        <translation>録画URL</translation>
+    </message>
+    <message>
+        <source>Open URL</source>
+        <translation>URLを開く</translation>
+    </message>
+    <message>
+        <source>Paste the direct URL of a recorded TS file.</source>
+        <translation>録画済みTSファイルのURLを貼り付けてください。</translation>
+    </message>
+    <message>
         <source>Opening TS file…</source>
         <translation>TSファイルを開いています…</translation>
     </message>

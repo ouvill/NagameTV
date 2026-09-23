@@ -32,6 +32,7 @@ TestCase {
         started.clear();
     }
     function cleanup() {
+        findChild(input, "recordingSource").close();
         const error = findChild(input, "recordingOpenError");
         error.close();
         tryCompare(error, "visible", false);
@@ -45,6 +46,28 @@ TestCase {
         backend.recording_loading = false;
         backend.recordingOpened(true);
         compare(started.count, 1);
+    }
+    function test_url_dialog_submission_and_cancel() {
+        input.open();
+        const dialog = findChild(input, "recordingSource");
+        const field = findChild(input, "recordingUrl");
+        const open = findChild(input, "recordingOpenUrl");
+        tryCompare(dialog, "opened", true);
+        field.text = "  ";
+        verify(!open.enabled);
+        field.text = "http://epgstation:8888/api/videos/123?isDownload=true";
+        verify(open.enabled);
+        mouseClick(open);
+        tryCompare(dialog, "visible", false);
+        compare(backend.lastUrl, field.text);
+        compare(started.count, 0);
+        backend.recording_loading = false;
+        backend.recordingOpened(true);
+        compare(started.count, 1);
+        input.open();
+        tryCompare(dialog, "opened", true);
+        dialog.reject();
+        compare(backend.calls, 1);
     }
     function test_rejected_file_reports_plain_text_without_starting() {
         backend.accept = false;

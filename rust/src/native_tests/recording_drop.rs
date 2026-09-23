@@ -44,7 +44,9 @@ pub fn run(app: &QGuiApplication, directory: &Path) {
         loader.begin(Request::portal_transfer(key).unwrap());
         let recording = finish(app, &mut loader).unwrap();
         assert_eq!(
-            recording.path(),
+            recording
+                .local_path()
+                .expect("portal transfer was not a local file"),
             directory.join(format!("録画 #100%.{extension}"))
         );
     }

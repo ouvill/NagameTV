@@ -14,10 +14,11 @@ mod tests;
 use crate::transport::{framing::Framing, wire::TS_PACKET_SIZE};
 use index::{Anchor, Index};
 pub(super) use source::{Input, ReadProgress};
+#[cfg(test)]
+use std::path::Path;
 use std::{
     collections::VecDeque,
     io::{Read, Seek, SeekFrom},
-    path::Path,
     sync::{
         Arc, Mutex,
         atomic::{AtomicBool, Ordering},
@@ -198,7 +199,7 @@ enum SeekAnchor {
 }
 
 enum ReaderSource {
-    File(file::LocalFile),
+    File(super::recording::source::Reader),
     Live(Arc<Mutex<Store>>),
 }
 struct Reader {
@@ -433,7 +434,7 @@ fn file_reader(path: &Path, service: u16, programs: bool) -> Result<(Reader, Wor
         std::io::Error::new(std::io::ErrorKind::InvalidData, "TS framing not found")
     })?;
     file_reader_inspected(
-        path,
+        &super::recording::source::Source::Local(path.to_owned()),
         service,
         programs,
         &super::recording::Inspection {
@@ -445,7 +446,7 @@ fn file_reader(path: &Path, service: u16, programs: bool) -> Result<(Reader, Wor
     )
 }
 fn file_reader_inspected(
-    path: &Path,
+    source: &super::recording::source::Source,
     service: u16,
     programs: bool,
     inspection: &super::recording::Inspection,
@@ -456,8 +457,9 @@ fn file_reader_inspected(
     let framing = inspection.framing;
     let prefix = inspection.prefix.clone();
     let inspection_bytes = prefix.len();
-    let mut scan = file::Metered::new(file::LocalFile::new(path));
-    let file = file::LocalFile::new(path);
+    let cancellation = Cancellation(Arc::new(AtomicBool::new(false)));
+    let mut scan = file::Metered::new(source.reader(cancellation.0.clone()));
+    let file = source.reader(cancellation.0.clone());
     let shared = Arc::new(Mutex::new(FileIndex {
         index: Index::new(service, programs),
         status: Status::Receiving,
@@ -467,7 +469,6 @@ fn file_reader_inspected(
         additional_bytes: 0,
         priority: Arc::new(AtomicBool::new(false)),
     }));
-    let cancellation = Cancellation(Arc::new(AtomicBool::new(false)));
     let cancelled = cancellation.0.clone();
     let indexed = shared.clone();
     std::thread::Builder::new()

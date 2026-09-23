@@ -57,7 +57,7 @@ Item {
         onTriggered: { root.backend.skip(root.seekSteps.forwardMilliseconds); root.activity(); }
     }
     readonly property Action openRecording: Operation {
-        text: qsTranslate("Recording", "Open TS file")
+        text: qsTranslate("Recording", "Open recording")
         onTriggered: root.recordingRequested()
     }
     readonly property Action returnToLive: Operation {

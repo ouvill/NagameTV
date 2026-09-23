@@ -1,9 +1,9 @@
 //! Translate Qt requests into owned inspections; commit only current results.
 use super::{ffi, stream_state::Attempt};
-use crate::playback::recording::{Error, Purpose, Request};
+use crate::playback::recording::{Purpose, Request};
 use cxx_qt::CxxQtType;
 use cxx_qt_lib::{QString, QUrl};
-use std::{path::PathBuf, pin::Pin};
+use std::pin::Pin;
 
 impl ffi::Player {
     pub fn recording_loading(&self) -> bool {
@@ -29,16 +29,19 @@ impl ffi::Player {
 
     /// True means accepted for inspection. recordingOpened reports completion.
     pub fn open_recording(mut self: Pin<&mut Self>, url: QUrl) -> bool {
-        let Some(path) = url.to_local_file().filter(|path| !path.is_empty()) else {
-            self.set_file_error(super::status::with_detail(
-                "Could not open the TS file: %1",
-                Error::NotLocal,
-            ));
-            return false;
+        let request = match Request::from_url(&url.to_string()) {
+            Ok(request) => request,
+            Err(error) => {
+                self.set_file_error(super::status::with_detail(
+                    "Could not open the TS file: %1",
+                    error,
+                ));
+                return false;
+            }
         };
         self.as_mut().rust_mut().autoplay_pending = false;
         self.as_mut().set_file_error(QString::default());
-        self.begin_recording(Request::open(PathBuf::from(path.to_string())));
+        self.begin_recording(request);
         true
     }
     pub(super) fn begin_recording(mut self: Pin<&mut Self>, request: Request) {

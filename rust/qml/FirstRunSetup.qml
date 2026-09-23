@@ -89,7 +89,7 @@ Popup {
                 ActionButton {
                     objectName: "setupOpenRecording"
                     Layout.alignment: Qt.AlignHCenter
-                    text: qsTranslate("Recording", "Open TS file")
+                    text: qsTranslate("Recording", "Open recording")
                     onClicked: root.openFileRequested()
                 }
             }

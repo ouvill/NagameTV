@@ -77,7 +77,7 @@ Rectangle {
         ActionButton {
             objectName: "openRecording"
             anchors.horizontalCenter: parent.horizontalCenter
-            text: qsTranslate("Recording", "Open TS file")
+            text: qsTranslate("Recording", "Open recording")
             onClicked: root.openFileRequested()
         }
         ActionButton {

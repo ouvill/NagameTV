@@ -1,10 +1,14 @@
-//! A readable local transport stream, validated before replacing playback.
+//! A readable local or HTTP transport stream, validated before replacing playback.
+mod http;
+#[cfg(test)]
+pub(super) use http::tests::serve_ts;
+pub(super) mod source;
+use source::{Location, Source};
 mod loader;
 pub use loader::{Loader, Purpose, Request};
 use std::{
     fs::File,
     io::Read,
-    path::{Path, PathBuf},
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -14,8 +18,7 @@ use std::{
 
 #[derive(Clone, Debug)]
 pub struct Recording {
-    path: PathBuf,
-    uri: String,
+    source: Source,
     name: String,
     service: u16,
     inspection: Inspection,
@@ -32,9 +35,8 @@ pub(super) struct Inspection {
 }
 impl PartialEq for Recording {
     fn eq(&self, other: &Self) -> bool {
-        self.path == other.path
+        self.source.location() == other.source.location()
             && self.service == other.service
-            && self.uri == other.uri
             && self.name == other.name
     }
 }
@@ -44,6 +46,12 @@ impl Eq for Recording {}
 pub enum Error {
     #[error("Select a local TS file.")]
     NotLocal,
+    #[error("Enter a local file URL or a recording URL starting with http:// or https://.")]
+    InvalidUrl,
+    #[error("Invalid recording URL: {0}")]
+    ParseUrl(#[from] url::ParseError),
+    #[error("{0}")]
+    Http(#[from] http::Error),
     #[error("Could not receive the dropped file: {0}. Use Open TS file to select it.")]
     Portal(String),
     #[error("Could not read the TS file: {0}")]
@@ -60,19 +68,46 @@ pub enum Error {
 
 impl Recording {
     #[cfg(any(test, feature = "native_tests"))]
-    pub fn open(path: &Path) -> Result<Self, Error> {
-        Self::inspect(path, &AtomicBool::new(false))
+    pub fn open(path: &std::path::Path) -> Result<Self, Error> {
+        Self::inspect(
+            &Location::Local(path.to_owned()),
+            &Arc::new(AtomicBool::new(false)),
+        )
     }
-    fn inspect(path: &Path, cancelled: &AtomicBool) -> Result<Self, Error> {
+    fn inspect(location: &Location, cancelled: &Arc<AtomicBool>) -> Result<Self, Error> {
+        let (source, mut file, size, name) = match location {
+            Location::Local(path) => {
+                if !std::fs::metadata(path)?.is_file() {
+                    return Err(Error::NotLocal);
+                }
+                let file = File::open(path)?;
+                if !file.metadata()?.is_file() {
+                    return Err(Error::NotLocal);
+                }
+                let size = file.metadata()?.len();
+                let path = std::fs::canonicalize(path)?;
+                let name = path
+                    .file_name()
+                    .ok_or(Error::NotLocal)?
+                    .to_string_lossy()
+                    .into_owned();
+                (Source::Local(path), source::Reader::Local(file), size, name)
+            }
+            Location::Http(url) => {
+                let file = http::Verified::inspect(url.clone(), cancelled.clone())?;
+                let source = file.source().clone();
+                let size = source.size();
+                // Exclude credentials, query tokens and fragments from presentation.
+                let name = format!("{}{}", url.host_str().unwrap_or_default(), url.path());
+                (
+                    Source::Http(Arc::new(source)),
+                    source::Reader::Http(file),
+                    size,
+                    name,
+                )
+            }
+        };
         let deadline = Instant::now() + super::input::EXPLORATION_TIMEOUT;
-        if !std::fs::metadata(path)?.is_file() {
-            return Err(Error::NotLocal);
-        }
-        let mut file = File::open(path)?;
-        if !file.metadata()?.is_file() {
-            return Err(Error::NotLocal);
-        }
-        let size = file.metadata()?.len();
         // Bound memory and check cancellation between reads. Filesystem syscalls
         // themselves cannot be interrupted portably; the UI never waits on them.
         let mut prefix = Vec::new();
@@ -109,18 +144,8 @@ impl Recording {
         })?;
         let framing =
             crate::transport::framing::Framing::detect(&prefix).ok_or(Error::MissingProgram)?;
-        let path = std::fs::canonicalize(path)?;
-        let uri = url::Url::from_file_path(&path)
-            .map_err(|_| Error::NotLocal)?
-            .to_string();
-        let name = path
-            .file_name()
-            .ok_or(Error::NotLocal)?
-            .to_string_lossy()
-            .into_owned();
         Ok(Self {
-            path,
-            uri,
+            source,
             name,
             service,
             inspection: Inspection {
@@ -132,15 +157,18 @@ impl Recording {
         })
     }
 
-    pub fn path(&self) -> &Path {
-        &self.path
+    pub(super) fn source(&self) -> &Source {
+        &self.source
+    }
+    #[cfg(feature = "native_tests")]
+    pub fn local_path(&self) -> Option<&std::path::Path> {
+        match &self.source {
+            Source::Local(path) => Some(path),
+            Source::Http(_) => None,
+        }
     }
     pub(super) fn inspection(&self) -> &Inspection {
         &self.inspection
-    }
-    #[cfg(test)]
-    pub fn uri(&self) -> &str {
-        &self.uri
     }
     pub fn name(&self) -> &str {
         &self.name
@@ -149,7 +177,7 @@ impl Recording {
         self.service
     }
     pub fn replay(&self) -> Request {
-        Request::replay(self.path.clone())
+        Request::replay(self.source.location())
     }
 }
 
@@ -165,10 +193,7 @@ mod tests {
             include_bytes!("../../../tests/fixtures/subtitle-clock.ts"),
         )?;
         let recording = Recording::open(&path)?;
-        assert_eq!(
-            url::Url::parse(recording.uri())?.to_file_path().unwrap(),
-            path
-        );
+        assert_eq!(recording.source.location(), Location::Local(path.clone()));
         assert_eq!(recording.name(), "録画 #100%.ts");
         std::fs::write(&path, b"not a TS")?;
         assert!(matches!(Recording::open(&path), Err(Error::MissingProgram)));
