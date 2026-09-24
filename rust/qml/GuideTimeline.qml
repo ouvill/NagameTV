@@ -34,10 +34,16 @@ Item {
     readonly property real titleLineHeight: 18
     readonly property real compactTitleLineHeight: 14
     readonly property real timeLabelHeight: 18
+    // Text does not inherit the Controls window font as Label does.
+    readonly property string programFontFamily: root.ApplicationWindow.window
+        ? root.ApplicationWindow.window.font.family : Application.font.family
     readonly property real minimumFullCellHeight: cellTopPadding + timeLabelHeight + textSpacing + titleLineHeight + textSpacing
     readonly property real pixelsPerMinute: 3
     readonly property int minutesPerHour: 60
     readonly property int timeTickMinutes: 30
+    // Give offscreen incubation time to finish before the next wheel step or
+    // flick reaches it, while keeping the retained range bounded by the view.
+    readonly property real verticalPreload: Math.max(2 * timeTickMinutes * pixelsPerMinute, timelineView.height / 2)
     readonly property int timeBandHours: 3
     readonly property var timeBandColors: GuidePalette.timeBands
     property double now: Date.now()
@@ -227,27 +233,46 @@ Item {
                 width: timelineView.contentWidth; height: root.dividerWidth; color: root.timeGridColor
             }
         }
-        Repeater {
+        ListView {
+            id: channelColumns
+            // The outer Flickable owns both axes. Virtualize columns inside its
+            // horizontal viewport, accounting for ListView's insertion origin.
+            x: timelineView.contentX
+            width: timelineView.width; height: timelineView.contentHeight
+            orientation: ListView.Horizontal
+            interactive: false
+            currentIndex: -1
+            keyNavigationEnabled: false
+            // Filling the viewport can update originX inside contentX's setter.
+            // Apply the final offset after layout instead of reentering it.
+            Binding {
+                target: channelColumns
+                property: "contentX"
+                value: timelineView.contentX + channelColumns.originX
+                delayed: true
+            }
+            // Preload synchronously: a filter/reset may destroy the model while
+            // cacheBuffer's asynchronous delegate incubation is still pending.
+            cacheBuffer: 0
+            displayMarginBeginning: root.channelWidth
+            displayMarginEnd: root.channelWidth
             model: root.channels
-            Loader {
+            delegate: Loader {
                 id: column
                 required property int index
                 required property int channelIndex
                 required property string label
                 required property string logo
                 objectName: "guideColumn" + index
-                x: index * root.channelWidth
                 width: root.channelWidth; height: timelineView.contentHeight
-                active: x + width >= timelineView.contentX - root.channelWidth
-                    && x <= timelineView.contentX + timelineView.width + root.channelWidth
                 sourceComponent: Rectangle {
                     width: column.width; height: column.height
                     color: root.dividerColor
                     GuideFilterModel { id: programs; sourceModel: root.guideModel; channel_index: column.channelIndex }
                     Repeater {
                         model: programs
-                        Rectangle {
-                            id: cell
+                        Loader {
+                            id: slot
                             required property string watchKey
                             required property double begin
                             required property double end
@@ -257,75 +282,90 @@ Item {
                             required property string description
                             required property int genre
                             required property double startAt
-                            readonly property var modelData: { root.guideModel.revision; return root.guideModel.lookup(watchKey); }
-                            objectName: "guideCell"
-                            readonly property int layoutMode: height < root.compactTitleLineHeight ? GuideTimeline.NoText
-                                : height < root.minimumFullCellHeight ? GuideTimeline.OneLine : GuideTimeline.Full
-                            readonly property string startLabel: Qt.formatTime(new Date(startAt), "hh:mm")
-                            readonly property string title: scheduleState === GuideModel.Conflict
-                                ? qsTranslate("Viewer", "Conflicting schedules (%1)").arg(candidateCount)
-                                : name || qsTranslate("Viewer", "No program information")
+                            objectName: "guideCellLoader"
                             y: root.channelHeaderHeight + (begin - root.dayStart) / 60000 * root.pixelsPerMinute
                             x: root.dividerWidth
                             width: column.width - root.dividerWidth * 2
                             height: Math.max(0, (end - begin) / 60000 * root.pixelsPerMinute - root.dividerWidth)
-                            clip: true
-                            color: root.genreColor(genre)
-                            readonly property bool highlighted: (!!root.selectedProgram && watchKey === root.selectedProgram.watchKey)
-                                || (root.activeFocus && column.index === root.cursorColumn && root.cursorKey.length > 0 && watchKey === root.cursorKey)
-                            border.width: highlighted ? 2 : 0
-                            border.color: Theme.accent
-                            Label {
-                                objectName: "guideShortProgram"
-                                visible: cell.layoutMode === GuideTimeline.OneLine
-                                x: root.cellPadding - root.textSpacing
-                                width: parent.width - x * 2; height: parent.height
-                                text: cell.startLabel + " " + cell.title
-                                textFormat: Text.PlainText; elide: Text.ElideRight
-                                color: GuidePalette.programText; font.pixelSize: Theme.fontCaption; font.weight: Font.Medium
-                                verticalAlignment: Text.AlignVCenter
+                            active: y + height > timelineView.contentY - root.verticalPreload
+                                && y < timelineView.contentY + timelineView.height + root.verticalPreload
+                            // Spread preloading across frames. A jump directly
+                            // into the viewport completes the required cells now.
+                            asynchronous: y + height <= timelineView.contentY + root.channelHeaderHeight
+                                || y >= timelineView.contentY + timelineView.height
+                            visible: status === Loader.Ready
+                            sourceComponent: Rectangle {
+                                id: cell
+                                objectName: "guideCell"
+                                readonly property int layoutMode: height < root.compactTitleLineHeight ? GuideTimeline.NoText
+                                    : height < root.minimumFullCellHeight ? GuideTimeline.OneLine : GuideTimeline.Full
+                                readonly property string startLabel: Qt.formatTime(new Date(slot.startAt), "hh:mm")
+                                readonly property string title: slot.scheduleState === GuideModel.Conflict
+                                    ? qsTranslate("Viewer", "Conflicting schedules (%1)").arg(slot.candidateCount)
+                                    : slot.name || qsTranslate("Viewer", "No program information")
+                                width: slot.width; height: slot.height
+                                clip: true
+                                color: root.genreColor(slot.genre)
+                                readonly property bool highlighted: (!!root.selectedProgram && slot.watchKey === root.selectedProgram.watchKey)
+                                    || (root.activeFocus && column.index === root.cursorColumn && root.cursorKey.length > 0 && slot.watchKey === root.cursorKey)
+                                border.width: highlighted ? 2 : 0
+                                border.color: Theme.accent
+                                Text {
+                                    objectName: "guideShortProgram"
+                                    font.family: root.programFontFamily
+                                    visible: cell.layoutMode === GuideTimeline.OneLine
+                                    x: root.cellPadding - root.textSpacing
+                                    width: parent.width - x * 2; height: parent.height
+                                    text: cell.startLabel + " " + cell.title
+                                    textFormat: Text.PlainText; elide: Text.ElideRight
+                                    color: GuidePalette.programText; font.pixelSize: Theme.fontCaption; font.weight: Font.Medium
+                                    verticalAlignment: Text.AlignVCenter
+                                }
+                                Item {
+                                    visible: cell.layoutMode === GuideTimeline.Full
+                                    anchors.fill: parent
+                                    anchors.leftMargin: root.cellPadding; anchors.rightMargin: root.cellPadding
+                                    anchors.topMargin: root.cellTopPadding; anchors.bottomMargin: root.cellTopPadding
+                                    Text {
+                                        id: startLabel
+                                        font.family: root.programFontFamily
+                                        width: parent.width; height: root.timeLabelHeight
+                                        text: cell.startLabel
+                                        color: GuidePalette.programSecondary; font.pixelSize: Theme.fontMicro
+                                    }
+                                    Text {
+                                        id: titleLabel
+                                        font.family: root.programFontFamily
+                                        y: startLabel.height + root.textSpacing
+                                        width: parent.width; text: cell.title
+                                        color: GuidePalette.programText; font.pixelSize: Theme.fontCaption; font.weight: Font.DemiBold
+                                        textFormat: Text.PlainText; wrapMode: Text.Wrap
+                                        lineHeightMode: Text.FixedHeight; lineHeight: root.titleLineHeight
+                                        maximumLineCount: Math.max(1, Math.min(5, Math.floor((parent.height - y) / root.titleLineHeight)))
+                                        elide: Text.ElideRight
+                                    }
+                                    Text {
+                                        font.family: root.programFontFamily
+                                        readonly property real descriptionLineHeight: 15
+                                        readonly property real descriptionSpacing: 12
+                                        y: titleLabel.y + titleLabel.height + descriptionSpacing
+                                        width: parent.width; height: Math.max(0, parent.height - y)
+                                        visible: height >= descriptionLineHeight * 2
+                                        text: slot.description
+                                        color: GuidePalette.programSecondary; font.pixelSize: Theme.fontCaption
+                                        textFormat: Text.PlainText; wrapMode: Text.Wrap; elide: Text.ElideRight
+                                        lineHeightMode: Text.FixedHeight; lineHeight: descriptionLineHeight
+                                        maximumLineCount: Math.max(1, Math.floor(height / descriptionLineHeight))
+                                    }
+                                }
+                                MouseArea { anchors.fill: parent; onClicked: {
+                                    root.cursorColumn = column.index
+                                    root.cursorKey = slot.watchKey
+                                    root.cursorTime = slot.begin
+                                    root.forceActiveFocus()
+                                    root.selected(root.guideModel.lookup(slot.watchKey), cell.mapToItem(root, 0, 0), column.label)
+                                } }
                             }
-                            Item {
-                                visible: cell.layoutMode === GuideTimeline.Full
-                                anchors.fill: parent
-                                anchors.leftMargin: root.cellPadding; anchors.rightMargin: root.cellPadding
-                                anchors.topMargin: root.cellTopPadding; anchors.bottomMargin: root.cellTopPadding
-                                Label {
-                                    id: startLabel
-                                    width: parent.width; height: root.timeLabelHeight
-                                    text: cell.startLabel
-                                    color: GuidePalette.programSecondary; font.pixelSize: Theme.fontMicro
-                                }
-                                Label {
-                                    id: titleLabel
-                                    y: startLabel.height + root.textSpacing
-                                    width: parent.width; text: cell.title
-                                    color: GuidePalette.programText; font.pixelSize: Theme.fontCaption; font.weight: Font.DemiBold
-                                    textFormat: Text.PlainText; wrapMode: Text.Wrap
-                                    lineHeightMode: Text.FixedHeight; lineHeight: root.titleLineHeight
-                                    maximumLineCount: Math.max(1, Math.min(5, Math.floor((parent.height - y) / root.titleLineHeight)))
-                                    elide: Text.ElideRight
-                                }
-                                Label {
-                                    readonly property real descriptionLineHeight: 15
-                                    readonly property real descriptionSpacing: 12
-                                    y: titleLabel.y + titleLabel.height + descriptionSpacing
-                                    width: parent.width; height: Math.max(0, parent.height - y)
-                                    visible: height >= descriptionLineHeight * 2
-                                    text: cell.description
-                                    color: GuidePalette.programSecondary; font.pixelSize: Theme.fontCaption
-                                    textFormat: Text.PlainText; wrapMode: Text.Wrap; elide: Text.ElideRight
-                                    lineHeightMode: Text.FixedHeight; lineHeight: descriptionLineHeight
-                                    maximumLineCount: Math.max(1, Math.floor(height / descriptionLineHeight))
-                                }
-                            }
-                            MouseArea { anchors.fill: parent; onClicked: {
-                                root.cursorColumn = column.index
-                                root.cursorKey = cell.modelData.watchKey || ""
-                                root.cursorTime = cell.begin
-                                root.forceActiveFocus()
-                                root.selected(cell.modelData, cell.mapToItem(root, 0, 0), column.label)
-                            } }
                         }
                     }
                     Rectangle {

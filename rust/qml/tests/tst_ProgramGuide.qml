@@ -731,7 +731,7 @@ TestCase {
         const list = findChild(guide, "guideTimeline")
         verify(waitForRendering(guide))
         verify(findChild(guide, "guideColumn0").item !== null)
-        compare(findChild(guide, "guideColumn29").item, null)
+        compare(findChild(guide, "guideColumn29"), null)
         const first = findChild(guide, "guideCell")
         verify(first !== null)
         compare(first.color, "#ffffe0")
@@ -747,12 +747,147 @@ TestCase {
         compare(findChild(loader.item, "programDescription").text, "Full description 0")
         list.contentX = list.contentWidth - list.width
         verify(waitForRendering(guide))
-        compare(findChild(guide, "guideColumn0").item, null)
+        tryVerify(function() { return findChild(guide, "guideColumn0") === null })
         verify(findChild(guide, "guideColumn29").item !== null)
         compare(findChild(loader.item, "programTitle").text, "Program 0")
         guide.dayOffset = 2
         compare(loader.item, null)
         compare(guide.selectedProgram, null)
+    }
+
+    function test_virtual_columns_stay_aligned_after_scroll_and_filter_changes() {
+        guide.dayOffset = 1
+        guide.rows = Array.from({length:40}, (_,i) =>
+            ({index:i, label:"Channel "+i, band:i<20 ? "GR" : "BS"}))
+        guide.programsJson = JSON.stringify(guide.rows.map(row => ({index:row.index,
+            programs:[{name:"Program "+row.index, startAt:guide.selectedWindow.start, duration:3600000}]})))
+        const view = findChild(guide, "guideTimeline")
+        const timeline = view.parent
+        verify(waitForRendering(guide))
+        view.contentX = view.contentWidth - view.width
+        verify(waitForRendering(guide))
+        const last = findChild(guide, "guideColumn19")
+        verify(last !== null)
+        fuzzyCompare(last.mapToItem(view,0,0).x + last.width, view.width, 1)
+        mouseClick(view, view.width-20, timeline.channelHeaderHeight+20)
+        compare(guide.selectedChannel, "Channel 19")
+        compare(guide.selectedProgram.name, "Program 19")
+        keyClick(Qt.Key_Escape)
+        const details = findChild(guide, "scheduledDetailsLoader")
+        tryCompare(details, "item", null)
+        // Model insertions/removals can move ListView's origin. Both filters
+        // must still put the first surviving channel at the viewport edge.
+        for (const band of ["BS", "GR"]) {
+            guide.band = band
+            tryCompare(view, "contentX", 0)
+            guide.visibilityJson = JSON.stringify(band === "BS" ? [21,23,25,27] : [1,3,5,7])
+            verify(waitForRendering(guide))
+            const first = findChild(guide, "guideColumn0")
+            verify(first !== null)
+            fuzzyCompare(first.mapToItem(view,0,0).x, 0, 1)
+            mouseClick(view, 20, timeline.channelHeaderHeight+20)
+            compare(guide.selectedChannel, "Channel " + (band === "BS" ? 21 : 1))
+            compare(guide.selectedProgram.name, "Program " + (band === "BS" ? 21 : 1))
+            keyClick(Qt.Key_Escape)
+            tryCompare(details, "item", null)
+            guide.visibilityJson = "null"
+        }
+    }
+
+    function test_vertical_window_bounds_cells_and_keeps_offscreen_selection() {
+        guide.dayOffset = 1
+        guide.rows = [{index:0, label:"Channel", band:"GR"}]
+        const start = guide.selectedWindow.start
+        const duration = 15 * 60000
+        const programs = Array.from({length:96}, (_,i) => ({watchKey:"slot"+i,
+            name:"Program "+i, startAt:start+i*duration, duration:duration}))
+        guide.programsJson = JSON.stringify([{index:0, programs:programs}])
+        const view = findChild(guide, "guideTimeline")
+        const timeline = view.parent
+        verify(waitForRendering(guide))
+        const slots = []
+        function collect(item) {
+            if (item.objectName === "guideCellLoader") slots.push(item)
+            for (const child of item.children || []) collect(child)
+        }
+        collect(guide)
+        compare(slots.length, programs.length)
+        compare(guide.guideModel.count, programs.length)
+        const pixelHeight = duration / 60000 * timeline.pixelsPerMinute
+        const limit = Math.ceil((view.height + 2*timeline.verticalPreload) / pixelHeight) + 2
+        verify(slots.filter(slot => slot.item !== null).length <= limit)
+        const first = slots.find(slot => slot.watchKey === guide.keyFor("slot0"))
+        const noon = slots.find(slot => slot.watchKey === guide.keyFor("slot48"))
+        verify(first.item !== null)
+        compare(noon.item, null)
+        const aheadIndex = Math.floor((view.height + timeline.verticalPreload / 2 - timeline.channelHeaderHeight) / pixelHeight)
+        const ahead = slots.find(slot => slot.watchKey === guide.keyFor("slot"+aheadIndex))
+        verify(ahead.asynchronous)
+        verify(ahead.active)
+        tryCompare(ahead, "status", Loader.Ready)
+        const preparedCell = ahead.item
+        view.contentY = aheadIndex * pixelHeight
+        verify(waitForRendering(guide))
+        compare(ahead.asynchronous, false)
+        compare(ahead.item, preparedCell)
+        // Wheel steps and scrollbar jumps must have complete visible cells as
+        // soon as the position changes, even with preloads still pending.
+        for (const offset of [0,144,288,2000,2144]) {
+            view.contentY = offset
+            for (const slot of slots) {
+                if (slot.y + slot.height > view.contentY + timeline.channelHeaderHeight
+                        && slot.y < view.contentY + view.height) {
+                    compare(slot.status, Loader.Ready)
+                    verify(slot.item !== null)
+                }
+            }
+        }
+        view.contentY = 48 * pixelHeight
+        verify(waitForRendering(guide))
+        compare(first.item, null)
+        verify(noon.item !== null)
+        verify(slots.filter(slot => slot.item !== null).length <= limit)
+        mouseClick(noon.item, 20, 15)
+        const details = findChild(guide, "scheduledDetailsLoader")
+        tryCompare(details.item, "opened", true)
+        compare(guide.selectedProgram.watchKey, guide.keyFor("slot48"))
+        view.contentY = 0
+        verify(waitForRendering(guide))
+        compare(noon.item, null)
+        compare(findChild(details.item, "programTitle").text, "Program 48")
+        keyClick(Qt.Key_Escape)
+        tryCompare(details, "item", null)
+        timeline.chooseProgram(start + 90 * duration)
+        timeline.revealCursor()
+        verify(waitForRendering(guide))
+        keyClick(Qt.Key_Return)
+        tryCompare(details.item, "opened", true)
+        compare(guide.selectedProgram.watchKey, guide.keyFor("slot90"))
+    }
+
+    function test_pending_preloads_survive_snapshot_and_band_changes() {
+        guide.dayOffset = 1
+        guide.rows = [{index:0, label:"Channel", band:"GR"}]
+        const start = guide.selectedWindow.start
+        function snapshot(prefix) {
+            return JSON.stringify([{index:0, programs:Array.from({length:96}, (_,i) =>
+                ({watchKey:"slot"+i, name:prefix+i, startAt:start+i*15*60000, duration:15*60000}))}])
+        }
+        guide.programsJson = snapshot("Before ")
+        verify(waitForRendering(guide))
+        const view = findChild(guide, "guideTimeline")
+        view.contentY = 8*60*view.parent.pixelsPerMinute
+        guide.programsJson = snapshot("After ")
+        guide.band = "BS"
+        guide.band = "GR"
+        verify(waitForRendering(guide))
+        view.contentY = 12*60*view.parent.pixelsPerMinute
+        verify(waitForRendering(guide))
+        mouseClick(view, 20, view.parent.channelHeaderHeight+15)
+        const details = findChild(guide, "scheduledDetailsLoader")
+        tryCompare(details.item, "opened", true)
+        compare(guide.selectedProgram.name, "After 48")
+        compare(guide.selectedProgram.watchKey, guide.keyFor("slot48"))
     }
 
     function test_conflict_segments_candidates_and_channel_action() {
