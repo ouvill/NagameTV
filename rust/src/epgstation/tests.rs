@@ -541,6 +541,15 @@ fn encoded_clock_uses_explicit_channel_ids_video_metadata_and_survives_replay() 
             })
         );
         assert_eq!(view.clock.unwrap().utc(2_000_000_000), Some(START + 2000));
+        assert_eq!(
+            media
+                .broadcast()
+                .unwrap()
+                .comments(Some(gstreamer::ClockTime::from_seconds(12))),
+            viewer_comments::cache::Recording::Whole(
+                viewer_comments::cache::Interval::new(START / 1000, START / 1000 + 12).unwrap()
+            )
+        );
     }
     fixture.runtime.block_on(fixture.server.verify());
     Ok(())

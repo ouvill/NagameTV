@@ -1,4 +1,5 @@
-//! Acquisition uses programme schedules; playback clocks never grow to match it.
+//! Acquisition uses programme schedules or a whole video's measured range;
+//! playback clocks never grow to match it.
 use super::{Demand, Interval, LOOKBACK_SECONDS, Source};
 use serde::{Deserialize, Serialize};
 
@@ -33,6 +34,8 @@ impl Program {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Recording {
     Discovering,
+    /// A continuous recording with a known start and measured video duration.
+    Whole(Interval),
     Observed {
         current: Option<Program>,
         next: Option<Program>,
@@ -43,6 +46,9 @@ pub enum Recording {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 enum Basis {
+    Recording {
+        start: i64,
+    },
     Program {
         id: ProgramId,
         start: i64,
@@ -74,7 +80,7 @@ impl Target {
     pub fn live_clock(&self) -> Option<&str> {
         match &self.basis {
             Basis::Live { clock, .. } => Some(clock),
-            Basis::Program { .. } | Basis::Window { .. } => None,
+            Basis::Recording { .. } | Basis::Program { .. } | Basis::Window { .. } => None,
         }
     }
     fn program(channel: u16, program: &Program, utc: Option<i64>) -> Self {
@@ -142,6 +148,11 @@ impl Planner {
             .map(|view| view.interval.start + LOOKBACK_SECONDS);
         let candidate = match &demand.source_range {
             Source::Pending | Source::Recording(Recording::Discovering) => None,
+            Source::Recording(Recording::Whole(range)) => Some(Target {
+                channel: demand.channel,
+                range: *range,
+                basis: Basis::Recording { start: range.start },
+            }),
             Source::Recording(Recording::Observed {
                 current,
                 next,
@@ -262,6 +273,25 @@ mod tests {
                 at_start,
             }),
         }
+    }
+    #[test]
+    fn whole_video_is_selected_before_playback_and_stays_selected_after_seeks() {
+        const LONG_VIDEO_SECONDS: i64 = 8 * 60 * 60;
+        let range = Interval::new(START, START + LONG_VIDEO_SECONDS).unwrap();
+        let mut input = demand(None, None, None, false);
+        input.source_range = Source::Recording(Recording::Whole(range));
+        let mut planner = Planner::default();
+        let selected = planner.update(&input, 0).unwrap();
+        assert_eq!(selected.range, range);
+        assert!(selected.live_clock().is_none());
+        for offset in [LONG_VIDEO_SECONDS - 1, WINDOW_SECONDS, 0] {
+            input.view = demand(Some(START + offset), None, None, false).view;
+            assert_eq!(planner.update(&input, 1), Some(selected.clone()));
+        }
+        // Reopening the video uses the same persistent acquisition target.
+        input.source += 1;
+        input.view = None;
+        assert_eq!(planner.update(&input, 2), Some(selected));
     }
     #[test]
     fn following_programme_supplies_one_movie_scope_without_a_complete_clock_map() {

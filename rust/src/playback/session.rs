@@ -227,23 +227,9 @@ impl Session {
                 broadcast: Some(broadcast),
                 controller,
                 ..
-            } => {
-                let snapshot = controller.snapshot();
-                let utc_seconds = broadcast
-                    .view(snapshot.duration)
-                    .clock
-                    .zip(snapshot.position)
-                    .and_then(|(clock, position)| clock.utc(position.nseconds()))
-                    .map(|ms| ms / 1000);
-                Some(viewer_comments::cache::Source::Recording(
-                    viewer_comments::cache::Recording::Observed {
-                        current: None,
-                        next: None,
-                        utc_seconds,
-                        at_start: false,
-                    },
-                ))
-            }
+            } => Some(viewer_comments::cache::Source::Recording(
+                broadcast.comments(controller.snapshot().duration),
+            )),
             Input::Idle
             | Input::Media {
                 broadcast: None, ..

@@ -394,6 +394,74 @@ fn recording(start: i64, duration: i64, utc: i64) -> Source {
 }
 
 #[test]
+fn whole_video_prefetch_stores_the_tail_before_seeking_and_reuses_it_on_reopen() {
+    const START: i64 = 100_000;
+    const VIDEO_SECONDS: i64 = 8 * 60 * 60;
+    const NOW: i64 = START + VIDEO_SECONDS + SETTLED_SECONDS;
+    let range = Interval::new(START, START + VIDEO_SECONDS).unwrap();
+    let directory = tempfile::tempdir().unwrap();
+    let mut store = Store::open(directory.path()).unwrap();
+    let owner = store.session().unwrap();
+    let demand = Demand {
+        source: 1,
+        channel: 4,
+        fetch: true,
+        view: None,
+        source_range: Source::Recording(Recording::Whole(range)),
+    };
+    let target = plan::Planner::default().update(&demand, NOW).unwrap();
+    let acquisition = Acquisition {
+        target,
+        focus: Some(START),
+    };
+    let Planned::Ready(request) = next(&mut store, &owner.name, &acquisition, NOW).unwrap() else {
+        panic!("whole video must be requested at open");
+    };
+    assert_eq!(request.range, range);
+    let lease = store.try_provider().unwrap().unwrap();
+    let Reservation::Granted(eligible) = store.reserve_plan(&lease, request, NOW).unwrap() else {
+        panic!("first request");
+    };
+    let mut response = eligible.begin("whole-video".into()).unwrap();
+    response
+        .write(
+            &serde_json::to_vec(&serde_json::json!({"packet": [
+                {"chat": {"date": range.end - 1, "content": "video tail"}}
+            ]}))
+            .unwrap(),
+        )
+        .unwrap();
+    let response = response
+        .finish()
+        .unwrap()
+        .validate()
+        .map_err(|(_, error)| error)
+        .unwrap();
+    response.import(&mut store, || false).unwrap();
+    response.finish().unwrap();
+    drop(lease);
+    drop(store);
+
+    let mut reopened = Store::open(directory.path()).unwrap();
+    let records = reopened
+        .read(
+            &owner.name,
+            demand.channel,
+            &View {
+                clock_key: "video".into(),
+                interval: Interval::new(range.end - 60, range.end).unwrap(),
+            },
+        )
+        .unwrap();
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].comment.text.as_ref(), "video tail");
+    assert!(matches!(
+        next(&mut reopened, &owner.name, &acquisition, NOW).unwrap(),
+        Planned::Complete
+    ));
+}
+
+#[test]
 fn recent_program_adds_only_available_tail_when_view_approaches_or_program_finishes() {
     const START: i64 = 100_000;
     const DURATION: i64 = 7200;
