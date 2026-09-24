@@ -2,7 +2,7 @@
 use super::ffi;
 use crate::features::program_info::Completion;
 use cxx_qt::CxxQtType;
-use cxx_qt_lib::QString;
+
 use std::pin::Pin;
 use viewer_diagnostics::recorder::Event;
 
@@ -80,10 +80,10 @@ impl ffi::Player {
             // All-channel grid data depends on EPG, catalog and day, not selection.
             && (self.rust().guide_revision != self.rust().epg.revision || self.rust().guide_dirty)
         {
-            let data = match self
+            let view = match self
                 .rust()
                 .epg
-                .grid_view(self.rust().catalog.channels(), window)
+                .guide_view(self.rust().catalog.snapshot(), window)
             {
                 Ok(data) => {
                     self.as_mut().rust_mut().guide_error = None;
@@ -92,13 +92,13 @@ impl ffi::Player {
                 Err(error) => {
                     tracing::error!("Program guide presentation failed: {error}");
                     self.as_mut().rust_mut().guide_error = Some(error);
-                    "[]".into()
+                    Default::default()
                 }
             };
             let revision = self.rust().epg.revision;
             self.as_mut().rust_mut().guide_revision = revision;
             self.as_mut().rust_mut().guide_dirty = false;
-            self.as_mut().set_epg_data(QString::from(data));
+            self.as_mut().rust_mut().guide_model.pin_mut().replace(view);
         }
     }
 }

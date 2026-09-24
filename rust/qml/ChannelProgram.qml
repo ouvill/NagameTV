@@ -13,7 +13,7 @@ ColumnLayout {
     Label {
         objectName: "cardProgramTitle"
         Layout.fillWidth: true
-        text: root.program ? (root.program.name || qsTranslate("Viewer", "Program title unavailable")) : qsTranslate("Viewer", "No current program information")
+        text: root.program && root.program.scheduleState === "conflict" ? qsTranslate("Viewer", "Conflicting schedules") : root.program ? (root.program.name || qsTranslate("Viewer", "Program title unavailable")) : qsTranslate("Viewer", "No current program information")
         color: Theme.textPrimary
         font.pixelSize: root.emphasized ? Theme.fontControl : Theme.fontBody
         font.bold: true
@@ -24,7 +24,7 @@ ColumnLayout {
     }
     Label {
         Layout.fillWidth: true
-        text: root.program ? Qt.formatDateTime(new Date(root.program.startAt), "hh:mm") + " – " + Qt.formatDateTime(new Date(root.program.startAt + root.program.duration), "hh:mm") : ""
+        text: root.program && root.program.scheduleState === "unknownEnd" ? qsTranslate("Viewer", "End time unknown") : root.program && !root.program.scheduleState ? Qt.formatDateTime(new Date(root.program.startAt), "hh:mm") + " – " + Qt.formatDateTime(new Date(root.program.startAt + root.program.duration), "hh:mm") : ""
         color: Theme.textSecondary
         font.pixelSize: Theme.fontCaption
     }

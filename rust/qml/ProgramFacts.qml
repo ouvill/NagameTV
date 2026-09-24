@@ -7,8 +7,9 @@ Flow {
     id: root
     required property var program
     required property double now
-    enum BroadcastState { Upcoming, OnAir, Finished }
-    readonly property int broadcastState: !program || now < program.startAt ? ProgramFacts.Upcoming
+    enum BroadcastState { Upcoming, OnAir, Finished, Conflict, UnknownEnd }
+    readonly property int broadcastState: program && (program.scheduleState === GuideModel.Conflict || program.scheduleState === "conflict") ? ProgramFacts.Conflict
+        : program && program.endUnknown ? ProgramFacts.UnknownEnd : !program || now < program.startAt ? ProgramFacts.Upcoming
         : now < program.startAt + program.duration ? ProgramFacts.OnAir : ProgramFacts.Finished
     readonly property var facts: labels()
     readonly property int minuteMs: 60000
@@ -18,11 +19,13 @@ Flow {
         if (!program) return []
         const result = []
         switch (broadcastState) {
+        case ProgramFacts.Conflict: result.push(qsTranslate("Viewer", "Conflicting schedules")); break
+        case ProgramFacts.UnknownEnd: result.push(qsTranslate("Viewer", "End time unknown")); break
         case ProgramFacts.Upcoming: result.push(qsTranslate("Viewer", "Upcoming")); break
         case ProgramFacts.OnAir: result.push(qsTranslate("Viewer", "On air")); break
         case ProgramFacts.Finished: result.push(qsTranslate("Viewer", "Ended")); break
         }
-        if (program.duration > 0) result.push(qsTranslate("Viewer", "%1 min").arg(Math.ceil(program.duration / minuteMs)))
+        if (!program.endUnknown && program.duration > 0) result.push(qsTranslate("Viewer", "%1 min").arg(Math.ceil(program.duration / minuteMs)))
         const genres = [
             qsTranslate("Viewer", "News / Reports"), qsTranslate("Viewer", "Sports"),
             qsTranslate("Viewer", "Information / Lifestyle"), qsTranslate("Viewer", "Drama"),

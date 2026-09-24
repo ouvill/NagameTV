@@ -7,7 +7,7 @@ Item {
     id: root
     enum ProgramLayout { NoText, OneLine, Full }
     required property ChannelFilterModel channels
-    required property string programsJson
+    required property GuideModel guideModel
     required property double dayStart
     required property double dayEnd
     property int openingIndex: -1
@@ -40,7 +40,6 @@ Item {
     readonly property int timeTickMinutes: 30
     readonly property int timeBandHours: 3
     readonly property var timeBandColors: GuidePalette.timeBands
-    readonly property var columns: JSON.parse(programsJson)
     property double now: Date.now()
     readonly property bool today: now >= dayStart && now < dayEnd
     readonly property real currentTimeY: channelHeaderHeight + (now - dayStart) / 60000 * pixelsPerMinute
@@ -59,22 +58,21 @@ Item {
     // program can have no cursorProgram while still retaining a chosen time.
     property var cursorTime: null
     readonly property var cursorProgram: {
-        channels.revision;
-        return cursorColumn < channels.count && cursorKey.length
-            ? schedule(channels.row(cursorColumn).channelIndex).find(program => program.watchKey === cursorKey) || null : null;
+        guideModel.revision;
+        return cursorKey.length ? guideModel.lookup(cursorKey) || null : null;
     }
     function chooseProgram(time) {
         cursorTime = time
         if (cursorColumn >= channels.count) return
-        const programs = schedule(channels.row(cursorColumn).channelIndex)
-        let closest = null
-        let distance = Number.POSITIVE_INFINITY
-        for (const program of programs) {
-            const end = program.startAt + program.duration
-            const candidate = time < program.startAt ? program.startAt - time : time >= end ? time - end + 1 : 0
-            if (candidate < distance) { closest = program; distance = candidate }
-        }
+        const closest = guideModel.nearest(channels.row(cursorColumn).channelIndex, time)
         cursorKey = closest ? closest.watchKey : ""
+    }
+    Connections {
+        target: root.guideModel
+        function onChanged() {
+            if (root.cursorKey.length && !root.guideModel.lookup(root.cursorKey))
+                root.chooseProgram(root.cursorTime === null ? root.dayStart : root.cursorTime)
+        }
     }
     function revealCursor() {
         wheelInput.cancelGesture()
@@ -84,7 +82,7 @@ Item {
         timelineView.contentX = Math.max(0, Math.min(Math.max(0, timelineView.contentWidth - timelineView.width),
             left < timelineView.contentX ? left : Math.max(timelineView.contentX, left + channelWidth - timelineView.width)))
         if (!cursorProgram) return
-        const top = channelHeaderHeight + (Math.max(dayStart, cursorProgram.startAt) - dayStart) / 60000 * pixelsPerMinute
+        const top = channelHeaderHeight + (cursorProgram.begin - dayStart) / 60000 * pixelsPerMinute
         // Align the start of long programs below the sticky channel header.
         if (top < timelineView.contentY + root.channelHeaderHeight || top + 24 > timelineView.contentY + timelineView.height)
             timelineView.contentY = Math.max(0, Math.min(Math.max(0, timelineView.contentHeight - timelineView.height), top - channelHeaderHeight))
@@ -97,18 +95,15 @@ Item {
             cursorColumn = Math.max(0, Math.min(channels.count - 1, cursorColumn + (key === Qt.Key_Left ? -1 : 1)))
             chooseProgram(time)
         } else if (key === Qt.Key_Up || key === Qt.Key_Down) {
-            const programs = schedule(channels.row(cursorColumn).channelIndex)
-            const index = programs.findIndex(program => program.watchKey === cursorKey)
-            // Rust projects programs in start-time order; do not sort/copy them per key.
-            if (index >= 0) {
-                const program = programs[Math.max(0, Math.min(programs.length - 1, index + (key === Qt.Key_Up ? -1 : 1)))]
+            const program = guideModel.adjacent(channels.row(cursorColumn).channelIndex, cursorKey, key === Qt.Key_Up ? -1 : 1)
+            if (program) {
                 cursorKey = program.watchKey
-                cursorTime = Math.max(dayStart, program.startAt)
+                cursorTime = program.begin
             }
         }
         revealCursor()
         if ((key === Qt.Key_Return || key === Qt.Key_Enter) && cursorProgram) {
-            const top = channelHeaderHeight + (Math.max(dayStart, cursorProgram.startAt) - dayStart) / 60000 * pixelsPerMinute
+            const top = channelHeaderHeight + (cursorProgram.begin - dayStart) / 60000 * pixelsPerMinute
             selected(cursorProgram, Qt.point(timelineView.x + cursorColumn * channelWidth - timelineView.contentX, top - timelineView.contentY), channels.row(cursorColumn).label)
         }
     }
@@ -122,10 +117,6 @@ Item {
     function genreColor(genre) {
         const colors = GuidePalette.genres
         return Number.isInteger(genre) && genre >= 0 && genre < colors.length ? colors[genre] : GuidePalette.defaultGenre
-    }
-    function schedule(index) {
-        const column = columns.find(column => column.index === index)
-        return column ? column.programs : []
     }
     function scrollHorizontally(event) {
         const delta = event.angleDelta.y || event.angleDelta.x
@@ -252,26 +243,36 @@ Item {
                 sourceComponent: Rectangle {
                     width: column.width; height: column.height
                     color: root.dividerColor
+                    GuideFilterModel { id: programs; sourceModel: root.guideModel; channel_index: column.channelIndex }
                     Repeater {
-                        model: root.schedule(column.channelIndex)
+                        model: programs
                         Rectangle {
                             id: cell
-                            required property var modelData
+                            required property string watchKey
+                            required property double begin
+                            required property double end
+                            required property int scheduleState
+                            required property int candidateCount
+                            required property string name
+                            required property string description
+                            required property int genre
+                            required property double startAt
+                            readonly property var modelData: { root.guideModel.revision; return root.guideModel.lookup(watchKey); }
                             objectName: "guideCell"
-                            readonly property double begin: Math.max(root.dayStart, modelData.startAt)
-                            readonly property double end: Math.min(root.dayEnd, modelData.startAt + modelData.duration)
                             readonly property int layoutMode: height < root.compactTitleLineHeight ? GuideTimeline.NoText
                                 : height < root.minimumFullCellHeight ? GuideTimeline.OneLine : GuideTimeline.Full
-                            readonly property string startLabel: Qt.formatTime(new Date(modelData.startAt), "hh:mm")
-                            readonly property string title: modelData.name || qsTranslate("Viewer", "No program information")
+                            readonly property string startLabel: Qt.formatTime(new Date(startAt), "hh:mm")
+                            readonly property string title: scheduleState === GuideModel.Conflict
+                                ? qsTranslate("Viewer", "Conflicting schedules (%1)").arg(candidateCount)
+                                : name || qsTranslate("Viewer", "No program information")
                             y: root.channelHeaderHeight + (begin - root.dayStart) / 60000 * root.pixelsPerMinute
                             x: root.dividerWidth
                             width: column.width - root.dividerWidth * 2
-                            height: Math.max(1, (end - begin) / 60000 * root.pixelsPerMinute - root.dividerWidth)
+                            height: Math.max(0, (end - begin) / 60000 * root.pixelsPerMinute - root.dividerWidth)
                             clip: true
-                            color: root.genreColor(modelData.genre)
-                            readonly property bool highlighted: modelData === root.selectedProgram
-                                || (root.activeFocus && column.index === root.cursorColumn && root.cursorKey.length > 0 && modelData.watchKey === root.cursorKey)
+                            color: root.genreColor(genre)
+                            readonly property bool highlighted: (!!root.selectedProgram && watchKey === root.selectedProgram.watchKey)
+                                || (root.activeFocus && column.index === root.cursorColumn && root.cursorKey.length > 0 && watchKey === root.cursorKey)
                             border.width: highlighted ? 2 : 0
                             border.color: Theme.accent
                             Label {
@@ -311,7 +312,7 @@ Item {
                                     y: titleLabel.y + titleLabel.height + descriptionSpacing
                                     width: parent.width; height: Math.max(0, parent.height - y)
                                     visible: height >= descriptionLineHeight * 2
-                                    text: cell.modelData.description || ""
+                                    text: cell.description
                                     color: GuidePalette.programSecondary; font.pixelSize: Theme.fontCaption
                                     textFormat: Text.PlainText; wrapMode: Text.Wrap; elide: Text.ElideRight
                                     lineHeightMode: Text.FixedHeight; lineHeight: descriptionLineHeight
@@ -321,7 +322,7 @@ Item {
                             MouseArea { anchors.fill: parent; onClicked: {
                                 root.cursorColumn = column.index
                                 root.cursorKey = cell.modelData.watchKey || ""
-                                root.cursorTime = Math.max(root.dayStart, cell.modelData.startAt)
+                                root.cursorTime = cell.begin
                                 root.forceActiveFocus()
                                 root.selected(cell.modelData, cell.mapToItem(root, 0, 0), column.label)
                             } }

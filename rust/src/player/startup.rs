@@ -163,7 +163,7 @@ impl Default for PlayerRust {
             subtitle_data: QString::default(),
             subtitle_status: super::status::tr("Stopped"),
             subtitle_phase: Default::default(),
-            epg_data: QString::from("[]"),
+            guide_model: crate::guide_model::ffi::make_guide_model(),
             epg_events: Default::default(),
             epg_status: super::status::tr("Disabled"),
             guide_error: None,

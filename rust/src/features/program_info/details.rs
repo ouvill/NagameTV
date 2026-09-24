@@ -5,13 +5,13 @@ use serde::{
 };
 use std::fmt;
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, PartialEq, Eq, Serialize)]
 pub struct Section {
     heading: String,
     text: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, PartialEq, Eq, Serialize)]
 #[serde(transparent)]
 pub struct Extended(Box<[Section]>);
 
@@ -49,7 +49,7 @@ impl<'de> Deserialize<'de> for Extended {
 
 // Strings preserve future API codec/resolution names instead of rejecting an EPG
 // snapshot when a broadcaster adds a format the UI has not named yet.
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Video {
     #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
@@ -65,7 +65,7 @@ impl Video {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Series {
     pub name: Option<String>,

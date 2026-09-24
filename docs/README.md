@@ -59,6 +59,7 @@
 | **[音声機能と出力制御](audio-output.md)** | 音量、ミュート、複数トラック・二重音声（主/副音声）、再生時計同期、バッファ余裕設定 |
 | **[チャンネル選局とブラウザー](channel-browser.md)** | 放送波分類（地デジ/BS/CS/CATV）、ソート規則、局ロゴ、カルーセルUI |
 | **[番組表と予定番組 (EPG)](guide-calendar.md)** | 7日分カレンダー番組表、番組詳細情報、取得ストリーム |
+| **[EPGの重複調査と設計案](epg-architecture-review.md)** | Mirakurun 4.1.3の実応答・競合保持の再現と、予定・TS観測・競合を分ける提案 |
 | **[現在番組情報](current-program.md)** | EIT p/f解析、現在・次番組情報のリアルタイム追従 |
 | **[GPU映像処理とNV12表示](gpu-video.md)** | GStreamer OpenGLプラグインとQt Quickの統合、NV12テクスチャ描画 |
 | **[字幕描画](subtitle-rendering.md)** | ARIB外字フォント、常時縁取りオプション |

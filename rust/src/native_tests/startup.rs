@@ -751,7 +751,7 @@ fn window(
         wait_for(
             app,
             &mut engine,
-            "JSON.parse(guideLoader.item.programsJson).some(column => column.programs.some(program => program.id === 101))",
+            "Array.from({length:guideLoader.item.guideModel.count}, (_,i) => guideLoader.item.guideModel.row(i)).some(row => guideLoader.item.guideModel.details(row.watchKey,0).id === '101')",
         )?;
         // A user can select this card only after channel visibility arrives.
         // Its initial publication clears selectedProgram; selecting earlier
@@ -766,12 +766,12 @@ fn window(
             &mut engine,
             r#"
             const guide = guideLoader.item;
-            const programs = guide.programsJson;
+            const programs = guide.guideModel.revision;
             const visibility = guide.visibilityJson;
             const status = guide.status;
             player.guide_open(false);
             !guideLoader.enabled && guideLoader.item === guide && guideLoader.opacity === 1
-                && programs !== '[]' && guide.programsJson === programs
+                && guide.guideModel.count > 0 && guide.guideModel.revision === programs
                 && guide.visibilityJson === visibility && guide.status === status
                 && guide.width === root.width
             "#,
@@ -793,15 +793,14 @@ fn window(
         wait_for(
             app,
             &mut engine,
-            "guideLoader.opacity === 1 && guideLoader.item.programsJson !== '[]' && guideLoader.item.visibilityJson !== 'null'",
+            "guideLoader.opacity === 1 && guideLoader.item.guideModel.count > 0 && guideLoader.item.visibilityJson !== 'null'",
         )?;
         evaluate(
             &mut engine,
             r#"
             const guide = guideLoader.item;
             guide.selectedChannel = 'Saved TV';
-            const column = JSON.parse(guide.programsJson).find(column => column.programs.some(program => program.id === 101));
-            guide.selectedProgram = column.programs.find(program => program.id === 101);
+            guide.selectedProgram = Array.from({length:guide.guideModel.count}, (_,i) => guide.guideModel.row(i)).find(row => guide.guideModel.details(row.watchKey,0).id === '101');
             true
         "#,
         )?;

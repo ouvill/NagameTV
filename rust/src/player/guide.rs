@@ -6,6 +6,15 @@ use cxx_qt_lib::QString;
 use std::pin::Pin;
 
 impl ffi::Player {
+    pub fn guide_release(mut self: Pin<&mut Self>) {
+        if matches!(self.rust().guide, Guide::Closed) {
+            self.as_mut()
+                .rust_mut()
+                .guide_model
+                .pin_mut()
+                .replace(Default::default());
+        }
+    }
     pub fn guide_visible(&self) -> bool {
         match self.rust().guide {
             Guide::Closed => false,
@@ -33,7 +42,13 @@ impl ffi::Player {
         self.as_mut().rust_mut().guide_dirty = false;
         self.as_mut().rust_mut().guide_error = None;
         self.as_mut().refresh_epg_status();
-        self.as_mut().set_epg_data(QString::from("[]"));
+        if open {
+            self.as_mut()
+                .rust_mut()
+                .guide_model
+                .pin_mut()
+                .replace(Default::default());
+        }
         // The QML Loader may synchronously request its first day on this signal.
         // Publish visibility only after the backend is ready to accept that day.
         self.guide_visible_changed();

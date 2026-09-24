@@ -395,7 +395,7 @@ fn current_projection_only_serializes_changes_and_handles_clock_reversal()
 }
 
 #[test]
-fn current_program_zero_duration_overlap_and_overflow_do_not_resurrect_old_events()
+fn zero_duration_does_not_displace_a_valid_program_and_overflow_saturates()
 -> Result<(), Box<dyn std::error::Error>> {
     let snapshot = parse(
         br#"[
@@ -404,7 +404,7 @@ fn current_program_zero_duration_overlap_and_overflow_do_not_resurrect_old_event
         {"id":3,"serviceId":1,"networkId":1,"startAt":18446744073709551605,"duration":100}
     ]"#,
     )?;
-    assert!(snapshot.current(key(1, 1), 10).is_none());
+    assert_eq!(snapshot.current(key(1, 1), 10).map(|p| p.id), Some(1));
     let final_program = snapshot
         .current(key(1, 1), u64::MAX - 1)
         .ok_or("saturating endpoint failed")?;
@@ -468,19 +468,32 @@ fn guide_day_includes_crossing_programs_and_does_not_truncate_at_200()
     assert_eq!(view[0]["id"], 999);
     let channels =
         crate::channels::parse(br#"[{"id":42,"name":"A","type":1,"networkId":3,"serviceId":20}]"#)?;
-    let grid: serde_json::Value = serde_json::from_str(
-        &snapshot.grid_view(&channels, guide::DayWindow::new(10000.0, 260000.0)?)?,
+    let grid = view::View::new(
+        snapshot.clone(),
+        channels.into(),
+        guide::DayWindow::new(10000.0, 260000.0)?,
+        0,
     )?;
-    let cells = grid[0]["programs"]
-        .as_array()
-        .ok_or("grid programs missing")?;
-    assert_eq!(cells.len(), 251);
-    for (cell, program) in cells.iter().zip(&view) {
-        assert_eq!(cell["id"], program["id"]);
-        let key: serde_json::Value =
-            serde_json::from_str(cell["watchKey"].as_str().ok_or("watch key missing")?)?;
+    assert_eq!(grid.cells().len(), 251);
+    let crossing = &grid.cells()[0];
+    assert_eq!((crossing.begin, crossing.end), (10000, 10001));
+    assert_eq!(
+        crossing.segment.resolution,
+        schedule::Resolution::Conflict(2)
+    );
+    assert_eq!(grid.candidates(&crossing.key).len(), 2);
+    assert_eq!(
+        grid.action(&crossing.key, 10000),
+        Some(watch::Action::Channel)
+    );
+    for (cell, program) in grid.cells()[1..].iter().zip(&view[1..]) {
+        assert_eq!(
+            grid.program(cell).ok_or("missing program")?.id,
+            program["id"]
+        );
+        let key: serde_json::Value = serde_json::from_str(&cell.key)?;
         assert_eq!(key["endpoint"], 42);
-        assert_eq!(key["program"], program["id"]);
+        assert_eq!(key["target"]["Program"]["id"], program["id"]);
     }
     let next: Vec<serde_json::Value> = serde_json::from_str(
         &snapshot.view(key(3, 20), guide::DayWindow::new(260000.0, 261000.0)?)?,
@@ -566,12 +579,8 @@ fn epg_details_keep_order_optional_fields_and_unknown_formats_in_grid()
         {"id":3,"networkId":10,"serviceId":1,"startAt":300,"duration":100,
          "extended":null,"video":{"type":"future-codec","resolution":"future-resolution"},"series":null,"isFree":null}
     ]"#.as_bytes())?;
-    let channels =
-        crate::channels::parse(br#"[{"id":42,"name":"A","type":1,"networkId":10,"serviceId":1}]"#)?;
-    let grid: serde_json::Value = serde_json::from_str(
-        &snapshot.grid_view(&channels, guide::DayWindow::new(0.0, 86_400_000.0)?)?,
-    )?;
-    let program = &grid[0]["programs"][0];
+    let programs = serde_json::to_value(snapshot.schedule(key(10, 1)))?;
+    let program = &programs[0];
     let sections = program["extended"].as_array().ok_or("missing sections")?;
     let headings: Vec<_> = sections
         .iter()
@@ -596,13 +605,13 @@ fn epg_details_keep_order_optional_fields_and_unknown_formats_in_grid()
     assert_eq!(program["series"]["episode"], 3);
     assert_eq!(program["isFree"], false);
     assert_eq!(program["genre"], 3);
-    let missing = &grid[0]["programs"][1];
+    let missing = &programs[1];
     for field in ["extended", "video", "series", "isFree"] {
         assert!(missing.get(field).is_none());
     }
     assert_eq!(missing["audios"], serde_json::json!([]));
-    assert_eq!(grid[0]["programs"][2]["video"]["type"], "future-codec");
-    assert!(grid[0]["programs"][2].get("extended").is_none());
+    assert_eq!(programs[2]["video"]["type"], "future-codec");
+    assert!(programs[2].get("extended").is_none());
     let storage = snapshot.storage();
     assert_eq!(
         storage.details,
@@ -615,13 +624,14 @@ fn epg_details_keep_order_optional_fields_and_unknown_formats_in_grid()
 #[test]
 fn grid_columns_use_explicit_services_and_only_overlap_the_requested_day()
 -> Result<(), Box<dyn std::error::Error>> {
-    let channels = crate::channels::parse(
+    let channels: std::sync::Arc<[_]> = crate::channels::parse(
         br#"[
         {"id":777,"name":"A","type":1,"networkId":4,"serviceId":42},
         {"id":888,"name":"B","type":1,"networkId":5,"serviceId":42},
         {"id":999,"name":"Unknown","type":1}
     ]"#,
-    )?;
+    )?
+    .into();
     let snapshot = parse(
         br#"[
         {"id":1,"networkId":4,"serviceId":42,"name":"Crossing","genres":[{"lv1":1,"lv2":0}],"startAt":50,"duration":100},
@@ -630,31 +640,32 @@ fn grid_columns_use_explicit_services_and_only_overlap_the_requested_day()
         {"id":4,"networkId":4,"serviceId":42,"name":"Next day","startAt":200,"duration":100}
     ]"#,
     )?;
-    let data: serde_json::Value = serde_json::from_str(
-        &snapshot.grid_view(&channels, guide::DayWindow::new(100.0, 200.0)?)?,
+    let data = view::View::new(
+        snapshot.clone(),
+        channels.clone(),
+        guide::DayWindow::new(100.0, 200.0)?,
+        0,
     )?;
-    for (index, channel) in channels.iter().enumerate() {
-        assert_eq!(data[index]["index"], index);
-        let programs = data[index]["programs"]
-            .as_array()
-            .ok_or("missing programs")?;
-        match channel.id {
+    assert_eq!(data.cells().len(), 2);
+    for cell in data.cells() {
+        let program = data.program(cell).ok_or("missing program")?;
+        match channels[cell.channel].id {
             777 => {
-                assert_eq!(programs.len(), 1);
-                assert_eq!(programs[0]["id"], 1);
-                assert_eq!(programs[0]["genre"], 1);
+                assert_eq!(program.id, 1);
+                assert_eq!(program.genre as u8, 1);
+                assert_eq!((cell.begin, cell.end), (100, 150));
             }
             888 => {
-                assert_eq!(programs.len(), 1);
-                assert_eq!(programs[0]["id"], 2);
-                assert_eq!(programs[0]["genre"], 15);
+                assert_eq!(program.id, 2);
+                assert_eq!(program.genre as u8, 15);
             }
-            _ => assert!(programs.is_empty()),
+            _ => panic!("unknown service must have no cells"),
         }
     }
-    assert_eq!(
-        snapshot.grid_view(&[], guide::DayWindow::new(100.0, 200.0)?)?,
-        "[]"
+    assert!(
+        view::View::new(snapshot, [].into(), guide::DayWindow::new(100.0, 200.0)?, 0)?
+            .cells()
+            .is_empty()
     );
     Ok(())
 }
@@ -662,12 +673,11 @@ fn grid_columns_use_explicit_services_and_only_overlap_the_requested_day()
 #[test]
 fn watch_revalidates_opaque_ids_current_time_and_reordered_channels()
 -> Result<(), Box<dyn std::error::Error>> {
-    let mut channels = crate::channels::parse(
-        br#"[
+    let channel_data = br#"[
         {"id":18446744073709551615,"name":"A","type":1,"networkId":4,"serviceId":42},
         {"id":123,"name":"B","type":1,"networkId":5,"serviceId":42}
-    ]"#,
-    )?;
+    ]"#;
+    let mut channels = crate::channels::parse(channel_data)?;
     let mut feature = ProgramInfo {
         snapshot: parse(
             br#"[
@@ -676,15 +686,15 @@ fn watch_revalidates_opaque_ids_current_time_and_reordered_channels()
         )?,
         ..ProgramInfo::default()
     };
-    let data: serde_json::Value =
-        serde_json::from_str(&feature.grid_view(&channels, guide::DayWindow::new(100.0, 200.0)?)?)?;
+    let data = feature.guide_view(
+        crate::channels::parse(channel_data)?.into(),
+        guide::DayWindow::new(100.0, 200.0)?,
+    )?;
     let column = channels
         .iter()
         .position(|c| c.id == u64::MAX)
         .ok_or("missing channel")?;
-    let key = data[column]["programs"][0]["watchKey"]
-        .as_str()
-        .ok_or("missing key")?;
+    let key = &data.cells()[0].key;
     assert!(key.contains("18446744073709551615"));
     assert_eq!(feature.watch_channel(key, &channels, 100)?, column);
     channels.reverse();
@@ -755,7 +765,8 @@ fn validates_captured_server_catalog_and_guide() -> Result<(), Box<dyn std::erro
         }
         Ok(bytes)
     };
-    let channels = crate::channels::parse(&read("services.json", 1024 * 1024)?)?;
+    let channels: std::sync::Arc<[_]> =
+        crate::channels::parse(&read("services.json", 1024 * 1024)?)?.into();
     let bytes = read("programs.json", MAX_RESPONSE)?;
     let snapshot = parse(&bytes)?;
     let now = u64::try_from(SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis())?;
@@ -776,34 +787,49 @@ fn validates_captured_server_catalog_and_guide() -> Result<(), Box<dyn std::erro
         storage.audio,
         storage.total()
     );
-    let json = snapshot.grid_view(&channels, window)?;
-    let columns: Vec<serde_json::Value> = serde_json::from_str(&json)?;
-    assert_eq!(columns.len(), channels.len());
-    let mut cells = 0;
-    for (index, column) in columns.iter().enumerate() {
-        assert_eq!(column["index"], index);
-        let programs = column["programs"]
-            .as_array()
-            .ok_or("missing program array")?;
-        for program in programs {
-            let key = program["watchKey"].as_str().ok_or("missing watch key")?;
-            let _: watch::Identity = serde_json::from_str(key)?;
+    let view = view::View::new(snapshot.clone(), channels.clone(), window, 0)?;
+    let mut conflicts = 0;
+    for (row, cell) in view.cells().iter().enumerate() {
+        assert_eq!(view.find(&cell.key), Some(row));
+        assert!(cell.begin < cell.end && cell.begin >= window.start() && cell.end <= window.end());
+        assert_eq!(view.nearest(cell.channel, cell.begin), Some(row));
+        if let Some(previous) = row.checked_sub(1).map(|i| &view.cells()[i]) {
+            assert!(previous.channel != cell.channel || previous.end <= cell.begin);
         }
-        cells += programs.len();
+        let candidates = view.candidates(&cell.key);
+        match cell.segment.resolution {
+            schedule::Resolution::Conflict(count) => {
+                conflicts += 1;
+                assert_eq!(candidates.len(), count);
+                assert!(
+                    snapshot
+                        .current(channels[cell.channel].broadcast, cell.begin)
+                        .is_none()
+                );
+                assert_eq!(
+                    view.action(&cell.key, cell.begin),
+                    Some(watch::Action::Channel)
+                );
+            }
+            schedule::Resolution::Single(_) => assert_eq!(candidates.len(), 1),
+            schedule::Resolution::Gap => panic!("gap cell"),
+        }
     }
     let current = channels
         .iter()
         .filter(|channel| snapshot.current(channel.broadcast, now).is_some())
         .count();
     eprintln!(
-        "CAPTURE channels={} programs={} raw_bytes={} program_string_capacity={} current_channels={} grid_cells={} grid_bytes={}",
+        "CAPTURE channels={} programs={} raw_bytes={} program_string_capacity={} current_channels={} grid_cells={} conflict_cells={} conflict_services={} unknown_ends={}",
         channels.len(),
         snapshot.len(),
         bytes.len(),
         storage.strings,
         current,
-        cells,
-        json.len()
+        view.cells().len(),
+        conflicts,
+        snapshot.conflict_services(),
+        snapshot.unknown_ends()
     );
     Ok(())
 }

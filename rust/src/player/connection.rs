@@ -88,7 +88,11 @@ impl ffi::Player {
         self.as_mut().rust_mut().request.cancel();
         self.as_mut().cancel_connection();
         self.as_mut().rust_mut().epg.configure(None);
-        self.as_mut().set_epg_data(QString::from("[]"));
+        self.as_mut()
+            .rust_mut()
+            .guide_model
+            .pin_mut()
+            .replace(Default::default());
         self.as_mut().cancel_recording_open();
         if let Err(error) = self.as_mut().end_stream() {
             self.playback_failed(error);

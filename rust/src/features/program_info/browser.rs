@@ -1,18 +1,28 @@
 //! Borrow current events from the shared EPG; retain only change-detection keys.
-use super::model::{Program, Snapshot};
+use super::{
+    model::{Program, Snapshot},
+    schedule::{Resolution, Segment},
+};
 use crate::channels::{BroadcastService, Channel};
 use serde::Serialize;
 
 #[derive(PartialEq, Eq)]
 struct Key {
     service: Option<BroadcastService>,
+    segment: Option<Segment>,
     event: Option<(u64, u64, u64)>,
     next: Option<(u64, u64, u64)>,
 }
 impl Key {
-    fn new(channel: &Channel, program: Option<&Program>, next: Option<&Program>) -> Self {
+    fn new(
+        channel: &Channel,
+        program: Option<&Program>,
+        next: Option<&Program>,
+        segment: Option<&Segment>,
+    ) -> Self {
         Self {
             service: channel.broadcast,
+            segment: segment.copied(),
             event: program.map(|p| (p.id, p.start_at, p.duration)),
             next: next.map(|p| (p.id, p.start_at, p.duration)),
         }
@@ -39,6 +49,8 @@ struct Card<'a> {
     #[serde(flatten)]
     current: Summary<'a>,
     next: Option<Summary<'a>>,
+    #[serde(rename = "scheduleState", skip_serializing_if = "Option::is_none")]
+    state: Option<&'static str>,
 }
 #[derive(Default)]
 pub struct Projection {
@@ -56,33 +68,53 @@ impl Projection {
     ) -> Result<Option<String>, serde_json::Error> {
         let current =
             |channel: &Channel| now.and_then(|time| snapshot.current(channel.broadcast, time));
+        let segment =
+            |channel: &Channel| now.and_then(|time| snapshot.segment(channel.broadcast, time));
         let next = |channel: &Channel| now.and_then(|time| snapshot.next(channel.broadcast, time));
         if self.revision == Some(revision)
             && self.keys.len() == channels.len()
-            && self
-                .keys
-                .iter()
-                .zip(channels)
-                .all(|(key, channel)| *key == Key::new(channel, current(channel), next(channel)))
+            && self.keys.iter().zip(channels).all(|(key, channel)| {
+                *key == Key::new(channel, current(channel), next(channel), segment(channel))
+            })
         {
             return Ok(None);
         }
         let cards: Vec<_> = channels
             .iter()
             .map(|channel| {
-                current(channel).map(|program| Card {
-                    current: program.into(),
-                    next: next(channel).map(Into::into),
-                })
+                current(channel)
+                    .map(|program| Card {
+                        current: program.into(),
+                        next: next(channel).map(Into::into),
+                        state: None,
+                    })
+                    .or_else(|| {
+                        segment(channel).map(|slot| Card {
+                            current: Summary {
+                                name: match slot.resolution {
+                                    Resolution::Single(i) => snapshot.program(i).name.as_deref(),
+                                    Resolution::Conflict(_) | Resolution::Gap => None,
+                                },
+                                start_at: slot.start,
+                                duration: 0,
+                            },
+                            next: next(channel).map(Into::into),
+                            state: Some(match slot.resolution {
+                                Resolution::Single(_) => "unknownEnd",
+                                Resolution::Conflict(_) => "conflict",
+                                Resolution::Gap => "gap",
+                            }),
+                        })
+                    })
             })
             .collect();
         let json = serde_json::to_string(&cards)?;
-        let visible = super::visibility::indices(channels, |channel| current(channel));
+        let visible = super::visibility::with_uncertain(snapshot, channels, now);
         let visible_json = serde_json::to_string(&visible)?;
         // Commit keys only after successful serialization so errors remain retryable.
         self.keys = channels
             .iter()
-            .map(|channel| Key::new(channel, current(channel), next(channel)))
+            .map(|channel| Key::new(channel, current(channel), next(channel), segment(channel)))
             .collect();
         self.visible_json = visible_json;
         self.revision = Some(revision);
@@ -93,6 +125,64 @@ impl Projection {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn uncertain_programs_do_not_hide_subchannels_or_choose_a_current_title()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let channels = crate::channels::parse(br#"[
+            {"id":1,"networkId":1,"serviceId":1,"name":"A","type":1,"channel":{"type":"GR","channel":"27"}},
+            {"id":2,"networkId":1,"serviceId":2,"name":"B","type":1,"channel":{"type":"GR","channel":"27"}}
+        ]"#)?;
+        let snapshot = super::super::model::parse(br#"[
+            {"id":1,"eventId":7,"networkId":1,"serviceId":1,"startAt":100,"duration":100,"name":"A"},
+            {"id":2,"eventId":8,"networkId":1,"serviceId":1,"startAt":150,"duration":100,"name":"B"},
+            {"id":3,"eventId":7,"networkId":1,"serviceId":2,"startAt":100,"duration":100,"name":"Simulcast"},
+            {"id":4,"eventId":9,"networkId":1,"serviceId":2,"startAt":200,"duration":1,"name":"Unknown end"}
+        ]"#)?;
+        let mut projection = Projection::default();
+        projection.update(&snapshot, 0, &channels, Some(100))?;
+        assert_eq!(projection.visible_json, "[0]");
+        let conflict: serde_json::Value = serde_json::from_str(
+            &projection
+                .update(&snapshot, 0, &channels, Some(150))?
+                .unwrap(),
+        )?;
+        assert_eq!(projection.visible_json, "[0,1]");
+        assert_eq!(conflict[0]["scheduleState"], "conflict");
+        assert!(conflict[0]["name"].is_null());
+        assert!(conflict[0]["next"].is_null());
+        let unknown: serde_json::Value = serde_json::from_str(
+            &projection
+                .update(&snapshot, 0, &channels, Some(200))?
+                .unwrap(),
+        )?;
+        assert_eq!(unknown[1]["scheduleState"], "unknownEnd");
+        assert_eq!(unknown[1]["duration"], 0);
+        assert_eq!(projection.visible_json, "[0,1]");
+        let mut current = super::super::presentation::Projection::default();
+        let detail: serde_json::Value = serde_json::from_str(
+            &current
+                .update(&snapshot, 0, channels[0].broadcast, 150)?
+                .data
+                .unwrap(),
+        )?;
+        assert_eq!(detail["scheduleState"], "conflict");
+        assert!(detail["name"].is_null());
+        assert!(
+            current
+                .update(&snapshot, 0, channels[0].broadcast, 151)?
+                .data
+                .is_none()
+        );
+        let detail: serde_json::Value = serde_json::from_str(
+            &current
+                .update(&snapshot, 0, channels[1].broadcast, 200)?
+                .data
+                .unwrap(),
+        )?;
+        assert_eq!(detail["endUnknown"], true);
+        assert_eq!(detail["duration"], 1);
+        Ok(())
+    }
     #[test]
     fn snapshots_change_only_on_boundary_revision_or_catalog()
     -> Result<(), Box<dyn std::error::Error>> {

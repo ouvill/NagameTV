@@ -6,7 +6,20 @@ import QtQuick.Layouts
 
 Popup {
     id: popup
-    required property var program
+    required property GuideModel guideModel
+    required property var selection
+    property int candidateIndex: 0
+    readonly property GuideCandidates candidates: guideModel.candidates
+    readonly property var program: {
+        guideModel.revision;
+        return selection ? guideModel.details(selection.watchKey, candidateIndex) : null;
+    }
+    function refreshCandidates() {
+        candidateIndex = 0
+        guideModel.select_candidates(selection ? selection.watchKey : "")
+    }
+    onSelectionChanged: refreshCandidates()
+    Connections { target: popup.guideModel; function onChanged() { popup.refreshCandidates(); } }
     required property point cellPosition
     required property real channelWidth
     required property string channelLabel
@@ -15,8 +28,11 @@ Popup {
     // Backend translation source; retranslate even while the error remains visible.
     property string watchError: ""
     property double now: Date.now()
-    readonly property bool live: !!program && typeof program.watchKey === "string"
-        && program.startAt <= now && now < program.startAt + program.duration
+    readonly property int watchAction: {
+        guideModel.revision;
+        return selection ? guideModel.action(selection.watchKey, now) : GuideModel.Unavailable;
+    }
+    readonly property bool live: watchAction !== GuideModel.Unavailable
     signal watchRequested(string key)
 
     // Keep coordinates, not a delegate reference: offscreen columns are destroyed.
@@ -40,7 +56,7 @@ Popup {
         NumberAnimation { property: "opacity"; to: 0; duration: Theme.moveDuration; easing.type: Easing.OutCubic }
         NumberAnimation { property: "scale"; to: 0.97; duration: Theme.moveDuration; easing.type: Easing.OutBack }
     }
-    Component.onCompleted: open()
+    Component.onCompleted: { refreshCandidates(); open(); }
     onAboutToShow: now = Date.now()
     Timer { interval: 1000; repeat: true; running: popup.opened; onTriggered: popup.now = Date.now() }
     background: PanelSurface {}
@@ -87,6 +103,22 @@ Popup {
                     width: detailsFlick.width
                     spacing: Theme.spaceLg
                     Label {
+                        width: parent.width
+                        visible: popup.selection && popup.selection.scheduleState === GuideModel.Conflict
+                        text: qsTranslate("Viewer", "Program information overlaps. The current program cannot be determined from the schedule.")
+                        textFormat: Text.PlainText; wrapMode: Text.Wrap
+                        color: Theme.textSecondary; font.pixelSize: Theme.fontCaption
+                    }
+                    SettingsChoice {
+                        objectName: "guideCandidateSelector"
+                        width: parent.width
+                        visible: popup.candidates.count > 1
+                        model: popup.candidates
+                        textRole: "name"
+                        currentIndex: popup.candidateIndex
+                        onActivated: function(index) { popup.candidateIndex = index }
+                    }
+                    Label {
                         objectName: "programDateTime"
                         width: parent.width
                         text: {
@@ -95,6 +127,7 @@ Popup {
                             const end = new Date(popup.program.startAt + popup.program.duration)
                             const format = qsTranslate("Viewer", "ddd, MMM d · hh:mm")
                             const locale = Qt.locale(popup.uiLanguage)
+                            if (popup.program.endUnknown) return start.toLocaleString(locale, format) + " – " + qsTranslate("Viewer", "End time unknown")
                             return start.toLocaleString(locale, format) + " – "
                                 + end.toLocaleString(locale, start.toDateString() === end.toDateString() ? "hh:mm" : format)
                         }
@@ -161,10 +194,10 @@ Popup {
             id: watchButton
             objectName: "watchGuideProgram"
             visible: popup.live
-            Layout.preferredWidth: 168
+            Layout.preferredWidth: Math.max(168, implicitWidth)
             Layout.preferredHeight: 44
-            text: qsTranslate("Viewer", "Watch this program")
-            onClicked: popup.watchRequested(popup.program.watchKey)
+            text: popup.watchAction === GuideModel.WatchChannel ? qsTranslate("Viewer", "Watch this channel") : qsTranslate("Viewer", "Watch this program")
+            onClicked: popup.watchRequested(popup.selection.watchKey)
         }
     }
 }

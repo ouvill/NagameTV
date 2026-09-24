@@ -170,7 +170,7 @@ Item {
                         top: heading.bottom
                         topMargin: 8
                     }
-                    text: card.program ? (card.program.name || qsTranslate("Viewer", "Program title unavailable")) : qsTranslate("Main", "No program information")
+                    text: card.program && card.program.scheduleState === "conflict" ? qsTranslate("Viewer", "Conflicting schedules") : card.program ? (card.program.name || qsTranslate("Viewer", "Program title unavailable")) : qsTranslate("Main", "No program information")
                     color: Theme.textPrimary
                     font.bold: true
                     elide: Text.ElideRight
@@ -184,7 +184,7 @@ Item {
                         top: title.bottom
                         topMargin: 8
                     }
-                    text: card.program ? Qt.formatDateTime(new Date(card.program.startAt), "hh:mm") + " – " + Qt.formatDateTime(new Date(card.program.startAt + card.program.duration), "hh:mm") : ""
+                    text: card.program && card.program.scheduleState === "unknownEnd" ? qsTranslate("Viewer", "End time unknown") : card.program && !card.program.scheduleState ? Qt.formatDateTime(new Date(card.program.startAt), "hh:mm") + " – " + Qt.formatDateTime(new Date(card.program.startAt + card.program.duration), "hh:mm") : ""
                     color: Theme.textSecondary
                     font.pixelSize: Theme.fontCaption
                 }

@@ -6,7 +6,7 @@ import QtQuick.Layouts
 
 Rectangle {
     id: root
-    required property string programsJson
+    required property GuideModel guideModel
     required property string status
     property string uiLanguage: Qt.uiLanguage
     required property string channel
@@ -77,22 +77,10 @@ Rectangle {
         requestDay()
         timeline.forceActiveFocus()
     }
-    function refreshSelection(columns) {
-        if (!selectedProgram) return
-        const key = selectedProgram.watchKey
-        // Reuse the timeline's parsed snapshot. Do not retain a stale object or
-        // use its old row index: updates can reorder or remove programs.
-        if (typeof key === "string") {
-            for (const column of columns) {
-                const current = column.programs.find(program => program.watchKey === key)
-                if (current) {
-                    selectedProgram = current
-                    return
-                }
-            }
-        }
-        selectedProgram = null
+    function refreshSelection() {
+        if (selectedProgram) selectedProgram = guideModel.lookup(selectedProgram.watchKey) || null
     }
+    Connections { target: root.guideModel; function onChanged() { root.refreshSelection(); } }
     onSelectedWindowChanged: requestDay()
     onOpeningIndexChanged: restoreChannel()
     onChannelsChanged: restoreChannel()
@@ -116,11 +104,10 @@ Rectangle {
             Layout.fillWidth: true; Layout.fillHeight: true
             channels: channelFilter
             openingIndex: root.openingIndex
-            programsJson: root.programsJson
+            guideModel: root.guideModel
             dayStart: root.selectedWindow.start
             dayEnd: root.selectedWindow.end
             selectedProgram: root.selectedProgram
-            onColumnsChanged: root.refreshSelection(columns)
             onSelected: function(program, cellPosition, channelLabel) {
                 root.selectedPosition = cellPosition
                 root.selectedChannel = channelLabel
@@ -133,7 +120,7 @@ Rectangle {
         parent: timeline
         anchors.centerIn: parent
         width: Math.max(0, timeline.width - 48)
-        visible: root.programsJson === "[]"
+        visible: root.guideModel.count === 0
         text: root.status
         textFormat: Text.PlainText
         horizontalAlignment: Text.AlignHCenter
@@ -157,7 +144,8 @@ Rectangle {
             cellPosition: root.selectedPosition
             channelWidth: timeline.channelWidth
             channelLabel: root.selectedChannel
-            program: root.selectedProgram
+            guideModel: root.guideModel
+            selection: root.selectedProgram
             watchError: root.watchError
             onWatchRequested: function(key) { root.watchRequested(key) }
             onClosed: root.selectedProgram = null

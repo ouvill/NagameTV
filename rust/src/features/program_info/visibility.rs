@@ -43,6 +43,41 @@ pub(super) fn indices<'a>(
         .collect()
 }
 
+/// Uncertain schedules cannot prove that a subchannel is a simulcast.
+pub(super) fn with_uncertain(
+    snapshot: &super::model::Snapshot,
+    channels: &[Channel],
+    now: Option<u64>,
+) -> Vec<usize> {
+    let mut visible = indices(channels, |channel| {
+        now.and_then(|time| snapshot.current(channel.broadcast, time))
+    });
+    let uncertain = |channel: &Channel| {
+        now.is_some_and(|time| {
+            snapshot.segment(channel.broadcast, time).is_some()
+                && snapshot.current(channel.broadcast, time).is_none()
+        })
+    };
+    let carriers: HashSet<_> = channels
+        .iter()
+        .filter(|c| uncertain(c))
+        .filter_map(|c| c.physical.as_ref())
+        .collect();
+    for (index, channel) in channels.iter().enumerate() {
+        if (uncertain(channel)
+            || channel
+                .physical
+                .as_ref()
+                .is_some_and(|p| carriers.contains(p)))
+            && !visible.contains(&index)
+        {
+            visible.push(index);
+        }
+    }
+    visible.sort_unstable();
+    visible
+}
+
 /// Indices retain catalog order, including when the playing service has become hidden.
 pub(super) fn adjacent(
     visible: &[usize],

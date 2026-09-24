@@ -663,7 +663,6 @@ ViewerWindow {
             function refreshSnapshot() {
                 if (!view || !player.guide_visible) return;
                 view.visibilityJson = player.guide_visibility_data;
-                view.programsJson = player.epg_data;
                 view.status = player.epg_status;
             }
             parent: root.viewport
@@ -673,6 +672,7 @@ ViewerWindow {
             open: root.guideVisible
             shuttingDown: root.closing
             onLoaded: refreshSnapshot()
+            onActiveChanged: if (!active) player.guide_release()
             onOpenChanged: if (open && view) view.openGuide()
             sourceComponent: Component {
                 ProgramGuide {
@@ -687,11 +687,10 @@ ViewerWindow {
                     channels: player.channels
                     selected: player.selected
                     viewingIndex: player.viewing_channel
-                    programsJson: "[]"
+                    guideModel: player.guide_model
                     status: ""
                     Connections {
                         target: player
-                        function onEpg_dataChanged() { guideLoader.refreshSnapshot(); }
                         function onGuide_visibility_dataChanged() { guideLoader.refreshSnapshot(); }
                         function onEpg_statusChanged() { guideLoader.refreshSnapshot(); }
                     }

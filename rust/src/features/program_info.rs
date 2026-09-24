@@ -4,10 +4,11 @@ use crate::services::{FetchError, Job, Network, Progress, Stopping};
 pub mod browser;
 mod details;
 mod genre;
-mod grid;
 pub mod guide;
-mod model;
+pub mod model;
 pub mod presentation;
+pub mod schedule;
+pub mod view;
 mod visibility;
 pub mod watch;
 use model::{Snapshot, parse};
@@ -19,6 +20,8 @@ const REFRESH: Duration = Duration::from_secs(300);
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error("番組情報の変換失敗: {0}")]
+    Projection(#[source] serde_json::Error),
     #[error("番組JSONの解析失敗: {0}")]
     Json(#[from] crate::json::Error),
     #[error("番組数が上限を超えています（{actual} > {limit}）")]
@@ -79,6 +82,7 @@ pub struct Update {
 #[derive(Default)]
 pub struct ProgramInfo {
     desired: Option<String>,
+    generation: u64,
     acquisition: Acquisition,
     // Preserve one follow-up request even when notifications arrive during a fetch.
     refresh_pending: bool,
@@ -87,7 +91,15 @@ pub struct ProgramInfo {
     pub text_capacity_bytes: usize,
 }
 impl ProgramInfo {
-    /// Borrow current metadata for another presentation without parsing QML JSON.
+    /// Share validated candidates with the guide's interval projection.
+    pub fn guide_view(
+        &self,
+        channels: std::sync::Arc<[crate::channels::Channel]>,
+        window: guide::DayWindow,
+    ) -> Result<view::View, serde_json::Error> {
+        view::View::new(self.snapshot.clone(), channels, window, self.generation)
+    }
+    /// Borrow unambiguous current metadata without parsing QML JSON.
     pub fn current(&self, service: Option<BroadcastService>, now: u64) -> Option<&model::Program> {
         self.snapshot.current(service, now)
     }
@@ -98,6 +110,7 @@ impl ProgramInfo {
             return;
         }
         self.desired = server;
+        self.generation = self.generation.wrapping_add(1);
         self.refresh_pending = false;
         self.snapshot = Snapshot::default();
         self.text_capacity_bytes = 0;
@@ -138,6 +151,11 @@ impl ProgramInfo {
                                 storage.total()
                             );
                             self.text_capacity_bytes = storage.strings;
+                            tracing::debug!(
+                                conflict_services = programs.conflict_services(),
+                                unknown_ends = programs.unknown_ends(),
+                                "EPG schedule validation completed"
+                            );
                             self.snapshot = programs;
                             self.revision += 1;
                             Outcome::Ready
@@ -200,22 +218,14 @@ impl ProgramInfo {
     ) -> Result<String, serde_json::Error> {
         self.snapshot.view(service, window)
     }
-    pub fn grid_view(
-        &self,
-        channels: &[crate::channels::Channel],
-        window: guide::DayWindow,
-    ) -> Result<String, serde_json::Error> {
-        self.snapshot.grid_view(channels, window)
-    }
+
     /// Share the same simulcast policy with navigation and both channel views.
     pub fn visible_channels(
         &self,
         channels: &[crate::channels::Channel],
         now: Option<u64>,
     ) -> Vec<usize> {
-        visibility::indices(channels, |channel| {
-            now.and_then(|time| self.snapshot.current(channel.broadcast, time))
-        })
+        visibility::with_uncertain(&self.snapshot, channels, now)
     }
     /// Compute navigation on demand; do not retain browser widgets or a second EPG.
     pub fn adjacent_channel(
@@ -252,11 +262,7 @@ impl ProgramInfo {
         let Some((service, event, start)) = identity() else {
             return;
         };
-        let Some(epg) = self
-            .snapshot
-            .current(Some(service), start)
-            .filter(|epg| epg.event_id == Some(event) && epg.start_at == start)
-        else {
+        let Some(epg) = self.snapshot.exact(service, event, start) else {
             return;
         };
         for (key, value) in [("name", &epg.name), ("description", &epg.description)] {

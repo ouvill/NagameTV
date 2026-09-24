@@ -1,6 +1,7 @@
 //! Native Qt services shared by startup, playback and presentation adapters.
 //! Domain modules must not depend on Player to access these services.
 pub mod application;
+pub mod variant;
 
 #[cxx::bridge]
 pub mod ffi {

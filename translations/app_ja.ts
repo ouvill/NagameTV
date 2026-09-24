@@ -1305,6 +1305,26 @@
       <source>Program information from broadcast TS</source>
       <translation>番組情報は放送TSから取得しています</translation>
     </message>
+    <message>
+        <source>Conflicting schedules (%1)</source>
+        <translation>番組情報の重複（%1件）</translation>
+    </message>
+    <message>
+        <source>Conflicting schedules</source>
+        <translation>番組情報が重複しています</translation>
+    </message>
+    <message>
+        <source>Program information overlaps. The current program cannot be determined from the schedule.</source>
+        <translation>番組情報が重複しているため、予定表から放送中の番組を特定できません。</translation>
+    </message>
+    <message>
+        <source>End time unknown</source>
+        <translation>終了時刻未定</translation>
+    </message>
+    <message>
+        <source>Watch this channel</source>
+        <translation>このチャンネルを視聴</translation>
+    </message>
 </context>
   <context>
     <name>Settings</name>

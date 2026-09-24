@@ -224,6 +224,7 @@ fn checks() -> TestResult {
     check_stream_state(&mut player)?;
     check_viewing_channel()?;
     crate::channel_model::checks::run()?;
+    crate::guide_model::checks::run()?;
     super::recording_library_checks::run()?;
     check_playback_actions(&mut player)?;
     check_recording_input(&mut player)?;

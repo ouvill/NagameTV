@@ -11,6 +11,7 @@ mod diagnostics;
 mod epgstation;
 mod error_log;
 mod features;
+mod guide_model;
 mod json;
 mod logging;
 mod media_caption;

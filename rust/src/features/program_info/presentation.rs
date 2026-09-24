@@ -1,5 +1,8 @@
 //! Change detection prevents re-serializing descriptions on every progress tick.
-use super::model::Snapshot;
+use super::{
+    model::Snapshot,
+    schedule::{End, Resolution, Segment},
+};
 use crate::channels::BroadcastService;
 
 #[derive(PartialEq, Eq)]
@@ -7,6 +10,7 @@ struct Key {
     revision: u64,
     service: Option<BroadcastService>,
     program: Option<(u64, u64, u64)>,
+    segment: Option<Segment>,
 }
 #[derive(Default)]
 pub struct Projection {
@@ -33,10 +37,22 @@ impl Projection {
         let key = Key {
             revision,
             service,
+            segment: snapshot.segment(service, now).copied(),
             program: program.map(|p| (p.id, p.start_at, p.duration)),
         };
         let data = if self.key.as_ref() != Some(&key) {
-            Some(serde_json::to_string(&program)?)
+            Some(match snapshot.resolution(service, now) {
+                Resolution::Conflict(_) => serde_json::to_string(
+                    &serde_json::json!({"name":null,"scheduleState":"conflict","startAt":null,"duration":null}),
+                )?,
+                Resolution::Single(index) if snapshot.program(index).end() == End::Unknown => {
+                    let mut value = serde_json::to_value(snapshot.program(index))?;
+                    value["scheduleState"] = "unknownEnd".into();
+                    value["endUnknown"] = true.into();
+                    serde_json::to_string(&value)?
+                }
+                Resolution::Single(_) | Resolution::Gap => serde_json::to_string(&program)?,
+            })
         } else {
             None
         };

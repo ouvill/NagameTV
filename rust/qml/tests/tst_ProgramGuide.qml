@@ -16,7 +16,14 @@ TestCase {
             width: 600; height: 460
             targetWindow: guideWindow
             iconDirectory: Qt.resolvedUrl("../../../assets/icons/")
-            programsJson: "[]"
+            guideModel: Viewer.GuideModel { id: schedules }
+            property string programsJson: "[]"
+            onProgramsJsonChanged: testCase.verify(schedules.load_test(programsJson))
+            function keyFor(alias) { return schedules.test_key(alias) }
+            function selectFixture(program) {
+                programsJson = JSON.stringify([{index:0, programs:[program]}])
+                selectedProgram = schedules.lookup(keyFor(program.watchKey || ""))
+            }
             channel: "Test channel"
             status: "Ready"
             property var requests: []
@@ -142,7 +149,7 @@ TestCase {
         keyClick(Qt.Key_Right)
         keyClick(Qt.Key_Return)
         tryCompare(loader.item, "opened", true)
-        compare(guide.selectedProgram.watchKey, "late-2")
+        compare(guide.selectedProgram.watchKey, guide.keyFor("late-2"))
     }
     function test_keyboard_refresh_replaces_program_at_retained_time() {
         guide.dayOffset = 2
@@ -160,10 +167,11 @@ TestCase {
         keyClick(Qt.Key_Return)
         const loader = findChild(guide,"scheduledDetailsLoader")
         tryCompare(loader.item, "opened", true)
-        compare(guide.selectedProgram.watchKey, "replacement")
+        compare(guide.selectedProgram.watchKey, guide.keyFor("replacement"))
         keyClick(Qt.Key_Escape)
         tryCompare(loader, "item", null)
         // Selecting a different day must discard the previous day's time anchor.
+        gc() // Rust retains the candidate model after its popup's JS wrapper is gone.
         guide.dayOffset = 1
         const next = guide.days[1].start
         guide.programsJson = JSON.stringify([{index:0, programs:[
@@ -172,7 +180,7 @@ TestCase {
         ]}])
         keyClick(Qt.Key_Return)
         tryCompare(loader.item, "opened", true)
-        compare(guide.selectedProgram.watchKey, "first")
+        compare(guide.selectedProgram.watchKey, guide.keyFor("first"))
     }
     function test_keyboard_channel_change_preserves_time_inside_long_program() {
         guide.dayOffset = 1
@@ -191,7 +199,7 @@ TestCase {
         keyClick(Qt.Key_Right)
         keyClick(Qt.Key_Return)
         tryCompare(findChild(guide, "scheduledDetailsLoader").item, "opened", true)
-        compare(guide.selectedProgram.watchKey, "current")
+        compare(guide.selectedProgram.watchKey, guide.keyFor("current"))
     }
     function test_keyboard_navigation_scrolls_and_reopens_details() {
         guide.dayOffset = 1
@@ -216,7 +224,7 @@ TestCase {
         keyClick(Qt.Key_Return)
         const loader = findChild(guide, "scheduledDetailsLoader")
         tryCompare(loader.item, "opened", true)
-        compare(guide.selectedProgram.watchKey, "second-1")
+        compare(guide.selectedProgram.watchKey, guide.keyFor("second-1"))
         compare(guide.selectedChannel, "Channel 1")
         keyClick(Qt.Key_Escape)
         tryCompare(loader, "item", null)
@@ -227,7 +235,7 @@ TestCase {
         compare(view.contentY, 0)
         keyClick(Qt.Key_Enter, Qt.KeypadModifier)
         tryCompare(loader.item, "opened", true)
-        compare(guide.selectedProgram.watchKey, "first-7")
+        compare(guide.selectedProgram.watchKey, guide.keyFor("first-7"))
         verify(guide.selectedPosition.x >= view.x)
         verify(guide.selectedPosition.x < timeline.width)
         keyClick(Qt.Key_Escape)
@@ -238,7 +246,7 @@ TestCase {
         guide.programsJson = JSON.stringify(columns)
         keyClick(Qt.Key_Return)
         tryCompare(loader.item, "opened", true)
-        compare(guide.selectedProgram.watchKey, "second-7")
+        compare(guide.selectedProgram.watchKey, guide.keyFor("second-7"))
         keyClick(Qt.Key_Escape)
         tryCompare(loader, "item", null)
         guide.visibilityJson = "[]"
@@ -264,7 +272,7 @@ TestCase {
         tryCompare(findChild(loader.item, "programTitle"), "text", "After")
         compare(findChild(loader.item, "programDescription").text, "New description")
         compare(guide.selectedProgram.duration, 3600000)
-        compare(guide.selectedProgram.watchKey, "selected")
+        compare(guide.selectedProgram.watchKey, guide.keyFor("selected"))
         // Removing the selected identity must not display its former row's replacement.
         guide.programsJson = JSON.stringify([{index:0, programs:[other]}])
         tryCompare(loader, "item", null)
@@ -302,7 +310,7 @@ TestCase {
         const timeline = findChild(guide, "guideTimeline").parent
         guide.selectedPosition = Qt.point(timeline.timeRulerWidth, 140)
         guide.selectedChannel = "101 NHK BS"
-        guide.selectedProgram = {name:"World news",description:"Description",startAt:0,duration:1}
+        guide.selectFixture({name:"World news",description:"Description",startAt:0,duration:1})
         const loader = findChild(guide, "scheduledDetailsLoader")
         const popup = loader.item
         tryCompare(popup, "opened", true)
@@ -336,7 +344,7 @@ TestCase {
         const timeline = findChild(guide, "guideTimeline").parent
         compare(timeline.channels.count, 2)
         compare(timeline.channels.row(1).channelIndex, 2)
-        guide.selectedProgram = {name:"Old details", startAt:0, duration:1}
+        guide.selectFixture({name:"Old details", startAt:0, duration:1})
         guide.visibilityJson = "[0,1,2,3]"
         compare(guide.selectedProgram, null)
         compare(timeline.channels.count, 3)
@@ -397,12 +405,12 @@ TestCase {
         const loader = findChild(guide, "scheduledDetailsLoader")
         mouseClick(view, 20, timeline.channelHeaderHeight + shortMinutes * timeline.pixelsPerMinute / 2)
         tryCompare(loader.item, "opened", true)
-        compare(guide.selectedProgram.watchKey, "short")
+        compare(guide.selectedProgram.watchKey, guide.keyFor("short"))
         keyClick(Qt.Key_Escape)
         tryCompare(loader, "item", null)
         mouseClick(view, 20, timeline.channelHeaderHeight + (shortMinutes + nextMinutes / 2) * timeline.pixelsPerMinute)
         tryCompare(loader.item, "opened", true)
-        compare(guide.selectedProgram.watchKey, "next")
+        compare(guide.selectedProgram.watchKey, guide.keyFor("next"))
     }
     function test_toolbar_forwards_actions_and_fills_window_data() {
         return [
@@ -467,17 +475,17 @@ TestCase {
         watchSpy.clear()
         const key = '{"endpoint":18446744073709551615}'
         const start = Date.now() - 1000
-        guide.selectedProgram = {name:"Live",description:"Description",startAt:start,duration:60000,watchKey:key}
+        guide.selectFixture({name:"Live",description:"Description",startAt:start,duration:60000,watchKey:key})
         const popup = findChild(guide, "scheduledDetailsLoader").item
         tryCompare(popup, "opened", true)
         const button = findChild(popup, "watchGuideProgram")
         verify(button.visible)
         mouseClick(button)
         compare(watchSpy.count, 1)
-        compare(watchSpy.signalArguments[0][0], key)
+        compare(watchSpy.signalArguments[0][0], guide.keyFor(key))
         guide.watchError = "番組情報が更新されています"
         compare(findChild(popup, "watchGuideError").text, guide.watchError)
-        guide.selectedProgram = {name:"長い番組名の表示確認 ".repeat(30),description:"Description",startAt:start,duration:60000,watchKey:key}
+        guide.selectFixture({name:"長い番組名の表示確認 ".repeat(30),description:"Description",startAt:start,duration:60000,watchKey:key})
         guide.watchError = "番組情報が更新されています。番組表から選び直してください"
         verify(waitForRendering(guide))
         verify(button.y + button.height <= popup.availableHeight)
@@ -502,8 +510,8 @@ TestCase {
                 {heading:"番組内容2", text:"More details"}, {heading:"出演者", text:"<b>Plain cast names</b>"},
                 {heading:"スタッフ", text:"Staff"}, {heading:"", text:"Text without a heading"}],
             video:{type:"mpeg2", resolution:"1080i"},
-            audios:[{isMain:true, componentType:3, langs:["jpn"], samplingRate:48000},
-                {isMain:false, componentType:2, langs:["jpn", "eng"], samplingRate:32000}],
+            audios:[{componentTag:16, isMain:true, componentType:3, langs:["jpn"], samplingRate:48000},
+                {componentTag:17, isMain:false, componentType:2, langs:["jpn", "eng"], samplingRate:32000}],
             series:{name:"Series title", episode:3, lastEpisode:12}
         }
         guide.rows = [{index:0, label:"Channel", band:"GR"}]
@@ -541,7 +549,7 @@ TestCase {
         const revised = Object.assign({}, program, {
             extended:[{heading:"更新された見出し", text:"Updated information"}],
             video:{type:"future-codec", resolution:"future-resolution"},
-            audios:[{isMain:false, componentType:254, langs:["unknown"], samplingRate:-1}],
+            audios:[{componentTag:17, isMain:false, componentType:254, langs:["unknown"], samplingRate:-1}],
             series:null, isFree:undefined
         })
         guide.programsJson = JSON.stringify([{index:0, programs:[revised]}])
@@ -616,7 +624,7 @@ TestCase {
         watchSpy.clear()
         mouseClick(button)
         compare(watchSpy.count, 1)
-        compare(watchSpy.signalArguments[0][0], program.watchKey)
+        compare(watchSpy.signalArguments[0][0], guide.keyFor(program.watchKey))
         // A failed watch request must reveal its error even with a long description.
         guide.watchError = "番組情報が更新されています"
         const error = findChild(popup, "watchGuideError")
@@ -633,13 +641,13 @@ TestCase {
     }
     function test_details_allow_toolbar_and_outside_click_dismisses() {
         modesSpy.clear()
-        guide.selectedProgram = {name:"Program",description:"Description",startAt:0,duration:1}
+        guide.selectFixture({name:"Program",description:"Description",startAt:0,duration:1})
         const loader = findChild(guide, "scheduledDetailsLoader")
         tryCompare(loader.item, "opened", true)
         mouseClick(findChild(guide, "settingsModeButton"))
         compare(modesSpy.count, 1)
         tryCompare(loader, "item", null)
-        guide.selectedProgram = {name:"Program",description:"Description",startAt:0,duration:1}
+        guide.selectFixture({name:"Program",description:"Description",startAt:0,duration:1})
         tryCompare(loader.item, "opened", true)
         mouseClick(guide, 10, 150)
         tryCompare(loader, "item", null)
@@ -745,5 +753,68 @@ TestCase {
         guide.dayOffset = 2
         compare(loader.item, null)
         compare(guide.selectedProgram, null)
+    }
+
+    function test_conflict_segments_candidates_and_channel_action() {
+        guide.dayOffset = 1
+        guide.rows = [{index:0, label:"Conflict channel", band:"GR"}]
+        const start = guide.selectedWindow.start
+        const minute = 60000
+        const a = {watchKey:"a", name:"Long program", startAt:start, duration:60*minute}
+        const b = {watchKey:"b", name:"Short program", startAt:start+15*minute, duration:15*minute}
+        const c = {watchKey:"c", name:"Later program", startAt:start+45*minute, duration:45*minute}
+        guide.programsJson = JSON.stringify([{index:0, programs:[a,b,c]}])
+        compare(guide.guideModel.count, 5)
+        for (let i=1; i<guide.guideModel.count; ++i)
+            verify(guide.guideModel.row(i-1).end <= guide.guideModel.row(i).begin)
+        const conflict = guide.guideModel.row(1)
+        compare(conflict.scheduleState, Viewer.GuideModel.Conflict)
+        compare(conflict.candidateCount, 2)
+        const timeline = findChild(guide,"guideTimeline").parent
+        timeline.chooseProgram(start+20*minute)
+        compare(timeline.cursorKey, conflict.watchKey)
+        guide.selectedProgram = conflict
+        const popup = findChild(guide,"scheduledDetailsLoader").item
+        tryCompare(popup,"opened",true)
+        popup.now = start+20*minute
+        const button = findChild(popup,"watchGuideProgram")
+        verify(button.visible)
+        compare(button.text,qsTranslate("Viewer","Watch this channel"))
+        compare(popup.candidates.count,2)
+        const selector = findChild(popup,"guideCandidateSelector")
+        verify(selector.visible)
+        mouseClick(selector)
+        keyClick(Qt.Key_Down)
+        keyClick(Qt.Key_Return)
+        tryCompare(popup,"candidateIndex",1)
+        compare(findChild(popup,"programTitle").text,"Short program")
+        watchSpy.clear()
+        tryVerify(function() { return !selector.popup.visible })
+        popup.now = start+20*minute
+        mouseClick(button)
+        compare(watchSpy.count, 1)
+        compare(watchSpy.signalArguments[0][0],conflict.watchKey)
+        guide.programsJson = JSON.stringify([{index:0,programs:[a,c]}])
+        tryCompare(findChild(guide,"scheduledDetailsLoader"),"item",null)
+    }
+    function test_unknown_end_uses_display_bound_without_claiming_an_end() {
+        guide.dayOffset = 1
+        guide.rows = [{index:0,label:"Unknown end",band:"GR"}]
+        const start=guide.selectedWindow.start
+        guide.programsJson=JSON.stringify([{index:0,programs:[
+            {watchKey:"unknown",name:"Unknown end",startAt:start,duration:1},
+            {watchKey:"next",name:"Next",startAt:start+3600000,duration:3600000}
+        ]}])
+        const row=guide.guideModel.row(0)
+        compare(row.scheduleState,Viewer.GuideModel.UnknownEnd)
+        compare(row.end-row.begin,3600000)
+        guide.selectedProgram=row
+        const popup=findChild(guide,"scheduledDetailsLoader").item
+        tryCompare(popup,"opened",true)
+        verify(findChild(popup,"programDateTime").text.includes(qsTranslate("Viewer","End time unknown")))
+        popup.now=start+1000
+        compare(popup.watchAction,Viewer.GuideModel.WatchChannel)
+        popup.now=start+3600000
+        compare(popup.watchAction,Viewer.GuideModel.Unavailable)
     }
 }

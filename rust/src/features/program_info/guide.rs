@@ -8,6 +8,12 @@ pub struct DayWindow {
 #[error("番組表の日付範囲が不正です")]
 pub struct InvalidDayWindow;
 impl DayWindow {
+    pub fn start(self) -> u64 {
+        self.start
+    }
+    pub fn end(self) -> u64 {
+        self.end
+    }
     pub fn new(start: f64, end: f64) -> Result<Self, InvalidDayWindow> {
         // JavaScript Date's range is inside the exact integer range of f64.
         let timestamp = |value: f64| {

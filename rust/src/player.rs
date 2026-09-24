@@ -58,6 +58,8 @@ pub mod ffi {
     unsafe extern "C++" {
         include!("nagametv/src/channel_model.cxxqt.h");
         type ChannelModel = crate::channel_model::ffi::ChannelModel;
+        include!("nagametv/src/guide_model.cxxqt.h");
+        type GuideModel = crate::guide_model::ffi::GuideModel;
         include!("nagametv/src/recording_model.cxxqt.h");
         type RecordingModel = crate::recording_model::ffi::RecordingModel;
         include!("nagametv/src/subtitle_model.cxxqt.h");
@@ -190,7 +192,7 @@ pub mod ffi {
         #[qproperty(bool, subtitle_loading, READ = subtitle_loading, NOTIFY)]
         #[qproperty(QString, media_subtitle_error, READ, NOTIFY)]
         #[qproperty(QString, subtitle_status, READ, NOTIFY)]
-        #[qproperty(QString, epg_data, READ, NOTIFY)]
+        #[qproperty(*mut GuideModel, guide_model, READ = guide_model, CONSTANT)]
         #[qproperty(QString, epg_status, READ, NOTIFY)]
         #[qproperty(bool, guide_visible, READ = guide_visible, NOTIFY)]
         #[qproperty(QString, current_program_data, READ, NOTIFY)]
@@ -203,6 +205,9 @@ pub mod ffi {
         #[qproperty(QString, build_info, READ = build_info, CONSTANT)]
         type Player = super::PlayerRust;
         fn channels(self: &Player) -> *mut ChannelModel;
+        fn guide_model(self: &Player) -> *mut GuideModel;
+        #[qinvokable]
+        fn guide_release(self: Pin<&mut Player>);
         fn recordings(self: &Player) -> *mut RecordingModel;
         fn epgstation_server(self: &Player) -> QString;
         fn epgstation_busy(self: &Player) -> bool;
@@ -552,7 +557,7 @@ pub struct PlayerRust {
     subtitle_data: QString,
     subtitle_status: QString,
     subtitle_phase: subtitle_status::Status,
-    epg_data: QString,
+    guide_model: cxx::UniquePtr<crate::guide_model::ffi::GuideModel>,
     epg_events: viewer_epg_events::controller::Controller,
     epg_status: QString,
     guide_error: Option<serde_json::Error>,
@@ -716,6 +721,9 @@ impl ffi::Player {
         channel_program_now_changed,
         f64
     );
+    pub fn guide_model(&self) -> *mut crate::guide_model::ffi::GuideModel {
+        self.rust().guide_model.as_ptr().cast_mut()
+    }
     pub fn channels(&self) -> *mut crate::channel_model::ffi::ChannelModel {
         self.rust().channel_model.as_ptr().cast_mut()
     }
@@ -775,7 +783,7 @@ impl ffi::Player {
         media_subtitle_error_changed,
         QString
     );
-    property_setter!(set_epg_data, epg_data, epg_data_changed, QString);
+
     property_setter!(
         set_current_program_data,
         current_program_data,
