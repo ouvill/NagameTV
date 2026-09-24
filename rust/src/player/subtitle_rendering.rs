@@ -46,6 +46,10 @@ impl ffi::Player {
         self.save_settings();
     }
     pub fn poll_subtitles(mut self: Pin<&mut Self>) {
+        if self.media_subtitle_available() {
+            self.poll_media_subtitles();
+            return;
+        }
         if self.seeking() || self.ended() {
             return;
         }

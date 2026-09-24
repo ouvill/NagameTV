@@ -50,7 +50,8 @@ MP4・MKVの入力に対応します。中身の映像・音声は利用環境�
 
 録画中の追いかけ再生、SSO、リバースプロキシ独自の認証、録画予約・削除・視聴履歴の同期は
 未対応です。TSの字幕・実況には既存の[HTTP録画再生](recording-playback.md#epgstationの録画url)を
-使います。一般動画の埋め込み字幕と実況同期は未対応です。
+使います。一般動画は[埋め込み・外部字幕と実況同期](recording-playback.md#一般動画の字幕)に対応します。
+CMカットの補正は行いません。
 
 ## APIと所有関係
 
@@ -63,6 +64,10 @@ MP4・MKVの入力に対応します。中身の映像・音声は利用環境�
 - `GET /api/recorded?isHalfWidth=false&offset=…&limit=50&keyword=…`で一覧を取得します。
 - stuayu版のログインは`POST /api/auth/login`、再生トークンの取得は`GET /api/auth/media-token`です。
   Cookieは接続先ごとのHTTPクライアントで管理し、API要求のリダイレクトには追従しません。
+- `GET /api/channels`の明示的な`networkId`・`serviceId`を録画の`channelId`と照合します。
+  放送局情報を取得できない場合は、動画を開いても実況の接続先を推測しません。
+- 一覧に動画の`startAt`がない場合、`GET /api/videos/{videoFileId}/metadata`を検査ワーカーで
+  取得します。Cookieは一覧と同じ接続に属し、キャンセル・接続先変更後の結果を混在させません。
 - 再生は`GET /api/videos/{videoFileId}`を使用し、認証時は`token`クエリーを付けます。
   録画番組IDと動画ファイルIDを現在の一覧で照合し、URLをQMLへ公開せず録画ローダーへ渡します。
 
@@ -94,7 +99,7 @@ bash scripts/test-danmaku.sh
 bash scripts/test-startup.sh
 ```
 
-2026-09-24に、Rustテスト325件（除外5件）、QML部品テスト323件（対象外18件）、
+2026-09-24に、Rustテスト331件（除外5件）、QML部品テスト324件（対象外18件）、
 接続・デスクトップメディア・起動テストの成功を確認しました。起動テストでは認証なしと
 Cookie／再生トークンを使う接続の両方を再生し、640×360と960×540の画面を確認しています。
 確認画像は`build/navigation-review/epgstation-*.png`へ出力します。

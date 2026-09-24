@@ -197,6 +197,15 @@ ViewerWindow {
         // focus when the closing animation finishes.
         onClosed: overlayVisibility.reveal()
     }
+    MediaSubtitleSettings {
+        id: mediaSubtitleSettings
+        objectName: "mediaSubtitleSettings"
+        backend: player
+        anchorItem: playerControls.subtitleAnchor.visible ? playerControls.subtitleAnchor : playerControls
+        windowWidth: root.viewport.width
+        windowHeight: root.viewport.height
+        onClosed: overlayVisibility.reveal()
+    }
     ViewerActions {
         id: viewerActions
         backend: player
@@ -220,8 +229,8 @@ ViewerWindow {
         onProgramVisibilityRequested: function(visible) { root.showProgram = visible; }
         onRecordingRequested: recordingInput.open()
         onCaptureRequested: screenshot.capture()
-        onAudioRequested: { playerControls.closeSpeed(); audioSettings.toggle(); }
-        onSpeedOpened: audioSettings.close()
+        onAudioRequested: { mediaSubtitleSettings.close(); playerControls.closeSpeed(); audioSettings.toggle(); }
+        onSpeedOpened: { mediaSubtitleSettings.close(); audioSettings.close(); }
         onSettingsRequested: {
             root.showProgram = !(root.showProgram && root.sidebarPage === ProgramSidebar.Playback);
             root.sidebarPage = ProgramSidebar.Playback;
@@ -380,6 +389,12 @@ ViewerWindow {
                     controlsTopInVideo: (composer.visible
                         ? composer.y + composer.height - composer.occupiedHeight : bottomPanel.y) - videoPicture.y - danmaku.y
                 }
+            }
+            MediaCaption {
+                objectName: "mediaCaption"
+                anchors.fill: parent
+                visible: !root.closing && player.media_subtitle_available && player.subtitle_display
+                image: player.media_subtitle_image
             }
             Loader {
                 // Match a 16:9 broadcast's letterboxed video area.
@@ -592,6 +607,7 @@ ViewerWindow {
                 }
                 PlayerControls {
                     id: playerControls
+                    onSubtitlesRequested: { audioSettings.close(); closeSpeed(); mediaSubtitleSettings.open(); }
                     Layout.fillWidth: true
                     Layout.leftMargin: 24
                     Layout.rightMargin: 24

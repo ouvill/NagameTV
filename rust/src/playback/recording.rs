@@ -1,5 +1,7 @@
 //! Inspected local/HTTP media. Only transport streams carry a TS service and index.
+mod broadcast;
 mod http;
+pub use broadcast::Broadcast;
 #[cfg(test)]
 pub(super) use http::tests::serve_ts;
 pub(super) mod source;
@@ -54,6 +56,8 @@ pub struct MediaFile {
     name: String,
     size: u64,
     caps: gstreamer::Caps,
+    broadcast: Option<Broadcast>,
+    external_subtitle: Option<crate::media_subtitles::Script>,
 }
 impl PartialEq for MediaFile {
     fn eq(&self, other: &Self) -> bool {
@@ -61,10 +65,18 @@ impl PartialEq for MediaFile {
             && self.name == other.name
             && self.size == other.size
             && self.caps == other.caps
+            && self.broadcast == other.broadcast
+            && self.external_subtitle == other.external_subtitle
     }
 }
 impl Eq for MediaFile {}
 impl MediaFile {
+    pub fn external_subtitle(&self) -> Option<&crate::media_subtitles::Script> {
+        self.external_subtitle.as_ref()
+    }
+    pub(crate) fn broadcast(&self) -> Option<&Broadcast> {
+        self.broadcast.as_ref()
+    }
     pub(in crate::playback) fn source(&self) -> &Source {
         &self.source
     }
@@ -178,6 +190,8 @@ impl Recording {
                     name,
                     size: file_size,
                     caps,
+                    broadcast: None,
+                    external_subtitle: None,
                 }));
             }
             if crate::transport::recording_service(&prefix).is_some() {
@@ -208,6 +222,11 @@ impl Recording {
             },
         }))
     }
+    pub(crate) fn retain_subtitle(&mut self, script: Option<crate::media_subtitles::Script>) {
+        if let Self::Media(file) = self {
+            file.external_subtitle = script;
+        }
+    }
     pub fn name(&self) -> &str {
         match self {
             Self::Transport(file) => &file.name,
@@ -221,7 +240,17 @@ impl Recording {
         }
     }
     pub fn replay(&self) -> Request {
-        Request::replay(self.source().location())
+        let mut request = Request::replay(
+            self.source().location(),
+            match self {
+                Self::Media(file) => file.broadcast.clone(),
+                Self::Transport(_) => None,
+            },
+        );
+        if let Self::Media(file) = self {
+            request.external_subtitle = file.external_subtitle.clone();
+        }
+        request
     }
     #[cfg(feature = "native_tests")]
     pub fn local_path(&self) -> Option<&std::path::Path> {

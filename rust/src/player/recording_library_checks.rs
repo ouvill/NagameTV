@@ -45,6 +45,49 @@ pub(super) fn run() -> Result<(), Box<dyn std::error::Error>> {
     crate::video_file_model::ffi::check_video_model(
         player.pin_mut().rust_mut().video_file_model.pin_mut(),
     );
+    crate::subtitle_model::ffi::check_subtitle_model(
+        player.pin_mut().rust_mut().subtitle_model.pin_mut(),
+    );
+    player
+        .pin_mut()
+        .rust_mut()
+        .subtitle_model
+        .pin_mut()
+        .replace(
+            vec![
+                crate::media_subtitles::Track {
+                    id: "stable-id".into(),
+                    title: "日本語".into(),
+                    selected: true,
+                },
+                crate::media_subtitles::Track {
+                    id: "external".into(),
+                    title: "外部.ass".into(),
+                    selected: false,
+                },
+            ]
+            .into(),
+        );
+    let subtitles = &player.rust().subtitle_model;
+    assert_eq!(subtitles.count(), 2);
+    let selected_role = subtitles
+        .role_names()
+        .iter()
+        .find(|(_, name)| name.to_string() == "trackSelected")
+        .map(|(id, _)| *id)
+        .unwrap();
+    assert_eq!(
+        subtitles
+            .data(
+                &subtitles.model_index(0, 0, &QModelIndex::default()),
+                selected_role
+            )
+            .value::<bool>(),
+        Some(true)
+    );
+    player.pin_mut().publish_subtitle_tracks();
+    assert_eq!(player.rust().subtitle_model.count(), 0);
+    assert!(!player.pin_mut().select_subtitle(QString::from("stable-id")));
     let _notification = player.pin_mut().on_epgstation_changed(|player| {
         assert_eq!(
             player.rust().recording_model.count() as usize,

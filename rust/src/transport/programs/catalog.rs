@@ -143,6 +143,23 @@ pub(crate) struct ClockReading {
     pub epoch: u64,
 }
 impl ClockReading {
+    /// Explicit recording metadata, scoped to the demuxer's measured duration.
+    /// This does not claim that an edited file still has a continuous clock.
+    pub(crate) fn recording(start_ms: i64, duration_ns: u64) -> Option<Self> {
+        if start_ms <= 0 || duration_ns == 0 {
+            return None;
+        }
+        start_ms.checked_add(i64::try_from(duration_ns / NS_PER_MS).ok()?)?;
+        Some(Self {
+            clock: Clock {
+                media_ns: 0,
+                unix_ms: start_ms,
+            },
+            start: 0,
+            end: duration_ns,
+            epoch: 0,
+        })
+    }
     pub fn key(self) -> String {
         format!(
             "{}:{}:{}",

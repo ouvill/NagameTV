@@ -90,6 +90,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     ])
     .file("src/player.rs")
     .file("src/qt.rs")
+    .file("src/media_subtitle_renderer.rs")
+    .file("src/media_caption.rs")
+    .file("src/subtitle_model.rs")
     .file("src/screenshot_native.rs")
     .file("src/screenshot_overlay.rs")
     .file("src/danmaku.rs")
@@ -117,6 +120,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .qt_module("Svg")
             .qt_module("Test")
             .file("src/native_test_bridge.rs");
+    }
+    let ass = pkg_config::Config::new()
+        .atleast_version("0.17.0")
+        .probe("libass")?;
+    for path in ass.include_paths {
+        builder = builder.include_dir(path);
     }
     builder.build();
     Ok(())

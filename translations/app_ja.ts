@@ -350,6 +350,15 @@
 </context>
   <context>
     <name>Backend</name>
+    <message><source>Could not read subtitles: %1</source><translation>字幕を読み込めませんでした: %1</translation></message>
+    <message><source>Select a valid SRT or ASS subtitle file</source><translation>有効な SRT または ASS 字幕ファイルを選択してください</translation></message>
+    <message><source>Save the subtitle file as UTF-8</source><translation>字幕ファイルを UTF-8 で保存してください</translation></message>
+    <message><source>Subtitle data exceeds the supported limit</source><translation>字幕データが対応する上限を超えています</translation></message>
+    <message><source>Could not render subtitles: %1</source><translation>字幕を描画できませんでした: %1</translation></message>
+    <message><source>Could not receive subtitles: %1</source><translation>字幕を受信できませんでした: %1</translation></message>
+    <message><source>Subtitle track is no longer available</source><translation>字幕トラックが利用できなくなりました</translation></message>
+    <message><source>Subtitle selection was rejected</source><translation>字幕の選択が拒否されました</translation></message>
+    <message><source>Subtitle worker stopped unexpectedly</source><translation>字幕の読み込み処理が予期せず終了しました</translation></message>
     <message>
       <source>Authentication failed. Check your username and password, then sign in again.</source>
       <translation>認証できません。ユーザー名とパスワードを確認し、ログインしてください。</translation>
@@ -739,6 +748,11 @@
 </context>
   <context>
     <name>Viewer</name>
+    <message><source>Open subtitle file</source><translation>字幕ファイルを開く</translation></message>
+    <message><source>Subtitles (*.srt *.ass *.ssa)</source><translation>字幕 (*.srt *.ass *.ssa)</translation></message>
+    <message><source>Open subtitle file…</source><translation>字幕ファイルを開く…</translation></message>
+    <message><source>Loading subtitles…</source><translation>字幕を読み込み中…</translation></message>
+    <message><source>Subtitle %1</source><translation>字幕 %1</translation></message>
     <message><source>Changing storage or turning timeshift off clears history and returns to live playback.</source><translation>保存先の変更や無効化をすると履歴が消え、ライブ再生に戻ります。</translation></message>
     <message><source>When either limit is reached, older video is discarded. Playback resumes if a paused position expires.</source><translation>上限に達すると古い映像を破棄します。一時停止位置の映像が失われると再生を再開します。</translation></message>
     <message><source>Uses disk space. Files are deleted when playback stops.</source><translation>ディスクに保持し、再生停止時に削除します。</translation></message>

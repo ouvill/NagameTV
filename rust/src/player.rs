@@ -16,6 +16,7 @@ mod guide;
 mod language;
 mod lifecycle;
 use lifecycle::{Failure as StatusFailure, Status as PlaybackStatus};
+mod media_subtitles;
 mod playback_failure;
 mod preferences;
 mod program_info;
@@ -59,6 +60,8 @@ pub mod ffi {
         type ChannelModel = crate::channel_model::ffi::ChannelModel;
         include!("nagametv/src/recording_model.cxxqt.h");
         type RecordingModel = crate::recording_model::ffi::RecordingModel;
+        include!("nagametv/src/subtitle_model.cxxqt.h");
+        type SubtitleModel = crate::subtitle_model::ffi::SubtitleModel;
         include!("nagametv/src/video_file_model.cxxqt.h");
         type VideoFileModel = crate::video_file_model::ffi::VideoFileModel;
         include!("nagametv/src/comment_model.cxxqt.h");
@@ -181,6 +184,11 @@ pub mod ffi {
         #[qproperty(bool, subtitle_display, READ, NOTIFY)]
         #[qproperty(bool, subtitle_force_outline, READ = subtitle_force_outline, NOTIFY)]
         #[qproperty(QString, subtitle_data, READ, NOTIFY)]
+        #[qproperty(QImage, media_subtitle_image, READ, NOTIFY)]
+        #[qproperty(*mut SubtitleModel, subtitle_tracks, READ = subtitle_tracks, CONSTANT)]
+        #[qproperty(bool, media_subtitle_available, READ = media_subtitle_available, NOTIFY)]
+        #[qproperty(bool, subtitle_loading, READ = subtitle_loading, NOTIFY)]
+        #[qproperty(QString, media_subtitle_error, READ, NOTIFY)]
         #[qproperty(QString, subtitle_status, READ, NOTIFY)]
         #[qproperty(QString, epg_data, READ, NOTIFY)]
         #[qproperty(QString, epg_status, READ, NOTIFY)]
@@ -333,6 +341,13 @@ pub mod ffi {
         fn request_language(self: Pin<&mut Player>, language: QString) -> bool;
         #[qinvokable]
         fn display_subtitles(self: Pin<&mut Player>, display: bool);
+        fn subtitle_tracks(self: &Player) -> *mut SubtitleModel;
+        fn media_subtitle_available(self: &Player) -> bool;
+        fn subtitle_loading(self: &Player) -> bool;
+        #[qinvokable]
+        fn open_subtitle(self: Pin<&mut Player>, file: QUrl) -> bool;
+        #[qinvokable]
+        fn select_subtitle(self: Pin<&mut Player>, id: QString) -> bool;
         fn subtitle_force_outline(self: &Player) -> bool;
         #[qinvokable]
         fn configure_subtitle_outline(self: Pin<&mut Player>, enabled: bool);
@@ -484,6 +499,9 @@ pub struct PlayerRust {
     diagnostic_recorder: Option<crate::diagnostics::Client>,
     diagnostic_ui: telemetry::UiState,
     subtitle_cells: usize,
+    subtitle_model: cxx::UniquePtr<crate::subtitle_model::ffi::SubtitleModel>,
+    media_subtitle_image: cxx_qt_lib::QImage,
+    media_subtitle_error: QString,
     error_log: Result<crate::error_log::ErrorLog, crate::error_log::Error>,
     channel_model: cxx::UniquePtr<crate::channel_model::ffi::ChannelModel>,
     recording_model: cxx::UniquePtr<crate::recording_model::ffi::RecordingModel>,
@@ -743,6 +761,18 @@ impl ffi::Player {
         set_subtitle_status,
         subtitle_status,
         subtitle_status_changed,
+        QString
+    );
+    property_setter!(
+        set_media_subtitle_image,
+        media_subtitle_image,
+        media_subtitle_image_changed,
+        cxx_qt_lib::QImage
+    );
+    property_setter!(
+        set_media_subtitle_error,
+        media_subtitle_error,
+        media_subtitle_error_changed,
         QString
     );
     property_setter!(set_epg_data, epg_data, epg_data_changed, QString);

@@ -27,7 +27,7 @@ if ! fc-match :lang=ja | grep -qi "Noto"; then
   missing+=("font:Noto-CJK")
 fi
 
-for module in Qt6Core Qt6DBus Qt6Gui Qt6Qml Qt6Quick Qt6Svg aribb24 \
+for module in Qt6Core Qt6DBus Qt6Gui Qt6Qml Qt6Quick Qt6Svg aribb24 libass \
   gstreamer-1.0 gstreamer-app-1.0 gstreamer-mpegts-1.0 mpv; do
   if ! pkg-config --exists "$module"; then
     missing+=("pkg-config:$module")
@@ -51,7 +51,7 @@ fi
 gst_plugins_dir=$(pkg-config --variable=pluginsdir gstreamer-1.0 2>/dev/null || true)
 for plugin in app audioconvert audiofx audioparsers audioresample autodetect coreelements \
   deinterlace isomp4 libav matroska mpegtsdemux nvcodec opengl playback pulseaudio qml6 soup \
-  typefindfunctions va videoconvertscale videofiltersbad videoparsersbad volume; do
+  subparse typefindfunctions va videoconvertscale videofiltersbad videoparsersbad volume; do
   if [[ -z "$gst_plugins_dir" || ! -f "$gst_plugins_dir/libgst$plugin.so" ]]; then
     missing+=("GStreamer:libgst$plugin.so")
   fi

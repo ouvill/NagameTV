@@ -18,6 +18,7 @@ playback
 pulseaudio
 qml6
 soup
+subparse
 typefindfunctions
 va
 videoconvertscale

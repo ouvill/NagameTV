@@ -41,6 +41,8 @@ pub enum Error {
     },
     #[error("{0}")]
     Deinterlace(#[from] deinterlace::Error),
+    #[error("{0}")]
+    MediaSubtitle(#[from] crate::media_subtitles::Error),
     #[error("Video output: {0}")]
     VideoOutput(String),
     #[error("{0}")]
@@ -427,6 +429,35 @@ impl Playback {
         output.apply(&self.playbin);
     }
 
+    pub fn subtitle_tracks(&self) -> Vec<crate::media_subtitles::Track> {
+        self.audio_streams.borrow().text_tracks()
+    }
+    pub fn select_subtitle(
+        &self,
+        id: &str,
+    ) -> std::result::Result<(), crate::media_subtitles::Error> {
+        self.audio_streams
+            .borrow_mut()
+            .select_text(&self.playbin, id)
+    }
+    pub fn subtitle_canvas(&self) -> (i32, i32) {
+        let info = self
+            .sink
+            .static_pad("sink")
+            .and_then(|pad| pad.current_caps())
+            .and_then(|caps| gstreamer_video::VideoInfo::from_caps(&caps).ok());
+        let Some(info) = info else {
+            return (1280, 720);
+        };
+        let ratio = info.width() as f64 * info.par().numer() as f64
+            / info.par().denom() as f64
+            / info.height().max(1) as f64;
+        if ratio >= 1.0 {
+            (1280, (1280.0 / ratio).round().clamp(1.0, 1920.0) as i32)
+        } else {
+            ((1280.0 * ratio).round().clamp(1.0, 1920.0) as i32, 1280)
+        }
+    }
     pub fn audio_failure(&self) -> Option<audio_streams::Error> {
         self.audio_streams.borrow().failure()
     }
@@ -561,6 +592,13 @@ fn stop_stream(playbin: &gst::Element) -> Result<()> {
     bus.set_flushing(false);
     result?;
     Ok(())
+}
+
+/// Unique across both transport and container sessions; cache ownership cannot collide.
+fn next_source_identity() -> u64 {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT: AtomicU64 = AtomicU64::new(1);
+    NEXT.fetch_add(1, Ordering::Relaxed)
 }
 
 #[cfg(test)]

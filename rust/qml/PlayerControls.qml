@@ -20,6 +20,8 @@ Item {
     readonly property int actionSpacing: density === PlayerControls.Dense ? 2 : 6
     readonly property int dividerWidth: density === PlayerControls.Dense ? 8 : 18
     readonly property alias audioAnchor: volume
+    readonly property alias subtitleAnchor: subtitleButton
+    signal subtitlesRequested
     readonly property bool speedVisible: speedPanel.visible
     readonly property bool stacked: width < 620
     function closeSpeed() { speedPanel.close(); }
@@ -147,12 +149,14 @@ Item {
                 action: root.actions.captureScreenshot
             }
             Control {
+                id: subtitleButton
                 objectName: "subtitlesButton"
                 visible: root.density === PlayerControls.Wide
                 iconSource: root.iconDirectory + (root.backend.subtitle_display ? "captions.svg" : "captions-off.svg")
-                tip: action.text
+                tip: qsTranslate("Viewer", "Subtitles")
                 active: root.backend.subtitles_enabled && root.backend.subtitle_display
-                action: root.actions.toggleSubtitles
+                action: root.backend.media_subtitle_available ? null : root.actions.toggleSubtitles
+                onClicked: if (root.backend.media_subtitle_available) root.subtitlesRequested()
             }
             Control {
                 objectName: "danmakuButton"
@@ -197,7 +201,9 @@ Item {
                     }
                     Entry {
                         objectName: "overflowSubtitles"
-                        action: root.actions.toggleSubtitles
+                        action: root.backend.media_subtitle_available ? null : root.actions.toggleSubtitles
+                        text: qsTranslate("Viewer", "Subtitles")
+                        onTriggered: if (root.backend.media_subtitle_available) root.subtitlesRequested()
                         icon.source: root.iconDirectory + (root.backend.subtitle_display ? "captions.svg" : "captions-off.svg")
                     }
                     Entry {

@@ -22,6 +22,7 @@ mod ffi {
         #[namespace = ""]
         type QString = cxx_qt_lib::QString;
         fn paintImage(image: &mut QImage, overlay: &Overlay);
+        fn mediaCaption(painter: Pin<&mut QPainter>, image: &QImage, width: i32, height: i32);
         fn transform(painter: Pin<&mut QPainter>, x: f64, y: f64, sx: f64, sy: f64);
         fn rotate(painter: Pin<&mut QPainter>, x: f64, y: f64, degrees: f64);
         fn clip(painter: Pin<&mut QPainter>, x: f64, y: f64, width: f64, height: f64);
@@ -60,6 +61,8 @@ pub struct Overlay {
     width: f64,
     height: f64,
     layers: Vec<Layer>,
+    #[serde(skip)]
+    media_caption: Option<QImage>,
 }
 #[derive(Debug, Deserialize)]
 struct Layer {
@@ -124,6 +127,15 @@ const MAX_SNAPSHOT_BYTES: usize = 1024 * 1024;
 const MAX_COMMANDS: usize = 2048;
 const OVERLAY_LAYERS: usize = 2;
 impl Overlay {
+    pub fn media_caption_bytes(&self) -> usize {
+        self.media_caption.as_ref().map_or(0, |image| {
+            image.width().max(0) as usize * image.height().max(0) as usize * 4
+        })
+    }
+    pub fn with_media_caption(mut self, image: &QImage) -> Self {
+        self.media_caption = Some(crate::qt::ffi::share_screenshot_image(image));
+        self
+    }
     pub fn parse(json: &str) -> Result<Self, Error> {
         if json.len() > MAX_SNAPSHOT_BYTES {
             return Err(Error::Capacity);
@@ -149,9 +161,11 @@ impl Overlay {
             width,
             height,
             layers: Vec::new(),
+            media_caption: None,
         }
     }
     fn paint(&self, mut painter: Pin<&mut QPainter>, width: i32, height: i32) {
+        painter.as_mut().save();
         // qml6glsink centers a fitted rectangle using integer display dimensions.
         let fit = (self.width / f64::from(width)).min(self.height / f64::from(height));
         let display_width = (f64::from(width) * fit).floor().max(1.0);
@@ -191,6 +205,10 @@ impl Overlay {
                 }
             }
             painter.as_mut().restore();
+        }
+        painter.as_mut().restore();
+        if let Some(image) = &self.media_caption {
+            ffi::mediaCaption(painter.as_mut(), image, width, height);
         }
     }
 }
@@ -297,5 +315,19 @@ mod tests {
             QColor::from_rgb(0, 0, 0),
             "letterbox overlay is outside the saved video"
         );
+        // Media captions already use video coordinates, and are above comments
+        // in Main.qml. The saved frame must preserve both the fit and this order.
+        let mut caption = QImage::from_width_height_and_format(
+            200,
+            100,
+            cxx_qt_lib::QImageFormat::Format_RGBA8888_Premultiplied,
+        );
+        caption.fill(&QColor::from_rgba(0, 0, 0, 0));
+        caption.set_pixel_color(25, 15, &QColor::from_rgb(0, 255, 0));
+        let overlay = overlay.with_media_caption(&caption);
+        assert_eq!(overlay.media_caption_bytes(), 200 * 100 * 4);
+        let image = compose(image, 200, 100, &overlay).unwrap();
+        assert_eq!(image.pixel_color(25, 15), QColor::from_rgb(0, 255, 0));
+        assert_eq!(image.pixel_color(26, 15), QColor::from_rgb(255, 0, 0));
     }
 }

@@ -218,3 +218,9 @@ typefinding, the source-setup callback and paused seeking for all four files.
 The startup suite additionally uses the real product
 window and validated GPU/virtual audio output for source switching, EOF,
 EPGStation file selection and token-authenticated playback.
+
+`media-subtitles.mp4` / `media-subtitles.mkv` は `media-h264.mp4` に合成字幕を追加した
+試験用動画です。MP4はテキスト字幕1トラック、MKVはテキスト字幕と装飾付きASSの2トラックを
+持ちます。外部字幕は `media-subtitles.srt` / `.ass` です。
+`/usr/bin/python3 scripts/fixtures/media-subtitles.py` でCPU上のmux処理だけを使って再生成できます。
+映像・音声の生成条件と権利は元の合成動画と同じです。

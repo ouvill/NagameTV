@@ -570,6 +570,26 @@ mod tests {
         ctx
     }
     #[test]
+    fn encoded_recording_projection_includes_recording_lead_in_and_original_comment_timestamp() {
+        let post = Record {
+            id: 1,
+            comment: comment(2, 1),
+            own: false,
+            origin: RecordOrigin::Archive,
+            media_ms: None,
+        };
+        let clock = ClockReading::recording(UTC - 5000, 20 * SECOND).unwrap();
+        let json = project(
+            &[post],
+            clock,
+            Interval::new(UTC / 1000, UTC / 1000 + 20).unwrap(),
+            &LiveArrivals::default(),
+        );
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(value[0]["time"], 7.0);
+        assert_eq!(value[0]["timing"], "scheduled");
+    }
+    #[test]
     fn live_arrival_is_immediate_and_keeps_original_time_for_seek() {
         let directory = tempfile::tempdir().unwrap();
         let mut replay = Replay::in_directory(directory.path().into());

@@ -5,7 +5,7 @@ FROM ubuntu:24.04@sha256:b3cc40b72b93588182b5410f723c7aaf142363311c2aa993d8a453d
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     build-essential ca-certificates cmake curl desktop-file-utils git \
     libclang-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
-    libgstreamer-plugins-bad1.0-dev libegl1-mesa-dev libgl1-mesa-dev \
+    libgstreamer-plugins-bad1.0-dev libass-dev libegl1-mesa-dev libgl1-mesa-dev \
     libx11-xcb1 libxcb-cursor0 libxcb-icccm4 libxcb-keysyms1 \
     libxcb-image0 libxcb-render-util0 libxkbcommon-x11-0 \
     gstreamer1.0-plugins-base gstreamer1.0-plugins-good \

@@ -60,6 +60,7 @@ Item {
         SignalSpy { id: audio; target: actions; signalName: "audioRequested" }
         SignalSpy { id: panel; target: actions; signalName: "programVisibilityRequested" }
         SignalSpy { id: comments; target: actions; signalName: "composerVisibilityRequested" }
+        SignalSpy { id: subtitles; target: controls; signalName: "subtitlesRequested" }
         TestCase {
             name: "PlayerControls"
             when: windowShown
@@ -81,12 +82,14 @@ Item {
                 backend.saved = 0;
                 backend.skips = [];
                 backend.subtitles_enabled = true;
+                backend.media_subtitle_available = false;
                 backend.subtitle_display = true;
                 host.width = 1100;
                 controls.width = host.width - 48;
                 actions.canCapture = true;
                 navigation.guideEnabled = true;
                 modes.clear(); capture.clear(); comments.clear(); audio.clear(); panel.clear();
+                subtitles.clear();
                 mouseMove(host.contentItem, 500, 150);
                 verify(waitForRendering(controls));
             }
@@ -170,6 +173,21 @@ Item {
                 }
                 compare(backend.skips, [actions.seekSteps.backwardMilliseconds, actions.seekSteps.forwardMilliseconds,
                     actions.seekSteps.backwardMilliseconds, actions.seekSteps.forwardMilliseconds]);
+            }
+            function test_general_media_subtitles_open_choices_from_wide_and_narrow_controls() {
+                backend.media_subtitle_available = true;
+                mouseClick(findChild(controls, "subtitlesButton"));
+                compare(subtitles.count, 1);
+                compare(backend.subtitle_display, true);
+                controls.width = 532;
+                verify(waitForRendering(controls));
+                const menu = findChild(controls, "playerOverflowMenu");
+                mouseClick(findChild(controls, "moreControlsButton"));
+                tryCompare(menu, "opened", true);
+                mouseClick(findChild(menu, "overflowSubtitles"));
+                compare(subtitles.count, 2);
+                compare(backend.subtitle_display, true);
+                tryCompare(menu, "visible", false);
             }
             function test_screenshot_hover_shows_tip_immediately_and_keeps_controls_visible() {
                 const screenshot = findChild(controls, "screenshotButton");

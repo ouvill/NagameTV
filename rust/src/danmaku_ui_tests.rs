@@ -121,12 +121,14 @@ impl ffi::TestRecordingFiles {
                     name: String::new(),
                     filename: "original.ts".into(),
                     kind: VideoType::Ts,
+                    start_ms: None,
                 },
                 Video {
                     id: u64::MAX,
                     name: "<b>HEVC</b>".into(),
                     filename: "日本語.mkv".into(),
                     kind: VideoType::Encoded,
+                    start_ms: None,
                 },
             ]
             .into(),

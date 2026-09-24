@@ -56,6 +56,7 @@ proptest = { version = "1", default-features = false, features = ["std"] }
 wiremock = "0.6"
 
 [build-dependencies]
+pkg-config = "0.3"
 cxx-qt-build = { version = "0.10", features = ["link_qt_object_files"] }
 
 [profile.release]

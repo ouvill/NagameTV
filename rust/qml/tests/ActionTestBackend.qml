@@ -40,6 +40,7 @@ QtObject {
     property real comment_opacity: 0.8
     property real comment_speed: 1.2
     property bool subtitles_enabled: true
+    property bool media_subtitle_available: false
     property bool subtitle_display: true
     property bool epg_enabled: true
     property bool guide_visible: false

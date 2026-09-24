@@ -243,6 +243,7 @@ impl ffi::Player {
         self.as_mut().set_subtitles_active(false);
         self.as_mut().rust_mut().subtitle_cells = 0;
         self.as_mut().set_subtitle_data(QString::default());
+        self.as_mut().reset_media_subtitles();
         self.as_mut()
             .update_subtitle_status(subtitle_status::Status::Stopped);
         Ok(())
@@ -333,7 +334,9 @@ impl ffi::Player {
         self.as_mut().poll_comments();
         self.as_mut().rust_mut().subtitle_cells = 0;
         self.as_mut().set_subtitle_data(QString::default());
-        let active = subtitles_enabled && self.rust().media.subtitles().is_some();
+        self.as_mut().reset_media_subtitles();
+        let active = subtitles_enabled
+            && (self.rust().media.subtitles().is_some() || self.media_subtitle_available());
         self.as_mut().set_subtitles_active(active);
         self.as_mut().update_subtitle_status(if active {
             subtitle_status::Status::Parsing
@@ -413,6 +416,7 @@ impl ffi::Player {
                 self.as_mut().update_status(PlaybackStatus::Finished);
                 self.as_mut().rust_mut().subtitle_cells = 0;
                 self.as_mut().set_subtitle_data(QString::default());
+                self.as_mut().reset_media_subtitles();
             }
             Ok(playback::Event::Ended(_)) => match self.as_mut().end_stream() {
                 Ok(()) => self.as_mut().playback_failed(playback::Error::EndOfStream),

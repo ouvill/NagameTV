@@ -67,6 +67,69 @@ impl Streams {
             .collect()
     }
 
+    pub fn text_tracks(&self) -> Vec<crate::media_subtitles::Track> {
+        self.collection
+            .iter()
+            .flat_map(|collection| collection.iter())
+            .filter(|stream| stream.stream_type().contains(gst::StreamType::TEXT))
+            .filter(|stream| {
+                stream
+                    .caps()
+                    .is_some_and(|caps| crate::media_subtitles::supported_caps(&caps))
+            })
+            .take(crate::media_subtitles::MAX_TRACKS)
+            .filter_map(|stream| {
+                let id = stream.stream_id()?;
+                let tags = stream.tags();
+                let title = tags
+                    .as_ref()
+                    .and_then(|tags| tags.get::<gst::tags::Title>())
+                    .map(|v| v.get().to_owned());
+                let language = tags
+                    .as_ref()
+                    .and_then(|tags| tags.get::<gst::tags::LanguageCode>())
+                    .map(|v| v.get().to_owned());
+                Some(crate::media_subtitles::Track {
+                    selected: self.selected.contains(&id),
+                    id: id.to_string(),
+                    title: title.or(language).unwrap_or_default(),
+                })
+            })
+            .collect()
+    }
+    pub fn select_text(
+        &mut self,
+        player: &gst::Element,
+        text_id: &str,
+    ) -> Result<(), crate::media_subtitles::Error> {
+        use crate::media_subtitles::Error;
+        let collection = self.collection.as_ref().ok_or(Error::Unavailable)?;
+        if !self.text_tracks().iter().any(|track| track.id == text_id) {
+            return Err(Error::Unavailable);
+        }
+        let mut ids = vec![text_id.to_owned()];
+        for kind in [gst::StreamType::VIDEO, gst::StreamType::AUDIO] {
+            let streams = collection
+                .iter()
+                .filter(|stream| stream.stream_type().contains(kind))
+                .filter_map(|s| s.stream_id())
+                .collect::<Vec<_>>();
+            if let Some(id) = streams
+                .iter()
+                .find(|id| self.selected.contains(id))
+                .or_else(|| streams.first())
+            {
+                ids.push(id.to_string());
+            }
+        }
+        if player.send_event(gst::event::SelectStreams::new(
+            ids.iter().map(String::as_str),
+        )) {
+            Ok(())
+        } else {
+            Err(Error::Rejected)
+        }
+    }
     fn selection(&self, audio_id: &str) -> Result<Vec<gst::glib::GString>, Error> {
         let collection = self.collection.as_ref().ok_or(Error::Unavailable)?;
         let audio = collection

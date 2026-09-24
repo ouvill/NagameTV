@@ -105,6 +105,19 @@ impl Default for State {
     }
 }
 impl State {
+    pub(super) fn retain_subtitle(&mut self, script: Option<crate::media_subtitles::Script>) {
+        match self {
+            Self::Recording(file, _)
+            | Self::Connecting(Attempt::File(file))
+            | Self::StopFailed(Attempt::File(file))
+            | Self::Stopped(Selection::File(file)) => file.retain_subtitle(script),
+            Self::Playing(_, _)
+            | Self::Connecting(Attempt::Live(_))
+            | Self::StopFailed(Attempt::Live(_))
+            | Self::Stopped(Selection::Live) => {}
+        }
+    }
+
     pub(super) fn reconfigured_live(mut self, retention: Policy) -> Self {
         match &mut self {
             Self::Playing(live, _)

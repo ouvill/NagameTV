@@ -6,6 +6,7 @@ mod client;
 #[cfg(test)]
 mod tests;
 pub use client::Login;
+pub(crate) use client::PlaybackMetadata;
 use client::{Access, Connection, Fetched};
 
 pub const PAGE_SIZE: u64 = 50;
@@ -69,6 +70,7 @@ pub struct Video {
     pub name: String,
     pub filename: String,
     pub kind: VideoType,
+    pub start_ms: Option<i64>,
 }
 impl Availability {
     pub fn files(&self) -> Arc<[Video]> {
@@ -88,6 +90,8 @@ pub struct Recording {
     pub end_ms: i64,
     pub description: String,
     pub availability: Availability,
+    channel_id: Option<u64>,
+    pub service: Option<crate::channels::BroadcastService>,
 }
 
 #[derive(Deserialize)]
@@ -101,6 +105,7 @@ struct WireRecording {
     id: u64,
     name: String,
     channel_name: Option<String>,
+    channel_id: Option<u64>,
     ts_channel_name: Option<String>,
     start_at: i64,
     end_at: i64,
@@ -115,6 +120,8 @@ struct WireVideo {
     #[serde(rename = "type")]
     kind: VideoType,
     size: u64,
+    #[serde(rename = "startAt")]
+    start_at: Option<i64>,
     #[serde(default)]
     name: String,
     #[serde(default)]
@@ -167,6 +174,7 @@ fn parse(bytes: &[u8]) -> Result<Page, Error> {
                             name: file.name,
                             filename: file.filename,
                             kind: file.kind,
+                            start_ms: file.start_at.filter(|ms| *ms > 0),
                         })
                     })
                     .collect::<Result<Vec<_>, Error>>()?;
@@ -193,6 +201,8 @@ fn parse(bytes: &[u8]) -> Result<Page, Error> {
                 end_ms: record.end_at,
                 description: record.description.unwrap_or_default(),
                 availability,
+                channel_id: record.channel_id,
+                service: None,
             })
         })
         .collect::<Result<Vec<_>, Error>>()?;
@@ -452,6 +462,47 @@ impl Library {
             _ => None,
         }
     }
+    pub fn playback_request(
+        &self,
+        id: u64,
+        video: Option<u64>,
+    ) -> Option<crate::playback::recording::Request> {
+        let rows = self.rows();
+        let recording = rows.iter().find(|row| row.id == id)?;
+        let files = self.files(id);
+        let file = match video {
+            Some(id) => files.iter().find(|file| file.id == id)?,
+            None => files.first()?,
+        };
+        let start = file
+            .start_ms
+            .or_else(|| {
+                files
+                    .iter()
+                    .find(|v| v.kind == VideoType::Ts)
+                    .and_then(|v| v.start_ms)
+            })
+            .unwrap_or(recording.start_ms);
+        let broadcast = recording
+            .service
+            .and_then(|service| crate::playback::recording::Broadcast::new(service, start));
+        let metadata =
+            if file.kind == VideoType::Encoded && file.start_ms.is_none() && broadcast.is_some() {
+                match &self.catalogue {
+                    Catalogue::Loaded { connection, .. } => Some(connection.metadata(file.id)),
+                    Catalogue::Empty => None,
+                }
+            } else {
+                None
+            };
+        crate::playback::recording::Request::epgstation(
+            &self.video_url(id, file.id)?,
+            broadcast,
+            metadata,
+        )
+        .ok()
+    }
+    #[cfg(test)]
     pub fn playback_url(&self, id: u64) -> Option<String> {
         self.video_url(id, self.files(id).first()?.id)
     }

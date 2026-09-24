@@ -2,7 +2,7 @@
 use super::ffi;
 use crate::services::{FetchError, NetworkError};
 use cxx_qt::CxxQtType;
-use cxx_qt_lib::{QString, QUrl};
+use cxx_qt_lib::QString;
 use std::pin::Pin;
 
 impl ffi::Player {
@@ -24,15 +24,24 @@ impl ffi::Player {
             .replace(files);
         available
     }
-    pub fn play_epgstation_file(self: Pin<&mut Self>, id: QString, video: QString) -> bool {
-        let url = id
+    pub fn play_epgstation_file(mut self: Pin<&mut Self>, id: QString, video: QString) -> bool {
+        let request = id
             .to_string()
             .parse::<u64>()
             .ok()
             .zip(video.to_string().parse::<u64>().ok())
-            .and_then(|(id, video)| self.rust().recording_library.video_url(id, video));
-        match url {
-            Some(url) => self.open_recording(QUrl::from(url.as_str())),
+            .and_then(|(id, video)| {
+                self.rust()
+                    .recording_library
+                    .playback_request(id, Some(video))
+            });
+        match request {
+            Some(request) => {
+                self.as_mut().rust_mut().autoplay_pending = false;
+                self.as_mut().set_file_error(QString::default());
+                self.begin_recording(request);
+                true
+            }
             None => false,
         }
     }
@@ -151,14 +160,19 @@ impl ffi::Player {
         self.as_mut().rust_mut().recording_library.cancel();
         self.epgstation_changed();
     }
-    pub fn play_epgstation(self: Pin<&mut Self>, id: QString) -> bool {
-        let url = id
+    pub fn play_epgstation(mut self: Pin<&mut Self>, id: QString) -> bool {
+        let request = id
             .to_string()
             .parse::<u64>()
             .ok()
-            .and_then(|id| self.rust().recording_library.playback_url(id));
-        match url {
-            Some(url) => self.open_recording(QUrl::from(url.as_str())),
+            .and_then(|id| self.rust().recording_library.playback_request(id, None));
+        match request {
+            Some(request) => {
+                self.as_mut().rust_mut().autoplay_pending = false;
+                self.as_mut().set_file_error(QString::default());
+                self.begin_recording(request);
+                true
+            }
             None => false,
         }
     }

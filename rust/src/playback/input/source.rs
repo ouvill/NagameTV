@@ -157,9 +157,8 @@ impl Input {
             None
         });
         subscriptions.signal(playbin, id);
-        static NEXT_SOURCE: AtomicU64 = AtomicU64::new(1);
         Self {
-            identity: NEXT_SOURCE.fetch_add(1, Ordering::Relaxed),
+            identity: crate::playback::next_source_identity(),
             shared,
             worker,
             subscriptions,

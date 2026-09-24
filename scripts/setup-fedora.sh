@@ -17,6 +17,7 @@ exec sudo dnf install "$@" -- \
     qt6-qtbase-devel qt6-qtdeclarative-devel qt6-qtsvg-devel \
     qt6-linguist qt6-qtimageformats qt6-qtwayland \
     gstreamer1-devel gstreamer1-plugins-base-devel \
+    libass-devel \
     gstreamer1-plugins-bad-free-devel \
     gstreamer1-plugins-base gstreamer1-plugins-good \
     gstreamer1-plugins-good-qt6 gstreamer1-plugins-bad-free \

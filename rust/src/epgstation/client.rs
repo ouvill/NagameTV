@@ -38,6 +38,12 @@ pub(super) struct Connection {
     media: MediaAccess,
 }
 impl Connection {
+    pub(super) fn metadata(&self, video: u64) -> PlaybackMetadata {
+        PlaybackMetadata {
+            connection: self.clone(),
+            video,
+        }
+    }
     pub fn video_url(&self, id: u64) -> String {
         let mut url = url::Url::parse(&format!("{}/api/videos/{id}", self.endpoint.as_str()))
             .expect("validated endpoint");
@@ -48,6 +54,44 @@ impl Connection {
             }
         }
         url.into()
+    }
+}
+
+/// The cookie session and video ID stay together during asynchronous inspection.
+/// This optional endpoint is absent on older EPGStation versions.
+pub(crate) struct PlaybackMetadata {
+    connection: Connection,
+    video: u64,
+}
+impl PlaybackMetadata {
+    pub(crate) fn start_ms(self, cancelled: &std::sync::atomic::AtomicBool) -> Option<i64> {
+        use std::sync::atomic::Ordering;
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .ok()?;
+        runtime.block_on(async {
+            let fetch = async {
+                let response = self.connection.client.get(format!("{}/api/videos/{}/metadata", self.connection.endpoint.as_str(), self.video))
+                    .send().await.map_err(network)?;
+                #[derive(Deserialize)]
+                #[serde(rename_all = "camelCase")]
+                struct Metadata { video_file_id: u64, start_at: Option<i64> }
+                let metadata: Metadata = crate::json::from_slice(&body(response).await?).map_err(Error::from).map_err(FetchError::Parse)?;
+                Ok::<_, FetchError<Error>>((metadata.video_file_id == self.video).then_some(metadata.start_at).flatten().filter(|ms| *ms > 0))
+            };
+            tokio::pin!(fetch);
+            loop {
+                if cancelled.load(Ordering::Acquire) { return None; }
+                tokio::select! {
+                    result = &mut fetch => return match result {
+                        Ok(start) => start,
+                        Err(error) => { tracing::debug!(%error, "EPGStation video timing unavailable; using catalogue timing"); None },
+                    },
+                    _ = tokio::time::sleep(Duration::from_millis(25)) => {},
+                }
+            }
+        })
     }
 }
 pub(super) struct Fetched {
@@ -130,6 +174,47 @@ pub(super) async fn fetch(endpoint: Endpoint, url: String, access: Access) -> Re
         }
     };
     let response = connection.client.get(url).send().await.map_err(network)?;
-    let page = super::parse(&body(response).await?).map_err(FetchError::Parse)?;
+    let mut page = super::parse(&body(response).await?).map_err(FetchError::Parse)?;
+    if page.rows.iter().any(|row| row.channel_id.is_some()) {
+        // Some older servers do not expose channels to this account. Media still
+        // opens, but we never guess broadcast IDs from opaque API resource IDs.
+        match connection.channels().await {
+            Ok(channels) => {
+                for row in std::sync::Arc::make_mut(&mut page.rows) {
+                    row.service = channels
+                        .iter()
+                        .find(|c| Some(c.id) == row.channel_id)
+                        .map(|c| crate::channels::BroadcastService {
+                            network_id: c.network_id,
+                            service_id: c.service_id,
+                        });
+                }
+            }
+            Err(error) => {
+                tracing::warn!(%error, "EPGStation broadcast channel metadata unavailable")
+            }
+        }
+    }
     Ok(Fetched { page, connection })
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Channel {
+    id: u64,
+    network_id: u16,
+    service_id: u16,
+}
+impl Connection {
+    async fn channels(&self) -> Result<Vec<Channel>> {
+        let response = self
+            .client
+            .get(format!("{}/api/channels", self.endpoint.as_str()))
+            .send()
+            .await
+            .map_err(network)?;
+        crate::json::from_slice(&body(response).await?)
+            .map_err(Error::from)
+            .map_err(FetchError::Parse)
+    }
 }

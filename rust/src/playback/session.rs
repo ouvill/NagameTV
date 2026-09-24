@@ -5,15 +5,23 @@ use crate::{channels::BroadcastService, features::subtitles};
 
 pub struct Session {
     playback: Option<Playback>,
-    subtitles: Option<subtitles::Session>,
+    subtitles: SubtitleSession,
     input: Input,
     live_buffer: crate::settings::LiveBuffer,
+}
+
+enum SubtitleSession {
+    Disabled,
+    Broadcast(subtitles::Session),
+    Media(Box<crate::media_subtitles::Session>),
 }
 
 enum Input {
     Idle,
     Media {
         source: super::media::Input,
+        identity: u64,
+        broadcast: Option<super::recording::Broadcast>,
         controller: Box<super::timeline::Controller>,
     },
     Active {
@@ -108,7 +116,7 @@ impl Session {
     pub fn new(playback: Option<Playback>, live_buffer: crate::settings::LiveBuffer) -> Self {
         Self {
             playback,
-            subtitles: None,
+            subtitles: SubtitleSession::Disabled,
             input: Input::Idle,
             live_buffer,
         }
@@ -129,8 +137,23 @@ impl Session {
     pub fn playback(&self) -> Option<&Playback> {
         self.playback.as_ref()
     }
+    pub fn media_subtitles(&self) -> Option<&crate::media_subtitles::Session> {
+        match &self.subtitles {
+            SubtitleSession::Media(session) => Some(session),
+            SubtitleSession::Disabled | SubtitleSession::Broadcast(_) => None,
+        }
+    }
+    pub fn media_subtitles_mut(&mut self) -> Option<&mut crate::media_subtitles::Session> {
+        match &mut self.subtitles {
+            SubtitleSession::Media(session) => Some(session),
+            SubtitleSession::Disabled | SubtitleSession::Broadcast(_) => None,
+        }
+    }
     pub fn subtitles(&self) -> Option<&subtitles::Session> {
-        self.subtitles.as_ref()
+        match &self.subtitles {
+            SubtitleSession::Broadcast(session) => Some(session),
+            SubtitleSession::Disabled | SubtitleSession::Media(_) => None,
+        }
     }
 
     pub fn transport_control(
@@ -160,13 +183,29 @@ impl Session {
     ) -> crate::transport::programs::catalog::View {
         match &self.input {
             Input::Active { source, .. } => source.metadata(position.nseconds()),
-            Input::Idle | Input::Media { .. } => Default::default(),
+            Input::Media {
+                broadcast,
+                controller,
+                ..
+            } => broadcast
+                .as_ref()
+                .map(|b| b.view(controller.snapshot().duration))
+                .unwrap_or_default(),
+            Input::Idle => Default::default(),
         }
     }
     pub fn source_identity(&self) -> Option<u64> {
         match &self.input {
             Input::Active { source, .. } => Some(source.identity()),
-            Input::Idle | Input::Media { .. } => None,
+            Input::Media {
+                identity,
+                broadcast: Some(_),
+                ..
+            } => Some(*identity),
+            Input::Idle
+            | Input::Media {
+                broadcast: None, ..
+            } => None,
         }
     }
     pub fn comment_source(
@@ -184,7 +223,31 @@ impl Session {
                 controller.snapshot().position.map(|p| p.nseconds()),
                 reception,
             ),
-            Input::Idle | Input::Media { .. } => None,
+            Input::Media {
+                broadcast: Some(broadcast),
+                controller,
+                ..
+            } => {
+                let snapshot = controller.snapshot();
+                let utc_seconds = broadcast
+                    .view(snapshot.duration)
+                    .clock
+                    .zip(snapshot.position)
+                    .and_then(|(clock, position)| clock.utc(position.nseconds()))
+                    .map(|ms| ms / 1000);
+                Some(viewer_comments::cache::Source::Recording(
+                    viewer_comments::cache::Recording::Observed {
+                        current: None,
+                        next: None,
+                        utc_seconds,
+                        at_start: false,
+                    },
+                ))
+            }
+            Input::Idle
+            | Input::Media {
+                broadcast: None, ..
+            } => None,
         }
     }
     /// Audio follows the same sampled output position as transport, including pause.
@@ -407,7 +470,7 @@ impl Session {
         }
         // A failed native transition cannot reach either resource release or
         // construction of Stopped. The caller retains this owner for retry.
-        self.subtitles = None;
+        self.subtitles = SubtitleSession::Disabled;
         self.input = Input::Idle;
         Ok(Stopped(self))
     }
@@ -416,7 +479,7 @@ impl Session {
         if let Some(playback) = &mut self.playback {
             playback.shutdown()?;
         }
-        self.subtitles = None;
+        self.subtitles = SubtitleSession::Disabled;
         self.input = Input::Idle;
         Ok(())
     }
@@ -425,7 +488,7 @@ impl Session {
         if let Some(playback) = &mut self.playback {
             playback.shutdown_before_drop();
         }
-        self.subtitles = None;
+        self.subtitles = SubtitleSession::Disabled;
         self.input = Input::Idle;
     }
 }
@@ -483,11 +546,20 @@ impl Stopped<'_> {
                 let playback = self.0.playback.as_ref().ok_or(Error::Unavailable)?;
                 let input = Input::Media {
                     source: super::media::Input::new(playback.element(), file),
+                    identity: super::next_source_identity(),
+                    broadcast: file.broadcast().cloned(),
                     controller: Box::new(super::timeline::Controller::new(
                         &playback.sink,
                         super::timeline::StartPosition::Beginning,
                     )?),
                 };
+                if subtitles_enabled {
+                    self.0.subtitles =
+                        SubtitleSession::Media(Box::new(crate::media_subtitles::Session::start(
+                            playback.element(),
+                            file.external_subtitle().cloned(),
+                        )?));
+                }
                 self.start_uri("appsrc://", None, SubtitleInput::Disabled, input)
             }
         }
@@ -528,10 +600,21 @@ impl Stopped<'_> {
         input: Input,
     ) -> Result<SubtitleStart> {
         let playback = self.0.playback.as_ref().ok_or(Error::Unavailable)?;
+        use gstreamer::prelude::*;
+        if self.0.media_subtitles().is_some() {
+            playback.element().set_property_from_str(
+                "flags",
+                "video+audio+text+soft-volume+buffering+native-video",
+            );
+        } else {
+            playback
+                .element()
+                .set_property_from_str("flags", "video+audio+soft-volume+buffering+native-video");
+        }
         let subtitles = match subtitle_input.start(playback.element()) {
             None => SubtitleStart::Disabled,
             Some(Ok(session)) => {
-                self.0.subtitles = Some(session);
+                self.0.subtitles = SubtitleSession::Broadcast(session);
                 SubtitleStart::Parsing
             }
             Some(Err(error)) => SubtitleStart::Failed(error),
@@ -574,7 +657,7 @@ pub(super) fn check_stop_ownership() {
     .expect("subtitle generation");
     let mut session = Session {
         playback: Some(playback),
-        subtitles: Some(subtitles),
+        subtitles: SubtitleSession::Broadcast(subtitles),
         input: Input::Idle,
         live_buffer: Default::default(),
     };

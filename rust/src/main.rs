@@ -13,6 +13,8 @@ mod error_log;
 mod features;
 mod json;
 mod logging;
+mod media_caption;
+mod media_subtitles;
 mod memory;
 #[cfg(feature = "native_tests")]
 mod native_tests;
@@ -27,6 +29,7 @@ mod screenshots;
 mod services;
 mod settings;
 mod shortcut_key;
+mod subtitle_model;
 mod transport;
 mod video_file_model;
 #[cfg(feature = "video_item_tests")]

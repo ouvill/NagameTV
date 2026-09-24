@@ -220,7 +220,14 @@ impl ffi::Player {
     pub fn stage_screenshot(&self, overlay: QString) {
         if let Some(playback) = self.rust().media.playback() {
             match crate::screenshots::overlay::Overlay::parse(&overlay.to_string()) {
-                Ok(overlay) => playback.presentation().stage(overlay),
+                Ok(overlay) => {
+                    let overlay = if *self.subtitle_display() && self.media_subtitle_available() {
+                        overlay.with_media_caption(self.media_subtitle_image())
+                    } else {
+                        overlay
+                    };
+                    playback.presentation().stage(overlay)
+                }
                 Err(error) => {
                     playback.presentation().clear();
                     tracing::warn!("Invalid screenshot overlay: {error}");

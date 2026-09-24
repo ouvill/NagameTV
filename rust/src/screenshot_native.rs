@@ -45,6 +45,7 @@ impl Presented {
             .checked_mul(height as usize)
             .and_then(|p| p.checked_mul(8))
             .and_then(|size| size.checked_add(self.frame.info.size()))
+            .and_then(|size| size.checked_add(self.overlay.media_caption_bytes()))
             .and_then(|size| {
                 // A capture of NV12 additionally owns a temporary RGBA frame.
                 if self.frame.info.format() == video::VideoFormat::Rgba {

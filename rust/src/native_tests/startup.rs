@@ -936,6 +936,7 @@ fn window(
         check_recording_recovery(app, &mut engine, "recording-pid-change.ts")?;
         check_http_recording(app, &mut engine)?;
         check_general_media(app, &mut engine)?;
+        check_media_subtitles(app, &mut engine)?;
         super::timeshift::run(app, &mut engine)?;
     }
     evaluate(
@@ -1177,7 +1178,7 @@ fn check_epgstation_library(
     wait_for(
         app,
         engine,
-        "!recordingLibrary.visible && player.playing && player.seekable && player.duration_ms > 11900 && player.duration_ms < 13000 && !player.subtitles_active && player.current_program_data === 'null' && JSON.parse(player.video_stats()).rendered > 0",
+        "!recordingLibrary.visible && player.playing && player.seekable && player.duration_ms > 11900 && player.duration_ms < 13000 && player.media_subtitle_available && player.current_program_data === 'null' && JSON.parse(player.video_stats()).rendered > 0",
     )?;
     assert!(evaluate(engine, "player.pause() && player.seek_to(8000)")?);
     wait_for(
@@ -1339,7 +1340,7 @@ fn check_general_media(
             app,
             engine,
             &format!(
-                "!player.recording_loading && player.recording_name === {} && player.playing && player.seekable && player.duration_ms > 11900 && player.duration_ms < 13000 && !player.subtitles_active && player.current_program_data === 'null' && JSON.parse(player.video_stats()).rendered > 0",
+                "!player.recording_loading && player.recording_name === {} && player.playing && player.seekable && player.duration_ms > 11900 && player.duration_ms < 13000 && player.media_subtitle_available && player.current_program_data === 'null' && JSON.parse(player.video_stats()).rendered > 0",
                 serde_json::to_string(name)?
             ),
         )?;
@@ -1379,6 +1380,143 @@ fn check_general_media(
         println!("General media: {name}, playback, pause, seek, rate, replay and EOF passed");
     }
     evaluate(engine, "player.stop(); true")?;
+    Ok(())
+}
+
+fn check_media_subtitles(
+    app: &QGuiApplication,
+    engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
+) -> TestResult {
+    fn image_visible(engine: &mut cxx::UniquePtr<QQmlApplicationEngine>) -> TestResult<bool> {
+        let image = ffi::evaluate_root(
+            engine.pin_mut(),
+            &QString::from("player.media_subtitle_image"),
+        )?
+        .value::<cxx_qt_lib::QImage>()
+        .ok_or("subtitle image")?;
+        Ok((0..image.height()).step_by(4).any(|y| {
+            (0..image.width())
+                .step_by(4)
+                .any(|x| image.pixel_color(x, y).alpha() > 0)
+        }))
+    }
+    fn wait_image(
+        app: &QGuiApplication,
+        engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
+        expected: bool,
+    ) -> TestResult {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            app.process_events();
+            if image_visible(engine)? == expected {
+                return Ok(());
+            }
+            if Instant::now() >= deadline {
+                let state = ffi::evaluate_root(engine.pin_mut(), &QString::from("JSON.stringify({name:player.recording_name, position:player.position_ms, subtitles:player.subtitle_tracks.count, error:player.media_subtitle_error})"))?.value::<QString>().unwrap();
+                return Err(format!("subtitle pixels expected visible={expected}: {state}").into());
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+    }
+    let fixture_url = |name: &str| -> TestResult<String> {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../tests/fixtures")
+            .join(name)
+            .canonicalize()?;
+        Ok(serde_json::to_string(
+            url::Url::from_file_path(path)
+                .map_err(|_| "file URL")?
+                .as_str(),
+        )?)
+    };
+    evaluate(engine, "player.display_subtitles(true); true")?;
+    for name in ["media-subtitles.mp4", "media-subtitles.mkv"] {
+        assert!(evaluate(
+            engine,
+            &format!("player.open_recording({})", fixture_url(name)?)
+        )?);
+        wait_for(
+            app,
+            engine,
+            "player.playing && player.seekable && player.media_subtitle_available && player.subtitle_tracks.count > 0",
+        )?;
+        assert!(evaluate(engine, "player.pause() && player.seek_to(2000)")?);
+        wait_for(
+            app,
+            engine,
+            "player.paused && !player.seeking && Math.abs(player.position_ms-2000)<250",
+        )?;
+        wait_image(app, engine, true)?;
+        evaluate(engine, "playerControls.subtitlesRequested(); true")?;
+        wait_for(app, engine, "mediaSubtitleSettings.opened")?;
+        capture_navigation(app, engine, &format!("subtitles-{name}.png"))?;
+        evaluate(
+            engine,
+            "mediaSubtitleSettings.close(); player.display_subtitles(false); true",
+        )?;
+        assert!(evaluate(engine, "!player.subtitle_display")?);
+        evaluate(engine, "player.display_subtitles(true); true")?;
+        for target in [5000, 8000, 2000] {
+            assert!(evaluate(engine, &format!("player.seek_to({target})"))?);
+            wait_for(app, engine, "!player.seeking && player.paused")?;
+            wait_image(app, engine, target != 5000)?;
+        }
+        for external in ["media-subtitles.srt", "media-subtitles.ass"] {
+            assert!(evaluate(
+                engine,
+                &format!("player.open_subtitle({})", fixture_url(external)?)
+            )?);
+            wait_for(
+                app,
+                engine,
+                "!player.subtitle_loading && !player.media_subtitle_error.length",
+            )?;
+            wait_image(app, engine, true)?;
+            assert!(evaluate(engine, "player.seek_to(8000)")?);
+            wait_for(app, engine, "!player.seeking && player.paused")?;
+            wait_image(app, engine, true)?;
+            capture_navigation(app, engine, &format!("subtitles-external-{external}.png"))?;
+            assert!(evaluate(engine, "player.seek_to(2000)")?);
+            wait_for(app, engine, "!player.seeking && player.paused")?;
+            wait_image(app, engine, true)?;
+        }
+        assert!(evaluate(
+            engine,
+            "player.open_subtitle('file:///missing/subtitle.srt')"
+        )?);
+        wait_for(
+            app,
+            engine,
+            "!player.subtitle_loading && player.media_subtitle_error.length > 0",
+        )?;
+        assert!(
+            image_visible(engine)?,
+            "failed subtitle replacement keeps the displayed cue"
+        );
+        evaluate(engine, "player.stop(); player.play(); true")?;
+        wait_for(
+            app,
+            engine,
+            "player.playing && player.seekable && player.media_subtitle_available",
+        )?;
+        assert!(evaluate(engine, "player.pause() && player.seek_to(2000)")?);
+        wait_for(app, engine, "!player.seeking && player.paused")?;
+        wait_image(app, engine, true)?;
+    }
+    assert!(evaluate(
+        engine,
+        &format!("player.open_recording({})", fixture_url("media-h264.mp4")?)
+    )?);
+    wait_for(
+        app,
+        engine,
+        "player.playing && player.subtitle_tracks.count === 0",
+    )?;
+    wait_image(app, engine, false)?;
+    evaluate(engine, "player.stop(); true")?;
+    println!(
+        "Embedded/external subtitles: Main.qml, pause/seek, visibility, replacement failure, replay and source switch passed"
+    );
     Ok(())
 }
 

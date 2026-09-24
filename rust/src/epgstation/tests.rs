@@ -441,3 +441,107 @@ fn encoded_candidates_keep_stable_ids_and_reject_stale_or_unrelated_choices() ->
     assert!(parse(&serde_json::to_vec(&json!({"records":[row],"total":1}))?).is_err());
     Ok(())
 }
+
+#[test]
+fn encoded_clock_uses_explicit_channel_ids_video_metadata_and_survives_replay() -> TestResult {
+    use crate::playback::recording::{Loader, Recording as File};
+    let fixture = Fixture::new()?;
+    const START: i64 = 1_700_000_000_000;
+    const CHANNEL: u64 = 9_876_543_210;
+    fixture.mount(
+        Mock::given(method("GET"))
+            .and(path("/api/channels"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(json!([{"id":CHANNEL,"networkId":4,"serviceId":101}])),
+            )
+            .expect(2),
+    );
+    fixture.mount(Mock::given(method("GET")).and(path("/api/recorded"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"total":1,"records":[{
+            "id":7,"name":"Encoded recording","channelId":CHANNEL,"startAt":START+5000,"endAt":START+17000,"isRecording":false,
+            "videoFiles":[{"id":123,"type":"encoded","size":10000}]
+        }]}))).expect(2));
+    fixture.mount(
+        Mock::given(method("GET"))
+            .and(path("/api/videos/123/metadata"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(json!({"videoFileId":123,"startAt":START,"startTime":1.4})),
+            )
+            .expect(1),
+    );
+    fixture.mount(
+        Mock::given(method("GET"))
+            .and(path("/api/videos/123"))
+            .respond_with(|request: &wiremock::Request| {
+                let bytes = include_bytes!("../../../tests/fixtures/media-h264.mp4");
+                let range = request
+                    .headers
+                    .get("range")
+                    .unwrap()
+                    .to_str()
+                    .unwrap()
+                    .strip_prefix("bytes=")
+                    .unwrap();
+                let (start, end) = range.split_once('-').unwrap();
+                let start: usize = start.parse().unwrap();
+                let end = end.parse::<usize>().unwrap().min(bytes.len() - 1);
+                ResponseTemplate::new(206)
+                    .insert_header(
+                        "content-range",
+                        format!("bytes {start}-{end}/{}", bytes.len()),
+                    )
+                    .insert_header("etag", "\"stable\"")
+                    .set_body_bytes(bytes[start..=end].to_vec())
+            }),
+    );
+    let mut library = Library::default();
+    library.open(&fixture.network, &fixture.server.uri(), "", Login::Current)?;
+    fixture.finish(&mut library);
+    let request = library
+        .playback_request(7, Some(123))
+        .ok_or("playback request")?;
+    // Replacing the visible page cannot change an already accepted video's clock.
+    library.open(
+        &fixture.network,
+        &fixture.server.uri(),
+        "other",
+        Login::Current,
+    )?;
+    fixture.finish(&mut library);
+    let mut loader = Loader::default();
+    loader.begin(request);
+    let load = |loader: &mut Loader| -> Result<File, Box<dyn std::error::Error>> {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            if let Some((_, result)) = loader.poll() {
+                return Ok(result?);
+            }
+            assert!(Instant::now() < deadline);
+            thread::sleep(Duration::from_millis(1));
+        }
+    };
+    let file = load(&mut loader)?;
+    loader.begin(file.replay());
+    let replay = load(&mut loader)?;
+    for file in [file, replay] {
+        let File::Media(media) = file else {
+            panic!("container expected")
+        };
+        let view = media
+            .broadcast()
+            .unwrap()
+            .view(Some(gstreamer::ClockTime::from_seconds(12)));
+        assert_eq!(
+            view.service,
+            Some(crate::channels::BroadcastService {
+                network_id: 4,
+                service_id: 101
+            })
+        );
+        assert_eq!(view.clock.unwrap().utc(2_000_000_000), Some(START + 2000));
+    }
+    fixture.runtime.block_on(fixture.server.verify());
+    Ok(())
+}

@@ -6,7 +6,7 @@ COPY runtime-dependencies-26.04.txt /tmp/runtime-dependencies.txt
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     build-essential binutils ca-certificates cmake curl desktop-file-utils dpkg-dev git \
     libclang-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
-    libgstreamer-plugins-bad1.0-dev pkg-config python3 qmake6 \
+    libgstreamer-plugins-bad1.0-dev libass-dev pkg-config python3 qmake6 \
     qt6-base-dev qt6-declarative-dev qt6-declarative-dev-tools qt6-l10n-tools util-linux \
     $(sed '/^#/d; /^$/d' /tmp/runtime-dependencies.txt) \
     && rm -rf /var/lib/apt/lists/* /tmp/runtime-dependencies.txt

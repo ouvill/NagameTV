@@ -20,29 +20,51 @@ pub enum Purpose {
 pub struct Request {
     location: Location,
     purpose: Purpose,
+    broadcast: Option<super::Broadcast>,
+    metadata: Option<crate::epgstation::PlaybackMetadata>,
+    pub(super) external_subtitle: Option<crate::media_subtitles::Script>,
 }
 impl Request {
     pub fn open(path: PathBuf) -> Self {
         Self {
             location: Location::Local(path),
             purpose: Purpose::Open,
+            broadcast: None,
+            external_subtitle: None,
+            metadata: None,
         }
     }
     pub fn from_url(url: &str) -> Result<Self, Error> {
         Ok(Self {
             location: Location::from_url(url)?,
             purpose: Purpose::Open,
+            broadcast: None,
+            external_subtitle: None,
+            metadata: None,
         })
+    }
+    pub(crate) fn epgstation(
+        url: &str,
+        broadcast: Option<super::Broadcast>,
+        metadata: Option<crate::epgstation::PlaybackMetadata>,
+    ) -> Result<Self, Error> {
+        let mut request = Self::from_url(url)?;
+        request.broadcast = broadcast;
+        request.metadata = metadata;
+        Ok(request)
     }
     /// Resolve before acknowledging the drop: KDE retires its transfer when
     /// the drag ends. Only the received path can enter the asynchronous loader.
     pub fn portal_transfer(key: &str) -> Result<Self, Error> {
         retrieve_transfer(key).map(Self::open)
     }
-    pub(super) fn replay(location: Location) -> Self {
+    pub(super) fn replay(location: Location, broadcast: Option<super::Broadcast>) -> Self {
         Self {
             location,
             purpose: Purpose::Replay,
+            broadcast,
+            external_subtitle: None,
+            metadata: None,
         }
     }
 }
@@ -108,7 +130,25 @@ impl Loader {
     }
     fn start(request: Request) -> State {
         let purpose = request.purpose;
-        match Job::spawn(move |cancelled| Recording::inspect(&request.location, cancelled)) {
+        match Job::spawn(move |cancelled| {
+            let mut recording = Recording::inspect(&request.location, cancelled)?;
+            if let Recording::Media(file) = &mut recording {
+                file.broadcast = request.broadcast.map(|broadcast| {
+                    match request
+                        .metadata
+                        .and_then(|metadata| metadata.start_ms(cancelled))
+                    {
+                        Some(start) => broadcast.with_start(start),
+                        None => broadcast,
+                    }
+                });
+                file.external_subtitle = request.external_subtitle;
+            }
+            if cancelled.load(Ordering::Acquire) {
+                return Err(Error::Cancelled);
+            }
+            Ok(recording)
+        }) {
             Ok(job) => State::Working { job, purpose },
             Err(error) => State::Ready((purpose, Err(error.into()))),
         }
