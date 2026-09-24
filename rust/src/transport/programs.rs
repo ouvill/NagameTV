@@ -197,11 +197,10 @@ impl Collector {
         let Some(transport) = self.transport else {
             return;
         };
-        let before = self.information.clone();
         match (pid, data.first().copied()) {
             (TIME_TABLE_PID, Some(syntax::TDT_TABLE_ID | syntax::TOT_TABLE_ID)) => {
                 if let (Some(pcr), Some(time)) = (self.pcr, syntax::time_table(data)) {
-                    self.information.time = Some((pcr, time));
+                    self.changed |= replace_changed(&mut self.information.time, Some((pcr, time)));
                 }
             }
             (SDT_PID, Some(syntax::SDT_ACTUAL_TABLE_ID)) => {
@@ -210,12 +209,15 @@ impl Collector {
                     && self.network.is_none_or(|old| old == network)
                 {
                     self.network = Some(network);
-                    self.information.service = Some(crate::channels::BroadcastService {
-                        network_id: network,
-                        service_id: self.service,
-                    });
-                    self.information.station = name;
-                    self.information.provider = provider;
+                    self.changed |= replace_changed(
+                        &mut self.information.service,
+                        Some(crate::channels::BroadcastService {
+                            network_id: network,
+                            service_id: self.service,
+                        }),
+                    );
+                    self.changed |= replace_changed(&mut self.information.station, name);
+                    self.changed |= replace_changed(&mut self.information.provider, provider);
                 }
             }
             (pid, Some(syntax::EIT_ACTUAL_PF_TABLE_ID)) if EIT_PIDS.contains(&pid) => {
@@ -223,21 +225,24 @@ impl Collector {
                     && self.network.is_none_or(|network| network == event.network)
                 {
                     self.network = Some(event.network);
-                    self.information.service = Some(crate::channels::BroadcastService {
-                        network_id: event.network,
-                        service_id: self.service,
-                    });
+                    self.changed |= replace_changed(
+                        &mut self.information.service,
+                        Some(crate::channels::BroadcastService {
+                            network_id: event.network,
+                            service_id: self.service,
+                        }),
+                    );
                     let slot = usize::from(event.number);
                     if slot == 0 {
-                        self.information.current = event.program.into();
+                        self.changed |=
+                            replace_changed(&mut self.information.current, event.program.into());
                     } else {
-                        self.information.next = event.program;
+                        self.changed |= replace_changed(&mut self.information.next, event.program);
                     }
                 }
             }
             _ => {}
         }
-        self.changed |= self.information != before;
     }
     pub fn take(&mut self) -> Option<Observation> {
         let pcr = self.pcr?;
@@ -251,12 +256,81 @@ impl Collector {
     }
 }
 
+// Compare only the fields a section can change. Repeated SI must not clone the
+// current/next program text, audio descriptors and station just to detect changes.
+fn replace_changed<T: PartialEq>(current: &mut T, next: T) -> bool {
+    if *current == next {
+        return false;
+    }
+    *current = next;
+    true
+}
+
 #[cfg(test)]
 mod audio_tests;
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn fixture_section(pid: Pid) -> Vec<u8> {
+        let bytes = include_bytes!("../../../tests/fixtures/recording-seek.ts");
+        let mut assembly = Sections::si();
+        bytes
+            .as_chunks::<TS_PACKET_SIZE>()
+            .0
+            .iter()
+            .find_map(|bytes| {
+                let packet = TransportPacket::parse(bytes).expect("valid fixture packet");
+                if packet.pid != pid {
+                    return None;
+                }
+                assembly
+                    .push(packet.start, packet.payload)
+                    .into_iter()
+                    .next()
+            })
+            .expect("fixture section")
+    }
+
+    #[test]
+    fn repeated_sections_do_not_publish_changes_and_clock_preserves_programs() {
+        const PCR_TICKS_PER_SECOND: u64 = 90_000;
+        let mut collector = Collector::new(1);
+        collector.transport(1);
+        collector.pcr = Some(PCR_TICKS_PER_SECOND);
+        let event = fixture_section(EIT_PIDS[0]);
+        let station = fixture_section(SDT_PID);
+        let clock = fixture_section(TIME_TABLE_PID);
+        for (pid, section) in [
+            (EIT_PIDS[0], &event),
+            (SDT_PID, &station),
+            (TIME_TABLE_PID, &clock),
+        ] {
+            collector.section(pid, section);
+            assert!(collector.take().is_some());
+            collector.section(pid, section);
+            assert!(collector.take().is_none());
+        }
+        let accepted = collector.information.clone();
+        collector.pcr = Some(2 * PCR_TICKS_PER_SECOND);
+        collector.section(TIME_TABLE_PID, &clock);
+        // An unchanged section must not erase an earlier change before take().
+        collector.section(EIT_PIDS[0], &event);
+        let update = collector
+            .take()
+            .expect("new PCR/UTC correlation")
+            .information;
+        assert_ne!(update.time, accepted.time);
+        assert_eq!(update.current, accepted.current);
+        assert_eq!(update.next, accepted.next);
+        assert_eq!(update.station, accepted.station);
+        assert_eq!(update.provider, accepted.provider);
+        assert!(collector.take().is_none());
+        collector.section(TIME_TABLE_PID, &clock[..1]);
+        assert!(collector.take().is_none());
+    }
+
     #[test]
     fn generated_ts_contains_distinct_japanese_events_and_a_broadcast_clock() {
         // Exercise the same packet/section/PAT/PMT/descriptor path as playback,

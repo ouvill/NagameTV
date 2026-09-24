@@ -1,23 +1,40 @@
-use super::wire::{self, Pid, PsiSection, STUFFING_BYTE};
+use super::wire::{self, Pid, PsiSection, SECTION_PREFIX_SIZE, STUFFING_BYTE};
 use std::collections::BTreeMap;
 
+#[derive(Default)]
+enum Syntax {
+    #[default]
+    Psi,
+    Si,
+}
+impl Syntax {
+    fn section_size(&self, bytes: &[u8]) -> Result<usize, wire::ParseError> {
+        match self {
+            Self::Psi => wire::section_size(bytes),
+            Self::Si => super::programs::section_size(bytes),
+        }
+    }
+}
+
 /// Incomplete data belongs to exactly one PID. Callers reset on discontinuity.
+/// Malformed sections are discarded until the next signalled start; CRC and
+/// table contents are validated by callers before they update accepted state.
 #[derive(Default)]
 pub(crate) struct Sections {
     pending: Option<Vec<u8>>,
-    si: bool,
+    syntax: Syntax,
 }
 
 impl Sections {
     pub(super) fn si() -> Self {
         Self {
             pending: None,
-            si: true,
+            syntax: Syntax::Si,
         }
     }
     #[cfg(test)]
     pub(crate) fn is_empty(&self) -> bool {
-        self.pending.as_ref().is_none_or(Vec::is_empty)
+        self.pending.is_none()
     }
     pub(crate) fn push(&mut self, start: bool, payload: &[u8]) -> Vec<Vec<u8>> {
         let mut complete = Vec::new();
@@ -26,44 +43,70 @@ impl Sections {
         }
         if start {
             let pointer = usize::from(payload[0]);
-            if pointer >= payload.len() {
+            let Some((prefix, sections)) = payload[1..].split_at_checked(pointer) else {
+                self.pending = None;
+                return complete;
+            };
+            if sections.is_empty() {
                 self.pending = None;
                 return complete;
             }
-            self.append(&payload[1..1 + pointer], &mut complete);
-            self.pending = Some(payload[1 + pointer..].to_vec());
-        } else if let Some(pending) = &mut self.pending {
-            pending.extend_from_slice(payload);
+            complete.extend(self.finish_pending(prefix));
+            // The pointer marks a fresh boundary even if the old section was truncated.
+            self.pending = None;
+            self.start_sections(sections, &mut complete);
+        } else {
+            complete.extend(self.finish_pending(payload));
         }
-        self.append(&[], &mut complete);
         complete
     }
 
-    fn append(&mut self, bytes: &[u8], complete: &mut Vec<Vec<u8>>) {
-        if let Some(pending) = &mut self.pending {
-            pending.extend_from_slice(bytes);
-        }
-        while let Some(data) = &mut self.pending {
-            if data.is_empty() || data.first() == Some(&STUFFING_BYTE) {
-                self.pending = None;
-                break;
+    // H.222.0 §2.4.4.3: bytes before a pointer boundary, or in a packet without
+    // payload_unit_start_indicator, cannot begin another section.
+    // https://www.itu.int/rec/T-REC-H.222.0/en
+    fn finish_pending(&mut self, bytes: &[u8]) -> Option<Vec<u8>> {
+        let mut data = self.pending.take()?;
+        let prefix = SECTION_PREFIX_SIZE
+            .saturating_sub(data.len())
+            .min(bytes.len());
+        data.extend_from_slice(&bytes[..prefix]);
+        let bytes = &bytes[prefix..];
+        match self.syntax.section_size(&data) {
+            Ok(size) => {
+                let remaining = size - data.len();
+                data.reserve_exact(remaining);
+                data.extend_from_slice(&bytes[..remaining.min(bytes.len())]);
+                if data.len() == size {
+                    return Some(data);
+                }
+                self.pending = Some(data);
             }
-            let size = match if self.si {
-                super::programs::section_size(data)
-            } else {
-                wire::section_size(data)
-            } {
-                Ok(size) => size,
-                Err(wire::ParseError::Incomplete) => break,
-                Err(wire::ParseError::Invalid(_)) => {
-                    self.pending = None;
+            Err(wire::ParseError::Incomplete) => self.pending = Some(data),
+            Err(wire::ParseError::Invalid(_)) => {}
+        }
+        None
+    }
+
+    fn start_sections(&mut self, mut bytes: &[u8], complete: &mut Vec<Vec<u8>>) {
+        while !bytes.is_empty() && bytes[0] != STUFFING_BYTE {
+            match self.syntax.section_size(bytes) {
+                Ok(size) if bytes.len() >= size => {
+                    // Copy each complete section once; never shift a packet's tail.
+                    complete.push(bytes[..size].to_vec());
+                    bytes = &bytes[size..];
+                }
+                Ok(size) => {
+                    let mut pending = Vec::with_capacity(size);
+                    pending.extend_from_slice(bytes);
+                    self.pending = Some(pending);
                     break;
                 }
-            };
-            if data.len() < size {
-                break;
+                Err(wire::ParseError::Incomplete) => {
+                    self.pending = Some(bytes.to_vec());
+                    break;
+                }
+                Err(wire::ParseError::Invalid(_)) => break,
             }
-            complete.push(data.drain(..size).collect());
         }
     }
 }
@@ -100,3 +143,6 @@ impl Pat {
         Some(programs)
     }
 }
+
+#[cfg(test)]
+mod tests;

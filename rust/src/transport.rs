@@ -6,6 +6,8 @@ mod psi;
 pub(crate) mod wire;
 pub(crate) use psi::{Pat, Sections};
 #[cfg(test)]
+mod benchmarks;
+#[cfg(test)]
 mod caption_transition_tests;
 #[cfg(test)]
 mod recovery_tests;
