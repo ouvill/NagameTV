@@ -591,7 +591,12 @@ fn scan_metadata(
     for packet in anchor.bootstrap.as_chunks::<TS_PACKET_SIZE>().0 {
         index.packet(anchor.offset, packet);
     }
-    if file.seek(SeekFrom::Start(anchor.offset)).is_err() {
+    if let Err(error) = file.seek(SeekFrom::Start(anchor.offset)) {
+        tracing::warn!(
+            error = &error as &dyn std::error::Error,
+            offset = anchor.offset,
+            "Recording metadata seek failed"
+        );
         return Ok(());
     }
     let mut offset = anchor.offset;
@@ -614,7 +619,15 @@ fn scan_metadata(
             || cancelled.load(Ordering::Acquire) || Instant::now() >= deadline,
         ) {
             Ok(bytes) if !bytes.is_empty() => bytes,
-            Ok(_) | Err(_) => break,
+            Ok(_) => break,
+            Err(error) => {
+                tracing::warn!(
+                    error = &error as &dyn std::error::Error,
+                    offset,
+                    "Recording metadata read failed"
+                );
+                break;
+            }
         };
         for (within, packet) in framing.packets(&bytes) {
             index.packet(offset + within, packet);
@@ -733,6 +746,11 @@ async fn receive(uri: &str, store: &Mutex<Store>) -> Result<(), String> {
                 return Err(error.to_string());
             }
             Err(error @ (ReceiveError::Network(_) | ReceiveError::Disconnected)) => {
+                tracing::warn!(
+                    error = &error as &dyn std::error::Error,
+                    attempt = attempt + 1,
+                    "Live stream receive attempt failed"
+                );
                 last_error = error.to_string()
             }
             Ok(()) => return Ok(()),

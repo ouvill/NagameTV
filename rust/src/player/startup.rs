@@ -55,14 +55,26 @@ impl Default for PlayerRust {
         let network = services::Network::new();
         let lifecycle_status = match &network {
             Ok(_) => super::lifecycle::Status::Connect,
-            Err(error) => super::lifecycle::Status::Failure(
-                super::lifecycle::Failure::Network,
-                error.to_string(),
-            ),
+            Err(error) => {
+                tracing::error!(
+                    error = error as &dyn std::error::Error,
+                    "Network initialization failed"
+                );
+                super::lifecycle::Status::Failure(
+                    super::lifecycle::Failure::Network,
+                    error.to_string(),
+                )
+            }
         };
         let error_log = crate::error_log::ErrorLog::new(
             crate::qt::ffi::playback_log_directory().to_string().into(),
         );
+        if let Err(error) = &error_log {
+            tracing::error!(
+                error = error as &dyn std::error::Error,
+                "Playback log initialization failed"
+            );
+        }
         let mut log_error = error_log
             .as_ref()
             .err()
@@ -72,6 +84,10 @@ impl Default for PlayerRust {
             Ok(log) => match crate::diagnostics::start(log.directory().to_owned(), plan.locked()) {
                 Ok(recorder) => recorder,
                 Err(error) => {
+                    tracing::error!(
+                        error = &error as &dyn std::error::Error,
+                        "Diagnostics initialization failed"
+                    );
                     log_error = error.to_string();
                     None
                 }

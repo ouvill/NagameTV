@@ -198,8 +198,10 @@ impl Controller {
             input.stop = true;
             self.shared.wake.notify_one();
         }
-        if let Some(task) = self.task.take() {
-            let _ = task.join();
+        if let Some(task) = self.task.take()
+            && task.join().is_err()
+        {
+            tracing::error!("Comment cache worker panicked during shutdown");
         }
     }
 }
@@ -245,6 +247,10 @@ fn run(directory: PathBuf, endpoint: String, shared: Arc<Shared>) {
         match result {
             Ok(value) => break value,
             Err(error) => {
+                tracing::error!(
+                    error = &error as &dyn std::error::Error,
+                    "Comment cache open failed"
+                );
                 set_state(&shared, State::StorageFailed(error.to_string()));
                 if wait(&shared, LOCAL_RETRY) {
                     return;
@@ -429,6 +435,7 @@ fn run(directory: PathBuf, endpoint: String, shared: Arc<Shared>) {
                         message,
                         retry_at,
                     } => {
+                        tracing::warn!(error = %message, retry_at, "Comment archive fetch failed");
                         if retry_at.is_none() {
                             blocked_target = failed_target.as_ref().map(plan::Target::key);
                         }
@@ -601,6 +608,10 @@ fn run(directory: PathBuf, endpoint: String, shared: Arc<Shared>) {
             Ok(())
         })();
         if let Err(error) = process {
+            tracing::error!(
+                error = &error as &dyn std::error::Error,
+                "Comment cache operation failed"
+            );
             observed = None;
             set_state(&shared, State::StorageFailed(error.to_string()));
             storage_retry = Some(Instant::now() + LOCAL_RETRY);
@@ -615,8 +626,18 @@ fn run(directory: PathBuf, endpoint: String, shared: Arc<Shared>) {
     if let Some(job) = job {
         job.stop();
     }
-    let _ = store.release_session(owner);
-    let _ = store.cleanup(wall(), false);
+    if let Err(error) = store.release_session(owner) {
+        tracing::error!(
+            error = &error as &dyn std::error::Error,
+            "Comment cache session release failed"
+        );
+    }
+    if let Err(error) = store.cleanup(wall(), false) {
+        tracing::error!(
+            error = &error as &dyn std::error::Error,
+            "Comment cache cleanup failed"
+        );
+    }
 }
 
 #[cfg(test)]

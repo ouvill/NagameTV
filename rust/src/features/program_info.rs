@@ -143,6 +143,10 @@ impl ProgramInfo {
                             Outcome::Ready
                         }
                         Err(error) => {
+                            tracing::error!(
+                                error = &error as &dyn std::error::Error,
+                                "Program guide fetch failed"
+                            );
                             update.completed = Some(Completion::Failed);
                             Outcome::Failed(error)
                         }

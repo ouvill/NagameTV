@@ -113,6 +113,10 @@ impl Controller {
         }
         self.success_until = None;
         if let Err(error) = validate_text(text) {
+            tracing::warn!(
+                error = &error as &dyn std::error::Error,
+                "Comment validation failed"
+            );
             self.status = Status::Failed(error);
             return false;
         }
@@ -126,6 +130,10 @@ impl Controller {
         let request = match client.post(url, now) {
             Ok(request) => request,
             Err(error) => {
+                tracing::error!(
+                    error = &error as &dyn std::error::Error,
+                    "Comment posting could not start"
+                );
                 self.status = Status::Failed(Error::Blocked(error));
                 return false;
             }
@@ -167,6 +175,21 @@ impl Controller {
             Ok(Outcome::Unknown(error)) => Status::Unknown(error),
             Err(error) => Status::Unknown(Error::Worker(error)),
         };
+        match &self.status {
+            Status::Failed(error) => {
+                tracing::error!(
+                    error = error as &dyn std::error::Error,
+                    "Comment posting failed"
+                );
+            }
+            Status::Unknown(error) => {
+                tracing::warn!(
+                    error = error as &dyn std::error::Error,
+                    "Comment delivery could not be confirmed"
+                );
+            }
+            Status::Idle | Status::Sending | Status::Sent => {}
+        }
         let sent = matches!(self.status, Status::Sent);
         self.success_until = sent.then(|| now + SUCCESS_NOTICE_DURATION);
         sent

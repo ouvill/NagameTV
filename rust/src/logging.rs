@@ -25,7 +25,7 @@ pub fn record_qt(level: u8, category: &str, message: &str) {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use std::sync::{Arc, Mutex};
 
@@ -42,7 +42,7 @@ mod tests {
         }
     }
 
-    fn capture(filter: &str) -> String {
+    pub(crate) fn capture_output<T>(filter: &str, operation: impl FnOnce() -> T) -> (T, String) {
         let buffer = Buffer::default();
         let writer = buffer.clone();
         let subscriber = tracing_subscriber::fmt()
@@ -51,7 +51,13 @@ mod tests {
             .with_ansi(false)
             .with_writer(move || writer.clone())
             .finish();
-        tracing::subscriber::with_default(subscriber, || {
+        let result = tracing::subscriber::with_default(subscriber, operation);
+        let output = String::from_utf8(buffer.0.lock().unwrap().clone()).unwrap();
+        (result, output)
+    }
+
+    fn capture(filter: &str) -> String {
+        capture_output(filter, || {
             tracing::info!("application started");
             for (level, message) in [
                 (0, "qt-debug"),
@@ -62,8 +68,8 @@ mod tests {
             ] {
                 record_qt(level, "test.category", message);
             }
-        });
-        String::from_utf8(buffer.0.lock().unwrap().clone()).unwrap()
+        })
+        .1
     }
 
     #[test]
@@ -98,5 +104,31 @@ mod tests {
         assert!(!output.contains("qt-warning"));
         assert!(!output.contains("qt-info"));
         assert!(capture("off").is_empty());
+    }
+
+    #[test]
+    fn typed_errors_include_underlying_causes_at_default_level() {
+        #[derive(Debug, thiserror::Error)]
+        #[error("request failed")]
+        struct RequestError(#[source] std::io::Error);
+
+        let error = RequestError(std::io::Error::new(
+            std::io::ErrorKind::ConnectionRefused,
+            "connection refused by test server",
+        ));
+        let (_, output) = capture_output("info", || {
+            tracing::error!(
+                error = &error as &dyn std::error::Error,
+                "Channel fetch failed"
+            );
+        });
+        assert!(output.contains("ERROR"), "{output}");
+        assert!(output.contains("Channel fetch failed"), "{output}");
+        assert!(output.contains("request failed"), "{output}");
+        assert!(output.contains("error.sources"), "{output}");
+        assert!(
+            output.contains("connection refused by test server"),
+            "{output}"
+        );
     }
 }

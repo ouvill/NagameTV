@@ -10,6 +10,67 @@ use std::{
 };
 
 #[test]
+fn each_failed_fetch_is_logged_once_with_causes_even_when_immediately_refreshed()
+-> Result<(), Box<dyn std::error::Error>> {
+    let network = Network::new()?;
+    let now = Instant::now();
+    let (result, output) = crate::logging::tests::capture_output("info", || {
+        let mut feature = ProgramInfo::default();
+        for refresh_pending in [false, true] {
+            let failure = parse(br#"[{"id":"invalid"}]"#)
+                .err()
+                .ok_or("expected invalid EPG")?;
+            feature.acquisition =
+                Acquisition::Fetching(network.job(async { Err(FetchError::Parse(failure)) }));
+            // Starting a queued refresh replaces Failed status in the same poll.
+            feature.desired = Some("http://127.0.0.1:1".into());
+            feature.refresh_pending = refresh_pending;
+            let deadline = Instant::now() + Duration::from_secs(3);
+            loop {
+                let update = feature.poll_at(&network, now);
+                if update.completed == Some(Completion::Failed) {
+                    assert_eq!(update.started, refresh_pending);
+                    assert_eq!(
+                        matches!(feature.status(), Status::Fetching),
+                        refresh_pending
+                    );
+                    break;
+                }
+                assert!(Instant::now() < deadline, "EPG worker did not complete");
+                thread::sleep(Duration::from_millis(1));
+            }
+            if !refresh_pending {
+                for _ in 0..10 {
+                    feature.poll_at(&network, now);
+                    assert!(matches!(feature.status(), Status::Failed(_)));
+                }
+            }
+            feature.configure(None);
+            while !matches!(feature.status(), Status::Disabled) {
+                assert!(Instant::now() < deadline, "EPG worker did not stop");
+                feature.poll_at(&network, now);
+                thread::sleep(Duration::from_millis(1));
+            }
+            for _ in 0..10 {
+                feature.poll_at(&network, now);
+                assert!(matches!(feature.status(), Status::Disabled));
+            }
+        }
+        Ok::<_, Box<dyn std::error::Error>>(())
+    });
+    result?;
+    assert_eq!(
+        output.matches("Program guide fetch failed").count(),
+        2,
+        "{output}"
+    );
+    assert_eq!(output.lines().count(), 2, "{output}");
+    assert!(output.contains("error.sources"), "{output}");
+    assert!(output.contains("[0].id"), "{output}");
+    Ok(())
+}
+
+#[test]
 fn navigation_uses_current_snapshot_without_a_browser_and_tracks_program_boundaries()
 -> Result<(), Box<dyn std::error::Error>> {
     use crate::channels::Step::{Next, Previous};

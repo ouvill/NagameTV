@@ -105,6 +105,9 @@ impl Control {
         self.save_error = self
             .preferences
             .configure(settings)
+            .inspect_err(|error| {
+                tracing::error!(%error, "Remote settings save failed");
+            })
             .err()
             .unwrap_or_default();
         if unchanged && matches!(self.phase, Phase::Running(_) | Phase::Disabled) {
@@ -128,7 +131,10 @@ impl Control {
         match next {
             AfterStop::Disabled => Phase::Disabled,
             AfterStop::Restart => Phase::Ready,
-            AfterStop::Failed(error) => Phase::Failed(error),
+            AfterStop::Failed(error) => {
+                tracing::error!(%error, "Remote API stopped unexpectedly");
+                Phase::Failed(error)
+            }
         }
     }
     pub fn stop(&mut self) {
@@ -155,7 +161,13 @@ impl Control {
             Phase::Stopping { task, next } => match task.poll() {
                 viewer_remote::Progress::Pending(task) => Phase::Stopping { task, next },
                 viewer_remote::Progress::Complete(Ok(())) => Self::after_stop(next),
-                viewer_remote::Progress::Complete(Err(error)) => Phase::Failed(error.to_string()),
+                viewer_remote::Progress::Complete(Err(error)) => {
+                    tracing::error!(
+                        error = &error as &dyn std::error::Error,
+                        "Remote API shutdown failed"
+                    );
+                    Phase::Failed(error.to_string())
+                }
             },
             phase @ (Phase::Disabled | Phase::Ready | Phase::Running(_) | Phase::Failed(_)) => {
                 phase

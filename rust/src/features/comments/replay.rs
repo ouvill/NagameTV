@@ -156,7 +156,10 @@ impl Replay {
                     }
                     Storage::Active(store)
                 }
-                Err(error) => Storage::Failed(error),
+                Err(error) => {
+                    tracing::error!(%error, "Comment cache initialization failed");
+                    Storage::Failed(error)
+                }
             };
     }
     pub fn update(

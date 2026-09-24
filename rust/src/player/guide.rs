@@ -99,10 +99,18 @@ impl ffi::Player {
                 self.select(index);
                 QString::default()
             }
-            Err(error) => QString::from(match error {
-                Error::Unavailable => "Program information has changed. Select the program again.",
-                Error::NotLive => "This program is not currently on air.",
-            }),
+            Err(error) => {
+                tracing::warn!(
+                    error = &error as &dyn std::error::Error,
+                    "Program selection rejected"
+                );
+                QString::from(match error {
+                    Error::Unavailable => {
+                        "Program information has changed. Select the program again."
+                    }
+                    Error::NotLive => "This program is not currently on air.",
+                })
+            }
         }
     }
     pub fn refresh_epg(mut self: Pin<&mut Self>) {

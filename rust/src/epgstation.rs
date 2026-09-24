@@ -436,7 +436,13 @@ impl Library {
                             };
                             return Some(verified);
                         }
-                        Err(error) => self.error = Some(error),
+                        Err(error) => {
+                            tracing::error!(
+                                error = &error as &dyn std::error::Error,
+                                "Recording catalogue fetch failed"
+                            );
+                            self.error = Some(error);
+                        }
                     }
                 }
             },

@@ -110,6 +110,10 @@ impl ffi::Player {
         {
             Ok(login) => login,
             Err(error) => {
+                tracing::error!(
+                    error = &error as &dyn std::error::Error,
+                    "EPGStation login validation failed"
+                );
                 self.as_mut().rust_mut().epgstation_input_error = QString::from(error.to_string());
                 self.epgstation_changed();
                 return false;
@@ -132,11 +136,18 @@ impl ffi::Player {
                 login,
             ),
             None => {
+                tracing::error!("Recording catalogue request failed: network is unavailable");
                 state.epgstation_input_error = super::status::tr("Network is unavailable.");
                 self.epgstation_changed();
                 return false;
             }
         };
+        if let Err(error) = &result {
+            tracing::error!(
+                error = error as &dyn std::error::Error,
+                "Recording catalogue request failed"
+            );
+        }
         let accepted = result.is_ok();
         self.as_mut().rust_mut().epgstation_input_error = result
             .err()

@@ -34,6 +34,13 @@ QObject presentation APIs in their adapters. Qt/QML form the presentation layer;
 keep authoritative application state and use-case decisions in Qt-independent
 Rust types. See the conventions for ownership, offline SQL metadata and validation.
 
+Report operational failures to terminal stderr through `tracing`, including the
+operation and underlying causes, even when the UI or a file also reports them.
+Log when handling a failure, not when rendering retained error state. Do not
+silently discard errors with `let _ =`, `.ok()` or fallback values; propagate them
+or record them. Document intentional exceptions for normal cancellation, absent
+optional data and shutdown races. Never log credentials or comment drafts.
+
 Select checks for the changed behavior and complete the required checks described
 in the conventions and development guide. Once they pass, repeat or broaden them
 only for further changes, failures or unresolved concerns. For prose-only changes,

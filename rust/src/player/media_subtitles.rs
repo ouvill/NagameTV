@@ -18,9 +18,20 @@ impl ffi::Player {
             .is_some_and(|session| session.loading())
     }
     fn subtitle_result(mut self: Pin<&mut Self>, result: Result<(), Error>) -> bool {
+        if let Err(error) = &result {
+            tracing::error!(
+                error = error as &dyn std::error::Error,
+                "Media subtitle operation failed"
+            );
+        }
         let success = result.is_ok();
-        self.as_mut()
-            .set_media_subtitle_error(result.err().map(subtitle_error).unwrap_or_default());
+        self.as_mut().set_media_subtitle_error(
+            result
+                .as_ref()
+                .err()
+                .map(subtitle_error)
+                .unwrap_or_default(),
+        );
         success
     }
     pub fn open_subtitle(mut self: Pin<&mut Self>, file: QUrl) -> bool {
@@ -152,14 +163,18 @@ impl ffi::Player {
             }
             Some(Err(error)) => {
                 self.as_mut().set_media_subtitle_image(QImage::default());
-                self.subtitle_result(Err(error));
+                // A persistent renderer failure can recur on every display tick.
+                // Explicit user operations still report each failed attempt above.
+                if self.media_subtitle_error() != &subtitle_error(&error) {
+                    self.subtitle_result(Err(error));
+                }
             }
             Some(Ok(None)) | None => {}
         }
     }
 }
 
-fn subtitle_error(error: Error) -> QString {
+fn subtitle_error(error: &Error) -> QString {
     use super::status::{tr, with_detail};
     match error {
         Error::Read(error) => with_detail("Could not read subtitles: %1", error),

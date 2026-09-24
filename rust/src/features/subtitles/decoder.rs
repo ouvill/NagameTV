@@ -5,11 +5,30 @@ pub(super) struct AribDecoder(Decoder);
 
 impl AribDecoder {
     pub(super) fn new() -> Option<Self> {
-        Decoder::new().ok().map(Self)
+        Decoder::new()
+            .inspect_err(|error| {
+                tracing::error!(
+                    error = error as &dyn std::error::Error,
+                    "ARIB subtitle decoder initialization failed"
+                );
+            })
+            .ok()
+            .map(Self)
     }
 
     pub(super) fn decode_pes(&mut self, pes: &[u8], pts_ms: i64) -> Option<SubtitleCue> {
-        self.0.decode(pes, pts_ms).ok().flatten().map(to_cue)
+        self.0
+            .decode(pes, pts_ms)
+            .inspect_err(|error| {
+                tracing::warn!(
+                    error = error as &dyn std::error::Error,
+                    pts_ms,
+                    "Discarding an invalid ARIB subtitle payload"
+                );
+            })
+            .ok()
+            .flatten()
+            .map(to_cue)
     }
 }
 

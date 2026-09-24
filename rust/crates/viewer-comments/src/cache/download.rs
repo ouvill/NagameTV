@@ -98,7 +98,17 @@ impl Job {
     }
     pub fn stop(self) {
         self.cancel.stop();
-        let _ = self.task.join();
+        match self.task.join() {
+            // A requested cancellation is a normal outcome, including a completed download.
+            Ok(Ok(_)) | Ok(Err(Error::Cancelled)) => {}
+            Ok(Err(error)) => {
+                tracing::error!(
+                    error = &error as &dyn std::error::Error,
+                    "Comment archive worker failed during shutdown"
+                );
+            }
+            Err(_) => tracing::error!("Comment archive worker panicked during shutdown"),
+        }
     }
 }
 

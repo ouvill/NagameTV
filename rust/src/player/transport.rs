@@ -208,6 +208,10 @@ impl ffi::Player {
         };
         let accepted = result.is_ok();
         let message = result.err().map_or(Message::None, |error| {
+            tracing::error!(
+                error = &error as &dyn std::error::Error,
+                "Playback transport operation failed"
+            );
             Message::Failure(QString::from(error.to_string()))
         });
         let changed = self.rust().transport_message != message;

@@ -423,6 +423,10 @@ impl ffi::Player {
                 Err(error) => self.as_mut().playback_failed(error),
             },
             Err(playback::Error::Transport(error @ playback::timeline::Error::RateTimedOut)) => {
+                tracing::error!(
+                    error = &error as &dyn std::error::Error,
+                    "Playback rate change timed out"
+                );
                 // The controller has paused and requires a confirmed normal-rate
                 // seek before resuming. Keep this source and the paused frame.
                 self.as_mut().change_stream_state(|state| state);
@@ -432,8 +436,6 @@ impl ffi::Player {
                     )));
             }
             Err(error) => {
-                let text = error.to_string();
-                tracing::error!("Playback error: {text}");
                 let retry = error
                     .is_live_resume_rejected()
                     .then(|| self.as_mut().rust_mut().stream_state.take_retry())
@@ -446,7 +448,10 @@ impl ffi::Player {
                     return;
                 }
                 if let Some(attempt) = retry {
-                    tracing::warn!("Live resume rejected; opening one fresh stream connection");
+                    tracing::warn!(
+                        error = &error as &dyn std::error::Error,
+                        "Live resume rejected; opening one fresh stream connection"
+                    );
                     self.as_mut().start_stream(attempt);
                     if self.connecting() {
                         self.as_mut().update_status(PlaybackStatus::Reconnecting);
@@ -477,7 +482,7 @@ impl ffi::Player {
         self.as_mut().rust_mut().screenshot_saves.finish();
         let result = self.as_mut().rust_mut().media.shutdown();
         if let Err(error) = result {
-            tracing::error!("Playback shutdown failed; keeping the window alive: {error}");
+            // playback_failed records the cause; keep the window alive for a retry.
             self.playback_failed(error);
             return false;
         }

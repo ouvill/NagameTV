@@ -147,6 +147,10 @@ impl Controller {
                     self.phase = Phase::Running(connection);
                 }
                 Err(blocked) => {
+                    tracing::warn!(
+                        error = &blocked as &dyn std::error::Error,
+                        "Comment connection could not start"
+                    );
                     let state = State::Failed(std::sync::Arc::new(crate::connection::Error::Http(
                         HttpError::Blocked(blocked.clone()),
                     )));
@@ -183,6 +187,18 @@ impl Controller {
         // On configure, stop() has already discarded the old queue immediately.
         if matches!(state, State::Ended(_) | State::Failed(_)) && comments.len() < MAX_POLL_COMMENTS
         {
+            match &state {
+                State::Failed(error) => {
+                    tracing::error!(
+                        error = error.as_ref() as &dyn std::error::Error,
+                        "Comment reception failed"
+                    );
+                }
+                State::Ended(reason) => {
+                    tracing::warn!(%reason, "Comment connection ended");
+                }
+                State::Connecting | State::Receiving => {}
+            }
             let endpoints = self.desired.as_ref().expect("running connection target");
             if matches!(&state, State::Failed(error) if matches!(&**error, crate::connection::Error::WorkerStopped))
             {

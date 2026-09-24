@@ -104,7 +104,12 @@ impl ffi::Player {
                 .and_then(|session| session.pending_diagnostic()),
             epg_loading: tasks > 0 && !stopping,
         };
-        let _ = recorder.record(event, snapshot);
+        if let Err(error) = recorder.record(event, snapshot) {
+            tracing::error!(
+                error = &error as &dyn std::error::Error,
+                "Diagnostic event recording failed"
+            );
+        }
     }
     pub(super) fn stop_diagnostics(mut self: Pin<&mut Self>) {
         let recorder = self.as_mut().rust_mut().diagnostic_recorder.take();

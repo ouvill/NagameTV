@@ -71,7 +71,13 @@ impl super::ffi::Player {
             });
         match result {
             Ok(()) => QString::default(),
-            Err(error) => QString::from(error_source(error)),
+            Err(error) => {
+                tracing::error!(
+                    error = &error as &dyn std::error::Error,
+                    "Audio track selection failed"
+                );
+                QString::from(error_source(error))
+            }
         }
     }
 }

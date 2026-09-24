@@ -63,7 +63,21 @@ impl ffi::Player {
         let text = self.rust().lifecycle_status.render();
         self.as_mut().set_status(text);
     }
-    pub(super) fn status_error(self: Pin<&mut Self>, kind: Failure, error: impl std::fmt::Display) {
+    pub(super) fn status_error(
+        self: Pin<&mut Self>,
+        kind: Failure,
+        error: impl std::error::Error + 'static,
+    ) {
+        let operation = match kind {
+            Failure::Server => "Server configuration",
+            Failure::Network => "Network initialization",
+            Failure::ChannelFetch => "Channel fetch",
+        };
+        tracing::error!(
+            operation,
+            error = &error as &dyn std::error::Error,
+            "Operation failed"
+        );
         self.update_status(Status::Failure(kind, error.to_string()));
     }
 }

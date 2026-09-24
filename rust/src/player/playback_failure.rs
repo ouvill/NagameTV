@@ -25,6 +25,9 @@ impl Player {
                 }),
             Err(error) => Err(error.to_string()),
         };
+        if let Err(error) = &result {
+            tracing::error!(%error, "Could not open the log folder");
+        }
         let opened = result.is_ok();
         self.as_mut()
             .set_log_error(QString::from(result.err().unwrap_or_default()));
@@ -34,6 +37,7 @@ impl Player {
     /// Retain only the latest failure for the UI; ordinary status updates do not erase it.
     /// User retry/server replacement and successful PLAYING clear this projection.
     pub(super) fn playback_failed(mut self: Pin<&mut Self>, error: crate::playback::Error) {
+        tracing::error!(error = &error as &dyn std::error::Error, "Playback failed");
         self.as_mut()
             .change_stream_state(super::stream_state::State::stop_failed);
         // Store only a static translation source plus the existing latest diagnostics.

@@ -14,6 +14,10 @@ impl ffi::Player {
         let request = match Request::portal_transfer(&key.to_string()) {
             Ok(request) => request,
             Err(error) => {
+                tracing::error!(
+                    error = &error as &dyn std::error::Error,
+                    "Recording transfer failed"
+                );
                 self.set_file_error(super::status::with_detail(
                     "Could not open the video file: %1",
                     error,
@@ -32,6 +36,10 @@ impl ffi::Player {
         let request = match Request::from_url(&url.to_string()) {
             Ok(request) => request,
             Err(error) => {
+                tracing::error!(
+                    error = &error as &dyn std::error::Error,
+                    "Recording request failed"
+                );
                 self.set_file_error(super::status::with_detail(
                     "Could not open the video file: %1",
                     error,
@@ -71,10 +79,16 @@ impl ffi::Player {
                 }
                 Err(error) => {
                     match purpose {
-                        Purpose::Open => self.as_mut().set_file_error(super::status::with_detail(
-                            "Could not open the video file: %1",
-                            error,
-                        )),
+                        Purpose::Open => {
+                            tracing::error!(
+                                error = &error as &dyn std::error::Error,
+                                "Recording inspection failed"
+                            );
+                            self.as_mut().set_file_error(super::status::with_detail(
+                                "Could not open the video file: %1",
+                                error,
+                            ));
+                        }
                         Purpose::Replay => self.as_mut().playback_failed(error.into()),
                     }
                     false
