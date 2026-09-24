@@ -20,6 +20,59 @@ const COMMENT_INK_TOLERANCE_PIXELS: f64 = 4.0;
 const OVERLAY_PRIMARY_MIN: i32 = 200;
 const OVERLAY_OTHER_MAX: i32 = 40;
 
+fn check_video_frame_sync(
+    app: &QGuiApplication,
+    engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
+) -> TestResult {
+    evaluate(
+        engine,
+        "setup.close(); player.configure_danmaku(true,36,1,1); true",
+    )?;
+    wait_for(app, engine, "danmaku.item !== null")?;
+    evaluate(
+        engine,
+        "danmaku.item.shadowEnabled=false; danmaku.item.timelineJson=JSON.stringify({generation:999,comments:Array.from({length:60},(_,i)=>({time:i/2,text:'Frame sync '+i}))}); true",
+    )?;
+    wait_for(app, engine, "videoFrameSync.enabled")?;
+    assert!(evaluate(
+        engine,
+        "danmaku.item.visible=false; !videoFrameSync.enabled"
+    )?);
+    evaluate(engine, "danmaku.item.visible=true; true")?;
+    wait_for(app, engine, "videoFrameSync.enabled")?;
+    assert!(evaluate(engine, "root.hide(); !videoFrameSync.enabled")?);
+    evaluate(engine, "root.show(); true")?;
+    wait_for(app, engine, "videoFrameSync.enabled")?;
+    assert!(evaluate(
+        engine,
+        "player.pause() && !videoFrameSync.enabled"
+    )?);
+    // update() requests another frame. An unconditional afterAnimating hook
+    // would keep rendering here even though the video and comments are paused.
+    pump(app, Duration::from_millis(800));
+    let frames = ffi::watchFrames(engine)?;
+    pump(app, Duration::from_millis(500));
+    let intervals: Vec<f64> = serde_json::from_str(&frames.samples().to_string())?;
+    assert!(
+        intervals.len() < 8,
+        "paused playback kept redrawing: {} frames in 500 ms",
+        intervals.len()
+    );
+    drop(frames);
+    evaluate(engine, "player.play(); true")?;
+    wait_for(app, engine, "videoFrameSync.enabled")?;
+    assert!(evaluate(
+        engine,
+        "player.seek_to(1000) && !videoFrameSync.enabled"
+    )?);
+    wait_for(app, engine, "!player.seeking && videoFrameSync.enabled")?;
+    assert!(evaluate(
+        engine,
+        "player.configure_danmaku(false,36,1,1); !videoFrameSync.enabled"
+    )?);
+    Ok(())
+}
+
 fn pump(app: &QGuiApplication, duration: Duration) {
     let until = Instant::now() + duration;
     while Instant::now() < until {
@@ -197,6 +250,7 @@ pub(super) fn run(
         engine,
         "player.playing && JSON.parse(player.video_stats()).rendered > 5",
     )?;
+    check_video_frame_sync(app, engine)?;
     assert!(evaluate(engine, "player.pause()")?);
     wait_for(app, engine, "player.paused")?;
     evaluate(

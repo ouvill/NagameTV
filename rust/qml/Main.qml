@@ -264,6 +264,20 @@ ViewerWindow {
         onFailed: function(message) { screenshotNotice.showFailure(message); }
     }
     Connections {
+        id: videoFrameSync
+        target: root
+        enabled: !root.closing && root.visible && root.visibility !== Window.Minimized
+            && player.playing && !player.paused && !player.seeking && !player.ended
+            && video.visible && video.width > 0 && video.height > 0
+            && danmaku.active && danmaku.view !== null && danmaku.view.animating
+        // qml6glsink queues its item update on the GUI thread. An animated
+        // overlay can start a sync before that event runs, repeating an old
+        // video frame. Include the video in this sync alongside the overlays.
+        // Connections is owned by the window; its binding disables this extra
+        // update when playback or comment animation stops.
+        function onAfterAnimating() { video.update(); }
+    }
+    Connections {
         target: root
         function onAfterAnimating() {
             if (root.closing || !player.media_active || video.width <= 0 || video.height <= 0) return;

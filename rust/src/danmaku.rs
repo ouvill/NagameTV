@@ -216,6 +216,13 @@ impl ffi::DanmakuController {
     }
 
     pub fn tick(mut self: Pin<&mut Self>) {
+        self.as_mut().update_clock();
+        self.as_mut().publish_positions();
+        self.publish();
+    }
+    // Measurement callbacks re-enter synchronously while admitting a batch.
+    // Expire comments here, then publish positions once after the whole batch.
+    fn update_clock(mut self: Pin<&mut Self>) {
         let expired = {
             let mut this = self.as_mut().rust_mut();
             let now = Instant::now();
@@ -227,8 +234,6 @@ impl ffi::DanmakuController {
         for token in expired {
             self.as_mut().removed(token.value());
         }
-        self.as_mut().publish_positions();
-        self.publish();
     }
     pub fn configure(
         mut self: Pin<&mut Self>,
@@ -351,7 +356,7 @@ impl ffi::DanmakuController {
         }
     }
     pub fn measured(mut self: Pin<&mut Self>, token: u32, width: f64) {
-        self.as_mut().tick();
+        self.as_mut().update_clock();
         let spawn = self.as_mut().rust_mut().engine.measured(token, width);
         if let Some(spawn) = spawn {
             self.as_mut().spawned(
@@ -431,12 +436,12 @@ impl ffi::DanmakuController {
         let Some(position) = danmaku_core::seconds(seconds) else {
             return false;
         };
-        self.as_mut().tick();
+        self.as_mut().update_clock();
         let backwards = self.as_mut().rust_mut().engine.set_position(position);
         if backwards {
             self.as_mut().cleared();
         }
-        self.as_mut().tick();
+        self.as_mut().update_clock();
         self.as_mut().drain_due();
         self.as_mut().publish_positions();
         self.publish();
@@ -478,7 +483,7 @@ impl ffi::DanmakuController {
         if cleared {
             self.as_mut().cleared();
         }
-        self.as_mut().tick();
+        self.as_mut().update_clock();
         self.as_mut().drain_due();
         self.as_mut().publish_positions();
         self.publish();

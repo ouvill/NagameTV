@@ -22,6 +22,7 @@ Item {
     readonly property alias controller: backend
     readonly property int activeCount: backend.active_count
     readonly property int laneCount: backend.lane_count
+    readonly property bool animating: frames.running
     // Visual handles only. Comment data, lanes, clocks and lifetime live in Rust.
     // A Map keeps storage tied to live entries, not the highest numeric token.
     property var visuals: new Map()
@@ -146,6 +147,7 @@ Item {
     // Rust advances from the media clock in playback mode and a monotonic clock
     // in direct reception mode. Playback keeps checking for upcoming comments.
     FrameAnimation {
+        id: frames
         running: overlay.visible && (backend.active_count > 0 || backend.media_driven) && !backend.paused
         onTriggered: {
             if (backend.media_driven && overlay.playbackClock) {

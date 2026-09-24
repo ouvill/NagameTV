@@ -14,6 +14,11 @@ TestCase {
         Viewer.DanmakuOverlay { width: 640; height: 480; fontSize: 21; textOpacity: 1; speed: 1 }
     }
     property var overlay
+    SignalSpy {
+        id: positions
+        target: overlay ? overlay.controller : null
+        signalName: "positioned"
+    }
     function entries() { return Array.from(overlay.visuals.values()); }
     function initTestCase() { failOnWarning(/.*/); }
     function init() { overlay = createTemporaryObject(component, this); verify(overlay !== null); }
@@ -26,6 +31,25 @@ TestCase {
     }
     function seek(position) { overlay.controller.seek(position); }
     function load() { verify(overlay.controller.load_timeline(records())); }
+    function test_advance_publishes_each_pose_once_data() {
+        return [{tag: "scroll", mode: "scroll"}, {tag: "pop", mode: "pop"}];
+    }
+    function test_advance_publishes_each_pose_once(data) {
+        overlay.displayMode = data.mode;
+        overlay.paused = true;
+        load();
+        seek(0);
+        overlay.paused = false;
+        // Advance admits two comments through synchronous measurement signals.
+        // They must not cause repeated updates of every existing label.
+        for (const time of [2, 2.5, 1.5]) {
+            positions.clear();
+            verify(overlay.controller.advance(time));
+            compare(overlay.activeCount, 3);
+            compare(positions.count, 3);
+            compare(new Set(positions.signalArguments.map(args => args[0])).size, 3);
+        }
+    }
     function test_live_arrival_enters_at_right_edge_and_replay_restores_timestamp() {
         const receivedAt = 10;
         const postedAt = 8;
@@ -134,6 +158,7 @@ TestCase {
         verify(entry.y < y);
         overlay.paused = true;
         const stoppedY = entry.y;
+        verify(!overlay.animating);
         verify(entry.background.visible);
         const shadow = findChild(entry, "commentShadow");
         verify(shadow.item !== null);
@@ -146,8 +171,10 @@ TestCase {
         overlay.textOpacity = 0.5;
         verify(entry.opacity <= 0.5);
         overlay.paused = false;
+        verify(overlay.animating);
         tryCompare(overlay, "activeCount", 0, 5000);
         tryCompare(overlay, "visualCount", 0);
+        verify(!overlay.animating);
     }
     function test_rotated_long_shadow_texture_stays_bounded() {
         overlay.displayMode = "pop";
