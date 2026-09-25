@@ -75,6 +75,9 @@ pub fn run(arguments: Vec<OsString>) -> i32 {
             return error.exit_code();
         }
     };
+    // Keep help/argument errors free of initialization, but record operational
+    // failures from every native suite and its startup-window subprocesses.
+    crate::logging::init();
     match args.suite {
         Suite::Localization => localization::run(false),
         Suite::MissingCatalog => localization::run(true),

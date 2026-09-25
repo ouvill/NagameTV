@@ -62,6 +62,19 @@ verify successful broadcast playback or audible sound. The internal
 `startup-window` subprocess is launched by the suite after hardware validation;
 run the public script rather than invoking this subprocess directly.
 
+The [startup HTTP fixture](../rust/src/native_tests/startup/server.rs) uses wiremock
+to read complete request bodies and isolate connections. Its hardware-free Rust
+regressions run with the ordinary `cargo test` command; the `epgstation` filter
+selects them alongside the catalogue tests. They cover split login bodies,
+cancelled connections and repeated authentication beside an incomplete request.
+Native runners initialize terminal logging, and the startup suite checks that a
+rejected login reports an authentication failure as soon as the request finishes.
+The EPGStation catalogue, channels and video metadata come from
+[captured real-provider responses](../tests/fixtures/epgstation/README.md).
+The separate hardware-free `python3 scripts/epgstation-integration.py` suite runs
+the pinned EPGStation HTTP service in Docker and checks these snapshots and the
+mock's file responses against it. GUI success alone does not verify a real server.
+
 The startup suite also covers persisted autoplay and both directions of the
 environment override, using the restored channel. Screenshot tests copy their
 fixture and production component into a temporary directory and run the native

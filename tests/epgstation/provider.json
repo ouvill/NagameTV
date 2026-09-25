@@ -1,0 +1,5 @@
+{
+  "repository": "https://github.com/stuayu/EPGStation",
+  "commit": "26f56720722e61e66fc33fc0c4aacfd3d98913ba",
+  "node_image": "node:24-trixie@sha256:be40f6a87b9b22215ddb20da0a2320a5c6d583fe3ee3b0024d9fa4f05b40c8fd"
+}

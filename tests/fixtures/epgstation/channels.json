@@ -1,0 +1,13 @@
+[
+  {
+    "id": 400101,
+    "serviceId": 101,
+    "networkId": 4,
+    "name": "Test TV",
+    "halfWidthName": "Test TV",
+    "hasLogoData": false,
+    "channelType": "BS",
+    "channel": "BS15_0",
+    "type": 1
+  }
+]

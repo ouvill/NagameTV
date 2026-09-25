@@ -4,6 +4,8 @@ use serde::Deserialize;
 use std::sync::Arc;
 mod client;
 #[cfg(test)]
+mod provider_tests;
+#[cfg(test)]
 mod tests;
 pub use client::Login;
 pub(crate) use client::PlaybackMetadata;

@@ -1,0 +1,315 @@
+{
+  "records": [
+    {
+      "id": 1,
+      "channelId": 400101,
+      "startAt": 1699999940000,
+      "endAt": 1700000000000,
+      "name": "EPGStation recording 1",
+      "isRecording": false,
+      "isEncoding": false,
+      "isProtected": false,
+      "channelName": "Test TV",
+      "description": "Recorded programme with a description for browsing.",
+      "thumbnails": [],
+      "videoFiles": [
+        {
+          "id": 123,
+          "name": "TS",
+          "filename": "recording-seek.ts",
+          "type": "ts",
+          "size": 1692940,
+          "duration": 12,
+          "startTime": 0,
+          "startAt": 1699999940000
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "channelId": 400101,
+      "startAt": 1699999880000,
+      "endAt": 1699999940000,
+      "name": "EPGStation recording 2",
+      "isRecording": false,
+      "isEncoding": false,
+      "isProtected": false,
+      "channelName": "Test TV",
+      "description": "Recorded programme with a description for browsing.",
+      "thumbnails": [],
+      "videoFiles": [
+        {
+          "id": 124,
+          "name": "media-h264.mp4",
+          "filename": "media-h264.mp4",
+          "type": "encoded",
+          "size": 254373,
+          "duration": 12,
+          "startTime": 0,
+          "startAt": 1699999880000
+        },
+        {
+          "id": 126,
+          "name": "TS",
+          "filename": "recording-seek.ts",
+          "type": "ts",
+          "size": 1692940,
+          "duration": 12,
+          "startTime": 0,
+          "startAt": 1699999880000
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "channelId": 400101,
+      "startAt": 1699999820000,
+      "endAt": 1699999880000,
+      "name": "EPGStation recording 3",
+      "isRecording": false,
+      "isEncoding": false,
+      "isProtected": false,
+      "channelName": "Test TV",
+      "description": "Recorded programme with a description for browsing.",
+      "thumbnails": [],
+      "videoFiles": [
+        {
+          "id": 125,
+          "name": "media-hevc.mkv",
+          "filename": "media-hevc.mkv",
+          "type": "encoded",
+          "size": 344107,
+          "duration": 12,
+          "startTime": 0,
+          "startAt": 1699999820000
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "channelId": 400101,
+      "startAt": 1699999760000,
+      "endAt": 1699999820000,
+      "name": "EPGStation recording 4",
+      "isRecording": false,
+      "isEncoding": false,
+      "isProtected": false,
+      "channelName": "Test TV",
+      "description": "Recorded programme with a description for browsing.",
+      "thumbnails": [],
+      "videoFiles": [
+        {
+          "id": 204,
+          "name": "TS",
+          "filename": "recording-seek.ts",
+          "type": "ts",
+          "size": 1692940,
+          "duration": 12,
+          "startTime": 0,
+          "startAt": 1699999760000
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "channelId": 400101,
+      "startAt": 1699999700000,
+      "endAt": 1699999760000,
+      "name": "EPGStation recording 5",
+      "isRecording": false,
+      "isEncoding": false,
+      "isProtected": false,
+      "channelName": "Test TV",
+      "description": "Recorded programme with a description for browsing.",
+      "thumbnails": [],
+      "videoFiles": [
+        {
+          "id": 205,
+          "name": "TS",
+          "filename": "recording-seek.ts",
+          "type": "ts",
+          "size": 1692940,
+          "duration": 12,
+          "startTime": 0,
+          "startAt": 1699999700000
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "channelId": 400101,
+      "startAt": 1699999640000,
+      "endAt": 1699999700000,
+      "name": "EPGStation recording 6",
+      "isRecording": false,
+      "isEncoding": false,
+      "isProtected": false,
+      "channelName": "Test TV",
+      "description": "Recorded programme with a description for browsing.",
+      "thumbnails": [],
+      "videoFiles": [
+        {
+          "id": 206,
+          "name": "TS",
+          "filename": "recording-seek.ts",
+          "type": "ts",
+          "size": 1692940,
+          "duration": 12,
+          "startTime": 0,
+          "startAt": 1699999640000
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "channelId": 400101,
+      "startAt": 1699999580000,
+      "endAt": 1699999640000,
+      "name": "EPGStation recording 7",
+      "isRecording": false,
+      "isEncoding": false,
+      "isProtected": false,
+      "channelName": "Test TV",
+      "description": "Recorded programme with a description for browsing.",
+      "thumbnails": [],
+      "videoFiles": [
+        {
+          "id": 207,
+          "name": "TS",
+          "filename": "recording-seek.ts",
+          "type": "ts",
+          "size": 1692940,
+          "duration": 12,
+          "startTime": 0,
+          "startAt": 1699999580000
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "channelId": 400101,
+      "startAt": 1699999520000,
+      "endAt": 1699999580000,
+      "name": "EPGStation recording 8",
+      "isRecording": false,
+      "isEncoding": false,
+      "isProtected": false,
+      "channelName": "Test TV",
+      "description": "Recorded programme with a description for browsing.",
+      "thumbnails": [],
+      "videoFiles": [
+        {
+          "id": 208,
+          "name": "TS",
+          "filename": "recording-seek.ts",
+          "type": "ts",
+          "size": 1692940,
+          "duration": 12,
+          "startTime": 0,
+          "startAt": 1699999520000
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "channelId": 400101,
+      "startAt": 1699999460000,
+      "endAt": 1699999520000,
+      "name": "EPGStation recording 9",
+      "isRecording": false,
+      "isEncoding": false,
+      "isProtected": false,
+      "channelName": "Test TV",
+      "description": "Recorded programme with a description for browsing.",
+      "thumbnails": [],
+      "videoFiles": [
+        {
+          "id": 209,
+          "name": "TS",
+          "filename": "recording-seek.ts",
+          "type": "ts",
+          "size": 1692940,
+          "duration": 12,
+          "startTime": 0,
+          "startAt": 1699999460000
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "channelId": 400101,
+      "startAt": 1699999400000,
+      "endAt": 1699999460000,
+      "name": "EPGStation recording 10",
+      "isRecording": false,
+      "isEncoding": false,
+      "isProtected": false,
+      "channelName": "Test TV",
+      "description": "Recorded programme with a description for browsing.",
+      "thumbnails": [],
+      "videoFiles": [
+        {
+          "id": 210,
+          "name": "TS",
+          "filename": "recording-seek.ts",
+          "type": "ts",
+          "size": 1692940,
+          "duration": 12,
+          "startTime": 0,
+          "startAt": 1699999400000
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "channelId": 400101,
+      "startAt": 1699999340000,
+      "endAt": 1699999400000,
+      "name": "EPGStation recording 11",
+      "isRecording": false,
+      "isEncoding": false,
+      "isProtected": false,
+      "channelName": "Test TV",
+      "description": "Recorded programme with a description for browsing.",
+      "thumbnails": [],
+      "videoFiles": [
+        {
+          "id": 211,
+          "name": "TS",
+          "filename": "recording-seek.ts",
+          "type": "ts",
+          "size": 1692940,
+          "duration": 12,
+          "startTime": 0,
+          "startAt": 1699999340000
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "channelId": 400101,
+      "startAt": 1699999280000,
+      "endAt": 1699999340000,
+      "name": "EPGStation recording 12",
+      "isRecording": false,
+      "isEncoding": false,
+      "isProtected": false,
+      "channelName": "Test TV",
+      "description": "Recorded programme with a description for browsing.",
+      "thumbnails": [],
+      "videoFiles": [
+        {
+          "id": 212,
+          "name": "TS",
+          "filename": "recording-seek.ts",
+          "type": "ts",
+          "size": 1692940,
+          "duration": 12,
+          "startTime": 0,
+          "startAt": 1699999280000
+        }
+      ]
+    }
+  ],
+  "total": 12
+}

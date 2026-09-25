@@ -214,6 +214,14 @@ CARGO_TARGET_DIR=build/cargo cargo test --manifest-path rust/Cargo.toml --releas
 どちらもテスト用の依存です。`proptest`が失敗時に保存した再現用シードは、
 修正後も回帰試験に使うためリポジトリーへ含めます。
 
+EPGStationの実装との互換性は、Dockerで固定版の本体を動かす機器不要の試験で検証します。
+通常のRustテストとは別に実行します。準備・検証範囲・実応答の更新方法は
+[EPGStationの結合テスト](epgstation.md#固定版の実サーバーとの結合テスト)を参照してください。
+
+```sh
+CARGO_TARGET_DIR=build/cargo python3 scripts/epgstation-integration.py
+```
+
 EPGイベント接続の停止・再試行は、機器不要の独立したクレートでも検証します。
 Tokioの仮想時間を使う試験では、実時間の待機を省いて期限前後の動作を確認します。
 

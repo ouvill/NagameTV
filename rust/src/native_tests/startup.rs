@@ -1,15 +1,12 @@
 //! Load the production Main.qml, Player and video item using validated hardware.
 use super::bridge::ffi;
+use crate::startup_test_server::{LIBRARY_RECORDINGS, Server};
 use crate::{features, playback, settings};
 use cxx_qt_lib::{QGuiApplication, QQmlApplicationEngine, QString, QUrl};
 use gstreamer::glib;
 use std::{
-    io::{Read, Write},
     net::TcpListener,
-    sync::{
-        Arc, Mutex,
-        atomic::{AtomicBool, AtomicUsize, Ordering},
-    },
+    sync::Mutex,
     thread,
     time::{Duration, Instant},
 };
@@ -18,7 +15,6 @@ pub(super) type TestResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
 static UI_WARNINGS: Mutex<Vec<String>> = Mutex::new(Vec::new());
 const SAVED_WINDOW_WIDTH: i32 = 850;
 const SAVED_WINDOW_HEIGHT: i32 = 610;
-const LIBRARY_RECORDINGS: usize = 12;
 
 fn record_qt(level: u8, category: &str, message: &str) {
     if level >= 2 {
@@ -26,192 +22,6 @@ fn record_qt(level: u8, category: &str, message: &str) {
     }
     if level >= 2 && (message.contains("qrc:/") || category.starts_with("qt.qml")) {
         UI_WARNINGS.lock().unwrap().push(message.into());
-    }
-}
-
-struct Server {
-    url: String,
-    requests: Arc<AtomicUsize>,
-    stop: Arc<AtomicBool>,
-    worker: Option<thread::JoinHandle<std::io::Result<()>>>,
-}
-
-impl Server {
-    fn new() -> std::io::Result<Self> {
-        let listener = TcpListener::bind("127.0.0.1:0")?;
-        listener.set_nonblocking(true)?;
-        let url = format!("http://{}", listener.local_addr()?);
-        let requests = Arc::new(AtomicUsize::new(0));
-        let stop = Arc::new(AtomicBool::new(false));
-        let count = requests.clone();
-        let stopped = stop.clone();
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_err(std::io::Error::other)?;
-        let programs = serde_json::json!([{
-            "id":101, "eventId":7, "networkId":10, "serviceId":2,
-            "startAt": now.as_secs().saturating_sub(60) * 1000, "duration":3_600_000,
-            "name":"Metadata program", "description":"Program overview", "isFree":true,
-            "genres":[{"lv1":3,"lv2":0}],
-            "extended":{"番組内容":"詳しい番組内容", "出演者":"出演者テスト", "スタッフ":"スタッフテスト"},
-            "video":{"type":"mpeg2", "resolution":"1080i"},
-            "audios":[{"componentTag":16,"componentType":3,"isMain":true,"langs":["jpn"],"samplingRate":48000}],
-            "series":{"name":"Test series","episode":3,"lastEpisode":12}
-        }]).to_string();
-        let recordings = serde_json::json!({
-            "records": (0..LIBRARY_RECORDINGS).map(|index| serde_json::json!({
-                "id": index + 1, "name": format!("EPGStation recording {}", index + 1),
-                "channelName": "Test TV", "startAt": 1000, "endAt": 61000,
-                "description": "Recorded programme with a description for browsing.",
-                "isRecording": false,
-                "videoFiles": match index {
-                    1 => serde_json::json!([
-                        {"id":123,"type":"ts","size":1880,"filename":"original.ts"},
-                        {"id":124,"type":"encoded","size":include_bytes!("../../../tests/fixtures/media-h264.mp4").len(),"name":"H.264","filename":"番組.mp4"}
-                    ]),
-                    2 => serde_json::json!([{"id":125,"type":"encoded","size":include_bytes!("../../../tests/fixtures/media-hevc.mkv").len(),"name":"HEVC","filename":"番組.mkv"}]),
-                    _ => serde_json::json!([{"id":123,"type":"ts","size":1880}]),
-                }
-            })).collect::<Vec<_>>(),
-            "total": LIBRARY_RECORDINGS
-        })
-        .to_string();
-        let worker = thread::spawn(move || {
-            while !stopped.load(Ordering::Relaxed) {
-                let mut socket = match listener.accept() {
-                    Ok((socket, _)) => socket,
-                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-                        thread::sleep(Duration::from_millis(5));
-                        continue;
-                    }
-                    Err(error) => return Err(error),
-                };
-                socket.set_read_timeout(Some(Duration::from_secs(3)))?;
-                socket.set_write_timeout(Some(Duration::from_secs(3)))?;
-                let mut header = Vec::new();
-                while !header.ends_with(b"\r\n\r\n") {
-                    if header.len() >= 8192 {
-                        return Err(std::io::ErrorKind::InvalidData.into());
-                    }
-                    let mut byte = [0];
-                    socket.read_exact(&mut byte)?;
-                    header.push(byte[0]);
-                }
-                if header.starts_with(b"POST /protected/api/auth/login ") {
-                    let body = r#"{"user":{"id":1,"name":"viewer"}}"#;
-                    write!(
-                        socket,
-                        "HTTP/1.1 200 OK\r\nSet-Cookie: epgstation_session=fixture; Path=/protected; HttpOnly\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-                        body.len()
-                    )?;
-                    continue;
-                }
-                let request = String::from_utf8_lossy(&header);
-                if (header.starts_with(b"GET /protected/api/recorded?")
-                    || header.starts_with(b"GET /protected/api/auth/media-token "))
-                    && !request.contains("epgstation_session=fixture")
-                {
-                    write!(
-                        socket,
-                        "HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
-                    )?;
-                    continue;
-                }
-                let video_bytes: Option<&[u8]> = [
-                    (
-                        123,
-                        include_bytes!("../../../tests/fixtures/recording-seek.ts").as_slice(),
-                    ),
-                    (
-                        124,
-                        include_bytes!("../../../tests/fixtures/media-h264.mp4").as_slice(),
-                    ),
-                    (
-                        125,
-                        include_bytes!("../../../tests/fixtures/media-hevc.mkv").as_slice(),
-                    ),
-                ]
-                .into_iter()
-                .find_map(|(id, bytes)| {
-                    (request.starts_with(&format!("GET /api/videos/{id} "))
-                        || request.starts_with(&format!(
-                            "GET /protected/api/videos/{id}?token=playback-fixture "
-                        )))
-                    .then_some(bytes)
-                });
-                if let Some(bytes) = video_bytes {
-                    let headers = String::from_utf8_lossy(&header).to_ascii_lowercase();
-                    let range = headers
-                        .lines()
-                        .find_map(|line| line.strip_prefix("range: bytes="))
-                        .and_then(|range| range.split_once('-'))
-                        .ok_or_else(|| std::io::Error::other("recording request without Range"))?;
-                    let start: usize = range.0.parse().map_err(std::io::Error::other)?;
-                    let end = range
-                        .1
-                        .parse::<usize>()
-                        .map_err(std::io::Error::other)?
-                        .min(bytes.len() - 1);
-                    write!(
-                        socket,
-                        "HTTP/1.1 206 Partial Content\r\nContent-Type: video/mp2t\r\nContent-Range: bytes {start}-{end}/{}\r\nContent-Length: {}\r\nETag: \"fixture\"\r\nConnection: close\r\n\r\n",
-                        bytes.len(),
-                        end - start + 1
-                    )?;
-                    socket.write_all(&bytes[start..=end])?;
-                    continue;
-                }
-                let body = if header.starts_with(b"GET /api/services ") {
-                    count.fetch_add(1, Ordering::Relaxed);
-                    r#"[{"id":1,"networkId":10,"serviceId":1,"name":"First TV","type":1,"channel":{"type":"GR"}},
-                        {"id":2,"networkId":10,"serviceId":2,"name":"Saved TV","type":1,"channel":{"type":"GR"}}]"#
-                } else if header.starts_with(b"GET /api/programs ") {
-                    &programs
-                } else if header.starts_with(b"GET /api/recorded?")
-                    || header.starts_with(b"GET /protected/api/recorded?")
-                {
-                    &recordings
-                } else if header.starts_with(b"GET /protected/api/auth/media-token ") {
-                    r#"{"token":"playback-fixture"}"#
-                } else {
-                    "[]"
-                };
-                let status = if header.starts_with(b"GET /api/services/2/stream") {
-                    503
-                } else {
-                    200
-                };
-                if let Err(error) = write!(
-                    socket,
-                    "HTTP/1.1 {status} Test\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-                    body.len()
-                ) && !matches!(
-                    error.kind(),
-                    std::io::ErrorKind::BrokenPipe | std::io::ErrorKind::ConnectionReset
-                ) {
-                    return Err(error);
-                }
-            }
-            Ok(())
-        });
-        Ok(Self {
-            url,
-            requests,
-            stop,
-            worker: Some(worker),
-        })
-    }
-}
-
-impl Drop for Server {
-    fn drop(&mut self) {
-        self.stop.store(true, Ordering::Relaxed);
-        if let Some(worker) = self.worker.take() {
-            worker
-                .join()
-                .expect("HTTP fixture thread")
-                .expect("HTTP fixture requests");
-        }
     }
 }
 
@@ -237,12 +47,34 @@ pub(super) fn wait_for(
         }
         if Instant::now() >= deadline {
             let state = ffi::evaluate_root(engine.pin_mut(), &QString::from(
-                "JSON.stringify({playing: player.playing, loading: player.recording_loading, fileError: player.file_error, playbackError: player.playback_error, duration: player.duration_ms, position: player.position_ms, seekable: player.seekable, subtitles: player.subtitles_active, program: player.current_program_data, video: JSON.parse(player.video_stats())})",
+                "JSON.stringify({playing: player.playing, loading: player.recording_loading, fileError: player.file_error, playbackError: player.playback_error, duration: player.duration_ms, position: player.position_ms, seekable: player.seekable, subtitles: player.subtitles_active, program: player.current_program_data, video: JSON.parse(player.video_stats()), epgstation: {busy: player.epgstation_busy, loaded: player.epgstation_loaded, count: player.recordings.count, error: player.epgstation_error}})",
             ))?.value::<QString>().ok_or("missing timeout snapshot")?;
             return Err(format!("Timed out: {source}; playback: {state}").into());
         }
         thread::sleep(Duration::from_millis(5));
     }
+}
+
+fn wait_for_epgstation(
+    app: &QGuiApplication,
+    engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
+) -> TestResult {
+    // A failed request is complete too. Report its error immediately rather than
+    // waiting for a successful catalogue that can no longer arrive.
+    wait_for(app, engine, "!player.epgstation_busy")?;
+    let error = ffi::evaluate_root(engine.pin_mut(), &QString::from("player.epgstation_error"))?
+        .value::<QString>()
+        .ok_or("missing EPGStation error property")?;
+    if !error.is_empty() {
+        return Err(format!("EPGStation catalogue failed: {error}").into());
+    }
+    if !evaluate(
+        engine,
+        &format!("player.epgstation_loaded && player.recordings.count === {LIBRARY_RECORDINGS}"),
+    )? {
+        return Err("EPGStation request finished without the expected catalogue".into());
+    }
+    Ok(())
 }
 
 fn check_danmaku_layout(
@@ -982,9 +814,9 @@ fn check_epgstation_library(
     authenticated: bool,
 ) -> TestResult {
     let endpoint = if authenticated {
-        format!("{}/protected", server.url)
+        format!("{}/protected", server.url())
     } else {
-        server.url.clone()
+        server.url()
     };
     let endpoint = serde_json::to_string(&endpoint)?;
     const FIND: &str = r#"
@@ -1054,13 +886,7 @@ fn check_epgstation_library(
             &format!("{FIND} find(settings, 'epgstationConnect').clicked(); true"),
         )?;
     }
-    wait_for(
-        app,
-        engine,
-        &format!(
-            "!player.epgstation_busy && player.epgstation_loaded && player.recordings.count === {LIBRARY_RECORDINGS}"
-        ),
-    )?;
+    wait_for_epgstation(app, engine)?;
     assert!(evaluate(
         engine,
         "!inputContext.viewing && !surface.enabled && settings.opened"
@@ -1274,7 +1100,22 @@ fn check_http_recording(
     let server = Server::new()?;
     check_epgstation_library(app, engine, &server, false)?;
     check_epgstation_library(app, engine, &server, true)?;
-    let url = serde_json::to_string(&format!("{}/api/videos/123", server.url))?;
+    let endpoint = serde_json::to_string(&format!("{}/protected", server.url()))?;
+    assert!(evaluate(
+        engine,
+        &format!("player.login_epgstation({endpoint}, 'viewer', 'rejected-password')")
+    )?);
+    let error = wait_for_epgstation(app, engine).expect_err("invalid login must fail");
+    assert!(
+        error
+            .to_string()
+            .starts_with("EPGStation catalogue failed:"),
+        "{error}"
+    );
+    println!(
+        "EPGStation rejected login: HTTP error reported without waiting for catalogue success"
+    );
+    let url = serde_json::to_string(&format!("{}/api/videos/123", server.url()))?;
     evaluate(engine, "recordingInput.open(); true")?;
     let dialog =
         "Array.from(recordingInput.data).find(item => item.objectName === 'recordingSource')";
@@ -1301,7 +1142,7 @@ fn check_http_recording(
             ),
         )?;
     }
-    let bad_url = serde_json::to_string(&format!("{}/not-a-recording", server.url))?;
+    let bad_url = serde_json::to_string(&format!("{}/not-a-recording", server.url()))?;
     assert!(evaluate(
         engine,
         &format!("player.open_recording({bad_url})")
@@ -2005,8 +1846,9 @@ fn checks() -> TestResult {
         !path.exists(),
         "run with the isolated test-startup.sh configuration"
     );
+    tracing::info!("Startup window check: first run");
     launch_window(None)?;
-    assert_eq!(server.requests.load(Ordering::Relaxed), 0);
+    assert_eq!(server.requests(), 0);
     let expected_size = settings::WindowSize::checked(SAVED_WINDOW_WIDTH, SAVED_WINDOW_HEIGHT)
         .ok_or("saved window size")?;
     assert_eq!(
@@ -2016,7 +1858,7 @@ fn checks() -> TestResult {
         Some(expected_size)
     );
     let mut preferences =
-        settings::Loaded::open(path.clone())?.activate(Some(server.url.clone()), Some("2".into()));
+        settings::Loaded::open(path.clone())?.activate(Some(server.url()), Some("2".into()));
     preferences.change(settings::Change::Comments(false));
     const SAVED_LIVE_BUFFER_MS: i32 = 150;
     preferences.change(settings::Change::LiveBuffer(
@@ -2032,12 +1874,17 @@ fn checks() -> TestResult {
     ] {
         preferences.change(settings::Change::Autoplay(autoplay));
         preferences.flush()?;
-        let before = server.requests.load(Ordering::Relaxed);
+        let before = server.requests();
+        tracing::info!(
+            autoplay,
+            launch_override,
+            "Startup window check: saved settings"
+        );
         launch_window(launch_override)?;
-        assert!(server.requests.load(Ordering::Relaxed) > before);
+        assert!(server.requests() > before);
         let saved = settings::Loaded::open(path.clone())?;
         assert_eq!(saved.preferences().window_size, Some(expected_size));
-        assert_eq!(saved.preferences().server, server.url);
+        assert_eq!(saved.preferences().server, server.url());
         assert_eq!(saved.preferences().service_id, "2");
         assert_eq!(saved.preferences().autoplay, autoplay);
         assert_eq!(
@@ -2133,7 +1980,7 @@ fn run_window_check(check: WindowCheck) -> i32 {
     match result {
         Ok(()) => 0,
         Err(error) => {
-            eprintln!("Startup window failed: {error}");
+            tracing::error!(error = error.as_ref(), "Startup window failed");
             1
         }
     }
@@ -2143,7 +1990,7 @@ pub fn run() -> i32 {
     match checks() {
         Ok(()) => 0,
         Err(error) => {
-            eprintln!("Startup checks failed: {error}");
+            tracing::error!(error = error.as_ref(), "Startup checks failed");
             1
         }
     }

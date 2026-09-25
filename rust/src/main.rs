@@ -30,6 +30,11 @@ mod screenshots;
 mod services;
 mod settings;
 mod shortcut_key;
+/// Also exercise the startup HTTP fixture's hardware-free login and cancellation
+/// regressions in the normal Rust test suite used by CI.
+#[cfg(any(test, feature = "native_tests"))]
+#[path = "native_tests/startup/server.rs"]
+mod startup_test_server;
 mod subtitle_model;
 mod transport;
 mod video_file_model;

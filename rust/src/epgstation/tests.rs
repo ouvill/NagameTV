@@ -7,13 +7,24 @@ use std::{
 };
 use wiremock::{
     Mock, MockServer, ResponseTemplate,
-    matchers::{body_json, header, method, path, query_param},
+    matchers::{body_json, header, method, path, path_regex, query_param},
 };
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
 fn record(id: u64, video: u64) -> Value {
-    json!({"id":id,"name":"録画番組","startAt":1000,"endAt":2000,"isRecording":false,
-        "videoFiles":[{"id":video,"type":"ts","size":1880}]})
+    // Mutate a real provider response for each client/error scenario. This helper
+    // does not claim that synthetic IDs/times were observed on a user server.
+    let captured: Value = serde_json::from_slice(include_bytes!(
+        "../../../tests/fixtures/epgstation/recorded.json"
+    ))
+    .expect("captured provider catalogue");
+    let mut record = captured["records"][0].clone();
+    record["id"] = json!(id);
+    record["name"] = json!("録画番組");
+    record["startAt"] = json!(1000);
+    record["endAt"] = json!(2000);
+    record["videoFiles"][0]["id"] = json!(video);
+    record
 }
 struct Fixture {
     network: Network,
@@ -26,11 +37,21 @@ impl Fixture {
             .worker_threads(1)
             .enable_all()
             .build()?;
-        Ok(Self {
+        let fixture = Self {
             network: Network::new()?,
             server: runtime.block_on(MockServer::start()),
             runtime,
-        })
+        };
+        fixture.mount(
+            Mock::given(method("GET"))
+                .and(path_regex("^(/tv)?/api/channels$"))
+                .respond_with(ResponseTemplate::new(200).set_body_raw(
+                    include_str!("../../../tests/fixtures/epgstation/channels.json"),
+                    "application/json",
+                ))
+                .with_priority(10),
+        );
+        Ok(fixture)
     }
     fn mount(&self, mock: Mock) {
         self.runtime.block_on(mock.mount(&self.server));
@@ -445,6 +466,8 @@ fn encoded_candidates_keep_stable_ids_and_reject_stale_or_unrelated_choices() ->
 #[test]
 fn encoded_clock_uses_explicit_channel_ids_video_metadata_and_survives_replay() -> TestResult {
     use crate::playback::recording::{Loader, Recording as File};
+    // Also support a standalone filtered run with a cold GStreamer registry.
+    gstreamer::init()?;
     let fixture = Fixture::new()?;
     const START: i64 = 1_700_000_000_000;
     const CHANNEL: u64 = 9_876_543_210;

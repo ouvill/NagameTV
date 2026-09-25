@@ -92,6 +92,20 @@ jobs:
             --env CARGO_TARGET_DIR=/project/build/ci/cargo \
             --env CARGO_BUILD_JOBS=2 \
             nagametv-ci:local bash scripts/ci.sh
+      - name: Verify the real EPGStation API and captured fixtures
+        env:
+          CARGO_HOME: /project/build/ci/cargo-home
+          CARGO_TARGET_DIR: /project/build/ci/cargo
+          CARGO_BUILD_JOBS: '2'
+        run: python3 scripts/epgstation-integration.py --client-image nagametv-ci:local
+      - name: Preserve EPGStation contract diagnostics
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: epgstation-contract
+          path: build/epgstation-contract/
+          if-no-files-found: ignore
+          retention-days: 14
       - name: Build AppImage and validate the glibc baseline
         run: |
           docker run --rm --user "$(id -u):$(id -g)" \

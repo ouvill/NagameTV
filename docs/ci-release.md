@@ -26,6 +26,10 @@ Flatpakのビルド状態をキャッシュする。ホストのコンパイル�
 Rustテストはアプリに加えて`viewer-comments`・`viewer-epg-events`（どちらも`network`付き）、
 `viewer-diagnostics`・`viewer-remote`・`tsreadex`を各lockfileの`--locked`で実行する。
 Qt試験は接続・翻訳・字幕アウトラインが対象。
+EPGStationは[固定版の本体との結合テスト](epgstation.md#固定版の実サーバーとの結合テスト)も必須で実行する。
+ホスト側で専用コンテナーを管理し、製品のRustクライアントは既存のビルドイメージで検査する。
+録画一覧などの保存済み実応答と新たな応答を比較し、差があれば失敗する。
+診断ログは`epgstation-contract` artifactとして14日間保存する。
 本体QMLは生成した型情報を使って全ファイルを`qmllint`で検査し、警告0件を合格条件とする。
 評価用部品も静的検査に含める。色・寸法・動きの共通化は`check-ui-style.py`で検査する。
 CIでは`NAGAMETV_TEST_PROFILE=release`でQt試験もリリースプロファイルを使い、
@@ -51,6 +55,8 @@ docker run --rm --user "$(id -u):$(id -g)" \
   --env CARGO_TARGET_DIR=/project/build/ci/cargo \
   --env CARGO_BUILD_JOBS=2 \
   nagametv-ci:local bash scripts/ci.sh
+CARGO_HOME=/project/build/ci/cargo-home CARGO_TARGET_DIR=/project/build/ci/cargo \
+  CARGO_BUILD_JOBS=2 python3 scripts/epgstation-integration.py --client-image nagametv-ci:local
 ```
 
 D-Busが数値UID/GIDを解決できるように、ユーザー・グループ情報を読み取り専用で渡す。
