@@ -514,6 +514,26 @@ fn screenshot_parameters_round_trip_without_losing_other_formats()
 }
 
 #[test]
+fn comment_density_defaults_and_choice_survive_restart() -> Result<(), Box<dyn std::error::Error>> {
+    use viewer_comments::danmaku::DensityMode;
+    for input in ["danmaku_enabled = true", "comment_density = 'unknown'"] {
+        assert_eq!(
+            toml::from_str::<Preferences>(input)?.comment_density,
+            DensityMode::Normal
+        );
+    }
+    let directory = tempfile::tempdir()?;
+    let path = directory.path().join("settings.toml");
+    let mut session = open(path.clone())?;
+    for density in [DensityMode::All, DensityMode::Normal] {
+        session.change(Change::CommentDensity(density));
+        session.flush()?;
+        assert_eq!(open(path.clone())?.preferences().comment_density, density);
+    }
+    Ok(())
+}
+
+#[test]
 fn comment_modes_roundtrip_and_old_preferences_keep_normal_defaults() {
     use viewer_comments::danmaku::{DisplayMode, PlacementMode, Presentation};
     let mut prefs: Preferences = toml::from_str("danmaku_enabled = true").unwrap();

@@ -1107,6 +1107,21 @@ fn check_comment_presentation() -> TestResult {
     let mut player = ffi::new_player();
     player.pin_mut().rust_mut().preferences =
         settings::Loaded::transient(settings::Preferences::default()).activate(None, None);
+    let densities = Arc::new(Mutex::new(Vec::new()));
+    let observed = densities.clone();
+    let _density = player.pin_mut().on_comment_density_changed(move |player| {
+        observed
+            .lock()
+            .unwrap()
+            .push(player.comment_density().to_string());
+    });
+    assert_eq!(player.comment_density().to_string(), "normal");
+    assert!(player.pin_mut().configure_comment_density("all".into()));
+    assert!(!player.pin_mut().configure_comment_density("unknown".into()));
+    assert!(player.pin_mut().configure_comment_density("all".into()));
+    assert_eq!(*densities.lock().unwrap(), ["all"]);
+    assert!(player.pin_mut().configure_comment_density("normal".into()));
+    assert_eq!(*densities.lock().unwrap(), ["all", "normal"]);
     let changes = Arc::new(Mutex::new(Vec::new()));
     let observed = changes.clone();
     let _display = player.pin_mut().on_comment_display_changed(move |player| {

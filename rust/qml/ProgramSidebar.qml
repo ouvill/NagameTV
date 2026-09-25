@@ -19,10 +19,12 @@ Rectangle {
     property bool evaluationCollision: false
     property string displayMode: "scroll"
     property string placementMode: "sequential"
+    property string densityMode: "normal"
     property real textSize: 24
     property real textOpacity: 1
     property real speed: 1
     property bool shadowEnabled: true
+    signal densityRequested(string densityMode)
     signal presentationRequested(string displayMode, string placementMode)
     signal adjusted(real textSize, real textOpacity, real speed)
     signal shadowRequested(bool enabled)
@@ -271,12 +273,14 @@ Rectangle {
             danmakuEnabled: root.danmakuEnabled
             displayMode: root.displayMode
             placementMode: root.placementMode
+            densityMode: root.densityMode
             evaluationCollision: root.evaluationCollision
             textSize: root.textSize
             textOpacity: root.textOpacity
             speed: root.speed
             shadowEnabled: root.shadowEnabled
             statsVisible: root.statsVisible
+            onDensityRequested: function(density) { root.densityRequested(density); }
             onPresentationRequested: function(display, placement) { root.presentationRequested(display, placement); }
             onDanmakuRequested: function(enabled) { root.danmakuRequested(enabled); }
             onAdjusted: function(size, opacity, speed) { root.adjusted(size, opacity, speed); }

@@ -73,14 +73,37 @@ TestCase {
         const burst = Array.from({length: 1000}, (_, i) => ({time: 0, text: "burst " + i}));
         verify(overlay.controller.load_timeline(JSON.stringify(burst)));
         seek(0);
-        compare(overlay.activeCount, 1);
-        compare(entries().length, 1);
+        compare(overlay.activeCount, 2);
+        compare(entries().length, 2);
         overlay.clearComments();
         compare(overlay.screenshotLayer(overlay).commands.length, 0);
         tryCompare(overlay, "visualCount", 0);
         overlay.controller.reset();
         verify(overlay.receive("new", "right", 0xffffff));
         compare(entries()[0].text, "new");
+    }
+    function test_all_density_displays_burst_and_switches_back_data() {
+        return [{tag: "scroll", mode: "scroll"}, {tag: "pop", mode: "pop"}];
+    }
+    function test_all_density_displays_burst_and_switches_back(data) {
+        overlay.shadowEnabled = false;
+        overlay.displayMode = data.mode;
+        const count = 128;
+        const burst = Array.from({length: count}, (_, i) => ({id: String(i), time: 0, text: "burst " + i}));
+        verify(overlay.controller.load_timeline(JSON.stringify(burst)));
+        seek(0);
+        compare(overlay.activeCount, 2);
+        overlay.densityMode = "all";
+        compare(overlay.activeCount, count);
+        compare(entries().length, count);
+        tryCompare(overlay, "visualCount", count);
+        overlay.densityMode = "normal";
+        compare(overlay.activeCount, 2);
+        tryCompare(overlay, "visualCount", 2);
+        overlay.densityMode = "all";
+        verify(overlay.controller.advance(20));
+        compare(overlay.activeCount, 0);
+        tryCompare(overlay, "visualCount", 0);
     }
     function test_timed_scroll_constant_velocity_pause_and_resize() {
         load();

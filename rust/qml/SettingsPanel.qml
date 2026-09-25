@@ -481,7 +481,9 @@ Popup {
                             enabled: root.backend.comments_enabled
                             displayMode: root.backend.comment_display
                             placementMode: root.backend.comment_placement
+                            densityMode: root.backend.comment_density
                             evaluationCollision: root.backend.evaluation_collision_layout
+                            onDensitySelected: function(density) { root.backend.configure_comment_density(density); }
                             onSelected: function(display, placement) { root.backend.configure_comment_presentation(display, placement); }
                         }
                         ColumnLayout {

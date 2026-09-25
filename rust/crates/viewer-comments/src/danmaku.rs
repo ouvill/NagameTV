@@ -6,7 +6,7 @@ use std::{collections::HashMap, time::Duration};
 mod presentation;
 use presentation::{Admission, Arc};
 pub use presentation::{
-    DisplayMode, POP_MAX_ROTATION_DEGREES, PlacementMode, Presentation, Visual,
+    DensityMode, DisplayMode, POP_MAX_ROTATION_DEGREES, PlacementMode, Presentation, Visual,
 };
 
 const SCROLL_SECONDS: f64 = 5.;
@@ -357,7 +357,7 @@ enum CursorMode {
     Updating,
 }
 enum Start {
-    Now,
+    Now(Duration),
     At(Duration),
 }
 struct Pending {
@@ -376,6 +376,7 @@ pub const MAX_TIMELINE_COMMENTS: usize = 20_000;
 #[derive(Default)]
 pub struct Engine {
     presentation: Presentation,
+    density: DensityMode,
     admission: Admission,
     viewport: Viewport,
     origins: [Origin; 3],
@@ -396,6 +397,14 @@ pub struct Engine {
     position: Duration,
 }
 impl Engine {
+    pub fn set_density(&mut self, density: DensityMode) -> bool {
+        if self.density == density {
+            return false;
+        }
+        self.density = density;
+        self.seek(self.position);
+        true
+    }
     pub fn set_presentation(&mut self, presentation: Presentation) -> bool {
         if self.presentation == presentation {
             return false;
@@ -405,10 +414,14 @@ impl Engine {
         true
     }
     fn collision_layout(&self) -> bool {
-        match self.presentation.placement() {
-            PlacementMode::Sequential | PlacementMode::Random => false,
-            #[cfg(feature = "evaluation-collision-layout")]
-            PlacementMode::Collision => true,
+        // All comments use independent placement, including in evaluation builds.
+        match self.density {
+            DensityMode::All => false,
+            DensityMode::Normal => match self.presentation.placement() {
+                PlacementMode::Sequential | PlacementMode::Random => false,
+                #[cfg(feature = "evaluation-collision-layout")]
+                PlacementMode::Collision => true,
+            },
         }
     }
     fn top_spread(&self) -> bool {
@@ -734,17 +747,17 @@ impl Engine {
         let seed = presentation::seed(record.id.as_bytes());
         let start = match record.timing {
             Timing::Scheduled => Start::At(record.time),
-            Timing::Live => Start::Now,
+            Timing::Live => Start::Now(record.time),
         };
         self.prepare_at(record.comment, start, seed)
     }
     pub fn prepare(&mut self, comment: Comment) -> Option<Measurement> {
         let seed = presentation::seed(comment.text.as_bytes()) ^ u64::from(self.serial);
-        self.prepare_at(comment, Start::Now, seed)
+        self.prepare_at(comment, Start::Now(self.clock), seed)
     }
     fn prepare_at(&mut self, comment: Comment, start: Start, seed: u64) -> Option<Measurement> {
         if self.hidden
-            || (self.paused && matches!(start, Start::Now))
+            || (self.paused && matches!(start, Start::Now(_)))
             || self.lane_count() == 0
             || self.viewport.width <= 0.
             || matches!(self.layout, LayoutState::Measuring(_))
@@ -775,13 +788,13 @@ impl Engine {
         if !width.is_finite()
             || !(0. ..=MAX_MEASURED_WIDTH).contains(&width)
             || width == 0.
-            || (self.paused && matches!(start, Start::Now))
+            || (self.paused && matches!(start, Start::Now(_)))
             || self.viewport.width <= 0.
         {
             return None;
         }
         let age = match start {
-            Start::Now => Duration::ZERO,
+            Start::Now(_) => Duration::ZERO,
             Start::At(start) => self.position.checked_sub(start)?,
         };
         if age >= MAX_LIFETIME {
@@ -792,12 +805,13 @@ impl Engine {
             (0, self.lane_count())
         } else {
             let time = match start {
-                Start::Now => self.clock,
-                Start::At(time) => time,
+                // Keep the arrival's time slot even when several updates are
+                // delivered together. Its visual lifetime still starts now.
+                Start::Now(time) | Start::At(time) => time,
             };
-            let admitted = self
-                .admission
-                .reserve(time, self.lane_count(), comment.position)?;
+            let admitted =
+                self.admission
+                    .reserve(time, self.lane_count(), comment.position, self.density)?;
             (admitted.sequence(), admitted.scroll_rows())
         };
         let speed = self.speed.unwrap_or(1.);
@@ -905,7 +919,7 @@ impl Engine {
             (first..limit.min(lanes.len().max(first) + 1)).find(|&index| {
                 lanes.get(index).is_none_or(|entries| {
                     entries.iter().all(|entry| match start {
-                        Start::Now => match active.motion {
+                        Start::Now(_) => match active.motion {
                             Motion::Scrolling { velocity, .. } => {
                                 entry.admits(visual.x, velocity, self.clock)
                             }
@@ -971,8 +985,12 @@ impl Engine {
         if self.top_spread()
             && let Some(through) = position.checked_sub(MAX_LIFETIME)
         {
-            self.admission
-                .restore_density(&self.timeline, through, self.lane_count());
+            self.admission.restore_density(
+                &self.timeline,
+                through,
+                self.lane_count(),
+                self.density,
+            );
         }
         self.delivered.clear();
         self.position = position;

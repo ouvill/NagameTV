@@ -11,6 +11,7 @@ Item {
     required property real speed
     property string displayMode: "scroll"
     property string placementMode: "sequential"
+    property string densityMode: "normal"
     property bool shadowEnabled: true
     property bool fullScreen: false
     property bool paused: false
@@ -84,6 +85,7 @@ Item {
         // the old generation alongside its replacement.
         old.forEach(item => { item.visible = false; item.destroy(); });
     }
+    onDensityModeChanged: backend.set_density(densityMode)
     onDisplayModeChanged: backend.set_presentation(displayMode, placementMode)
     onPlacementModeChanged: backend.set_presentation(displayMode, placementMode)
     onWidthChanged: configure()
@@ -99,6 +101,7 @@ Item {
     onVisibleChanged: backend.set_visible(visible)
     Component.onCompleted: {
         backend.set_visible(visible);
+        backend.set_density(densityMode);
         backend.set_presentation(displayMode, placementMode);
         configure();
         backend.set_paused(paused);

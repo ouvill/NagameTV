@@ -13,12 +13,18 @@ TestCase {
         id: component
         Viewer.CommentPresentation {
             width: 320
+            onDensitySelected: function(density) { densityMode = density; }
             onSelected: function(display, placement) { displayMode = display; placementMode = placement; }
         }
     }
     function initTestCase() { failOnWarning(/.*/); }
     function test_normal_choices_and_evaluation_only_option() {
         const controls = createTemporaryObject(component, this);
+        compare(controls.densityMode, "normal");
+        mouseClick(findChild(controls, "density-all"));
+        compare(controls.densityMode, "all");
+        mouseClick(findChild(controls, "density-normal"));
+        compare(controls.densityMode, "normal");
         const motion = findChild(controls, "commentMotion");
         const placement = findChild(controls, "commentPlacement");
         compare(placement.options.length, 2);

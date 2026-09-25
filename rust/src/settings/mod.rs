@@ -161,6 +161,7 @@ pub enum Change {
         speed: CommentSpeed,
     },
     CommentPresentation(viewer_comments::danmaku::Presentation),
+    CommentDensity(viewer_comments::danmaku::DensityMode),
     CommentShadow(bool),
     CommentSendOnEnter(bool),
 }
@@ -243,6 +244,7 @@ impl Session {
                 preferences.comment_speed = speed;
             }
             Change::CommentPresentation(value) => preferences.comment_presentation = value,
+            Change::CommentDensity(value) => preferences.comment_density = value,
             Change::CommentShadow(enabled) => preferences.comment_shadow_enabled = enabled,
             Change::CommentSendOnEnter(enabled) => preferences.comment_send_on_enter = enabled,
         }

@@ -80,6 +80,8 @@ pub mod ffi {
         #[qinvokable]
         fn set_paused(self: Pin<&mut DanmakuController>, paused: bool);
         #[qinvokable]
+        fn set_density(self: Pin<&mut DanmakuController>, density: QString) -> bool;
+        #[qinvokable]
         fn load_timeline(self: Pin<&mut DanmakuController>, json: QString) -> bool;
         #[qinvokable]
         fn advance(self: Pin<&mut DanmakuController>, seconds: f64) -> bool;
@@ -176,6 +178,19 @@ impl Default for Controller {
     }
 }
 impl ffi::DanmakuController {
+    pub fn set_density(mut self: Pin<&mut Self>, density: QString) -> bool {
+        let Some(density) = danmaku_core::DensityMode::parse(&density.to_string()) else {
+            return false;
+        };
+        if self.as_mut().rust_mut().engine.set_density(density) {
+            self.as_mut().rust_mut().last_tick = Instant::now();
+            self.as_mut().cleared();
+            self.as_mut().drain_due();
+            self.as_mut().publish_positions();
+            self.publish();
+        }
+        true
+    }
     fn publish(mut self: Pin<&mut Self>) {
         let media = self.rust().engine.media_driven();
         if self.rust().media_driven != media {

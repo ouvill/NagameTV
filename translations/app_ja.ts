@@ -3,6 +3,10 @@
 <TS version="2.1" language="ja_JP" sourcelanguage="en">
   <context>
     <name>Main</name>
+    <message><source>Comment amount</source><translation>コメントの表示量</translation></message>
+    <message><source>Standard</source><translation>通常</translation></message>
+    <message><source>Show all</source><translation>すべて表示</translation></message>
+    <message><source>Standard skips some comments when many arrive. Show all displays them without a count limit.</source><translation>「通常」はコメントが多いときに一部を省略します。「すべて表示」は件数を制限せず表示します。</translation></message>
     <message><source>Comment motion</source><translation>コメントの動き</translation></message>
     <message><source>Scroll</source><translation>横スクロール</translation></message>
     <message><source>Fountain</source><translation>噴水</translation></message>

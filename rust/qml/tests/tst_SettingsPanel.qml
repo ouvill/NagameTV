@@ -104,6 +104,8 @@ Item {
                 property real comment_font_size: 21
                 property real comment_opacity: 1
                 property string comment_display: "scroll"
+                property string comment_density: "normal"
+                function configure_comment_density(density) { comment_density = density; return true; }
                 property string comment_placement: "sequential"
                 property bool evaluation_collision_layout: false
                 function configure_comment_presentation(display, placement) { comment_display = display; comment_placement = placement; return true; }
@@ -681,6 +683,12 @@ Item {
                 compare(backend.comments_enabled, true);
                 mouseClick(findChild(panel.contentItem, "danmakuEnabled"));
                 compare(backend.danmaku_enabled, true);
+                const density = findChild(panel.contentItem, "commentDensity");
+                compare(density.value, "normal");
+                density.selected("all");
+                compare(backend.comment_density, "all");
+                backend.comment_density = "normal";
+                compare(density.value, "normal");
                 const size = findChild(findChild(panel.contentItem, "commentSize"), "settingSlider");
                 size.forceActiveFocus();
                 keyClick(Qt.Key_Right);

@@ -4,6 +4,28 @@ use cxx_qt_lib::QString;
 use std::pin::Pin;
 
 impl ffi::Player {
+    pub fn comment_density(&self) -> QString {
+        self.rust()
+            .preferences
+            .preferences()
+            .comment_density
+            .as_str()
+            .into()
+    }
+    pub fn configure_comment_density(mut self: Pin<&mut Self>, density: QString) -> bool {
+        let Some(value) = viewer_comments::danmaku::DensityMode::parse(&density.to_string()) else {
+            return false;
+        };
+        if value != self.rust().preferences.preferences().comment_density {
+            self.as_mut()
+                .rust_mut()
+                .preferences
+                .change(crate::settings::Change::CommentDensity(value));
+            self.as_mut().comment_density_changed();
+            self.save_settings();
+        }
+        true
+    }
     pub fn comment_display(&self) -> QString {
         self.rust()
             .preferences

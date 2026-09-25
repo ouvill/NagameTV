@@ -15,7 +15,9 @@ ScrollView {
     required property bool statsVisible
     property string displayMode: "scroll"
     property string placementMode: "sequential"
+    property string densityMode: "normal"
     property bool evaluationCollision: false
+    signal densityRequested(string densityMode)
     signal presentationRequested(string displayMode, string placementMode)
     signal danmakuRequested(bool enabled)
     signal adjusted(real textSize, real textOpacity, real speed)
@@ -49,7 +51,9 @@ ScrollView {
             enabled: root.commentsEnabled
             displayMode: root.displayMode
             placementMode: root.placementMode
+            densityMode: root.densityMode
             evaluationCollision: root.evaluationCollision
+            onDensitySelected: function(density) { root.densityRequested(density); }
             onSelected: function(display, placement) { root.presentationRequested(display, placement); }
         }
         DanmakuAdjustments {

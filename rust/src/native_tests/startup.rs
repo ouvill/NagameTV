@@ -356,6 +356,21 @@ fn check_danmaku_layout(
     // exercise the real Player binding, not only a standalone sidebar fixture.
     assert!(evaluate(
         engine,
+        r#"
+        sidebar.item.densityRequested("all");
+        player.comment_density === "all" && sidebar.item.densityMode === "all"
+            && danmaku.item.densityMode === "all"
+    "#
+    )?);
+    assert!(evaluate(
+        engine,
+        r#"
+        player.configure_comment_density("normal");
+        sidebar.item.densityMode === "normal" && danmaku.item.densityMode === "normal"
+    "#
+    )?);
+    assert!(evaluate(
+        engine,
         "player.configure_danmaku(false, player.comment_font_size, player.comment_opacity, player.comment_speed); sidebar.item.page === ProgramSidebar.Playback && !sidebar.item.danmakuEnabled",
     )?);
     assert!(evaluate(

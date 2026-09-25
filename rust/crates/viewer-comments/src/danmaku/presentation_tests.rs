@@ -88,13 +88,14 @@ fn live_future_waits_and_explicit_seek_restores_elapsed_position() {
 fn default_admission_limits_bursts_without_comparing_glyphs() {
     let mut e = engine(DisplayMode::Scroll, PlacementMode::Sequential);
     assert!(direct(&mut e, 2000.).is_some());
+    assert!(direct(&mut e, 2000.).is_some());
     for _ in 0..1000 {
         assert!(direct(&mut e, 20.).is_none());
     }
-    assert_eq!(e.active_count(), 1);
+    assert_eq!(e.active_count(), 2);
     e.advance_wall(Duration::from_secs(1));
     assert!(direct(&mut e, 2000.).is_some());
-    assert_eq!(e.active_count(), 2);
+    assert_eq!(e.active_count(), 3);
 }
 
 #[test]
@@ -228,18 +229,23 @@ fn rejected_bursts_and_fixed_comments_do_not_expand_the_scrolling_band() {
             .prepare(Comment::new("fixed", Position::Top, 0xffffff).unwrap())
             .unwrap();
         assert!(e.measured(measurement.id.value(), 100.).is_some());
+        let measurement = e
+            .prepare(Comment::new("second fixed", Position::Bottom, 0xffffff).unwrap())
+            .unwrap();
+        assert!(e.measured(measurement.id.value(), 100.).is_some());
         assert!(
             direct(&mut e, 100.).is_none(),
-            "the fixed comment won this slot"
+            "fixed comments filled this slot"
         );
         e.advance_wall(fixed_interval);
     }
     assert_eq!(direct(&mut e, 100.).unwrap().y, 0.);
+    assert!(direct(&mut e, 100.).is_some());
     for _ in 0..100 {
         assert!(direct(&mut e, 100.).is_none());
     }
     e.advance_wall(Duration::from_secs(1));
-    assert!(direct(&mut e, 100.).unwrap().y < 2. * e.viewport.spacing());
+    assert!(direct(&mut e, 100.).unwrap().y < 3. * e.viewport.spacing());
 }
 
 #[test]
@@ -444,4 +450,112 @@ fn unknown_and_unavailable_choices_are_rejected_at_api_boundary() {
     assert!(PlacementMode::parse("collision").is_none());
     #[cfg(feature = "evaluation-collision-layout")]
     assert!(Presentation::new(DisplayMode::Pop, PlacementMode::Collision).is_none());
+}
+
+#[test]
+fn normal_density_allows_twelve_per_second_and_two_in_a_burst() {
+    let mut e = engine(DisplayMode::Scroll, PlacementMode::Sequential);
+    e.configure(
+        Viewport {
+            height: 720.,
+            ..e.viewport
+        },
+        1.,
+    )
+    .unwrap();
+    for slot in 0..6 {
+        e.set_position(Duration::from_millis(slot * 167));
+        // Direct mode uses its own wall clock.
+        if slot > 0 {
+            e.advance_wall(Duration::from_millis(167));
+        }
+        assert!(direct(&mut e, 100.).is_some());
+        assert!(direct(&mut e, 100.).is_some());
+        assert!(direct(&mut e, 100.).is_none());
+    }
+    assert_eq!(e.active_count(), 12);
+}
+
+#[test]
+fn batched_live_updates_keep_their_slots_and_full_visual_lifetime() {
+    let mut e = engine(DisplayMode::Scroll, PlacementMode::Sequential);
+    let records = (0..4)
+        .map(|index| {
+            let mut r = record(&index.to_string(), index as f64 * 0.5, Position::Right);
+            r.timing = Timing::Live;
+            r
+        })
+        .collect();
+    e.load_at(records, seconds(2.).unwrap());
+    while let Some(due) = e.next_due() {
+        let spawn = timed(&mut e, due, 128.).unwrap();
+        assert_eq!(spawn.from_x, e.viewport.width);
+        assert_eq!(spawn.lifetime, seconds(6.).unwrap());
+    }
+    assert_eq!(e.active_count(), 4);
+}
+
+#[test]
+fn all_density_displays_same_time_bursts_and_releases_every_comment() {
+    const BURST: usize = 256;
+    for display in [DisplayMode::Scroll, DisplayMode::Pop] {
+        for placement in [
+            PlacementMode::Sequential,
+            PlacementMode::Random,
+            #[cfg(feature = "evaluation-collision-layout")]
+            PlacementMode::Collision,
+        ] {
+            if Presentation::new(display, placement).is_none() {
+                continue;
+            }
+            let mut e = engine(display, placement);
+            e.set_density(DensityMode::All);
+            for index in 0..BURST {
+                let spawn = timed(
+                    &mut e,
+                    record(&index.to_string(), 0., Position::Right),
+                    128.,
+                )
+                .unwrap();
+                assert!(spawn.lifetime <= MAX_LIFETIME);
+            }
+            assert_eq!(e.active_count(), BURST);
+            let visuals = e.visuals();
+            assert!(
+                visuals
+                    .windows(2)
+                    .any(|pair| pair[0].1.y != pair[1].1.y || pair[0].1.x != pair[1].1.x)
+            );
+            assert_eq!(e.advance_wall(MAX_LIFETIME).len(), BURST);
+            assert_eq!(e.active_count(), 0);
+        }
+    }
+}
+
+#[test]
+fn all_density_seek_reconstructs_same_time_comments_and_surviving_rows() {
+    let mut e = engine(DisplayMode::Scroll, PlacementMode::Sequential);
+    e.set_density(DensityMode::All);
+    let records: Vec<_> = (0..240)
+        .map(|i| record(&i.to_string(), (i / 4) as f64 * 0.5, Position::Right))
+        .collect();
+    e.load(records.clone());
+    for r in &records {
+        e.set_position(r.time);
+        e.advance_wall(Duration::ZERO);
+        while let Some(due) = e.next_due() {
+            timed(&mut e, due, 2000.).unwrap();
+        }
+    }
+    let poses = |e: &Engine| {
+        let mut poses: Vec<_> = e.visuals().into_iter().map(|(_, v)| v).collect();
+        poses.sort_by(|a, b| a.x.total_cmp(&b.x).then(a.y.total_cmp(&b.y)));
+        poses
+    };
+    let before = poses(&e);
+    e.seek(records.last().unwrap().time);
+    while let Some(due) = e.next_due() {
+        timed(&mut e, due, 2000.).unwrap();
+    }
+    assert_eq!(poses(&e), before);
 }

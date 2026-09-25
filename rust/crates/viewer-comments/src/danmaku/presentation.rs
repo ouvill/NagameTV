@@ -27,6 +27,7 @@ macro_rules! choice {
     };
 }
 choice!(DisplayMode, Scroll, { Scroll => "scroll", Pop => "pop" });
+choice!(DensityMode, Normal, { Normal => "normal", All => "all" });
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(from = "String", into = "String")]
@@ -123,12 +124,13 @@ impl From<Presentation> for PresentationWire {
     }
 }
 
-const LANES_PER_COMMENT_PER_SECOND: usize = 3;
-const MAX_COMMENTS_PER_SECOND: usize = 6;
+const LANES_PER_SLOT_PER_SECOND: usize = 3;
+const MAX_SLOTS_PER_SECOND: usize = 6;
+const COMMENTS_PER_SLOT: usize = 2;
 const NANOS_PER_SECOND: u128 = 1_000_000_000;
 const SCROLL_DENSITY_WINDOW: Duration = Duration::from_secs(3);
 
-/// Only a reserved time slot can supply a placement budget. Neither glyph
+/// Only admitted input can supply a placement budget. Neither glyph
 /// measurements nor the positions/lifetimes of displayed comments enter it.
 pub(super) struct Admitted {
     sequence: u128,
@@ -145,16 +147,22 @@ impl Admitted {
 
 #[derive(Default)]
 pub(super) struct Admission {
-    slots: BTreeMap<u128, Position>,
+    slots: BTreeMap<u128, Counts>,
+}
+#[derive(Default)]
+struct Counts {
+    total: usize,
+    scrolling: usize,
 }
 impl Admission {
     fn interval(lanes: usize) -> u128 {
-        let rate = (lanes / LANES_PER_COMMENT_PER_SECOND).clamp(1, MAX_COMMENTS_PER_SECOND);
+        let rate = (lanes / LANES_PER_SLOT_PER_SECOND).clamp(1, MAX_SLOTS_PER_SECOND);
         NANOS_PER_SECOND / rate as u128
     }
 
-    /// A bounded temporal budget, independent of glyph widths, live comment
-    /// positions and velocities. Overlap is allowed. This replaces the default
+    /// A temporal budget for normal density, bypassed by all-comment density.
+    /// Independent of glyph widths, live positions and velocities; overlap is
+    /// allowed. This replaces the default
     /// pairwise adjustment described in JP4695583 / JP6526304 / JP7178462;
     /// estimated terms are documented on PlacementMode::Collision above.
     pub fn reserve(
@@ -162,16 +170,25 @@ impl Admission {
         time: Duration,
         lanes: usize,
         position: Position,
+        density: DensityMode,
     ) -> Option<Admitted> {
         // Use absolute nanosecond keys so resizing does not mix different units.
         let interval = Self::interval(lanes);
         let bucket = time.as_nanos() / interval;
         let start = bucket * interval;
         let end = start + interval;
-        if self.slots.range(start..end).next().is_some() {
-            return None;
+        let preceding: usize = self
+            .slots
+            .range(start..end)
+            .map(|(_, count)| count.total)
+            .sum();
+        match density {
+            DensityMode::Normal if preceding >= COMMENTS_PER_SLOT => return None,
+            DensityMode::Normal | DensityMode::All => {}
         }
-        self.slots.insert(time.as_nanos(), position);
+        let count = self.slots.entry(time.as_nanos()).or_default();
+        count.total += 1;
+        count.scrolling += usize::from(position == Position::Right);
         let earliest = time.saturating_sub(super::MAX_LIFETIME).as_nanos();
         while self
             .slots
@@ -186,11 +203,11 @@ impl Admission {
         let scroll_rows = self
             .slots
             .range((since, Bound::Included(time.as_nanos())))
-            .filter(|(_, position)| **position == Position::Right)
-            .count()
+            .map(|(_, count)| count.scrolling)
+            .sum::<usize>()
             .max(1);
         Some(Admitted {
-            sequence: bucket,
+            sequence: bucket * COMMENTS_PER_SLOT as u128 + preceding as u128,
             scroll_rows,
         })
     }
@@ -198,14 +215,20 @@ impl Admission {
     /// Seed the temporal budget before the oldest comment a seek can restore.
     /// Include the whole first slot so a fixed comment that won that slot is
     /// not mistaken for a subsequent scrolling comment in the same slot.
-    pub fn restore_density(&mut self, records: &[TimedComment], through: Duration, lanes: usize) {
+    pub fn restore_density(
+        &mut self,
+        records: &[TimedComment],
+        through: Duration,
+        lanes: usize,
+        density: DensityMode,
+    ) {
         let interval = Self::interval(lanes);
         let since = through.saturating_sub(SCROLL_DENSITY_WINDOW).as_nanos();
         let first_slot = since / interval * interval;
         let start = records.partition_point(|record| record.time.as_nanos() < first_slot);
         let end = records.partition_point(|record| record.time <= through);
         for record in &records[start..end] {
-            self.reserve(record.time, lanes, record.comment.position);
+            self.reserve(record.time, lanes, record.comment.position, density);
         }
     }
 }

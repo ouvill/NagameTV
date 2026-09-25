@@ -165,6 +165,7 @@ pub mod ffi {
         #[qproperty(f64, comment_speed, READ, NOTIFY)]
         #[qproperty(QString, comment_display, READ = comment_display, NOTIFY)]
         #[qproperty(QString, comment_placement, READ = comment_placement, NOTIFY)]
+        #[qproperty(QString, comment_density, READ = comment_density, NOTIFY)]
         #[qproperty(bool, evaluation_comment_list, READ = evaluation_comment_list, CONSTANT)]
         #[qproperty(bool, evaluation_wide_comments, READ = evaluation_wide_comments, CONSTANT)]
         #[qproperty(bool, evaluation_collision_layout, READ = evaluation_collision_layout, CONSTANT)]
@@ -470,6 +471,9 @@ pub mod ffi {
         ) -> bool;
         fn comment_display(self: &Player) -> QString;
         fn comment_placement(self: &Player) -> QString;
+        fn comment_density(self: &Player) -> QString;
+        #[qinvokable]
+        fn configure_comment_density(self: Pin<&mut Player>, density: QString) -> bool;
         fn evaluation_comment_list(self: &Player) -> bool;
         fn evaluation_wide_comments(self: &Player) -> bool;
         fn evaluation_collision_layout(self: &Player) -> bool;

@@ -379,6 +379,7 @@ ViewerWindow {
                     Component.onCompleted: { configure(); replayReady = true; syncTimeline(); }
                     displayMode: player.comment_display
                     placementMode: player.comment_placement
+                    densityMode: player.comment_density
                     // The saved text size is relative to a 1280 x 720 picture.
                     // This item's height follows the fitted video, excluding bars.
                     readonly property int referenceVideoHeight: 720
@@ -772,10 +773,12 @@ ViewerWindow {
             evaluationCollision: player.evaluation_collision_layout
             displayMode: player.comment_display
             placementMode: player.comment_placement
+            densityMode: player.comment_density
             textSize: player.comment_font_size
             textOpacity: player.comment_opacity
             speed: player.comment_speed
             shadowEnabled: player.comment_shadow_enabled
+            onDensityRequested: function(density) { player.configure_comment_density(density); }
             onPresentationRequested: function(display, placement) { player.configure_comment_presentation(display, placement); }
             onAdjusted: function(size, opacity, speed) {
                 player.configure_danmaku(player.danmaku_enabled, size, opacity, speed);
