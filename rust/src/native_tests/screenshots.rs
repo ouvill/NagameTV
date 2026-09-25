@@ -24,21 +24,35 @@ fn check_video_frame_sync(
     app: &QGuiApplication,
     engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
 ) -> TestResult {
+    // Video updates must not depend on comments being enabled or animated.
     evaluate(
         engine,
-        "setup.close(); player.configure_danmaku(true,36,1,1); true",
+        "setup.close(); player.configure_danmaku(false,36,1,1); true",
     )?;
+    wait_for(app, engine, "!danmaku.active && videoFrameSync.enabled")?;
+    evaluate(engine, "player.configure_danmaku(true,36,1,1); true")?;
     wait_for(app, engine, "danmaku.item !== null")?;
-    evaluate(
+    assert!(evaluate(
         engine,
-        "danmaku.item.shadowEnabled=false; danmaku.item.timelineJson=JSON.stringify({generation:999,comments:Array.from({length:60},(_,i)=>({time:i/2,text:'Frame sync '+i}))}); true",
-    )?;
+        "danmaku.item.shadowEnabled=false; danmaku.item.replayReady=false; danmaku.item.controller.load_timeline(JSON.stringify(Array.from({length:60},(_,i)=>({time:i/2,text:'Frame sync '+i}))))",
+    )?);
+    wait_for(app, engine, "danmaku.item.activeCount > 0")?;
     wait_for(app, engine, "videoFrameSync.enabled")?;
     assert!(evaluate(
         engine,
-        "danmaku.item.visible=false; !videoFrameSync.enabled"
+        "danmaku.item.visible=false; videoFrameSync.enabled"
     )?);
     evaluate(engine, "danmaku.item.visible=true; true")?;
+    wait_for(app, engine, "videoFrameSync.enabled")?;
+    assert!(evaluate(
+        engine,
+        "danmaku.item.controller.reset(); !danmaku.item.animating && videoFrameSync.enabled"
+    )?);
+    assert!(evaluate(
+        engine,
+        "video.visible=false; !videoFrameSync.enabled"
+    )?);
+    evaluate(engine, "video.visible=true; true")?;
     wait_for(app, engine, "videoFrameSync.enabled")?;
     assert!(evaluate(engine, "root.hide(); !videoFrameSync.enabled")?);
     evaluate(engine, "root.show(); true")?;
@@ -68,7 +82,7 @@ fn check_video_frame_sync(
     wait_for(app, engine, "!player.seeking && videoFrameSync.enabled")?;
     assert!(evaluate(
         engine,
-        "player.configure_danmaku(false,36,1,1); !videoFrameSync.enabled"
+        "player.configure_danmaku(false,36,1,1); videoFrameSync.enabled"
     )?);
     Ok(())
 }
@@ -646,7 +660,7 @@ pub(super) fn run(
     let count = saved_files(&images)?.len();
     assert!(evaluate(
         engine,
-        "player.capture_screenshot() && (player.stop(), !player.capture_screenshot())"
+        "player.capture_screenshot() && (player.stop(), !videoFrameSync.enabled && !player.capture_screenshot())"
     )?);
     wait_for(
         app,
