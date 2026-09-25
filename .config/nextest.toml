@@ -1,0 +1,11 @@
+[profile.default]
+# Each test has its own process; do not hide failures behind automatic retries.
+test-threads = 2
+retries = 0
+fail-fast = false
+slow-timeout = { period = "60s", terminate-after = 3 }
+
+[[profile.default.overrides]]
+# These CPU playback tests measure real GStreamer clocks and frame delivery.
+filter = 'test(playback::timeline::startup_tests::)'
+threads-required = "num-test-threads"

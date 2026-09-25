@@ -32,26 +32,36 @@ TestCase {
     function cleanup() { Qt.uiLanguage = previousLanguage; }
     function test_language_change_resizes_hit_targets() {
         Qt.uiLanguage = "ja";
-        compare(tabs.width, 234);
-        compare(findChild(tabs, "band-CS").width, 76);
+        const japaneseWidth = tabs.width;
         Qt.uiLanguage = "en";
-        compare(tabs.width, 294);
+        verify(waitForRendering(tabs));
+        verify(tabs.width > japaneseWidth, "English labels need wider hit targets");
+        for (const band of ["GR", "BS", "CS"]) {
+            const tab = findChild(tabs, "band-" + band);
+            verify(!tab.contentItem.truncated, "Tab label should fit: " + band);
+        }
         const last = findChild(tabs, "band-CS");
-        compare(last.width, 96);
         mouseClick(last, last.width - 4, last.height / 2);
         compare(selected.count, 1);
         compare(selected.signalArguments[0][0], "CS");
         Qt.uiLanguage = "ja";
-        compare(tabs.width, 234);
+        compare(tabs.width, japaneseWidth);
     }
     function test_constrained_width_keeps_all_tabs_inside_background() {
         tabs.width = 216;
         verify(waitForRendering(tabs));
-        const first = findChild(tabs, "band-GR");
-        const last = findChild(tabs, "band-CS");
-        compare(first.width, 70);
-        compare(last.mapToItem(tabs, last.width, 0).x, tabs.width - 3);
-        mouseClick(last, last.width - 4, last.height / 2);
-        compare(selected.signalArguments[0][0], "CS");
+        let previousRight = 0;
+        for (const band of ["GR", "BS", "CS"]) {
+            const tab = findChild(tabs, "band-" + band);
+            const left = tab.mapToItem(tabs, 0, 0).x;
+            const right = tab.mapToItem(tabs, tab.width, 0).x;
+            verify(tab.width > 0 && left >= previousRight && right <= tabs.width,
+                   "Tab must be inside the background without overlap: " + band);
+            previousRight = right;
+            selected.clear();
+            mouseClick(tab, tab.width - 4, tab.height / 2);
+            compare(selected.count, 1);
+            compare(selected.signalArguments[0][0], band);
+        }
     }
 }

@@ -24,20 +24,6 @@ TestCase {
         gallery.Window.window.update();
         verify(waitForRendering(gallery));
     }
-    function capture(name, includePopups = false) {
-        wait(Theme.panelDuration);
-        gallery.Window.window.update();
-        verify(waitForRendering(gallery));
-        const path = Qt.resolvedUrl("../../build/ui-review/" + name + ".png").toString().replace(/^file:\/\//, "");
-        const snapshot = grabImage(includePopups ? gallery.Window.window.contentItem : gallery);
-        verify(snapshot.width > 0 && snapshot.height > 0);
-        snapshot.save(path);
-    }
-    function test_gallery_at_product_sizes() {
-        capture("controls-1280");
-        width = 640; height = 360;
-        capture("controls-640");
-    }
     function test_press_release_keeps_hit_area_and_invokes_once() {
         const button = clicked.target;
         const origin = button.mapToItem(testCase, 0, 0);
@@ -63,18 +49,14 @@ TestCase {
         clicked.target = disabled; clicked.clear();
         mouseClick(disabled);
         compare(clicked.count, 0);
-        button.forceActiveFocus(Qt.TabFocusReason);
-        capture("controls-focus");
     }
     function test_hover_and_choice_popup() {
         const button = clicked.target;
         mouseMove(button, button.width / 2, button.height / 2);
         tryCompare(button, "hovered", true);
-        capture("controls-hover");
         const choice = findChild(gallery, "choice");
         mouseClick(choice);
         tryCompare(choice.popup, "opened", true);
-        capture("controls-choice", true);
         keyClick(Qt.Key_Escape);
         tryCompare(choice.popup, "visible", false);
     }
@@ -84,6 +66,10 @@ TestCase {
         slider.forceActiveFocus(Qt.TabFocusReason);
         keyClick(Qt.Key_Right);
         compare(slider.value, 60);
+        slider.subdued = true;
+        keyClick(Qt.Key_Left);
+        compare(slider.value, 50);
+        slider.subdued = false;
         const toggle = findChild(gallery, "toggle_0");
         toggle.checked = false;
         toggle.forceActiveFocus(Qt.TabFocusReason);

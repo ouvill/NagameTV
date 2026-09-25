@@ -24,5 +24,4 @@ if [[ $renderer_info == *llvmpipe* || $renderer_info == *softpipe* || $renderer_
     exit 1
 fi
 QT_QPA_PLATFORM=xcb QSG_RHI_BACKEND=opengl \
-    cargo run --manifest-path rust/Cargo.toml --locked --features video_item_tests \
-    -- --video-item-tests
+    python3 scripts/run-test-binary.py -- --video-item-tests

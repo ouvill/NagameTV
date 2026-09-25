@@ -46,6 +46,11 @@ in the conventions and development guide. Once they pass, repeat or broaden them
 only for further changes, failures or unresolved concerns. For prose-only changes,
 check the wording, links and diff; application builds and GUI tests are unnecessary.
 
+Use `python3 scripts/test.py` for tests (`--list` lists suites). It runs Rust tests
+with nextest and shares a build/test lock with CMake and the Qt test scripts.
+Wrap direct Cargo diagnostics, including Clippy, in
+`bash scripts/with-build-lock.sh COMMAND ...` so they do not overlap a test run.
+
 ## Workshop hardware requirements
 
 This project runs inside a container; display, GPU, camera and audio access must

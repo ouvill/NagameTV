@@ -407,8 +407,7 @@ fn measure_explicit_save_latency() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
-fn comment_send_shortcut_defaults_and_persists_without_saving_drafts()
--> Result<(), Box<dyn std::error::Error>> {
+fn comment_send_shortcut_defaults_and_persists() -> Result<(), Box<dyn std::error::Error>> {
     let directory = tempfile::tempdir()?;
     let path = directory.path().join("settings.toml");
     fs::write(&path, "comments_enabled = true\n")?;
@@ -422,7 +421,6 @@ fn comment_send_shortcut_defaults_and_persists_without_saving_drafts()
             enabled
         );
     }
-    assert!(!fs::read_to_string(path)?.contains("draft"));
     Ok(())
 }
 

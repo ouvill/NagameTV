@@ -62,3 +62,5 @@ FROM appimage AS ci
 RUN apt-get update && apt-get install -y --no-install-recommends dbus-daemon python3-dbus python3-gi \
     && rm -rf /var/lib/apt/lists/*
 RUN rustup component add rustfmt && chmod -R a+rX /opt/rustup /opt/cargo
+RUN cargo install cargo-nextest --locked --version 0.9.146 \
+    && chmod -R a+rX /opt/cargo

@@ -2,9 +2,9 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 source scripts/gui-test-session.sh
-features=qml_tests
+build_options=()
 if [[ ${1:-} == --evaluation-legacy-comments && $# == 1 ]]; then
-    features+=,evaluation-legacy-comments
+    build_options+=(--evaluation-legacy-comments)
 elif [[ $# != 0 ]]; then
     echo "Usage: $0 [--evaluation-legacy-comments]" >&2
     exit 2
@@ -24,6 +24,5 @@ if [[ $renderer_info == *llvmpipe* || $renderer_info == *softpipe* || $renderer_
     exit 1
 fi
 printf '%s\n' "$renderer_info"
-QT_QPA_PLATFORM=xcb QSG_RHI_BACKEND=opengl CARGO_TARGET_DIR=build/cargo \
-    cargo run --manifest-path rust/Cargo.toml --release --locked --features "$features" \
-    -- --qml-tests
+QT_QPA_PLATFORM=xcb QSG_RHI_BACKEND=opengl \
+    python3 scripts/run-test-binary.py "${build_options[@]}" -- --qml-tests

@@ -25,7 +25,7 @@ Host desktop connections and physical audio devices are not required.
 | `bash scripts/test-localization.sh` | Locale resolution, existing QML retranslation, date stability, dynamic snapshots, literal diagnostic arguments, 100 repeated language switches and translator ownership; a separate process removes the real catalog resource and checks failure cleanup | None: QCoreApplication and QtObject |
 | `bash scripts/test-connection.sh` | Real Player and local HTTP fixtures: pending/failed saves, empty catalogs, save failures, shutdown, coherent stream properties during Qt signals, retry allowance and guide visibility/day notification order; channel source/proxy models with QAbstractItemModelTester, exact 64-bit service IDs, filtering, replacement and source destruction | None: QCoreApplication and HTTP |
 | `bash scripts/test-danmaku.sh` | QML component tests in `rust/qml/tests/`, including channel views using the production Rust models | Validated private X11 display and GPU |
-| `bash scripts/test-ui-style.sh` | Production control catalogue, press/release hit areas, disabled actions, keyboard input, popup dismissal and screenshots at regular/small sizes | Validated private X11 display and GPU |
+| `bash scripts/test-ui-style.sh` | Production control catalogue, press/release hit areas, disabled actions, keyboard input, popup dismissal | Validated private X11 display and GPU |
 | `bash scripts/test-channel-wheel.sh` | Channel browser and sidebar wheel input, cursor movement, snapping and filtering using the production Rust models | Validated private X11 display and GPU |
 | `bash scripts/test-startup.sh` | Production Main.qml in separate processes: first run, two saved startups, channel restoration, guide open/close, native playback failure and clean shutdown; QML warnings fail the test | Validated private X11 display, GPU and virtual PipeWire output |
 | `bash scripts/test-screenshot.sh` | Real Player, parallel PNG/JPG/WebP saving, immutable images/settings, accepted saves surviving UI unavailability, Unicode/escaped folders and failure recovery | Validated X11 display and GPU |
@@ -46,14 +46,20 @@ not automatically start an isolated session or fall back after a GPU check fails
 Build without accessing hardware:
 
 ```sh
-cargo build --manifest-path rust/Cargo.toml --locked --features native_tests
+bash scripts/with-build-lock.sh cargo build --manifest-path rust/Cargo.toml --locked --features native_tests
 ```
 
 Use the validating scripts for hardware-dependent execution.
-`scripts/run-native-tests.sh` is their common Cargo launcher.
-It defaults to the `dev` profile. Set `NAGAMETV_TEST_PROFILE=release` to use
-the release profile; CI uses this to share compilation with the distribution build.
-Only `dev` and `release` are accepted.
+`python3 scripts/test.py native` builds once and runs the hardware-free Qt suites.
+`python3 scripts/test.py gui` runs the listed GUI suites, after resource validation.
+The existing shell entry points remain available and share the build/test lock.
+Their common launcher uses a private executable copy and defaults to `release`;
+set `NAGAMETV_TEST_PROFILE=dev` for standalone scripts or `--profile dev` on the
+common runner. Only `dev` and `release` are accepted.
+
+`bash scripts/capture-ui-style.sh` separately generates regular/small-size,
+focus, hover and popup images in `build/ui-review/` for human review.
+These images are not compared automatically and are not counted as visual regression coverage.
 
 The startup suite uses an isolated configuration and a local HTTP fixture, with
 the real Player, GStreamer pipeline and video item. The fixture returns HTTP 503

@@ -26,15 +26,6 @@ Item {
                 property int requests: 0
                 function setDanmaku(value) { danmaku = value; requests++; }
             }
-            SettingsToggle {
-                id: setting
-                width: 480
-                text: "Show comments over the video"
-                description: "Settings row"
-                enabled: backend.enabled
-                checked: backend.danmaku
-                onToggled: backend.setDanmaku(checked)
-            }
             ProgramSidebar {
                 channelModel: ChannelFixture {}
                 id: sidebar
@@ -69,7 +60,6 @@ Item {
             function verifyState(value, requests) {
                 compare(backend.danmaku, value);
                 compare(backend.requests, requests);
-                compare(setting.checked, value);
                 compare(sidebarToggle().checked, value);
             }
             function init() {
@@ -82,10 +72,10 @@ Item {
                 host.requestActivate(); tryCompare(host, "active", true);
                 reveal(sidebarToggle());
             }
-            function test_surfaces_stay_in_sync_after_mouse_keyboard_and_external_changes() {
-                mouseClick(setting, 20, setting.height / 2);
-                verifyState(true, 1);
+            function test_sidebar_emits_user_requests_and_reflects_external_state() {
                 const toggle = sidebarToggle();
+                mouseClick(toggle);
+                verifyState(true, 1);
                 mousePress(toggle, 0, toggle.height / 2);
                 wait(120);
                 mouseRelease(toggle, 0, toggle.height / 2);
@@ -97,7 +87,7 @@ Item {
             }
             function test_disabled_controls_do_not_request_changes() {
                 backend.enabled = false;
-                mouseClick(setting); mouseClick(sidebarToggle());
+                mouseClick(sidebarToggle());
                 verifyState(false, 0);
             }
             function test_stats_and_timeshift_remain_reachable_in_short_sidebar() {

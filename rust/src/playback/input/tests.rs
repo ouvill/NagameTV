@@ -666,21 +666,29 @@ fn normalizer_announces_and_feeds_missing_captions_before_broadcast_changes() {
 
 #[test]
 fn slow_short_read_does_not_start_another_io_after_exploration_deadline() {
-    struct SlowFile {
+    use std::cell::Cell;
+
+    struct SlowFile<'a> {
         reads: usize,
+        elapsed: &'a Cell<Duration>,
     }
-    impl Read for SlowFile {
+    impl Read for SlowFile<'_> {
         fn read(&mut self, bytes: &mut [u8]) -> std::io::Result<usize> {
             self.reads += 1;
-            std::thread::sleep(Duration::from_millis(40));
+            // Advance the injected deadline check, independently of CPU scheduling.
+            self.elapsed.set(Duration::from_millis(40));
             bytes[0] = 0;
             Ok(1)
         }
     }
-    let mut source = SlowFile { reads: 0 };
-    let deadline = Instant::now() + Duration::from_millis(20);
+    let elapsed = Cell::new(Duration::ZERO);
+    let mut source = SlowFile {
+        reads: 0,
+        elapsed: &elapsed,
+    };
+    let deadline = Duration::from_millis(20);
     assert_eq!(
-        read_exploration(&mut source, READ_BYTES, || Instant::now() >= deadline)
+        read_exploration(&mut source, READ_BYTES, || elapsed.get() >= deadline)
             .unwrap()
             .len(),
         1

@@ -32,8 +32,11 @@ EPGStationは[固定版の本体との結合テスト](epgstation.md#固定版�
 診断ログは`epgstation-contract` artifactとして14日間保存する。
 本体QMLは生成した型情報を使って全ファイルを`qmllint`で検査し、警告0件を合格条件とする。
 評価用部品も静的検査に含める。色・寸法・動きの共通化は`check-ui-style.py`で検査する。
-CIでは`NAGAMETV_TEST_PROFILE=release`でQt試験もリリースプロファイルを使い、
-デバッグ用依存ライブラリーの二重ビルドを避ける。通常の開発用スクリプトの既定は`dev`。
+CIの`scripts/ci.sh`は共通ランナー`python3 scripts/test.py cpu`を実行する。
+Rustはnextestで個別プロセスに分離し、Qt試験は一度ビルドした実行ファイルを共用する。
+ローカルとCIの既定はともに`release`で、ビルドと検証は共通ロックで直列化する。
+各検査のログと実行結果は、失敗時も`test-results` artifactとして14日間保存する。
+詳しい選択方法とログの保存先は[開発手順](development.md#テストと診断)を参照。
 debの導入試験は開発パッケージのない対象Ubuntuコンテナーで行い、
 全ELFの依存解決・引数解析（Qt初期化前に終了）・ファイル整合性・削除を検証する。
 画面、GPU、音声機器は使用せず、Dockerに機器やホストセッションを渡さない。

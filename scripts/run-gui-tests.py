@@ -17,6 +17,8 @@ import tempfile
 import time
 import uuid
 
+from test_support import ensure_lock, lock_fds
+
 ROOT = Path(__file__).resolve().parent.parent
 START_TIMEOUT_SECONDS = 20
 PROBE_TIMEOUT_SECONDS = 15
@@ -312,7 +314,8 @@ def validate_audio(processes, runtime, sink, monitor_name):
 
 def _run_command(processes, command):
     processes.check()
-    process = subprocess.Popen(command, cwd=ROOT, env=processes.env, start_new_session=True)
+    process = subprocess.Popen(command, cwd=ROOT, env=processes.env, start_new_session=True,
+                               pass_fds=lock_fds())
     try:
         while process.poll() is None:
             processes.check()
@@ -416,6 +419,7 @@ def main():
     command = args.command[1:] if args.command[:1] == ["--"] else args.command
     if args.check == bool(command):
         parser.error("select either --check or -- COMMAND [ARG ...]")
+    ensure_lock()
     log_root = ROOT / "build" / "gui-tests"
     log_root.mkdir(parents=True, exist_ok=True)
     logs = Path(tempfile.mkdtemp(prefix="session-", dir=log_root))

@@ -181,7 +181,7 @@ SQLまたはスキーマを変更した場合は、Python標準ライブラリ�
 ```sh
 python3 scripts/check-comment-sql.py --update
 python3 scripts/check-comment-sql.py
-CARGO_TARGET_DIR=build/cargo cargo test --manifest-path rust/crates/viewer-comments/Cargo.toml --release --locked --features network
+python3 scripts/test.py viewer-comments
 python3 scripts/flatpak-cargo-sources.py
 ```
 
@@ -204,11 +204,43 @@ GitHub Actionsでの自動テストと配布ビルド、`main`へのpushに伴�
 バージョンタグからGitHub Releaseの下書きを作成する手順は
 [CIとリリース](ci-release.md)を参照してください。
 
-アプリのRustテスト:
+共通ランナーは`python3 scripts/test.py`です。初回は固定版の[nextest](https://nexte.st/docs/installation/pre-built-binaries/)を導入します。
+WorkshopとFedoraでは次のコマンドを実行し、`$HOME/.local/bin`を`PATH`へ含めます。
+Workshopには同じ導入処理の`setup-tests`アクションがあります。CIイメージには導入済みです。
 
 ```sh
-CARGO_TARGET_DIR=build/cargo cargo test --manifest-path rust/Cargo.toml --release --locked
+bash scripts/install-nextest.sh
+python3 scripts/test.py --list
+python3 scripts/test.py             # 機器不要: 静的検査、Rust全6パッケージ、Qt接続など
+python3 scripts/test.py app         # アプリのRustテストのみ
+python3 scripts/test.py danmaku ui-style  # GPU環境を検証してQML部品を確認
+python3 scripts/test.py app --filter 'test(settings::)'
 ```
+
+Rustの通常テストはnextestが個別プロセスで実行します。同じプロセス内のtracing subscriberや
+初期化状態の干渉を避け、既定の同時実行数は2、自動リトライは0とします。実時間の再生試験は
+nextest内で単独実行します。`--test-threads N`で並列数、`--profile dev`でビルド構成を変更できます。
+アプリのpath依存5クレートも明示的に列挙し、nextestの対象外であるdoctestはCargoで別途実行します。
+`#[ignore]`の実機・性能プローブ、実EPGStation、配布物の検査は自動では実行しません。
+
+ランナーは必要なバイナリーを先にビルドします。Rustはnextestのビルド情報、Qtは実行ごとのコピーを
+使い、各Qtスクリプトで`cargo run`を繰り返しません。ログと`summary.json`は`build/test-runs/run-*/`に
+保存します。失敗時はそこで停止し、成功・失敗・環境不足・未実行を区別します。
+GUIを選ぶと必要資源を先に検証し、不足時はGUIのビルド・実行へ進みません。
+
+CMakeのビルド、共通ランナー、既存のQtテスト入口は、同じLinuxユーザーの
+`/tmp/nagametv-build-UID/lock`を共有します。別worktreeからの起動も待機するため、
+ビルドと検証が重なりません。Cargoを直接使う診断やClippyも次のラッパーを通します。
+外部のビルドや、ラッパーを使わないコマンドによる負荷までは制御できません。
+別コンテナーのビルドも、このロックの対象外です。
+
+```sh
+bash scripts/with-build-lock.sh cargo clippy --manifest-path rust/Cargo.toml --release --locked --all-targets -- -D warnings
+```
+
+通常は`CARGO_TARGET_DIR=build/cargo`、ビルド並列数2を使います。既存の環境変数で変更できます。
+`NAGAMETV_BUILD_LOCK_DIR`は独立したCI環境などでロックの保存先を変えるための設定です。
+同時に動く開発作業では保存先を統一してください。
 
 チャンネル選択の操作列は`proptest`、HTTP応答と要求回数は`wiremock`で検証します。
 どちらもテスト用の依存です。`proptest`が失敗時に保存した再現用シードは、
@@ -226,7 +258,7 @@ EPGイベント接続の停止・再試行は、機器不要の独立したク�
 Tokioの仮想時間を使う試験では、実時間の待機を省いて期限前後の動作を確認します。
 
 ```sh
-CARGO_TARGET_DIR=build/cargo cargo test --manifest-path rust/crates/viewer-epg-events/Cargo.toml --release --locked --features network
+python3 scripts/test.py viewer-epg-events
 ```
 
 依存を変更した場合は`python3 scripts/flatpak-cargo-sources.py`で配布用のソース一覧を更新し、
@@ -235,8 +267,8 @@ CARGO_TARGET_DIR=build/cargo cargo test --manifest-path rust/crates/viewer-epg-e
 Clippyは通常構成とQt統合テスト構成の両方で、警告をエラーとして検査します。
 
 ```sh
-CARGO_TARGET_DIR=build/cargo SQLX_OFFLINE=true cargo clippy --manifest-path rust/Cargo.toml --release --locked --all-targets -- -D warnings
-CARGO_TARGET_DIR=build/cargo SQLX_OFFLINE=true cargo clippy --manifest-path rust/Cargo.toml --release --locked --all-targets --features native_tests -- -D warnings
+CARGO_TARGET_DIR=build/cargo SQLX_OFFLINE=true bash scripts/with-build-lock.sh cargo clippy --manifest-path rust/Cargo.toml --release --locked --all-targets -- -D warnings
+CARGO_TARGET_DIR=build/cargo SQLX_OFFLINE=true bash scripts/with-build-lock.sh cargo clippy --manifest-path rust/Cargo.toml --release --locked --all-targets --features native_tests -- -D warnings
 ```
 
 これらのコマンドは表示・GPU・音声機器を使用しません。
@@ -269,8 +301,9 @@ bash scripts/test-ui-style.sh
 
 Pythonの2つの検査は機器不要で、CIにも含めます。部品一覧は専用画面・実GPU・仮想音声出力を
 自動検証してから起動し、通常・押下・選択・無効の各状態、ホバー、キーボード操作と
-選択欄の開閉を確認します。1280×720、640×360、フォーカス・ホバー・選択欄の画像を
-`build/ui-review/controls-*.png`へ出力します。ファイルはGit対象外です。
+選択欄の開閉を確認します。画像は別途`bash scripts/capture-ui-style.sh`で生成します。
+1280×720、640×360、フォーカス・ホバー・選択欄の画像を
+`build/ui-review/controls-*.png`へ出力します。自動比較は行わず、ファイルはGit対象外です。
 主要画面は`bash scripts/test-startup.sh`でも確認し、画像を`build/navigation-review/`へ保存します。
 比較する際は前回の画像を別のディレクトリーへ退避し、同じサイズ・言語・表示内容で見比べます。
 

@@ -16,11 +16,12 @@ connections:
     slot: system:gpu
 
 actions:
+  setup-tests: bash scripts/install-nextest.sh
   configure: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
   build: |
     cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
     cmake --build build
-  test: cargo test --manifest-path rust/Cargo.toml "$@"
+  test: python3 scripts/test.py "$@"
   gui-test: python3 scripts/run-gui-tests.py "$@"
   run: bash scripts/run-viewer.sh "$@"
   profile-memory: bash scripts/profile-memory.sh "$@"
