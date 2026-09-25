@@ -1,3 +1,4 @@
+mod aac;
 mod audio_choices;
 mod audio_components;
 mod audio_default;
@@ -258,6 +259,7 @@ impl Playback {
             .map(|factory| factory.create().build())
             .transpose()?;
         let audio_filter = routing.filter_with_tempo(tempo.as_ref())?;
+        aac::register()?;
         let playbin = clock::Policy::from_environment()?.build_playbin()?;
         let program_number = Arc::new(std::sync::atomic::AtomicI32::new(-1));
         let program = program_number.clone();
