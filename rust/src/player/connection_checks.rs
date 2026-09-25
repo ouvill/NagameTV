@@ -236,6 +236,7 @@ fn checks() -> TestResult {
     check_transport_messages();
     check_screenshot_directory()?;
     check_comment_presentation()?;
+    crate::danmaku::checks::run()?;
     super::remote_checks::run()?;
 
     // HTTP failures and non-Mirakurun responses preserve a working saved URL.

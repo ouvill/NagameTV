@@ -153,8 +153,10 @@ DanmakuTimeline {
 }
 ```
 
-recordingは説明用の再生元で、現在のPlayerのAPIではない。製品は`comment_timeline`と
-`commentary_position()`を使って`DanmakuController.update_timeline()`へ渡す。
+recordingは説明用の再生元で、現在のPlayerのAPIではない。製品は`comment_timeline_revision`の
+変更時に`Player.sync_comment_timeline(controller)`を呼び、型付きコメント列をRust内で渡す。
+同じデータの再通知では表示中のコメントを保持し、シークや再生元の変更では表示をリセットする。
+再生中の位置更新には`commentary_position()`を使う。
 QMLからインポートする場合は `timeline.load(jsonString)` を使う。
 型検証・データ保持・ソートはRustで行う。Rustからは `Engine::load(Vec<TimedComment>)` を使える。
 

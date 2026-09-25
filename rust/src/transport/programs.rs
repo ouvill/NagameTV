@@ -1,5 +1,6 @@
 //! ARIB STD-B10 SI shared by recording, live and time-shift playback.
 pub(crate) mod catalog;
+pub(crate) mod presentation;
 mod syntax;
 use super::{
     Sections,

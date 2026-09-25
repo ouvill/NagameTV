@@ -8,8 +8,18 @@ use std::{pin::Pin, time::Instant};
 use viewer_comments::Position;
 use viewer_comments::danmaku::{self as danmaku_core, ConfigurationChange, Engine, Viewport};
 
+#[cfg(feature = "native_tests")]
+pub(crate) mod checks;
+
 #[cxx_qt::bridge]
 pub mod ffi {
+    #[cfg(feature = "native_tests")]
+    unsafe extern "C++" {
+        include!("cxx-qt-lib/common.h");
+        #[namespace = "rust::cxxqtlib1"]
+        #[cxx_name = "make_unique"]
+        fn new_controller() -> UniquePtr<DanmakuController>;
+    }
     unsafe extern "C++" {
         include!("cxx-qt-lib/qstring.h");
         type QString = cxx_qt_lib::QString;
@@ -145,6 +155,7 @@ pub struct Controller {
     paused: bool,
     media_driven: bool,
     error: QString,
+    playback_timeline: Option<crate::features::comments::replay::Timeline>,
 }
 impl Default for Controller {
     fn default() -> Self {
@@ -160,6 +171,7 @@ impl Default for Controller {
             paused: false,
             media_driven: false,
             error: QString::default(),
+            playback_timeline: None,
         }
     }
 }
@@ -396,6 +408,7 @@ impl ffi::DanmakuController {
         self.publish();
     }
     pub fn reset(mut self: Pin<&mut Self>) {
+        self.as_mut().rust_mut().playback_timeline = None;
         self.as_mut().rust_mut().engine.reset();
         self.as_mut().cleared();
         self.publish();
@@ -418,6 +431,7 @@ impl ffi::DanmakuController {
     pub fn load_timeline(mut self: Pin<&mut Self>, json: QString) -> bool {
         match danmaku_core::parse_timeline(&json.to_string()) {
             Ok(records) => {
+                self.as_mut().rust_mut().playback_timeline = None;
                 self.as_mut().rust_mut().engine.load(records);
                 self.as_mut().rust_mut().error = QString::default();
                 self.as_mut().error_changed();
@@ -471,6 +485,31 @@ impl ffi::DanmakuController {
         ) else {
             return false;
         };
+        self.as_mut().rust_mut().playback_timeline = None;
+        self.apply_records(records, position, reset);
+        true
+    }
+    pub(crate) fn apply_playback_timeline(
+        mut self: Pin<&mut Self>,
+        timeline: crate::features::comments::replay::Timeline,
+        position: std::time::Duration,
+    ) {
+        let previous = self.rust().playback_timeline.as_ref();
+        if previous.is_some_and(|previous| previous.same_snapshot(&timeline)) {
+            return;
+        }
+        let reset = previous.is_none_or(|previous| !previous.same_generation(&timeline));
+        let records = timeline.records().to_vec();
+        // Commit the delivery before signals can synchronously re-enter QML.
+        self.as_mut().rust_mut().playback_timeline = Some(timeline);
+        self.apply_records(records, position, reset);
+    }
+    fn apply_records(
+        mut self: Pin<&mut Self>,
+        records: Vec<danmaku_core::TimedComment>,
+        position: std::time::Duration,
+        reset: bool,
+    ) {
         let cleared = if reset {
             self.as_mut().rust_mut().engine.load_at(records, position);
             true
@@ -487,7 +526,6 @@ impl ffi::DanmakuController {
         self.as_mut().drain_due();
         self.as_mut().publish_positions();
         self.publish();
-        true
     }
     fn drain_due(mut self: Pin<&mut Self>) {
         loop {

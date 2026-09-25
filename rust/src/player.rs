@@ -56,6 +56,8 @@ pub mod ffi {
         fn new_player() -> UniquePtr<Player>;
     }
     unsafe extern "C++" {
+        include!("nagametv/src/danmaku.cxxqt.h");
+        type DanmakuController = crate::danmaku::ffi::DanmakuController;
         include!("nagametv/src/channel_model.cxxqt.h");
         type ChannelModel = crate::channel_model::ffi::ChannelModel;
         include!("nagametv/src/guide_model.cxxqt.h");
@@ -173,7 +175,7 @@ pub mod ffi {
         #[qproperty(*mut CommentModel, comment_model, READ = comment_model, CONSTANT)]
         #[qproperty(QString, activity_data, READ, NOTIFY)]
         #[qproperty(QString, comment_status, READ, NOTIFY)]
-        #[qproperty(QString, comment_timeline, READ, NOTIFY)]
+        #[qproperty(u32, comment_timeline_revision, READ, NOTIFY)]
         #[qproperty(f64, comment_cache_bytes, READ, NOTIFY)]
         #[qproperty(i32, comment_cache_limit_mib, READ = comment_cache_limit_mib, NOTIFY)]
         #[qproperty(QString, comment_draft, READ, NOTIFY)]
@@ -416,6 +418,8 @@ pub mod ffi {
         #[qinvokable]
         fn commentary_position(&self) -> f64;
         #[qinvokable]
+        unsafe fn sync_comment_timeline(self: &Player, controller: *mut DanmakuController) -> bool;
+        #[qinvokable]
         fn poll(self: Pin<&mut Player>);
         #[qinvokable]
         fn shutdown(self: Pin<&mut Player>) -> bool;
@@ -550,7 +554,7 @@ pub struct PlayerRust {
     comment_send_on_enter: bool,
     comments: crate::features::comments::Comments,
     comment_replay: crate::features::comments::replay::Replay,
-    comment_timeline: QString,
+    comment_timeline_revision: u32,
     comment_cache_bytes: f64,
     subtitles_active: bool,
     subtitle_display: bool,
@@ -565,6 +569,9 @@ pub struct PlayerRust {
     program_progress: f64,
     program_status: QString,
     current_projection: crate::features::program_info::presentation::Projection,
+    program_publication: crate::transport::programs::presentation::Publication,
+    recording_program_bodies: crate::transport::programs::presentation::Cache,
+    program_enrichment: crate::transport::programs::presentation::Enrichment,
     next_current_program: Instant,
     diagnostics: QString,
     feature_metrics: Option<telemetry::FeatureMetrics>,

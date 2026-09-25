@@ -224,6 +224,9 @@ impl ffi::Player {
             self.as_mut().rust_mut().subtitle_cells = 0;
             self.as_mut().set_subtitle_data(QString::default());
             if self.recording() {
+                // A seek clears the UI even when it stays inside the same program.
+                // The next presentation must publish that cached body again.
+                self.as_mut().rust_mut().program_publication = Default::default();
                 self.as_mut()
                     .set_current_program_data(QString::from("null"));
                 self.as_mut().set_program_progress(0.0);

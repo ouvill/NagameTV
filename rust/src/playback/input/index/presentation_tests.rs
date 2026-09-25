@@ -149,7 +149,7 @@ fn separate_pcr_pid_keeps_received_video_and_audio_programs_available() {
             },
         );
         assert_eq!(after.program_status(), Status::Available);
-        let program: serde_json::Value = serde_json::from_str(&after.viewing_program().0).unwrap();
+        let program: serde_json::Value = serde_json::from_str(after.viewing_program().0).unwrap();
         assert_eq!(program["eventId"], 1);
     }
 }

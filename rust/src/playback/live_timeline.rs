@@ -2,6 +2,7 @@
 //! Media coordinates are monotonic TS time, never UTC seek offsets.
 use super::timeline::{Phase, Resume};
 use crate::transport::programs::catalog::{Accuracy, Catalog, ScanCursor, ScanPoint, View};
+use crate::transport::programs::presentation::{Cache, Data, Enrichment};
 use crate::transport::programs::{Observation, Program};
 use serde::Serialize;
 use std::{
@@ -414,7 +415,11 @@ impl History {
             .utc(position_ns)
             .map(UtcMs)
     }
+    #[cfg(test)]
     fn selection(&self, position_ns: u64) -> Option<Selection> {
+        self.project_selection(position_ns, &mut Cache::default())
+    }
+    fn project_selection(&self, position_ns: u64, cache: &mut Cache) -> Option<Selection> {
         let position = MediaMs::from_ns(position_ns);
         let epoch = self.epoch(position)?;
         let view = self.metadata(position_ns);
@@ -428,7 +433,13 @@ impl History {
         // program segments. Re-anchoring at each fractional PCR position rounds
         // UTC and media time separately, shifting scheduled times by 1 ms.
         // Frame UTC still uses the catalog's nanosecond mapping in History::utc.
-        Selection::new(epoch.serial, epoch.clock, &record, position)
+        Some(Selection::new(
+            epoch.serial,
+            epoch.clock,
+            record,
+            position,
+            cache,
+        ))
     }
     fn retained(&self, range: Option<Span>) -> Vec<Span> {
         let Some(range) = range else {
@@ -454,30 +465,31 @@ struct Selection {
     elapsed: Option<i64>,
     duration: Option<i64>,
     progress: f64,
-    data: serde_json::Value,
+    data: Data,
 }
 impl Selection {
-    fn new(epoch: u64, clock: Option<Clock>, record: &Record, position: MediaMs) -> Option<Self> {
-        let program = &record.program;
+    fn new(
+        epoch: u64,
+        clock: Option<Clock>,
+        record: Record,
+        position: MediaMs,
+        cache: &mut Cache,
+    ) -> Self {
         let span = record.span(clock);
         let elapsed =
             span.map(|span| (position.0 - span.start.0).clamp(0, span.end.0 - span.start.0));
         let duration = span.map(|span| span.end.0 - span.start.0);
-        let mut data = serde_json::to_value(program).ok()?;
-        data["progressKnown"] = span.is_some().into();
-        data["source"] = "broadcast_ts".into();
-        data["station"] = record.station.clone().into();
-        data["provider"] = record.provider.clone().into();
-        data["playbackStartMs"] = span.map(|span| span.start.0).into();
-        data["playbackEndMs"] = span.map(|span| span.end.0).into();
-        if !program.extended.is_empty() {
-            data["description"] = format!("{}\n\n{}", program.description, program.extended)
-                .trim()
-                .into();
-        }
-        Some(Self {
-            id: record.id(epoch),
-            title: program.name.clone(),
+        let id = record.id(epoch);
+        let data = cache.project(
+            record.program,
+            record.station,
+            record.provider,
+            span.map(|span| (span.start.0, span.end.0)),
+            span.is_some(),
+        );
+        Self {
+            id,
+            title: data.title().to_owned(),
             span,
             elapsed,
             duration,
@@ -485,7 +497,7 @@ impl Selection {
                 .zip(duration)
                 .map_or(0.0, |(elapsed, duration)| elapsed as f64 / duration as f64),
             data,
-        })
+        }
     }
 }
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -569,24 +581,36 @@ impl Snapshot {
             |viewing| viewing.program_status,
         )
     }
-    pub fn viewing_program(&self) -> (String, f64) {
+    pub fn viewing_program(&self) -> (&str, f64) {
         self.viewing
             .as_ref()
             .and_then(|viewing| viewing.program.as_ref())
             .map_or_else(
-                || ("null".into(), 0.0),
-                |program| (program.data.to_string(), program.progress),
+                || ("null", 0.0),
+                |program| (program.data.json(), program.progress),
             )
     }
-    pub fn supplement(&mut self, enrich: impl Fn(&mut serde_json::Value)) {
+    pub fn viewing_data(&self) -> Option<Data> {
+        self.viewing
+            .as_ref()?
+            .program
+            .as_ref()
+            .map(|program| program.data.clone())
+    }
+    pub fn supplement(
+        &mut self,
+        revision: u64,
+        cache: &mut Enrichment,
+        enrich: impl Fn(&mut serde_json::Value),
+    ) {
         for selection in self
             .viewing
             .iter_mut()
             .filter_map(|viewing| viewing.program.as_mut())
             .chain(self.live.program.iter_mut())
         {
-            enrich(&mut selection.data);
-            selection.title = selection.data["name"].as_str().unwrap_or_default().into();
+            selection.data = cache.apply(&selection.data, revision, &enrich);
+            selection.title = selection.data.title().to_owned();
         }
     }
     pub fn disable_programs(&mut self) {
@@ -628,12 +652,14 @@ pub(super) struct Reading {
 pub(super) struct Presenter {
     session: String,
     previous: Option<Snapshot>,
+    program_bodies: Cache,
 }
 impl Presenter {
     pub fn new() -> Self {
         Self {
             session: NEXT_SESSION.fetch_add(1, Ordering::Relaxed).to_string(),
             previous: None,
+            program_bodies: Cache::default(),
         }
     }
     pub fn owns(&self, session: &str) -> bool {
@@ -654,13 +680,13 @@ impl Presenter {
         let live = Live {
             position: edge,
             utc: history.utc(live_position_ns).map(|utc| UtcMs(utc.0 + 1)),
-            program: history.selection(live_position_ns),
+            program: history.project_selection(live_position_ns, &mut self.program_bodies),
         };
         let available = history.retained(enabled.then_some(Span { start, end: edge }));
         let oldest_ns = if enabled { start_ns } else { live_position_ns };
         let oldest = MediaMs::from_ns(oldest_ns);
         let left = history
-            .selection(oldest_ns)
+            .project_selection(oldest_ns, &mut self.program_bodies)
             .and_then(|selection| selection.span)
             .map_or(oldest, |span| span.start);
         let previous_end = self
@@ -712,7 +738,7 @@ impl Presenter {
                 position: MediaMs::from_ns(position_ns),
                 position_ns,
                 utc: history.utc(position_ns),
-                program: history.selection(position_ns),
+                program: history.project_selection(position_ns, &mut self.program_bodies),
                 program_status: history.metadata(position_ns).status,
                 availability: Availability::Unavailable,
                 offscreen: false,
@@ -727,7 +753,8 @@ impl Presenter {
                 if metadata.status != crate::transport::programs::catalog::Status::Pending
                     || viewing.program.is_none()
                 {
-                    viewing.program = history.selection(viewing.position_ns);
+                    viewing.program =
+                        history.project_selection(viewing.position_ns, &mut self.program_bodies);
                     viewing.program_status = metadata.status;
                 }
                 viewing.utc = history.utc(viewing.position_ns);

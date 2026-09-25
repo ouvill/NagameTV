@@ -318,7 +318,7 @@ pub struct Measurement {
     pub id: Id,
     pub text: Box<str>,
 }
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct TimedComment {
     pub id: Box<str>,
     pub time: Duration,
@@ -327,7 +327,7 @@ pub struct TimedComment {
 }
 
 /// Live arrivals begin when measured; replay restores the scheduled position.
-#[derive(Clone, Copy, Debug, Default, serde::Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Timing {
     #[default]

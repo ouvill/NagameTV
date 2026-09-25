@@ -215,9 +215,23 @@ impl Default for View {
     }
 }
 impl View {
+    #[cfg(test)]
     pub fn presentation(&self, position: u64) -> (String, f64) {
+        let (data, progress) = self.project(position, &mut super::presentation::Cache::default());
+        (
+            data.as_ref()
+                .map_or("null", super::presentation::Data::json)
+                .to_owned(),
+            progress,
+        )
+    }
+    pub fn project(
+        &self,
+        position: u64,
+        cache: &mut super::presentation::Cache,
+    ) -> (Option<super::presentation::Data>, f64) {
         let Some(program) = &self.program else {
-            return ("null".into(), 0.0);
+            return (None, 0.0);
         };
         let utc = self.clock.and_then(|clock| clock.utc(position));
         let progress = utc
@@ -236,19 +250,14 @@ impl View {
                     i64::try_from(start + i128::from(duration)).ok()?,
                 ))
             });
-        let mut value = serde_json::to_value(program).expect("finite program data");
-        value["source"] = "broadcast_ts".into();
-        value["station"] = self.station.clone().into();
-        value["provider"] = self.provider.clone().into();
-        value["progressKnown"] = progress.is_some().into();
-        value["playbackStartMs"] = range.map(|range| range.0).into();
-        value["playbackEndMs"] = range.map(|range| range.1).into();
-        if !program.extended.is_empty() {
-            value["description"] = format!("{}\n\n{}", program.description, program.extended)
-                .trim()
-                .into();
-        }
-        (value.to_string(), progress.unwrap_or(0.))
+        let data = cache.project(
+            program.clone(),
+            self.station.clone(),
+            self.provider.clone(),
+            range,
+            progress.is_some(),
+        );
+        (Some(data), progress.unwrap_or(0.))
     }
 }
 impl Catalog {

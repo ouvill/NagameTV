@@ -2,12 +2,14 @@
 //! independent lifetime, so seeks never cancel or invalidate a received response.
 use super::mapping;
 mod arrivals;
+mod timeline;
 use crate::{channels::BroadcastService, transport::programs::catalog::ClockReading};
 use arrivals::LiveArrivals;
 use std::{
     collections::{HashMap, HashSet},
     path::PathBuf,
 };
+pub(crate) use timeline::Timeline;
 use viewer_comments::{
     Comment,
     cache::{self, Controller, Demand, Interval, Record, RecordOrigin, Source, View},
@@ -71,11 +73,13 @@ pub(crate) struct Replay {
     position: Option<u64>,
     seeking: bool,
     arrivals: LiveArrivals,
-    pub generation: u64,
-    pub data: String,
+    timeline: Timeline,
     pub status: Status,
 }
 impl Replay {
+    pub fn timeline(&self) -> &Timeline {
+        &self.timeline
+    }
     #[cfg(test)]
     fn in_directory(directory: PathBuf) -> Self {
         Self {
@@ -134,8 +138,7 @@ impl Replay {
         self.status = Status::Disabled;
     }
     fn clear_projection(&mut self) {
-        self.generation = self.generation.wrapping_add(1);
-        self.data = "[]".into();
+        self.timeline.reset();
         self.projected = None;
         self.clock = None;
         self.position = None;
@@ -295,7 +298,7 @@ impl Replay {
         }
         let enabled = context.as_ref().is_some_and(|c| c.enabled && c.display);
         if !enabled {
-            if self.data != "[]" || !self.arrivals.is_empty() {
+            if !self.timeline.records().is_empty() || !self.arrivals.is_empty() {
                 self.clear_projection();
             }
             self.status = Status::Disabled;
@@ -307,7 +310,7 @@ impl Replay {
             } else {
                 Status::Unsupported
             };
-            self.data = "[]".into();
+            self.timeline.replace(Vec::new());
             return;
         }
         if seeking {
@@ -319,7 +322,7 @@ impl Replay {
                 tracing::debug!(target: "comment_archive", source = ?self.target, "waiting for broadcast clock");
             }
             self.status = Status::WaitingClock;
-            self.data = "[]".into();
+            self.timeline.replace(Vec::new());
             self.projected = None;
             return;
         };
@@ -328,7 +331,7 @@ impl Replay {
         }
         let Some(view) = view else {
             self.status = Status::WaitingClock;
-            self.data = "[]".into();
+            self.timeline.replace(Vec::new());
             return;
         };
         let snapshot = match &self.storage {
@@ -354,7 +357,8 @@ impl Replay {
             } else {
                 &[]
             };
-            self.data = project(records, clock, view.interval, &self.arrivals);
+            self.timeline
+                .replace(project(records, clock, view.interval, &self.arrivals));
             self.projected = Some(signature);
         }
         self.status = match snapshot.state {
@@ -371,7 +375,7 @@ impl Replay {
             cache::State::Waiting(until) => {
                 Status::Scheduled((until.saturating_sub(wall_ms / 1000).max(1) as u64).div_ceil(60))
             }
-            _ if self.data != "[]" => Status::Ready,
+            _ if !self.timeline.records().is_empty() => Status::Ready,
             _ if utc / 1000 >= cache::archive_end(wall_ms / 1000) => Status::Pending,
             cache::State::Starting => Status::Waiting,
             cache::State::Ready => match snapshot.availability {
@@ -390,24 +394,31 @@ fn project(
     clock: ClockReading,
     viewing: Interval,
     arrivals: &LiveArrivals,
-) -> String {
+) -> Vec<viewer_comments::danmaku::TimedComment> {
     // Prefer the transient arrival over its persisted copy. Its ID and display
     // time survive worker snapshots, while the stored posting time stays intact.
     let stored = records.iter().filter(|record| {
         record.origin != RecordOrigin::Live || !arrivals.contains(&record.comment)
     });
     let records: Vec<_> = arrivals.records().into_iter().chain(stored).collect();
-    let mut live: HashMap<String, Vec<usize>> = HashMap::new();
+    let mut live: HashMap<_, Vec<usize>> = HashMap::new();
     let mut paired = HashSet::new();
-    let payload = |record: &Record| {
-        serde_json::to_string(&(
+    // Borrow the original payload as a typed key; no escaping or JSON allocation.
+    fn payload(
+        record: &Record,
+    ) -> (
+        Option<u64>,
+        viewer_comments::Origin,
+        &str,
+        viewer_comments::Style,
+    ) {
+        (
             record.comment.timestamp_micros,
             record.comment.origin,
             &record.comment.text,
             record.comment.style,
-        ))
-        .expect("comment key")
-    };
+        )
+    }
     let mut live_ids = HashSet::new();
     let mut duplicate_live = HashSet::new();
     for (index, record) in records.iter().enumerate() {
@@ -449,8 +460,9 @@ fn project(
         selected.push(index);
     }
     let selected_count = selected.len();
-    let mut json = String::from("[");
-    let mut count = 0;
+    let mut projected = Vec::new();
+    let mut bytes = 0;
+    let mut invalid = 0;
     for index in selected {
         let record = records[index];
         let Some(micros) = record.comment.timestamp_micros else {
@@ -474,24 +486,43 @@ fn project(
         else {
             continue;
         };
-        let entry=serde_json::json!({"id":record.id.to_string(),"time":media as f64/1_000_000_000.,
-            "text":record.comment.text,"type":record.comment.style.position,"color":record.comment.style.color,"own":record.own,
-            "timing": if arrival.is_some() { viewer_comments::danmaku::Timing::Live } else { viewer_comments::danmaku::Timing::Scheduled }}).to_string();
-        if count >= viewer_comments::danmaku::MAX_TIMELINE_COMMENTS
-            || json.len() + entry.len() + 2 > viewer_comments::danmaku::MAX_TIMELINE_BYTES
+        use viewer_comments::danmaku::{self, TimedComment, Timing};
+        let Some(mut comment) = danmaku::Comment::new(
+            &record.comment.text,
+            record.comment.style.position,
+            record.comment.style.color,
+        ) else {
+            invalid += 1;
+            continue;
+        };
+        comment.own = record.own;
+        let id = record.id.to_string().into_boxed_str();
+        // Bound record, ID and text payloads to 8 MiB (excluding allocator overhead).
+        let charge = std::mem::size_of::<TimedComment>() + id.len() + comment.text.len();
+        if projected.len() >= danmaku::MAX_TIMELINE_COMMENTS
+            || charge > danmaku::MAX_TIMELINE_BYTES - bytes
         {
             break;
         }
-        if count > 0 {
-            json.push(',');
-        }
-        json.push_str(&entry);
-        count += 1;
+        bytes += charge;
+        projected.push(TimedComment {
+            id,
+            time: std::time::Duration::from_nanos(media),
+            comment,
+            timing: if arrival.is_some() {
+                Timing::Live
+            } else {
+                Timing::Scheduled
+            },
+        });
     }
-    json.push(']');
+    if invalid > 0 {
+        tracing::warn!(target: "comment_archive", invalid, "Discarded invalid comments while projecting playback window");
+    }
+    let count = projected.len();
     tracing::debug!(target: "comment_archive", cached = records.len(), merged = selected_count, projected = count,
         excluded_duplicate = records.len() - selected_count, excluded_clock_window_or_limit = selected_count - count, "projected comments");
-    json
+    projected
 }
 
 #[cfg(test)]
@@ -502,6 +533,11 @@ mod tests {
         catalog::{Accuracy, Catalog, ScanCursor, ScanPoint},
     };
     use std::time::{Duration, Instant};
+    fn as_json(records: &[viewer_comments::danmaku::TimedComment]) -> serde_json::Value {
+        serde_json::Value::Array(records.iter().map(|r| serde_json::json!({
+            "id": r.id, "time": r.time.as_secs_f64(), "own": r.comment.own, "timing": r.timing,
+        })).collect())
+    }
     const UTC: i64 = 1_700_000_000_000;
     const SECOND: u64 = 1_000_000_000;
     fn context(source: u64, seconds: u64) -> Context {
@@ -573,6 +609,73 @@ mod tests {
         ctx
     }
     #[test]
+    fn typed_projection_preserves_attributes_and_submillisecond_timing() {
+        let mut post = comment(1, 1);
+        post.text = "改行\n引用\"\\\u{2028}終端".into();
+        post.timestamp_micros = post.timestamp_micros.map(|time| time + 123);
+        post.style.position = viewer_comments::Position::Top;
+        post.style.color = 0x123456;
+        let records = project(
+            &[Record {
+                id: u64::MAX,
+                comment: post,
+                own: true,
+                origin: RecordOrigin::Archive,
+                media_ms: None,
+            }],
+            ClockReading::recording(UTC, 20 * SECOND).unwrap(),
+            Interval::new(UTC / 1000, UTC / 1000 + 20).unwrap(),
+            &LiveArrivals::default(),
+        );
+        assert_eq!(records.len(), 1);
+        let record = &records[0];
+        assert_eq!(record.id.as_ref(), u64::MAX.to_string());
+        assert_eq!(record.time, Duration::from_nanos(SECOND + 123_000));
+        assert_eq!(record.comment.text.as_ref(), "改行 引用\"\\ 終端");
+        assert_eq!(record.comment.position, viewer_comments::Position::Top);
+        assert_eq!(record.comment.color.rgb(), 0x123456);
+        assert!(record.comment.own);
+        assert_eq!(record.timing, viewer_comments::danmaku::Timing::Scheduled);
+    }
+
+    #[test]
+    fn typed_projection_enforces_count_and_payload_limits() {
+        use viewer_comments::danmaku::{MAX_TIMELINE_BYTES, MAX_TIMELINE_COMMENTS, TimedComment};
+        for (text, count) in [
+            ("x".to_owned(), MAX_TIMELINE_COMMENTS + 1),
+            ("x".repeat(viewer_comments::MAX_COMMENT_BYTES), 2_100),
+        ] {
+            let records: Vec<_> = (0..count)
+                .map(|index| {
+                    let mut post = comment(1, index as u64);
+                    post.text = text.as_str().into();
+                    Record {
+                        id: index as u64,
+                        comment: post,
+                        own: false,
+                        origin: RecordOrigin::Archive,
+                        media_ms: None,
+                    }
+                })
+                .collect();
+            let projected = project(
+                &records,
+                ClockReading::recording(UTC, 20 * SECOND).unwrap(),
+                Interval::new(UTC / 1000, UTC / 1000 + 20).unwrap(),
+                &LiveArrivals::default(),
+            );
+            assert!(!projected.is_empty());
+            assert!(projected.len() < count);
+            assert!(projected.len() <= MAX_TIMELINE_COMMENTS);
+            let bytes: usize = projected
+                .iter()
+                .map(|r| std::mem::size_of::<TimedComment>() + r.id.len() + r.comment.text.len())
+                .sum();
+            assert!(bytes <= MAX_TIMELINE_BYTES);
+        }
+    }
+
+    #[test]
     fn encoded_recording_projection_includes_recording_lead_in_and_original_comment_timestamp() {
         let post = Record {
             id: 1,
@@ -588,7 +691,7 @@ mod tests {
             Interval::new(UTC / 1000, UTC / 1000 + 20).unwrap(),
             &LiveArrivals::default(),
         );
-        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let value: serde_json::Value = as_json(&json);
         assert_eq!(value[0]["time"], 7.0);
         assert_eq!(value[0]["timing"], "scheduled");
     }
@@ -604,8 +707,8 @@ mod tests {
             vec![(comment(POSTED, 1), true)],
             UTC + 600_000,
         );
-        let first = replay.data.clone();
-        let value: serde_json::Value = serde_json::from_str(&first).unwrap();
+        let first = replay.timeline.records().to_vec();
+        let value: serde_json::Value = as_json(&first);
         assert_eq!(value.as_array().unwrap().len(), 1);
         assert_eq!(value[0]["time"], RECEIVED as f64);
         assert_eq!(value[0]["timing"], "live");
@@ -631,10 +734,10 @@ mod tests {
             vec![(comment(POSTED, 1), true)],
             UTC + 600_000,
         );
-        assert_eq!(replay.data, first);
+        assert_eq!(replay.timeline.records(), first);
         replay.update(Some(context(1, RECEIVED)), true, vec![], UTC + 600_000);
         replay.update(Some(context(1, RECEIVED)), false, vec![], UTC + 600_000);
-        let restored: serde_json::Value = serde_json::from_str(&replay.data).unwrap();
+        let restored: serde_json::Value = as_json(replay.timeline.records());
         assert_eq!(restored.as_array().unwrap().len(), 1);
         assert_eq!(restored[0]["time"], POSTED as f64);
         assert_eq!(restored[0]["timing"], "scheduled");
@@ -653,8 +756,7 @@ mod tests {
                 .receive(&[(comment(1, 1), false), (comment(35, 2), false)])
         );
         let view = Interval::new(UTC / 1000 + 14, UTC / 1000 + 150).unwrap();
-        let value: serde_json::Value =
-            serde_json::from_str(&project(&[], clock, view, &arrivals)).unwrap();
+        let value: serde_json::Value = as_json(&project(&[], clock, view, &arrivals));
         assert_eq!(value.as_array().unwrap().len(), 2);
         assert_eq!(value[0]["time"], 30.);
         assert_eq!(value[1]["time"], 35.);
@@ -716,7 +818,7 @@ mod tests {
             vec![(comment(5, 1), false)],
             UTC + 600_000,
         );
-        assert_eq!(replay.data, "[]");
+        assert!(replay.timeline.records().is_empty());
         assert!(!replay.arrivals.is_empty());
         let mut disabled = context_until(1, 3, 4);
         disabled.display = false;
@@ -735,11 +837,11 @@ mod tests {
             UTC + 600_000,
         );
         let until = Instant::now() + Duration::from_secs(3);
-        while replay.data == "[]" && Instant::now() < until {
+        while replay.timeline.records().is_empty() && Instant::now() < until {
             std::thread::sleep(Duration::from_millis(5));
             replay.update(Some(context(1, 3)), false, vec![], UTC + 600_000);
         }
-        let value: serde_json::Value = serde_json::from_str(&replay.data).unwrap();
+        let value: serde_json::Value = as_json(replay.timeline.records());
         assert_eq!(value.as_array().unwrap().len(), 1);
         assert_eq!(value[0]["time"], 1.);
         assert_eq!(value[0]["own"], true);
@@ -748,12 +850,12 @@ mod tests {
         const CACHE_READ_DEADLINE: Duration = Duration::from_millis(400);
         for (position, expected_time) in [(500, 500.), (3, 1.)] {
             replay.update(Some(context(1, position)), true, vec![], UTC + 600_000);
-            let generation = replay.generation;
+            let before_seek = replay.timeline.clone();
             replay.update(Some(context(1, position)), false, vec![], UTC + 600_000);
-            assert_ne!(replay.generation, generation);
+            assert!(!replay.timeline.same_generation(&before_seek));
             let until = Instant::now() + CACHE_READ_DEADLINE;
             loop {
-                let value: serde_json::Value = serde_json::from_str(&replay.data).unwrap();
+                let value: serde_json::Value = as_json(replay.timeline.records());
                 if value[0]["time"] == expected_time {
                     assert_eq!(value.as_array().unwrap().len(), 1);
                     break;
@@ -769,17 +871,17 @@ mod tests {
         let mut disabled = context(1, 3);
         disabled.enabled = false;
         replay.update(Some(disabled), false, vec![], UTC + 600_000);
-        assert_eq!(replay.data, "[]");
+        assert!(replay.timeline.records().is_empty());
         replay.update(Some(context(1, 3)), false, vec![], UTC + 600_000);
         let until = Instant::now() + Duration::from_secs(3);
-        while replay.data == "[]" && Instant::now() < until {
+        while replay.timeline.records().is_empty() && Instant::now() < until {
             std::thread::sleep(Duration::from_millis(5));
             replay.update(Some(context(1, 3)), false, vec![], UTC + 600_000);
         }
-        assert_ne!(replay.data, "[]");
+        assert!(!replay.timeline.records().is_empty());
         replay.update(Some(context(1, 500)), true, vec![], UTC + 600_000);
         replay.update(Some(context(2, 3)), false, vec![], UTC + 600_000);
-        assert_eq!(replay.data, "[]");
+        assert!(replay.timeline.records().is_empty());
         replay.shutdown();
     }
     #[test]
@@ -822,13 +924,12 @@ mod tests {
             media_ms: None,
         };
         posts.push(duplicate);
-        let value: serde_json::Value = serde_json::from_str(&project(
+        let value: serde_json::Value = as_json(&project(
             &posts,
             clock,
             Interval::new(UTC / 1000, UTC / 1000 + 10).unwrap(),
             &LiveArrivals::default(),
-        ))
-        .unwrap();
+        ));
         assert_eq!(value.as_array().unwrap().len(), 2);
         assert_eq!(value[0]["time"], 1.000123);
         assert_eq!(value[0]["own"], true);

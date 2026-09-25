@@ -79,6 +79,36 @@ impl ffi::Player {
             .map_or(-1., |position| position.nseconds() as f64 / 1_000_000_000.)
     }
 
+    /// # Safety
+    /// `controller` must be null or a live DanmakuController on the GUI thread.
+    /// The QML call owns its lifetime for this synchronous delivery; no pointer is retained.
+    pub unsafe fn sync_comment_timeline(
+        &self,
+        controller: *mut crate::danmaku::ffi::DanmakuController,
+    ) -> bool {
+        if self.seeking() || !self.media_active() {
+            return false;
+        }
+        let Some(position) = self
+            .rust()
+            .media
+            .playback()
+            .and_then(|playback| playback.position())
+        else {
+            return false;
+        };
+        let timeline = self.rust().comment_replay.timeline().clone();
+        // End all borrows of Player state before the controller emits any signals.
+        let Some(controller) = (unsafe { controller.as_mut() }) else {
+            return false;
+        };
+        unsafe { Pin::new_unchecked(controller) }.apply_playback_timeline(
+            timeline,
+            std::time::Duration::from_nanos(position.nseconds()),
+        );
+        true
+    }
+
     pub fn configure_comment_shadow(mut self: Pin<&mut Self>, enabled: bool) {
         self.as_mut()
             .rust_mut()
@@ -178,7 +208,8 @@ impl ffi::Player {
     pub(super) fn poll_comments(mut self: Pin<&mut Self>) {
         self.as_mut().poll_activity();
         let seeking = self.seeking();
-        let (reset, comments, timeline) = {
+        let (reset, comments, timeline_changed) = {
+            let previous = self.rust().comment_replay.timeline().clone();
             let mut this = self.as_mut().rust_mut();
             let this = &mut *this;
             this.comment_replay.set_budget(
@@ -265,20 +296,13 @@ impl ffi::Player {
                 received,
                 wall_ms,
             );
-            let timeline = format!(
-                "{{\"generation\":{},\"comments\":{}}}",
-                this.comment_replay.generation,
-                if this.comment_replay.data.is_empty() {
-                    "[]"
-                } else {
-                    &this.comment_replay.data
-                }
-            );
-            (reset, comments, QString::from(timeline))
+            let timeline_changed = !previous.same_snapshot(this.comment_replay.timeline());
+            (reset, comments, timeline_changed)
         };
-        if *self.comment_timeline() != timeline {
-            self.as_mut().rust_mut().comment_timeline = timeline;
-            self.as_mut().comment_timeline_changed();
+        if timeline_changed {
+            let revision = self.rust().comment_timeline_revision.wrapping_add(1);
+            self.as_mut().rust_mut().comment_timeline_revision = revision;
+            self.as_mut().comment_timeline_revision_changed();
         }
         let cache_bytes = self.rust().comment_replay.disk_bytes() as f64;
         if self.rust().comment_cache_bytes != cache_bytes {

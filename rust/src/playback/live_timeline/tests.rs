@@ -6,6 +6,41 @@ const MINUTE_MS: i64 = 60 * SECOND_MS;
 const SHOW_MS: i64 = 30 * MINUTE_MS;
 const BROADCAST_START_MS: i64 = 1_800_000_000_000;
 const EPOCH: u64 = 1;
+
+#[test]
+#[ignore = "manual CPU benchmark; run with --ignored --nocapture"]
+fn benchmark_live_program_projection() {
+    use std::{hint::black_box, time::Instant};
+    const TICKS: i64 = 2_000;
+    const SAMPLES: usize = 3;
+    let mut history = History::default();
+    let mut event = program(1, 0);
+    event.description = "番組の詳しい説明。".repeat(2_000);
+    event.extended = "出演者・内容の補足。".repeat(2_000);
+    observe(&mut history, EPOCH, 0, BROADCAST_START_MS, Some(event));
+    history.advance_end(ns(SHOW_MS));
+    for _ in 0..SAMPLES {
+        let mut presenter = Presenter::new();
+        let start = Instant::now();
+        let mut bytes = 0;
+        for position in 1..=TICKS {
+            let snapshot = project(
+                &mut presenter,
+                &mut history,
+                0,
+                SHOW_MS,
+                Phase::Playing,
+                position,
+            );
+            bytes += black_box(snapshot.viewing_program().0.len());
+            bytes += black_box(snapshot.serialize()).len();
+        }
+        eprintln!(
+            "live_projection ticks={TICKS} bytes={bytes} elapsed_us={}",
+            start.elapsed().as_micros()
+        );
+    }
+}
 fn ns(ms: i64) -> u64 {
     ms as u64 * NS_PER_MS
 }

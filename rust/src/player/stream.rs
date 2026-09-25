@@ -83,9 +83,12 @@ impl ffi::Player {
                 || before.3.to_string()
                     != this.stream_state.recording().map_or("", |file| file.name());
             if source_changed
-                || (old_live_timeline.to_string() != "null" && !this.stream_state.active())
+                || (!this.stream_state.active() && old_live_timeline.to_string() != "null")
             {
                 this.current_projection = Default::default();
+                this.program_publication = Default::default();
+                this.recording_program_bodies = Default::default();
+                this.program_enrichment = Default::default();
                 this.current_program_data = QString::from("null");
                 this.program_progress = 0.0;
                 this.subtitle_data = QString::default();
@@ -95,11 +98,15 @@ impl ffi::Player {
                 && let Some(mut snapshot) = this.media.live_timeline()
             {
                 if this.epg_enabled {
-                    snapshot.supplement(|data| this.epg.supplement_data(data));
+                    let this = &mut *this;
+                    snapshot.supplement(this.epg.revision, &mut this.program_enrichment, |data| {
+                        this.epg.supplement_data(data)
+                    });
                 } else {
                     snapshot.disable_programs();
                 }
-                let (data, progress) = snapshot.viewing_program();
+                let (_, progress) = snapshot.viewing_program();
+                let data = snapshot.viewing_data();
                 this.program_status = QString::from(if !this.epg_enabled {
                     "disabled"
                 } else if this.stream_state.seeking() {
@@ -107,7 +114,9 @@ impl ffi::Player {
                 } else {
                     snapshot.program_status().as_str()
                 });
-                this.current_program_data = QString::from(data);
+                if this.program_publication.update(data) {
+                    this.current_program_data = QString::from(this.program_publication.json());
+                }
                 this.program_progress = progress;
                 this.live_timeline = QString::from(snapshot.serialize());
             } else {
@@ -122,11 +131,14 @@ impl ffi::Player {
                     {
                         let view = this.media.metadata(position);
                         let (data, progress) = if this.epg_enabled {
-                            view.presentation(position.nseconds())
+                            view.project(position.nseconds(), &mut this.recording_program_bodies)
                         } else {
-                            ("null".into(), 0.)
+                            (None, 0.)
                         };
-                        this.current_program_data = QString::from(data);
+                        if this.program_publication.update(data) {
+                            this.current_program_data =
+                                QString::from(this.program_publication.json());
+                        }
                         this.program_progress = progress;
                         this.program_status = QString::from(if !this.epg_enabled {
                             "disabled"

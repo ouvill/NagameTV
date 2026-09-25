@@ -369,19 +369,13 @@ ViewerWindow {
                     id: playbackComments
                     playbackClock: player
                     paused: player.paused || player.seeking || player.ended
-                    property string timelineJson: player.comment_timeline
-                    property var replayGeneration: null
+                    property int timelineRevision: player.comment_timeline_revision
                     property bool replayReady: false
                     function syncTimeline() {
                         if (!replayReady) return;
-                        const snapshot = JSON.parse(timelineJson);
-                        const position = player.commentary_position();
-                        if (!snapshot || position < 0) return;
-                        const reset = replayGeneration !== snapshot.generation;
-                        if (controller.update_timeline(JSON.stringify(snapshot.comments), position, reset))
-                            replayGeneration = snapshot.generation;
+                        player.sync_comment_timeline(controller);
                     }
-                    onTimelineJsonChanged: syncTimeline()
+                    onTimelineRevisionChanged: syncTimeline()
                     Component.onCompleted: { configure(); replayReady = true; syncTimeline(); }
                     displayMode: player.comment_display
                     placementMode: player.comment_placement

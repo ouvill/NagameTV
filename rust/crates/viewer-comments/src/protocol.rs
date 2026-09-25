@@ -65,7 +65,7 @@ pub enum Phase {
     Live,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub enum Origin {
     #[serde(rename = "ニコ実")]
     Niconico,
@@ -73,7 +73,7 @@ pub enum Origin {
     Nx,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, Hash)]
 #[serde(rename_all = "lowercase")]
 pub enum Position {
     #[default]
@@ -92,7 +92,7 @@ impl Position {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub struct Style {
     pub position: Position,
     pub color: u32,
