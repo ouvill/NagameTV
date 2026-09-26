@@ -1,7 +1,7 @@
 # ビルド・テストの待ち時間を減らす
 
 通常開発は`dev`、配布とCIは`release`を使います。既存のWorkshopにも次の設定を適用できます。
-コンテナーの再作成や追加パッケージの導入は不要です。
+基本設定の切り替えにコンテナーの再作成は不要です。
 
 ```sh
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DNAGAMETV_DISTRIBUTION=OFF
@@ -48,7 +48,35 @@ C++やQMLのコンパイル結果を再利用できます。Qt連携・ヘッダ
 nextestの並列数は引き続き2です。実時間を使う再生試験は単独実行し、
 ビルドの並列化によって試験どうしが干渉する範囲は広げません。
 
-CIではUbuntu 24.04と26.04のコンパイル結果を別々にキャッシュします。
+### C++のコンパイル結果を再利用する
+
+`ccache`があれば、共通ラッパーがネイティブ用の`HOST_CC`・`HOST_CXX`へ設定します。
+QMLやQt連携のRustファイルを変更して生成処理が再実行されても、入力が同じC++の
+コンパイル結果を再利用します。初回はキャッシュを作るため、短縮できるとは限りません。
+Workshop・FedoraのセットアップとCIイメージには導入手順を含めています。
+既存のUbuntu環境へ追加する場合は次を実行します。
+
+```sh
+sudo apt-get install --yes --no-install-recommends ccache
+cmake --build build
+CCACHE_DIR="$PWD/build/ccache" ccache --show-stats
+```
+
+保存先は`build/ccache`で、`CCACHE_DIR`で変更できます。
+Cargoの出力先を作り直してもキャッシュを残せます。
+ccacheがなければ通常のコンパイルを使い、無効化して比較する場合は
+`CCACHE_DISABLE=1 bash scripts/with-build-lock.sh cargo build --manifest-path rust/Cargo.toml --locked`
+とします。
+
+明示した`CC`・`CXX`・`HOST_CC`・`HOST_CXX`とターゲット別の指定を優先し、
+クロスコンパイラーの選択はcc-rsに任せます。これらの環境変数はラッパーの起動前に設定してください。
+独自コンパイラーにもキャッシュを使う場合は、たとえば`CXX="ccache clang++"`を指定します。
+Rustの差分コンパイルと、QMLの事前コンパイルは維持します。
+ヘッダーの時刻検査を省く`sloppiness`などは設定しません。
+動作条件は[ccacheの説明](https://ccache.dev/manual/4.12.3.html)と
+[cc-rsの環境変数](https://docs.rs/cc/latest/cc/#external-configuration-via-environment-variables)を参照してください。
+
+CIではUbuntu 24.04と26.04のCargo生成物とccacheを別々にキャッシュします。
 実際のDockerイメージIDとCargoの設定・依存情報をキーに含め、同じ環境の過去の結果を再利用します。
 実行ファイルとincrementalデータは保存対象から外します。
 キャッシュの構成と配布手順は[CIとリリース](ci-release.md)を参照してください。

@@ -89,6 +89,7 @@ jobs:
           # incremental state; local Workshop artifacts never enter this path.
           path: |
             build/ci/cargo
+            build/ccache
             !build/ci/cargo/**/incremental
             !build/ci/cargo/**/nagametv
             !build/ci/cargo/**/deps/nagametv-*
@@ -200,6 +201,7 @@ jobs:
         with:
           path: |
             build/deb/ubuntu26.04/native/cargo
+            build/ccache
             !build/deb/ubuntu26.04/native/cargo/**/incremental
             !build/deb/ubuntu26.04/native/cargo/**/nagametv
             !build/deb/ubuntu26.04/native/cargo/**/deps/nagametv-*

@@ -15,6 +15,10 @@ getent passwd "$(id -u)" >/dev/null || {
   exit 1
 }
 
+# The offline build-info fixture needs the same registry as the application,
+# including on a runner without a restored download cache.
+bash scripts/with-build-lock.sh cargo fetch --manifest-path rust/Cargo.toml --locked
+
 # Match the distribution profile so dependencies are reused by packaging and
 # the real EPGStation contract tests; local development defaults to dev.
 exec python3 scripts/test.py cpu --profile release "$@"

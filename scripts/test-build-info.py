@@ -23,7 +23,8 @@ class BuildInfoTests(unittest.TestCase):
         self.addCleanup(self.directory.cleanup)
         self.root = Path(self.directory.name)
         self.env = {key: value for key, value in os.environ.items()
-                    if not key.startswith(("NAGAMETV_BUILD_", "CARGO_", "GIT_"))}
+                    if not key.startswith(("NAGAMETV_BUILD_", "CARGO_", "GIT_"))
+                    or key in ("CARGO_HOME", "CARGO_BUILD_JOBS")}
         self.env.update(SOURCE_DATE_EPOCH="1700000000", GIT_AUTHOR_NAME="Build test",
                         GIT_AUTHOR_EMAIL="test@example.invalid", GIT_COMMITTER_NAME="Build test",
                         GIT_COMMITTER_EMAIL="test@example.invalid",

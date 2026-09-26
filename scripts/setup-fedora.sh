@@ -13,7 +13,7 @@ fi
 # Additional arguments are dnf options, for example --assumeno to review only.
 exec sudo dnf install "$@" -- \
     rust cargo rustfmt clippy rust-analyzer \
-    cmake ninja-build gcc gcc-c++ make clang-devel lld pkgconf-pkg-config \
+    cmake ninja-build ccache gcc gcc-c++ make clang-devel lld pkgconf-pkg-config \
     qt6-qtbase-devel qt6-qtdeclarative-devel qt6-qtsvg-devel \
     qt6-linguist qt6-qtimageformats qt6-qtwayland \
     gstreamer1-devel gstreamer1-plugins-base-devel \
