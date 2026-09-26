@@ -210,6 +210,17 @@ class BuildInfoTests(unittest.TestCase):
         self.assertIn("rust/crates/viewer-translations", local_crates)
         original = json.loads(manifest_path.read_text())
         self.assertEqual(manifest["finish-args"], original["finish-args"])
+        # Run the actual wrapper with only the files shipped into the sandbox.
+        # This catches omitted helper scripts without needing the Flatpak SDK.
+        for source in application["sources"]:
+            if isinstance(source, dict) and source.get("type") == "file":
+                destination = self.root / source.get("dest", "")
+                destination.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source["path"], destination)
+        self.env["NAGAMETV_BUILD_LOCK_DIR"] = str(self.root / "lock")
+        self.assertEqual(self.run_command(
+            "bash", str(self.root / "scripts/with-build-lock.sh"),
+            "printf", "archive-build"), "archive-build")
 
 
 if __name__ == "__main__":
