@@ -157,8 +157,12 @@ impl State {
     pub(super) fn ended(&self) -> bool {
         matches!(self, Self::Recording(_, Phase::Ended))
     }
-    pub(super) fn timeshift(&self) -> bool {
+    pub(super) fn pausable(&self) -> bool {
         matches!(self, Self::Playing(live, _) if live.retention.storage() != Retention::Off)
+    }
+    pub(super) fn timeshift(&self, has_history: bool) -> bool {
+        matches!(self, Self::Playing(live, _) if live.retention.storage() != Retention::Off
+            && (live.retention.activation() == crate::playback::input::Activation::Always || has_history))
     }
     pub(super) fn active(&self) -> bool {
         matches!(self, Self::Playing(_, _) | Self::Recording(_, _))

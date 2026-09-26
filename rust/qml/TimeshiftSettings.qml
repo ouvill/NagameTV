@@ -11,11 +11,14 @@ ColumnLayout {
     enum EditState { Synced, Pending, Saving }
     property int editState: TimeshiftSettings.Synced
     property string storageValue: "memory"
+    property string modeValue: "pause"
+    readonly property bool retentionEnabled: modeValue !== "off"
     property string saveError: ""
     readonly property int coalesceMilliseconds: 300
     function syncSaved() {
-        if (backend.timeshift_storage !== "off") storageValue = backend.timeshift_storage;
-        enabledToggle.checked = backend.timeshift_storage !== "off";
+        const value = backend.timeshift_storage;
+        modeValue = value === "off" ? "off" : value.startsWith("pause_") ? "pause" : "always";
+        if (value !== "off") storageValue = value.replace("pause_", "");
         memory.value = saved.memory_mib;
         files.value = saved.filesystem_mib;
         minutes.value = saved.minutes;
@@ -24,7 +27,8 @@ ColumnLayout {
         saveDelay.stop();
         readNumericEdits();
         editState = TimeshiftSettings.Saving;
-        const accepted = backend.configure_timeshift_options(enabledToggle.checked ? storageValue : "off", memory.value, files.value, minutes.value);
+        const storage = modeValue === "off" ? "off" : (modeValue === "pause" ? "pause_" : "") + storageValue;
+        const accepted = backend.configure_timeshift_options(storage, memory.value, files.value, minutes.value);
         saveError = accepted ? "" : qsTranslate("Viewer", "Could not change timeshift settings. Previous settings remain in use.");
         syncSaved();
         editState = TimeshiftSettings.Synced;
@@ -88,12 +92,21 @@ ColumnLayout {
         .arg(Math.floor(estimateSeconds / secondsPerMinute)).arg(Math.floor(estimateSeconds % secondsPerMinute))
     spacing: Theme.spaceXl
 
-    SettingsToggle {
-        id: enabledToggle
-        objectName: "timeshiftEnabled"
+    SegmentedControl {
+        objectName: "timeshiftMode"
+        objectNamePrefix: "timeshift-mode-"
         Layout.fillWidth: true
-        text: qsTranslate("Viewer", "Enable timeshift")
-        onClicked: root.commit()
+        options: [{value: "off", label: qsTranslate("Viewer", "Off")},
+            {value: "pause", label: qsTranslate("Viewer", "Only when paused")},
+            {value: "always", label: qsTranslate("Viewer", "Always enabled")}]
+        value: root.modeValue
+        onSelected: function(value) { root.modeValue = value; root.commit(); }
+    }
+    Label {
+        Layout.fillWidth: true; wrapMode: Text.Wrap
+        visible: root.modeValue === "pause"
+        text: qsTranslate("Viewer", "Pause live TV to start keeping history. Returning to live clears it.")
+        color: Theme.textSecondary; font.pixelSize: Theme.fontBody
     }
     ColumnLayout {
         Layout.fillWidth: true; spacing: Theme.spaceMd
@@ -103,7 +116,7 @@ ColumnLayout {
             objectName: "timeshiftStorage"
             objectNamePrefix: "timeshift-"
             Layout.fillWidth: true; Layout.maximumWidth: 400
-            enabled: enabledToggle.checked
+            enabled: root.retentionEnabled
             options: [{value: "memory", label: qsTranslate("Viewer", "Memory")},
                 {value: "filesystem", label: qsTranslate("Viewer", "Temporary files")}]
             value: root.storageValue
@@ -131,13 +144,13 @@ ColumnLayout {
             }
             BudgetSpinBox {
                 id: memory; objectName: "timeshiftMemoryLimit"
-                visible: root.storageValue === "memory"; enabled: enabledToggle.checked
+                visible: root.storageValue === "memory"; enabled: root.retentionEnabled
                 from: root.saved.min_mib; to: root.saved.max_mib
                 Accessible.name: qsTranslate("Viewer", "Maximum TS memory (MiB)")
             }
             BudgetSpinBox {
                 id: files; objectName: "timeshiftFileLimit"
-                visible: root.storageValue === "filesystem"; enabled: enabledToggle.checked
+                visible: root.storageValue === "filesystem"; enabled: root.retentionEnabled
                 from: root.saved.min_mib; to: root.saved.max_mib
                 Accessible.name: qsTranslate("Viewer", "Maximum temporary files (MiB)")
             }
@@ -161,19 +174,19 @@ ColumnLayout {
         Label { Layout.fillWidth: true; wrapMode: Text.Wrap; text: qsTranslate("Viewer", "Maximum retention (minutes)"); color: Theme.textPrimary; font.pixelSize: Theme.fontControl }
         BudgetSpinBox {
             id: minutes; objectName: "timeshiftMinutes"
-            enabled: enabledToggle.checked
+            enabled: root.retentionEnabled
             from: root.saved.min_minutes; to: root.saved.max_minutes
             Accessible.name: qsTranslate("Viewer", "Maximum retention (minutes)")
         }
     }
     Label {
         Layout.fillWidth: true; wrapMode: Text.Wrap
-        text: qsTranslate("Viewer", "When either limit is reached, older video is discarded. Playback resumes if a paused position expires.")
+        text: qsTranslate("Viewer", "When either limit is reached, older video is discarded. If the paused position expires, resume starts within the remaining history.")
         color: Theme.textSecondary; font.pixelSize: Theme.fontCaption
     }
     Label {
         Layout.fillWidth: true; wrapMode: Text.Wrap
-        text: qsTranslate("Viewer", "Changing storage or turning timeshift off clears history and returns to live playback.")
+        text: qsTranslate("Viewer", "Changing the mode or storage clears history and returns to live playback.")
         color: Theme.textSecondary; font.pixelSize: Theme.fontCaption
     }
     Label {

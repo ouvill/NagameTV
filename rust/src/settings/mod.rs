@@ -145,6 +145,7 @@ pub enum Change {
     Autoplay(bool),
     LiveBuffer(LiveBuffer),
     Timeshift(crate::playback::input::Retention),
+    TimeshiftActivation(crate::playback::input::Activation),
     TimeshiftLimits(crate::playback::input::Limits),
     ScreenshotDirectory(ScreenshotDirectory),
     ScreenshotFormat(ScreenshotFormat),
@@ -223,6 +224,9 @@ impl Session {
             Change::Autoplay(enabled) => preferences.autoplay = enabled,
             Change::LiveBuffer(value) => preferences.live_buffer_ms = value,
             Change::Timeshift(retention) => preferences.timeshift = retention,
+            Change::TimeshiftActivation(activation) => {
+                preferences.timeshift_activation = activation
+            }
             Change::TimeshiftLimits(limits) => preferences.timeshift_limits = limits,
             Change::ScreenshotDirectory(directory) => preferences.screenshot_directory = directory,
             Change::ScreenshotFormat(format) => preferences.screenshot_format = format,

@@ -53,7 +53,7 @@ enum Command {
 impl ffi::Player {
     fn desktop_can_pause(&self) -> bool {
         self.recording()
-            || self.timeshift()
+            || self.pausable()
             || (!self.media_active()
                 && self.selected() >= 0
                 && self.rust().preferences.preferences().timeshift
@@ -156,11 +156,7 @@ impl ffi::Player {
                 }
             }
             Command::Pause => {
-                if (self.recording() || self.timeshift())
-                    && self.media_active()
-                    && !self.paused()
-                    && !self.ended()
-                {
+                if self.pausable() && self.media_active() && !self.paused() && !self.ended() {
                     self.pause();
                 }
             }

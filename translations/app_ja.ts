@@ -796,13 +796,17 @@
 </context>
   <context>
     <name>Viewer</name>
+    <message><source>Off</source><translation>無効</translation></message>
+    <message><source>Only when paused</source><translation>一時停止時のみ</translation></message>
+    <message><source>Always enabled</source><translation>常に有効</translation></message>
+    <message><source>Pause live TV to start keeping history. Returning to live clears it.</source><translation>一時停止した位置から追いかけ再生できます。ライブに戻ると履歴を消去します。</translation></message>
     <message><source>Open subtitle file</source><translation>字幕ファイルを開く</translation></message>
     <message><source>Subtitles (*.srt *.ass *.ssa)</source><translation>字幕 (*.srt *.ass *.ssa)</translation></message>
     <message><source>Open subtitle file…</source><translation>字幕ファイルを開く…</translation></message>
     <message><source>Loading subtitles…</source><translation>字幕を読み込み中…</translation></message>
     <message><source>Subtitle %1</source><translation>字幕 %1</translation></message>
-    <message><source>Changing storage or turning timeshift off clears history and returns to live playback.</source><translation>保存先の変更や無効化をすると履歴が消え、ライブ再生に戻ります。</translation></message>
-    <message><source>When either limit is reached, older video is discarded. Playback resumes if a paused position expires.</source><translation>上限に達すると古い映像を破棄します。一時停止位置の映像が失われると再生を再開します。</translation></message>
+    <message><source>Changing the mode or storage clears history and returns to live playback.</source><translation>モードや保存先を変更すると履歴が消え、ライブ再生に戻ります。</translation></message>
+    <message><source>When either limit is reached, older video is discarded. If the paused position expires, resume starts within the remaining history.</source><translation>上限に達すると古い映像を破棄します。一時停止位置が保持範囲から外れた場合は、残っている範囲から再開します。</translation></message>
     <message><source>Uses disk space. Files are deleted when playback stops.</source><translation>ディスクに保持し、再生停止時に削除します。</translation></message>
     <message><source>Uses RAM to retain recent video.</source><translation>直前の映像をメモリーに保持します。</translation></message>
     <message>
@@ -1376,6 +1380,7 @@
 </context>
   <context>
     <name>Settings</name>
+    <message><source>Recordings and pausable live TV</source><translation>録画再生中・一時停止できるライブ視聴中</translation></message>
     <message><source>Higher quality increases file size.</source><translation>高画質にするとファイルが大きくなります。</translation></message>
     <message><source>Higher compression saves space but takes longer.</source><translation>圧縮を強くすると容量は減りますが、保存に時間がかかります。</translation></message>
     <message><source>Compact files, with optional lossless saving.</source><translation>容量を抑えられます。画質を落とさない保存も選べます。</translation></message>

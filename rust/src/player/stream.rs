@@ -34,6 +34,7 @@ impl ffi::Player {
         change: impl FnOnce(State) -> State,
     ) {
         let before_speed = self.rust().speed;
+        let before_pausable = self.pausable();
         let before_edge = self.at_live_edge();
         let before_action = self.playback_action();
         let before_viewing = self.viewing_channel();
@@ -169,6 +170,9 @@ impl ffi::Player {
         }
         if before_live.0 != self.timeshift() {
             self.as_mut().timeshift_changed();
+        }
+        if before_pausable != self.pausable() {
+            self.as_mut().pausable_changed();
         }
         if before_live.1 != self.window_start_ms() {
             self.as_mut().window_start_ms_changed();

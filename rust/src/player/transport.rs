@@ -119,7 +119,12 @@ impl ffi::Player {
     }
 
     pub fn timeshift(&self) -> bool {
-        self.rust().stream_state.timeshift()
+        self.rust()
+            .stream_state
+            .timeshift(self.rust().timeline.range.is_some())
+    }
+    pub fn pausable(&self) -> bool {
+        self.media_active() && (self.recording() || self.rust().stream_state.pausable())
     }
     pub fn window_start_ms(&self) -> f64 {
         self.rust()
@@ -200,8 +205,7 @@ impl ffi::Player {
         mut self: Pin<&mut Self>,
         operation: impl FnOnce(&mut playback::Session) -> Result<(), Error>,
     ) -> bool {
-        let result = if self.rust().stream_state.active() && (self.recording() || self.timeshift())
-        {
+        let result = if self.pausable() {
             operation(&mut self.as_mut().rust_mut().media)
         } else {
             Err(Error::Unavailable)

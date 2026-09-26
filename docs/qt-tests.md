@@ -204,6 +204,10 @@ longer than one minute. It logs the provisional duration and audio selection.
 This uses the same GPU and virtual audio checks; it is not a full-file playback or audible
 quality test. The timeshift suite also opens the production settings page, applies
 custom budgets, and enables/disables retention during playback and pause.
+On-pause retention checks both storage backends, continuity across pause/resume,
+release on confirmed live return and speed catch-up, repeated pauses, channel changes,
+stop, and expiry under capacity pressure. Hardware-free tests cover legacy settings
+and failed creation/writes when starting temporary-file retention.
 Connection tests verify atomic budget notifications, rejected invalid values and
 persistence without using display or audio hardware.
 

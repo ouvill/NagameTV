@@ -27,6 +27,8 @@ QtObject {
     function return_to_live() { liveRequests++; }
     property bool recording: false
     property bool timeshift: false
+    property bool pauseOnDemand: false
+    readonly property bool pausable: media_active && (recording || timeshift || pauseOnDemand)
     property bool media_active: playing || paused
     property bool connecting: false
     property bool seekable: (recording || timeshift) && media_active

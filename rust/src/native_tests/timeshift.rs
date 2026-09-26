@@ -423,6 +423,9 @@ pub(super) fn run(
             "Timeshift {backend}: receive while paused, backward seek, return to live and stop passed"
         );
     }
+    for storage in ["pause_memory", "pause_filesystem"] {
+        pause_on_demand(app, engine, &server, storage)?;
+    }
     start_near_live(
         app,
         engine,
@@ -498,7 +501,7 @@ pub(super) fn run(
         engine,
         "player.server_configured && !player.loading && player.selected >= 0",
     )?;
-    for storage in ["memory", "filesystem"] {
+    for storage in ["memory", "filesystem", "pause_memory", "pause_filesystem"] {
         evaluate(
             engine,
             &format!(
@@ -508,7 +511,7 @@ pub(super) fn run(
         wait_for(
             app,
             engine,
-            "player.playing && !player.seeking && player.seekable && player.position_ms > 0 && JSON.parse(player.live_timeline).viewing !== null && JSON.parse(player.live_timeline).viewing.program !== null",
+            "player.playing && !player.seeking && player.pausable && player.position_ms > 0 && JSON.parse(player.live_timeline).viewing !== null && JSON.parse(player.live_timeline).viewing.program !== null",
         )?;
         assert!(evaluate(engine, "player.pause()")?);
         assert!(evaluate(
@@ -650,6 +653,121 @@ pub(super) fn run(
         &format!("{OBSERVER}.failure.length === 0")
     )?);
     evaluate(engine, &format!("{OBSERVER}.destroy(); true"))?;
+    Ok(())
+}
+
+fn pause_on_demand(
+    app: &QGuiApplication,
+    engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
+    server: &Server,
+    storage: &str,
+) -> TestResult {
+    let cache =
+        std::path::PathBuf::from(std::env::var_os("XDG_CACHE_HOME").ok_or("isolated cache")?)
+            .join("nagametv/timeshift");
+    start_near_live(
+        app,
+        engine,
+        server,
+        storage,
+        &format!(
+            "player.configure_timeshift_options('{storage}', {MEMORY_MIB}, {FILESYSTEM_MIB}, {RETENTION_MINUTES}); player.select(0); player.play(); true"
+        ),
+    )?;
+    assert!(evaluate(
+        engine,
+        "player.pausable && player.playback_action === Player.Pause && !player.timeshift && !player.seekable"
+    )?);
+    assert!(anonymous_history_files(&cache)?.is_empty());
+    let connections = server.streams.load(Ordering::Acquire);
+    for catch_up in [false, true] {
+        evaluate(engine, "viewerActions.playbackToggle.trigger(); true")?;
+        wait_for(
+            app,
+            engine,
+            "player.paused && player.timeshift && player.seekable && !player.seeking",
+        )?;
+        evaluate(
+            engine,
+            &format!("{OBSERVER}.saved = JSON.parse(player.live_timeline); true"),
+        )?;
+        if storage == "pause_filesystem" {
+            assert_eq!(anonymous_history_files(&cache)?.len(), 1);
+        }
+        wait_for(
+            app,
+            engine,
+            &format!("player.paused && player.live_delay_ms > {SPEED_CATCH_UP_DELAY_MS}"),
+        )?;
+        assert!(evaluate(
+            engine,
+            &format!(
+                "Math.abs(player.position_ms - {OBSERVER}.saved.viewing.position) < {}",
+                SEEK_TOLERANCE.as_millis()
+            )
+        )?);
+        evaluate(engine, "viewerActions.playbackToggle.trigger(); true")?;
+        assert!(evaluate(
+            engine,
+            &format!(
+                "player.playing && !player.seeking && Math.abs(player.position_ms - {OBSERVER}.saved.viewing.position) < {}",
+                SEEK_TOLERANCE.as_millis()
+            )
+        )?);
+        wait_for(
+            app,
+            engine,
+            &format!(
+                "player.position_ms > {OBSERVER}.saved.viewing.position + {} && player.speed_available",
+                SEEK_TOLERANCE.as_millis()
+            ),
+        )?;
+        if catch_up {
+            assert!(evaluate(engine, "player.set_playback_rate(20)")?);
+        } else {
+            assert!(evaluate(engine, "player.return_to_live()")?);
+        }
+        wait_for(
+            app,
+            engine,
+            "player.playing && !player.seeking && !player.timeshift && !player.seekable && player.pausable && player.playback_rate === 10",
+        )?;
+        assert!(anonymous_history_files(&cache)?.is_empty());
+        observe_playback(
+            app,
+            engine,
+            "!player.timeshift && !player.seekable && !player.playback_error.length",
+        )?;
+        assert_eq!(
+            server.streams.load(Ordering::Acquire),
+            connections,
+            "automatic retention reconnected the stream"
+        );
+    }
+    assert!(evaluate(engine, "player.pause()")?);
+    wait_for(app, engine, "player.paused && player.timeshift")?;
+    evaluate(engine, "player.select(1); true")?;
+    wait_for(
+        app,
+        engine,
+        "player.playing && !player.paused && !player.seeking && player.position_ms > 0 && !player.timeshift && !player.seekable",
+    )?;
+    assert!(anonymous_history_files(&cache)?.is_empty());
+    assert!(evaluate(engine, "player.pause()")?);
+    wait_for(app, engine, "player.paused && player.timeshift")?;
+    evaluate(engine, "player.stop(); true")?;
+    let deadline = Instant::now() + NETWORK_TIMEOUT;
+    while !anonymous_history_files(&cache)?.is_empty() {
+        assert!(
+            Instant::now() < deadline,
+            "stopped automatic history still owns disk files"
+        );
+        app.process_events();
+        thread::sleep(ACCEPT_POLL);
+    }
+    eprintln!(
+        "Timeshift {storage}: pause/resume, explicit live return, speed catch-up, re-pause, channel change and stop passed"
+    );
     Ok(())
 }
 

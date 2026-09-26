@@ -69,12 +69,17 @@ impl ffi::Player {
     }
 
     pub fn timeshift_storage(&self) -> QString {
-        use crate::playback::input::Retention;
-        QString::from(match self.rust().preferences.preferences().timeshift {
-            Retention::Off => "off",
-            Retention::Memory => "memory",
-            Retention::Filesystem => "filesystem",
-        })
+        use crate::playback::input::{Activation, Retention};
+        let preferences = self.rust().preferences.preferences();
+        QString::from(
+            match (preferences.timeshift, preferences.timeshift_activation) {
+                (Retention::Off, _) => "off",
+                (Retention::Memory, Activation::Always) => "memory",
+                (Retention::Filesystem, Activation::Always) => "filesystem",
+                (Retention::Memory, Activation::OnPause) => "pause_memory",
+                (Retention::Filesystem, Activation::OnPause) => "pause_filesystem",
+            },
+        )
     }
     pub fn timeshift_limits(&self) -> QString {
         use crate::playback::input::limits;
@@ -105,23 +110,29 @@ impl ffi::Player {
         filesystem_mib: i32,
         minutes: i32,
     ) -> bool {
-        use crate::playback::input::{Limits, Policy, Retention};
-        let storage = match storage.to_string().as_str() {
-            "off" => Retention::Off,
-            "memory" => Retention::Memory,
-            "filesystem" => Retention::Filesystem,
+        use crate::playback::input::{Activation, Limits, Policy, Retention};
+        let (storage, activation) = match storage.to_string().as_str() {
+            "off" => (Retention::Off, Activation::Always),
+            "memory" => (Retention::Memory, Activation::Always),
+            "filesystem" => (Retention::Filesystem, Activation::Always),
+            "pause_memory" => (Retention::Memory, Activation::OnPause),
+            "pause_filesystem" => (Retention::Filesystem, Activation::OnPause),
             _ => return false,
         };
         let Some(limits) = Limits::new(memory_mib as u32, filesystem_mib as u32, minutes as u32)
         else {
             return false;
         };
-        let policy = Policy::new(storage, limits);
+        let policy = Policy::new(storage, limits).with_activation(activation);
         if policy == self.rust().preferences.preferences().timeshift_policy() {
             self.as_mut().save_settings();
             return true;
         }
         if let Err(error) = self.as_mut().rust_mut().media.configure_timeshift(policy) {
+            tracing::error!(
+                error = &error as &dyn std::error::Error,
+                "Could not change timeshift settings"
+            );
             self.as_mut()
                 .set_transport_message(super::transport::Message::Failure(QString::from(
                     error.to_string(),
@@ -132,6 +143,8 @@ impl ffi::Player {
             let mut this = self.as_mut().rust_mut();
             this.preferences
                 .change(crate::settings::Change::Timeshift(storage));
+            this.preferences
+                .change(crate::settings::Change::TimeshiftActivation(activation));
             this.preferences
                 .change(crate::settings::Change::TimeshiftLimits(limits));
         }

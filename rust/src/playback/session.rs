@@ -50,6 +50,7 @@ enum Projection {
 pub struct TransportControl<'a> {
     playback: &'a Playback,
     controller: &'a mut super::timeline::Controller,
+    source: Option<&'a mut super::input::Input>,
 }
 
 impl TransportControl<'_> {
@@ -75,10 +76,37 @@ impl TransportControl<'_> {
         self.seek(target)
     }
     pub fn resume(
-        self,
+        mut self,
         resume: super::timeline::Resume,
     ) -> std::result::Result<(), super::timeline::Error> {
-        self.controller.pause(self.playback.element(), resume)
+        use gstreamer::prelude::*;
+        let started = if resume == super::timeline::Resume::Paused {
+            if let Some(source) = &mut self.source {
+                let position = self
+                    .playback
+                    .element()
+                    .query_position::<gstreamer::ClockTime>()
+                    .ok_or(super::timeline::Error::Unavailable)?;
+                source.begin_pause(position.nseconds())?
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+        if let Err(error) = self.controller.pause(self.playback.element(), resume) {
+            if started
+                && let Some(source) = self.source
+                && let Err(cleanup) = source.finish_pause()
+            {
+                tracing::error!(
+                    error = &cleanup as &dyn std::error::Error,
+                    "Could not release history after rejected pause"
+                );
+            }
+            return Err(error);
+        }
+        Ok(())
     }
 }
 
@@ -162,10 +190,18 @@ impl Session {
         match (&self.playback, &mut self.input) {
             (
                 Some(playback),
-                Input::Active { controller, .. } | Input::Media { controller, .. },
+                Input::Active {
+                    controller, source, ..
+                },
             ) => Ok(TransportControl {
                 playback,
                 controller,
+                source: Some(source),
+            }),
+            (Some(playback), Input::Media { controller, .. }) => Ok(TransportControl {
+                playback,
+                controller,
+                source: None,
             }),
             _ => Err(super::timeline::Error::Unavailable),
         }
@@ -411,13 +447,19 @@ impl Session {
                 Some(controller)
             }
         };
+        let mut arrival = super::timeline::Arrival::None;
         if let Some(controller) = controller {
             if let super::Event::Ended(sequence) = event
                 && !controller.ended(sequence)?
             {
                 event = super::Event::Idle;
             }
-            controller.poll(playback.element())?;
+            arrival = controller.poll(playback.element())?;
+        }
+        if arrival == super::timeline::Arrival::Live
+            && let Input::Active { source, .. } = &mut self.input
+        {
+            source.finish_pause()?;
         }
         if let Input::Active {
             controller, source, ..

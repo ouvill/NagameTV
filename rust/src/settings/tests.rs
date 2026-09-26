@@ -248,7 +248,6 @@ fn subtitle_visibility_uses_the_existing_key_and_survives_restart()
 fn commentary_defaults_match_main_and_explicit_disable_survives_roundtrip()
 -> Result<(), Box<dyn std::error::Error>> {
     let defaults: Preferences = toml::from_str("")?;
-    assert_eq!(defaults, Preferences::default());
     assert!(defaults.comments_enabled);
     assert!(!defaults.danmaku_enabled);
     // Legacy main files only store the overlay choice. Both choices still
@@ -267,6 +266,34 @@ fn commentary_defaults_match_main_and_explicit_disable_survives_roundtrip()
             disabled
         );
     }
+    Ok(())
+}
+
+#[test]
+fn new_install_uses_pause_retention_and_legacy_settings_keep_their_mode()
+-> Result<(), Box<dyn std::error::Error>> {
+    use crate::playback::input::{Activation, Retention};
+    let defaults = Preferences::default();
+    assert_eq!(defaults.timeshift, Retention::Memory);
+    assert_eq!(defaults.timeshift_activation, Activation::OnPause);
+    for (saved, storage) in [
+        ("", Retention::Off),
+        ("timeshift = 'off'", Retention::Off),
+        ("timeshift = 'memory'", Retention::Memory),
+        ("timeshift = 'filesystem'", Retention::Filesystem),
+    ] {
+        let preferences: Preferences = toml::from_str(saved)?;
+        assert_eq!(preferences.timeshift, storage);
+        assert_eq!(preferences.timeshift_activation, Activation::Always);
+        assert_eq!(
+            toml::from_str::<Preferences>(&toml::to_string(&preferences)?)?,
+            preferences
+        );
+    }
+    assert_eq!(
+        toml::from_str::<Preferences>(&toml::to_string(&defaults)?)?,
+        defaults
+    );
     Ok(())
 }
 

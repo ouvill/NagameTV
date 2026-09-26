@@ -54,7 +54,7 @@ Item {
             operation: root.actions.playbackToggle
             scope: InputContext.Playback
             description: qsTranslate("Settings", "Play or pause")
-            condition: qsTranslate("Settings", "Recordings and timeshift")
+            condition: qsTranslate("Settings", "Recordings and pausable live TV")
         },
         Binding {
             id: backward

@@ -30,7 +30,7 @@ Item {
         InputContext {
             id: inputContext
             targetWindow: host
-            playbackControls: backend.recording || backend.timeshift
+            playbackControls: backend.recording || backend.pausable
         }
         ShortcutBindings { actions: actions; inputContext: inputContext }
         OverlayVisibility {
@@ -77,6 +77,7 @@ Item {
                 backend.audio_muted = false; backend.volume_level = 0.5;
                 actions.enabled = true;
                 backend.recording = false; backend.timeshift = false;
+                backend.pauseOnDemand = false;
                 backend.comments_enabled = true;
                 backend.danmaku_enabled = false;
                 backend.saved = 0;
@@ -173,6 +174,21 @@ Item {
                 }
                 compare(backend.skips, [actions.seekSteps.backwardMilliseconds, actions.seekSteps.forwardMilliseconds,
                     actions.seekSteps.backwardMilliseconds, actions.seekSteps.forwardMilliseconds]);
+            }
+            function test_pause_on_demand_allows_button_and_space_without_seeking() {
+                backend.pauseOnDemand = true;
+                backend.playing = true;
+                backend.playback_action = Player.Pause;
+                controls.forceActiveFocus();
+                verify(!backend.seekable);
+                verify(!findChild(controls, "skipBackButton").visible);
+                mouseClick(findChild(controls, "playStopButton"));
+                compare(backend.playbackRequests, 1);
+                controls.forceActiveFocus();
+                keyClick(Qt.Key_Space);
+                compare(backend.playbackRequests, 2);
+                keyClick(Qt.Key_Left);
+                compare(backend.skips.length, 0);
             }
             function test_general_media_subtitles_open_choices_from_wide_and_narrow_controls() {
                 backend.media_subtitle_available = true;

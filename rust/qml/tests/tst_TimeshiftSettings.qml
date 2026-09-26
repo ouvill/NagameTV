@@ -40,7 +40,7 @@ Item {
                 findChild(settings, "timeshiftMemoryLimit").value = 256;
                 findChild(settings, "timeshiftFileLimit").value = 2048;
                 findChild(settings, "timeshiftMinutes").value = 30;
-                findChild(settings, "timeshiftEnabled").checked = true;
+                settings.modeValue = "always";
                 host.requestActivate(); tryCompare(host, "active", true);
                 waitForRendering(settings);
             }
@@ -136,10 +136,28 @@ Item {
                 tryCompare(backend, "requests", [["memory", 257, 2048, 30]]);
             }
             function test_disabled_timeshift_keeps_budgets_but_disables_editing() {
-                mouseClick(findChild(settings, "timeshiftEnabled"));
+                mouseClick(findChild(settings, "timeshift-mode-off"));
                 compare(findChild(settings, "timeshiftMemoryLimit").enabled, false);
                 compare(backend.requests.length, 1);
                 compare(backend.requests[0][0], "off");
+            }
+            function test_pause_mode_preserves_storage_and_limits() {
+                mouseClick(findChild(settings, "timeshift-mode-pause"));
+                compare(backend.timeshift_storage, "pause_memory");
+                verify(findChild(settings, "timeshiftMemoryLimit").enabled);
+                mouseClick(findChild(settings, "timeshift-filesystem"));
+                compare(backend.timeshift_storage, "pause_filesystem");
+                compare(settings.modeValue, "pause");
+                mouseClick(findChild(settings, "timeshift-mode-always"));
+                compare(backend.timeshift_storage, "filesystem");
+                compare(findChild(settings, "timeshiftFileLimit").value, 2048);
+                backend.timeshift_storage = "pause_memory";
+                compare(settings.modeValue, "pause");
+                compare(settings.storageValue, "memory");
+                backend.acceptChanges = false;
+                mouseClick(findChild(settings, "timeshift-mode-off"));
+                compare(settings.modeValue, "pause");
+                verify(findChild(settings, "timeshiftSaveError").visible);
             }
         }
     }

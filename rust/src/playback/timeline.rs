@@ -49,6 +49,12 @@ pub enum Resume {
     Paused,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum Arrival {
+    None,
+    Live,
+}
+
 pub(super) enum StartPosition {
     Beginning,
     LiveEdge(LiveBuffer),
@@ -117,6 +123,8 @@ impl Range {
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error("一時停止用の保持を開始できません: {0}")]
+    Retention(#[from] super::input::Error),
     #[error("シークをまだ利用できません")]
     Unavailable,
     #[error("再生速度を変更できません")]
@@ -746,6 +754,14 @@ impl Controller {
                 unreachable!("handled before state change")
             }
         }
+        if !matches!(self.state, State::Seeking(_)) {
+            self.snapshot.position = pipeline
+                .query_position::<gst::ClockTime>()
+                .or(self.snapshot.position);
+        }
+        // Initial preroll can still be pending. Sample the range again on the
+        // next poll instead of postponing its first valid publication.
+        self.next_sample = Instant::now();
         Ok(())
     }
 
@@ -819,7 +835,8 @@ impl Controller {
         Ok(true)
     }
 
-    pub fn poll(&mut self, pipeline: &gst::Element) -> Result<(), Error> {
+    pub fn poll(&mut self, pipeline: &gst::Element) -> Result<Arrival, Error> {
+        let mut arrival = Arrival::None;
         if let State::Seeking(seek) = &self.state {
             let (ready, eos) = {
                 let output = self.output.lock().map_err(|_| Error::Observer)?;
@@ -840,6 +857,17 @@ impl Controller {
                 // only for the confirmed segment, with no newer user intent.
                 // The existing exit hysteresis absorbs reception during preroll.
                 if next.is_none() {
+                    let reached_live = match seek.completion {
+                        Completion::Live => true,
+                        Completion::CaughtUp => self.snapshot.range.is_some_and(|range| {
+                            range.end.saturating_sub(seek.target)
+                                <= live_headroom(self.live_buffer) + LIVE_RATE_HYSTERESIS
+                        }),
+                        Completion::Position | Completion::ReceptionStalled => false,
+                    };
+                    if !eos && resume == Resume::Playing && reached_live {
+                        arrival = Arrival::Live;
+                    }
                     match seek.completion {
                         Completion::Position => {}
                         Completion::Live => self.live_position = LivePosition::Near,
@@ -884,7 +912,7 @@ impl Controller {
         if Instant::now() >= self.next_sample {
             self.sample(pipeline);
         }
-        Ok(())
+        Ok(arrival)
     }
 
     pub fn relative_target(&self, delta_ms: f64) -> Result<f64, Error> {
@@ -1161,6 +1189,61 @@ mod tests {
             Some(latest_edge - live_headroom(buffer))
         );
         assert!(controller.take_notice().is_none());
+        Ok(())
+    }
+    #[test]
+    fn history_release_requires_confirmed_live_output_and_playing_intent()
+    -> Result<(), Box<dyn std::error::Error>> {
+        gst::init()?;
+        // An explicit CPU-only sink exercises output generations and native
+        // transition completion without opening a display or an audio device.
+        let sink = gst::ElementFactory::make("fakesink")
+            .property("async", false)
+            .build()?;
+        sink.set_state(gst::State::Playing)?;
+        let edge = gst::ClockTime::from_seconds(20);
+        let near = edge - live_headroom(LiveBuffer::default());
+        let behind = gst::ClockTime::from_seconds(10);
+        for (completion, resume, target, confirmed, releases) in [
+            (Completion::Live, Resume::Playing, near, false, false),
+            (Completion::Live, Resume::Playing, near, true, true),
+            (Completion::Live, Resume::Paused, near, true, false),
+            (Completion::Position, Resume::Playing, near, true, false),
+            (Completion::CaughtUp, Resume::Playing, near, true, true),
+            (Completion::CaughtUp, Resume::Playing, behind, true, false),
+            (
+                Completion::ReceptionStalled,
+                Resume::Playing,
+                near,
+                true,
+                false,
+            ),
+        ] {
+            let mut control = Controller::new(&sink, StartPosition::Beginning)?;
+            let sequence = gst::Seqnum::next();
+            control.snapshot.range = Range::new(gst::ClockTime::ZERO, edge);
+            control.next_sample = Instant::now() + POSITION_SAMPLE_INTERVAL;
+            control.state = State::Seeking(Seek {
+                sequence,
+                target,
+                resume,
+                next: None,
+                rate: Rate::NORMAL,
+                completion,
+                deadline: Instant::now() + SEEK_TIMEOUT,
+            });
+            {
+                let mut output = control.output.lock().unwrap();
+                output.buffered = Some(if confirmed {
+                    sequence
+                } else {
+                    gst::Seqnum::next()
+                });
+                output.rate = Some(Rate::NORMAL.multiplier());
+            }
+            assert_eq!(control.poll(&sink)? == Arrival::Live, releases);
+        }
+        sink.set_state(gst::State::Null)?;
         Ok(())
     }
     #[test]

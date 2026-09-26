@@ -17,6 +17,27 @@ enum Storage {
     Memory,
     Filesystem(super::filesystem::Buffer),
 }
+#[derive(Clone, Copy)]
+enum RetentionState {
+    Forward,
+    History { since: u64 },
+}
+impl RetentionState {
+    fn initial(policy: super::Policy) -> Self {
+        match (policy.storage(), policy.activation()) {
+            (Retention::Off, _) | (_, super::Activation::OnPause) => Self::Forward,
+            (Retention::Memory | Retention::Filesystem, super::Activation::Always) => {
+                Self::History { since: 0 }
+            }
+        }
+    }
+    fn effective(self, policy: super::Policy) -> super::Policy {
+        match self {
+            Self::Forward => policy.with_storage(Retention::Off),
+            Self::History { .. } => policy,
+        }
+    }
+}
 enum Bytes {
     Memory(Arc<Vec<u8>>),
     File,
@@ -73,6 +94,7 @@ pub(super) struct Store {
     boundaries: VecDeque<u64>,
     end: u64,
     policy: super::Policy,
+    retention: RetentionState,
     pub index: Index,
     pub history: super::super::live_timeline::History,
     pub status: Status,
@@ -83,13 +105,14 @@ pub(super) struct Store {
 pub(super) struct Prepared<'a> {
     store: &'a mut Store,
     policy: super::Policy,
+    retention: RetentionState,
     replacement: Option<(Storage, Segment)>,
 }
 impl Prepared<'_> {
     pub fn commit(self) -> std::io::Result<Option<super::super::timeline::RetentionChange>> {
         use super::super::timeline::RetentionChange;
-        let (bytes, time) = self.policy.budget();
-        let (previous_bytes, previous_time) = self.store.policy.budget();
+        let (bytes, time) = self.retention.effective(self.policy).budget();
+        let (previous_bytes, previous_time) = self.store.effective_policy().budget();
         let change = if let Some((storage, segment)) = self.replacement {
             self.store.segments.clear();
             self.store.storage = storage;
@@ -107,6 +130,7 @@ impl Prepared<'_> {
         };
         self.store.trim(bytes, time)?;
         self.store.policy = self.policy;
+        self.store.retention = self.retention;
         Ok(change)
     }
 }
@@ -117,7 +141,8 @@ impl Store {
         programs: bool,
     ) -> std::io::Result<Self> {
         let policy = policy.into();
-        let storage = match policy.storage() {
+        let retention = RetentionState::initial(policy);
+        let storage = match retention.effective(policy).storage() {
             Retention::Off | Retention::Memory => Storage::Memory,
             Retention::Filesystem => Storage::Filesystem(super::filesystem::Buffer::new()?),
         };
@@ -129,6 +154,7 @@ impl Store {
             boundaries: VecDeque::new(),
             end: 0,
             policy,
+            retention,
             index,
             history,
             status: Status::Receiving,
@@ -136,6 +162,21 @@ impl Store {
     }
     pub fn policy(&self) -> super::Policy {
         self.policy
+    }
+    fn effective_policy(&self) -> super::Policy {
+        self.retention.effective(self.policy)
+    }
+    pub fn retaining(&self) -> bool {
+        matches!(self.retention, RetentionState::History { .. })
+    }
+    pub fn window_start(&self) -> Option<u64> {
+        self.index
+            .entries()
+            .front()
+            .map(|entry| match self.retention {
+                RetentionState::Forward => entry.time_ns,
+                RetentionState::History { since } => entry.time_ns.max(since),
+            })
     }
     pub fn prepare(&mut self, policy: super::Policy) -> std::io::Result<Prepared<'_>> {
         self.prepare_with(policy, super::filesystem::Buffer::new)
@@ -145,17 +186,28 @@ impl Store {
         policy: super::Policy,
         buffer: impl FnOnce() -> std::io::Result<super::filesystem::Buffer>,
     ) -> std::io::Result<Prepared<'_>> {
-        let reset = match (self.policy.storage(), policy.storage()) {
-            (Retention::Memory, Retention::Memory)
-            | (Retention::Filesystem, Retention::Filesystem)
-            | (Retention::Off, Retention::Off)
-            | (Retention::Off, Retention::Memory) => false,
-            (Retention::Memory | Retention::Filesystem, Retention::Off)
-            | (Retention::Off | Retention::Memory, Retention::Filesystem)
-            | (Retention::Filesystem, Retention::Memory) => true,
+        let retention = if self.policy.activation() == policy.activation()
+            && self.policy.storage() == policy.storage()
+        {
+            self.retention
+        } else {
+            RetentionState::initial(policy)
         };
+        let reset = (self.policy.activation() != policy.activation() && self.retaining())
+            || match (
+                self.effective_policy().storage(),
+                retention.effective(policy).storage(),
+            ) {
+                (Retention::Memory, Retention::Memory)
+                | (Retention::Filesystem, Retention::Filesystem)
+                | (Retention::Off, Retention::Off)
+                | (Retention::Off, Retention::Memory) => false,
+                (Retention::Memory | Retention::Filesystem, Retention::Off)
+                | (Retention::Off | Retention::Memory, Retention::Filesystem)
+                | (Retention::Filesystem, Retention::Memory) => true,
+            };
         let replacement = if reset {
-            let (storage, bytes) = match policy.storage() {
+            let (storage, bytes) = match retention.effective(policy).storage() {
                 Retention::Off | Retention::Memory => (
                     Storage::Memory,
                     Bytes::Memory(Arc::new(Vec::with_capacity(READ_BYTES))),
@@ -177,8 +229,111 @@ impl Store {
         Ok(Prepared {
             store: self,
             policy,
+            retention,
             replacement,
         })
+    }
+    /// Prepare disk resources and copy the small forward buffer before changing
+    /// retention. Failure leaves the live reader, offsets and policy untouched.
+    pub fn begin_pause(&mut self, position_ns: u64) -> std::io::Result<bool> {
+        self.begin_pause_with(position_ns, super::filesystem::Buffer::new)
+    }
+    fn begin_pause_with(
+        &mut self,
+        position_ns: u64,
+        buffer: impl FnOnce() -> std::io::Result<super::filesystem::Buffer>,
+    ) -> std::io::Result<bool> {
+        if self.policy.activation() != super::Activation::OnPause
+            || self.retaining()
+            || self.policy.storage() == Retention::Off
+        {
+            return Ok(false);
+        }
+        if self.policy.storage() == Retention::Filesystem {
+            let (storage, segments) =
+                self.copy_tail(Storage::Filesystem(buffer()?), self.start())?;
+            self.storage = storage;
+            self.segments = segments;
+        }
+        self.retention = RetentionState::History { since: position_ns };
+        Ok(true)
+    }
+    /// Called only after confirmed live output (or a rejected pause). Preserve
+    /// the forward bytes already in use; dropping the old storage closes its fd.
+    pub fn finish_pause(&mut self) -> std::io::Result<()> {
+        if self.policy.activation() != super::Activation::OnPause || !self.retaining() {
+            return Ok(());
+        }
+        let (bytes, time) = self.policy.with_storage(Retention::Off).budget();
+        if matches!(self.storage, Storage::Filesystem(_)) {
+            let capacity = bytes / READ_BYTES as u64 * READ_BYTES as u64;
+            let start = self.start().max(self.end.saturating_sub(capacity));
+            let (storage, segments) = self.copy_tail(Storage::Memory, start)?;
+            self.storage = storage;
+            self.segments = segments;
+        }
+        self.retention = RetentionState::Forward;
+        self.trim(bytes, time)
+    }
+    fn copy_tail(
+        &mut self,
+        mut storage: Storage,
+        start: u64,
+    ) -> std::io::Result<(Storage, VecDeque<Segment>)> {
+        let capacity = match storage {
+            Storage::Memory => READ_BYTES,
+            Storage::Filesystem(_) => SEGMENT_BYTES / super::TS_PACKET_SIZE * super::TS_PACKET_SIZE,
+        };
+        let mut segments: VecDeque<Segment> = VecDeque::new();
+        for segment in &self.segments {
+            let mut within = start.saturating_sub(segment.start).min(segment.size as u64) as usize;
+            while within < segment.size {
+                if segments.back().is_none_or(|last| last.size == capacity) {
+                    segments.push_back(Segment {
+                        start: segment.start + within as u64,
+                        size: 0,
+                        end_ns: segment.end_ns,
+                        bytes: match storage {
+                            Storage::Memory => {
+                                Bytes::Memory(Arc::new(Vec::with_capacity(READ_BYTES)))
+                            }
+                            Storage::Filesystem(_) => Bytes::File,
+                        },
+                    });
+                }
+                let last = segments.back_mut().expect("inserted above");
+                let count = (segment.size - within)
+                    .min(capacity - last.size)
+                    .min(READ_BYTES);
+                let data = match (&segment.bytes, &mut self.storage) {
+                    (Bytes::Memory(bytes), _) => ReadBytes::Shared {
+                        bytes: bytes.clone(),
+                        range: within..within + count,
+                    },
+                    (Bytes::File, Storage::Filesystem(buffer)) => {
+                        ReadBytes::Owned(buffer.read(segment.start, within, count)?)
+                    }
+                    (Bytes::File, Storage::Memory) => {
+                        unreachable!("file bytes require file storage")
+                    }
+                };
+                match (&mut last.bytes, &mut storage) {
+                    (Bytes::Memory(bytes), _) => Arc::get_mut(bytes)
+                        .expect("unpublished copy")
+                        .extend_from_slice(data.as_ref()),
+                    (Bytes::File, Storage::Filesystem(buffer)) => {
+                        buffer.write(last.start, last.size, data.as_ref())?
+                    }
+                    (Bytes::File, Storage::Memory) => {
+                        unreachable!("file bytes require file storage")
+                    }
+                }
+                last.size += count;
+                last.end_ns = segment.end_ns;
+                within += count;
+            }
+        }
+        Ok((storage, segments))
     }
     pub fn reconnect(&mut self) {
         self.boundaries.push_back(self.end);
@@ -191,7 +346,7 @@ impl Store {
                 "unaligned TS write",
             ));
         }
-        let (byte_limit, time_limit) = self.policy.budget();
+        let (byte_limit, time_limit) = self.effective_policy().budget();
         let segment_capacity = match self.storage {
             Storage::Memory => READ_BYTES,
             Storage::Filesystem(_) => SEGMENT_BYTES,
@@ -361,6 +516,122 @@ impl Store {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn on_pause_preserves_forward_bytes_then_releases_history_for_both_backends()
+    -> std::io::Result<()> {
+        use super::super::{Activation, Policy};
+        let root = tempfile::tempdir()?;
+        let fixture = include_bytes!("../../../../tests/fixtures/recording.ts");
+        for storage in [Retention::Memory, Retention::Filesystem] {
+            let policy = Policy::from(storage).with_activation(Activation::OnPause);
+            let mut store = Store::new(policy, 1, true)?;
+            assert!(!store.retaining());
+            assert!(matches!(store.storage, Storage::Memory));
+            store.append(fixture)?;
+            let offset = store.index.entries().front().unwrap().offset;
+            let ReadResult::Data { bytes, .. } = store.read(offset)? else {
+                panic!("forward bytes")
+            };
+            let expected = bytes.as_ref().to_vec();
+            let since = store.index.end_ns().unwrap();
+            assert!(
+                store.begin_pause_with(since, || super::super::filesystem::Buffer::in_root(
+                    root.path()
+                ))?
+            );
+            assert!(store.retaining());
+            assert_eq!(store.window_start(), Some(since));
+            let ReadResult::Data { bytes, .. } = store.read(offset)? else {
+                panic!("pause lost forward bytes")
+            };
+            assert!(bytes.as_ref().starts_with(&expected));
+            assert!(!store.begin_pause(since)?);
+            store.reconnect();
+            store.append(fixture)?;
+            assert!(store.index.end_ns().unwrap() > since);
+            assert_eq!(store.window_start(), Some(since));
+            store.finish_pause()?;
+            assert!(!store.retaining());
+            assert!(matches!(store.storage, Storage::Memory));
+            assert_eq!(store.policy(), policy);
+            assert!(
+                store.segments.len() as u64 * READ_BYTES as u64
+                    <= store.effective_policy().budget().0
+            );
+            let since = store.index.end_ns().unwrap();
+            assert!(
+                store.begin_pause_with(since, || super::super::filesystem::Buffer::in_root(
+                    root.path()
+                ))?
+            );
+            assert_eq!(store.window_start(), Some(since));
+        }
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    fn failed_automatic_disk_start_keeps_live_bytes_and_dormant_state() -> std::io::Result<()> {
+        let mut store = Store::new(
+            super::super::Policy::from(Retention::Filesystem)
+                .with_activation(super::super::Activation::OnPause),
+            1,
+            true,
+        )?;
+        store.append(include_bytes!("../../../../tests/fixtures/recording.ts"))?;
+        let start = store.start();
+        let end = store.end;
+        assert!(
+            store
+                .begin_pause_with(0, || Err(std::io::Error::other("disk unavailable")))
+                .is_err()
+        );
+        assert!(!store.retaining());
+        assert!(matches!(store.storage, Storage::Memory));
+        assert_eq!((store.start(), store.end), (start, end));
+        assert!(
+            store
+                .begin_pause_with(0, || {
+                    let root = tempfile::tempdir()?;
+                    let mut buffer = super::super::filesystem::Buffer::in_root(root.path())?;
+                    buffer.deny_writes_for_test()?;
+                    Ok(buffer)
+                })
+                .is_err()
+        );
+        assert!(!store.retaining());
+        assert_eq!((store.start(), store.end), (start, end));
+        Ok(())
+    }
+    proptest::proptest! {
+        #[test]
+        fn automatic_retention_stays_bounded_across_pause_release_and_mode_changes(
+            operations in proptest::collection::vec(0u8..6, 1..80)
+        ) {
+            use super::super::{Activation, Policy};
+            let auto = Policy::from(Retention::Memory).with_activation(Activation::OnPause);
+            let mut store = Store::new(auto, 1, false).unwrap();
+            let chunk = vec![0; READ_BYTES];
+            let mut received = 0;
+            for operation in operations {
+                match operation {
+                    0 => { store.append(&chunk).unwrap(); received += READ_BYTES as u64; }
+                    1 => { store.begin_pause(0).unwrap(); }
+                    2 => { store.finish_pause().unwrap(); }
+                    3 => { store.prepare(auto).unwrap().commit().unwrap(); }
+                    4 => { store.prepare(Retention::Off.into()).unwrap().commit().unwrap(); }
+                    5 => { store.prepare(Retention::Memory.into()).unwrap().commit().unwrap(); }
+                    _ => unreachable!(),
+                }
+                proptest::prop_assert_eq!(store.end, received);
+                proptest::prop_assert!(store.start() <= store.end);
+                proptest::prop_assert!(store.segments.len() as u64 * READ_BYTES as u64 <= store.effective_policy().budget().0);
+                if store.policy().storage() == Retention::Off { proptest::prop_assert!(!store.retaining()); }
+                if store.policy().storage() == Retention::Memory && store.policy().activation() == Activation::Always { proptest::prop_assert!(store.retaining()); }
+                if !store.retaining() { proptest::prop_assert!(matches!(store.storage, Storage::Memory)); }
+            }
+        }
+    }
     #[test]
     fn shared_read_survives_append_eviction_and_store_destruction_without_copying()
     -> std::io::Result<()> {

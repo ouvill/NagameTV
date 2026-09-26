@@ -719,7 +719,7 @@ fn check_timeshift_options() -> TestResult {
         FILESYSTEM_MIB,
         MINUTES
     ));
-    assert_eq!(player.timeshift_storage().to_string(), "off");
+    assert_eq!(player.timeshift_storage().to_string(), "pause_memory");
     assert!(observed.lock().unwrap().is_empty());
     assert!(player.pin_mut().configure_timeshift_options(
         QString::from("filesystem"),

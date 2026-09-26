@@ -3,6 +3,15 @@ use super::Retention;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
+/// When live history starts. Missing saved values keep the legacy on/off behavior.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Activation {
+    #[default]
+    Always,
+    OnPause,
+}
+
 pub const MIN_CAPACITY_MIB: u32 = 16;
 pub const MAX_CAPACITY_MIB: u32 = 65_536;
 pub const MIN_RETENTION_MINUTES: u32 = 1;
@@ -75,10 +84,24 @@ impl From<Limits> for SavedLimits {
 pub struct Policy {
     storage: Retention,
     limits: Limits,
+    activation: Activation,
 }
 impl Policy {
     pub fn new(storage: Retention, limits: Limits) -> Self {
-        Self { storage, limits }
+        Self {
+            storage,
+            limits,
+            activation: Activation::Always,
+        }
+    }
+    pub fn with_activation(self, activation: Activation) -> Self {
+        Self { activation, ..self }
+    }
+    pub fn activation(self) -> Activation {
+        self.activation
+    }
+    pub(super) fn with_storage(self, storage: Retention) -> Self {
+        Self { storage, ..self }
     }
     pub fn storage(self) -> Retention {
         self.storage

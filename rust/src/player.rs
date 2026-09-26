@@ -143,6 +143,7 @@ pub mod ffi {
         #[qproperty(QString, speed_reason, READ = speed_reason, NOTIFY)]
         #[qproperty(bool, at_live_edge, READ = at_live_edge, NOTIFY)]
         #[qproperty(bool, timeshift, READ = timeshift, NOTIFY)]
+        #[qproperty(bool, pausable, READ = pausable, NOTIFY)]
         #[qproperty(f64, window_start_ms, READ = window_start_ms, NOTIFY)]
         #[qproperty(f64, window_end_ms, READ = window_end_ms, NOTIFY)]
         #[qproperty(f64, live_delay_ms, READ = live_delay_ms, NOTIFY)]
@@ -321,6 +322,7 @@ pub mod ffi {
         #[qinvokable]
         fn set_playback_rate(self: Pin<&mut Player>, tenths: i32) -> bool;
         fn timeshift(self: &Player) -> bool;
+        fn pausable(self: &Player) -> bool;
         fn window_start_ms(self: &Player) -> f64;
         fn window_end_ms(self: &Player) -> f64;
         fn live_delay_ms(self: &Player) -> f64;

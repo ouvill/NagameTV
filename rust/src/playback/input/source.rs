@@ -187,6 +187,24 @@ impl Input {
         self.shared.window()?;
         Ok(())
     }
+    pub fn begin_pause(&mut self, position_ns: u64) -> Result<bool, Error> {
+        match &self.shared {
+            Shared::File(_) => Ok(false),
+            Shared::Live(shared) => {
+                let mut store = shared.lock().map_err(|_| Error::Poisoned)?;
+                if store.policy().storage() == Retention::Off {
+                    return Err(Error::Unindexed);
+                }
+                Ok(store.begin_pause(position_ns)?)
+            }
+        }
+    }
+    pub fn finish_pause(&mut self) -> Result<(), Error> {
+        if let Shared::Live(shared) = &self.shared {
+            shared.lock().map_err(|_| Error::Poisoned)?.finish_pause()?;
+        }
+        Ok(())
+    }
     pub fn identity(&self) -> u64 {
         self.identity
     }
@@ -328,12 +346,8 @@ impl Input {
         };
         let mut store = shared.lock().ok()?;
         let end = store.index.end_ns().unwrap_or(0);
-        let start = store
-            .index
-            .entries()
-            .front()
-            .map_or(end, |anchor| anchor.time_ns);
-        let enabled = store.policy().storage() != Retention::Off;
+        let start = store.window_start().unwrap_or(end);
+        let enabled = store.retaining();
         Some(presenter.project(
             &mut store.history,
             start,
@@ -355,15 +369,10 @@ impl Input {
             return Err(Error::Unavailable);
         };
         let store = shared.lock().map_err(|_| Error::Unavailable)?;
-        if store.policy().storage() == Retention::Off {
+        if !store.retaining() {
             return Err(Error::Unavailable);
         }
-        let start = store
-            .index
-            .entries()
-            .front()
-            .ok_or(Error::Unavailable)?
-            .time_ns;
+        let start = store.window_start().ok_or(Error::Unavailable)?;
         let end = store.index.end_ns().ok_or(Error::Unavailable)?;
         store.history.seek_target(start, end, milliseconds)
     }

@@ -240,7 +240,7 @@ ViewerWindow {
         id: inputContext
         targetWindow: root
         enabled: !root.closing
-        playbackControls: player.recording || player.timeshift
+        playbackControls: player.recording || player.pausable
         guideVisible: root.showGuide
         libraryVisible: root.libraryVisible
         channelsVisible: root.showChannels

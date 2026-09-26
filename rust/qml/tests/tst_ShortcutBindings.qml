@@ -52,7 +52,7 @@ Item {
                         id: inputContext
                         targetWindow: host
                         enabled: actions.enabled
-                        playbackControls: backend.recording || backend.timeshift
+                        playbackControls: backend.recording || backend.pausable
                         guideVisible: actions.backend.guide_visible
                         libraryVisible: actions.libraryVisible
                         channelsVisible: actions.channelsVisible

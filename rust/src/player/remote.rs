@@ -83,7 +83,7 @@ impl PlayerRust {
             .and_then(|duration| u64::try_from(duration.as_millis()).ok());
         // The remote API's program IDs come from the server's wall-clock EPG.
         // Do not label retained playback with a program currently on air.
-        let broadcast = if self.stream_state.timeshift() {
+        let broadcast = if self.stream_state.timeshift(self.timeline.range.is_some()) {
             None
         } else {
             broadcast

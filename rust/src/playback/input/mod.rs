@@ -3,7 +3,7 @@ mod file;
 mod filesystem;
 mod index;
 pub mod limits;
-pub use limits::{Limits, Policy};
+pub use limits::{Activation, Limits, Policy};
 #[cfg(test)]
 mod live_speed_tests;
 mod packet_tail;
@@ -131,10 +131,10 @@ impl Shared {
             Self::Live(shared) => {
                 let store = shared.lock().map_err(|_| Error::Poisoned)?;
                 (
-                    store.index.entries().front().map(|entry| entry.time_ns),
+                    store.window_start(),
                     store.index.end_ns(),
                     Coverage::Partial,
-                    store.policy().storage() != Retention::Off,
+                    store.retaining(),
                 )
             }
         };

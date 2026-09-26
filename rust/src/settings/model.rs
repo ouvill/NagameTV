@@ -57,7 +57,10 @@ pub struct Preferences {
     pub service_id: String,
     pub autoplay: bool,
     pub live_buffer_ms: super::LiveBuffer,
+    #[serde(default)]
     pub timeshift: crate::playback::input::Retention,
+    #[serde(default)]
+    pub timeshift_activation: crate::playback::input::Activation,
     pub timeshift_limits: crate::playback::input::Limits,
     pub screenshot_directory: ScreenshotDirectory,
     pub screenshot_format: ScreenshotFormat,
@@ -93,7 +96,8 @@ impl Default for Preferences {
             service_id: String::new(),
             autoplay: false,
             live_buffer_ms: Default::default(),
-            timeshift: Default::default(),
+            timeshift: crate::playback::input::Retention::Memory,
+            timeshift_activation: crate::playback::input::Activation::OnPause,
             timeshift_limits: Default::default(),
             screenshot_directory: ScreenshotDirectory::default(),
             screenshot_format: ScreenshotFormat::default(),
@@ -121,6 +125,7 @@ impl Default for Preferences {
 impl Preferences {
     pub fn timeshift_policy(&self) -> crate::playback::input::Policy {
         crate::playback::input::Policy::new(self.timeshift, self.timeshift_limits)
+            .with_activation(self.timeshift_activation)
     }
     pub(super) fn apply_overrides(&mut self, server: Option<String>, service: Option<String>) {
         if let Some(server) = server {
