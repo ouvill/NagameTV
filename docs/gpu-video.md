@@ -45,8 +45,10 @@ NAGAMETV_DEINTERLACE=yadif NAGAMETV_VIDEO_FORMAT=nv12 ./build/nagametv
 ```
 
 `NAGAMETV_VIDEO_FORMAT=auto|nv12|rgba`でsinkの形式を選べる。既定の`auto`は
-NV12対応のqml6glsinkならNV12を選ぶ（`gl`だけRGBA）。古いpluginでNV12を
-扱えない場合は、起動ログに表示するRGBAを選ぶ。`nv12`を明示した場合は
+NV12とRGBAを許可し、入力に応じて交渉する（`gl`はRGBA）。CPU処理後はNV12へ
+変換してから転送し、GLMemoryのNV12入力はそのまま表示する。10bit AV1／HEVCなどの
+P010 GL入力は、NV12への直接変換に対応しないためGPU上でRGBAへ変換する。
+古いpluginでNV12を扱えない場合もRGBAを選ぶ。`nv12`を明示した場合は
 未対応pluginではエラーにする。GStreamer 1.24との互換性は維持する。
 これは色形式の互換処理であり、GPU故障時のソフトウェア描画への切り替えではない。
 

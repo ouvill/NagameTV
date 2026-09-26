@@ -1177,6 +1177,7 @@ fn check_general_media(
         "media-h264.mp4",
         "media-h264.mkv",
         "media-hevc.mp4",
+        "media-hevc-10bit.mp4",
         "media-hevc.mkv",
     ] {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -1199,6 +1200,15 @@ fn check_general_media(
                 serde_json::to_string(name)?
             ),
         )?;
+        if name == "media-hevc-10bit.mp4" {
+            let stats = super::screenshots::json(engine, "JSON.parse(player.video_stats())")?;
+            assert_eq!(stats["output"]["memory"], "memory:GLMemory");
+            if stats["input"]["memory"] == "memory:GLMemory"
+                && stats["input"]["pixel_format"] == "P010_10LE"
+            {
+                assert_eq!(stats["output"]["pixel_format"], "RGBA");
+            }
+        }
         assert!(evaluate(engine, "player.pause() && player.paused")?);
         for target in [8000, 2000] {
             assert!(evaluate(engine, &format!("player.seek_to({target})"))?);

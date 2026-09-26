@@ -9,7 +9,7 @@ from pathlib import Path
 import subprocess
 
 root = Path(__file__).resolve().parents[2]
-for codec in ('h264', 'hevc'):
+for codec, pixel_format in [('h264', 'I420'), ('hevc', 'I420'), ('hevc-10bit', 'I420_10LE')]:
     encoder = (
         ['openh264enc', 'gop-size=25', 'bitrate=150000', '!', 'h264parse']
         if codec == 'h264' else
@@ -17,13 +17,15 @@ for codec in ('h264', 'hevc'):
          'option-string=pools=none:frame-threads=1:log-level=error', '!', 'h265parse']
     )
     for container, mux in [('mp4', 'mp4mux'), ('mkv', 'matroskamux')]:
+        if codec == 'hevc-10bit' and container != 'mp4':
+            continue
         output = root / 'tests' / 'fixtures' / f'media-{codec}.{container}'
         # Cover both tail and front MP4 indexes without duplicate media fixtures.
-        mux_options = ['faststart=true'] if container == 'mp4' and codec == 'hevc' else []
+        mux_options = ['faststart=true'] if container == 'mp4' and codec.startswith('hevc') else []
         subprocess.run([
             'gst-launch-1.0', '-q', mux, 'name=mux', *mux_options, '!', 'filesink', f'location={output}',
             'videotestsrc', 'num-buffers=300', 'pattern=ball', '!',
-            'video/x-raw,format=I420,width=160,height=96,framerate=25/1', '!',
+            f'video/x-raw,format={pixel_format},width=160,height=96,framerate=25/1', '!',
             *encoder, '!', 'queue', '!', 'mux.',
             'audiotestsrc', 'num-buffers=563', 'samplesperbuffer=1024', 'volume=0.05', '!',
             'audio/x-raw,rate=48000,channels=2', '!', 'audioconvert', '!',

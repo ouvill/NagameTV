@@ -13,16 +13,25 @@ const VA_MEMORY: &str = "memory:VAMemory";
 enum Format {
     Nv12,
     Rgba,
+    Nv12OrRgba,
 }
 impl Format {
     fn name(self) -> &'static str {
         match self {
             Self::Nv12 => "NV12",
             Self::Rgba => "RGBA",
+            Self::Nv12OrRgba => "NV12 or RGBA (negotiated)",
         }
     }
     fn caps(self) -> gst::Caps {
-        raw_caps(GL_MEMORY, Some(self.name()))
+        match self {
+            Self::Nv12 | Self::Rgba => raw_caps(GL_MEMORY, Some(self.name())),
+            Self::Nv12OrRgba => gst::Caps::builder("video/x-raw")
+                .features([GL_MEMORY])
+                .field("format", gst::List::new(["NV12", "RGBA"]))
+                .field("texture-target", "2D")
+                .build(),
+        }
     }
 }
 
@@ -42,6 +51,16 @@ fn raw_caps(memory: &str, format: Option<&str>) -> gst::Caps {
 fn va_import_caps() -> gst::Caps {
     let mut caps = Format::Nv12.caps();
     caps.make_mut().append(Format::Rgba.caps());
+    caps
+}
+
+fn upload_caps() -> gst::Caps {
+    // Keep CPU conversion before upload/read-ahead, so 8-bit broadcast video
+    // still uses NV12. Native GL/DMABuf inputs retain their decoded format;
+    // glcolorconvert chooses RGBA when direct NV12 conversion is unsupported.
+    let mut caps = raw_caps("memory:SystemMemory", Some("NV12"));
+    caps.make_mut().append(raw_caps(GL_MEMORY, None));
+    caps.make_mut().append(raw_caps("memory:DMABuf", None));
     caps
 }
 
@@ -118,16 +137,20 @@ impl Validated {
             // Formats already matching the sink can pass through unchanged.
             // videoconvert's ANY feature template still passes GPU memory
             // through in off mode; CPU I420 needs conversion for NV12 output.
-            Mode::Yadif | Mode::Linear | Mode::Off => vec![
-                // Negotiate unsupported input formats without converting I420
-                // prematurely: deinterlace itself cannot process every format.
-                gst::ElementFactory::make("videoconvert").build()?,
-                processor.clone(),
-                gst::ElementFactory::make("videoconvert").build()?,
-                queue.clone(),
-                upload,
-                convert,
-            ],
+            Mode::Yadif | Mode::Linear | Mode::Off => {
+                let mut cpu = vec![
+                    // Negotiate unsupported input formats without converting I420
+                    // prematurely: deinterlace itself cannot process every format.
+                    gst::ElementFactory::make("videoconvert").build()?,
+                    processor.clone(),
+                    gst::ElementFactory::make("videoconvert").build()?,
+                ];
+                if format == Format::Nv12OrRgba {
+                    cpu.push(filter(upload_caps())?);
+                }
+                cpu.extend([queue.clone(), upload, convert]);
+                cpu
+            }
             Mode::NvidiaGl => {
                 bypass_progressive(&processor)?;
                 vec![
@@ -197,7 +220,14 @@ fn select_format(mode: Mode, requested: Option<Format>, caps: &gst::CapsRef) -> 
         (_, Some(format)) => format,
         (Mode::Yadif | Mode::Linear | Mode::Off | Mode::VaApi, None) => {
             if caps.can_intersect(&Format::Nv12.caps()) {
-                Format::Nv12
+                if caps.can_intersect(&Format::Rgba.caps()) {
+                    // NV12 can pass through, but P010 GL textures cannot be
+                    // converted directly to NV12. Let glcolorconvert negotiate
+                    // RGBA for those inputs without downloading GPU memory.
+                    Format::Nv12OrRgba
+                } else {
+                    Format::Nv12
+                }
             } else {
                 Format::Rgba
             }
@@ -317,7 +347,7 @@ mod tests {
         current.make_mut().append(Format::Nv12.caps());
         assert_eq!(
             select_format(Mode::Yadif, None, &current).unwrap(),
-            Format::Nv12
+            Format::Nv12OrRgba
         );
         assert_eq!(
             select_format(Mode::Yadif, None, &old).unwrap(),
@@ -344,5 +374,11 @@ mod tests {
         assert!(va_import.can_intersect(&Format::Rgba.caps()));
         assert!(!va_import.can_intersect(&raw_caps(GL_MEMORY, Some("YUY2"))));
         assert!(!va_import.can_intersect(&raw_caps("memory:SystemMemory", Some("NV12"))));
+        let upload = upload_caps();
+        assert!(upload.can_intersect(&raw_caps("memory:SystemMemory", Some("NV12"))));
+        assert!(!upload.can_intersect(&raw_caps("memory:SystemMemory", Some("P010_10LE"))));
+        assert!(upload.can_intersect(&raw_caps(GL_MEMORY, Some("P010_10LE"))));
+        assert!(upload.can_intersect(&raw_caps(GL_MEMORY, Some("NV12"))));
+        assert!(upload.can_intersect(&raw_caps("memory:DMABuf", Some("DMA_DRM"))));
     }
 }

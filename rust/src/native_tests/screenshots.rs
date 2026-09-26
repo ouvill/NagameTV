@@ -24,6 +24,11 @@ fn check_video_frame_sync(
     app: &QGuiApplication,
     engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
 ) -> TestResult {
+    // Attachment must observe the real screen before playback starts.
+    assert!(evaluate(
+        engine,
+        "JSON.parse(player.video_stats()).render_delay_ms > 0"
+    )?);
     // Video updates must not depend on comments being enabled or animated.
     evaluate(
         engine,

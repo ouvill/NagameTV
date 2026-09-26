@@ -209,6 +209,11 @@ contain 12 seconds of synthetic 160×96, 25 fps, 8-bit SDR video and stereo AAC
 `python3 scripts/fixtures/general-media.py`; this uses CPU OpenH264/x265 and
 libav AAC encoders with file outputs, without display, GPU or audio devices.
 H.264 MP4 keeps its `moov` index at the end; HEVC MP4 uses faststart.
+`media-hevc-10bit.mp4` uses the same pattern and duration in 10-bit SDR. The
+startup suite exercises GPU P010 decoding and negotiated display conversion,
+including pause, seek, replay and switching back to 8-bit media. Automatic
+output must allow RGBA because glcolorconvert cannot convert P010 GL textures
+directly to NV12.
 
 The hardware-free `playback::media` tests use explicit CPU decoders and memory
 outputs to check both local and HTTP Range input, both tracks, paused forward

@@ -90,6 +90,18 @@ NAGAMETV_PLAYBACK_CLOCK=auto ./build/nagametv
 NAGAMETV_PLAYBACK_CLOCK=system ./build/nagametv
 ```
 
+### 画面への表示待ちと同期
+
+qml6glsinkへ渡した映像は、Qtの描画と画面更新を経て表示される。
+この待ち時間を考慮するため、画面更新1周期をGStreamerの`render-delay`へ設定する。
+周期はQtの`QScreen::refreshRate`から求め、画面や更新レートの変更にも追従する。
+映像・音声のPTSと共通の再生時計は維持する。
+
+音声出力や映像表示の遅延が変わったときは、`LATENCY`メッセージを処理して
+パイプライン全体の遅延を再計算する。設定した表示待ち時間は
+`player.video_stats()`の`render_delay_ms`で確認できる。
+画面更新周期は表示待ちの見積もりであり、物理モニターや音声デバイスの実測値ではない。
+
 ---
 
 ## 関連ドキュメント

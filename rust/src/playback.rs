@@ -347,6 +347,27 @@ impl Playback {
         // without processing events or retaining a Rust pointer to the item.
         self.sink
             .set_property("widget", widget.cast::<std::ffi::c_void>());
+        let sink = self.sink.downgrade();
+        // SAFETY: the item has just passed the GUI-thread/type validation.
+        // Its QObject context owns all screen/window-change connections.
+        unsafe {
+            crate::qt::ffi::observe_screen_refresh(
+                item,
+                crate::qt::RefreshObserver::new(move |rate| {
+                    // Screen detachment may follow playback teardown.
+                    let Some(sink) = sink.upgrade() else {
+                        return;
+                    };
+                    match clock::render_delay(rate) {
+                        Ok(delay) => sink.set_property("render-delay", delay.nseconds()),
+                        Err(error) => tracing::warn!(
+                            error = &error as &dyn std::error::Error,
+                            "Could not update video presentation latency"
+                        ),
+                    }
+                }),
+            );
+        }
         // SAFETY: the same live GUI item validated above. Connections own an
         // Arc-backed observer and are disconnected with the item's lifetime.
         unsafe {
@@ -493,6 +514,14 @@ impl Playback {
                 gst::MessageView::NewClock(message) => {
                     if let Some(clock) = message.clock() {
                         tracing::info!("Playback clock selected: {}", clock.name());
+                    }
+                }
+                gst::MessageView::Latency(_) => {
+                    if let Err(error) = clock::redistribute_latency(&self.playbin, &message) {
+                        tracing::warn!(
+                            error = &error as &dyn std::error::Error,
+                            "Could not redistribute audio/video latency"
+                        );
                     }
                 }
                 gst::MessageView::Warning(warning) => {

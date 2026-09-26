@@ -3,6 +3,18 @@
 pub mod application;
 pub mod variant;
 
+/// GUI-thread screen notifications. The item owns the native connections;
+/// consumers can retain weak handles instead of extending playback lifetime.
+pub struct RefreshObserver(Box<dyn Fn(f64)>);
+impl RefreshObserver {
+    pub fn new(changed: impl Fn(f64) + 'static) -> Box<Self> {
+        Box::new(Self(Box::new(changed)))
+    }
+    fn changed(&self, refresh_rate_hz: f64) {
+        (self.0)(refresh_rate_hz);
+    }
+}
+
 #[cxx::bridge]
 pub mod ffi {
     unsafe extern "C++" {
@@ -89,5 +101,12 @@ pub mod ffi {
         include!("video_item.h");
         #[cxx_name = "qml6VideoItemPointer"]
         unsafe fn qml6_video_item_pointer(item: *mut QQuickItem) -> *mut u8;
+        include!("screen_refresh.h");
+        #[cxx_name = "observeScreenRefresh"]
+        unsafe fn observe_screen_refresh(item: *mut QQuickItem, observer: Box<RefreshObserver>);
+    }
+    extern "Rust" {
+        type RefreshObserver;
+        fn changed(self: &RefreshObserver, refresh_rate_hz: f64);
     }
 }
