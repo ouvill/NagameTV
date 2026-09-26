@@ -15,6 +15,7 @@ pub mod recording;
 pub mod speed;
 pub mod stats;
 pub mod timeline;
+mod video_info;
 #[cfg(feature = "video_item_tests")]
 pub(crate) mod video_item_checks;
 mod video_output;
@@ -187,6 +188,7 @@ pub struct Playback {
     playbin: gst::Element,
     sink: gst::Element,
     processor: gst::Element,
+    video_streams: video_info::Streams,
     queue: gst::Element,
     mode: deinterlace::Mode,
     video_output: VideoOutputState,
@@ -214,7 +216,8 @@ impl Playback {
             &self.processor,
             &self.queue,
             &self.sink,
-            self.mode.label(),
+            self.mode,
+            &self.video_streams,
         )
     }
     pub fn video_aspect_ratio(&self) -> Option<f64> {
@@ -252,6 +255,7 @@ impl Playback {
             bin: output,
             processor,
             queue,
+            streams: video_streams,
         } = video_output::Validated::new(sink.clone(), mode)?.build()?;
         let audio = audio_sink::Output::from_environment()?.build()?;
         let routing = audio_routing::Routing::default();
@@ -302,6 +306,7 @@ impl Playback {
             playbin,
             sink,
             processor,
+            video_streams,
             queue,
             mode,
             video_output: VideoOutputState::Unattached,

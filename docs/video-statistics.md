@@ -1,5 +1,29 @@
 # デインターレース設定と動画統計の移植
 
+## インターレース判定と適用状態（2026-09-26）
+
+動画統計は入力の走査方式、設定したデインターレース方式、現在の適用状態を分けて表示する。
+`mixed`では「混在」に加え、直近の入力フレームがインターレースかプログレッシブかを示す。
+方式はYADIF、Linear、OpenGL vfir、VA-API adaptiveで、処理を省略しているときは
+「適用なし」、Off設定では「無効」とする。有効な設定でも、フレーム未取得や停止中は「—」を表示する。
+
+入力・出力のcapsは更新時に
+[`GstVideoInfo`](https://gstreamer.freedesktop.org/documentation/video/video-info.html)へ変換する。
+走査方式・画素形式・寸法・fps・PARを型付きで取得し、省略された走査方式とPARには
+GStreamerの既定値を使う。`mixed`のフレーム判定には`INTERLACED`と`ONEFIELD`を使う。
+単一フィールドも補間が必要な入力として扱う。`fields`と`alternate`を含め、
+プログレッシブと確認できたフレームだけをOpenGL処理の省略対象にする。
+フラグの意味は[GStreamerの走査方式の仕様](https://gstreamer.freedesktop.org/documentation/additional/design/interlaced-video.html)を参照。
+
+適用状態は直近の入力フレーム、出力形式、GPUフィルターのpassthrough状態から判定する。
+GPU経路ではフィルター自身の状態を優先する。[VA-API](https://github.com/GStreamer/gstreamer/blob/main/subprojects/gst-plugins-bad/sys/va/gstvadeinterlace.c)は`mixed`のプログレッシブフレームでも
+処理を継続する場合があり、入力の走査方式だけでは省略中と判断できない。
+1秒ごとの観測であり、表示中のフレームと一対一には対応しない。
+表示する方式名は選択中の処理方式で、GStreamer内部の形式依存の代替方式や、
+テレシネ処理・末尾処理で使われる補助アルゴリズムまでは示さない。
+probeが保持するのは形式と直近の判定だけで、映像bufferや画素、履歴を保持しない。
+シークではフレーム判定を、ストリーム開始では形式も破棄し、READY/NULLでは統計に公開しない。
+
 ## 実況コメント表示中の動画更新（2026-09-25）
 
 コメントの計算と状態管理をRust、表示をQMLへ戻し、動画アイテムをシーングラフ同期の

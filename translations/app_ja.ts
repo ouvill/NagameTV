@@ -244,6 +244,50 @@
       <translation>デインターレース設定</translation>
     </message>
     <message>
+      <source>Progressive</source>
+      <translation>プログレッシブ</translation>
+    </message>
+    <message>
+      <source>Interlaced</source>
+      <translation>インターレース</translation>
+    </message>
+    <message>
+      <source>Interlaced (separate fields)</source>
+      <translation>インターレース（フィールド分離）</translation>
+    </message>
+    <message>
+      <source>Interlaced (alternate fields)</source>
+      <translation>インターレース（交互フィールド）</translation>
+    </message>
+    <message>
+      <source>Mixed · latest input: interlaced</source>
+      <translation>混在 · 直近の入力: インターレース</translation>
+    </message>
+    <message>
+      <source>Mixed · latest input: progressive</source>
+      <translation>混在 · 直近の入力: プログレッシブ</translation>
+    </message>
+    <message>
+      <source>Mixed · waiting for a frame</source>
+      <translation>混在 · フレーム待ち</translation>
+    </message>
+    <message>
+      <source>Active: %1</source>
+      <translation>適用中: %1</translation>
+    </message>
+    <message>
+      <source>Not applied (passthrough)</source>
+      <translation>適用なし（そのまま出力）</translation>
+    </message>
+    <message>
+      <source>Disabled</source>
+      <translation>無効</translation>
+    </message>
+    <message>
+      <source>Applied deinterlacing</source>
+      <translation>適用中のデインターレース</translation>
+    </message>
+    <message>
       <source>Sink average rate</source>
       <translation>sink平均レート</translation>
     </message>

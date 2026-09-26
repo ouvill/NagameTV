@@ -1,8 +1,10 @@
 //! Explicit memory contracts for CPU, NVDEC/OpenGL and Linux VA-API output.
-use super::{Error, Result, deinterlace::Mode};
+use super::{
+    Error, Result,
+    deinterlace::Mode,
+    video_info::{Monitor, Streams},
+};
 use gstreamer::{self as gst, prelude::*};
-use gstreamer_base::prelude::BaseTransformExt;
-use gstreamer_video::{VideoBufferFlags, prelude::VideoBufferExt};
 
 // Leave bounded read-ahead room to absorb brief upstream processing stalls.
 const QUEUE_BUFFERS: u32 = 8;
@@ -82,6 +84,7 @@ pub(super) struct Output {
     pub bin: gst::Bin,
     pub processor: gst::Element,
     pub queue: gst::Element,
+    pub streams: Streams,
 }
 
 impl Validated {
@@ -122,6 +125,22 @@ impl Validated {
     pub fn build(self) -> Result<Output> {
         let Self { sink, mode, format } = self;
         let processor = mode.build()?;
+        let pad = processor.static_pad("sink").ok_or(Error::MissingSinkPad)?;
+        let input = match mode {
+            Mode::NvidiaGl => {
+                let transform = processor
+                    .downcast_ref::<gstreamer_base::BaseTransform>()
+                    .ok_or_else(|| {
+                        Error::VideoOutput("gldeinterlace is not a video transform".into())
+                    })?;
+                Monitor::bypass_progressive(&pad, transform)
+            }
+            Mode::Yadif | Mode::Linear | Mode::Off | Mode::VaApi => Monitor::observe(&pad),
+        };
+        let streams = Streams {
+            input,
+            output: Monitor::observe(&sink.static_pad("sink").ok_or(Error::MissingSinkPad)?),
+        };
         let queue = gst::ElementFactory::make("queue")
             .property("max-size-buffers", QUEUE_BUFFERS)
             .property("max-size-bytes", 0_u32)
@@ -152,7 +171,6 @@ impl Validated {
                 cpu
             }
             Mode::NvidiaGl => {
-                bypass_progressive(&processor)?;
                 vec![
                     filter(raw_caps(GL_MEMORY, Some("NV12")))?,
                     queue.clone(),
@@ -210,6 +228,7 @@ impl Validated {
             bin,
             processor,
             queue,
+            streams,
         })
     }
 }
@@ -274,71 +293,9 @@ fn configure_decoders(mode: Mode) -> Result<()> {
     Ok(())
 }
 
-fn bypass_progressive(element: &gst::Element) -> Result<()> {
-    let transform = element
-        .clone()
-        .downcast::<gstreamer_base::BaseTransform>()
-        .map_err(|_| Error::VideoOutput("gldeinterlace is not a video transform".into()))?;
-    let weak = transform.downgrade();
-    element
-        .static_pad("sink")
-        .ok_or(Error::MissingSinkPad)?
-        .add_probe(
-            gst::PadProbeType::BUFFER | gst::PadProbeType::EVENT_DOWNSTREAM,
-            move |pad, probe| {
-                // Do not let a previous progressive stream's passthrough state
-                // affect the next stream's caps negotiation.
-                if probe
-                    .event()
-                    .is_some_and(|event| matches!(event.view(), gst::EventView::Caps(_)))
-                    && let Some(transform) = weak.upgrade()
-                {
-                    transform.set_passthrough(false);
-                }
-                if let (Some(transform), Some(buffer), Some(caps)) =
-                    (weak.upgrade(), probe.buffer(), pad.current_caps())
-                {
-                    let interlaced = caps
-                        .structure(0)
-                        .and_then(|s| s.get::<&str>("interlace-mode").ok());
-                    let process = needs_deinterlace(interlaced, buffer);
-                    transform.set_passthrough(!process);
-                }
-                gst::PadProbeReturn::Ok
-            },
-        );
-    Ok(())
-}
-
-fn needs_deinterlace(interlace: Option<&str>, buffer: &gst::BufferRef) -> bool {
-    match interlace {
-        Some("interleaved") => true,
-        // Core BufferFlags discards the video-specific flag bits. Inspect the
-        // video flags directly; this never maps GPU pixels to system memory.
-        Some("mixed") => buffer.video_flags().contains(VideoBufferFlags::INTERLACED),
-        _ => false,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test]
-    fn mixed_caps_use_video_flags_without_mapping_pixels() {
-        gst::init().unwrap();
-        let mut buffer = gst::Buffer::new();
-        assert!(!needs_deinterlace(Some("mixed"), &buffer));
-        assert!(needs_deinterlace(Some("interleaved"), &buffer));
-        buffer
-            .make_mut()
-            .set_video_flags(VideoBufferFlags::INTERLACED | VideoBufferFlags::TFF);
-        assert!(needs_deinterlace(Some("mixed"), &buffer));
-        assert!(!needs_deinterlace(Some("progressive"), &buffer));
-        buffer
-            .make_mut()
-            .unset_video_flags(VideoBufferFlags::INTERLACED);
-        assert!(!needs_deinterlace(Some("mixed"), &buffer));
-    }
     #[test]
     fn format_contract_handles_old_plugins_and_explicit_requests() {
         gst::init().unwrap();

@@ -100,6 +100,24 @@ pub(super) fn run(
         }
         let stats = json(engine, "JSON.parse(player.video_stats())")?;
         eprintln!("Video processing ({mode:?}, interlaced={is_interlaced}): {stats}");
+        assert_eq!(
+            stats["input"]["scan"],
+            if is_interlaced {
+                "interlaced"
+            } else {
+                "progressive"
+            }
+        );
+        assert_eq!(
+            stats["deinterlace_status"],
+            if mode == Mode::Off {
+                "disabled"
+            } else if is_interlaced {
+                "active"
+            } else {
+                "passthrough"
+            }
+        );
         // Check playbin's dynamically created decoder, not only a standalone
         // factory: the budget must be installed before every stream starts.
         if stats["decoders"]
@@ -177,6 +195,17 @@ pub(super) fn run(
             "blank captured frame"
         );
         evaluate(engine, "player.stop(); true")?;
+        let stopped = json(engine, "JSON.parse(player.video_stats())")?;
+        assert_eq!(stopped["input"]["scan"], "unknown");
+        assert_eq!(stopped["output"]["scan"], "unknown");
+        assert_eq!(
+            stopped["deinterlace_status"],
+            if mode == Mode::Off {
+                "disabled"
+            } else {
+                "unknown"
+            }
+        );
     }
     println!(
         "Video processing passed: interlaced/progressive/restart, negotiated memory, decoder, frame rate, screenshot"

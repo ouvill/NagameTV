@@ -1,7 +1,12 @@
-//! On-demand snapshots. No frame retention, probes, timers or historical samples.
+//! On-demand snapshots of native counters and observed video metadata.
+use super::{
+    deinterlace::Mode,
+    video_info::{Observation, Scan, Streams},
+};
 use gst::prelude::*;
 use gstreamer as gst;
 use gstreamer_base::{BaseSink, prelude::BaseSinkExt};
+use gstreamer_video::VideoInterlaceMode;
 use serde::Serialize;
 use std::collections::BTreeMap;
 
@@ -36,37 +41,85 @@ pub fn frame_counters(sink: &gst::Element) -> Option<FrameCounters> {
 
 #[derive(Default, Serialize)]
 pub struct VideoFormat {
-    width: Option<i32>,
-    height: Option<i32>,
+    width: Option<u32>,
+    height: Option<u32>,
     fps: Option<f64>,
-    interlace: Option<String>,
+    #[serde(serialize_with = "serialize_interlace")]
+    interlace: Option<VideoInterlaceMode>,
     pixel_format: Option<String>,
     memory: Option<String>,
     pixel_aspect_ratio: Option<String>,
+    scan: Scan,
 }
 
 impl VideoFormat {
-    fn from_caps(caps: Option<&gst::CapsRef>) -> Self {
-        let Some(s) = caps.and_then(|caps| caps.structure(0)) else {
+    fn from_observation(observation: Observation) -> Self {
+        let Observation::Negotiated { info, memory, scan } = observation else {
             return Self::default();
         };
+        let rate = info.fps();
+        let ratio = info.par();
         Self {
-            width: s.get("width").ok(),
-            height: s.get("height").ok(),
-            fps: s
-                .get::<gst::Fraction>("framerate")
-                .ok()
-                .filter(|rate| rate.numer() > 0 && rate.denom() > 0)
-                .map(|rate| f64::from(rate.numer()) / f64::from(rate.denom())),
-            interlace: s.get::<&str>("interlace-mode").ok().map(str::to_owned),
-            pixel_format: s.get::<&str>("format").ok().map(str::to_owned),
-            memory: caps
-                .and_then(|caps| caps.features(0))
-                .map(|features| features.to_string()),
-            pixel_aspect_ratio: s
-                .get::<gst::Fraction>("pixel-aspect-ratio")
-                .ok()
-                .map(|ratio| format!("{}:{}", ratio.numer(), ratio.denom())),
+            width: Some(info.width()),
+            height: Some(info.height()),
+            fps: (rate.numer() > 0 && rate.denom() > 0)
+                .then(|| f64::from(rate.numer()) / f64::from(rate.denom())),
+            interlace: Some(info.interlace_mode()),
+            pixel_format: Some(info.format().to_string()),
+            memory: Some(memory),
+            pixel_aspect_ratio: Some(format!("{}:{}", ratio.numer(), ratio.denom())),
+            scan,
+        }
+    }
+}
+
+fn serialize_interlace<S: serde::Serializer>(
+    mode: &Option<VideoInterlaceMode>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    mode.map(|mode| mode.to_string()).serialize(serializer)
+}
+
+#[derive(Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum DeinterlaceStatus {
+    Disabled,
+    Unknown,
+    Passthrough,
+    Active,
+}
+
+impl DeinterlaceStatus {
+    fn new(
+        mode: Mode,
+        input: &VideoFormat,
+        output: &VideoFormat,
+        passthrough: Option<bool>,
+    ) -> Self {
+        if mode == Mode::Off {
+            return Self::Disabled;
+        }
+        if input.scan == Scan::Unknown || output.scan == Scan::Unknown {
+            return Self::Unknown;
+        }
+        match mode {
+            Mode::Off => Self::Disabled,
+            Mode::Yadif | Mode::Linear => {
+                if input.scan == Scan::Interlaced
+                    && output.interlace == Some(VideoInterlaceMode::Progressive)
+                {
+                    Self::Active
+                } else {
+                    Self::Passthrough
+                }
+            }
+            // VA can keep filtering mixed caps even for progressive frames.
+            // Report the native filter state, not whether filtering is needed.
+            Mode::NvidiaGl | Mode::VaApi => match passthrough {
+                Some(false) => Self::Active,
+                Some(true) => Self::Passthrough,
+                None => Self::Unknown,
+            },
         }
     }
 }
@@ -77,6 +130,7 @@ pub struct VideoStats {
     input: VideoFormat,
     output: VideoFormat,
     deinterlacer: String,
+    deinterlace_status: DeinterlaceStatus,
     rendered: Option<u64>,
     dropped: Option<u64>,
     average_fps: Option<f64>,
@@ -90,22 +144,21 @@ pub struct VideoStats {
     processor_passthrough: Option<bool>,
 }
 
-pub fn snapshot(
+pub(super) fn snapshot(
     player: &gst::Element,
     processor: &gst::Element,
     queue: &gst::Element,
     sink: &gst::Element,
-    deinterlacer: &str,
+    mode: Mode,
+    streams: &Streams,
 ) -> VideoStats {
     let state = player.current_state();
     let active = matches!(state, gst::State::Paused | gst::State::Playing);
-    let caps = |element: &gst::Element| {
+    let format = |monitor: &super::video_info::Monitor| {
         if active {
-            element
-                .static_pad("sink")
-                .and_then(|pad| pad.current_caps())
+            VideoFormat::from_observation(monitor.snapshot())
         } else {
-            None
+            VideoFormat::default()
         }
     };
     let stats = active.then(|| sink_stats(sink)).flatten();
@@ -114,11 +167,21 @@ pub fn snapshot(
     } else {
         Default::default()
     };
+    let input = format(&streams.input);
+    let output = format(&streams.output);
+    let processor_passthrough = active
+        .then(|| {
+            processor
+                .downcast_ref::<gstreamer_base::BaseTransform>()
+                .map(gstreamer_base::prelude::BaseTransformExt::is_passthrough)
+        })
+        .flatten();
     VideoStats {
         state: format!("{state:?}"),
-        input: VideoFormat::from_caps(caps(processor).as_deref()),
-        output: VideoFormat::from_caps(caps(sink).as_deref()),
-        deinterlacer: deinterlacer.to_owned(),
+        deinterlace_status: DeinterlaceStatus::new(mode, &input, &output, processor_passthrough),
+        input,
+        output,
+        deinterlacer: mode.label().to_owned(),
         rendered: stats.as_ref().and_then(|s| s.get("rendered").ok()),
         dropped: stats.as_ref().and_then(|s| s.get("dropped").ok()),
         average_fps: stats
@@ -132,13 +195,7 @@ pub fn snapshot(
         gstreamer: gst::version_string().to_string(),
         decoders,
         decoder_thread_limits,
-        processor_passthrough: active
-            .then(|| {
-                processor
-                    .downcast_ref::<gstreamer_base::BaseTransform>()
-                    .map(gstreamer_base::prelude::BaseTransformExt::is_passthrough)
-            })
-            .flatten(),
+        processor_passthrough,
     }
 }
 
@@ -176,22 +233,75 @@ mod tests {
     struct Running(gst::Pipeline);
     impl Drop for Running {
         fn drop(&mut self) {
-            let _ = self.0.set_state(gst::State::Null);
+            if let Err(error) = self.0.set_state(gst::State::Null) {
+                tracing::error!(
+                    error = &error as &dyn std::error::Error,
+                    "Failed to stop video statistics test pipeline"
+                );
+            }
         }
+    }
+
+    fn format_from_caps(caps: &gst::CapsRef) -> VideoFormat {
+        VideoFormat::from_observation(Observation::Negotiated {
+            info: gstreamer_video::VideoInfo::from_caps(caps).unwrap(),
+            memory: caps.features(0).unwrap().to_string(),
+            scan: Scan::Unknown,
+        })
     }
 
     #[test]
     fn reads_exact_format_and_handles_unknown_rate() -> Result<(), Box<dyn std::error::Error>> {
         gst::init()?;
         let caps: gst::Caps = "video/x-raw,width=1440,height=1080,framerate=30000/1001,interlace-mode=interleaved,format=I420,pixel-aspect-ratio=4/3".parse()?;
-        let format = VideoFormat::from_caps(Some(&caps));
+        let format = format_from_caps(&caps);
         assert_eq!(format.width, Some(1440));
         assert_eq!(format.pixel_aspect_ratio.as_deref(), Some("4:3"));
         assert!((format.fps.ok_or("missing fps")? - 29.97002997).abs() < 0.000001);
-        let unknown: gst::Caps = "video/x-raw,framerate=0/1".parse()?;
-        assert!(VideoFormat::from_caps(Some(&unknown)).fps.is_none());
-        assert!(VideoFormat::from_caps(None).width.is_none());
+        assert_eq!(format.interlace, Some(VideoInterlaceMode::Interleaved));
+        let unknown: gst::Caps =
+            "video/x-raw,format=I420,width=320,height=240,framerate=0/1".parse()?;
+        let defaults = format_from_caps(&unknown);
+        assert!(defaults.fps.is_none());
+        assert_eq!(defaults.interlace, Some(VideoInterlaceMode::Progressive));
+        assert_eq!(defaults.pixel_aspect_ratio.as_deref(), Some("1:1"));
+        assert!(
+            VideoFormat::from_observation(Observation::Unavailable)
+                .width
+                .is_none()
+        );
         Ok(())
+    }
+
+    #[test]
+    fn gpu_filter_activity_is_not_inferred_from_a_progressive_mixed_frame() {
+        gst::init().unwrap();
+        let caps: gst::Caps = "video/x-raw,format=NV12,width=320,height=240,interlace-mode=mixed"
+            .parse()
+            .unwrap();
+        let mut input = format_from_caps(&caps);
+        input.scan = Scan::Progressive;
+        let mut output = format_from_caps(&caps);
+        output.scan = Scan::Progressive;
+        for mode in [Mode::NvidiaGl, Mode::VaApi] {
+            assert_eq!(
+                DeinterlaceStatus::new(mode, &input, &output, Some(false)),
+                DeinterlaceStatus::Active
+            );
+            assert_eq!(
+                DeinterlaceStatus::new(mode, &input, &output, Some(true)),
+                DeinterlaceStatus::Passthrough
+            );
+            assert_eq!(
+                DeinterlaceStatus::new(mode, &input, &output, None),
+                DeinterlaceStatus::Unknown
+            );
+            let pending = VideoFormat::default();
+            assert_eq!(
+                DeinterlaceStatus::new(mode, &pending, &output, Some(false)),
+                DeinterlaceStatus::Unknown
+            );
+        }
     }
 
     #[test]
@@ -213,54 +323,110 @@ mod tests {
             let sink = gst::ElementFactory::make("fakesink")
                 .property("sync", false)
                 .build()?;
+            let streams = Streams {
+                input: super::super::video_info::Monitor::observe(
+                    &processor
+                        .static_pad("sink")
+                        .ok_or("missing processor pad")?,
+                ),
+                output: super::super::video_info::Monitor::observe(
+                    &sink.static_pad("sink").ok_or("missing sink pad")?,
+                ),
+            };
             let elements = [&source, &filter, &processor, &queue, &sink];
             pipeline.0.add_many(elements)?;
             gst::Element::link_many(elements)?;
-            pipeline.0.set_state(gst::State::Playing)?;
-            let message = pipeline.0.bus().ok_or("missing bus")?.timed_pop_filtered(
-                gst::ClockTime::from_seconds(5),
-                &[gst::MessageType::Eos, gst::MessageType::Error],
-            );
-            assert!(
-                matches!(
-                    message.as_ref().map(|m| m.view()),
-                    Some(gst::MessageView::Eos(_))
-                ),
-                "{message:?}"
-            );
-            let running = snapshot(
-                pipeline.0.upcast_ref(),
-                &processor,
-                &queue,
-                &sink,
-                mode.label(),
-            );
-            assert_eq!(running.input.fps, Some(30.0));
-            assert_eq!(
-                running.output.fps,
-                Some(if mode == Mode::Off { 30.0 } else { 60.0 })
-            );
-            assert!(running.rendered.is_some_and(|n| n > 0));
-            let completed = frame_counters(&sink).ok_or("missing native counters")?;
-            assert_eq!(Some(completed.rendered), running.rendered);
-            assert_eq!(completed.dropped, 0);
-            // EOS does not leave PLAYING. Counters remain unchanged when no new
-            // frames arrive, even though a state-only observation says PLAYING.
-            assert_eq!(frame_counters(&sink), Some(completed));
-            assert_eq!(running.dropped, Some(0));
-            assert_eq!(running.output.width, Some(320));
-            pipeline.0.set_state(gst::State::Ready)?;
-            let stopped = snapshot(
-                pipeline.0.upcast_ref(),
-                &processor,
-                &queue,
-                &sink,
-                mode.label(),
-            );
-            assert!(stopped.rendered.is_none());
-            assert!(frame_counters(&sink).is_none());
-            assert!(stopped.output.width.is_none());
-            assert!(serde_json::to_string(&stopped).is_ok());
+            for interlaced in [true, false, true] {
+                let mut current_caps = caps.clone();
+                current_caps.make_mut().structure_mut(0).unwrap().set(
+                    "interlace-mode",
+                    if interlaced {
+                        "interleaved"
+                    } else {
+                        "progressive"
+                    },
+                );
+                filter.set_property("caps", &current_caps);
+                pipeline.0.set_state(gst::State::Playing)?;
+                let message = pipeline.0.bus().ok_or("missing bus")?.timed_pop_filtered(
+                    gst::ClockTime::from_seconds(5),
+                    &[gst::MessageType::Eos, gst::MessageType::Error],
+                );
+                assert!(
+                    matches!(
+                        message.as_ref().map(|m| m.view()),
+                        Some(gst::MessageView::Eos(_))
+                    ),
+                    "{message:?}"
+                );
+                let running = snapshot(
+                    pipeline.0.upcast_ref(),
+                    &processor,
+                    &queue,
+                    &sink,
+                    mode,
+                    &streams,
+                );
+                assert_eq!(running.input.fps, Some(30.0));
+                assert_eq!(
+                    running.input.scan,
+                    if interlaced {
+                        Scan::Interlaced
+                    } else {
+                        Scan::Progressive
+                    }
+                );
+                assert_eq!(
+                    running.deinterlace_status,
+                    if mode == Mode::Off {
+                        DeinterlaceStatus::Disabled
+                    } else if interlaced {
+                        DeinterlaceStatus::Active
+                    } else {
+                        DeinterlaceStatus::Passthrough
+                    }
+                );
+                assert_eq!(
+                    running.output.fps,
+                    Some(if mode == Mode::Off || !interlaced {
+                        30.0
+                    } else {
+                        60.0
+                    })
+                );
+                assert!(running.rendered.is_some_and(|n| n > 0));
+                let completed = frame_counters(&sink).ok_or("missing native counters")?;
+                assert_eq!(Some(completed.rendered), running.rendered);
+                assert_eq!(completed.dropped, 0);
+                // EOS does not leave PLAYING. Counters remain unchanged when no new
+                // frames arrive, even though a state-only observation says PLAYING.
+                assert_eq!(frame_counters(&sink), Some(completed));
+                assert_eq!(running.dropped, Some(0));
+                assert_eq!(running.output.width, Some(320));
+                pipeline.0.set_state(gst::State::Ready)?;
+                let stopped = snapshot(
+                    pipeline.0.upcast_ref(),
+                    &processor,
+                    &queue,
+                    &sink,
+                    mode,
+                    &streams,
+                );
+                assert!(stopped.rendered.is_none());
+                assert!(frame_counters(&sink).is_none());
+                assert!(stopped.output.width.is_none());
+                assert_eq!(stopped.input.scan, Scan::Unknown);
+                assert_eq!(stopped.output.scan, Scan::Unknown);
+                assert_eq!(
+                    stopped.deinterlace_status,
+                    if mode == Mode::Off {
+                        DeinterlaceStatus::Disabled
+                    } else {
+                        DeinterlaceStatus::Unknown
+                    }
+                );
+                assert!(serde_json::to_string(&stopped).is_ok());
+            }
         }
         Ok(())
     }
