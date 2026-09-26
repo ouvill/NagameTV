@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Check compiler selection without requiring Qt or hardware."""
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -9,7 +10,12 @@ import sys
 import tempfile
 import unittest
 
+from test_support import ensure_lock, lock_fds
+
 ROOT = Path(__file__).resolve().parent.parent
+spec = importlib.util.spec_from_file_location("fresh_local_crates", ROOT / "scripts/with-fresh-local-crates.py")
+fresh = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(fresh)
 
 
 @unittest.skipUnless(shutil.which("ccache"), "optional ccache is not installed")
@@ -53,5 +59,39 @@ class BuildCacheTests(unittest.TestCase):
         self.assertEqual(env["CXXFLAGS"], "-DUSER_FLAG=1")
 
 
+class RestoredCargoCacheTests(unittest.TestCase):
+    def test_changed_path_dependency_with_old_mtime_and_registry_reuse(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest = root / "Cargo.toml"
+            manifest.write_text(
+                '[package]\nname="cache-fixture"\nversion="0.0.0"\nedition="2024"\n'
+                '[[bin]]\nname="cache-fixture"\npath="main.rs"\n'
+                '[dependencies]\nlocal-value={path="local"}\njobserver="=0.1.35"\n')
+            (root / "main.rs").write_text('fn main(){ println!("{}", local_value::value()); }\n')
+            (root / "local").mkdir()
+            (root / "local/Cargo.toml").write_text(
+                '[package]\nname="local-value"\nversion="0.0.0"\nedition="2024"\n'
+                '[lib]\npath="lib.rs"\n')
+            source = root / "local/lib.rs"
+            source.write_text("pub fn value() -> u8 { 1 }\n")
+            original = source.stat()
+            env = dict(os.environ, CARGO_TARGET_DIR=str(root / "target"), CARGO_NET_OFFLINE="true")
+            command = ["cargo", "run", "--quiet", "--manifest-path", str(manifest)]
+            def run():
+                return subprocess.check_output(command, env=env, text=True, pass_fds=lock_fds()).strip()
+            self.assertEqual(run(), "1")
+            dependencies = list((root / "target/debug/deps").glob("libjobserver-*.rlib"))
+            self.assertTrue(dependencies)
+            modified = {path: path.stat().st_mtime_ns for path in dependencies}
+            source.write_text("pub fn value() -> u8 { 2 }\n")
+            # Simulate a checkout older than the restored build artifacts.
+            os.utime(source, ns=(original.st_atime_ns, original.st_mtime_ns))
+            fresh.clean_local_packages(manifest, env)
+            self.assertEqual({path: path.stat().st_mtime_ns for path in dependencies}, modified)
+            self.assertEqual(run(), "2")
+
+
 if __name__ == "__main__":
+    ensure_lock()
     unittest.main()

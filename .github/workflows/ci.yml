@@ -108,7 +108,7 @@ jobs:
             --env CARGO_HOME=/project/build/ci/cargo-home \
             --env CARGO_TARGET_DIR=/project/build/ci/cargo \
             --env CARGO_BUILD_JOBS="$(nproc)" \
-            nagametv-ci:local bash scripts/ci.sh
+            nagametv-ci:local python3 scripts/with-fresh-local-crates.py bash scripts/ci.sh
       - name: Preserve test logs and execution summaries
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -215,8 +215,10 @@ jobs:
           docker run --rm --user "$(id -u):$(id -g)" \
             --mount "type=bind,src=$PWD,dst=/project" \
             --env CARGO_HOME=/project/build/deb/ubuntu26.04/cargo-home \
+            --env CARGO_TARGET_DIR=/project/build/deb/ubuntu26.04/native/cargo \
             --env DEB_BUILD_JOBS="$(nproc)" \
-            nagametv-deb-ubuntu26:local bash scripts/build-deb.sh 26.04 --native
+            nagametv-deb-ubuntu26:local python3 scripts/with-fresh-local-crates.py \
+              bash scripts/build-deb.sh 26.04 --native
       - name: Install and remove deb in a clean Ubuntu 26.04 container
         run: bash scripts/test-deb.sh 26.04
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

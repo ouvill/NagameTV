@@ -88,6 +88,8 @@ QMLの事前コンパイルは、ファイルごとにCargoのjobserverから追
 CIではUbuntu 24.04と26.04のCargo生成物とccacheを別々にキャッシュします。
 実際のDockerイメージIDとCargoの設定・依存情報をキーに含め、同じ環境の過去の結果を再利用します。
 実行ファイルとincrementalデータは保存対象から外します。
+復元後はリポジトリー内のcrateとローカルパッチだけをCargoでcleanし、外部依存とccacheを残します。
+ソースの時刻が生成物より古くても、以前の実装を誤って再利用しないためです。
 キャッシュの構成と配布手順は[CIとリリース](ci-release.md)を参照してください。
 復元キーの扱いは[actions/cacheの公式資料](https://github.com/actions/cache/blob/main/caching-strategies.md)に従います。
 リモートCIでの短縮量は、変更反映後の実行で確認する必要があります。

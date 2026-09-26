@@ -30,6 +30,10 @@ Cargoのコンパイル結果も、Ubuntu 24.04の`build/ci/cargo`と
 キーには実際のDockerイメージID、Cargo設定・マニフェスト、lockfile、コミットを含め、
 一致する設定を優先し、なければ同じイメージの直近キャッシュを復元する。
 設定や依存関係が変わった部分はCargoが再コンパイルする。
+復元後は`with-fresh-local-crates.py`がCargo metadataからpath依存・ローカルパッチを列挙し、
+そのパッケージだけを`cargo clean --package`で消してから検証する。
+ファイル時刻が復元した生成物より古い場合も、リポジトリーの実装を確実にコンパイルするためである。
+外部の依存crateとccacheは残す。
 アプリの実行ファイルとincrementalデータは保存対象から外す。
 Workshopのコンパイル結果は取り込まない。キャッシュがなくても通常ビルドできる。
 
