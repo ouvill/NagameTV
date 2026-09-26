@@ -102,6 +102,7 @@ pub(super) struct Index {
     pmt_sections: Sections,
     pcr_pid: Option<Pid>,
     presentation_pids: Vec<Pid>,
+    video_pid: Option<Pid>,
     tables: Arc<Vec<u8>>,
     pat_packets: Vec<u8>,
     last_pmt: Vec<u8>,
@@ -131,6 +132,7 @@ impl Index {
             pmt_sections: Sections::default(),
             pcr_pid: None,
             presentation_pids: Vec::new(),
+            video_pid: None,
             tables: Arc::default(),
             pat_packets: Vec::new(),
             last_pmt: Vec::new(),
@@ -209,6 +211,27 @@ impl Index {
     pub fn service(&self) -> u16 {
         self.service
     }
+    pub fn latency_scope(&self) -> (u64, Option<Pid>, Option<Pid>) {
+        (self.epoch, self.video_pid, self.pcr_pid)
+    }
+    pub fn video_time(&self, bytes: &[u8]) -> Option<u64> {
+        // Timing is optional diagnostic metadata. A malformed packet supplies
+        // no receipt; transport handling remains with packet(), called first.
+        let Ok(packet) = TransportPacket::parse(bytes) else {
+            return None;
+        };
+        if !packet.start || Some(packet.pid) != self.video_pid {
+            return None;
+        }
+        let header = crate::transport::pes::PesHeader::parse(packet.payload)?;
+        if !header.is_video() {
+            return None;
+        }
+        let pts = header.pts_ticks?;
+        let (pcr, ticks) = self.clock?;
+        let distance = (pts + PCR_WRAP - pcr) % PCR_WRAP;
+        (distance < DISCONTINUITY_TICKS).then(|| ticks_to_ns(ticks + distance))
+    }
     pub fn seed(&mut self, anchor: &Anchor) {
         self.accuracy = anchor.accuracy;
         self.clock = Some((
@@ -267,6 +290,7 @@ impl Index {
         self.pmt_sections = Sections::default();
         self.pcr_pid = None;
         self.presentation_pids.clear();
+        self.video_pid = None;
         self.last_pts.clear();
         self.tables = Arc::default();
         self.last_pmt.clear();
@@ -295,6 +319,7 @@ impl Index {
                         self.pmt_sections = Sections::default();
                         self.pcr_pid = None;
                         self.presentation_pids.clear();
+                        self.video_pid = None;
                         self.last_pts.clear();
                         self.last_pmt.clear();
                     }
@@ -320,6 +345,12 @@ impl Index {
                 self.last_pts
                     .retain(|pid, _| *pid == map.pcr_pid || map.presentation_pids.contains(pid));
                 self.presentation_pids = map.presentation_pids;
+                // Multiple video tracks need selected-stream identity at the
+                // output. Until then, never match a timestamp from another ES.
+                self.video_pid = match map.video_pids.as_slice() {
+                    [pid] => Some(*pid),
+                    _ => None,
+                };
                 if let Some(collector) = &mut self.collector {
                     collector.pcr_pid(map.pcr_pid);
                 }

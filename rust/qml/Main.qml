@@ -746,9 +746,12 @@ ViewerWindow {
             }
         }
         Loader {
+            readonly property VideoStats view: item as VideoStats
             x: 16
             // Reserve the playback controls' measured space at small window sizes.
-            // Loader.height follows VideoStats' content height, including wrapping.
+            // Long statistics scroll inside the space above playback controls.
+            height: Math.min(view ? view.implicitHeight : 0,
+                             Math.max(0, (overlayVisibility.controlsVisible ? bottomPanel.y : surface.height) - 32))
             y: Math.min(overlayVisibility.controlsVisible ? 138 : 20,
                         Math.max(16, (overlayVisibility.controlsVisible ? bottomPanel.y : surface.height) - height - 16))
             width: Math.min(510, parent.width - 32)

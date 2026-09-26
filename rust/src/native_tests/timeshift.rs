@@ -804,6 +804,24 @@ fn start_near_live(
     if let Err(error) = started {
         return Err(format!("{context}: {error}: {startup_state:?}").into());
     }
+    wait_for(
+        app,
+        engine,
+        "JSON.parse(player.video_stats()).receive_latency.status === 'measuring'",
+    )?;
+    assert!(evaluate(
+        engine,
+        "(() => { const s = JSON.parse(player.video_stats()).receive_latency; return s.samples > 0 && s.latest_ms >= 0 && s.median_ms >= 0 && s.p95_ms >= s.median_ms && s.p95_ms <= 30000; })()"
+    )?);
+    wait_for(
+        app,
+        engine,
+        "JSON.parse(player.video_stats()).pcr_deviation.status === 'measuring'",
+    )?;
+    assert!(evaluate(
+        engine,
+        "(() => { const s = JSON.parse(player.video_stats()).pcr_deviation; return s.samples > 0 && [s.latest_ms, s.median_ms, s.p95_ms].every(Number.isFinite) && s.p95_ms >= s.median_ms; })()"
+    )?);
     // A fast startup already inside the live reserve needs no forward seek.
     // Wait for advancing playback above so the first-render decision is over.
     // If alignment was needed, bracket its target by the receive snapshots

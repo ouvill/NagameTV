@@ -98,6 +98,7 @@ pub(super) struct Store {
     pub index: Index,
     pub history: super::super::live_timeline::History,
     pub status: Status,
+    pub latency: crate::playback::latency::Tracker,
 }
 
 // Preparing owns the replacement resources and exclusively borrows their target.
@@ -158,6 +159,7 @@ impl Store {
             index,
             history,
             status: Status::Receiving,
+            latency: Default::default(),
         })
     }
     pub fn policy(&self) -> super::Policy {
@@ -336,10 +338,19 @@ impl Store {
         Ok((storage, segments))
     }
     pub fn reconnect(&mut self) {
+        self.latency.reset();
         self.boundaries.push_back(self.end);
         self.index.discontinuity();
     }
+    #[cfg(test)]
     pub fn append(&mut self, packets: &[u8]) -> std::io::Result<()> {
+        self.append_received(packets, std::time::Instant::now())
+    }
+    pub fn append_received(
+        &mut self,
+        packets: &[u8],
+        received: std::time::Instant,
+    ) -> std::io::Result<()> {
         if !packets.len().is_multiple_of(super::TS_PACKET_SIZE) {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
@@ -401,16 +412,24 @@ impl Store {
                 .iter()
                 .enumerate()
             {
-                if let Some(anchor) = self
+                let scope = self.index.latency_scope();
+                let anchor = self
                     .index
-                    .packet(self.end + (number * super::TS_PACKET_SIZE) as u64, packet)
-                {
+                    .packet(self.end + (number * super::TS_PACKET_SIZE) as u64, packet);
+                if scope != self.index.latency_scope() {
+                    self.latency.reset();
+                }
+                if let Some(anchor) = anchor {
+                    self.latency.observe_pcr(anchor.time_ns, received);
                     self.history.observe(
                         anchor.epoch,
                         anchor.time_ns,
                         self.index.end_ns().unwrap_or(anchor.time_ns),
                         anchor.observation(),
                     );
+                }
+                if let Some(position) = self.index.video_time(packet) {
+                    self.latency.receive(position, received);
                 }
             }
             segment.size += count;

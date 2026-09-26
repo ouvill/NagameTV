@@ -628,6 +628,10 @@ impl Stopped<'_> {
         input: Input,
     ) -> Result<SubtitleStart> {
         let playback = self.0.playback.as_ref().ok_or(Error::Unavailable)?;
+        let latency = match &input {
+            Input::Active { source, .. } => source.latency()?,
+            Input::Idle | Input::Media { .. } => None,
+        };
         use gstreamer::prelude::*;
         if self.0.media_subtitles().is_some() {
             playback.element().set_property_from_str(
@@ -658,6 +662,7 @@ impl Stopped<'_> {
             };
             return Err(failure);
         }
+        playback.presentation.set_latency(latency);
         Ok(subtitles)
     }
 }

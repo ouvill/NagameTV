@@ -85,6 +85,10 @@ fn timestamp(bytes: &[u8], expected_prefix: u64) -> Option<u64> {
 }
 
 impl PesHeader {
+    pub fn is_video(&self) -> bool {
+        const VIDEO_STREAM_IDS: std::ops::RangeInclusive<u8> = 0xe0..=0xef;
+        VIDEO_STREAM_IDS.contains(&self.stream_id)
+    }
     // Only the header must be present: video callers inspect the first TS
     // payload before the rest of the PES has arrived.
     pub fn parse(pes: &[u8]) -> Option<Self> {

@@ -3,6 +3,7 @@
 //! or decode-ahead last-sample is inspected. Pixels are downloaded only by a
 //! screenshot worker, after a presented frame has been retained.
 use super::{Error, overlay::Overlay};
+use crate::playback::latency;
 use gstreamer::{
     self as gst,
     glib::{self, translate::*},
@@ -32,6 +33,7 @@ pub mod ffi {
 struct Frame {
     buffer: gst::Buffer,
     info: video::VideoInfo,
+    timing: Option<latency::Pending>,
 }
 #[derive(Clone)]
 pub struct Presented {
@@ -141,6 +143,8 @@ struct Frames {
     phase: RenderPhase,
     mapped: Option<Frame>,
     presented: Option<Presented>,
+    segment: Option<gst::FormattedSegment<gst::ClockTime>>,
+    latency: Option<latency::Tracker>,
 }
 #[derive(Default)]
 enum RenderPhase {
@@ -150,12 +154,29 @@ enum RenderPhase {
         thread: std::thread::ThreadId,
         overlay: Option<Arc<Overlay>>,
     },
-    Rendering(Option<Presented>),
+    Rendering {
+        frame: Option<Frame>,
+        overlay: Option<Arc<Overlay>>,
+    },
 }
 #[derive(Clone, Default)]
 pub struct Presentation(Arc<Mutex<Frames>>);
 pub struct Observer(Presentation);
 impl Presentation {
+    pub fn set_latency(&self, tracker: Option<latency::Tracker>) {
+        self.0.lock().unwrap_or_else(|e| e.into_inner()).latency = tracker;
+    }
+    pub fn latency_snapshot(&self, now: std::time::Instant) -> latency::Measurements {
+        let tracker = self
+            .0
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .latency
+            .clone();
+        tracker.map_or_else(latency::Measurements::default, |tracker| {
+            tracker.snapshot(now)
+        })
+    }
     pub fn observer(&self) -> Box<Observer> {
         Box::new(Observer(self.clone()))
     }
@@ -173,10 +194,15 @@ impl Presentation {
     pub fn clear(&self) {
         let mut state = self.0.lock().unwrap_or_else(|e| e.into_inner());
         let generation = state.generation.wrapping_add(1);
+        let latency = state.latency.clone();
+        if let Some(tracker) = &latency {
+            tracker.reset_output();
+        }
         let retired = std::mem::replace(
             &mut *state,
             Frames {
                 generation,
+                latency,
                 ..Default::default()
             },
         );
@@ -199,6 +225,12 @@ impl Presentation {
                     )
                 {
                     tracker.clear();
+                }
+                if let Some(event) = probe.event()
+                    && let gst::EventView::Segment(event) = event.view()
+                {
+                    tracker.0.lock().unwrap_or_else(|e| e.into_inner()).segment =
+                        event.segment().downcast_ref::<gst::ClockTime>().cloned();
                 }
                 if let Some(buffer) = probe.buffer_mut() {
                     let Some(info) = pad
@@ -270,9 +302,11 @@ impl Observer {
         self.0.clear();
     }
     fn phase(&self, phase: Phase) {
+        let now = std::time::Instant::now();
         let mut state = self.0.0.lock().unwrap_or_else(|e| e.into_inner());
         let old_phase = std::mem::take(&mut state.phase);
         let mut retired = None;
+        let mut timing = None;
         match phase {
             Phase::BeforeSync => {
                 state.phase = RenderPhase::Syncing {
@@ -283,23 +317,28 @@ impl Observer {
             Phase::AfterSync => {
                 let overlay = match &old_phase {
                     RenderPhase::Syncing { overlay, .. } => overlay.clone(),
-                    RenderPhase::Idle | RenderPhase::Rendering(_) => None,
+                    RenderPhase::Idle | RenderPhase::Rendering { .. } => None,
                 };
-                state.phase = RenderPhase::Rendering(
-                    state
-                        .mapped
-                        .clone()
-                        .zip(overlay)
-                        .map(|(frame, overlay)| Presented { frame, overlay }),
-                );
+                state.phase = RenderPhase::Rendering {
+                    frame: state.mapped.clone(),
+                    overlay,
+                };
             }
             Phase::Presented => {
-                if let RenderPhase::Rendering(frame) = &old_phase {
-                    retired = std::mem::replace(&mut state.presented, frame.clone());
+                if let RenderPhase::Rendering { frame, overlay } = &old_phase {
+                    let capture = frame
+                        .clone()
+                        .zip(overlay.clone())
+                        .map(|(frame, overlay)| Presented { frame, overlay });
+                    retired = std::mem::replace(&mut state.presented, capture);
+                    timing = frame.as_ref().and_then(|frame| frame.timing.clone());
                 }
             }
         }
         drop(state);
+        if let Some(timing) = timing {
+            timing.present(now);
+        }
         drop(old_phase);
         drop(retired);
     }
@@ -318,6 +357,7 @@ struct MapObserver {
     tracker: Weak<Mutex<Frames>>,
     info: video::VideoInfo,
     generation: u64,
+    timing: Option<latency::Pending>,
 }
 #[derive(Clone, glib::Boxed)]
 #[boxed_type(name = "ViewerScreenshotMapContext")]
@@ -352,11 +392,20 @@ unsafe fn install_map_observer(
             };
             original = context.0.original;
         }
+        let timing = {
+            let state = tracker.0.lock().unwrap_or_else(|e| e.into_inner());
+            state
+                .segment
+                .as_ref()
+                .and_then(|segment| segment.to_stream_time(buffer.pts()))
+                .and_then(|time| state.latency.as_ref()?.match_frame(time.nseconds()))
+        };
         let context = MapContext(Arc::new(MapObserver {
             original,
             tracker: Arc::downgrade(&tracker.0),
             info,
             generation,
+            timing,
         }));
         // Unlike miniobject qdata, custom meta and its boxed Arc are copied
         // together with GstVideoMeta's map callback when buffers are copied.
@@ -402,6 +451,7 @@ unsafe extern "C" fn observe_map(
                 let retired = state.mapped.replace(Frame {
                     buffer: from_glib_none(buffer),
                     info: observer.info.clone(),
+                    timing: observer.timing.clone(),
                 });
                 drop(state);
                 drop(retired);
@@ -447,6 +497,52 @@ mod tests {
         let frame = video::VideoFrameRef::from_buffer_ref_readable(buffer, info).unwrap();
         drop(frame);
         observer.after_sync();
+    }
+    #[test]
+    fn latency_uses_the_mapped_frame_only_after_presentation_without_an_overlay() {
+        gst::init().unwrap();
+        let tracker = Presentation::default();
+        let latency = latency::Tracker::default();
+        let now = std::time::Instant::now();
+        latency.observe_pcr(0, now);
+        const FRAME_MS: u64 = 100;
+        latency.receive(FRAME_MS * 1_000_000, now);
+        tracker.set_latency(Some(latency.clone()));
+        tracker.0.lock().unwrap().segment = Some(gst::FormattedSegment::<gst::ClockTime>::new());
+        let (frame, info) = buffer(&tracker, FRAME_MS);
+        let observer = tracker.observer();
+        sync(&observer, &frame, &info);
+        assert!(matches!(
+            tracker.latency_snapshot(now).receive,
+            latency::Snapshot::Waiting
+        ));
+        observer.presented();
+        assert!(matches!(
+            tracker.latency_snapshot(std::time::Instant::now()).pcr,
+            latency::Snapshot::Measuring { samples: 1, .. }
+        ));
+        assert!(matches!(
+            tracker.latency_snapshot(std::time::Instant::now()).receive,
+            latency::Snapshot::Measuring { samples: 1, .. }
+        ));
+        sync(&observer, &frame, &info);
+        observer.presented();
+        assert!(matches!(
+            tracker.latency_snapshot(std::time::Instant::now()).receive,
+            latency::Snapshot::Measuring { samples: 1, .. }
+        ));
+        tracker.clear();
+        sync(&observer, &frame, &info);
+        observer.presented();
+        assert!(matches!(
+            tracker.latency_snapshot(std::time::Instant::now()).receive,
+            latency::Snapshot::Waiting
+        ));
+        tracker.set_latency(None);
+        assert!(matches!(
+            tracker.latency_snapshot(now).receive,
+            latency::Snapshot::Unavailable
+        ));
     }
     #[test]
     fn copied_or_reused_video_metadata_keeps_one_mapping_callback() {

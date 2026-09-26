@@ -126,6 +126,8 @@ impl DeinterlaceStatus {
 
 #[derive(Serialize)]
 pub struct VideoStats {
+    pub(crate) receive_latency: super::latency::Snapshot,
+    pub(crate) pcr_deviation: super::latency::Snapshot,
     state: String,
     input: VideoFormat,
     output: VideoFormat,
@@ -177,6 +179,8 @@ pub(super) fn snapshot(
         })
         .flatten();
     VideoStats {
+        receive_latency: super::latency::Snapshot::Unavailable,
+        pcr_deviation: super::latency::Snapshot::Unavailable,
         state: format!("{state:?}"),
         deinterlace_status: DeinterlaceStatus::new(mode, &input, &output, processor_passthrough),
         input,

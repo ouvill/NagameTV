@@ -92,6 +92,27 @@ fn timed_pes(pid: Pid, pts: u64) -> [u8; TS_PACKET_SIZE] {
 }
 
 #[test]
+fn latency_timestamps_select_video_and_handle_clock_wrap() {
+    let (mut index, mut offset) = acquired();
+    let original_scope = index.latency_scope();
+    separate_clock(&mut index, &mut offset);
+    assert_ne!(index.latency_scope(), original_scope);
+    let ticks = PCR_HZ * 5;
+    let raw_pcr = PCR_WRAP - PCR_HZ / 2;
+    index.clock = Some((raw_pcr, ticks));
+    let pts = (raw_pcr + PCR_HZ) % PCR_WRAP;
+    assert_eq!(
+        index.video_time(&timed_pes(VIDEO_PID, pts)),
+        Some(ticks_to_ns(ticks + PCR_HZ))
+    );
+    for pid in [AUDIO_PID, FOREIGN_PID] {
+        assert_eq!(index.video_time(&timed_pes(pid, pts)), None);
+    }
+    index.video_pid = None; // No unambiguous video ES selected by the PMT.
+    assert_eq!(index.video_time(&timed_pes(VIDEO_PID, pts)), None);
+}
+
+#[test]
 fn separate_pcr_pid_keeps_received_video_and_audio_programs_available() {
     use crate::playback::{
         live_timeline::{History, Presenter, Reading},

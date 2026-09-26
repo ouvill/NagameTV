@@ -58,6 +58,7 @@ pub(crate) struct ProgramMap {
     pub service: u16,
     pub pcr_pid: Pid,
     pub presentation_pids: Vec<Pid>,
+    pub video_pids: Vec<Pid>,
     pub captions: Vec<CaptionStream>,
 }
 
@@ -77,6 +78,18 @@ fn is_presentation_stream(stream_type: u8) -> bool {
             | mpegts::GST_MPEGTS_STREAM_TYPE_AUDIO_AAC_ADTS
             | mpegts::GST_MPEGTS_STREAM_TYPE_AUDIO_AAC_LATM
             | mpegts::GST_MPEGTS_STREAM_TYPE_AUDIO_AAC_CLEAN
+    )
+}
+
+fn is_video_stream(stream_type: u8) -> bool {
+    use gstreamer_mpegts::ffi as mpegts;
+    matches!(
+        i32::from(stream_type),
+        mpegts::GST_MPEGTS_STREAM_TYPE_VIDEO_MPEG1
+            | mpegts::GST_MPEGTS_STREAM_TYPE_VIDEO_MPEG2
+            | mpegts::GST_MPEGTS_STREAM_TYPE_VIDEO_MPEG4
+            | mpegts::GST_MPEGTS_STREAM_TYPE_VIDEO_H264
+            | mpegts::GST_MPEGTS_STREAM_TYPE_VIDEO_HEVC
     )
 }
 
@@ -398,6 +411,7 @@ impl<'a> PsiSection<'a> {
         Descriptors::parse(cursor.descriptor_loop()?)?;
         let mut captions = Vec::new();
         let mut presentation_pids = Vec::new();
+        let mut video_pids = Vec::new();
         let mut seen_pids = std::collections::HashSet::new();
         let mut seen_component_tags = std::collections::HashSet::new();
         while !cursor.rest.is_empty() {
@@ -415,6 +429,9 @@ impl<'a> PsiSection<'a> {
             if is_presentation_stream(stream_type) {
                 presentation_pids.push(pid);
             }
+            if is_video_stream(stream_type) {
+                video_pids.push(pid);
+            }
             if stream_type == PRIVATE_PES_STREAM
                 && descriptors.data_component == Some(ARIB_CAPTION_COMPONENT)
                 && let Some(component_tag) =
@@ -431,6 +448,7 @@ impl<'a> PsiSection<'a> {
             service: self.extension,
             pcr_pid,
             presentation_pids,
+            video_pids,
             captions,
         })
     }

@@ -34,6 +34,48 @@ TestCase {
         }
     }
     function initTestCase() { failOnWarning(/.*/); }
+    function test_receive_latency_availability_and_distribution() {
+        const item = createTemporaryObject(fixture, this);
+        for (const latency of [undefined, { status: "unavailable" }]) {
+            item.stats.snapshot = { receive_latency: latency };
+            compare(item.stats.metric("latency"), "—");
+            compare(item.stats.metric("latencyDistribution"), "—");
+        }
+        item.stats.snapshot = { receive_latency: { status: "waiting" } };
+        compare(item.stats.metric("latency"), qsTranslate("Main", "Waiting for measurement"));
+        item.stats.snapshot = { receive_latency: { status: "measuring", latest_ms: 0, median_ms: 123.4, p95_ms: 234.5, samples: 60 } };
+        compare(item.stats.metric("latency"), "0.0 ms");
+        compare(item.stats.metric("latencyDistribution"), "123.4 / 234.5 ms · " + qsTranslate("Main", "%1 samples").arg(60));
+        item.stats.snapshot = { receive_latency: { status: "waiting" } };
+        compare(item.stats.metric("latencyDistribution"), "—");
+    }
+    function test_short_panel_can_scroll_to_all_metrics() {
+        const item = createTemporaryObject(fixture, this);
+        item.stats.height = 240;
+        const scroll = findChild(item.stats, "videoStatsScroll");
+        verify(scroll !== null);
+        verify(scroll.contentHeight > scroll.height);
+        scroll.contentY = scroll.contentHeight - scroll.height;
+        verify(scroll.contentY > 0);
+    }
+    function test_pcr_estimate_preserves_sign_and_independent_availability() {
+        const item = createTemporaryObject(fixture, this);
+        const measured = { status: "measuring", latest_ms: 600, median_ms: 500, p95_ms: 700, samples: 30 };
+        for (const pcr of [undefined, { status: "unavailable" }, { status: "waiting" }]) {
+            item.stats.snapshot = { receive_latency: measured, pcr_deviation: pcr };
+            compare(item.stats.metric("latency"), "600.0 ms");
+            compare(item.stats.metric("pcrDeviation"), pcr?.status === "waiting" ? qsTranslate("Main", "Waiting for measurement") : "—");
+            compare(item.stats.metric("pcrDistribution"), "—");
+        }
+        for (const value of [-200, 0, 200]) {
+            item.stats.snapshot = { pcr_deviation: { status: "measuring", samples: 30, latest_ms: value, median_ms: -50, p95_ms: 100 } };
+            compare(item.stats.metric("pcrDeviation"), (value > 0 ? "+" : "") + value.toFixed(1) + " ms");
+            compare(item.stats.metric("pcrDistribution"), "-50.0 / +100.0 ms · " + qsTranslate("Main", "%1 samples").arg(30));
+        }
+        item.stats.snapshot = {};
+        compare(item.stats.metric("pcrDeviation"), "—");
+        compare(item.stats.metric("pcrDistribution"), "—");
+    }
     function test_viewport_binding_across_loader_scope() {
         const item = createTemporaryObject(fixture, this);
         verify(item !== null);

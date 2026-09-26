@@ -10,6 +10,7 @@ mod clock;
 pub mod deinterlace;
 pub mod failure;
 pub mod input;
+pub(crate) mod latency;
 pub(crate) mod live_timeline;
 pub mod recording;
 pub mod speed;
@@ -211,14 +212,23 @@ impl Playback {
         &self.playbin
     }
     pub fn video_stats(&self) -> stats::VideoStats {
-        stats::snapshot(
+        let mut stats = stats::snapshot(
             &self.playbin,
             &self.processor,
             &self.queue,
             &self.sink,
             self.mode,
             &self.video_streams,
-        )
+        );
+        let measurements = if self.playbin.current_state() == gst::State::Playing {
+            self.presentation
+                .latency_snapshot(std::time::Instant::now())
+        } else {
+            latency::Measurements::default()
+        };
+        stats.receive_latency = measurements.receive;
+        stats.pcr_deviation = measurements.pcr;
+        stats
     }
     pub fn video_aspect_ratio(&self) -> Option<f64> {
         if !matches!(
@@ -446,6 +456,7 @@ impl Playback {
         }
         *self.requested_uri.borrow_mut() = None;
         self.presentation.clear();
+        self.presentation.set_latency(None);
         *self.audio_streams.borrow_mut() = audio_streams::Streams::default();
         self.routing.reset();
         *self.audio_intent.borrow_mut() = None;

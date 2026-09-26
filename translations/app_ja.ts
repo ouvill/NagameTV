@@ -300,6 +300,38 @@
       <translation>映像キュー</translation>
     </message>
     <message>
+      <source>TS receive → presentation</source>
+      <translation>TS受信 → 描画要求</translation>
+    </message>
+    <message>
+      <source>Median / P95 (10 s)</source>
+      <translation>中央値 / P95（10秒）</translation>
+    </message>
+    <message>
+      <source>PCR deviation (estimate)</source>
+      <translation>PCR基準のずれ（推定）</translation>
+    </message>
+    <message>
+      <source>PCR median / P95 (10 s)</source>
+      <translation>PCR中央値 / P95（10秒）</translation>
+    </message>
+    <message>
+      <source>PCR deviation: + late, − early relative to the estimated presentation time. Based on app reception; excludes delay before reception.</source>
+      <translation>PCR基準のずれは、推定した提示予定時刻より遅ければ＋、早ければ−。アプリでの受信を基準とし、受信前の遅延は含みません。</translation>
+    </message>
+    <message>
+      <source>Waiting for measurement</source>
+      <translation>計測待ち</translation>
+    </message>
+    <message>
+      <source>%1 samples</source>
+      <translation>%1サンプル</translation>
+    </message>
+    <message>
+      <source>Latency: app TS reception to Qt presentation request, for matched video timestamps. Excludes tuner, server and physical display delay.</source>
+      <translation>遅延は、時刻を照合できた映像のアプリでのTS受信からQtの描画要求まで。チューナー・配信サーバー・物理画面の遅延は含みません。</translation>
+    </message>
+    <message>
       <source>Queue memory</source>
       <translation>キューメモリ</translation>
     </message>

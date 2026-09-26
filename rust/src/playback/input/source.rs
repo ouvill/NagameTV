@@ -208,6 +208,14 @@ impl Input {
     pub fn identity(&self) -> u64 {
         self.identity
     }
+    pub fn latency(&self) -> Result<Option<crate::playback::latency::Tracker>, Error> {
+        match &self.shared {
+            Shared::Live(store) => Ok(Some(
+                store.lock().map_err(|_| Error::Poisoned)?.latency.clone(),
+            )),
+            Shared::File(_) => Ok(None),
+        }
+    }
     pub fn comment_source(
         &self,
         fallback: Option<crate::channels::BroadcastService>,

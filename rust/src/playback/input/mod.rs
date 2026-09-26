@@ -719,6 +719,9 @@ async fn receive(uri: &str, store: &Mutex<Store>) -> Result<(), String> {
             let mut response = client.get(uri).send().await?.error_for_status()?;
             let mut pending = packet_tail::PacketTail::default();
             while let Some(chunk) = response.chunk().await? {
+                // Timestamp before parsing, retention locks and storage writes.
+                // A split TS packet is timed when its final bytes arrive.
+                let received = Instant::now();
                 // Retain less than one packet between reads; incoming HTTP chunks
                 // are consumed in bounded slices before the next await.
                 for bytes in chunk.chunks(READ_BYTES) {
@@ -726,7 +729,7 @@ async fn receive(uri: &str, store: &Mutex<Store>) -> Result<(), String> {
                         store
                             .lock()
                             .map_err(|_| ReceiveError::Poisoned)?
-                            .append(packets)?;
+                            .append_received(packets, received)?;
                         Ok::<_, ReceiveError>(())
                     })?;
                 }

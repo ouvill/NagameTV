@@ -17,6 +17,18 @@ Rectangle {
     radius: Theme.panelRadius
     implicitHeight: content.implicitHeight + 28
     function number(value, digits) { return typeof value === "number" && isFinite(value) ? value.toFixed(digits) : "—" }
+    function timingNumber(value, signed) {
+        const text = panel.number(value, 1)
+        return signed && value > 0 && text !== "—" ? "+" + text : text
+    }
+    function timingValue(stats, signed) {
+        if (stats?.status === "waiting") return qsTranslate("Main", "Waiting for measurement")
+        return stats?.status === "measuring" ? panel.timingNumber(stats.latest_ms, signed) + " ms" : "—"
+    }
+    function timingDistribution(stats, signed) {
+        return stats?.status === "measuring"
+            ? panel.timingNumber(stats.median_ms, signed) + " / " + panel.timingNumber(stats.p95_ms, signed) + " ms · " + qsTranslate("Main", "%1 samples").arg(stats.samples) : "—"
+    }
     function formatVideo(format) {
         return format && format.width && format.height
             ? format.width + " × " + format.height + " / " + number(format.fps, 3) + " fps" : "—"
@@ -62,6 +74,10 @@ Rectangle {
         case "deinterlaceSetting": return s.deinterlacer || "—"
         case "rate": return panel.number(s.average_fps, 2) + " fps"
         case "frames": return panel.number(s.rendered, 0) + " / " + panel.number(s.dropped, 0)
+        case "latency": return panel.timingValue(s.receive_latency, false)
+        case "latencyDistribution": return panel.timingDistribution(s.receive_latency, false)
+        case "pcrDeviation": return panel.timingValue(s.pcr_deviation, true)
+        case "pcrDistribution": return panel.timingDistribution(s.pcr_deviation, true)
         case "queue": return panel.number(s.queue_buffers, 0) + " frames / " + panel.number(s.queue_ms, 1) + " ms"
         case "memory": return panel.number(s.queue_bytes / 1048576, 2) + " MiB"
         case "engine": return (s.gstreamer || "—") + (s.decoders?.length ? " / " + s.decoders.join(", ") : "")
@@ -74,40 +90,63 @@ Rectangle {
         onTriggered: panel.snapshot = JSON.parse(panel.backend.video_stats())
     }
     MouseArea { anchors.fill: parent; acceptedButtons: Qt.AllButtons }
-    ColumnLayout {
-        id: content
-        anchors { left: parent.left; right: parent.right; top: parent.top; margins: 14 }
-        spacing: 7
-        RowLayout {
-            Layout.fillWidth: true
-            Label { text: qsTranslate("Main", "Stats for nerds"); font.pixelSize: Theme.fontBody; font.bold: true; color: Theme.textPrimary; Layout.fillWidth: true }
-            IconAction {
-                iconSource: panel.closeIcon
-                tip: qsTranslate("Main", "Close stats for nerds")
-                onClicked: panel.closeRequested()
-            }
-        }
-        Repeater {
-            // Constant rows: replace values, not delegate objects, on each sample.
-            model: [
-                [qsTranslate("Main", "State"), "state"], [qsTranslate("Main", "Input video"), "input"], [qsTranslate("Main", "Input scan / PAR"), "scan"],
-                [qsTranslate("Main", "Output video"), "output"], [qsTranslate("Main", "Pixels: input → output"), "pixels"],
-                [qsTranslate("Main", "Viewport / DPR"), "viewport"], [qsTranslate("Main", "Deinterlacing"), "deinterlaceSetting"],
-                [qsTranslate("Main", "Applied deinterlacing"), "deinterlace"], [qsTranslate("Main", "Sink average rate"), "rate"],
-                [qsTranslate("Main", "Sink rendered / dropped"), "frames"], [qsTranslate("Main", "Video queue"), "queue"],
-                [qsTranslate("Main", "Queue memory"), "memory"], [qsTranslate("Main", "Playback engine"), "engine"]
-            ]
-            delegate: RowLayout {
-                id: metricRow
-                required property var modelData
+    Flickable {
+        id: scroll
+        objectName: "videoStatsScroll"
+        anchors.fill: parent
+        anchors.margins: 14
+        contentWidth: width
+        contentHeight: content.implicitHeight
+        clip: true
+        boundsBehavior: Flickable.StopAtBounds
+        ScrollBar.vertical: ScrollBar {}
+        ColumnLayout {
+            id: content
+            width: scroll.width
+            spacing: 7
+            RowLayout {
                 Layout.fillWidth: true
-                Label { text: metricRow.modelData[0]; color: Theme.textSecondary; Layout.preferredWidth: 142; font.pixelSize: Theme.fontCaption; wrapMode: Text.Wrap }
-                Label { text: panel.metric(metricRow.modelData[1]); color: Theme.textPrimary; Layout.fillWidth: true; wrapMode: Text.Wrap; font.pixelSize: Theme.fontCaption }
+                Label { text: qsTranslate("Main", "Stats for nerds"); font.pixelSize: Theme.fontBody; font.bold: true; color: Theme.textPrimary; Layout.fillWidth: true }
+                IconAction {
+                    iconSource: panel.closeIcon
+                    tip: qsTranslate("Main", "Close stats for nerds")
+                    onClicked: panel.closeRequested()
+                }
             }
-        }
-        Label {
-            text: qsTranslate("Main", "Updated every second. Sink frame counts do not measure actual screen presentations. Queue time is not live latency.")
-            color: Theme.textSecondary; font.pixelSize: Theme.fontMicro; wrapMode: Text.Wrap; Layout.fillWidth: true
+            Repeater {
+                // Constant rows: replace values, not delegate objects, on each sample.
+                model: [
+                    [qsTranslate("Main", "State"), "state"], [qsTranslate("Main", "Input video"), "input"], [qsTranslate("Main", "Input scan / PAR"), "scan"],
+                    [qsTranslate("Main", "Output video"), "output"], [qsTranslate("Main", "Pixels: input → output"), "pixels"],
+                    [qsTranslate("Main", "Viewport / DPR"), "viewport"], [qsTranslate("Main", "Deinterlacing"), "deinterlaceSetting"],
+                    [qsTranslate("Main", "Applied deinterlacing"), "deinterlace"], [qsTranslate("Main", "Sink average rate"), "rate"],
+                    [qsTranslate("Main", "Sink rendered / dropped"), "frames"], [qsTranslate("Main", "Video queue"), "queue"],
+                    [qsTranslate("Main", "TS receive → presentation"), "latency"],
+                    [qsTranslate("Main", "Median / P95 (10 s)"), "latencyDistribution"],
+                    [qsTranslate("Main", "PCR deviation (estimate)"), "pcrDeviation"],
+                    [qsTranslate("Main", "PCR median / P95 (10 s)"), "pcrDistribution"],
+                    [qsTranslate("Main", "Queue memory"), "memory"], [qsTranslate("Main", "Playback engine"), "engine"]
+                ]
+                delegate: RowLayout {
+                    id: metricRow
+                    required property var modelData
+                    Layout.fillWidth: true
+                    Label { text: metricRow.modelData[0]; color: Theme.textSecondary; Layout.preferredWidth: 142; font.pixelSize: Theme.fontCaption; wrapMode: Text.Wrap }
+                    Label { text: panel.metric(metricRow.modelData[1]); color: Theme.textPrimary; Layout.fillWidth: true; wrapMode: Text.Wrap; font.pixelSize: Theme.fontCaption }
+                }
+            }
+            Label {
+                text: qsTranslate("Main", "Updated every second. Sink frame counts do not measure actual screen presentations. Queue time is not live latency.")
+                color: Theme.textSecondary; font.pixelSize: Theme.fontMicro; wrapMode: Text.Wrap; Layout.fillWidth: true
+            }
+            Label {
+                text: qsTranslate("Main", "Latency: app TS reception to Qt presentation request, for matched video timestamps. Excludes tuner, server and physical display delay.")
+                color: Theme.textSecondary; font.pixelSize: Theme.fontMicro; wrapMode: Text.Wrap; Layout.fillWidth: true
+            }
+            Label {
+                text: qsTranslate("Main", "PCR deviation: + late, − early relative to the estimated presentation time. Based on app reception; excludes delay before reception.")
+                color: Theme.textSecondary; font.pixelSize: Theme.fontMicro; wrapMode: Text.Wrap; Layout.fillWidth: true
+            }
         }
     }
 }

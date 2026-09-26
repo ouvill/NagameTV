@@ -6,6 +6,81 @@ const TEST_DEADLINE: Duration = Duration::from_secs(5);
 const TEST_POLL: Duration = Duration::from_millis(5);
 
 #[test]
+fn received_and_decoded_video_use_the_same_timeline() -> Result<(), Box<dyn std::error::Error>> {
+    const MIN_DECODED_FRAMES: usize = 20;
+    const DIAGNOSTIC_FRAMES: usize = 10;
+    gst::init()?;
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/fixtures/recording.ts");
+    let data = std::fs::read(&path)?;
+    let mut index = Index::new(1, false);
+    let mut received = Vec::new();
+    for (number, bytes) in data.as_chunks::<TS_PACKET_SIZE>().0.iter().enumerate() {
+        index.packet((number * TS_PACKET_SIZE) as u64, bytes);
+        if let Some(time) = index.video_time(bytes) {
+            received.push(time);
+        }
+    }
+    let (reader, _worker) = file_reader(&path, 1, false)?;
+    let pipeline = gst::parse::launch("appsrc name=source ! tsdemux name=demux demux. ! queue ! mpegvideoparse ! avdec_mpeg2video ! appsink name=output sync=false demux. ! queue ! fakesink sync=false")?.downcast::<gst::Pipeline>().map_err(|_| "pipeline")?;
+    let interrupted = Arc::new(AtomicBool::new(false));
+    struct Stop(gst::Pipeline, Arc<AtomicBool>);
+    impl Drop for Stop {
+        fn drop(&mut self) {
+            self.1.store(true, Ordering::Release);
+            if let Err(error) = self.0.set_state(gst::State::Null) {
+                tracing::error!(%error, "Could not stop latency timeline test pipeline");
+            }
+        }
+    }
+    let stop = Stop(pipeline.clone(), interrupted.clone());
+    let scope = crate::features::subscriptions::Subscriptions::default();
+    source::configure(
+        &pipeline
+            .by_name("source")
+            .ok_or("source")?
+            .downcast()
+            .map_err(|_| "appsrc")?,
+        Arc::new(Mutex::new(reader)),
+        interrupted.clone(),
+        Arc::new(source::Feedback::default()),
+        &scope,
+    );
+    pipeline.set_state(gst::State::Playing)?;
+    let sink = pipeline
+        .by_name("output")
+        .ok_or("sink")?
+        .downcast::<gstreamer_app::AppSink>()
+        .map_err(|_| "appsink")?;
+    let mut decoded = Vec::new();
+    while let Some(sample) = sink.try_pull_sample(gst::ClockTime::SECOND) {
+        if let Some(pts) = sample.buffer().and_then(|b| b.pts()) {
+            decoded.push(
+                sample
+                    .segment()
+                    .and_then(|s| s.downcast_ref::<gst::ClockTime>())
+                    .and_then(|s| s.to_stream_time(pts))
+                    .ok_or("stream time")?
+                    .nseconds(),
+            );
+        }
+    }
+    interrupted.store(true, Ordering::Release);
+    pipeline.set_state(gst::State::Null)?;
+    drop(stop);
+    scope.close();
+    assert!(decoded.len() > MIN_DECODED_FRAMES);
+    assert!(
+        decoded.iter().all(|time| received
+            .iter()
+            .any(|r| r.abs_diff(*time) <= crate::playback::latency::TIMESTAMP_TOLERANCE_NS)),
+        "received {:?}, decoded {:?}",
+        &received[..received.len().min(DIAGNOSTIC_FRAMES)],
+        &decoded[..decoded.len().min(DIAGNOSTIC_FRAMES)]
+    );
+    Ok(())
+}
+
+#[test]
 #[ignore = "hardware-free bounded I/O probe; requires NAGAMETV_RECORDING_PROBE"]
 fn recording_metadata_probe_uses_bounded_io_and_stays_idle()
 -> Result<(), Box<dyn std::error::Error>> {
