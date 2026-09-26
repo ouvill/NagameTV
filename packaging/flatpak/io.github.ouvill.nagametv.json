@@ -28,6 +28,27 @@
   },
   "modules": [
     {
+      "name": "libass",
+      "buildsystem": "meson",
+      "config-opts": [
+        "--libdir=lib",
+        "-Dfontconfig=enabled",
+        "-Dtest=disabled",
+        "-Dcompare=disabled",
+        "-Dprofile=disabled"
+      ],
+      "post-install": [
+        "install -Dm644 ../COPYING /app/share/licenses/nagametv/libass.txt"
+      ],
+      "sources": [
+        {
+          "type": "archive",
+          "url": "https://github.com/libass/libass/releases/download/0.17.5/libass-0.17.5.tar.xz",
+          "sha256": "2dca25c0e0c837ddf00b52011b3f82cac1e4ddd3ad018227806b0c2288864acc"
+        }
+      ]
+    },
+    {
       "name": "gstreamer-qml6",
       "buildsystem": "meson",
       "config-opts": [
@@ -81,6 +102,7 @@
         { "type": "dir", "path": "../../translations", "dest": "translations" },
         { "type": "dir", "path": "../linux", "dest": "packaging/linux" },
         { "type": "file", "path": "../../CMakeLists.txt" },
+        { "type": "file", "path": "../../scripts/with-build-lock.sh", "dest": "scripts" },
         {
           "type": "git",
           "url": "https://github.com/xqq/libaribcaption.git",

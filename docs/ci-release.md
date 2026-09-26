@@ -65,6 +65,8 @@ CARGO_HOME=/project/build/ci/cargo-home CARGO_TARGET_DIR=/project/build/ci/cargo
 D-Busが数値UID/GIDを解決できるように、ユーザー・グループ情報を読み取り専用で渡す。
 画面や音声のソケットは渡さない。ユーザー情報がない場合はコンパイル前に停止する。
 Flatpakのホスト側AppStream生成にはSVGローダーも必要で、CIでは`librsvg2-common`を明示的に導入する。
+字幕描画用の`libass`はKDE SDKの同梱を前提にせず、Flatpakマニフェストで
+バージョンとSHA-256を固定してアプリより先にビルドする。アプリへ静的リンクし、ライセンスも同梱する。
 
 依存関係を導入済みのネイティブ開発環境では`bash scripts/ci.sh`でも実行できる。
 ネイティブ実行の既定の出力先は`build/ci-native/cargo`。
