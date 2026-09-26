@@ -68,7 +68,7 @@ AppImageを生成し、その検証済み内容を展開する。FUSEは不要�
 26.04用は[専用Dockerfile](../packaging/deb/Dockerfile)でネイティブビルドする。
 両方とも`NAGAMETV_DISTRIBUTION=ON`を使用し、評価用featureは配布できない。
 Cargo／コンパイルキャッシュはOSごとに分離する。
-`DEB_BUILD_JOBS=4`のように並列数を指定できる。既定は8、CIでは2。
+`DEB_BUILD_JOBS=4`のように並列数を指定できる。既定は8、CIでは`nproc`で利用可能なCPU数を指定する。
 
 出力例:
 

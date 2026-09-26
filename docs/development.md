@@ -253,7 +253,7 @@ bash scripts/with-build-lock.sh cargo clippy --manifest-path rust/Cargo.toml --l
 ```
 
 通常は`CARGO_TARGET_DIR=build/cargo`を使い、ビルド並列数はCargoによる利用可能CPU数の検出に任せます。
-メモリーが限られる環境では`CARGO_BUILD_JOBS=2`などで制限できます。CIは2を明示します。
+メモリーが限られる環境では`CARGO_BUILD_JOBS=2`などで制限できます。CIは`nproc`で利用可能なCPU数を指定します。
 ビルド並列数とnextestのテスト並列数は別の設定です。
 `NAGAMETV_BUILD_LOCK_DIR`は独立したCI環境などでロックの保存先を変えるための設定です。
 同時に動く開発作業では保存先を統一してください。

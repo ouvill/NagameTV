@@ -92,7 +92,6 @@ CIではUbuntu 24.04と26.04のCargo生成物とccacheを別々にキャッシ�
 ソースの時刻が生成物より古くても、以前の実装を誤って再利用しないためです。
 キャッシュの構成と配布手順は[CIとリリース](ci-release.md)を参照してください。
 復元キーの扱いは[actions/cacheの公式資料](https://github.com/actions/cache/blob/main/caching-strategies.md)に従います。
-リモートCIでの短縮量は、変更反映後の実行で確認する必要があります。
 
 ## moldとその他の候補
 
@@ -182,3 +181,16 @@ Clang 21.1.8をC/C++の両方へ指定したキャッシュなしのフルビル
 181.94秒（1回）で、この試行では短縮を確認できなかったため既定のコンパイラーは変更していません。
 環境情報、各ビルドのログ、計測用スクリプト、Cargoのタイミングレポートは
 Git対象外の`build/throughput-study/`に保存しています。
+
+## CIでの確認（2026-09-27）
+
+Ubuntu 24.04の共通テストランナーが記録した工程の合計は、
+[最初の実行（`9d68bda`）](https://github.com/ouvill/NagameTV/actions/runs/36273744055)が
+1,157.93秒、[追加変更後（`5182558`）](https://github.com/ouvill/NagameTV/actions/runs/36276851941)が
+765.12秒でした。両方ともCPU試験はすべて成功しています。
+Docker環境の準備、キャッシュ転送、実EPGStationの結合テスト、配布物生成はこの合計に含みません。
+
+最初の実行は2並列でコンパイル結果のキャッシュがなく、追加変更後は4並列で
+外部依存・ccacheを復元し、QML生成を並列化しています。
+各1回の比較で、個々の変更の効果を分離した数値ではありません。
+実行ログと工程別の集計は`build/throughput-study/latest-ci-tests/`に保存しています。
