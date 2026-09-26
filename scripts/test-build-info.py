@@ -79,11 +79,18 @@ class BuildInfoTests(unittest.TestCase):
         self.git("add", ".")
         self.git("-c", "commit.gpgsign=false", "commit", "--quiet", "-m", "Fixture")
 
-    def build(self, root=None, *, features="distribution", native_builds=1):
+    def build(self, root=None, *, features="distribution", native_builds=1, fresh=None):
         root = root or self.root
         # Each source tree gets its own build-script outputs; dependency reuse
         # across worktrees is Cargo's responsibility, outside this assertion.
         self.env["CARGO_TARGET_DIR"] = str(root / "target")
+        if (root / ".git").exists():
+            self.env["NAGAMETV_BUILD_FINGERPRINT"] = (
+                packaging.source_identity(root, env=self.env) + ":" + packaging.source_fingerprint(root))
+            self.env["NAGAMETV_BUILD_SNAPSHOT_ROOT"] = str(root)
+        else:
+            self.env.pop("NAGAMETV_BUILD_FINGERPRINT", None)
+            self.env.pop("NAGAMETV_BUILD_SNAPSHOT_ROOT", None)
         output = self.run_command("cargo", "build", "--offline", "--locked", "--features", features,
                                   "--manifest-path", str(root / "rust/Cargo.toml"), "--message-format=json")
         messages = [json.loads(line) for line in output.splitlines()]
@@ -96,6 +103,11 @@ class BuildInfoTests(unittest.TestCase):
         binary = next(message["executable"] for message in messages
                       if message["reason"] == "compiler-artifact" and message.get("executable")
                       and message["target"]["name"] == "build-info-fixture")
+        if fresh is not None:
+            artifact = next(message for message in messages
+                            if message["reason"] == "compiler-artifact" and message.get("executable")
+                            and message["target"]["name"] == "build-info-fixture")
+            self.assertEqual(artifact["fresh"], fresh, "unchanged builds must reuse the executable")
         return json.loads(self.run_command(binary))
 
     def test_incremental_git_state_and_linked_worktree(self):
@@ -109,7 +121,7 @@ class BuildInfoTests(unittest.TestCase):
         self.assertEqual(clean["profile"], "debug")
         self.assertEqual(clean["rustc"], self.run_command("rustc", "--version"))
         self.assertTrue(clean["target"])
-        self.assertEqual(self.build(), clean)
+        self.assertEqual(self.build(fresh=True), clean)
         # No source file or index changes: addition and removal of an untracked file.
         untracked = self.root / "untracked.txt"
         untracked.write_text("change")
@@ -132,6 +144,7 @@ class BuildInfoTests(unittest.TestCase):
         # A source archive must not borrow the identity of an enclosing repository.
         archive = self.root / "target/archive"
         archive.mkdir()
+        self.env.pop("NAGAMETV_BUILD_SOURCE", None)
         self.run_command("git", "archive", "HEAD", "--output", str(archive / "source.tar"))
         self.run_command("tar", "-xf", str(archive / "source.tar"), "-C", str(archive))
         self.assertEqual(self.build(archive)["source"], {"kind": "unavailable"})
@@ -140,6 +153,38 @@ class BuildInfoTests(unittest.TestCase):
         self.assertEqual(supplied["source"], {"kind": "git", "commit": commit, "worktree": "dirty"})
         self.env["SOURCE_DATE_EPOCH"] = "1700000123"
         self.assertEqual(self.build(archive)["built_unix_seconds"], 1700000123)
+
+    def test_source_digest_tracks_contents_deletions_links_and_submodules(self):
+        self.prepare_repository()
+        original = packaging.source_fingerprint(self.root)
+        # A touched file has the same contents; ignored outputs are not inputs.
+        source = self.root / "rust/main.rs"
+        source.touch()
+        (self.root / "target").mkdir(exist_ok=True)
+        (self.root / "target/output").write_text("ignored")
+        self.assertEqual(packaging.source_fingerprint(self.root), original)
+        source.write_text(source.read_text() + "\n")
+        modified = packaging.source_fingerprint(self.root)
+        self.assertNotEqual(modified, original)
+        source.unlink()
+        self.assertNotEqual(packaging.source_fingerprint(self.root), modified)
+        link = self.root / "link"
+        link.symlink_to("missing-a")
+        linked = packaging.source_fingerprint(self.root)
+        link.unlink()
+        link.symlink_to("missing-b")
+        self.assertNotEqual(packaging.source_fingerprint(self.root), linked)
+        # Use a separate local Git repository, without any network access.
+        sub = self.root / "target/sub-origin"
+        sub.mkdir()
+        self.git("-C", str(sub), "init", "--quiet")
+        (sub / "input").write_text("one")
+        self.git("-C", str(sub), "add", ".")
+        self.git("-C", str(sub), "-c", "commit.gpgsign=false", "commit", "--quiet", "-m", "Initial")
+        self.git("-c", "protocol.file.allow=always", "submodule", "add", "--quiet", str(sub), "sub")
+        before = packaging.source_fingerprint(self.root)
+        (self.root / "sub/input").write_text("two")
+        self.assertNotEqual(packaging.source_fingerprint(self.root), before)
 
     def test_generator_validation(self):
         executable = self.root / "build-info-tests"

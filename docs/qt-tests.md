@@ -53,9 +53,10 @@ Use the validating scripts for hardware-dependent execution.
 `python3 scripts/test.py native` builds once and runs the hardware-free Qt suites.
 `python3 scripts/test.py gui` runs the listed GUI suites, after resource validation.
 The existing shell entry points remain available and share the build/test lock.
-Their common launcher uses a private executable copy and defaults to `release`;
-set `NAGAMETV_TEST_PROFILE=dev` for standalone scripts or `--profile dev` on the
-common runner. Only `dev` and `release` are accepted.
+Their common launcher uses a private executable copy and defaults to `dev`;
+set `NAGAMETV_TEST_PROFILE=release` for standalone scripts or `--profile release`
+on the common runner when measuring playback performance or frame timings.
+Only `dev` and `release` are accepted.
 
 `bash scripts/capture-ui-style.sh` separately generates regular/small-size,
 focus, hover and popup images in `build/ui-review/` for human review.

@@ -3,6 +3,22 @@ use cxx_qt_build::{CxxQtBuilder, QmlFile, QmlModule};
 #[path = "build/build_info.rs"]
 mod build_info;
 
+fn watch_headers(directory: &std::path::Path) -> std::io::Result<()> {
+    for entry in std::fs::read_dir(directory)? {
+        let entry = entry?;
+        let path = entry.path();
+        if entry.file_type()?.is_dir() {
+            watch_headers(&path)?;
+        } else if matches!(
+            path.extension().and_then(std::ffi::OsStr::to_str),
+            Some("h" | "hh" | "hpp")
+        ) {
+            println!("cargo:rerun-if-changed={}", path.display());
+        }
+    }
+    Ok(())
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     if cfg!(feature = "distribution")
         && cfg!(any(
@@ -16,6 +32,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
     }
     build_info::generate()?;
+    // Directory watches recurse in Cargo, including unrelated core Rust files.
+    // Watch each header instead. Adding a used header also changes an existing
+    // watched header/bridge (or build.rs), which discovers the new input.
+    watch_headers(std::path::Path::new("src"))?;
     // The source directory is the module manifest. A new production component
     // is registered and compiled without a second hand-maintained file list.
     println!("cargo:rerun-if-changed=qml");
@@ -52,8 +72,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Generated translations are a build dependency, completed before this
     // script starts. Watching outputs generated here would cause endless reruns.
     .qrc(viewer_translations::QRC_PATH)
-    // Never watch the entire crate tree: it may contain Cargo build outputs.
-    .crate_include_root(Some("src".into()))
+    // Export the same namespaced headers without cxx-qt's recursive directory
+    // watches; core-only Rust edits must not regenerate all Qt/C++ and QML.
+    .crate_include_root(None)
+    .include_dir(std::path::Path::new(&std::env::var("CARGO_MANIFEST_DIR")?).join("src"))
     .qrc_resources([
         "../assets/icons/camera.svg",
         "../assets/icons/folder-open.svg",

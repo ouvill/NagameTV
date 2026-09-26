@@ -21,7 +21,12 @@ Ubuntu 24.04、Rust 1.98.1、Qt 6.8.3、GStreamer 1.24を共用し、テスト�
 FlatpakはマニフェストのKDE 6.10 SDKを使う。26.04用debは[専用Dockerfile](../packaging/deb/Dockerfile)でUbuntuのQt/GStreamerを使う。
 GitHubの実行ホストはいずれも`ubuntu-24.04`。
 並列コンパイルは2件に制限し、Dockerレイヤー、Cargoのダウンロード、配布用ツール、
-Flatpakのビルド状態をキャッシュする。ホストのコンパイル済みCargoキャッシュは取り込まない。
+Flatpakのビルド状態をキャッシュする。
+Cargoのコンパイル結果も、Ubuntu 24.04の`build/ci/cargo`と
+26.04の`build/deb/ubuntu26.04/native/cargo`を別々に保存する。
+キーには実際のDockerイメージID、Cargo設定・マニフェスト、lockfile、コミットを含め、
+同じ環境の直近キャッシュを復元する。アプリの実行ファイルとincrementalデータは保存対象から外す。
+Workshopのコンパイル結果は取り込まない。キャッシュがなくても通常ビルドできる。
 
 Rustテストはアプリに加えて`viewer-comments`・`viewer-epg-events`（どちらも`network`付き）、
 `viewer-diagnostics`・`viewer-remote`・`tsreadex`を各lockfileの`--locked`で実行する。
@@ -34,7 +39,7 @@ EPGStationは[固定版の本体との結合テスト](epgstation.md#固定版�
 評価用部品も静的検査に含める。色・寸法・動きの共通化は`check-ui-style.py`で検査する。
 CIの`scripts/ci.sh`は共通ランナー`python3 scripts/test.py cpu`を実行する。
 Rustはnextestで個別プロセスに分離し、Qt試験は一度ビルドした実行ファイルを共用する。
-ローカルとCIの既定はともに`release`で、ビルドと検証は共通ロックで直列化する。
+ローカルの既定は`dev`、CIは`release`で、ビルドと検証は共通ロックで直列化する。
 各検査のログと実行結果は、失敗時も`test-results` artifactとして14日間保存する。
 詳しい選択方法とログの保存先は[開発手順](development.md#テストと診断)を参照。
 debの導入試験は開発パッケージのない対象Ubuntuコンテナーで行い、

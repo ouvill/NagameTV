@@ -1,0 +1,10 @@
+# Applies equally to the application and standalone crate test invocations.
+# Keep file/line backtraces; opt into full variable inspection with
+# CARGO_PROFILE_DEV_DEBUG=2. Cargo's dev incremental compilation stays enabled.
+[profile.dev]
+debug = "line-tables-only"
+
+[build]
+# Share artifacts between CMake, the test runner and direct Cargo diagnostics.
+# CMake/distribution scripts and CARGO_TARGET_DIR can still select another tree.
+target-dir = "build/cargo"

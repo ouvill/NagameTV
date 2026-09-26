@@ -118,7 +118,7 @@ download runtime-x86_64 \
 app_version=$(python3 -c 'import sys, tomllib; print(tomllib.load(open(sys.argv[1], "rb"))["package"]["version"])' "$project_dir/rust/Cargo.toml")
 bundle_name="nagametv-$app_version-x86_64.AppImage"
 export CARGO_BUILD_JOBS="$build_jobs"
-cmake -S "$project_dir" -B "$build_dir" -DNAGAMETV_DISTRIBUTION=ON
+cmake -S "$project_dir" -B "$build_dir" -DCMAKE_BUILD_TYPE=Release -DNAGAMETV_DISTRIBUTION=ON
 cmake --build "$build_dir" --parallel "$build_jobs"
 
 # A fresh staging directory prevents removed plugins from surviving a rebuild.

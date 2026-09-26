@@ -36,7 +36,7 @@ def main():
     parser.add_argument("arguments", nargs=argparse.REMAINDER)
     args = parser.parse_args()
     arguments = args.arguments[1:] if args.arguments[:1] == ["--"] else args.arguments
-    profile = os.environ.get("NAGAMETV_TEST_PROFILE", "release")
+    profile = os.environ.get("NAGAMETV_TEST_PROFILE", "dev")
     if profile not in ("dev", "release"):
         parser.error("NAGAMETV_TEST_PROFILE must be dev or release")
     if not args.prepare and not arguments:

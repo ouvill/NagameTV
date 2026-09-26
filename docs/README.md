@@ -34,6 +34,7 @@
 | **[GUIテスト専用環境](gui-test-environment.md)** | Weston / Xwayland / PipeWireを用いた隔離GUIテスト環境の構築と検証ルール |
 | **[RustでのQt結合テスト](qt-tests.md)** | cxx-qt、gstreamer-rs、QMLを組み合わせた統合テストの設計方針 |
 | **[CIとリリース](ci-release.md)** | GitHub Actionsでの継続的インテグレーションとリリースパッケージ生成 |
+| **[ビルド時間の改善](build-performance.md)** | 開発用プロファイル、差分ビルド、CIキャッシュ、計測手順 |
 | **[メモリプロファイリング](memory-profiling.md)** | 長時間視聴時のメモリ増加・ヒープ割り当ての調査手法 |
 
 ---

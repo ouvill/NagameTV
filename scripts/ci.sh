@@ -15,4 +15,6 @@ getent passwd "$(id -u)" >/dev/null || {
   exit 1
 }
 
-exec python3 scripts/test.py cpu "$@"
+# Match the distribution profile so dependencies are reused by packaging and
+# the real EPGStation contract tests; local development defaults to dev.
+exec python3 scripts/test.py cpu --profile release "$@"

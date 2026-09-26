@@ -17,9 +17,9 @@ connections:
 
 actions:
   setup-tests: bash scripts/install-nextest.sh
-  configure: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+  configure: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DNAGAMETV_DISTRIBUTION=OFF
   build: |
-    cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+    cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DNAGAMETV_DISTRIBUTION=OFF
     cmake --build build
   test: python3 scripts/test.py "$@"
   gui-test: python3 scripts/run-gui-tests.py "$@"

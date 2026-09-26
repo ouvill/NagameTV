@@ -102,7 +102,7 @@ LAUNCHER
   26.04)
     build_dir=${DEB_BUILD_DIR:-$output_dir/native}
     export CARGO_BUILD_JOBS="$build_jobs"
-    cmake -S "$project_dir" -B "$build_dir" -DNAGAMETV_DISTRIBUTION=ON
+    cmake -S "$project_dir" -B "$build_dir" -DCMAKE_BUILD_TYPE=Release -DNAGAMETV_DISTRIBUTION=ON
     cmake --build "$build_dir" --parallel "$build_jobs"
     DESTDIR="$package_dir" cmake --install "$build_dir" --prefix /usr
     strip --strip-unneeded "$package_dir/usr/bin/nagametv"

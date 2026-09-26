@@ -111,7 +111,8 @@ def cargo_test(args, endpoints, run_dir):
         "NAGAMETV_EPGSTATION_ANONYMOUS": endpoints["anonymous"],
         "NAGAMETV_EPGSTATION_AUTHENTICATED": endpoints["password"],
     })
-    cargo = ["cargo", "test", "--manifest-path", "rust/Cargo.toml", "--release", "--locked",
+    cargo = ["bash", "scripts/with-build-lock.sh", "cargo", "test",
+             "--manifest-path", "rust/Cargo.toml", "--release", "--locked",
              "epgstation::provider_tests::", "--", "--ignored", "--nocapture"]
     client_container = None
     client_exit_code = 0

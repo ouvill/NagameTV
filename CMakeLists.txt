@@ -1,6 +1,24 @@
 cmake_minimum_required(VERSION 3.24)
 project(nagametv LANGUAGES NONE)
 option(NAGAMETV_DISTRIBUTION "Build an installable distribution (reject evaluation features)" OFF)
+if(NOT CMAKE_BUILD_TYPE)
+    if(NAGAMETV_DISTRIBUTION)
+        set(CMAKE_BUILD_TYPE Release CACHE STRING "Debug or Release" FORCE)
+    else()
+        set(CMAKE_BUILD_TYPE Debug CACHE STRING "Debug or Release" FORCE)
+    endif()
+endif()
+set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS Debug Release)
+if(CMAKE_BUILD_TYPE STREQUAL "Debug" AND NOT NAGAMETV_DISTRIBUTION)
+    set(CARGO_PROFILE dev)
+    set(CARGO_PROFILE_DIR debug)
+elseif(CMAKE_BUILD_TYPE STREQUAL "Release")
+    set(CARGO_PROFILE release)
+    set(CARGO_PROFILE_DIR release)
+else()
+    message(FATAL_ERROR "Use Debug for development or Release for distribution")
+endif()
+message(STATUS "Cargo profile: ${CARGO_PROFILE}")
 option(NAGAMETV_EVALUATION_LEGACY_COMMENTS "Local comparison of all legacy comment features; not for distribution" OFF)
 set(COMMENT_EVALUATION_FEATURES "")
 foreach(feature COMMENT_LIST WIDE_COMMENTS COLLISION_LAYOUT)
@@ -32,9 +50,9 @@ file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS "rust/src/*.rs" "rust/src/*.h")
 add_custom_target(nagametv-build ALL
     COMMAND ${CMAKE_COMMAND} -E env CARGO_TARGET_DIR=${CARGO_TARGET_DIR}
             bash ${CMAKE_SOURCE_DIR}/scripts/with-build-lock.sh
-            cargo build --manifest-path ${CMAKE_SOURCE_DIR}/rust/Cargo.toml --release --locked ${CARGO_FEATURE_ARGS}
+            cargo build --manifest-path ${CMAKE_SOURCE_DIR}/rust/Cargo.toml --profile ${CARGO_PROFILE} --locked ${CARGO_FEATURE_ARGS}
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            ${CARGO_TARGET_DIR}/release/nagametv ${CMAKE_BINARY_DIR}/nagametv
+            ${CARGO_TARGET_DIR}/${CARGO_PROFILE_DIR}/nagametv ${CMAKE_BINARY_DIR}/nagametv
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     SOURCES ${SOURCES} rust/Cargo.toml rust/build.rs rust/qml/Main.qml rust/qml/SubtitleOverlay.qml rust/qml/ProgramGuide.qml
     VERBATIM)

@@ -64,6 +64,7 @@ jobs:
           persist-credentials: false
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Build the Ubuntu 24.04 test and distribution environment
+        id: build-environment
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: packaging/appimage
@@ -81,6 +82,20 @@ jobs:
             build/appimage/tools
           key: sources-${{ runner.os }}-x86_64-${{ hashFiles('**/Cargo.lock', 'scripts/build-appimage.sh') }}
           restore-keys: sources-${{ runner.os }}-x86_64-
+      - name: Cache compiled Cargo dependencies (Ubuntu 24.04)
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          # Separate native ABIs/toolchains. Do not cache copied test runners or
+          # incremental state; local Workshop artifacts never enter this path.
+          path: |
+            build/ci/cargo
+            !build/ci/cargo/**/incremental
+            !build/ci/cargo/**/nagametv
+            !build/ci/cargo/**/deps/nagametv-*
+          key: cargo-ubuntu24-v1-${{ steps.build-environment.outputs.imageid }}-${{ hashFiles('.cargo/config.toml', '**/Cargo.toml') }}-${{ hashFiles('**/Cargo.lock') }}-${{ github.sha }}
+          restore-keys: |
+            cargo-ubuntu24-v1-${{ steps.build-environment.outputs.imageid }}-${{ hashFiles('.cargo/config.toml', '**/Cargo.toml') }}-${{ hashFiles('**/Cargo.lock') }}-
+            cargo-ubuntu24-v1-${{ steps.build-environment.outputs.imageid }}-${{ hashFiles('.cargo/config.toml', '**/Cargo.toml') }}-
       - name: Run hardware-free tests
         run: |
           # D-Bus needs NSS entries for the runner's UID/GID inside Docker.
@@ -165,6 +180,7 @@ jobs:
           persist-credentials: false
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Build the Ubuntu 26.04 distribution environment
+        id: build-environment
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: packaging/deb
@@ -179,6 +195,18 @@ jobs:
             build/deb/ubuntu26.04/cargo-home/git
           key: sources-deb-ubuntu26-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: sources-deb-ubuntu26-
+      - name: Cache compiled Cargo dependencies (Ubuntu 26.04)
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            build/deb/ubuntu26.04/native/cargo
+            !build/deb/ubuntu26.04/native/cargo/**/incremental
+            !build/deb/ubuntu26.04/native/cargo/**/nagametv
+            !build/deb/ubuntu26.04/native/cargo/**/deps/nagametv-*
+          key: cargo-ubuntu26-v1-${{ steps.build-environment.outputs.imageid }}-${{ hashFiles('.cargo/config.toml', '**/Cargo.toml') }}-${{ hashFiles('**/Cargo.lock') }}-${{ github.sha }}
+          restore-keys: |
+            cargo-ubuntu26-v1-${{ steps.build-environment.outputs.imageid }}-${{ hashFiles('.cargo/config.toml', '**/Cargo.toml') }}-${{ hashFiles('**/Cargo.lock') }}-
+            cargo-ubuntu26-v1-${{ steps.build-environment.outputs.imageid }}-${{ hashFiles('.cargo/config.toml', '**/Cargo.toml') }}-
       - name: Build Ubuntu 26.04 deb
         run: |
           docker run --rm --user "$(id -u):$(id -g)" \

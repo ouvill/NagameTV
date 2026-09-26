@@ -86,7 +86,7 @@ GUIテストは既存のPipeWire／pipewire-pulseaudio／WirePlumberと実GPUを
 ホストに次の開発環境と実行用プラグインが必要です。
 
 - Rust / Cargo（Rust 1.98.1でビルド確認）
-- CMake 3.24以降、C/C++コンパイラー、pkg-config、libclang
+- CMake 3.24以降、C/C++コンパイラー、pkg-config、libclang、Python 3.11以降（ビルド入力の検出用）
 - Qt 6.8以降のQuick / Controls / Dialogs / Layouts / Shapes / EffectsとQtCore QMLモジュール、LinuxではQt DBus、SVG・JPEG・WebP画像プラグイン、翻訳用の`lrelease`
 - GStreamer 1.24以降と開発ライブラリー（`gstreamer-mpegts-1.0`を含む）
 - GStreamerの`qml6glsink`、OpenGL関連プラグイン、`tsdemux`・`qtdemux`・`matroskademux`、映像・音声デコーダー、音声出力プラグイン、速度変更用の`scaletempo`（Good Plug-insの`audiofx`）
@@ -104,10 +104,19 @@ QtのPortalプラグイン（Ubuntuでは`qt6-xdgdesktopportal-platformtheme`）
 
 ```sh
 git submodule update --init
-cmake -S . -B build
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DNAGAMETV_DISTRIBUTION=OFF
 cmake --build build
 ./build/nagametv
 ```
+
+通常開発はCargoの`dev`プロファイルを使い、差分コンパイルを有効にします。
+バックトレースのファイル名・行番号を残し、変数のデバッグ情報は省きます。
+デバッガーで変数を調べる場合は`CARGO_PROFILE_DEV_DEBUG=2`を指定してください。
+設定の切替直後は依存物の再コンパイルが必要です。
+最適化したアプリの実行速度や再生性能を確認する場合は、
+`cmake -S . -B build -DCMAKE_BUILD_TYPE=Release`で切り替えます。
+配布スクリプトは常に`Release`を指定します。
+[ビルド時間の改善方針と計測手順](build-performance.md)も参照してください。
 
 字幕デコーダーのlibaribcaptionとTS整形のtsreadexはサブモジュールからビルドします。
 映像表示にはOpenGL、音声再生には利用可能な音声出力が必要です。
@@ -219,7 +228,10 @@ python3 scripts/test.py app --filter 'test(settings::)'
 
 Rustの通常テストはnextestが個別プロセスで実行します。同じプロセス内のtracing subscriberや
 初期化状態の干渉を避け、既定の同時実行数は2、自動リトライは0とします。実時間の再生試験は
-nextest内で単独実行します。`--test-threads N`で並列数、`--profile dev`でビルド構成を変更できます。
+nextest内で単独実行します。通常のビルド構成は`dev`です。
+`--test-threads N`でテストの並列数、`--profile release`で最適化した構成に変更できます。
+再生性能やフレーム時間を評価する試験では`--profile release`を指定します。
+Qtスクリプトを直接使う場合は`NAGAMETV_TEST_PROFILE=release`で同じ構成を選べます。
 アプリの主要なpath依存5クレートも明示的に列挙し、nextestの対象外であるdoctestはCargoで別途実行します。
 ビルド情報専用の`viewer-build-info`と翻訳生成用の`viewer-translations`は、
 `checks`に含まれるビルド情報・変更検知の回帰試験で検証します。
@@ -237,10 +249,12 @@ CMakeのビルド、共通ランナー、既存のQtテスト入口は、同じL
 別コンテナーのビルドも、このロックの対象外です。
 
 ```sh
-bash scripts/with-build-lock.sh cargo clippy --manifest-path rust/Cargo.toml --release --locked --all-targets -- -D warnings
+bash scripts/with-build-lock.sh cargo clippy --manifest-path rust/Cargo.toml --locked --all-targets -- -D warnings
 ```
 
-通常は`CARGO_TARGET_DIR=build/cargo`、ビルド並列数2を使います。既存の環境変数で変更できます。
+通常は`CARGO_TARGET_DIR=build/cargo`を使い、ビルド並列数はCargoによる利用可能CPU数の検出に任せます。
+メモリーが限られる環境では`CARGO_BUILD_JOBS=2`などで制限できます。CIは2を明示します。
+ビルド並列数とnextestのテスト並列数は別の設定です。
 `NAGAMETV_BUILD_LOCK_DIR`は独立したCI環境などでロックの保存先を変えるための設定です。
 同時に動く開発作業では保存先を統一してください。
 
@@ -382,20 +396,30 @@ GC専用ログと間引き履歴にも付けるため、ローテーション後
 ビルド日時はUnix秒で保存し、画面ではUTCで表示します。`SOURCE_DATE_EPOCH`を指定すると
 その値を使います。未指定時はビルドスクリプトの実行時刻です。
 
-Gitの状態と日時は、Qt非依存の`viewer-build-info`クレートでCargoビルド・Clippyのたびに
-収集し直します。このクレートはアプリの通常の依存にし、`build-dependencies`には入れません。
+ビルドラッパーはロック取得後にGitの状態とソース内容のハッシュを収集し、
+`viewer-build-info`へ渡します。未追跡ファイルの削除、サブモジュール内の編集、
+リンク先の変更もハッシュへ反映し、無視対象のビルド出力は含めません。
+入力が同じならCargoが実行ファイルを再利用し、ビルド日時もその実行ファイルを作った時刻のままにします。
+ソースまたは`SOURCE_DATE_EPOCH`が変わると更新します。
+このクレートはアプリの通常の依存にし、`build-dependencies`には入れません。
 情報の更新はアプリのRustコンパイル・検査へ伝わりますが、Qt/C++を生成する
 `rust/build.rs`の再実行理由にはなりません。Qt側の入力・機能・ツールチェーンなどが
 変わらなければ、同じ構成の生成物とコンパイル結果を再利用します。
+ラッパーを通さない直接のCargo実行とGit情報のないソースアーカイブでは、
+従来どおり毎回収集して古いGit情報を残さない動作を維持します。
+`NAGAMETV_BUILD_FINGERPRINT`はラッパー内部の値で、手動設定しないでください。
 
 翻訳の生成は`viewer-translations`をビルド依存として先に実行します。Qt側が監視する
 `.qrc`と`.qm`をアプリの`build.rs`内で生成すると、その更新を理由に次回も再実行されるためです。
 翻訳カタログや翻訳ツールの指定が変わった場合だけ生成し直し、Qt側へ変更を伝えます。
-ヘッダーの監視範囲も`rust/src`に限定し、クレート内に置かれたビルド出力を監視対象にしません。
+ヘッダーは`rust/src`以下のファイルごとに監視します。ディレクトリー全体を監視すると
+Qt非依存のRust編集でもQt/C++が再生成されるためです。Qt連携のRustファイルとQMLも監視します。
+新しいヘッダーを使うときは既存のヘッダー・Qt連携ファイル・`build.rs`のいずれかも変わるため、
+再生成時に追加分を検出します。ビルド出力は監視対象にしません。
 
 ```mermaid
 flowchart LR
-    source["Git状態・日時"] --> identity["viewer-build-info<br/>毎回更新"]
+    source["Git状態・ソース内容"] --> identity["viewer-build-info<br/>変更時に日時を更新"]
     catalog["翻訳カタログ"] --> translations["viewer-translations<br/>入力変更時に生成"]
     translations --> native["アプリのbuild.rs<br/>入力や構成が変わったときに実行"]
     qt["Qt連携コード・QML"] --> native

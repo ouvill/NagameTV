@@ -94,6 +94,8 @@ elif args[:2] == ['nextest', 'run']:
     assert json.load(open(args[args.index('--cargo-metadata') + 1])) == {}
     print('fixture assertion failed', file=sys.stderr)
     sys.exit(100)
+if args[:2] == ['nextest', 'list']:
+    assert args[args.index('--cargo-profile') + 1] == 'dev'
 """)
         result, report = self.run_suite("viewer-diagnostics")
         self.assertNotEqual(result.returncode, 0)
@@ -114,6 +116,7 @@ with (pathlib.Path(os.environ['RUNNER_FIXTURE']) / 'runs').open('a') as output:
         self.fake_cargo("""import json, os, pathlib, sys
 directory = pathlib.Path(os.environ['RUNNER_FIXTURE'])
 assert sys.argv[1] == 'build'
+assert sys.argv[sys.argv.index('--profile') + 1] == 'dev'
 with (directory / 'builds').open('a') as output:
     output.write('build\\n')
 print(json.dumps({'reason': 'compiler-artifact', 'target': {'name': 'nagametv'},

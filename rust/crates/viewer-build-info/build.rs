@@ -125,19 +125,28 @@ fn timestamp(value: Option<&str>) -> Result<u64, Box<dyn Error>> {
 fn main() -> Result<(), Box<dyn Error>> {
     println!("cargo:rerun-if-env-changed=NAGAMETV_BUILD_SOURCE");
     println!("cargo:rerun-if-env-changed=SOURCE_DATE_EPOCH");
+    println!("cargo:rerun-if-env-changed=NAGAMETV_BUILD_FINGERPRINT");
+    println!("cargo:rerun-if-env-changed=NAGAMETV_BUILD_SNAPSHOT_ROOT");
+    println!("cargo:rerun-if-changed=build.rs");
     let output = PathBuf::from(std::env::var_os("OUT_DIR").ok_or("Missing OUT_DIR")?);
-    // Git status can change without a tracked file's mtime changing (checkout,
-    // untracked deletion, submodules, worktrees). Recollect on every Cargo build.
-    // This deliberately absent file avoids recursive watching of build outputs.
-    println!(
-        "cargo:rerun-if-changed={}",
-        output.join("always-recheck-build-info").display()
-    );
     let manifest =
         PathBuf::from(std::env::var_os("CARGO_MANIFEST_DIR").ok_or("Missing CARGO_MANIFEST_DIR")?);
     // This private crate lives at <source root>/rust/crates/viewer-build-info,
     // including in source archives and the Flatpak build tree.
-    let source = source(manifest.ancestors().nth(3).ok_or("Missing source root")?)?.rust_literal();
+    let root = manifest.ancestors().nth(3).ok_or("Missing source root")?;
+    // Supported entry points collect Git state and hash source inputs under the
+    // build lock, before Cargo's freshness check. An unchanged invocation keeps
+    // the original artifact's timestamp and avoids rebuilding the application.
+    // Direct Cargo invocations/archives retain conservative change detection.
+    if std::env::var_os("NAGAMETV_BUILD_FINGERPRINT").is_none()
+        || std::env::var_os("NAGAMETV_BUILD_SNAPSHOT_ROOT").as_deref() != Some(root.as_os_str())
+    {
+        println!(
+            "cargo:rerun-if-changed={}",
+            output.join("always-recheck-build-info").display()
+        );
+    }
+    let source = source(root)?.rust_literal();
     let epoch = std::env::var("SOURCE_DATE_EPOCH");
     let built = timestamp(match &epoch {
         Ok(value) => Some(value),

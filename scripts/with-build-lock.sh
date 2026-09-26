@@ -21,5 +21,13 @@ if ! flock --exclusive --nonblock 9; then
     flock --exclusive 9
 fi
 export NAGAMETV_BUILD_LOCK_HELD=$lock_file
-export CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS:-2}
+# Cargo detects available CPUs; CI and constrained machines can set
+# CARGO_BUILD_JOBS explicitly. Keep test execution concurrency independent.
+# Refresh identity outside Cargo so unchanged sources do not force recompilation.
+build_source_script=$(dirname "${BASH_SOURCE[0]}")/build-source-info.py
+build_inputs=$(python3 "$build_source_script" --cargo-env)
+if [[ -n "$build_inputs" ]]; then
+    export NAGAMETV_BUILD_SNAPSHOT_ROOT="${build_inputs%%$'\n'*}"
+    export NAGAMETV_BUILD_FINGERPRINT="${build_inputs#*$'\n'}"
+fi
 exec "$@"

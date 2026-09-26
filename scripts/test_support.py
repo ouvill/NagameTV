@@ -22,5 +22,4 @@ def ensure_lock():
 def build_environment(profile):
     env = dict(os.environ, NAGAMETV_TEST_PROFILE=profile)
     env["CARGO_TARGET_DIR"] = str(Path(env.get("CARGO_TARGET_DIR", ROOT / "build/cargo")).resolve())
-    env.setdefault("CARGO_BUILD_JOBS", "2")
     return env

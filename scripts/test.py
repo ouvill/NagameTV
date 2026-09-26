@@ -141,7 +141,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("suites", nargs="*", help="cpu, rust, native, gui, all, or individual suite names")
     parser.add_argument("--list", action="store_true", help="list suites without building or accessing hardware")
-    parser.add_argument("--profile", choices=("dev", "release"), default="release")
+    parser.add_argument("--profile", choices=("dev", "release"), default="dev")
     parser.add_argument("--log-dir", type=Path, default=ROOT / "build/test-runs",
                         help="parent directory for per-run logs and binaries")
     parser.add_argument("--test-threads", type=int, help="nextest concurrency (default: 2)")
