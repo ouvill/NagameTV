@@ -54,6 +54,7 @@ pub use tool::{
     QtToolMoc, QtToolQmlCacheGen, QtToolQmlTypeRegistrar, QtToolQtPaths, QtToolRcc,
 };
 
+mod parallel;
 mod utils;
 
 use std::{
@@ -389,27 +390,28 @@ impl QtBuild {
         let mut qmlcachegen_file_paths = Vec::new();
 
         // qmlcachegen has a different CLI in Qt 5, so only support Qt >= 6
-        if self.qt_installation.version().major >= 6 {
+        if self.qt_installation.version().major >= 6 && !qml_files.is_empty() {
             let qml_cache_args = QmlCacheArguments {
                 uri: uri.clone(),
                 qmldir_path: qmldir_file_path.clone(),
                 qmldir_qrc_path: qrc_path.clone(),
             };
+            let qmlcachegen = QtToolQmlCacheGen::new(self.qt_installation.as_ref());
+            let jobserver = parallel::inherited_jobserver()
+                .expect("Could not connect to Cargo's jobserver for qmlcachegen");
+            let products = parallel::map(jobserver.as_ref(), qml_files, |file| {
+                qmlcachegen.compile(qml_cache_args.clone(), file.get_path())
+            })
+            .expect("Could not acquire a Cargo jobserver token for qmlcachegen");
             let mut qml_resource_paths = Vec::new();
-            for file in qml_files {
-                let result = QtToolQmlCacheGen::new(self.qt_installation.as_ref())
-                    .compile(qml_cache_args.clone(), file.get_path());
+            for result in products {
                 qmlcachegen_file_paths.push(result.qml_cache_path);
                 qml_resource_paths.push(result.qml_resource_path);
             }
 
-            // If there are no QML files there is nothing for qmlcachegen to run with
-            if !qml_files.is_empty() {
-                qmlcachegen_file_paths.push(
-                    QtToolQmlCacheGen::new(self.qt_installation.as_ref())
-                        .compile_loader(qml_cache_args.clone(), &qml_resource_paths),
-                );
-            }
+            // All per-file outputs must be complete before generating the loader.
+            qmlcachegen_file_paths
+                .push(qmlcachegen.compile_loader(qml_cache_args, &qml_resource_paths));
         }
 
         let qml_plugin_dir = PathBuf::from(format!("{out_dir}/qt-build-utils/qml_plugin"));

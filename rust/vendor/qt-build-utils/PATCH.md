@@ -25,3 +25,12 @@ unqualified filename first, then the standard CMake configuration suffixes
 if no file is found. All paths come from the selected Qt installation.
 Keep the foreign-type input mandatory so missing metadata cannot silently weaken
 QML type checking.
+
+QML files are compiled concurrently using extra tokens from Cargo's jobserver.
+The build script keeps its implicit slot for synchronous work when no token is
+available, including `-j1`. Each worker owns its token until completion or panic.
+Results retain input order, all workers finish before the loader is generated,
+and the registrar still completes before any QML compilation starts. Construct
+and validate qmlcachegen once per module. This changes scheduling, not AOT options
+or generated type metadata. `scripts/test-qml-build.py` checks ordering, serial
+progress and token release using the production scheduler without Qt.

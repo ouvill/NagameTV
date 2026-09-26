@@ -26,7 +26,9 @@ Cargoのコンパイル結果も、Ubuntu 24.04の`build/ci/cargo`と
 26.04の`build/deb/ubuntu26.04/native/cargo`を別々に保存する。
 両ジョブの`build/ccache`もそれぞれのキャッシュへ保存し、Qt/C++の再コンパイルを減らす。
 キーには実際のDockerイメージID、Cargo設定・マニフェスト、lockfile、コミットを含め、
-同じ環境の直近キャッシュを復元する。アプリの実行ファイルとincrementalデータは保存対象から外す。
+一致する設定を優先し、なければ同じイメージの直近キャッシュを復元する。
+設定や依存関係が変わった部分はCargoが再コンパイルする。
+アプリの実行ファイルとincrementalデータは保存対象から外す。
 Workshopのコンパイル結果は取り込まない。キャッシュがなくても通常ビルドできる。
 
 Rustテストはアプリに加えて`viewer-comments`・`viewer-epg-events`（どちらも`network`付き）、

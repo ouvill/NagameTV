@@ -97,6 +97,7 @@ jobs:
           restore-keys: |
             cargo-ubuntu24-v1-${{ steps.build-environment.outputs.imageid }}-${{ hashFiles('.cargo/config.toml', '**/Cargo.toml') }}-${{ hashFiles('**/Cargo.lock') }}-
             cargo-ubuntu24-v1-${{ steps.build-environment.outputs.imageid }}-${{ hashFiles('.cargo/config.toml', '**/Cargo.toml') }}-
+            cargo-ubuntu24-v1-${{ steps.build-environment.outputs.imageid }}-
       - name: Run hardware-free tests
         run: |
           # D-Bus needs NSS entries for the runner's UID/GID inside Docker.
@@ -209,6 +210,7 @@ jobs:
           restore-keys: |
             cargo-ubuntu26-v1-${{ steps.build-environment.outputs.imageid }}-${{ hashFiles('.cargo/config.toml', '**/Cargo.toml') }}-${{ hashFiles('**/Cargo.lock') }}-
             cargo-ubuntu26-v1-${{ steps.build-environment.outputs.imageid }}-${{ hashFiles('.cargo/config.toml', '**/Cargo.toml') }}-
+            cargo-ubuntu26-v1-${{ steps.build-environment.outputs.imageid }}-
       - name: Build Ubuntu 26.04 deb
         run: |
           docker run --rm --user "$(id -u):$(id -g)" \

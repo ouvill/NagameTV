@@ -2551,6 +2551,7 @@ version = "0.10.0"
 dependencies = [
  "anyhow",
  "cc",
+ "jobserver",
  "semver",
  "serde",
  "thiserror 1.0.69",
