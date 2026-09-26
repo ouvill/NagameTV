@@ -27,6 +27,7 @@ tonic = { version = "0.14", optional = true }
 wiremock = { version = "0.6", optional = true }
 viewer-epg-events = { path = "crates/viewer-epg-events", features = ["network"] }
 viewer-diagnostics = { path = "crates/viewer-diagnostics" }
+viewer-build-info = { path = "crates/viewer-build-info" }
 viewer-comments = { path = "crates/viewer-comments", features = ["network"] }
 libaribcaption = { path = "crates/libaribcaption" }
 tracing = "0.1"
@@ -56,6 +57,7 @@ proptest = { version = "1", default-features = false, features = ["std"] }
 wiremock = "0.6"
 
 [build-dependencies]
+viewer-translations = { path = "crates/viewer-translations" }
 pkg-config = "0.3"
 cxx-qt-build = { version = "0.10", features = ["link_qt_object_files"] }
 

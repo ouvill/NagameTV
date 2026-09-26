@@ -20,8 +20,10 @@ Rust側はこの結果を確認してから設定を保存する必要がある�
 
 ## ビルド
 
-build/translations.rsを分離し、QT_LRELEASEの指定またはqtpaths6/qtpathsの
-QT_HOST_BINSからlreleaseを取得する。カタログと生成qrcはCargoのOUT_DIRへ置き、
+`viewer-translations`をアプリのビルド依存にし、`build/translations.rs`で翻訳を生成する。
+QT_LRELEASEの指定またはqtpaths6/qtpathsのQT_HOST_BINSからlreleaseを取得する。
+カタログと生成qrcは専用クレートのOUT_DIRへ置き、アプリのQtビルドより先に確定させる。
+アプリ側の変更検知が、自分で生成した翻訳ファイルを理由に再ビルドし続けることを防ぐ。
 生成ファイルをソースディレクトリーへ書き戻さない。
 ツール不在・カタログ生成失敗・出力失敗はResultでビルドを失敗させる。
 TSファイルとQT_LRELEASE変更をCargoの再ビルド条件へ登録する。

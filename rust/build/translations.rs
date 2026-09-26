@@ -1,8 +1,12 @@
 //! Compile the checked-in catalog into a build-local Qt resource.
-use std::{error::Error, path::PathBuf, process::Command};
+use std::{
+    error::Error,
+    path::{Path, PathBuf},
+    process::Command,
+};
 
-pub fn compile() -> Result<PathBuf, Box<dyn Error>> {
-    println!("cargo:rerun-if-changed=../translations/app_ja.ts");
+pub fn compile(catalog: &Path) -> Result<PathBuf, Box<dyn Error>> {
+    println!("cargo:rerun-if-changed={}", catalog.display());
     println!("cargo:rerun-if-env-changed=QT_LRELEASE");
     let output = PathBuf::from(std::env::var_os("OUT_DIR").ok_or("Cargo did not provide OUT_DIR")?);
     let lrelease = match std::env::var_os("QT_LRELEASE") {
@@ -30,7 +34,7 @@ pub fn compile() -> Result<PathBuf, Box<dyn Error>> {
     };
     let qm = output.join("ja.qm");
     let status = Command::new(lrelease)
-        .arg("../translations/app_ja.ts")
+        .arg(catalog)
         .arg("-qm")
         .arg(&qm)
         .status()?;

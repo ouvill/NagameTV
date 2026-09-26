@@ -6,7 +6,7 @@ mod ffi {
         type VideoFileModel = crate::video_file_model::ffi::VideoFileModel;
         include!("cxx-qt-lib/qstring.h");
         type QString = cxx_qt_lib::QString;
-        include!("nagametv/src/danmaku_test.h");
+        include!("danmaku_test.h");
         fn run_qml_tests(path: &QString) -> i32;
         #[rust_name = "send_input_method"]
         fn sendTestInputMethod(preedit: &QString, commit: &QString) -> bool;

@@ -2,8 +2,6 @@ use cxx_qt_build::{CxxQtBuilder, QmlFile, QmlModule};
 
 #[path = "build/build_info.rs"]
 mod build_info;
-#[path = "build/translations.rs"]
-mod translations;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     if cfg!(feature = "distribution")
@@ -18,7 +16,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
     }
     build_info::generate()?;
-    let translations = translations::compile()?;
     // The source directory is the module manifest. A new production component
     // is registered and compiled without a second hand-maintained file list.
     println!("cargo:rerun-if-changed=qml");
@@ -52,7 +49,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .depend("QtQuick.Shapes")
             .depend("QtQuick.Effects"),
     )
-    .qrc(&translations)
+    // Generated translations are a build dependency, completed before this
+    // script starts. Watching outputs generated here would cause endless reruns.
+    .qrc(viewer_translations::QRC_PATH)
+    // Never watch the entire crate tree: it may contain Cargo build outputs.
+    .crate_include_root(Some("src".into()))
     .qrc_resources([
         "../assets/icons/camera.svg",
         "../assets/icons/folder-open.svg",
@@ -103,7 +104,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     .file("src/recording_model.rs")
     .file("src/video_file_model.rs")
     .cpp_file("src/channel_model_types.h")
-    .include_dir("src")
     .qt_module("Quick");
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("linux") {
         builder = builder.qt_module("DBus");

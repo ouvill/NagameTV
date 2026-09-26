@@ -94,6 +94,8 @@
         { "type": "dir", "path": "../../rust/crates/viewer-remote", "dest": "rust/crates/viewer-remote", "skip": ["target"] },
         { "type": "dir", "path": "../../rust/crates/viewer-epg-events", "dest": "rust/crates/viewer-epg-events", "skip": ["target"] },
         { "type": "dir", "path": "../../rust/crates/viewer-diagnostics", "dest": "rust/crates/viewer-diagnostics", "skip": ["target"] },
+        { "type": "dir", "path": "../../rust/crates/viewer-build-info", "dest": "rust/crates/viewer-build-info", "skip": ["target"] },
+        { "type": "dir", "path": "../../rust/crates/viewer-translations", "dest": "rust/crates/viewer-translations", "skip": ["target"] },
         { "type": "dir", "path": "../../rust/crates/viewer-comments", "dest": "rust/crates/viewer-comments", "skip": ["target"] },
         { "type": "dir", "path": "../../rust/crates/tsreadex", "dest": "rust/crates/tsreadex", "skip": ["target"] },
         { "type": "dir", "path": "../../rust/crates/libaribcaption", "dest": "rust/crates/libaribcaption", "skip": ["target"] },
