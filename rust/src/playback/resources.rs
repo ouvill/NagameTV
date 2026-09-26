@@ -1,12 +1,17 @@
-//! Bound software decoder parallelism per player.
+//! Bound decoder failure tolerance and software parallelism per player.
 //! Compressed TS retention is separately owned by input::Store.
 use gstreamer::{self as gst, prelude::*};
+use gstreamer_video::{self as gst_video, prelude::*};
 
 const SOFTWARE_THREADS: usize = 6;
 const HEVC_THREADS: usize = 10;
+// Leave room for damaged pictures before the next keyframe. GstVideoDecoder
+// resets its counter on successful output; these are consecutive errors, not
+// a lifetime limit or a playback timeout.
+const MAX_CONSECUTIVE_ERRORS: i32 = 64;
 
 /// Captured once at player construction, applied before each decoder starts.
-/// Factory and property checks leave GPU and audio decoders untouched.
+/// Thread limits apply only to libav video; error limits also cover GPU video.
 pub(super) struct DecoderPolicy {
     parallelism: usize,
 }
@@ -19,6 +24,16 @@ impl DecoderPolicy {
     }
 
     pub fn configure(&self, element: &gst::Element) {
+        if let Some(decoder) = element.downcast_ref::<gst_video::VideoDecoder>() {
+            let limit = decoder.max_errors();
+            if !(0..=MAX_CONSECUTIVE_ERRORS).contains(&limit) {
+                // The default is unlimited. NVDEC repeatedly failing to create
+                // a decoder (e.g. CUDA_ERROR_NO_DEVICE) otherwise never posts a
+                // bus error and playbin can remain in preroll indefinitely.
+                // Keep any stricter limit selected by the decoder itself.
+                decoder.set_max_errors(MAX_CONSECUTIVE_ERRORS);
+            }
+        }
         let Some(factory) = element.factory() else {
             return;
         };
@@ -62,7 +77,7 @@ mod tests {
     }
 
     #[test]
-    fn policy_applies_to_libav_video_only() -> Result<(), Box<dyn std::error::Error>> {
+    fn thread_budget_applies_to_libav_video_only() -> Result<(), Box<dyn std::error::Error>> {
         gst::init()?;
         let policy = DecoderPolicy { parallelism: 64 };
         for name in ["avdec_mpeg2video", "avdec_h264", "avdec_h265"] {
@@ -82,6 +97,51 @@ mod tests {
                     .find_property("max-threads")
                     .map(|_| element.property::<i32>("max-threads"))
             );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn repeated_decode_failure_reaches_the_bus_without_gpu_or_display()
+    -> Result<(), Box<dyn std::error::Error>> {
+        gst::init()?;
+        let policy = DecoderPolicy { parallelism: 1 };
+        // Exercise the same GstVideoDecoder error path used by NVDEC without
+        // opening hardware or substituting a renderer in a playback test.
+        for stricter_limit in [None, Some(0), Some(2)] {
+            let pipeline = gst::Pipeline::new();
+            let element = gst::ElementFactory::make("avdec_h264").build()?;
+            let decoder = element.downcast_ref::<gst_video::VideoDecoder>().unwrap();
+            if let Some(limit) = stricter_limit {
+                decoder.set_max_errors(limit);
+            }
+            policy.configure(&element);
+            pipeline.add(&element)?;
+            let bus = pipeline.bus().unwrap();
+            let report_failure = || {
+                gst_video::video_decoder_error!(
+                    decoder,
+                    1,
+                    gst::StreamError::Decode,
+                    ("Failed to decode data"),
+                    ["Injected repeated decoder initialization failure"]
+                )
+            };
+            let tolerated = stricter_limit.unwrap_or(MAX_CONSECUTIVE_ERRORS);
+            for _ in 0..tolerated {
+                assert_eq!(report_failure(), Ok(gst::FlowSuccess::Ok));
+                assert!(bus.pop_filtered(&[gst::MessageType::Error]).is_none());
+            }
+            assert_eq!(report_failure(), Err(gst::FlowError::Error));
+            let message = bus
+                .pop_filtered(&[gst::MessageType::Error])
+                .ok_or("decoder failed without notifying the playback bus")?;
+            let gst::MessageView::Error(error) = message.view() else {
+                unreachable!();
+            };
+            assert!(error.error().matches(gst::StreamError::Decode));
+            assert_eq!(error.src(), Some(element.upcast_ref()));
+            assert!(error.debug().unwrap().contains("initialization failure"));
         }
         Ok(())
     }
