@@ -59,6 +59,37 @@ fn wait_frame(
     }
 }
 #[test]
+fn empty_subtitle_track_clears_once_without_repainting() -> TestResult {
+    gst::init()?;
+    let player = gst::ElementFactory::make("playbin3").build()?;
+    let mut session = Session::start(&player, None)?;
+    let render = |session: &mut Session, milliseconds| {
+        session.render(gst::ClockTime::from_mseconds(milliseconds), 640, 384)
+    };
+    assert!(!visible(&render(&mut session, 0)?.expect("initial clear")));
+    for milliseconds in [16, 32, 1000] {
+        assert!(
+            render(&mut session, milliseconds)?.is_none(),
+            "an empty subtitle track must not rebuild a transparent image on every poll"
+        );
+    }
+    session.invalidate();
+    assert!(!visible(
+        &render(&mut session, 2000)?.expect("explicit clear")
+    ));
+    assert!(render(&mut session, 2016)?.is_none());
+
+    let script = Script::load(&fixture("media-subtitles.srt"))?;
+    let mut session = Session::start(&player, Some(script))?;
+    assert!(visible(&render(&mut session, 2000)?.expect("external cue")));
+    session.select_embedded()?;
+    assert!(!visible(
+        &render(&mut session, 2000)?.expect("clear old cue")
+    ));
+    assert!(render(&mut session, 2016)?.is_none());
+    Ok(())
+}
+#[test]
 fn embedded_subtitles_follow_segments_and_track_selection() -> TestResult {
     gst::init()?;
     let pipeline = Pipeline(gst::ElementFactory::make("playbin3").build()?);

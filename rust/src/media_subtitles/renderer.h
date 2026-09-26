@@ -13,6 +13,8 @@ class Renderer {
   ASS_Library *library = nullptr;
   ASS_Renderer *renderer = nullptr;
   ASS_Track *track = nullptr;
+  enum class Content { Empty, Images };
+  Content lastContent = Content::Empty;
 public:
   Renderer() {
     library = ass_library_init();
@@ -53,7 +55,12 @@ public:
     int changed = 0;
     ASS_Image *images = ass_render_frame(renderer, track, milliseconds, &changed);
     rust::Vec<std::uint8_t> pixels;
-    if (!changed && !force) return pixels;
+    const auto content = images ? Content::Images : Content::Empty;
+    // libass can report changed=2 on every call for a track without events.
+    // Repeated empty output needs no image; a transition from images must
+    // still clear the previous canvas, including after a track reset.
+    if (!force && content == lastContent && (content == Content::Empty || !changed))
+      return pixels;
     pixels.reserve(static_cast<std::size_t>(width) * height * 4);
     for (std::size_t i = 0; i < static_cast<std::size_t>(width) * height * 4; ++i) pixels.push_back(0);
     for (ASS_Image *image = images; image; image = image->next) {
@@ -73,6 +80,7 @@ public:
         }
       }
     }
+    lastContent = content;
     return pixels;
   }
 };
