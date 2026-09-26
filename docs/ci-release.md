@@ -20,8 +20,10 @@ AppImageとテストは[配布用Dockerfile](../packaging/appimage/Dockerfile)�
 Ubuntu 24.04、Rust 1.98.1、Qt 6.8.3、GStreamer 1.24を共用し、テスト用にrustfmtを追加する。
 FlatpakはマニフェストのKDE 6.10 SDKを使う。26.04用debは[専用Dockerfile](../packaging/deb/Dockerfile)でUbuntuのQt/GStreamerを使う。
 GitHubの実行ホストはいずれも`ubuntu-24.04`。
-並列コンパイルは2件に制限し、Dockerレイヤー、Cargoのダウンロード、配布用ツール、
-Flatpakのビルド状態をキャッシュする。
+CIのビルド並列数は実行ホストの`nproc`に合わせる。公開リポジトリー用の標準Linux runnerは
+[4 vCPU・16 GB RAM](https://docs.github.com/en/actions/reference/runners/github-hosted-runners#standard-github-hosted-runners-for-public-repositories)
+で、従来の2並列から利用枠を増やす。nextestのテスト実行は2並列を維持する。
+Dockerレイヤー、Cargoのダウンロード、配布用ツール、Flatpakのビルド状態をキャッシュする。
 Cargoのコンパイル結果も、Ubuntu 24.04の`build/ci/cargo`と
 26.04の`build/deb/ubuntu26.04/native/cargo`を別々に保存する。
 両ジョブの`build/ccache`もそれぞれのキャッシュへ保存し、Qt/C++の再コンパイルを減らす。

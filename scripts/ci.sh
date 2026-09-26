@@ -7,6 +7,7 @@ cd "$(dirname "$0")/.."
 # GUI suites must use the separately validated real-GPU test environment.
 export CARGO_TARGET_DIR=${CARGO_TARGET_DIR:-$PWD/build/ci-native/cargo}
 export CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS:-2}
+echo "Cargo build jobs: $CARGO_BUILD_JOBS"
 
 # The private D-Bus tests require an NSS entry even when Docker accepts a numeric
 # --user. See docs/ci-release.md for the read-only passwd/group mounts.
