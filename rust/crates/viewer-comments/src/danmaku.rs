@@ -811,7 +811,7 @@ impl Engine {
             };
             let admitted =
                 self.admission
-                    .reserve(time, self.lane_count(), comment.position, self.density)?;
+                    .reserve(time, self.lane_count(), &comment, self.density)?;
             (admitted.sequence(), admitted.scroll_rows())
         };
         let speed = self.speed.unwrap_or(1.);

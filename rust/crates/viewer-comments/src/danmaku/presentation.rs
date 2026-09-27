@@ -2,7 +2,7 @@
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, ops::Bound, time::Duration};
 
-use super::{Position, TimedComment};
+use super::{Comment, Position, TimedComment};
 
 macro_rules! choice {
     ($name:ident, $default:ident, {$($variant:ident => $wire:literal),+ $(,)?}) => {
@@ -152,6 +152,7 @@ pub(super) struct Admission {
 #[derive(Default)]
 struct Counts {
     total: usize,
+    others: usize,
     scrolling: usize,
 }
 impl Admission {
@@ -160,7 +161,9 @@ impl Admission {
         NANOS_PER_SECOND / rate as u128
     }
 
-    /// A temporal budget for normal density, bypassed by all-comment density.
+    /// A temporal budget for normal density. Own posts bypass the budget and
+    /// do not consume other posts' slots, but still contribute to placement.
+    /// All-comment density bypasses the budget for every post.
     /// Independent of glyph widths, live positions and velocities; overlap is
     /// allowed. This replaces the default
     /// pairwise adjustment described in JP4695583 / JP6526304 / JP7178462;
@@ -169,7 +172,7 @@ impl Admission {
         &mut self,
         time: Duration,
         lanes: usize,
-        position: Position,
+        comment: &Comment,
         density: DensityMode,
     ) -> Option<Admitted> {
         // Use absolute nanosecond keys so resizing does not mix different units.
@@ -177,18 +180,20 @@ impl Admission {
         let bucket = time.as_nanos() / interval;
         let start = bucket * interval;
         let end = start + interval;
-        let preceding: usize = self
+        let (preceding, others) = self
             .slots
             .range(start..end)
-            .map(|(_, count)| count.total)
-            .sum();
+            .fold((0, 0), |(total, others), (_, count)| {
+                (total + count.total, others + count.others)
+            });
         match density {
-            DensityMode::Normal if preceding >= COMMENTS_PER_SLOT => return None,
+            DensityMode::Normal if !comment.own && others >= COMMENTS_PER_SLOT => return None,
             DensityMode::Normal | DensityMode::All => {}
         }
         let count = self.slots.entry(time.as_nanos()).or_default();
         count.total += 1;
-        count.scrolling += usize::from(position == Position::Right);
+        count.others += usize::from(!comment.own);
+        count.scrolling += usize::from(comment.position == Position::Right);
         let earliest = time.saturating_sub(super::MAX_LIFETIME).as_nanos();
         while self
             .slots
@@ -228,7 +233,7 @@ impl Admission {
         let start = records.partition_point(|record| record.time.as_nanos() < first_slot);
         let end = records.partition_point(|record| record.time <= through);
         for record in &records[start..end] {
-            self.reserve(record.time, lanes, record.comment.position, density);
+            self.reserve(record.time, lanes, &record.comment, density);
         }
     }
 }

@@ -99,6 +99,89 @@ fn default_admission_limits_bursts_without_comparing_glyphs() {
 }
 
 #[test]
+fn own_posts_bypass_density_limits_without_consuming_other_posts_slots() {
+    let orders = [
+        [true, true, true, false, false, false],
+        [false, false, false, true, true, true],
+        [true, false, true, false, true, false],
+    ];
+    for display in [DisplayMode::Scroll, DisplayMode::Pop] {
+        for placement in [PlacementMode::Sequential, PlacementMode::Random] {
+            for position in [Position::Right, Position::Top, Position::Bottom] {
+                for density in [DensityMode::Normal, DensityMode::All] {
+                    for order in orders {
+                        let mut e = engine(display, placement);
+                        e.set_density(density);
+                        let mut others = 0;
+                        let mut admitted = 0;
+                        for own in order {
+                            let mut comment = Comment::new("test", position, 0xffffff).unwrap();
+                            comment.own = own;
+                            let measurement = e.prepare(comment).unwrap();
+                            let spawn = e.measured(measurement.id.value(), 128.);
+                            others += usize::from(!own);
+                            let expected = own || density == DensityMode::All || others <= 2;
+                            assert_eq!(spawn.is_some(), expected);
+                            if let Some(spawn) = spawn {
+                                assert_eq!(spawn.comment.own, own);
+                                admitted += 1;
+                            }
+                        }
+                        assert_eq!(e.active_count(), admitted);
+                        assert_eq!(e.advance_wall(MAX_LIFETIME).len(), admitted);
+                        assert_eq!(e.active_count(), 0);
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn own_live_post_in_a_full_slot_is_displayed_once_and_restored_on_seek() {
+    for display in [DisplayMode::Scroll, DisplayMode::Pop] {
+        for placement in [PlacementMode::Sequential, PlacementMode::Random] {
+            let mut e = engine(display, placement);
+            let received = seconds(10.).unwrap();
+            let mut own = record("own", received.as_secs_f64(), Position::Right);
+            own.comment.own = true;
+            let mut records = vec![
+                record("first", received.as_secs_f64(), Position::Right),
+                record("second", received.as_secs_f64(), Position::Right),
+                record("skipped", received.as_secs_f64(), Position::Right),
+                own,
+            ];
+            for record in &mut records {
+                record.timing = Timing::Live;
+            }
+            e.load_at(records.clone(), received);
+            let mut shown = Vec::new();
+            while let Some(due) = e.next_due() {
+                let id = due.id.clone();
+                if let Some(spawn) = timed(&mut e, due, 128.) {
+                    assert_eq!(spawn.comment.own, id.as_ref() == "own");
+                    shown.push(id);
+                }
+            }
+            assert_eq!(shown, ["first".into(), "second".into(), "own".into()]);
+            e.replace(records);
+            assert!(e.next_due().is_none(), "refresh must not repeat own posts");
+
+            e.seek(received + Duration::from_secs(1));
+            let mut restored = Vec::new();
+            while let Some(due) = e.next_due() {
+                assert_eq!(due.timing, Timing::Scheduled);
+                let id = due.id.clone();
+                if timed(&mut e, due, 128.).is_some() {
+                    restored.push(id);
+                }
+            }
+            assert_eq!(restored, shown);
+        }
+    }
+}
+
+#[test]
 fn fullscreen_switches_keep_new_and_existing_scrolls_at_the_same_speed() {
     let comment_width = 100.;
     let sample_interval = Duration::from_secs(1);
