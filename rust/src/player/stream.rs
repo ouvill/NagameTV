@@ -181,6 +181,7 @@ impl ffi::Player {
     pub fn poll(mut self: Pin<&mut Self>) {
         self.as_mut().poll_remote_commands();
         self.as_mut().poll_player();
+        self.as_mut().poll_seek_preview();
         self.as_mut()
             .expire_transport_notice(std::time::Instant::now());
         let aspect = self

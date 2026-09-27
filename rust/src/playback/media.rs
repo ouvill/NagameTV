@@ -18,6 +18,7 @@ const MAX_READ_BYTES: u32 = 32 * 1024 * 1024;
 const NO_SEEK: u64 = u64::MAX;
 
 pub(super) struct Input {
+    file: MediaFile,
     subscriptions: Subscriptions,
     interrupted: Arc<AtomicBool>,
     sources: Arc<Mutex<Vec<gst::glib::WeakRef<AppSrc>>>>,
@@ -29,6 +30,7 @@ impl Input {
         let sources = Arc::new(Mutex::new(Vec::new()));
         let installed = sources.clone();
         let stopped = interrupted.clone();
+        let preview_file = file.clone();
         let file = file.clone();
         let registrations = subscriptions.clone();
         let id = playbin.connect("source-setup", false, move |values| {
@@ -47,6 +49,7 @@ impl Input {
         });
         subscriptions.signal(playbin, id);
         Self {
+            file: preview_file,
             subscriptions,
             interrupted,
             sources,
@@ -54,6 +57,9 @@ impl Input {
     }
     pub fn suspend(&self, suspended: bool) {
         self.interrupted.store(suspended, Ordering::Release);
+    }
+    pub fn preview_source(&self) -> MediaFile {
+        self.file.clone()
     }
 }
 impl Drop for Input {

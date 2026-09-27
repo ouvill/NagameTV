@@ -3,6 +3,9 @@ import MinimalViewer 1.0
 
 // Only records commands; Rust tests own playback state transitions.
 QtObject {
+    property string seek_preview_image: ""
+    function request_seek_preview(milliseconds) {}
+    function clear_seek_preview() { seek_preview_image = ""; }
     property int playback_rate: 10
     property int requested_playback_rate: 10
     readonly property int minimum_playback_rate: 5

@@ -181,6 +181,7 @@ impl Default for PlayerRust {
             settings_error: QString::from(settings_error),
             screenshot_error: QString::default(),
             screenshot_saves: Default::default(),
+            seek_preview: Default::default(),
             preferences,
             autoplay_pending,
             epg: ProgramInfo::default(),

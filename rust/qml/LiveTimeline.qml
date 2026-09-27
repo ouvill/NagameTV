@@ -267,14 +267,20 @@ ColumnLayout {
             border.color: root.primaryColor
         }
         HoverHandler { id: seekHover }
-        ThemedToolTip {
+        SeekPreview {
             id: preview
             objectName: "liveSeekPreview"
             parent: slider
             readonly property real fraction: Math.max(0, Math.min(1,
                 (seekHover.point.position.x - slider.leftPadding - slider.handle.width / 2) / Math.max(1, slider.availableWidth - slider.handle.width)))
             readonly property real target: slider.from + (slider.to - slider.from) * (slider.mirrored ? 1 - fraction : fraction)
-            visible: root.visible && root.hovered && root.snapshot !== null
+            visible: root.visible && !root.closing && slider.enabled
+                && (root.hovered || root.pressed) && root.snapshot !== null
+            positionMs: slider.pressed ? slider.value : target
+            available: root.available(root.snapshot, positionMs)
+            imageSource: root.backend.seek_preview_image || ""
+            onRequested: milliseconds => root.backend.request_seek_preview(milliseconds)
+            onDismissed: root.backend.clear_seek_preview()
             text: root.previewLabel(slider.pressed ? slider.value : target)
             x: Math.max(0, Math.min(slider.width - implicitWidth, seekHover.point.position.x - implicitWidth / 2))
             y: -implicitHeight - 6; padding: Theme.spaceSm

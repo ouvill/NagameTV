@@ -1598,6 +1598,19 @@ fn check_recording(
     for (target, event) in [(45000, 2), (10000, 1), (35000, 2)] {
         assert!(evaluate(
             engine,
+            &format!("player.request_seek_preview({target}); player.paused && !player.seeking")
+        )?);
+        wait_for(
+            app,
+            engine,
+            "player.seek_preview_image.startsWith('data:image/png;base64,')",
+        )?;
+        assert!(evaluate(
+            engine,
+            "player.clear_seek_preview(); player.seek_preview_image.length === 0 && player.paused && !player.seeking"
+        )?);
+        assert!(evaluate(
+            engine,
             &format!("player.seek_to({target}) && player.seeking && player.paused")
         )?);
         wait_for(

@@ -15,6 +15,7 @@ mpegtsdemux
 nvcodec
 opengl
 playback
+png
 pulseaudio
 qml6
 soup

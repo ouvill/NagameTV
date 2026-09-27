@@ -197,6 +197,7 @@ const INITIAL_PROGRAM_SELECTION: Duration = Duration::from_secs(120);
 
 pub(in crate::playback) struct Input {
     identity: u64,
+    preview: super::preview::Source,
     shared: Shared,
     worker: Worker,
     subscriptions: Subscriptions,
@@ -215,7 +216,7 @@ impl Input {
             programs,
             recording.inspection(),
         )?;
-        Self::attach(playbin, reader, worker)
+        Self::attach(playbin, reader, worker, Some(recording.source().clone()))
     }
     #[cfg(test)]
     pub fn file(
@@ -225,7 +226,14 @@ impl Input {
         programs: bool,
     ) -> Result<Self, Error> {
         let (reader, worker) = file_reader(path, service, programs)?;
-        Self::attach(playbin, reader, worker)
+        Self::attach(
+            playbin,
+            reader,
+            worker,
+            Some(crate::playback::recording::source::Source::Local(
+                path.to_owned(),
+            )),
+        )
     }
     pub fn live(
         playbin: &gst::Element,
@@ -235,9 +243,15 @@ impl Input {
         programs: bool,
     ) -> Result<Self, Error> {
         let (reader, worker) = live_reader(uri, service, retention, programs)?;
-        Self::attach(playbin, reader, worker)
+        Self::attach(playbin, reader, worker, None)
     }
-    fn attach(playbin: &gst::Element, reader: Reader, worker: Worker) -> Result<Self, Error> {
+    fn attach(
+        playbin: &gst::Element,
+        reader: Reader,
+        worker: Worker,
+        file: Option<crate::playback::recording::source::Source>,
+    ) -> Result<Self, Error> {
+        let preview = super::preview::Source::new(&reader, file)?;
         let shared = reader.shared.clone();
         let feeder = Feeder::new(reader)?;
         let subscriptions = Subscriptions::default();
@@ -263,6 +277,7 @@ impl Input {
         subscriptions.signal(playbin, id);
         Ok(Self {
             identity: crate::playback::next_source_identity(),
+            preview,
             shared,
             worker,
             subscriptions,
@@ -316,6 +331,9 @@ impl Input {
     }
     pub fn identity(&self) -> u64 {
         self.identity
+    }
+    pub fn preview_source(&self) -> super::preview::Source {
+        self.preview.clone()
     }
     pub fn latency(&self) -> Result<Option<crate::playback::latency::Tracker>, Error> {
         match &self.shared {

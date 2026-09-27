@@ -244,6 +244,28 @@ impl Session {
             } => None,
         }
     }
+    pub fn preview_identity(&self) -> Option<u64> {
+        match &self.input {
+            Input::Idle => None,
+            Input::Active { source, .. } => Some(source.identity()),
+            Input::Media { identity, .. } => Some(*identity),
+        }
+    }
+    pub fn preview_source(&self) -> Option<super::preview::Source> {
+        match &self.input {
+            Input::Idle => None,
+            Input::Active { source, .. } => Some(super::preview::Source::transport(
+                source.identity(),
+                source.preview_source(),
+            )),
+            Input::Media {
+                identity, source, ..
+            } => Some(super::preview::Source::media(
+                *identity,
+                source.preview_source(),
+            )),
+        }
+    }
     pub fn comment_source(
         &self,
         fallback: Option<BroadcastService>,

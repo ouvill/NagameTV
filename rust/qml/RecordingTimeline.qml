@@ -120,7 +120,7 @@ ColumnLayout {
             restoreMode: Binding.RestoreNone
         }
         HoverHandler { id: seekHover }
-        ThemedToolTip {
+        SeekPreview {
             id: preview
             objectName: "recordingSeekPreview"
             parent: slider
@@ -130,7 +130,11 @@ ColumnLayout {
                 / Math.max(1, slider.availableWidth - slider.handle.width)))
             readonly property real target: slider.from + (slider.to - slider.from)
                 * (slider.mirrored ? 1 - fraction : fraction)
-            visible: root.visible && root.hovered
+            visible: root.visible && !root.closing && slider.enabled && (root.hovered || root.pressed)
+            positionMs: slider.pressed ? slider.value : target
+            imageSource: root.backend.seek_preview_image || ""
+            onRequested: milliseconds => root.backend.request_seek_preview(milliseconds)
+            onDismissed: root.backend.clear_seek_preview()
             text: root.previewLabel(slider.pressed ? slider.value : target)
             x: Math.max(0, Math.min(slider.width - implicitWidth,
                 seekHover.point.position.x - implicitWidth / 2))

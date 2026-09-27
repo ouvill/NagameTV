@@ -9,6 +9,10 @@ Item {
         width: 860; height: 400; visible: true
         QtObject {
             id: backend
+            property string seek_preview_image: ""
+            property var previewRequests: []
+            function request_seek_preview(milliseconds) { previewRequests.push(milliseconds); }
+            function clear_seek_preview() { seek_preview_image = ""; }
             property string live_timeline: "null"
             property bool seekable: true
             property string transport_error: ""
@@ -48,6 +52,7 @@ Item {
                 failOnWarning(/.*/);
                 backend.seekable = true; backend.transport_error = ""; backend.requests = []; backend.liveRequests = 0;
                 backend.clockEpochs = [];
+                backend.previewRequests = [];
                 timeline.width = 820;
                 timeline.closing = false;
                 timeline.LayoutMirroring.enabled = false; timeline.LayoutMirroring.childrenInherit = true;
@@ -98,6 +103,20 @@ Item {
                 compare(backend.requests[0].session, "one");
                 mouseMove(host.contentItem, 5, 5);
                 compare(findChild(timeline, "returnToLiveButton"), null);
+            }
+            function test_preview_clears_when_pointer_leaves_retained_history() {
+                const slider = findChild(timeline, "liveSeekSlider");
+                const preview = findChild(timeline, "liveSeekPreview");
+                mouseMove(slider, slider.width / 2, slider.height / 2);
+                tryVerify(() => backend.previewRequests.length > 0);
+                backend.seek_preview_image = Qt.resolvedUrl("../../../assets/icons/radio.svg");
+                tryCompare(findChild(preview, "seekPreviewImage"), "visible", true);
+                const count = backend.previewRequests.length;
+                mouseMove(slider, 1, slider.height / 2);
+                tryCompare(preview, "available", false);
+                compare(backend.seek_preview_image, "");
+                compare(backend.previewRequests.length, count);
+                compare(backend.requests.length, 0);
             }
             function test_joining_mid_program_keeps_full_axis_and_only_retained_part_seekable() {
                 // Join at 20:36 during a 20:15–20:42 program; LIVE is 20:38.

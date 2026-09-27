@@ -8,6 +8,10 @@ Item {
         width: 720; height: 320; visible: true
         QtObject {
             id: backend
+            property string seek_preview_image: ""
+            property var previewRequests: []
+            function request_seek_preview(milliseconds) { previewRequests.push(milliseconds); }
+            function clear_seek_preview() { seek_preview_image = ""; }
             property bool recording: true
             property string current_program_data: "null"
             property real program_progress: 0
@@ -38,6 +42,7 @@ Item {
                 backend.window_end_ms = Qt.binding(function() { return backend.duration_ms; });
                 backend.recording = true; backend.current_program_data = "null"; backend.program_progress = 0;
                 backend.requests = []; timeline.closing = false;
+                backend.previewRequests = [];
                 timeline.LayoutMirroring.enabled = false;
                 host.requestActivate();
                 tryCompare(host, "active", true);
@@ -104,6 +109,22 @@ Item {
                 compare(backend.requests.length, 1);
                 verify(Math.abs(backend.requests[0] - 36000) < 2000);
                 verify(!timeline.pressed);
+            }
+            function test_image_preview_does_not_seek_and_clears_on_close() {
+                const slider = findChild(timeline, "recordingSeekSlider");
+                const preview = findChild(timeline, "recordingSeekPreview");
+                mouseMove(slider, slider.width / 2, slider.height / 2);
+                tryVerify(() => backend.previewRequests.length > 0);
+                backend.seek_preview_image = Qt.resolvedUrl("../../../assets/icons/radio.svg");
+                const image = findChild(preview, "seekPreviewImage");
+                tryCompare(image, "visible", true);
+                tryCompare(image, "status", Image.Ready);
+                compare(backend.position_ms, 5000);
+                compare(backend.requests.length, 0);
+                verify(preview.x >= 0 && preview.x + preview.width <= slider.width);
+                timeline.closing = true;
+                tryCompare(preview, "visible", false);
+                compare(backend.seek_preview_image, "");
             }
             function test_keyboard_unknown_duration_and_cancel_on_stop() {
                 const slider = findChild(timeline, "recordingSeekSlider");

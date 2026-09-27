@@ -23,6 +23,7 @@ macro_rules! snapshot {
 }
 
 snapshot! {
+    seek_preview_revision: u64 = |p| p.rust().seek_preview.revision() => [seek_preview_image_changed];
     applied_rate: playback::speed::Rate = |p| p.rust().speed.applied => [playback_rate_changed];
     requested_rate: playback::speed::Rate = |p| p.rust().speed.requested => [requested_playback_rate_changed];
     availability: playback::speed::Availability = |p| p.rust().speed.availability => [speed_available_changed, speed_reason_changed];
@@ -194,6 +195,13 @@ impl Values {
         player.program_status = program_status;
         player.subtitle_data = subtitle_data;
         player.subtitle_cells = subtitle_cells;
+        player.seek_preview.synchronize(
+            player
+                .stream_state
+                .active()
+                .then(|| player.media.preview_identity())
+                .flatten(),
+        );
         // Commit posting availability before any transport notification. Pausing
         // and seeking must disable submission without waiting for a comment poll.
         player.comment_post_available = player.commentary.posting_available(

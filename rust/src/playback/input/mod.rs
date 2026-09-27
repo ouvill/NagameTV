@@ -8,6 +8,7 @@ pub use limits::{Activation, Limits, Policy};
 #[cfg(test)]
 mod live_speed_tests;
 mod packet_tail;
+pub(in crate::playback) mod preview;
 mod source;
 mod store;
 #[cfg(test)]

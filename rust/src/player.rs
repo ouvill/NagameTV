@@ -29,6 +29,7 @@ mod remote;
 #[cfg(feature = "native_tests")]
 mod remote_checks;
 mod screenshots;
+mod seek_preview;
 mod startup;
 mod statistics;
 mod status;
@@ -156,6 +157,7 @@ pub mod ffi {
         #[qproperty(QString, live_timeline, READ, NOTIFY)]
         #[qproperty(QString, transport_error, READ = transport_error, NOTIFY)]
         #[qproperty(bool, recording, READ = recording, NOTIFY)]
+        #[qproperty(QString, seek_preview_image, READ = seek_preview_image, NOTIFY)]
         #[qproperty(QString, recording_name, READ = recording_name, NOTIFY)]
         #[qproperty(QString, file_error, READ, NOTIFY)]
         #[qproperty(bool, recording_loading, READ = recording_loading, NOTIFY)]
@@ -398,6 +400,11 @@ pub mod ffi {
         fn seek_timeline(self: Pin<&mut Player>, session: QString, milliseconds: f64) -> bool;
         #[qinvokable]
         fn timeline_preview(self: &Player, session: QString, milliseconds: f64) -> QString;
+        fn seek_preview_image(self: &Player) -> QString;
+        #[qinvokable]
+        fn request_seek_preview(self: Pin<&mut Player>, milliseconds: f64);
+        #[qinvokable]
+        fn clear_seek_preview(self: Pin<&mut Player>);
         #[qinvokable]
         fn skip(self: Pin<&mut Player>, milliseconds: f64) -> bool;
         #[qinvokable]
@@ -587,6 +594,7 @@ pub struct PlayerRust {
     settings_error: QString,
     screenshot_error: QString,
     screenshot_saves: crate::screenshots::Queue,
+    seek_preview: playback::preview::Controller,
     preferences: settings::Session,
     autoplay_pending: bool,
     epg: ProgramInfo,

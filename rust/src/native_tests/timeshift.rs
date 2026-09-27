@@ -262,6 +262,19 @@ pub(super) fn run(
         wait_for(app, engine, "player.paused && !player.seeking")?;
         assert!(evaluate(
             engine,
+            "player.request_seek_preview((player.window_start_ms + player.window_end_ms) / 2); player.paused && !player.seeking"
+        )?);
+        wait_for(
+            app,
+            engine,
+            "player.seek_preview_image.startsWith('data:image/png;base64,')",
+        )?;
+        assert!(evaluate(
+            engine,
+            "player.clear_seek_preview(); player.seek_preview_image.length === 0 && player.paused && !player.seeking"
+        )?);
+        assert!(evaluate(
+            engine,
             &format!("{OBSERVER}.saved = JSON.parse(player.live_timeline); true")
         )?);
         let before = super::bridge::ffi::evaluate_root(

@@ -17,6 +17,11 @@ pub(super) struct DecoderPolicy {
 }
 
 impl DecoderPolicy {
+    pub fn preview() -> Self {
+        // A still needs one frame, not the playback decoder's throughput.
+        Self { parallelism: 1 }
+    }
+
     pub fn new() -> Self {
         Self {
             parallelism: std::thread::available_parallelism().map_or(1, usize::from),

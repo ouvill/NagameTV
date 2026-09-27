@@ -12,6 +12,7 @@ pub mod failure;
 pub mod input;
 pub(crate) mod latency;
 pub(crate) mod live_timeline;
+pub mod preview;
 pub mod recording;
 pub mod speed;
 pub mod stats;
