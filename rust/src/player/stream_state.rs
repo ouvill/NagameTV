@@ -105,6 +105,27 @@ impl Default for State {
     }
 }
 impl State {
+    pub(super) fn commentary_playback<'a>(
+        &self,
+        channel: Option<&'a Channel>,
+        media: &'a crate::playback::Session,
+    ) -> crate::features::comments::session::Playback<'a> {
+        use crate::features::comments::session::{Playback, Target};
+        let live = Target::Live(channel);
+        match self {
+            Self::Stopped(Selection::Live) | Self::StopFailed(Attempt::Live(_)) => {
+                Playback::Inactive(live)
+            }
+            Self::Stopped(Selection::File(_)) | Self::StopFailed(Attempt::File(_)) => {
+                Playback::Inactive(Target::Recording)
+            }
+            Self::Connecting(Attempt::Live(_)) => Playback::Connecting(live, media),
+            Self::Connecting(Attempt::File(_)) => Playback::Connecting(Target::Recording, media),
+            Self::Playing(_, phase) => Playback::Active(live, media, *phase),
+            Self::Recording(_, phase) => Playback::Active(Target::Recording, media, *phase),
+        }
+    }
+
     pub(super) fn retain_subtitle(&mut self, script: Option<crate::media_subtitles::Script>) {
         match self {
             Self::Recording(file, _)

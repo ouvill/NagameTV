@@ -232,28 +232,13 @@ impl ffi::Player {
         mut self: Pin<&mut Self>,
         command: crate::features::comments::session::Command,
     ) -> bool {
-        use super::stream_state::{Attempt, Selection, State};
-        use crate::features::comments::session::{Input, Options, Playback, Submission, Target};
+        use crate::features::comments::session::{Input, Options, Submission};
         let update = {
             let mut this = self.as_mut().rust_mut();
             let this = &mut *this;
-            let live = || Target::Live(this.catalog.selected());
-            let input = match &this.stream_state {
-                State::Stopped(Selection::Live) | State::StopFailed(Attempt::Live(_)) => {
-                    Playback::Inactive(live())
-                }
-                State::Stopped(Selection::File(_)) | State::StopFailed(Attempt::File(_)) => {
-                    Playback::Inactive(Target::Recording)
-                }
-                State::Connecting(Attempt::Live(_)) => Playback::Connecting(live(), &this.media),
-                State::Connecting(Attempt::File(_)) => {
-                    Playback::Connecting(Target::Recording, &this.media)
-                }
-                State::Playing(_, phase) => Playback::Active(live(), &this.media, *phase),
-                State::Recording(_, phase) => {
-                    Playback::Active(Target::Recording, &this.media, *phase)
-                }
-            };
+            let input = this
+                .stream_state
+                .commentary_playback(this.catalog.selected(), &this.media);
             let options = Options {
                 enabled: this.comments_enabled,
                 display: this.danmaku_enabled,

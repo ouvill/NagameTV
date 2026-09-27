@@ -20,6 +20,7 @@ TestCase {
         submitPolicy: submitPolicy
         width: 340
         available: true
+        atLiveEdge: true
         iconDirectory: Qt.resolvedUrl("../../../assets/icons/")
         onDraftEdited: function(text) { draft = text; }
     }
@@ -35,6 +36,7 @@ TestCase {
         composer.visible = true;
         composer.busy = false;
         composer.available = true;
+        composer.atLiveEdge = true;
         submitPolicy.mode = CommentSubmitPolicy.ControlEnter;
         composer.status = "";
         composer.width = 340;
@@ -185,5 +187,27 @@ TestCase {
         replaceText("次のコメント");
         compare(hint.visible, false);
         compare(composer.occupiedHeight, 46);
+    }
+    function test_timeshift_keeps_draft_and_hint_until_returning_to_live() {
+        composer.available = false;
+        composer.atLiveEdge = false;
+        const hint = findChild(composer, "commentPostHint");
+        const button = findChild(composer, "sendComment");
+        verify(hint.visible);
+        compare(hint.text, composer.playbackHint);
+        verify(composer.occupiedHeight > composer.height);
+        keyClick(Qt.Key_Return, Qt.ControlModifier);
+        mouseClick(button);
+        compare(sent.count, 0);
+        compare(composer.draft, "実況🦀");
+        replaceText("あとで送るコメント");
+        verify(hint.visible);
+        composer.atLiveEdge = true;
+        composer.available = true;
+        verify(!hint.visible);
+        compare(composer.draft, "あとで送るコメント");
+        compare(sent.count, 0);
+        keyClick(Qt.Key_Return, Qt.ControlModifier);
+        compare(sent.count, 1);
     }
 }

@@ -59,9 +59,39 @@ impl Default for Snapshot {
     }
 }
 
+impl Snapshot {
+    /// A paused or pending seek can retain a near-live position without
+    /// presenting the live broadcast. Share this decision with comment posting.
+    pub fn playing_at_live_edge(self, phase: super::timeline::Phase) -> bool {
+        self.at_live_edge && matches!(phase, super::timeline::Phase::Playing)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn only_playing_at_the_live_edge_is_current() {
+        use crate::playback::timeline::{Phase, Resume};
+        for at_live_edge in [false, true] {
+            let speed = Snapshot {
+                at_live_edge,
+                ..Default::default()
+            };
+            assert_eq!(speed.playing_at_live_edge(Phase::Playing), at_live_edge);
+            for phase in [
+                Phase::Paused,
+                Phase::Seeking(Resume::Playing),
+                Phase::Seeking(Resume::Paused),
+                Phase::Ended,
+            ] {
+                assert!(
+                    !speed.playing_at_live_edge(phase),
+                    "{phase:?}, edge={at_live_edge}"
+                );
+            }
+        }
+    }
     #[test]
     fn external_rates_must_be_finite_in_range_and_in_tenths() {
         for invalid in [f64::NAN, f64::INFINITY, -1., 0., 0.4, 2.1, 1.25, f64::MAX] {

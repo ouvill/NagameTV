@@ -27,6 +27,7 @@ snapshot! {
     requested_rate: playback::speed::Rate = |p| p.rust().speed.requested => [requested_playback_rate_changed];
     availability: playback::speed::Availability = |p| p.rust().speed.availability => [speed_available_changed, speed_reason_changed];
     at_live_edge: bool = |p| p.at_live_edge() => [at_live_edge_changed];
+    comment_post_available: bool = |p| *p.comment_post_available() => [comment_post_available_changed];
     action: ffi::PlaybackAction = |p| p.playback_action() => [playback_action_changed];
     timeshift: bool = |p| p.timeshift() => [timeshift_changed];
     pausable: bool = |p| p.pausable() => [pausable_changed];
@@ -193,6 +194,15 @@ impl Values {
         player.program_status = program_status;
         player.subtitle_data = subtitle_data;
         player.subtitle_cells = subtitle_cells;
+        // Commit posting availability before any transport notification. Pausing
+        // and seeking must disable submission without waiting for a comment poll.
+        player.comment_post_available = player.commentary.posting_available(
+            player
+                .stream_state
+                .commentary_playback(player.catalog.selected(), &player.media),
+            player.network.as_ref(),
+            std::time::Instant::now(),
+        );
     }
 }
 

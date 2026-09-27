@@ -647,6 +647,7 @@ ViewerWindow {
             draft: player.comment_draft
             status: player.comment_post_status
             available: player.comment_post_available
+            atLiveEdge: player.at_live_edge
             supported: player.comments_enabled && player.comment_post_target.length > 0
             busy: player.comment_post_busy
             submitPolicy: commentSubmitPolicy

@@ -84,7 +84,15 @@ impl ffi::Player {
         self.rust().speed.availability == playback::speed::Availability::Variable
     }
     pub fn at_live_edge(&self) -> bool {
-        self.media_active() && !self.paused() && !self.seeking() && self.rust().speed.at_live_edge
+        match &self.rust().stream_state {
+            super::stream_state::State::Playing(_, phase) => {
+                self.rust().speed.playing_at_live_edge(*phase)
+            }
+            super::stream_state::State::Stopped(_)
+            | super::stream_state::State::Connecting(_)
+            | super::stream_state::State::Recording(_, _)
+            | super::stream_state::State::StopFailed(_) => false,
+        }
     }
     pub fn speed_reason(&self) -> QString {
         use playback::speed::Availability;

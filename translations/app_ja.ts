@@ -196,6 +196,10 @@
       <translation>コメントを入力…</translation>
     </message>
     <message>
+      <source>Return to live to post comments.</source>
+      <translation>ライブに戻るとコメントを投稿できます。</translation>
+    </message>
+    <message>
       <source>Send</source>
       <translation>送信</translation>
     </message>

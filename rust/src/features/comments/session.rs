@@ -17,6 +17,16 @@ pub(crate) enum Playback<'a> {
     Active(Target<'a>, &'a playback::Session, playback::timeline::Phase),
 }
 impl Playback<'_> {
+    fn allows_posting(&self) -> bool {
+        match self {
+            Self::Active(Target::Live(_), media, phase) => {
+                media.speed().playing_at_live_edge(*phase)
+            }
+            Self::Inactive(_) | Self::Connecting(_, _) | Self::Active(Target::Recording, _, _) => {
+                false
+            }
+        }
+    }
     fn channel(&self) -> Option<&Channel> {
         let (Self::Inactive(target) | Self::Connecting(target, _) | Self::Active(target, _, _)) =
             self;
@@ -216,9 +226,11 @@ impl Session {
         let submission = match command {
             Command::Poll => Submission::NotRequested,
             Command::Submit => {
-                if network.is_some_and(|network| {
-                    network.post_comment(&mut self.reception.posting, &self.draft)
-                }) {
+                if input.allows_posting()
+                    && network.is_some_and(|network| {
+                        network.post_comment(&mut self.reception.posting, &self.draft)
+                    })
+                {
                     Submission::Accepted
                 } else {
                     Submission::Rejected
@@ -276,8 +288,13 @@ impl Session {
     pub fn posting_busy(&self) -> bool {
         self.reception.posting.busy()
     }
-    pub fn posting_available(&self, network: Option<&Network>, now: Instant) -> bool {
-        network.is_some() && self.reception.posting.available(now)
+    pub fn posting_available(
+        &self,
+        playback: Playback<'_>,
+        network: Option<&Network>,
+        now: Instant,
+    ) -> bool {
+        playback.allows_posting() && network.is_some() && self.reception.posting.available(now)
     }
     pub fn posting_channel(&self) -> Option<u16> {
         self.reception.jikkyo_id()
@@ -387,6 +404,45 @@ mod tests {
     }
 
     #[test]
+    fn non_live_submission_keeps_the_draft_without_starting_a_post() {
+        use playback::timeline::{Phase, Resume};
+        let channels = channels();
+        let channel = &channels[0];
+        let media = playback::Session::new(None, Default::default());
+        let network = Network::new().unwrap();
+        // Keep even a regressed submission local; reception and activity are
+        // disabled independently so this test never contacts NX-Jikkyo.
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let mut session = Session::default();
+        session.reception.configure(true, Some(channel));
+        session.reception.controller.configure(None);
+        session.reception.posting.configure(Some(posting::Target {
+            service_id: channel.id,
+            watch_url: format!("ws://{}/watch", listener.local_addr().unwrap()),
+        }));
+        session.edit_draft("draft kept while behind live".into());
+        let target = || Target::Live(Some(channel));
+        for playback in [
+            Playback::Inactive(target()),
+            Playback::Connecting(target(), &media),
+            Playback::Active(target(), &media, Phase::Playing),
+            Playback::Active(target(), &media, Phase::Paused),
+            Playback::Active(target(), &media, Phase::Seeking(Resume::Playing)),
+            Playback::Active(target(), &media, Phase::Seeking(Resume::Paused)),
+            Playback::Active(target(), &media, Phase::Ended),
+        ] {
+            let mut input = input(&[], playback);
+            input.network = Some(&network);
+            assert!(session.reception.posting.available(input.now));
+            let result = session.update(input, Command::Submit);
+            assert_eq!(result.submission, Submission::Rejected);
+            assert!(!session.posting_busy());
+            assert_eq!(session.draft(), "draft kept while behind live");
+            assert!(matches!(session.posting_status(), posting::Status::Idle));
+        }
+    }
+
+    #[test]
     fn recording_disable_and_disconnect_invalidate_live_posting() {
         let channels = channels();
         let live = || {
@@ -454,6 +510,10 @@ mod tests {
         assert!(matches!(session.status(), Status::Replay(_)));
         assert_eq!(session.draft(), "retained while pausing");
         assert_eq!(session.posting_channel(), Some(101));
-        assert!(!session.posting_available(None, Instant::now()));
+        assert!(!session.posting_available(
+            Playback::Active(Target::Live(Some(&channels[0])), &media, Phase::Paused),
+            None,
+            Instant::now(),
+        ));
     }
 }

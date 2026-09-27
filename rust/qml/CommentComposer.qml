@@ -10,6 +10,9 @@ Rectangle {
     property bool busy: false
     property bool available: false
     property bool supported: true
+    required property bool atLiveEdge
+    readonly property string playbackHint: supported && !atLiveEdge
+        ? qsTranslate("Main", "Return to live to post comments.") : ""
     required property CommentSubmitPolicy submitPolicy
     property url iconDirectory: "qrc:/qt/qml/MinimalViewer/assets/icons/"
     readonly property int maximumLength: 1024
@@ -125,8 +128,8 @@ Rectangle {
         id: feedback
         objectName: "commentPostHint"
         anchors { left: parent.left; right: parent.right; bottom: parent.top; bottomMargin: 8 }
-        visible: root.showFeedback && root.status.length > 0
-        text: root.status
+        visible: root.playbackHint.length > 0 || (root.showFeedback && root.status.length > 0)
+        text: root.playbackHint.length > 0 ? root.playbackHint : root.status
         textFormat: Text.PlainText
         color: Theme.textPrimary
         font.pixelSize: Theme.fontCaption

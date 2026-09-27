@@ -69,8 +69,13 @@ pub(super) fn publish(mut player: Pin<&mut ffi::Player>, update: Option<Update>)
             comment_program_title: QString::from(session.program_title()),
             comment_status: status::comment_text(session.status()),
             comment_post_busy: session.posting_busy(),
-            comment_post_available: session
-                .posting_available(state.network.as_ref(), Instant::now()),
+            comment_post_available: session.posting_available(
+                state
+                    .stream_state
+                    .commentary_playback(state.catalog.selected(), &state.media),
+                state.network.as_ref(),
+                Instant::now(),
+            ),
             comment_post_target: QString::from(
                 session
                     .posting_channel()

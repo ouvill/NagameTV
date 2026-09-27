@@ -998,6 +998,40 @@ fn check_commentary_projection() -> TestResult {
     assert!(!player.pin_mut().post_comment());
     player.pin_mut().poll_comments();
     assert_eq!(*observed.lock().unwrap(), 1);
+
+    // A transport transition must invalidate the last UI availability before
+    // either the transport or posting observer can read the new state.
+    {
+        let mut state = player.pin_mut().rust_mut();
+        state.stream_state =
+            super::stream_state::State::Connecting(super::stream_state::Attempt::new(
+                state.catalog.selected().unwrap(),
+                state.preferences.preferences().timeshift_policy(),
+            ))
+            .started();
+        state.speed.at_live_edge = true;
+        state.comment_post_available = true;
+    }
+    let changes = Arc::new(Mutex::new(0));
+    let posting_changes = changes.clone();
+    let _posting = player
+        .pin_mut()
+        .on_comment_post_available_changed(move |player| {
+            assert!(player.paused());
+            assert!(!player.at_live_edge());
+            assert!(!*player.comment_post_available());
+            *posting_changes.lock().unwrap() += 1;
+        });
+    let pause_changes = changes.clone();
+    let _pause = player.pin_mut().on_paused_changed(move |player| {
+        assert!(!player.at_live_edge());
+        assert!(!*player.comment_post_available());
+        *pause_changes.lock().unwrap() += 1;
+    });
+    player
+        .pin_mut()
+        .change_stream_state(|state| state.transport(crate::playback::timeline::Phase::Paused));
+    assert_eq!(*changes.lock().unwrap(), 2);
     Ok(())
 }
 
