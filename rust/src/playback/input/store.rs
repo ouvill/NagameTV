@@ -413,13 +413,13 @@ impl Store {
                 .enumerate()
             {
                 let scope = self.index.latency_scope();
-                let anchor = self
+                let timing = self
                     .index
-                    .packet(self.end + (number * super::TS_PACKET_SIZE) as u64, packet);
+                    .receive_packet(self.end + (number * super::TS_PACKET_SIZE) as u64, packet);
                 if scope != self.index.latency_scope() {
                     self.latency.reset();
                 }
-                if let Some(anchor) = anchor {
+                if let Some(anchor) = timing.anchor {
                     self.latency.observe_pcr(anchor.time_ns, received);
                     self.history.observe(
                         anchor.epoch,
@@ -428,7 +428,7 @@ impl Store {
                         anchor.observation(),
                     );
                 }
-                if let Some(position) = self.index.video_time(packet) {
+                if let Some(position) = timing.video_time {
                     self.latency.receive(position, received);
                 }
             }

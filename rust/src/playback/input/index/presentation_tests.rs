@@ -102,14 +102,26 @@ fn latency_timestamps_select_video_and_handle_clock_wrap() {
     index.clock = Some((raw_pcr, ticks));
     let pts = (raw_pcr + PCR_HZ) % PCR_WRAP;
     assert_eq!(
-        index.video_time(&timed_pes(VIDEO_PID, pts)),
+        index
+            .receive_packet(offset, &timed_pes(VIDEO_PID, pts))
+            .video_time,
         Some(ticks_to_ns(ticks + PCR_HZ))
     );
     for pid in [AUDIO_PID, FOREIGN_PID] {
-        assert_eq!(index.video_time(&timed_pes(pid, pts)), None);
+        assert_eq!(
+            index
+                .receive_packet(offset, &timed_pes(pid, pts))
+                .video_time,
+            None
+        );
     }
     index.video_pid = None; // No unambiguous video ES selected by the PMT.
-    assert_eq!(index.video_time(&timed_pes(VIDEO_PID, pts)), None);
+    assert_eq!(
+        index
+            .receive_packet(offset, &timed_pes(VIDEO_PID, pts))
+            .video_time,
+        None
+    );
 }
 
 #[test]

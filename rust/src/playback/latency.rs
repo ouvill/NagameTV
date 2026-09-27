@@ -2,7 +2,7 @@
 mod pcr;
 use serde::Serialize;
 use std::{
-    collections::{BTreeMap, VecDeque},
+    collections::{BTreeMap, BTreeSet, VecDeque, btree_map::Entry},
     sync::{Arc, Mutex, MutexGuard},
     time::{Duration, Instant},
 };
@@ -26,6 +26,9 @@ struct State {
     previous_end: Option<u64>,
     received_end: Option<u64>,
     receipts: BTreeMap<u64, Receipt>,
+    // Only waiting receipts need expiration. Arrival order differs from PTS
+    // order, so index their deadlines separately instead of scanning all PTS.
+    waiting: BTreeSet<(Instant, u64)>,
     samples: VecDeque<Sample>,
     clock: pcr::Clock,
 }
@@ -35,7 +38,7 @@ enum Receipt {
     Presented,
     Ambiguous,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 struct Sample {
     at: Instant,
     delay: Duration,
@@ -76,6 +79,7 @@ impl Tracker {
             let mut state = error.into_inner();
             state.generation = state.generation.wrapping_add(1);
             state.receipts.clear();
+            state.waiting.clear();
             state.samples.clear();
             state.clock = pcr::Clock::default();
             self.0.clear_poison();
@@ -99,17 +103,22 @@ impl Tracker {
         state.received_end = Some(state.received_end.map_or(position, |end| end.max(position)));
         // Packet timestamps can arrive out of presentation order (B frames).
         // Bound both time and count, including malformed repeated timestamps.
-        state.receipts.retain(|_, receipt| match receipt {
-            Receipt::Waiting(at) => now.saturating_duration_since(*at) <= RECEIPT_LIFETIME,
-            Receipt::Presented | Receipt::Ambiguous => true,
-        });
-        state
-            .receipts
-            .entry(position)
-            .and_modify(|receipt| *receipt = Receipt::Ambiguous)
-            .or_insert(Receipt::Waiting(now));
+        state.expire_receipts(now);
+        match state.receipts.entry(position) {
+            Entry::Occupied(mut entry) => {
+                if let Receipt::Waiting(at) = entry.insert(Receipt::Ambiguous) {
+                    state.waiting.remove(&(at, position));
+                }
+            }
+            Entry::Vacant(entry) => {
+                entry.insert(Receipt::Waiting(now));
+                state.waiting.insert((now, position));
+            }
+        }
         while state.receipts.len() > MAX_RECEIPTS {
-            state.receipts.pop_first();
+            if let Some((position, Receipt::Waiting(at))) = state.receipts.pop_first() {
+                state.waiting.remove(&(at, position));
+            }
         }
     }
     pub fn match_frame(&self, position: u64) -> Option<Pending> {
@@ -146,46 +155,76 @@ impl Tracker {
             .received_end
             .map(|end| end.saturating_add(2 * TIMESTAMP_TOLERANCE_NS));
         state.receipts.clear();
+        state.waiting.clear();
         state.samples.clear();
         state.clock = pcr::Clock::default();
     }
     pub fn snapshot(&self, now: Instant) -> Measurements {
         let mut state = self.state();
         state.expire_samples(now);
+        let samples: Vec<_> = state.samples.iter().cloned().collect();
+        let pcr_fresh = state.clock.is_fresh(now);
+        // Statistics must not hold up reception or Qt's presentation callback.
+        // Copy one consistent window, then select quantiles outside the lock.
+        drop(state);
         Measurements {
-            receive: state.summarize(now, |sample| Some(sample.delay.as_nanos() as i128)),
-            pcr: if state.clock.is_fresh(now) {
-                state.summarize(now, |sample| sample.pcr_deviation_ns)
+            receive: Snapshot::summarize(&samples, now, |sample| {
+                Some(sample.delay.as_nanos() as i128)
+            }),
+            pcr: if pcr_fresh {
+                Snapshot::summarize(&samples, now, |sample| sample.pcr_deviation_ns)
             } else {
                 Snapshot::Waiting
             },
         }
     }
 }
-impl State {
-    fn summarize(&self, now: Instant, value: impl Fn(&Sample) -> Option<i128>) -> Snapshot {
-        let mut measurements: Vec<_> = self
-            .samples
+impl Snapshot {
+    fn summarize(
+        samples: &[Sample],
+        now: Instant,
+        value: impl Fn(&Sample) -> Option<i128>,
+    ) -> Self {
+        let Some((_, latest)) = samples
             .iter()
-            .filter_map(|sample| value(sample).map(|value| (sample.at, value)))
-            .collect();
-        let Some((_, latest)) = measurements
-            .last()
+            .rev()
+            .find_map(|sample| value(sample).map(|value| (sample.at, value)))
             .filter(|(at, _)| now.saturating_duration_since(*at) <= STALE_AFTER)
         else {
-            return Snapshot::Waiting;
+            return Self::Waiting;
         };
         const NS_PER_MS: f64 = 1_000_000.0;
-        let latest_ms = *latest as f64 / NS_PER_MS;
-        measurements.sort_unstable_by_key(|(_, value)| *value);
+        let latest_ms = latest as f64 / NS_PER_MS;
+        let mut measurements: Vec<_> = samples.iter().filter_map(value).collect();
         let count = measurements.len();
-        let median_ms = (measurements[(count - 1) / 2].1 + measurements[count / 2].1) as f64
-            / (2.0 * NS_PER_MS);
-        Snapshot::Measuring {
+        let p95 = *measurements
+            .select_nth_unstable((count * 95).div_ceil(100) - 1)
+            .1;
+        let (lower, upper_median, _) = measurements.select_nth_unstable(count / 2);
+        let lower_median = if count.is_multiple_of(2) {
+            *lower
+                .iter()
+                .max()
+                .expect("even sample count has a lower half")
+        } else {
+            *upper_median
+        };
+        Self::Measuring {
             latest_ms,
-            median_ms,
-            p95_ms: measurements[(count * 95).div_ceil(100) - 1].1 as f64 / NS_PER_MS,
+            median_ms: (lower_median + *upper_median) as f64 / (2.0 * NS_PER_MS),
+            p95_ms: p95 as f64 / NS_PER_MS,
             samples: count,
+        }
+    }
+}
+impl State {
+    fn expire_receipts(&mut self, now: Instant) {
+        while let Some(&(at, position)) = self.waiting.first() {
+            if now.saturating_duration_since(at) <= RECEIPT_LIFETIME {
+                break;
+            }
+            self.waiting.pop_first();
+            self.receipts.remove(&position);
         }
     }
     fn expire_samples(&mut self, now: Instant) {
@@ -217,6 +256,7 @@ impl Pending {
             return;
         };
         state.receipts.insert(self.position, Receipt::Presented);
+        state.waiting.remove(&(self.received, self.position));
         state.expire_samples(now);
         if state.samples.len() == MAX_SAMPLES {
             state.samples.pop_front();
@@ -233,6 +273,7 @@ impl Pending {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
     const FRAME_NS: u64 = 40_000_000;
 
     #[test]
@@ -459,6 +500,115 @@ mod tests {
         }
         let state = tracker.state();
         assert_eq!(state.receipts.len(), MAX_RECEIPTS);
+        assert!(state.waiting.is_empty());
         assert_eq!(state.samples.len(), MAX_SAMPLES);
+    }
+
+    #[test]
+    fn receipt_expiration_uses_arrival_order_and_keeps_duplicate_guards() {
+        let tracker = Tracker::default();
+        let start = Instant::now();
+        let later = start + Duration::from_secs(1);
+        tracker.receive(4 * FRAME_NS, start);
+        let expired = tracker.match_frame(4 * FRAME_NS).unwrap();
+        tracker.receive(3 * FRAME_NS, later);
+        tracker.receive(FRAME_NS, start);
+        tracker.match_frame(FRAME_NS).unwrap().present(start);
+        tracker.receive(2 * FRAME_NS, start);
+        tracker.receive(2 * FRAME_NS, later);
+
+        tracker.receive(5 * FRAME_NS, start + RECEIPT_LIFETIME);
+        assert!(tracker.match_frame(4 * FRAME_NS).is_some());
+        let after_expiration = start + RECEIPT_LIFETIME + Duration::from_nanos(1);
+        tracker.receive(6 * FRAME_NS, after_expiration);
+        assert!(tracker.match_frame(4 * FRAME_NS).is_none());
+        assert!(tracker.match_frame(3 * FRAME_NS).is_some());
+        // An expired receipt can be replaced, but cannot validate old output.
+        tracker.receive(4 * FRAME_NS, after_expiration);
+        expired.present(after_expiration);
+        assert!(tracker.match_frame(4 * FRAME_NS).is_some());
+        for position in [FRAME_NS, 2 * FRAME_NS] {
+            tracker.receive(position, after_expiration);
+            assert!(tracker.match_frame(position).is_none());
+        }
+    }
+
+    #[test]
+    fn count_eviction_and_reset_also_release_waiting_deadlines() {
+        let tracker = Tracker::default();
+        let start = Instant::now();
+        // Arrival order is the reverse of PTS order, including count eviction.
+        for index in (0..MAX_RECEIPTS * 2).rev() {
+            tracker.receive(index as u64 * FRAME_NS, start);
+        }
+        {
+            let state = tracker.state();
+            assert_eq!(state.receipts.len(), MAX_RECEIPTS);
+            assert_eq!(state.waiting.len(), MAX_RECEIPTS);
+        }
+        tracker.reset_output();
+        assert_eq!(tracker.state().waiting.len(), MAX_RECEIPTS);
+        tracker.reset();
+        assert!(tracker.state().waiting.is_empty());
+    }
+
+    proptest! {
+        #[test]
+        fn waiting_deadlines_follow_receipt_lifecycle(
+            operations in prop::collection::vec((0_u8..5, 0_u64..64, 0_u64..31_000), 1..200),
+        ) {
+            let tracker = Tracker::default();
+            let mut now = Instant::now();
+            for (operation, frame, elapsed_ms) in operations {
+                let position = frame * FRAME_NS;
+                match operation {
+                    0 => tracker.receive(position, now),
+                    1 => if let Some(pending) = tracker.match_frame(position) {
+                        pending.present(now);
+                    },
+                    2 => now += Duration::from_millis(elapsed_ms),
+                    3 => tracker.reset_output(),
+                    4 => tracker.reset(),
+                    _ => unreachable!("generated operation"),
+                }
+                let state = tracker.state();
+                let expected: BTreeSet<_> = state.receipts.iter().filter_map(|(&position, receipt)| {
+                    match receipt {
+                        Receipt::Waiting(at) => Some((*at, position)),
+                        Receipt::Presented | Receipt::Ambiguous => None,
+                    }
+                }).collect();
+                prop_assert_eq!(&state.waiting, &expected);
+            }
+        }
+
+        #[test]
+        fn selected_quantiles_match_sorted_signed_samples(
+            values in prop::collection::vec(prop::option::of(-1_000_000_i64..1_000_000), 1..=MAX_SAMPLES),
+        ) {
+            let now = Instant::now();
+            let samples: Vec<_> = values.iter().map(|value| Sample {
+                at: now,
+                delay: Duration::ZERO,
+                pcr_deviation_ns: value.map(i128::from),
+            }).collect();
+            let measured = Snapshot::summarize(&samples, now, |sample| sample.pcr_deviation_ns);
+            let mut sorted: Vec<_> = values.iter().copied().flatten().collect();
+            if sorted.is_empty() {
+                prop_assert!(matches!(measured, Snapshot::Waiting));
+            } else {
+                let latest = *sorted.last().unwrap();
+                sorted.sort_unstable();
+                let count = sorted.len();
+                const NS_PER_MS: f64 = 1_000_000.0;
+                let expected = Snapshot::Measuring {
+                    latest_ms: latest as f64 / NS_PER_MS,
+                    median_ms: (sorted[(count - 1) / 2] + sorted[count / 2]) as f64 / (2.0 * NS_PER_MS),
+                    p95_ms: sorted[(count * 95).div_ceil(100) - 1] as f64 / NS_PER_MS,
+                    samples: count,
+                };
+                prop_assert_eq!(serde_json::to_value(measured).unwrap(), serde_json::to_value(expected).unwrap());
+            }
+        }
     }
 }

@@ -37,6 +37,12 @@ pub(super) struct Anchor {
     programs: Option<Arc<Observation>>,
 }
 
+#[derive(Default)]
+pub(super) struct ReceivedPacket {
+    pub anchor: Option<Anchor>,
+    pub video_time: Option<u64>,
+}
+
 impl Anchor {
     pub fn observation(&self) -> Option<&Arc<Observation>> {
         self.programs.as_ref()
@@ -214,12 +220,19 @@ impl Index {
     pub fn latency_scope(&self) -> (u64, Option<Pid>, Option<Pid>) {
         (self.epoch, self.video_pid, self.pcr_pid)
     }
-    pub fn video_time(&self, bytes: &[u8]) -> Option<u64> {
-        // Timing is optional diagnostic metadata. A malformed packet supplies
-        // no receipt; transport handling remains with packet(), called first.
+    pub fn receive_packet(&mut self, offset: u64, bytes: &[u8]) -> ReceivedPacket {
+        // A malformed packet supplies neither an index entry nor a receipt.
         let Ok(packet) = TransportPacket::parse(bytes) else {
-            return None;
+            return ReceivedPacket::default();
         };
+        let anchor = self.parsed_packet(offset, bytes, &packet);
+        // Use the clock and selected PID after this packet's table/PCR updates.
+        ReceivedPacket {
+            anchor,
+            video_time: self.video_time(&packet),
+        }
+    }
+    fn video_time(&self, packet: &TransportPacket<'_>) -> Option<u64> {
         if !packet.start || Some(packet.pid) != self.video_pid {
             return None;
         }
@@ -296,7 +309,18 @@ impl Index {
         self.last_pmt.clear();
     }
     pub fn packet(&mut self, offset: u64, bytes: &[u8]) -> Option<Anchor> {
-        let packet = TransportPacket::parse(bytes).ok()?;
+        // Invalid transport packets cannot contribute to the sparse index.
+        let Ok(packet) = TransportPacket::parse(bytes) else {
+            return None;
+        };
+        self.parsed_packet(offset, bytes, &packet)
+    }
+    fn parsed_packet(
+        &mut self,
+        offset: u64,
+        bytes: &[u8],
+        packet: &TransportPacket<'_>,
+    ) -> Option<Anchor> {
         if packet.pid == Pid::PAT {
             for data in self.pat_sections.push(packet.start, packet.payload) {
                 let Ok(section) = PsiSection::parse(&data) else {
@@ -419,7 +443,7 @@ impl Index {
         if let Some(collector) = &mut self.collector
             && let Ok(bytes) = bytes.try_into()
         {
-            collector.packet(&packet, bytes);
+            collector.packet(packet, bytes);
             if let Some(mut observation) = collector.take()
                 && let Some((pcr, ticks)) = self.clock
             {

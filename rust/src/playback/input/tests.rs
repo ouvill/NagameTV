@@ -15,8 +15,10 @@ fn received_and_decoded_video_use_the_same_timeline() -> Result<(), Box<dyn std:
     let mut index = Index::new(1, false);
     let mut received = Vec::new();
     for (number, bytes) in data.as_chunks::<TS_PACKET_SIZE>().0.iter().enumerate() {
-        index.packet((number * TS_PACKET_SIZE) as u64, bytes);
-        if let Some(time) = index.video_time(bytes) {
+        if let Some(time) = index
+            .receive_packet((number * TS_PACKET_SIZE) as u64, bytes)
+            .video_time
+        {
             received.push(time);
         }
     }
