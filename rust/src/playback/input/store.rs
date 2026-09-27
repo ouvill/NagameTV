@@ -97,7 +97,8 @@ pub(super) struct Store {
     retention: RetentionState,
     pub index: Index,
     pub history: super::super::live_timeline::History,
-    pub status: Status,
+    status: Status,
+    activity: super::activity::Activity,
     pub latency: crate::playback::latency::Tracker,
 }
 
@@ -159,11 +160,25 @@ impl Store {
             index,
             history,
             status: Status::Receiving,
+            activity: Default::default(),
             latency: Default::default(),
         })
     }
     pub fn policy(&self) -> super::Policy {
         self.policy
+    }
+    pub fn activity(&self) -> super::activity::Activity {
+        self.activity.clone()
+    }
+    pub fn finish(&mut self, result: Result<(), String>) {
+        self.status = match result {
+            Ok(()) => Status::Ended,
+            Err(error) => {
+                tracing::error!(%error, "TS reception stopped after a failure");
+                Status::Failed(error)
+            }
+        };
+        self.activity.notify(super::activity::Change::Control);
     }
     fn effective_policy(&self) -> super::Policy {
         self.retention.effective(self.policy)
@@ -441,7 +456,11 @@ impl Store {
                 self.trim(byte_limit, time_limit)?;
             }
         }
-        self.trim(byte_limit, time_limit)
+        self.trim(byte_limit, time_limit)?;
+        if !packets.is_empty() {
+            self.activity.notify(super::activity::Change::Data);
+        }
+        Ok(())
     }
     fn trim(&mut self, byte_limit: u64, time_limit: Duration) -> std::io::Result<()> {
         let earliest = self
@@ -852,9 +871,9 @@ mod tests {
                 matches!(store.read(store.start())?, ReadResult::Data { bytes, .. } if bytes.as_ref() == block)
             );
             assert!(matches!(store.read(store.end)?, ReadResult::Awaiting));
-            store.status = Status::Ended;
+            store.finish(Ok(()));
             assert!(matches!(store.read(store.end)?, ReadResult::End));
-            store.status = Status::Failed("disk full".into());
+            store.finish(Err("disk full".into()));
             assert!(store.read(store.end).is_err());
             drop(store);
             assert!(

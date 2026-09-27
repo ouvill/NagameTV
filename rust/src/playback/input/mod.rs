@@ -1,4 +1,5 @@
 //! Raw source ownership is independent of playback. Pause/seek never stop reception.
+mod activity;
 mod file;
 mod filesystem;
 mod index;
@@ -33,7 +34,6 @@ pub(super) const SEEK_PREROLL: Duration = Duration::from_secs(3);
 const RECEIVE_TIMEOUT: Duration = Duration::from_secs(15);
 const RECONNECT_DELAY: Duration = Duration::from_secs(1);
 const MAX_RECONNECTS: usize = 3;
-const INPUT_WAIT: Duration = Duration::from_millis(10);
 const METADATA_BYTES: usize = 8 * 1024 * 1024;
 pub(super) const EXPLORATION_TIMEOUT: Duration = Duration::from_secs(2);
 
@@ -45,6 +45,8 @@ pub enum Error {
     Filter(#[from] cxx::Exception),
     #[error("TS入力の内部状態に異常があります")]
     Poisoned,
+    #[error("TS入力の読み取り位置が進みませんでした")]
+    NoReadProgress,
     #[error("シーク先のTSは保持範囲外です")]
     Expired,
     #[error("シーク先の番組情報をまだ取得できていません")]
@@ -335,6 +337,8 @@ impl Reader {
                     self.filter = tsreadex::Filter::new(self.service)?;
                 }
                 let data = data.as_ref();
+                let consumed =
+                    std::num::NonZeroUsize::new(data.len()).ok_or(Error::NoReadProgress)?;
                 let mut bytes = Vec::with_capacity(data.len());
                 bytes.extend_from_slice(self.filter.push(&std::mem::take(&mut self.bootstrap))?);
                 let mut time_ns = self.time_ns;
@@ -386,7 +390,10 @@ impl Reader {
                         discontinuity,
                     });
                 }
-                Ok(self.pending.pop_front().unwrap_or(Output::Filtered))
+                Ok(self
+                    .pending
+                    .pop_front()
+                    .unwrap_or(Output::Filtered { consumed }))
             }
             ReadResult::Awaiting => Ok(Output::Awaiting),
             ReadResult::Expired => Ok(Output::Expired),
@@ -401,7 +408,9 @@ enum Output {
         discontinuity: bool,
     },
     Awaiting,
-    Filtered,
+    Filtered {
+        consumed: std::num::NonZeroUsize,
+    },
     Expired,
     End,
 }
@@ -669,11 +678,12 @@ fn live_reader(
     let uri = uri.to_owned();
     let task = runtime.spawn(async move {
         let result = receive(&uri, &receiving).await;
-        if let Ok(mut store) = receiving.lock() {
-            store.status = match result {
-                Ok(()) => Status::Ended,
-                Err(error) => Status::Failed(error),
-            };
+        match receiving.lock() {
+            Ok(mut store) => store.finish(result),
+            Err(error) => {
+                tracing::error!(%error, "Could not finish TS reception; waking the failed input");
+                error.into_inner().finish(Err("TS store poisoned".into()));
+            }
         }
     });
     let reader = Reader {
@@ -695,13 +705,19 @@ fn live_reader(
 #[derive(Debug, thiserror::Error)]
 enum ReceiveError {
     #[error("{0}")]
-    Network(#[from] reqwest::Error),
+    Network(#[source] reqwest::Error),
     #[error("TS保持領域: {0}")]
     Storage(#[from] std::io::Error),
     #[error("TS保持領域の内部状態に異常があります")]
     Poisoned,
     #[error("配信の接続が終了しました")]
     Disconnected,
+}
+impl From<reqwest::Error> for ReceiveError {
+    fn from(error: reqwest::Error) -> Self {
+        // Input URLs may carry credentials; failures are retained and logged.
+        Self::Network(error.without_url())
+    }
 }
 async fn receive(uri: &str, store: &Mutex<Store>) -> Result<(), String> {
     let client = reqwest::Client::builder()

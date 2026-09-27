@@ -1,15 +1,20 @@
 //! appsrc owns the GStreamer streaming boundary; the receiver owns raw retention.
+use super::activity::{Activity, Change, Interest};
 use super::*;
 use crate::features::subscriptions::Subscriptions;
 use gstreamer::{self as gst, prelude::*};
 use gstreamer_app::{AppSrc, AppSrcCallbacks, AppStreamType};
 use std::sync::atomic::AtomicU64;
+#[cfg(test)]
+mod wait_tests;
 
 pub(super) struct Feedback {
     pub failure: Mutex<Option<String>>,
     generation: AtomicU64,
     expired: AtomicU64,
     progress: Mutex<ReadProgress>,
+    interrupted: AtomicBool,
+    activity: Activity,
 }
 
 /// Receive-edge waits belong to one seek generation. A wait alone says nothing
@@ -43,6 +48,8 @@ impl Default for Feedback {
                 generation: 0,
                 waits: 0,
             }),
+            interrupted: AtomicBool::new(false),
+            activity: Activity::default(),
         }
     }
 }
@@ -55,6 +62,7 @@ impl Feedback {
                 waits: 0,
             };
         }
+        self.activity.notify(Change::Control);
     }
     fn awaited(&self, generation: u64) {
         if let Ok(mut progress) = self.progress.lock()
@@ -75,6 +83,112 @@ impl Feedback {
     }
 }
 
+// Keep the reader and all ways of interrupting its wait together. Callers
+// cannot change a standalone cancellation flag without waking that reader.
+#[derive(Clone)]
+pub(super) struct Feeder {
+    reader: Arc<Mutex<Reader>>,
+    pub(super) feedback: Arc<Feedback>,
+}
+
+impl Feeder {
+    pub fn new(reader: Reader) -> Result<Self, Error> {
+        let activity = match &reader.shared {
+            Shared::Live(store) => store.lock().map_err(|_| Error::Poisoned)?.activity(),
+            Shared::File(_) => Activity::default(),
+        };
+        Ok(Self {
+            reader: Arc::new(Mutex::new(reader)),
+            feedback: Arc::new(Feedback {
+                activity,
+                ..Feedback::default()
+            }),
+        })
+    }
+
+    pub fn suspend(&self, suspended: bool) {
+        self.feedback
+            .interrupted
+            .store(suspended, Ordering::Release);
+        self.feedback.activity.notify(Change::Control);
+    }
+
+    fn cancelled(&self, generation: u64) -> bool {
+        self.feedback.interrupted.load(Ordering::Acquire)
+            || generation != self.feedback.generation.load(Ordering::Acquire)
+    }
+
+    fn next(
+        &self,
+        generation: u64,
+        requests: &Mutex<Option<u64>>,
+    ) -> Result<Option<gst::Buffer>, Error> {
+        // Filtering consumes at most READ_BYTES each iteration. Yield after a
+        // bounded burst of real work, never spin on an unchanged empty input.
+        const FILTERED_YIELD_BYTES: usize = READ_BYTES * 16;
+        let mut filtered_bytes = 0;
+        loop {
+            let observed = self.feedback.activity.observe();
+            if self.cancelled(generation) {
+                return Err(Error::Cancelled);
+            }
+            let result = self
+                .reader
+                .lock()
+                .map_err(|_| Error::Poisoned)
+                .and_then(|mut reader| {
+                    if let Some(target) = requests.lock().map_err(|_| Error::Poisoned)?.take()
+                        && !(target == 0 && reader.offset == reader.framing.offset())
+                    {
+                        reader.prepare(target)?.execute()?;
+                    }
+                    reader.next_with_cancel(|| self.cancelled(generation))
+                });
+            if self.cancelled(generation) {
+                return Err(Error::Cancelled);
+            }
+            match result {
+                Ok(Output::Data {
+                    bytes,
+                    time_ns,
+                    discontinuity,
+                }) => {
+                    if bytes.is_empty() {
+                        return Err(Error::NoReadProgress);
+                    }
+                    let mut buffer = gst::Buffer::from_mut_slice(bytes);
+                    let writable = buffer.get_mut().expect("new buffer");
+                    if discontinuity {
+                        writable.set_flags(gst::BufferFlags::DISCONT);
+                    }
+                    writable.set_dts(gst::ClockTime::from_nseconds(time_ns));
+                    writable.set_pts(gst::ClockTime::from_nseconds(time_ns));
+                    return Ok(Some(buffer));
+                }
+                Ok(Output::Expired) | Err(Error::Expired) => {
+                    self.feedback.expired.store(generation, Ordering::Release);
+                    // New TS cannot repair an expired read position. Wait for
+                    // a seek, terminal input state or cancellation, not arrivals.
+                    observed.wait(Interest::Control);
+                }
+                Ok(Output::Awaiting) => {
+                    self.feedback.awaited(generation);
+                    observed.wait(Interest::Any);
+                }
+                Ok(Output::Filtered { consumed }) => {
+                    filtered_bytes += consumed.get();
+                    if filtered_bytes >= FILTERED_YIELD_BYTES {
+                        std::thread::yield_now();
+                        filtered_bytes = 0;
+                    }
+                }
+                Ok(Output::End) => return Ok(None),
+                Err(error) => return Err(error),
+            }
+        }
+    }
+}
+
 const SOURCE_QUEUE_BYTES: u64 = (READ_BYTES * 2) as u64;
 const LIVE_EDGE_TOLERANCE_NS: u64 = 5_000_000_000;
 // Allow the bounded metadata scan to finish after playback has started.
@@ -86,8 +200,7 @@ pub(in crate::playback) struct Input {
     shared: Shared,
     worker: Worker,
     subscriptions: Subscriptions,
-    interrupted: Arc<AtomicBool>,
-    feedback: Arc<Feedback>,
+    feeder: Feeder,
     sources: Arc<Mutex<Vec<gst::glib::WeakRef<AppSrc>>>>,
 }
 impl Input {
@@ -102,7 +215,7 @@ impl Input {
             programs,
             recording.inspection(),
         )?;
-        Ok(Self::attach(playbin, reader, worker))
+        Self::attach(playbin, reader, worker)
     }
     #[cfg(test)]
     pub fn file(
@@ -112,7 +225,7 @@ impl Input {
         programs: bool,
     ) -> Result<Self, Error> {
         let (reader, worker) = file_reader(path, service, programs)?;
-        Ok(Self::attach(playbin, reader, worker))
+        Self::attach(playbin, reader, worker)
     }
     pub fn live(
         playbin: &gst::Element,
@@ -122,17 +235,14 @@ impl Input {
         programs: bool,
     ) -> Result<Self, Error> {
         let (reader, worker) = live_reader(uri, service, retention, programs)?;
-        Ok(Self::attach(playbin, reader, worker))
+        Self::attach(playbin, reader, worker)
     }
-    fn attach(playbin: &gst::Element, reader: Reader, worker: Worker) -> Self {
+    fn attach(playbin: &gst::Element, reader: Reader, worker: Worker) -> Result<Self, Error> {
         let shared = reader.shared.clone();
-        let interrupted = Arc::new(AtomicBool::new(false));
-        let feedback = Arc::new(Feedback::default());
+        let feeder = Feeder::new(reader)?;
         let subscriptions = Subscriptions::default();
         let registrations = subscriptions.clone();
-        let reader = Arc::new(Mutex::new(reader));
-        let stopped = interrupted.clone();
-        let failed = feedback.clone();
+        let installed_feeder = feeder.clone();
         let sources = Arc::new(Mutex::new(Vec::new()));
         let installed_sources = sources.clone();
         let id = playbin.connect("source-setup", false, move |values| {
@@ -146,29 +256,22 @@ impl Input {
                         .retain(|source: &gst::glib::WeakRef<AppSrc>| source.upgrade().is_some());
                     sources.push(source.downgrade());
                 }
-                configure(
-                    &source,
-                    reader.clone(),
-                    stopped.clone(),
-                    failed.clone(),
-                    &registrations,
-                );
+                configure(&source, installed_feeder.clone(), &registrations);
             }
             None
         });
         subscriptions.signal(playbin, id);
-        Self {
+        Ok(Self {
             identity: crate::playback::next_source_identity(),
             shared,
             worker,
             subscriptions,
-            interrupted,
-            feedback,
+            feeder,
             sources,
-        }
+        })
     }
     pub fn suspend(&self, suspended: bool) {
-        self.interrupted.store(suspended, Ordering::Release);
+        self.feeder.suspend(suspended);
     }
     pub fn reconfigure(
         &mut self,
@@ -181,7 +284,13 @@ impl Input {
         Ok(store.prepare(policy)?.commit()?)
     }
     pub fn check(&self) -> Result<(), Error> {
-        if let Some(error) = &*self.feedback.failure.lock().map_err(|_| Error::Poisoned)? {
+        if let Some(error) = &*self
+            .feeder
+            .feedback
+            .failure
+            .lock()
+            .map_err(|_| Error::Poisoned)?
+        {
             return Err(std::io::Error::other(error.clone()).into());
         }
         self.shared.window()?;
@@ -385,10 +494,10 @@ impl Input {
         store.history.seek_target(start, end, milliseconds)
     }
     pub fn take_expired(&self) -> bool {
-        self.feedback.take_expired()
+        self.feeder.feedback.take_expired()
     }
     pub fn read_progress(&self) -> Result<ReadProgress, Error> {
-        self.feedback.read_progress()
+        self.feeder.feedback.read_progress()
     }
     pub fn live_window(&self) -> Option<super::super::timeline::LiveWindow> {
         use super::super::timeline::{LiveWindow, Range};
@@ -425,13 +534,7 @@ impl Drop for Input {
     }
 }
 
-pub(super) fn configure(
-    source: &AppSrc,
-    reader: Arc<Mutex<Reader>>,
-    interrupted: Arc<AtomicBool>,
-    feedback: Arc<Feedback>,
-    registrations: &Subscriptions,
-) {
+pub(super) fn configure(source: &AppSrc, feeder: Feeder, registrations: &Subscriptions) {
     source.set_format(gst::Format::Time);
     source.set_stream_type(AppStreamType::Seekable);
     source.set_max_bytes(SOURCE_QUEUE_BYTES);
@@ -441,17 +544,23 @@ pub(super) fn configure(
             .field("packetsize", TS_PACKET_SIZE as i32)
             .build(),
     ));
-    let shared = reader.lock().expect("new source reader").shared.clone();
+    let shared = feeder
+        .reader
+        .lock()
+        .expect("new source reader")
+        .shared
+        .clone();
     let seek_shared = shared.clone();
     let requests = Arc::new(Mutex::new(None));
     let seeking = requests.clone();
     let sequence = Arc::new(Mutex::new(None::<gst::Seqnum>));
     let requested = sequence.clone();
-    let epoch = feedback.clone();
+    let epoch = feeder.feedback.clone();
     if let Some(pad) = source.static_pad("src") {
         let probe = pad.add_probe(
             gst::PadProbeType::EVENT_UPSTREAM
                 | gst::PadProbeType::EVENT_DOWNSTREAM
+                | gst::PadProbeType::EVENT_FLUSH
                 | gst::PadProbeType::QUERY_UPSTREAM,
             move |_, info| {
                 if let Some(event) = info.event_mut() {
@@ -462,6 +571,7 @@ pub(super) fn configure(
                                 *sequence = Some(event.seqnum());
                             }
                         }
+                        gst::EventView::FlushStart(_) => epoch.begin_seek(),
                         gst::EventView::Segment(_) => {
                             // appsrc creates a fresh segment seqnum. Preserve the
                             // originating seek identity through demux and preroll.
@@ -511,6 +621,7 @@ pub(super) fn configure(
         registrations.probe(&pad, probe);
     }
 
+    let seeking_activity = feeder.feedback.activity.clone();
     source.set_callbacks(
         AppSrcCallbacks::builder()
             .seek_data(move |_, target| {
@@ -524,6 +635,7 @@ pub(super) fn configure(
                     }
                     // No disk access and no reader lock on the GUI seek path.
                     *seeking.lock().map_err(|_| Error::Poisoned)? = Some(target);
+                    seeking_activity.notify(Change::Control);
                     Ok(())
                 })();
                 if let Err(error) = &result {
@@ -534,76 +646,34 @@ pub(super) fn configure(
                 result.is_ok()
             })
             .need_data(move |source, _| {
-                let current = feedback.generation.load(Ordering::Acquire);
-                while !interrupted.load(Ordering::Acquire)
-                    && current == feedback.generation.load(Ordering::Acquire)
-                {
-                    let result =
-                        reader
-                            .lock()
-                            .map_err(|_| Error::Poisoned)
-                            .and_then(|mut reader| {
-                                if let Some(target) =
-                                    requests.lock().map_err(|_| Error::Poisoned)?.take()
-                                    && !(target == 0 && reader.offset == reader.framing.offset())
-                                {
-                                    reader.prepare(target)?.execute()?;
-                                }
-                                reader.next_with_cancel(|| {
-                                    interrupted.load(Ordering::Acquire)
-                                        || current != feedback.generation.load(Ordering::Acquire)
-                                })
-                            });
-                    if interrupted.load(Ordering::Acquire)
-                        || current != feedback.generation.load(Ordering::Acquire)
-                    {
-                        return;
+                let generation = feeder.feedback.generation.load(Ordering::Acquire);
+                let result = feeder.next(generation, &requests);
+                if feeder.cancelled(generation) {
+                    return;
+                }
+                let delivered = match result {
+                    Ok(Some(buffer)) => source.push_buffer(buffer),
+                    Ok(None) => source.end_of_stream(),
+                    // Normal cancellation during shutdown or a flushing seek.
+                    Err(Error::Cancelled) => return,
+                    Err(error) => {
+                        tracing::error!(
+                            error = &error as &dyn std::error::Error,
+                            "Could not read TS input for playback"
+                        );
+                        if let Ok(mut failure) = feeder.feedback.failure.lock() {
+                            *failure = Some(error.to_string());
+                        }
+                        source.end_of_stream()
                     }
-                    match result {
-                        Ok(Output::Data {
-                            bytes,
-                            time_ns,
-                            discontinuity,
-                        }) => {
-                            if bytes.is_empty() {
-                                continue;
-                            }
-                            let mut buffer = gst::Buffer::from_mut_slice(bytes);
-                            let writable = buffer.get_mut().expect("new buffer");
-                            if discontinuity {
-                                writable.set_flags(gst::BufferFlags::DISCONT);
-                            }
-                            writable.set_dts(gst::ClockTime::from_nseconds(time_ns));
-                            writable.set_pts(gst::ClockTime::from_nseconds(time_ns));
-                            if current == feedback.generation.load(Ordering::Acquire) {
-                                let _ = source.push_buffer(buffer);
-                            }
-                            return;
-                        }
-                        Ok(Output::Expired) | Err(Error::Expired) => {
-                            // A delayed seek may expire before the reader accepts
-                            // it. Recover in this generation, never fail playback or
-                            // carry an old reader's feedback into a new seek.
-                            feedback.expired.store(current, Ordering::Release);
-                            std::thread::sleep(INPUT_WAIT);
-                        }
-                        Ok(Output::Awaiting) => {
-                            feedback.awaited(current);
-                            std::thread::sleep(INPUT_WAIT);
-                        }
-                        Ok(Output::Filtered) => {
-                            std::thread::sleep(INPUT_WAIT);
-                        }
-                        Ok(Output::End) => {
-                            let _ = source.end_of_stream();
-                            return;
-                        }
-                        Err(error) => {
-                            if let Ok(mut failure) = feedback.failure.lock() {
-                                *failure = Some(error.to_string());
-                            }
-                            let _ = source.end_of_stream();
-                            return;
+                };
+                if let Err(error) = delivered {
+                    // GStreamer can flush or end between the generation check
+                    // and delivery. These are normal seek/shutdown races.
+                    if !matches!(error, gst::FlowError::Flushing | gst::FlowError::Eos) {
+                        tracing::error!(%error, "Could not deliver TS input to appsrc");
+                        if let Ok(mut failure) = feeder.feedback.failure.lock() {
+                            *failure = Some(error.to_string());
                         }
                     }
                 }

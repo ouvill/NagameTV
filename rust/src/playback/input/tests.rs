@@ -24,17 +24,17 @@ fn received_and_decoded_video_use_the_same_timeline() -> Result<(), Box<dyn std:
     }
     let (reader, _worker) = file_reader(&path, 1, false)?;
     let pipeline = gst::parse::launch("appsrc name=source ! tsdemux name=demux demux. ! queue ! mpegvideoparse ! avdec_mpeg2video ! appsink name=output sync=false demux. ! queue ! fakesink sync=false")?.downcast::<gst::Pipeline>().map_err(|_| "pipeline")?;
-    let interrupted = Arc::new(AtomicBool::new(false));
-    struct Stop(gst::Pipeline, Arc<AtomicBool>);
+    let feeder = source::Feeder::new(reader)?;
+    struct Stop(gst::Pipeline, source::Feeder);
     impl Drop for Stop {
         fn drop(&mut self) {
-            self.1.store(true, Ordering::Release);
+            self.1.suspend(true);
             if let Err(error) = self.0.set_state(gst::State::Null) {
                 tracing::error!(%error, "Could not stop latency timeline test pipeline");
             }
         }
     }
-    let stop = Stop(pipeline.clone(), interrupted.clone());
+    let stop = Stop(pipeline.clone(), feeder.clone());
     let scope = crate::features::subscriptions::Subscriptions::default();
     source::configure(
         &pipeline
@@ -42,9 +42,7 @@ fn received_and_decoded_video_use_the_same_timeline() -> Result<(), Box<dyn std:
             .ok_or("source")?
             .downcast()
             .map_err(|_| "appsrc")?,
-        Arc::new(Mutex::new(reader)),
-        interrupted.clone(),
-        Arc::new(source::Feedback::default()),
+        feeder.clone(),
         &scope,
     );
     pipeline.set_state(gst::State::Playing)?;
@@ -66,7 +64,7 @@ fn received_and_decoded_video_use_the_same_timeline() -> Result<(), Box<dyn std:
             );
         }
     }
-    interrupted.store(true, Ordering::Release);
+    feeder.suspend(true);
     pipeline.set_state(gst::State::Null)?;
     drop(stop);
     scope.close();
@@ -243,15 +241,15 @@ fn normalized_raw_input_seeks_across_pid_changes_without_losing_pause()
             std::thread::sleep(TEST_POLL);
         }
         let pipeline = gst::parse::launch("appsrc name=source ! tsdemux name=demux demux. ! queue ! mpegvideoparse ! avdec_mpeg2video ! appsink name=output max-buffers=1 drop=true sync=true")?.downcast::<gst::Pipeline>().map_err(|_| "pipeline")?;
-        struct Stop(gst::Pipeline, Arc<AtomicBool>);
+        struct Stop(gst::Pipeline, source::Feeder);
         impl Drop for Stop {
             fn drop(&mut self) {
-                self.1.store(true, Ordering::Release);
+                self.1.suspend(true);
                 let _ = self.0.set_state(gst::State::Null);
             }
         }
-        let interrupted = Arc::new(AtomicBool::new(false));
-        let stop = Stop(pipeline.clone(), interrupted.clone());
+        let feeder = source::Feeder::new(reader)?;
+        let stop = Stop(pipeline.clone(), feeder.clone());
         let scope = crate::features::subscriptions::Subscriptions::default();
         source::configure(
             &pipeline
@@ -259,9 +257,7 @@ fn normalized_raw_input_seeks_across_pid_changes_without_losing_pause()
                 .ok_or("source")?
                 .downcast()
                 .map_err(|_| "appsrc")?,
-            Arc::new(Mutex::new(reader)),
-            interrupted,
-            Arc::new(source::Feedback::default()),
+            feeder.clone(),
             &scope,
         );
         let sink = pipeline.by_name("output").ok_or("sink")?;
@@ -354,18 +350,16 @@ fn sequential_playback_across_discontinuities_keeps_frames_and_monotonic_clock()
             .join(name);
         let (reader, _worker) = file_reader(&path, 1, true)?;
         let pipeline = gst::parse::launch("appsrc name=source ! tsdemux name=demux demux. ! queue ! mpegvideoparse ! avdec_mpeg2video ! fakesink name=output sync=false demux. ! queue ! aacparse ! avdec_aac ! fakesink name=audio sync=false")?.downcast::<gst::Pipeline>().map_err(|_| "pipeline")?;
-        let interrupted = Arc::new(AtomicBool::new(false));
+        let feeder = source::Feeder::new(reader)?;
         let scope = crate::features::subscriptions::Subscriptions::default();
-        let failure = Arc::new(source::Feedback::default());
+        let failure = feeder.feedback.clone();
         source::configure(
             &pipeline
                 .by_name("source")
                 .ok_or("source")?
                 .downcast()
                 .map_err(|_| "appsrc")?,
-            Arc::new(Mutex::new(reader)),
-            interrupted.clone(),
-            failure.clone(),
+            feeder.clone(),
             &scope,
         );
         let frames = Arc::new(Mutex::new(Vec::<u64>::new()));
@@ -389,7 +383,7 @@ fn sequential_playback_across_discontinuities_keeps_frames_and_monotonic_clock()
             gst::ClockTime::from_seconds(TEST_DEADLINE.as_secs()),
             &[gst::MessageType::Error, gst::MessageType::Eos],
         );
-        interrupted.store(true, Ordering::Release);
+        feeder.suspend(true);
         pipeline.set_state(gst::State::Null)?;
         scope.close();
         assert!(
@@ -446,7 +440,7 @@ fn file_framing_preserves_packets_for_ts_m2ts_and_parity_frames()
             match reader.next()? {
                 Output::Data { bytes, .. } => output.extend(bytes),
                 Output::End => break,
-                Output::Filtered => {}
+                Output::Filtered { .. } => {}
                 Output::Awaiting | Output::Expired => panic!("file did not complete"),
             }
         }
@@ -548,26 +542,24 @@ fn exercise_expired_pause(expiry: Expiry) -> Result<(), Box<dyn std::error::Erro
         pending_seek: None,
     };
     let pipeline = gst::parse::launch("appsrc name=source ! tsdemux name=demux demux. ! queue ! mpegvideoparse ! avdec_mpeg2video ! fakesink name=output sync=true")?.downcast::<gst::Pipeline>().map_err(|_| "pipeline")?;
-    let interrupted = Arc::new(AtomicBool::new(false));
-    struct Stop(gst::Pipeline, Arc<AtomicBool>);
+    let feeder = source::Feeder::new(reader)?;
+    struct Stop(gst::Pipeline, source::Feeder);
     impl Drop for Stop {
         fn drop(&mut self) {
-            self.1.store(true, Ordering::Release);
+            self.1.suspend(true);
             let _ = self.0.set_state(gst::State::Null);
         }
     }
-    let stop = Stop(pipeline.clone(), interrupted.clone());
+    let stop = Stop(pipeline.clone(), feeder.clone());
     let scope = crate::features::subscriptions::Subscriptions::default();
-    let feedback = Arc::new(source::Feedback::default());
+    let feedback = feeder.feedback.clone();
     source::configure(
         &pipeline
             .by_name("source")
             .ok_or("source")?
             .downcast()
             .map_err(|_| "appsrc")?,
-        Arc::new(Mutex::new(reader)),
-        interrupted,
-        feedback.clone(),
+        feeder.clone(),
         &scope,
     );
     let mut controller = super::super::timeline::Controller::new(
@@ -817,15 +809,15 @@ fn playback_speed_uses_normalized_ts_and_preserves_pause_seek_and_latest_request
     let (reader, _worker) = file_reader(&path, 1, true)?;
     let pipeline = gst::parse::launch("appsrc name=source ! tsdemux name=demux demux. ! queue ! mpegvideoparse ! avdec_mpeg2video ! fakesink name=output sync=true demux. ! queue ! aacparse ! avdec_aac ! audioconvert ! scaletempo name=tempo ! fakesink name=audio sync=true")?
         .downcast::<gst::Pipeline>().map_err(|_| "pipeline")?;
-    let interrupted = Arc::new(AtomicBool::new(false));
-    struct Stop(gst::Pipeline, Arc<AtomicBool>);
+    let feeder = source::Feeder::new(reader)?;
+    struct Stop(gst::Pipeline, source::Feeder);
     impl Drop for Stop {
         fn drop(&mut self) {
-            self.1.store(true, Ordering::Release);
+            self.1.suspend(true);
             let _ = self.0.set_state(gst::State::Null);
         }
     }
-    let _stop = Stop(pipeline.clone(), interrupted.clone());
+    let _stop = Stop(pipeline.clone(), feeder.clone());
     let scope = crate::features::subscriptions::Subscriptions::default();
     source::configure(
         &pipeline
@@ -833,9 +825,7 @@ fn playback_speed_uses_normalized_ts_and_preserves_pause_seek_and_latest_request
             .ok_or("source")?
             .downcast()
             .map_err(|_| "appsrc")?,
-        Arc::new(Mutex::new(reader)),
-        interrupted,
-        Arc::new(source::Feedback::default()),
+        feeder.clone(),
         &scope,
     );
     let sink = pipeline.by_name("output").ok_or("output")?;

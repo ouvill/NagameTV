@@ -97,26 +97,24 @@ fn live_catch_up_recovers_when_receive_index_is_ahead_of_decodable_video()
     };
     let pipeline = gst::parse::launch("appsrc name=source ! tsdemux name=demux demux. ! queue ! mpegvideoparse ! avdec_mpeg2video ! fakesink name=output sync=true")?
         .downcast::<gst::Pipeline>().map_err(|_| "pipeline")?;
-    let interrupted = Arc::new(AtomicBool::new(false));
-    struct Stop(gst::Pipeline, Arc<AtomicBool>);
+    let feeder = source::Feeder::new(reader)?;
+    struct Stop(gst::Pipeline, source::Feeder);
     impl Drop for Stop {
         fn drop(&mut self) {
-            self.1.store(true, Ordering::Release);
+            self.1.suspend(true);
             let _ = self.0.set_state(gst::State::Null);
         }
     }
-    let _stop = Stop(pipeline.clone(), interrupted.clone());
+    let _stop = Stop(pipeline.clone(), feeder.clone());
     let scope = crate::features::subscriptions::Subscriptions::default();
-    let feedback = Arc::new(source::Feedback::default());
+    let feedback = feeder.feedback.clone();
     source::configure(
         &pipeline
             .by_name("source")
             .ok_or("source")?
             .downcast()
             .map_err(|_| "appsrc")?,
-        Arc::new(Mutex::new(reader)),
-        interrupted,
-        feedback.clone(),
+        feeder.clone(),
         &scope,
     );
     let mut controller = Controller::new(
