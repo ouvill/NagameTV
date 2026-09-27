@@ -25,6 +25,8 @@ CREATE TABLE IF NOT EXISTS pins (
     channel INTEGER NOT NULL, start INTEGER NOT NULL, end INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS pin_time ON pins(channel,start,end);
+-- Legacy v2 tables retained for database compatibility. New live playback
+-- never opens this database; old rows are reaped with their dead sessions.
 CREATE TABLE IF NOT EXISTS live_comments (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     owner TEXT NOT NULL REFERENCES sessions(owner) ON DELETE CASCADE,

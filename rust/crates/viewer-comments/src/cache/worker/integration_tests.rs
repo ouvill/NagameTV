@@ -16,7 +16,7 @@ fn demand(source: u64, utc: i64, fetch: bool) -> Demand {
             interval: Interval::new(utc, utc + 60).unwrap(),
         }),
         fetch,
-        source_range: Source::Recording(Recording::Observed {
+        source_range: Recording::Observed {
             current: Program::new(
                 ProgramId {
                     network: 1,
@@ -30,7 +30,7 @@ fn demand(source: u64, utc: i64, fetch: bool) -> Demand {
             next: None,
             utc_seconds: Some(utc),
             at_start: false,
-        }),
+        },
     }
 }
 
@@ -115,7 +115,7 @@ fn cached_seek_is_readable_while_an_archive_writer_holds_the_database() {
     controller.shutdown();
 }
 #[test]
-fn sent_response_finishes_after_source_change_while_live_saving_continues() {
+fn sent_recording_response_finishes_after_clearing_archive_demand() {
     let dir = tempfile::tempdir().unwrap();
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let endpoint = format!("http://{}", listener.local_addr().unwrap());
@@ -147,43 +147,14 @@ fn sent_response_finishes_after_source_change_while_live_saving_continues() {
     let mut controller = Controller::with_endpoint(dir.path().into(), endpoint).unwrap();
     controller.configure(Some(demand(1, 100_000, true)));
     started_rx.recv_timeout(Duration::from_secs(3)).unwrap();
-    let next = demand(2, 200_000, false);
-    controller.configure(Some(next.clone()));
-    let span = ClockSpan {
-        key: "clock-2".into(),
-        channel: 1,
-        media_start_ms: 0,
-        media_end_ms: 60_000,
-        utc_start_ms: 200_000_000,
-    };
-    let live = Comment {
-        identity: None,
-        source_id: Some((1, 1)),
-        text: "live while downloading".into(),
-        origin: Origin::Nx,
-        phase: Phase::Live,
-        unix_seconds: 200005,
-        timestamp_micros: Some(200_005_000_000),
-        style: Default::default(),
-    };
-    controller
-        .receive(2, 1, Some(span), vec![(live, true)])
-        .unwrap();
+    // Live playback has no archive demand. The already sent recording GET
+    // still completes, but neither the old source nor its rows stay published.
+    controller.configure(None);
     let deadline = Instant::now() + Duration::from_secs(3);
-    loop {
-        let snapshot = controller.snapshot();
-        if snapshot.source == Some(2)
-            && snapshot
-                .records
-                .iter()
-                .any(|r| r.comment.text.as_ref() == "live while downloading")
-        {
-            break;
-        }
+    while controller.snapshot().source.is_some() {
         assert!(
             Instant::now() < deadline,
-            "live persistence blocked by archive HTTP: {:?}",
-            snapshot.state
+            "old archive view was not released"
         );
         thread::sleep(Duration::from_millis(5));
     }
@@ -201,7 +172,7 @@ fn sent_response_finishes_after_source_change_while_live_saving_continues() {
         assert!(Instant::now() < deadline, "old response was not saved");
         thread::sleep(Duration::from_millis(5));
     }
-    assert_eq!(controller.snapshot().source, Some(2));
+    assert_eq!(controller.snapshot().source, None);
     assert!(
         controller
             .snapshot()
@@ -243,9 +214,9 @@ fn whole_program_uses_one_request_across_playback_seeks_and_restart() {
         listener
     });
     let mut current = demand(1, UTC, true);
-    let Source::Recording(Recording::Observed {
+    let Recording::Observed {
         current: program, ..
-    }) = &mut current.source_range
+    } = &mut current.source_range
     else {
         unreachable!()
     };

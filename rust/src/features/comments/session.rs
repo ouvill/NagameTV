@@ -50,7 +50,21 @@ impl Playback<'_> {
             clock: view.clock,
             source_range: media
                 .comment_source(fallback, super::channel_for, reception)
-                .unwrap_or(viewer_comments::cache::Source::Pending),
+                .unwrap_or_else(|| {
+                    use viewer_comments::cache::{Recording, Source};
+                    let (Self::Connecting(target, _) | Self::Active(target, _, _)) = self else {
+                        unreachable!("active source")
+                    };
+                    match target {
+                        Target::Recording => Source::Recording(Recording::Discovering),
+                        Target::Live(_) => Source::Live {
+                            earliest_media_ms: 0,
+                            spans: Vec::new(),
+                            reception,
+                            at_edge: false,
+                        },
+                    }
+                }),
             enabled: options.enabled,
             display: options.display,
             paused: matches!(
@@ -150,8 +164,7 @@ impl Session {
             self.draft.clear();
         }
         self.program_title = self.activity.program_title(channel).to_owned();
-        let accepting = self.replay.can_receive();
-        let comments = match network.filter(|_| accepting) {
+        let comments = match network {
             Some(network) => match self.reception.poll(network) {
                 Ok(comments) => comments,
                 Err(error) => {
@@ -164,17 +177,15 @@ impl Session {
             },
             None => Vec::new(),
         };
-        let reception = if accepting
-            && comments.len() < viewer_comments::controller::MAX_POLL_COMMENTS
-            && options.enabled
-        {
-            self.reception
-                .reception_epoch()
-                .map(Reception::Receiving)
-                .unwrap_or(Reception::Interrupted)
-        } else {
-            Reception::Interrupted
-        };
+        let reception =
+            if comments.len() < viewer_comments::controller::MAX_POLL_COMMENTS && options.enabled {
+                self.reception
+                    .reception_epoch()
+                    .map(Reception::Receiving)
+                    .unwrap_or(Reception::Interrupted)
+            } else {
+                Reception::Interrupted
+            };
         let received = comments
             .iter()
             .map(|comment| {
@@ -230,6 +241,15 @@ impl Session {
         match self.status_source {
             StatusSource::Disabled => Status::Reception(PresentationStatus::Disabled),
             StatusSource::Reception => Status::Reception(self.reception.status(true)),
+            StatusSource::Playback
+                if self.replay.is_live()
+                    && matches!(
+                        self.replay.status,
+                        replay::Status::Ready | replay::Status::Waiting
+                    ) =>
+            {
+                Status::Reception(self.reception.status(true))
+            }
             StatusSource::Playback => Status::Replay(&self.replay.status),
         }
     }
@@ -278,9 +298,11 @@ impl Session {
         self.activity.dirty = true;
     }
 
-    /// A server replacement cancels reception/posting and activity. Persistent
-    /// replay retains its independent lifetime until the next playback update.
+    /// A server replacement releases live history immediately. An already sent
+    /// recording archive request retains its independent lifetime.
     pub fn disconnect(&mut self) -> Update {
+        let previous = self.replay.timeline().clone();
+        self.replay.disconnect();
         self.reception.configure(false, None);
         self.activity.configure(false);
         self.activity.dirty = false;
@@ -291,14 +313,14 @@ impl Session {
             submission: Submission::NotRequested,
             history: History::Replace(Vec::new()),
             activity: Some(Ok("[]".to_owned())),
-            timeline_changed: false,
+            timeline_changed: !previous.same_snapshot(self.replay.timeline()),
         }
     }
     pub fn shutdown(&mut self) -> Update {
         let mut update = self.disconnect();
         let previous = self.replay.timeline().clone();
         self.replay.shutdown();
-        update.timeline_changed = !previous.same_snapshot(self.replay.timeline());
+        update.timeline_changed |= !previous.same_snapshot(self.replay.timeline());
         update
     }
 }

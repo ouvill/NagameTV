@@ -145,7 +145,6 @@ pub enum Reception {
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Source {
-    Pending,
     Recording(Recording),
     Live {
         earliest_media_ms: i64,
@@ -161,11 +160,24 @@ pub struct View {
     pub interval: Interval,
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
+/// Archive requests cannot be constructed from a live playback range.
+///
+/// ```compile_fail
+/// use viewer_comments::cache::{Demand, Source, Reception};
+/// let demand = Demand {
+///     source: 1, channel: 1, view: None, fetch: true,
+///     source_range: Source::Live {
+///         earliest_media_ms: 0, spans: vec![],
+///         reception: Reception::Interrupted, at_edge: false,
+///     },
+/// };
+/// ```
 pub struct Demand {
     pub source: u64,
     pub channel: u16,
     pub view: Option<View>,
-    pub source_range: Source,
+    /// Archive acquisition accepts recording metadata only.
+    pub source_range: Recording,
     pub fetch: bool,
 }
 

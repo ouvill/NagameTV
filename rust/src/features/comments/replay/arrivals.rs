@@ -1,10 +1,7 @@
 //! Temporary display times for posts received while watching the live edge.
-//! Persistence always receives the original comments and posting timestamps.
-use super::{ClockReading, Comment, Context, FORWARD_SECONDS, Record, RecordOrigin, Source};
-use std::{
-    collections::{BTreeMap, HashMap},
-    time::Duration,
-};
+//! Session history keeps the original comments and posting timestamps.
+use super::{ClockReading, Context, FORWARD_SECONDS, Record, Source};
+use std::{collections::BTreeMap, time::Duration};
 use viewer_comments::{
     Phase,
     danmaku::{MAX_LIFETIME, MAX_TIMELINE_BYTES, MAX_TIMELINE_COMMENTS},
@@ -44,9 +41,7 @@ impl ArrivalTime {
 
 #[derive(Default)]
 pub(super) struct LiveArrivals {
-    serial: u64,
     records: BTreeMap<u64, Arrival>,
-    identities: HashMap<String, u64>,
 }
 
 /// A short-lived right to display this poll's posts as live arrivals.
@@ -57,20 +52,9 @@ pub(super) struct LiveReception<'a> {
 }
 
 impl LiveReception<'_> {
-    pub(super) fn receive(self, comments: &[(Comment, bool)]) -> bool {
+    pub(super) fn receive(self, comments: &[Record]) -> bool {
         self.arrivals.receive(comments, self.clock, self.position)
     }
-}
-
-fn identity(comment: &Comment) -> String {
-    serde_json::to_string(&(
-        comment.source_id,
-        comment.timestamp_micros,
-        comment.origin,
-        &comment.text,
-        comment.style,
-    ))
-    .expect("live comment identity")
 }
 
 impl LiveArrivals {
@@ -99,7 +83,19 @@ impl LiveArrivals {
 
     pub(super) fn clear(&mut self) {
         self.records.clear();
-        self.identities.clear();
+    }
+
+    pub(super) fn mark_own(&mut self, ids: &[u64]) -> bool {
+        let mut changed = false;
+        for id in ids {
+            if let Some(arrival) = self.records.get_mut(id)
+                && !arrival.record.own
+            {
+                arrival.record.own = true;
+                changed = true;
+            }
+        }
+        changed
     }
 
     pub(super) fn advance(&mut self, clock: ClockReading, position: u64) -> bool {
@@ -123,80 +119,51 @@ impl LiveArrivals {
             };
             position.saturating_sub(start) < lifetime.as_nanos() as u64
         });
-        self.identities
-            .retain(|_, id| self.records.contains_key(id));
         resolved || before != self.records.len()
     }
 
-    fn receive(
-        &mut self,
-        comments: &[(Comment, bool)],
-        clock: ClockReading,
-        position: u64,
-    ) -> bool {
+    fn receive(&mut self, comments: &[Record], clock: ClockReading, position: u64) -> bool {
         let before = self.records.len();
-        let mut bytes: usize = self.identities.keys().map(String::len).sum::<usize>()
-            + self
-                .records
-                .values()
-                .map(|a| a.record.comment.text.len())
-                .sum::<usize>();
-        for (comment, own) in comments {
+        let mut bytes: usize = self
+            .records
+            .values()
+            .map(|a| std::mem::size_of::<Arrival>() + a.record.comment.text.len())
+            .sum();
+        for record in comments {
+            let comment = &record.comment;
             let Some(micros) = comment.timestamp_micros else {
                 continue;
             };
             if comment.phase != Phase::Live {
                 continue;
             }
-            let key = identity(comment);
-            let size = key.len() + comment.text.len();
-            if self.identities.contains_key(&key)
+            let size = std::mem::size_of::<Arrival>() + comment.text.len();
+            if self.records.contains_key(&record.id)
                 || self.records.len() >= MAX_TIMELINE_COMMENTS
                 || bytes.saturating_add(size) > MAX_TIMELINE_BYTES
             {
                 continue;
             }
-            // SQLite assigns positive signed IDs. The upper unsigned half is
-            // reserved here for transient arrivals, never written to the DB.
-            let Some(id) = u64::MAX
-                .checked_sub(self.serial)
-                .filter(|id| *id > i64::MAX as u64)
-            else {
-                break;
-            };
-            self.serial += 1;
             self.records.insert(
-                id,
+                record.id,
                 Arrival {
-                    record: Record {
-                        id,
-                        comment: comment.clone(),
-                        own: *own,
-                        origin: RecordOrigin::Live,
-                        media_ms: None,
-                    },
+                    record: record.clone(),
                     // Do not extrapolate beyond the verified video clock.
                     timing: ArrivalTime::resolve(clock, position, micros),
                 },
             );
-            self.identities.insert(key, id);
             bytes += size;
         }
         before != self.records.len()
     }
 
-    pub(super) fn contains(&self, comment: &Comment) -> bool {
-        !self.is_empty()
-            && self
-                .identities
-                .get(&identity(comment))
-                .is_some_and(|id| self.start(*id).is_some())
+    pub(super) fn contains(&self, id: u64) -> bool {
+        self.start(id).is_some()
     }
 
     pub(super) fn records(&self) -> Vec<&Record> {
         self.records
             .values()
-            .rev()
             .filter(|arrival| arrival.timing.start().is_some())
             .map(|arrival| &arrival.record)
             .collect()

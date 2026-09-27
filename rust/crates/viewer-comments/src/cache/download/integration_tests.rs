@@ -116,7 +116,6 @@ fn recording_prefetch_keeps_old_fragments_and_saves_both_origins_ahead_of_the_sc
     const CHECK_SECONDS: i64 = 120;
     let records = store
         .read(
-            &owner.name,
             4,
             &View {
                 clock_key: span.key.clone(),
@@ -288,7 +287,6 @@ fn large_response_without_content_length_is_fetched_once_and_all_rows_reach_disk
     );
     let records = store
         .read(
-            &owner.name,
             1,
             &View {
                 clock_key: "clock".into(),
@@ -375,8 +373,8 @@ fn retry_after_and_http_failure_do_not_become_empty_coverage() {
     ));
 }
 
-fn recording(start: i64, duration: i64, utc: i64) -> Source {
-    Source::Recording(Recording::Observed {
+fn recording(start: i64, duration: i64, utc: i64) -> Recording {
+    Recording::Observed {
         current: Program::new(
             ProgramId {
                 network: 1,
@@ -390,7 +388,7 @@ fn recording(start: i64, duration: i64, utc: i64) -> Source {
         next: None,
         utc_seconds: Some(utc),
         at_start: false,
-    })
+    }
 }
 
 #[test]
@@ -401,20 +399,19 @@ fn whole_video_prefetch_stores_the_tail_before_seeking_and_reuses_it_on_reopen()
     let range = Interval::new(START, START + VIDEO_SECONDS).unwrap();
     let directory = tempfile::tempdir().unwrap();
     let mut store = Store::open(directory.path()).unwrap();
-    let owner = store.session().unwrap();
     let demand = Demand {
         source: 1,
         channel: 4,
         fetch: true,
         view: None,
-        source_range: Source::Recording(Recording::Whole(range)),
+        source_range: Recording::Whole(range),
     };
     let target = plan::Planner::default().update(&demand, NOW).unwrap();
     let acquisition = Acquisition {
         target,
         focus: Some(START),
     };
-    let Planned::Ready(request) = next(&mut store, &owner.name, &acquisition, NOW).unwrap() else {
+    let Planned::Ready(request) = next(&mut store, &acquisition, NOW).unwrap() else {
         panic!("whole video must be requested at open");
     };
     assert_eq!(request.range, range);
@@ -445,7 +442,6 @@ fn whole_video_prefetch_stores_the_tail_before_seeking_and_reuses_it_on_reopen()
     let mut reopened = Store::open(directory.path()).unwrap();
     let records = reopened
         .read(
-            &owner.name,
             demand.channel,
             &View {
                 clock_key: "video".into(),
@@ -456,7 +452,7 @@ fn whole_video_prefetch_stores_the_tail_before_seeking_and_reuses_it_on_reopen()
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].comment.text.as_ref(), "video tail");
     assert!(matches!(
-        next(&mut reopened, &owner.name, &acquisition, NOW).unwrap(),
+        next(&mut reopened, &acquisition, NOW).unwrap(),
         Planned::Complete
     ));
 }
@@ -468,7 +464,6 @@ fn recent_program_adds_only_available_tail_when_view_approaches_or_program_finis
     const NOW: i64 = START + 3600;
     let dir = tempfile::tempdir().unwrap();
     let mut store = Store::open(dir.path()).unwrap();
-    let owner = store.session().unwrap();
     let demand = Demand {
         source: 1,
         channel: 4,
@@ -481,7 +476,7 @@ fn recent_program_adds_only_available_tail_when_view_approaches_or_program_finis
         target: target.clone(),
         focus: Some(START),
     };
-    let Planned::Ready(request) = next(&mut store, &owner.name, &acquisition, NOW).unwrap() else {
+    let Planned::Ready(request) = next(&mut store, &acquisition, NOW).unwrap() else {
         panic!("initial prefix")
     };
     assert_eq!(request.range.end, archive_end(NOW));
@@ -510,11 +505,11 @@ fn recent_program_adds_only_available_tail_when_view_approaches_or_program_finis
     assert_eq!(store.covered(4, target.range, NOW).unwrap(), vec![prefix]);
     let later = NOW + COLLECTION_SECONDS;
     assert!(matches!(
-        next(&mut store, &owner.name, &acquisition, later).unwrap(),
+        next(&mut store, &acquisition, later).unwrap(),
         Planned::Complete
     ));
     acquisition.focus = Some(prefix.end - plan::PROGRAM_PADDING_SECONDS);
-    let Planned::Ready(tail) = next(&mut store, &owner.name, &acquisition, later).unwrap() else {
+    let Planned::Ready(tail) = next(&mut store, &acquisition, later).unwrap() else {
         panic!("near tail")
     };
     assert_eq!(
@@ -523,7 +518,7 @@ fn recent_program_adds_only_available_tail_when_view_approaches_or_program_finis
     );
     acquisition.focus = Some(START);
     let ended = target.range.end + ARCHIVE_DELAY_SECONDS + COLLECTION_SECONDS;
-    let Planned::Ready(tail) = next(&mut store, &owner.name, &acquisition, ended).unwrap() else {
+    let Planned::Ready(tail) = next(&mut store, &acquisition, ended).unwrap() else {
         panic!("completed program tail")
     };
     assert_eq!(

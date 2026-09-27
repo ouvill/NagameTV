@@ -74,6 +74,7 @@
 | **[コメント表示の仕様](comment-display-redesign.md)** | 横スクロール／ポップ（噴水）表示、文字サイズ、透過度、表示領域 |
 | **[コメント投稿](comment-posting.md)** | NX-Jikkyoへのコメント投稿API連携、自分コメントの強調 |
 | **[NX-Jikkyoの通信と再試行](nx-jikkyo-network.md)** | 障害時の待機延長、Retry-After、受信・勢い取得・投稿の待機共有 |
+| **[ライブコメントの受信・保持の見直し](live-comment-redesign.md)** | 視聴中のメモリー履歴で巻き戻しに対応。過去ログAPI・録画用DBから分離 |
 | **[実況過去ログの取得・保持](comment-archive-redesign.md)** | タイムシフト再生・録画再生時の過去ログ取得とキャッシュ |
 
 ---

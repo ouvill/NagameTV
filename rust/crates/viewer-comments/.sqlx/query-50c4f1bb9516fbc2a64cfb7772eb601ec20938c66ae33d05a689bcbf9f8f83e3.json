@@ -1,0 +1,38 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT c.id AS \"id!\", c.payload AS \"payload!\"\nFROM comments c JOIN coverage v ON v.id = c.coverage\nWHERE v.published = 1 AND v.channel = ?1 AND c.time >= ?2 AND c.time < ?3\nORDER BY c.time, c.id\nLIMIT ?4\n",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "comments",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "name": "payload!",
+        "ordinal": 1,
+        "type_info": "Blob",
+        "origin": {
+          "Table": {
+            "table": "comments",
+            "name": "payload"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "50c4f1bb9516fbc2a64cfb7772eb601ec20938c66ae33d05a689bcbf9f8f83e3"
+}

@@ -75,7 +75,10 @@ READYで停止してplaybinを再利用する方針を保持するが、パイ�
 破棄はengineとPlayer、診断資源、事前作成した再生資源、QGuiApplicationの順になる。
 PlayerのFFIにはQML公開APIと必要な型の参照を残し、他のモジュールはQt共通処理を直接参照する。
 
-コメントDBは`viewer-comments::cache::store`がSQLx接続を所有する。
+ライブコメントは`features::comments::replay`が視聴中のメモリー履歴を所有する。
+映像の保持範囲に合わせて解放し、録画用DB・過去ログAPIを利用しない。
+詳細は[ライブコメントの受信・保持](live-comment-redesign.md)を参照。
+録画用コメントDBは`viewer-comments::cache::store`がSQLx接続を所有する。
 専用ワーカー内での待機、トランザクション、SQL検査情報の更新手順は
 [開発手順](development.md#コメントdbのsql検査)を参照。
 

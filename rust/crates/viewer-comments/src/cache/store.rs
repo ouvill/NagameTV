@@ -159,36 +159,7 @@ impl Store {
         Ok(())
     }
     pub fn reset_source(&mut self, owner: &str) -> Result<(), Error> {
-        let mut tx = block_on(self.db.begin())?;
-        block_on(sqlx::query!("DELETE FROM pins WHERE owner=?1", owner).execute(&mut *tx))?;
-        block_on(
-            sqlx::query!("DELETE FROM live_comments WHERE owner=?1", owner).execute(&mut *tx),
-        )?;
-        block_on(
-            sqlx::query!("DELETE FROM live_coverage WHERE owner=?1", owner).execute(&mut *tx),
-        )?;
-        block_on(tx.commit())?;
-        Ok(())
-    }
-    pub fn pin(&mut self, owner: &str, spans: &[ClockSpan], now: i64) -> Result<(), Error> {
-        let mut tx = block_on(self.db.begin())?;
-        block_on(sqlx::query!("DELETE FROM pins WHERE owner=?1", owner).execute(&mut *tx))?;
-        for span in spans {
-            if let Some(range) = span.interval() {
-                block_on(
-                    sqlx::query!(
-                        "INSERT INTO pins(owner,channel,start,end) VALUES(?1,?2,?3,?4)",
-                        owner,
-                        span.channel,
-                        range.start,
-                        range.end
-                    )
-                    .execute(&mut *tx),
-                )?;
-            }
-        }
-        touch_pinned(&mut tx, now)?;
-        block_on(tx.commit())?;
+        block_on(sqlx::query!("DELETE FROM pins WHERE owner=?1", owner).execute(&mut self.db))?;
         Ok(())
     }
     pub fn generation(&mut self) -> Result<i64, Error> {
@@ -363,12 +334,7 @@ impl Store {
         block_on(tx.commit())?;
         Ok(())
     }
-    pub fn planned(
-        &mut self,
-        owner: &str,
-        target: &plan::Target,
-        now: i64,
-    ) -> Result<Planned, Error> {
+    pub fn planned(&mut self, target: &plan::Target, now: i64) -> Result<Planned, Error> {
         let state = block_on(sqlx::query!(r#"SELECT refresh,completed_refresh,stopped AS "stopped: bool",retry_at,failure FROM targets WHERE key=?1"#, target.key()).fetch_optional(&mut self.db))?;
         let (refresh, completed, stopped, retry_at, failure) = state
             .map(|row| {
@@ -393,7 +359,7 @@ impl Store {
         else {
             return Ok(Planned::Complete);
         };
-        let mut covered = if refresh > completed {
+        let covered = if refresh > completed {
             vec![]
         } else {
             self.coverage(
@@ -402,9 +368,6 @@ impl Store {
                 now >= target.range.end.saturating_add(SETTLED_SECONDS),
             )?
         };
-        if let Some(clock) = target.live_clock() {
-            covered.extend(self.live_covered(owner, target.channel, clock, range)?);
-        }
         let gaps = range.missing(covered);
         #[cfg(feature = "network")]
         if !gaps.is_empty() {
@@ -501,114 +464,6 @@ impl Store {
         Ok((!stopped).then_some(until))
     }
 
-    pub fn live_covered(
-        &mut self,
-        owner: &str,
-        channel: u16,
-        key: &str,
-        wanted: Interval,
-    ) -> Result<Vec<Interval>, Error> {
-        block_on(sqlx::query!("SELECT start,end FROM live_coverage WHERE owner=?1 AND channel=?2 AND clock=?3 AND start<?4 AND end>?5", owner, channel, key, wanted.end, wanted.start).fetch_all(&mut self.db))?
-            .into_iter().map(|row| Interval::new(row.start, row.end).ok_or_else(|| Error::Format("invalid live coverage".into()))).collect()
-    }
-    pub fn observe_live(
-        &mut self,
-        owner: &str,
-        channel: u16,
-        key: &str,
-        range: Interval,
-    ) -> Result<(), Error> {
-        let mut tx = block_on(self.db.begin())?;
-        // The UNION includes the requested range, so both aggregates are non-null.
-        let merged = block_on(
-            sqlx::query_file!(
-                "src/cache/store/queries/merge_live_coverage.sql",
-                owner,
-                channel,
-                key,
-                range.end,
-                range.start
-            )
-            .fetch_one(&mut *tx),
-        )?;
-        let (a, b) = (merged.start, merged.end);
-        block_on(sqlx::query!("DELETE FROM live_coverage WHERE owner=?1 AND channel=?2 AND clock=?3 AND start<=?4 AND end>=?5", owner, channel, key, b, a).execute(&mut *tx))?;
-        block_on(
-            sqlx::query!(
-                "INSERT INTO live_coverage(owner,channel,clock,start,end) VALUES(?1,?2,?3,?4,?5)",
-                owner,
-                channel,
-                key,
-                a,
-                b
-            )
-            .execute(&mut *tx),
-        )?;
-        block_on(tx.commit())?;
-        Ok(())
-    }
-    pub fn insert_live(
-        &mut self,
-        owner: &str,
-        channel: u16,
-        clock: Option<&ClockSpan>,
-        comments: &[(Comment, bool)],
-    ) -> Result<(), Error> {
-        let mut tx = block_on(self.db.begin())?;
-        {
-            for (comment, own) in comments {
-                let Some(time) = comment.timestamp_micros.and_then(|t| i64::try_from(t).ok())
-                else {
-                    continue;
-                };
-                let payload = serde_json::to_vec(&StoredComment::from(comment.clone()))?;
-                block_on(sqlx::query!("INSERT INTO live_comments(owner,channel,clock,media_ms,time,payload,own) VALUES(?1,?2,?3,?4,?5,?6,?7)",
-                    owner, channel, clock.map(|c| c.key.as_str()), clock.and_then(|c| c.media_ms(time as u64)), time, payload, own).execute(&mut *tx))?;
-            }
-        }
-        block_on(tx.commit())?;
-        Ok(())
-    }
-    pub fn retain_live(
-        &mut self,
-        owner: &str,
-        earliest_ms: i64,
-        spans: &[ClockSpan],
-    ) -> Result<(), Error> {
-        let mut tx = block_on(self.db.begin())?;
-        for span in spans {
-            let end = span
-                .utc_start_ms
-                .saturating_add(span.media_end_ms - span.media_start_ms);
-            // Associate reception before the first clock only where the current
-            // TS map has one possible position. Overlapping UTC epochs remain
-            // unassigned and protected until their owning TS session ends.
-            if let Some(range) = span.interval() {
-                let others = spans
-                    .iter()
-                    .filter(|other| other.key != span.key)
-                    .filter_map(ClockSpan::interval);
-                for unique in range.missing(others) {
-                    block_on(sqlx::query!("UPDATE live_comments SET clock=?1 WHERE owner=?2 AND channel=?3 AND clock IS NULL AND time>=?4 AND time<?5", span.key, owner, span.channel, unique.start*1_000_000, unique.end*1_000_000).execute(&mut *tx))?;
-                }
-            }
-            // A known clock key also protects comments ahead of received video.
-            block_on(sqlx::query!("UPDATE live_comments SET media_ms=?1+(time/1000-?2) WHERE owner=?3 AND clock=?4
-                AND media_ms IS NULL AND time>=?2*1000 AND time<?5*1000", span.media_start_ms, span.utc_start_ms, owner, span.key, end).execute(&mut *tx))?;
-        }
-        block_on(
-            sqlx::query!(
-                "DELETE FROM live_comments WHERE owner=?1 AND media_ms<?2",
-                owner,
-                earliest_ms.saturating_sub(LOOKBACK_SECONDS * 1000)
-            )
-            .execute(&mut *tx),
-        )?;
-        // Do not remove an unmapped comment by its UTC age. A later clock or the
-        // end of its TS-owning session decides its lifetime.
-        block_on(tx.commit())?;
-        Ok(())
-    }
     pub fn begin_import(&mut self, receipt: &spool::Receipt) -> Result<i64, Error> {
         if let Some(plan) = &receipt.plan {
             self.register_target(&plan.target, receipt.fetched)?;
@@ -785,7 +640,7 @@ impl Store {
             sqlx::query_scalar!("SELECT revision FROM provider WHERE id=1").fetch_one(&mut self.db),
         )?)
     }
-    pub fn read(&mut self, owner: &str, channel: u16, view: &View) -> Result<Vec<Record>, Error> {
+    pub fn read(&mut self, channel: u16, view: &View) -> Result<Vec<Record>, Error> {
         let start = view.interval.start * 1_000_000;
         let end = view.interval.end * 1_000_000;
         let limit = WORKING_COMMENTS as i64;
@@ -794,8 +649,6 @@ impl Store {
             channel,
             start,
             end,
-            owner,
-            view.clock_key,
             limit
         );
         let mut rows = query.fetch(&mut self.db);
@@ -811,15 +664,11 @@ impl Store {
             }
             let stored: StoredComment = serde_json::from_slice(&row.payload)?;
             records.push(Record {
-                id: (row.id as u64) * 2 + u64::from(row.origin),
+                id: row.id as u64,
                 comment: stored.into(),
-                own: row.own,
-                origin: if row.origin {
-                    RecordOrigin::Live
-                } else {
-                    RecordOrigin::Archive
-                },
-                media_ms: row.media_ms,
+                own: false,
+                origin: RecordOrigin::Archive,
+                media_ms: None,
             });
         }
         // Reading a published window never acquires a write lock. Pinning and

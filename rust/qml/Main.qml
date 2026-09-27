@@ -80,7 +80,6 @@ ViewerWindow {
     readonly property bool summariesVisible: !closing && (channelPanel.active || (sidebar.active && sidebarPage === ProgramSidebar.Channels))
     readonly property bool commentaryVisible: !closing && sidebar.active && sidebarPage === ProgramSidebar.Program
     readonly property bool guideVisible: !closing && player.epg_enabled && showGuide
-    onCommentaryVisibleChanged: player.comments_open(commentaryVisible)
     onSummariesVisibleChanged: player.browser_open(summariesVisible)
     readonly property real panelWidth: Math.min(408, Math.max(320, viewport.width * 0.32))
     readonly property var selectedChannel: {

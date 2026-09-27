@@ -65,7 +65,7 @@ pub enum Phase {
     Live,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Hash)]
 pub enum Origin {
     #[serde(rename = "ニコ実")]
     Niconico,

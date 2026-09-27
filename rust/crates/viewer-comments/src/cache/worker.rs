@@ -4,14 +4,12 @@ use super::{
     *,
 };
 use std::{
-    collections::VecDeque,
     path::PathBuf,
     sync::{Arc, Condvar, Mutex},
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
-const PENDING_BYTES: usize = 8 * 1024 * 1024;
 const POLL: Duration = Duration::from_millis(100);
 const LOCAL_RETRY: Duration = Duration::from_secs(5);
 const SEEK_SETTLE: Duration = Duration::from_millis(500);
@@ -65,18 +63,9 @@ impl Default for Snapshot {
         }
     }
 }
-struct Batch {
-    source: u64,
-    channel: u16,
-    clock: Option<ClockSpan>,
-    comments: Vec<(Comment, bool)>,
-    bytes: usize,
-}
 #[derive(Default)]
 struct Input {
     demand: Option<Demand>,
-    batches: VecDeque<Batch>,
-    bytes: usize,
     clear: bool,
     refresh: Option<plan::Target>,
     budget: Option<i64>,
@@ -115,49 +104,6 @@ impl Controller {
             input.demand = demand;
             self.shared.wake.notify_one();
         }
-    }
-    /// A rejected batch remains owned by the caller. The reception controller
-    /// must stop draining new comments until it can submit that same batch.
-    pub fn receive(
-        &mut self,
-        source: u64,
-        channel: u16,
-        clock: Option<ClockSpan>,
-        comments: Vec<(Comment, bool)>,
-    ) -> Result<(), Vec<(Comment, bool)>> {
-        if comments.is_empty() {
-            return Ok(());
-        }
-        let bytes = comments
-            .iter()
-            .map(|(c, _)| {
-                c.text.len()
-                    + c.identity.as_ref().map_or(0, |i| i.user_id.len())
-                    + std::mem::size_of::<Comment>()
-            })
-            .sum::<usize>();
-        let Ok(mut input) = self.shared.input.lock() else {
-            return Err(comments);
-        };
-        if input.bytes.saturating_add(bytes) > PENDING_BYTES {
-            return Err(comments);
-        }
-        input.bytes += bytes;
-        input.batches.push_back(Batch {
-            source,
-            channel,
-            clock,
-            comments,
-            bytes,
-        });
-        self.shared.wake.notify_one();
-        Ok(())
-    }
-    pub fn has_capacity(&self) -> bool {
-        self.shared
-            .input
-            .lock()
-            .is_ok_and(|input| input.bytes < PENDING_BYTES / 2)
     }
     pub fn snapshot(&self) -> Snapshot {
         self.shared
@@ -264,7 +210,6 @@ fn run(directory: PathBuf, endpoint: String, shared: Arc<Shared>) {
     let mut source = None;
     let mut job: Option<Job> = None;
     let mut demand: Option<Demand> = None;
-    let mut pending: Option<Batch> = None;
     let mut next_fetch = Some(Instant::now() + SEEK_SETTLE);
     let mut planner = plan::Planner::default();
     let mut pinned_target = None;
@@ -272,29 +217,21 @@ fn run(directory: PathBuf, endpoint: String, shared: Arc<Shared>) {
     let mut fetched_revision = None;
     let mut blocked_target = None;
     let mut maintenance = Instant::now();
-    let mut observed: Option<(u64, String, u16, u64, i64)> = None;
     let mut read_signature = None;
-    let mut live_revision = 0_u64;
     let mut storage_retry = None;
     let mut clear_pending = false;
     let mut refresh_pending = None;
     let mut budget_pending = None;
     loop {
         let now = initial_wall.saturating_add(epoch.elapsed().as_secs() as i64);
-        let (latest, clear, refresh, budget, stopping, backlog) = match shared.input.lock() {
-            Ok(mut input) => {
-                if pending.is_none() {
-                    pending = input.batches.pop_front();
-                }
-                (
-                    input.demand.clone(),
-                    std::mem::take(&mut input.clear),
-                    input.refresh.take(),
-                    input.budget.take(),
-                    input.stop,
-                    !input.batches.is_empty(),
-                )
-            }
+        let (latest, clear, refresh, budget, stopping) = match shared.input.lock() {
+            Ok(mut input) => (
+                input.demand.clone(),
+                std::mem::take(&mut input.clear),
+                input.refresh.take(),
+                input.budget.take(),
+                input.stop,
+            ),
             Err(_) => break,
         };
         if stopping {
@@ -320,33 +257,11 @@ fn run(directory: PathBuf, endpoint: String, shared: Arc<Shared>) {
                 store.reset_source(owner)?;
                 source = next_source;
                 set_state(&shared, State::Ready);
-                observed = None;
                 pinned_target = None;
                 read_signature = None;
                 next_fetch = Some(Instant::now() + SEEK_SETTLE);
             }
             if latest != demand {
-                // Moving the view does not change retention. Rewriting the
-                // same pins would wait for an archive import's write lock
-                // before a cached seek could use SQLite's concurrent reader.
-                if let Some(latest) = &latest
-                    && demand.as_ref().is_none_or(|old| {
-                        old.source != latest.source || old.source_range != latest.source_range
-                    })
-                {
-                    match &latest.source_range {
-                        Source::Pending => {}
-                        Source::Recording(_) => {}
-                        Source::Live {
-                            spans,
-                            earliest_media_ms,
-                            ..
-                        } => {
-                            store.pin(owner, spans, now)?;
-                            store.retain_live(owner, *earliest_media_ms, spans)?;
-                        }
-                    }
-                }
                 // Changing fetch permission or jumping to another position must
                 // replace the deferred demand, without cancelling a sent GET.
                 let jump = latest.as_ref().zip(demand.as_ref()).is_some_and(|(a, b)| {
@@ -360,54 +275,6 @@ fn run(directory: PathBuf, endpoint: String, shared: Arc<Shared>) {
                     next_fetch = Some(Instant::now() + SEEK_SETTLE);
                 }
                 demand = latest.clone();
-            }
-            if let Some(batch) = pending.as_ref() {
-                if source == Some(batch.source) {
-                    store.insert_live(
-                        owner,
-                        batch.channel,
-                        batch.clock.as_ref(),
-                        &batch.comments,
-                    )?;
-                    live_revision = live_revision.wrapping_add(1);
-                }
-                let bytes = batch.bytes;
-                pending = None;
-                if let Ok(mut input) = shared.input.lock() {
-                    input.bytes = input.bytes.saturating_sub(bytes);
-                }
-            }
-            // Only advertise reception through a tip after all batches queued
-            // before that demand have reached disk. A backlog is a gap, not
-            // evidence of an empty, successfully received interval.
-            if let Some(d) = demand.as_ref().filter(|_| !backlog) {
-                if let Source::Live {
-                    spans,
-                    reception: Reception::Receiving(epoch),
-                    ..
-                } = &d.source_range
-                {
-                    if let Some(tip) = spans.iter().max_by_key(|s| s.media_end_ms)
-                        && let Some(range) = tip.interval()
-                    {
-                        let at = range.end;
-                        if let Some((old_source, ref key, channel, old_epoch, last)) = observed
-                            && old_source == d.source
-                            && *key == tip.key
-                            && channel == tip.channel
-                            && old_epoch == *epoch
-                            && at > last
-                            && let Some(range) = Interval::new(last, at)
-                        {
-                            store.observe_live(owner, channel, key, range)?;
-                        }
-                        observed = Some((d.source, tip.key.clone(), tip.channel, *epoch, at));
-                    }
-                } else {
-                    observed = None;
-                }
-            } else {
-                observed = None;
             }
             if job.as_ref().is_some_and(Job::finished) {
                 let finished = job.take().expect("finished job");
@@ -469,10 +336,10 @@ fn run(directory: PathBuf, endpoint: String, shared: Arc<Shared>) {
             }
             if let Some(d) = &demand {
                 let revision = store.revision()?;
-                let signature = (d.source, d.channel, d.view.clone(), revision, live_revision);
+                let signature = (d.source, d.channel, d.view.clone(), revision);
                 if read_signature.as_ref() != Some(&signature) {
                     let records = match &d.view {
-                        Some(view) => store.read(owner, d.channel, view)?,
+                        Some(view) => store.read(d.channel, view)?,
                         None => Vec::new(),
                     };
                     if let Ok(mut output) = shared.output.lock() {
@@ -486,9 +353,7 @@ fn run(directory: PathBuf, endpoint: String, shared: Arc<Shared>) {
                 }
                 let target = planner.update(d, now);
                 if target != pinned_target {
-                    if matches!(d.source_range, Source::Recording(_))
-                        && let Some(target) = &target
-                    {
+                    if let Some(target) = &target {
                         store.pin_target(owner, target, now)?;
                     }
                     pinned_target = target.clone();
@@ -612,7 +477,6 @@ fn run(directory: PathBuf, endpoint: String, shared: Arc<Shared>) {
                 error = &error as &dyn std::error::Error,
                 "Comment cache operation failed"
             );
-            observed = None;
             set_state(&shared, State::StorageFailed(error.to_string()));
             storage_retry = Some(Instant::now() + LOCAL_RETRY);
             // Local recovery comes before another GET. The complete spool is
@@ -653,7 +517,7 @@ mod tests {
             source: 1,
             channel: 1,
             view: None,
-            source_range: Source::Recording(Recording::Discovering),
+            source_range: Recording::Discovering,
             fetch: false,
         }));
         let until = Instant::now() + Duration::from_secs(3);

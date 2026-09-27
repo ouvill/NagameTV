@@ -1,6 +1,6 @@
 //! Acquisition uses programme schedules or a whole video's measured range;
 //! playback clocks never grow to match it.
-use super::{Demand, Interval, LOOKBACK_SECONDS, Source};
+use super::{Demand, Interval, LOOKBACK_SECONDS};
 use serde::{Deserialize, Serialize};
 
 pub const PROGRAM_PADDING_SECONDS: i64 = 120;
@@ -57,6 +57,8 @@ enum Basis {
     Window {
         start: i64,
     },
+    // Decode complete response spools from the old live-cache implementation.
+    // The recording-only Planner can no longer construct this acquisition.
     Live {
         clock: String,
         start: i64,
@@ -76,12 +78,6 @@ impl Target {
             self.channel,
             serde_json::to_string(&self.basis).expect("target key")
         )
-    }
-    pub fn live_clock(&self) -> Option<&str> {
-        match &self.basis {
-            Basis::Live { clock, .. } => Some(clock),
-            Basis::Recording { .. } | Basis::Program { .. } | Basis::Window { .. } => None,
-        }
     }
     fn program(channel: u16, program: &Program, utc: Option<i64>) -> Self {
         let offset = utc
@@ -147,18 +143,18 @@ impl Planner {
             .as_ref()
             .map(|view| view.interval.start + LOOKBACK_SECONDS);
         let candidate = match &demand.source_range {
-            Source::Pending | Source::Recording(Recording::Discovering) => None,
-            Source::Recording(Recording::Whole(range)) => Some(Target {
+            Recording::Discovering => None,
+            Recording::Whole(range) => Some(Target {
                 channel: demand.channel,
                 range: *range,
                 basis: Basis::Recording { start: range.start },
             }),
-            Source::Recording(Recording::Observed {
+            Recording::Observed {
                 current,
                 next,
                 utc_seconds,
                 at_start,
-            }) => {
+            } => {
                 let utc = view_utc.or(*utc_seconds);
                 let following = at_start.then(|| next.as_ref()).flatten().filter(|next| {
                     utc.is_some_and(|utc| {
@@ -174,32 +170,10 @@ impl Planner {
                     .map(|program| Target::program(demand.channel, program, utc))
                     .or_else(|| utc.and_then(|utc| Target::window(demand.channel, utc)))
             }
-            Source::Live { at_edge: true, .. } => None,
-            Source::Live { spans, .. } => {
-                let view = demand.view.as_ref()?;
-                let utc = view_utc?;
-                let span = spans.iter().find(|span| {
-                    span.channel == demand.channel
-                        && span.key == view.clock_key
-                        && span.interval().is_some_and(|range| range.contains(utc))
-                })?;
-                let mut target = Target::window(demand.channel, utc)?;
-                target.range = target.range.intersection(span.interval()?)?;
-                target.range = Interval::new(
-                    target.range.start,
-                    target.range.end.min(super::archive_end(now)),
-                )?;
-                target.basis = Basis::Live {
-                    clock: span.key.clone(),
-                    start: target.range.start,
-                };
-                Some(target)
-            }
         };
         let candidate = candidate?;
         if let Some(previous) = &self.selected
             && previous.channel == candidate.channel
-            && matches!(demand.source_range, Source::Recording(_))
         {
             if previous.basis == candidate.basis && previous.range != candidate.range {
                 if candidate.range.start >= previous.range.start
@@ -266,12 +240,12 @@ mod tests {
                 clock_key: "movie".into(),
                 interval: Interval::new(utc - LOOKBACK_SECONDS, utc + 120).unwrap(),
             }),
-            source_range: Source::Recording(Recording::Observed {
+            source_range: Recording::Observed {
                 current,
                 next,
                 utc_seconds: utc,
                 at_start,
-            }),
+            },
         }
     }
     #[test]
@@ -279,11 +253,10 @@ mod tests {
         const LONG_VIDEO_SECONDS: i64 = 8 * 60 * 60;
         let range = Interval::new(START, START + LONG_VIDEO_SECONDS).unwrap();
         let mut input = demand(None, None, None, false);
-        input.source_range = Source::Recording(Recording::Whole(range));
+        input.source_range = Recording::Whole(range);
         let mut planner = Planner::default();
         let selected = planner.update(&input, 0).unwrap();
         assert_eq!(selected.range, range);
-        assert!(selected.live_clock().is_none());
         for offset in [LONG_VIDEO_SECONDS - 1, WINDOW_SECONDS, 0] {
             input.view = demand(Some(START + offset), None, None, false).view;
             assert_eq!(planner.update(&input, 1), Some(selected.clone()));
@@ -352,7 +325,7 @@ mod tests {
                 .is_some()
         );
         let mut unknown = demand(None, None, None, false);
-        unknown.source_range = Source::Recording(Recording::Discovering);
+        unknown.source_range = Recording::Discovering;
         assert!(planner.update(&unknown, 1).is_none());
         assert!(
             planner

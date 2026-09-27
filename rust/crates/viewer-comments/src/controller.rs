@@ -175,6 +175,10 @@ impl Controller {
         let state = connection.state();
         let dropped = connection.dropped();
         if dropped != self.dropped {
+            tracing::warn!(
+                dropped = dropped.saturating_sub(self.dropped),
+                "Live comment receive queue overflowed; comments were lost"
+            );
             // Queue loss is a reception gap even when the socket stayed open.
             self.generation = self.generation.wrapping_add(1);
             self.dropped = dropped;

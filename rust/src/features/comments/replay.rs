@@ -1,14 +1,12 @@
-//! Playback projection over persistent comments. Fetching and storage have an
+//! Playback projection over session-owned live history or persistent archives. Fetching and storage have an
 //! independent lifetime, so seeks never cancel or invalidate a received response.
 use super::mapping;
 mod arrivals;
+mod history;
 mod timeline;
 use crate::{channels::BroadcastService, transport::programs::catalog::ClockReading};
 use arrivals::LiveArrivals;
-use std::{
-    collections::{HashMap, HashSet},
-    path::PathBuf,
-};
+use std::path::PathBuf;
 pub(crate) use timeline::Timeline;
 use viewer_comments::{
     Comment,
@@ -55,11 +53,12 @@ enum Storage {
     Active(Controller),
     Failed(String),
 }
-struct Pending {
-    source: u64,
-    channel: u16,
-    clock: Option<cache::ClockSpan>,
-    comments: Vec<(Comment, bool)>,
+#[derive(Default)]
+enum ReplaySource {
+    #[default]
+    Unselected,
+    Live(history::History),
+    Recording,
 }
 #[derive(Default)]
 pub(crate) struct Replay {
@@ -67,7 +66,7 @@ pub(crate) struct Replay {
     directory: Option<PathBuf>,
     budget: Option<i64>,
     target: Option<(u64, u16)>,
-    pending: Option<Pending>,
+    source: ReplaySource,
     projected: Option<(u64, i64, String)>,
     clock: Option<ClockReading>,
     position: Option<u64>,
@@ -87,16 +86,16 @@ impl Replay {
             ..Default::default()
         }
     }
-    pub fn can_receive(&self) -> bool {
-        self.pending.is_none()
-            && match &self.storage {
-                Storage::Dormant => true,
-                Storage::Active(store) => {
-                    store.has_capacity()
-                        && !matches!(store.snapshot().state, cache::State::StorageFailed(_))
-                }
-                Storage::Failed(_) => false,
-            }
+    pub fn is_live(&self) -> bool {
+        matches!(self.source, ReplaySource::Live(_))
+    }
+    pub fn disconnect(&mut self) {
+        if self.is_live() {
+            self.source = ReplaySource::Unselected;
+            self.target = None;
+            self.clear_projection();
+            self.status = Status::Disabled;
+        }
     }
     pub fn disk_bytes(&self) -> u64 {
         match &self.storage {
@@ -114,7 +113,9 @@ impl Replay {
         }
     }
     pub fn refresh_current(&mut self) {
-        if let Storage::Active(store) = &mut self.storage {
+        if matches!(self.source, ReplaySource::Recording)
+            && let Storage::Active(store) = &mut self.storage
+        {
             store.refresh_current();
         }
     }
@@ -132,7 +133,7 @@ impl Replay {
             store.shutdown();
         }
         self.storage = Storage::Dormant;
-        self.pending = None;
+        self.source = ReplaySource::Unselected;
         self.target = None;
         self.clear_projection();
         self.status = Status::Disabled;
@@ -173,25 +174,34 @@ impl Replay {
         wall_ms: i64,
     ) {
         let target = context.as_ref().and_then(|c| {
-            c.service
-                .and_then(|s| mapping::resolve(s.network_id, s.service_id))
-                .or_else(|| {
-                    self.target
-                        .filter(|(source, _)| *source == c.source)
-                        .map(|(_, channel)| channel)
-                })
-                .map(|channel| (c.source, channel))
+            match c.service {
+                Some(s) => mapping::resolve(s.network_id, s.service_id),
+                None => self
+                    .target
+                    .filter(|(source, _)| *source == c.source)
+                    .map(|(_, channel)| channel),
+            }
+            .map(|channel| (c.source, channel))
         });
-        if target != self.target {
+        let recording = context
+            .as_ref()
+            .is_some_and(|c| matches!(c.source_range, Source::Recording(_)));
+        if target != self.target
+            || (target.is_some() && recording != matches!(self.source, ReplaySource::Recording))
+        {
             self.target = target;
-            self.pending = None;
+            self.source = match target {
+                Some(_) if recording => ReplaySource::Recording,
+                Some((_, channel)) => ReplaySource::Live(history::History::new(channel)),
+                None => ReplaySource::Unselected,
+            };
             self.clear_projection();
         }
         if self.seeking && !seeking {
             self.clear_projection();
         }
         self.seeking = seeking;
-        if context.as_ref().is_some_and(|c| c.enabled) && target.is_some() {
+        if recording && context.as_ref().is_some_and(|c| c.enabled) && target.is_some() {
             self.start_store();
         }
         let reading = context.as_ref().and_then(|c| {
@@ -201,6 +211,23 @@ impl Replay {
                 .or_else(|| self.position.filter(|old| *old == position).and(self.clock))?;
             Some((clock, position, clock.utc(position)?))
         });
+        let added = match (&mut self.source, context.as_ref()) {
+            (ReplaySource::Live(history), Some(c)) => match &c.source_range {
+                Source::Live {
+                    earliest_media_ms,
+                    spans,
+                    ..
+                } => {
+                    let position = c.position.and_then(|ns| i64::try_from(ns / 1_000_000).ok());
+                    history.update(*earliest_media_ms, position, spans, comments, wall_ms)
+                }
+                Source::Recording(_) => history::Received::default(),
+            },
+            _ => history::Received::default(),
+        };
+        if self.arrivals.mark_own(&added.own) {
+            self.projected = None;
+        }
         if let Some((clock, position, _)) = reading {
             if self.clock.is_some_and(|old| !old.agrees(clock, position)) {
                 self.clear_projection();
@@ -211,7 +238,7 @@ impl Replay {
             if let Some(c) = context.as_ref()
                 && let Some(reception) = self.arrivals.at_edge(c, seeking, clock, position)
             {
-                changed |= reception.receive(&comments);
+                changed |= reception.receive(&added.new);
             }
             if changed {
                 self.projected = None;
@@ -227,73 +254,27 @@ impl Replay {
                 interval,
             })
         });
-        let mut demand = context
+        let demand = context
             .as_ref()
             .zip(target)
-            .map(|(c, (source, channel))| Demand {
-                source,
-                channel,
-                view: (c.enabled && c.display && !seeking)
-                    .then(|| view.clone())
-                    .flatten(),
-                source_range: c.source_range.clone(),
-                // The storage worker owns seek settling. Cache reads remain
-                // available immediately after the output position is known.
-                fetch: c.enabled && c.display && !seeking,
+            .and_then(|(c, (source, channel))| {
+                let Source::Recording(recording) = &c.source_range else {
+                    return None;
+                };
+                Some(Demand {
+                    source,
+                    channel,
+                    view: (c.enabled && c.display && !seeking)
+                        .then(|| view.clone())
+                        .flatten(),
+                    source_range: recording.clone(),
+                    // Archive reads remain available while the worker settles seeks.
+                    fetch: c.enabled && c.display && !seeking,
+                })
             });
         if let Storage::Active(store) = &mut self.storage {
-            if let Some(mut pending) = self.pending.take() {
-                match store.receive(
-                    pending.source,
-                    pending.channel,
-                    pending.clock.clone(),
-                    pending.comments,
-                ) {
-                    Ok(()) => {}
-                    Err(comments) => {
-                        pending.comments = comments;
-                        self.pending = Some(pending);
-                    }
-                }
-            }
-            if !comments.is_empty()
-                && let Some((source, channel)) = target
-            {
-                let clock = context.as_ref().and_then(|c| match &c.source_range {
-                    Source::Live { spans, .. } => spans
-                        .iter()
-                        .filter(|s| s.channel == channel)
-                        .max_by_key(|s| s.media_end_ms)
-                        .cloned(),
-                    Source::Pending | Source::Recording(_) => None,
-                });
-                match store.receive(source, channel, clock.clone(), comments) {
-                    Ok(()) => {}
-                    Err(comments) => {
-                        // poll_comments checks can_receive before draining.
-                        if let Some(pending) = &mut self.pending {
-                            pending.comments.extend(comments);
-                        } else {
-                            self.pending = Some(Pending {
-                                source,
-                                channel,
-                                clock,
-                                comments,
-                            });
-                        }
-                    }
-                }
-            }
-            if self.pending.is_some()
-                && let Some(Demand {
-                    source_range: Source::Live { reception, .. },
-                    ..
-                }) = &mut demand
-            {
-                *reception = cache::Reception::Interrupted;
-            }
-            // Publish the reception tip after enqueuing its comments, so the
-            // store can never mark this range complete before saving them.
+            // A sent recording request may finish in the background. Live
+            // playback never submits an acquisition or received posts to it.
             store.configure(demand);
         }
         let enabled = context.as_ref().is_some_and(|c| c.enabled && c.display);
@@ -334,6 +315,30 @@ impl Replay {
             self.timeline.replace(Vec::new());
             return;
         };
+        if let ReplaySource::Live(history) = &self.source {
+            let signature = (history.revision(), utc / 1000, clock.key());
+            if self.projected.as_ref() != Some(&signature) {
+                let position_ms = (reading.expect("verified clock").1 / 1_000_000) as i64;
+                self.timeline.replace(project(
+                    history.window(
+                        &clock.key(),
+                        position_ms.saturating_sub(cache::LOOKBACK_SECONDS * 1000),
+                        position_ms.saturating_add(FORWARD_SECONDS * 1000),
+                    ),
+                    clock,
+                    view.interval,
+                    &self.arrivals,
+                ));
+                self.projected = Some(signature);
+            }
+            // Reception gaps are never advertised as an acquired empty archive.
+            self.status = if self.timeline.records().is_empty() {
+                Status::Waiting
+            } else {
+                Status::Ready
+            };
+            return;
+        }
         let snapshot = match &self.storage {
             Storage::Active(store) => store.snapshot(),
             Storage::Failed(error) => {
@@ -387,84 +392,24 @@ impl Replay {
     }
 }
 
-/// Pair original payloads across reception and archive once per occurrence.
-/// Equal posts within the archive remain distinct, including identical IDs.
-fn project(
-    records: &[Record],
+/// Project a window from exactly one source. Archive multiplicity is preserved;
+/// the live history already deduplicated identified redeliveries on ingestion.
+fn project<'a>(
+    records: impl IntoIterator<Item = &'a Record>,
     clock: ClockReading,
     viewing: Interval,
-    arrivals: &LiveArrivals,
+    arrivals: &'a LiveArrivals,
 ) -> Vec<viewer_comments::danmaku::TimedComment> {
-    // Prefer the transient arrival over its persisted copy. Its ID and display
-    // time survive worker snapshots, while the stored posting time stays intact.
-    let stored = records.iter().filter(|record| {
-        record.origin != RecordOrigin::Live || !arrivals.contains(&record.comment)
-    });
+    // Prefer a temporary live display time to the same session history record.
+    // The stored posting time is never changed by arrival latency.
+    let stored = records
+        .into_iter()
+        .filter(|record| record.origin != RecordOrigin::Live || !arrivals.contains(record.id));
     let records: Vec<_> = arrivals.records().into_iter().chain(stored).collect();
-    let mut live: HashMap<_, Vec<usize>> = HashMap::new();
-    let mut paired = HashSet::new();
-    // Borrow the original payload as a typed key; no escaping or JSON allocation.
-    fn payload(
-        record: &Record,
-    ) -> (
-        Option<u64>,
-        viewer_comments::Origin,
-        &str,
-        viewer_comments::Style,
-    ) {
-        (
-            record.comment.timestamp_micros,
-            record.comment.origin,
-            &record.comment.text,
-            record.comment.style,
-        )
-    }
-    let mut live_ids = HashSet::new();
-    let mut duplicate_live = HashSet::new();
-    for (index, record) in records.iter().enumerate() {
-        if record.origin == RecordOrigin::Live {
-            if let Some(id) = record.comment.source_id
-                && !live_ids.insert((id, record.comment.timestamp_micros, payload(record)))
-            {
-                duplicate_live.insert(index);
-                continue;
-            }
-            live.entry(payload(record)).or_default().push(index);
-        }
-    }
-    let mut selected = Vec::new();
-    for (index, record) in records.iter().enumerate() {
-        if record.origin == RecordOrigin::Live {
-            if duplicate_live.contains(&index) {
-                continue;
-            }
-        } else if let Some(candidates) = live.get(&payload(record)) {
-            let same_user = |other: &Comment| match (&record.comment.identity, &other.identity) {
-                (Some(a), Some(b)) => {
-                    a.user_id
-                        .trim_start_matches("nicolive:")
-                        .trim_start_matches("rekari:")
-                        == b.user_id
-                            .trim_start_matches("nicolive:")
-                            .trim_start_matches("rekari:")
-                }
-                _ => true,
-            };
-            if let Some(&matched) = candidates.iter().find(|&&candidate| {
-                !paired.contains(&candidate) && same_user(&records[candidate].comment)
-            }) {
-                paired.insert(matched);
-                continue;
-            }
-        }
-        selected.push(index);
-    }
-    let selected_count = selected.len();
     let mut projected = Vec::new();
     let mut bytes = 0;
     let mut invalid = 0;
-    for index in selected {
-        let record = records[index];
+    for record in &records {
         let Some(micros) = record.comment.timestamp_micros else {
             continue;
         };
@@ -520,8 +465,7 @@ fn project(
         tracing::warn!(target: "comment_archive", invalid, "Discarded invalid comments while projecting playback window");
     }
     let count = projected.len();
-    tracing::debug!(target: "comment_archive", cached = records.len(), merged = selected_count, projected = count,
-        excluded_duplicate = records.len() - selected_count, excluded_clock_window_or_limit = selected_count - count, "projected comments");
+    tracing::debug!(target: "comment_playback", available = records.len(), projected = count, "projected comments");
     projected
 }
 
@@ -532,7 +476,7 @@ mod tests {
         Information, Observation,
         catalog::{Accuracy, Catalog, ScanCursor, ScanPoint},
     };
-    use std::time::{Duration, Instant};
+    use std::time::Duration;
     fn as_json(records: &[viewer_comments::danmaku::TimedComment]) -> serde_json::Value {
         serde_json::Value::Array(records.iter().map(|r| serde_json::json!({
             "id": r.id, "time": r.time.as_secs_f64(), "own": r.comment.own, "timing": r.timing,
@@ -599,6 +543,15 @@ mod tests {
             unix_seconds: UTC as u64 / 1000 + seconds,
             timestamp_micros: Some((UTC as u64 + seconds * 1000) * 1000),
             style: Default::default(),
+        }
+    }
+    fn live_record(seconds: u64, id: u64) -> Record {
+        Record {
+            id,
+            comment: comment(seconds, id),
+            own: false,
+            origin: RecordOrigin::Live,
+            media_ms: None,
         }
     }
     fn live_context(seconds: u64) -> Context {
@@ -713,21 +666,14 @@ mod tests {
         assert_eq!(value[0]["time"], RECEIVED as f64);
         assert_eq!(value[0]["timing"], "live");
         assert_eq!(value[0]["own"], true);
-        // Wait for the actual storage worker, then ensure the saved copy and a
-        // repeated delivery do not replace or duplicate the displayed arrival.
-        let until = Instant::now() + Duration::from_secs(3);
-        loop {
-            let stored = match &replay.storage {
-                Storage::Active(store) => !store.snapshot().records.is_empty(),
-                _ => false,
-            };
-            if stored {
-                break;
-            }
-            assert!(Instant::now() < until, "live comment was not persisted");
-            std::thread::sleep(Duration::from_millis(5));
-            replay.update(Some(live_context(RECEIVED)), false, vec![], UTC + 600_000);
-        }
+        // A redelivery is deduplicated synchronously, without opening a DB.
+        assert!(matches!(replay.storage, Storage::Dormant));
+        assert!(
+            std::fs::read_dir(directory.path())
+                .unwrap()
+                .next()
+                .is_none()
+        );
         replay.update(
             Some(live_context(RECEIVED)),
             false,
@@ -753,7 +699,7 @@ mod tests {
             arrivals
                 .at_edge(&ctx, false, clock, position)
                 .unwrap()
-                .receive(&[(comment(1, 1), false), (comment(35, 2), false)])
+                .receive(&[live_record(1, 1), live_record(35, 2)])
         );
         let view = Interval::new(UTC / 1000 + 14, UTC / 1000 + 150).unwrap();
         let value: serde_json::Value = as_json(&project(&[], clock, view, &arrivals));
@@ -795,7 +741,7 @@ mod tests {
         arrivals
             .at_edge(&ctx, false, clock, ctx.position.unwrap())
             .unwrap()
-            .receive(&[(comment(5, 1), false)]);
+            .receive(&[live_record(5, 1)]);
         assert!(arrivals.records().is_empty());
         assert!(!arrivals.advance(clock, ctx.position.unwrap()));
         let ready = context_until(1, 5, 7);
@@ -827,111 +773,212 @@ mod tests {
         replay.shutdown();
     }
     #[test]
-    fn disk_replay_survives_seek_display_off_and_rejects_old_sources() {
+    fn memory_replay_survives_pause_seek_and_toggles_without_opening_archive_storage() {
         let directory = tempfile::tempdir().unwrap();
-        let mut replay = Replay::in_directory(directory.path().into());
+        let mut replay = Replay::in_directory(directory.path().join("must-not-be-created"));
+        let mut paused = context(1, 3);
+        paused.paused = true;
         replay.update(
-            Some(context(1, 3)),
+            Some(paused),
             false,
             vec![(comment(1, 1), true), (comment(500, 2), false)],
-            UTC + 600_000,
+            UTC,
         );
-        let until = Instant::now() + Duration::from_secs(3);
-        while replay.timeline.records().is_empty() && Instant::now() < until {
-            std::thread::sleep(Duration::from_millis(5));
-            replay.update(Some(context(1, 3)), false, vec![], UTC + 600_000);
+        for position in [500, 3, 500, 3] {
+            replay.update(Some(context(1, position)), true, vec![], UTC);
+            let previous = replay.timeline.clone();
+            replay.update(Some(context(1, position)), false, vec![], UTC);
+            assert!(!replay.timeline.same_generation(&previous));
+            assert_eq!(replay.timeline.records().len(), 1);
+            assert_eq!(
+                replay.timeline.records()[0].time.as_secs(),
+                if position == 3 { 1 } else { 500 }
+            );
         }
-        let value: serde_json::Value = as_json(replay.timeline.records());
-        assert_eq!(value.as_array().unwrap().len(), 1);
-        assert_eq!(value[0]["time"], 1.);
-        assert_eq!(value[0]["own"], true);
-        // A completed seek restores persisted comments before the worker's
-        // HTTP settling deadline, in both directions on the same source.
-        const CACHE_READ_DEADLINE: Duration = Duration::from_millis(400);
-        for (position, expected_time) in [(500, 500.), (3, 1.)] {
-            replay.update(Some(context(1, position)), true, vec![], UTC + 600_000);
-            let before_seek = replay.timeline.clone();
-            replay.update(Some(context(1, position)), false, vec![], UTC + 600_000);
-            assert!(!replay.timeline.same_generation(&before_seek));
-            let until = Instant::now() + CACHE_READ_DEADLINE;
-            loop {
-                let value: serde_json::Value = as_json(replay.timeline.records());
-                if value[0]["time"] == expected_time {
-                    assert_eq!(value.as_array().unwrap().len(), 1);
-                    break;
-                }
-                assert!(
-                    Instant::now() < until,
-                    "cached seek did not restore comments"
-                );
-                std::thread::sleep(Duration::from_millis(5));
-                replay.update(Some(context(1, position)), false, vec![], UTC + 600_000);
-            }
+        for enabled in [true, false] {
+            let mut hidden = context(1, 3);
+            hidden.enabled = enabled;
+            hidden.display = false;
+            replay.update(
+                Some(hidden),
+                false,
+                vec![(comment(4, if enabled { 3 } else { 4 }), false)],
+                UTC,
+            );
+            assert!(replay.timeline.records().is_empty());
+            replay.update(Some(context(1, 3)), false, vec![], UTC);
+            assert!(!replay.timeline.records().is_empty());
         }
-        let mut disabled = context(1, 3);
-        disabled.enabled = false;
-        replay.update(Some(disabled), false, vec![], UTC + 600_000);
+        assert!(matches!(replay.storage, Storage::Dormant));
+        assert!(
+            std::fs::read_dir(directory.path())
+                .unwrap()
+                .next()
+                .is_none()
+        );
+        replay.update(Some(context(2, 3)), false, vec![], UTC);
         assert!(replay.timeline.records().is_empty());
-        replay.update(Some(context(1, 3)), false, vec![], UTC + 600_000);
-        let until = Instant::now() + Duration::from_secs(3);
-        while replay.timeline.records().is_empty() && Instant::now() < until {
-            std::thread::sleep(Duration::from_millis(5));
-            replay.update(Some(context(1, 3)), false, vec![], UTC + 600_000);
+        replay.update(
+            Some(context(2, 3)),
+            false,
+            vec![(comment(1, 1), false)],
+            UTC,
+        );
+        replay.update(None, false, vec![], UTC);
+        assert!(matches!(replay.source, ReplaySource::Unselected));
+        replay.update(Some(context(2, 3)), false, vec![], UTC);
+        assert!(replay.timeline.records().is_empty());
+    }
+
+    #[test]
+    fn failed_archive_storage_does_not_block_live_arrivals_or_rewind() {
+        let mut replay = Replay {
+            storage: Storage::Failed("injected I/O failure".into()),
+            ..Default::default()
+        };
+        replay.update(
+            Some(live_context(3)),
+            false,
+            vec![(comment(1, 1), true)],
+            UTC,
+        );
+        assert_eq!(replay.timeline.records()[0].time.as_secs(), 3);
+        replay.update(Some(context(1, 3)), true, vec![], UTC);
+        replay.update(Some(context(1, 3)), false, vec![], UTC);
+        assert_eq!(replay.timeline.records()[0].time.as_secs(), 1);
+        assert_eq!(replay.status, Status::Ready);
+    }
+
+    #[test]
+    fn live_history_waits_for_initial_clock_without_starting_an_archive_worker() {
+        let mut replay = Replay::default();
+        let mut starting = context(1, 3);
+        starting.position = None;
+        starting.clock = None;
+        let Source::Live { spans, .. } = &mut starting.source_range else {
+            unreachable!()
+        };
+        spans.clear();
+        replay.update(Some(starting), false, vec![(comment(1, 1), false)], UTC);
+        assert_eq!(replay.status, Status::WaitingClock);
+        assert!(matches!(replay.storage, Storage::Dormant));
+        replay.update(Some(context(1, 3)), false, vec![], UTC + 1);
+        assert_eq!(replay.timeline.records()[0].time.as_secs(), 1);
+    }
+
+    #[test]
+    fn delayed_own_recognition_updates_the_display_without_restarting_a_redelivery() {
+        let mut replay = Replay::default();
+        replay.update(
+            Some(live_context(3)),
+            false,
+            vec![(comment(1, 1), false)],
+            UTC,
+        );
+        let first = replay.timeline.records()[0].clone();
+        replay.update(
+            Some(live_context(5)),
+            false,
+            vec![(comment(1, 1), true)],
+            UTC + 1,
+        );
+        let current = &replay.timeline.records()[0];
+        assert_eq!(current.time, first.time);
+        assert_eq!(current.id, first.id);
+        assert!(current.comment.own);
+    }
+
+    #[test]
+    fn retention_follows_video_window_after_confirmed_live_return() {
+        for always in [false, true] {
+            let mut replay = Replay::default();
+            replay.update(
+                Some(live_context(3)),
+                false,
+                vec![(comment(1, 1), false)],
+                UTC,
+            );
+            let mut paused = context(1, 3);
+            paused.paused = true;
+            replay.update(
+                Some(paused),
+                false,
+                vec![(comment(98, 2), false)],
+                UTC + 100_000,
+            );
+            // The pause frame keeps the same arrival and newly received posts
+            // are scheduled at their original video time, never at this frame.
+            assert_eq!(replay.timeline.records()[0].time.as_secs(), 3);
+            assert_eq!(replay.timeline.records()[1].time.as_secs(), 98);
+            replay.update(Some(context(1, 100)), true, vec![], UTC + 100_001);
+            let mut returned = live_context(100);
+            let Source::Live {
+                earliest_media_ms, ..
+            } = &mut returned.source_range
+            else {
+                unreachable!()
+            };
+            *earliest_media_ms = if always { 0 } else { 100_000 };
+            replay.update(Some(returned), false, vec![], UTC + 100_002);
+            assert_eq!(replay.timeline.records().len(), 1);
+            let ReplaySource::Live(history) = &replay.source else {
+                unreachable!()
+            };
+            let records = history.window(&context(1, 3).clock.unwrap().key(), 0, 100_000);
+            assert_eq!(records.len(), if always { 2 } else { 1 });
         }
-        assert!(!replay.timeline.records().is_empty());
-        replay.update(Some(context(1, 500)), true, vec![], UTC + 600_000);
-        replay.update(Some(context(2, 3)), false, vec![], UTC + 600_000);
+    }
+
+    #[test]
+    fn an_active_archive_worker_failure_is_independent_of_live_playback() {
+        use std::time::Instant;
+        // A file where a directory is required forces a real worker I/O error.
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let mut replay = Replay::in_directory(file.path().into());
+        replay.open_cache();
+        let deadline = Instant::now() + Duration::from_secs(3);
+        loop {
+            let Storage::Active(store) = &replay.storage else {
+                panic!("worker was not started")
+            };
+            if matches!(store.snapshot().state, cache::State::StorageFailed(_)) {
+                break;
+            }
+            assert!(Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        replay.update(
+            Some(live_context(3)),
+            false,
+            vec![(comment(1, 1), false)],
+            UTC,
+        );
+        assert_eq!(replay.timeline.records()[0].time.as_secs(), 3);
+        replay.update(Some(context(1, 3)), true, vec![], UTC);
+        replay.update(Some(context(1, 3)), false, vec![], UTC);
+        assert_eq!(replay.timeline.records()[0].time.as_secs(), 1);
+        replay.disconnect();
+        assert!(matches!(replay.source, ReplaySource::Unselected));
         assert!(replay.timeline.records().is_empty());
         replay.shutdown();
     }
     #[test]
-    fn pairing_preserves_archive_multiplicity_and_microseconds() {
-        let ctx = context(1, 3);
-        let clock = ctx.clock.unwrap();
-        let mut posts = vec![
-            Record {
-                id: 1,
-                comment: comment(1, 1),
-                own: true,
-                origin: RecordOrigin::Live,
-                media_ms: None,
-            },
-            Record {
-                id: 2,
-                comment: comment(1, 11),
-                own: false,
-                origin: RecordOrigin::Archive,
-                media_ms: None,
-            },
-            Record {
-                id: 3,
-                comment: comment(1, 11),
-                own: false,
-                origin: RecordOrigin::Archive,
-                media_ms: None,
-            },
-        ];
-        *posts[0].comment.timestamp_micros.as_mut().unwrap() += 123;
-        posts[1].comment.timestamp_micros = posts[0].comment.timestamp_micros;
-        posts[2].comment.timestamp_micros = posts[0].comment.timestamp_micros;
-        // A reconnect may repeat a live post. It must not consume a second
-        // archive occurrence when pairing the two origins.
+    fn archive_projection_preserves_multiplicity_and_microseconds() {
+        let clock = context(1, 3).clock.unwrap();
+        let mut post = live_record(1, 1);
+        post.origin = RecordOrigin::Archive;
+        *post.comment.timestamp_micros.as_mut().unwrap() += 123;
         let duplicate = Record {
-            id: 4,
-            comment: posts[0].comment.clone(),
-            own: true,
-            origin: RecordOrigin::Live,
-            media_ms: None,
+            id: 2,
+            ..post.clone()
         };
-        posts.push(duplicate);
-        let value: serde_json::Value = as_json(&project(
-            &posts,
+        let records = project(
+            &[post, duplicate],
             clock,
             Interval::new(UTC / 1000, UTC / 1000 + 10).unwrap(),
             &LiveArrivals::default(),
-        ));
-        assert_eq!(value.as_array().unwrap().len(), 2);
-        assert_eq!(value[0]["time"], 1.000123);
-        assert_eq!(value[0]["own"], true);
+        );
+        assert_eq!(records.len(), 2);
+        assert_eq!(records[0].time, Duration::from_nanos(SECOND + 123_000));
     }
 }
