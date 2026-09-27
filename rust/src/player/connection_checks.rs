@@ -229,6 +229,8 @@ fn checks() -> TestResult {
     check_playback_actions(&mut player)?;
     check_recording_input(&mut player)?;
     check_recording_notifications(&mut player)?;
+    check_stream_projection_commit()?;
+    check_commentary_projection()?;
     check_guide_state();
     check_autoplay()?;
     check_live_buffer()?;
@@ -861,6 +863,12 @@ fn check_recording_notifications(player: &mut cxx::UniquePtr<ffi::Player>) -> Te
         observed.lock().unwrap().as_slice(),
         &vec![(true, "subtitle-clock.ts".to_owned(), true, false); 3]
     );
+    observed.lock().unwrap().clear();
+    player.pin_mut().change_stream_state(|state| state);
+    assert!(
+        observed.lock().unwrap().is_empty(),
+        "unchanged projections must not notify"
+    );
     player.pin_mut().change_stream_state(State::started);
     let transport = Arc::new(Mutex::new(Vec::new()));
     let changes = transport.clone();
@@ -912,6 +920,84 @@ fn check_recording_notifications(player: &mut cxx::UniquePtr<ffi::Player>) -> Te
         &vec![(false, String::new(), true, false); 3]
     );
     player.pin_mut().end_stream()?;
+    Ok(())
+}
+
+fn check_stream_projection_commit() -> TestResult {
+    use super::stream_state::{Attempt, State};
+    let mut player = ffi::new_player();
+    let file = crate::playback::recording::Recording::open(Path::new(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../tests/fixtures/subtitle-clock.ts"
+    )))?;
+    {
+        let mut state = player.pin_mut().rust_mut();
+        state.speed.applied = crate::playback::speed::Rate::checked(15).unwrap();
+        state.current_program_data = QString::from("{\"name\":\"old program\"}");
+        state.program_progress = 0.5;
+        state.subtitle_data = QString::from("old subtitle");
+        state.subtitle_cells = 1;
+    }
+    let observed = Arc::new(Mutex::new(0));
+    let changes = observed.clone();
+    // Rate is the first emitted stream signal. Every dependent field must
+    // already describe the new input when this observer executes.
+    let _rate = player.pin_mut().on_playback_rate_changed(move |player| {
+        assert_eq!(player.playback_rate(), 10);
+        assert!(player.connecting());
+        assert!(player.recording());
+        assert_eq!(player.recording_name().to_string(), "subtitle-clock.ts");
+        assert_eq!(player.current_program_data().to_string(), "null");
+        assert_eq!(*player.program_progress(), 0.0);
+        assert!(player.subtitle_data().is_empty());
+        assert_eq!(player.rust().subtitle_cells, 0);
+        assert_eq!(player.live_timeline().to_string(), "null");
+        *changes.lock().unwrap() += 1;
+    });
+    player
+        .pin_mut()
+        .update_stream_state(State::Connecting(Attempt::File(file)));
+    player.pin_mut().change_stream_state(|state| state);
+    assert_eq!(*observed.lock().unwrap(), 1);
+    Ok(())
+}
+
+fn check_commentary_projection() -> TestResult {
+    let mut player = ffi::new_player();
+    let channels = crate::channels::parse(
+        br#"[
+        {"id":1,"type":1,"name":"A","networkId":4,"serviceId":101},
+        {"id":2,"type":1,"name":"B","networkId":4,"serviceId":103}
+    ]"#,
+    )?;
+    {
+        let mut state = player.pin_mut().rust_mut();
+        state.network = None; // No external requests in this boundary test.
+        state.comments_enabled = true;
+        state.catalog.replace(channels, Some(1));
+    }
+    player.pin_mut().poll_comments();
+    player
+        .pin_mut()
+        .edit_comment_draft(QString::from("draft for A"));
+    let observed = Arc::new(Mutex::new(0));
+    let changes = observed.clone();
+    let _draft = player.pin_mut().on_comment_draft_changed(move |player| {
+        assert!(player.comment_draft().is_empty());
+        assert_eq!(
+            player.comment_post_target().to_string(),
+            "NX-Jikkyo · jk103"
+        );
+        assert!(!*player.comment_post_available());
+        assert!(!*player.comment_post_busy());
+        assert!(player.comment_post_status().is_empty());
+        *changes.lock().unwrap() += 1;
+    });
+    player.pin_mut().set_selected(1);
+    // Submit must invalidate the old draft itself, without a preceding UI poll.
+    assert!(!player.pin_mut().post_comment());
+    player.pin_mut().poll_comments();
+    assert_eq!(*observed.lock().unwrap(), 1);
     Ok(())
 }
 

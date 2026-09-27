@@ -119,7 +119,7 @@ impl ffi::Player {
         else {
             return false;
         };
-        let timeline = self.rust().comment_replay.timeline().clone();
+        let timeline = self.rust().commentary.timeline().clone();
         // End all borrows of Player state before the controller emits any signals.
         let Some(controller) = (unsafe { controller.as_mut() }) else {
             return false;
@@ -189,12 +189,12 @@ impl ffi::Player {
 
     pub fn comments_open(mut self: Pin<&mut Self>, opened: bool) {
         if opened {
-            self.as_mut().rust_mut().comment_replay.open_cache();
+            self.as_mut().rust_mut().commentary.open_cache();
             self.as_mut().poll_comments();
         }
     }
     pub fn clear_comment_cache(mut self: Pin<&mut Self>) {
-        self.as_mut().rust_mut().comment_replay.clear_unused();
+        self.as_mut().rust_mut().commentary.clear_unused();
         self.poll_comments();
     }
     pub fn comment_cache_limit_mib(&self) -> i32 {
@@ -212,143 +212,95 @@ impl ffi::Player {
             .rust_mut()
             .preferences
             .change(crate::settings::Change::CommentCacheLimit(limit));
-        self.as_mut()
-            .rust_mut()
-            .comment_replay
-            .set_budget(limit.bytes());
+        self.as_mut().rust_mut().commentary.set_cache_limit(limit);
         self.as_mut().comment_cache_limit_mib_changed();
         self.save_settings();
         true
     }
     pub fn refresh_recording_comments(mut self: Pin<&mut Self>) {
         if self.rust().stream_state.recording().is_some() {
-            self.as_mut().rust_mut().comment_replay.refresh_current();
+            self.as_mut().rust_mut().commentary.refresh_current();
             self.poll_comments();
         }
     }
 
-    pub(super) fn poll_comments(mut self: Pin<&mut Self>) {
-        self.as_mut().poll_activity();
-        let seeking = self.seeking();
-        let (reset, comments, timeline_changed) = {
-            let previous = self.rust().comment_replay.timeline().clone();
+    pub(super) fn poll_comments(self: Pin<&mut Self>) {
+        self.update_commentary(crate::features::comments::session::Command::Poll);
+    }
+
+    pub(super) fn update_commentary(
+        mut self: Pin<&mut Self>,
+        command: crate::features::comments::session::Command,
+    ) -> bool {
+        use super::stream_state::{Attempt, Selection, State};
+        use crate::features::comments::session::{Input, Options, Playback, Submission, Target};
+        let update = {
             let mut this = self.as_mut().rust_mut();
             let this = &mut *this;
-            this.comment_replay.set_budget(
-                this.preferences
-                    .preferences()
-                    .comment_cache_limit_mib
-                    .bytes(),
-            );
-            let channel = this
-                .catalog
-                .selected()
-                .filter(|_| this.stream_state.recording().is_none());
-            let reset = this.comments.configure(this.comments_enabled, channel);
-            let accepting = this.comment_replay.can_receive();
-            let comments = match this.network.as_ref().filter(|_| accepting) {
-                Some(network) => match this.comments.poll(network) {
-                    Ok(comments) => comments,
+            let live = || Target::Live(this.catalog.selected());
+            let input = match &this.stream_state {
+                State::Stopped(Selection::Live) | State::StopFailed(Attempt::Live(_)) => {
+                    Playback::Inactive(live())
+                }
+                State::Stopped(Selection::File(_)) | State::StopFailed(Attempt::File(_)) => {
+                    Playback::Inactive(Target::Recording)
+                }
+                State::Connecting(Attempt::Live(_)) => Playback::Connecting(live(), &this.media),
+                State::Connecting(Attempt::File(_)) => {
+                    Playback::Connecting(Target::Recording, &this.media)
+                }
+                State::Playing(_, phase) => Playback::Active(live(), &this.media, *phase),
+                State::Recording(_, phase) => {
+                    Playback::Active(Target::Recording, &this.media, *phase)
+                }
+            };
+            let options = Options {
+                enabled: this.comments_enabled,
+                display: this.danmaku_enabled,
+                cache_limit: this.preferences.preferences().comment_cache_limit_mib,
+            };
+            let wall_ms = match std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
+                Ok(time) => match i64::try_from(time.as_millis()) {
+                    Ok(time) => time,
                     Err(error) => {
-                        tracing::error!("{error}");
-                        Vec::new()
+                        tracing::error!(
+                            error = &error as &dyn std::error::Error,
+                            "Comment clock exceeds supported range"
+                        );
+                        return false;
                     }
                 },
-                None => Vec::new(),
+                Err(error) => {
+                    tracing::error!(
+                        error = &error as &dyn std::error::Error,
+                        "Comment clock precedes Unix epoch"
+                    );
+                    return false;
+                }
             };
-            let reception = if accepting
-                && comments.len() < viewer_comments::controller::MAX_POLL_COMMENTS
-                && this.comments_enabled
-            {
-                this.comments
-                    .reception_epoch()
-                    .map(viewer_comments::cache::Reception::Receiving)
-                    .unwrap_or(viewer_comments::cache::Reception::Interrupted)
-            } else {
-                viewer_comments::cache::Reception::Interrupted
-            };
-            let context = if this.stream_state.active() || this.stream_state.connecting() {
-                this.media.source_identity().map(|source| {
-                    let position = this
-                        .media
-                        .playback()
-                        .and_then(|playback| playback.position());
-                    let view = position
-                        .map(|position| this.media.metadata(position))
-                        .unwrap_or_default();
-                    let fallback = channel.and_then(|channel| channel.broadcast);
-                    let source_range = this
-                        .media
-                        .comment_source(fallback, crate::features::comments::channel_for, reception)
-                        .unwrap_or(viewer_comments::cache::Source::Pending);
-                    crate::features::comments::replay::Context {
-                        source,
-                        service: view
-                            .service
-                            .or_else(|| channel.and_then(|channel| channel.broadcast)),
-                        position: position.map(|position| position.nseconds()),
-                        clock: view.clock,
-                        source_range,
-                        enabled: this.comments_enabled,
-                        display: this.danmaku_enabled,
-                        paused: this.stream_state.paused(),
-                    }
-                })
-            } else {
-                None
-            };
-            let now = std::time::Instant::now();
-            let received = comments
-                .iter()
-                .map(|comment| {
-                    (
-                        comment.clone(),
-                        this.comments.posting.is_own_comment(comment, now),
-                    )
-                })
-                .collect();
-            let wall_ms = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .ok()
-                .and_then(|time| i64::try_from(time.as_millis()).ok())
-                .unwrap_or(0);
-            this.comment_replay.update(
-                context,
-                seeking && this.comments_enabled,
-                received,
-                wall_ms,
-            );
-            let timeline_changed = !previous.same_snapshot(this.comment_replay.timeline());
-            (reset, comments, timeline_changed)
+            this.commentary.update(
+                Input {
+                    options,
+                    playback: input,
+                    channels: this.catalog.channels(),
+                    network: this.network.as_ref(),
+                    now: std::time::Instant::now(),
+                    wall_ms,
+                },
+                command,
+            )
         };
-        if timeline_changed {
-            let revision = self.rust().comment_timeline_revision.wrapping_add(1);
-            self.as_mut().rust_mut().comment_timeline_revision = revision;
-            self.as_mut().comment_timeline_revision_changed();
-        }
-        let cache_bytes = self.rust().comment_replay.disk_bytes() as f64;
-        if self.rust().comment_cache_bytes != cache_bytes {
-            self.as_mut().rust_mut().comment_cache_bytes = cache_bytes;
-            self.as_mut().comment_cache_bytes_changed();
-        }
-        if reset {
-            self.as_mut().clear_comment_history();
-            self.as_mut().set_comment_draft(QString::default());
-        }
-        self.as_mut().history_model().append(comments);
-        let title = {
-            let this = self.rust();
-            let channel = this
-                .catalog
-                .selected()
-                .filter(|_| this.stream_state.recording().is_none());
-            QString::from(this.activity.program_title(channel))
-        };
-        self.as_mut().set_comment_program_title(title);
-        self.as_mut().refresh_comment_status();
-        self.as_mut().poll_comment_posting();
+        let accepted = update.submission == Submission::Accepted;
+        super::comment_projection::publish(self, Some(update));
+        accepted
     }
-    fn history_model(self: Pin<&mut Self>) -> Pin<&mut crate::comment_model::ffi::CommentModel> {
+
+    pub(super) fn refresh_commentary(self: Pin<&mut Self>) {
+        super::comment_projection::publish(self, None);
+    }
+    pub(super) fn history_model(
+        self: Pin<&mut Self>,
+    ) -> Pin<&mut crate::comment_model::ffi::CommentModel> {
         let model = self.comment_model();
         // UniquePtr keeps the model at a stable address for the Player lifetime.
         // End the PlayerRust borrow before emitting synchronous model signals,
@@ -358,31 +310,5 @@ impl ffi::Player {
 
     pub(super) fn clear_comment_history(self: Pin<&mut Self>) {
         self.history_model().clear();
-    }
-
-    fn poll_activity(mut self: Pin<&mut Self>) {
-        let data = {
-            let mut this = self.as_mut().rust_mut();
-            let this = &mut *this;
-            this.activity
-                .configure(this.comments_enabled && !this.catalog.channels().is_empty());
-            if let Some(network) = &this.network {
-                this.activity.poll(network);
-            }
-            if this.activity.dirty {
-                this.activity.dirty = false;
-                Some(this.activity.json(this.catalog.channels()))
-            } else {
-                None
-            }
-        };
-        match data {
-            Some(Ok(json)) => self.set_activity_data(QString::from(json)),
-            Some(Err(error)) => {
-                tracing::error!("Comment activity projection failed: {error}");
-                self.set_activity_data(QString::from("[]"));
-            }
-            None => {}
-        }
     }
 }

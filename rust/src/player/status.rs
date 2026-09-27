@@ -14,11 +14,11 @@ pub(super) fn with_detail(source: &'static str, detail: impl std::fmt::Display) 
     tr(source).arg(&QString::from(detail.to_string()))
 }
 
-impl ffi::Player {
-    pub(super) fn refresh_comment_status(mut self: Pin<&mut Self>) {
-        if self.media_active() && *self.comments_enabled() {
+pub(super) fn comment_text(status: crate::features::comments::session::Status<'_>) -> QString {
+    match status {
+        crate::features::comments::session::Status::Replay(status) => {
             use crate::features::comments::replay::Status;
-            let text = match &self.rust().comment_replay.status {
+            match status {
                 Status::Disabled => tr("Disabled"),
                 Status::WaitingService => tr("Identifying the broadcast service…"),
                 Status::WaitingClock => tr("Waiting for broadcast time…"),
@@ -38,11 +38,9 @@ impl ffi::Player {
                 Status::Empty => tr("No archived comments in this interval"),
                 Status::Failed(error) => with_detail("Could not fetch past comments: %1", error),
                 Status::StorageFailed(error) => with_detail("Could not save comments: %1", error),
-            };
-            self.set_comment_status(text);
-            return;
+            }
         }
-        let text = match self.rust().comments.status(self.rust().comments_enabled) {
+        crate::features::comments::session::Status::Reception(status) => match status {
             PresentationStatus::Disabled => tr("Disabled"),
             PresentationStatus::WaitingForChannel => {
                 tr("Select a channel to receive live comments.")
@@ -55,10 +53,11 @@ impl ffi::Player {
                 with_detail("Waiting to reconnect: %1", error)
             }
             PresentationStatus::Retrying(None) => tr("Waiting to reconnect"),
-        };
-        self.as_mut().set_comment_status(text);
+        },
     }
+}
 
+impl ffi::Player {
     pub(super) fn refresh_epg_status(mut self: Pin<&mut Self>) {
         if let Some(error) = &self.rust().guide_error {
             let text = with_detail("Could not display the program guide: %1", error);

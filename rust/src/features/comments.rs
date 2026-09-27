@@ -2,6 +2,7 @@
 pub mod activity;
 mod mapping;
 pub(crate) mod replay;
+pub(crate) mod session;
 use crate::{channels::Channel, services::Network};
 use viewer_comments::{
     Comment,

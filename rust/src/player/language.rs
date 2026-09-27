@@ -19,8 +19,7 @@ impl ffi::Player {
         self.as_mut().set_ui_language(effective);
         // Reproject existing state only: translating must not poll or restart workers.
         self.as_mut().refresh_status();
-        self.as_mut().refresh_comment_status();
-        self.as_mut().refresh_comment_posting();
+        self.as_mut().refresh_commentary();
         self.as_mut().refresh_epg_status();
         self.as_mut().refresh_subtitle_status();
         self.as_mut().transport_error_changed();

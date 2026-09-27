@@ -5,6 +5,7 @@ mod channel_programs;
 mod channel_refresh;
 mod channels;
 mod comment_posting;
+mod comment_projection;
 mod comments;
 mod connection;
 #[cfg(feature = "native_tests")]
@@ -32,6 +33,7 @@ mod startup;
 mod statistics;
 mod status;
 mod stream;
+mod stream_projection;
 mod stream_state;
 mod subtitle_rendering;
 mod subtitle_status;
@@ -550,7 +552,6 @@ pub struct PlayerRust {
     comment_program_title: QString,
     comment_model: cxx::UniquePtr<crate::comment_model::ffi::CommentModel>,
     activity_data: QString,
-    activity: crate::features::comments::activity::Activity,
     comment_status: QString,
     comment_draft: QString,
     comment_post_status: QString,
@@ -558,8 +559,7 @@ pub struct PlayerRust {
     comment_post_available: bool,
     comment_post_busy: bool,
     comment_send_on_enter: bool,
-    comments: crate::features::comments::Comments,
-    comment_replay: crate::features::comments::replay::Replay,
+    commentary: crate::features::comments::session::Session,
     comment_timeline_revision: u32,
     comment_cache_bytes: f64,
     subtitles_active: bool,
@@ -615,64 +615,16 @@ macro_rules! property_setter {
 impl ffi::Player {
     property_setter!(set_file_error, file_error, file_error_changed, QString);
     property_setter!(
-        set_comment_draft,
-        comment_draft,
-        comment_draft_changed,
-        QString
-    );
-    property_setter!(
-        set_comment_post_status,
-        comment_post_status,
-        comment_post_status_changed,
-        QString
-    );
-    property_setter!(
-        set_comment_post_target,
-        comment_post_target,
-        comment_post_target_changed,
-        QString
-    );
-    property_setter!(
-        set_comment_post_available,
-        comment_post_available,
-        comment_post_available_changed,
-        bool
-    );
-    property_setter!(
-        set_comment_post_busy,
-        comment_post_busy,
-        comment_post_busy_changed,
-        bool
-    );
-    property_setter!(
         set_comment_send_on_enter,
         comment_send_on_enter,
         comment_send_on_enter_changed,
         bool
     );
     property_setter!(
-        set_comment_program_title,
-        comment_program_title,
-        comment_program_title_changed,
-        QString
-    );
-    property_setter!(
         set_comments_enabled,
         comments_enabled,
         comments_enabled_changed,
         bool
-    );
-    property_setter!(
-        set_activity_data,
-        activity_data,
-        activity_data_changed,
-        QString
-    );
-    property_setter!(
-        set_comment_status,
-        comment_status,
-        comment_status_changed,
-        QString
     );
     property_setter!(
         set_danmaku_enabled,

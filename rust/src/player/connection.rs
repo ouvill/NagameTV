@@ -77,13 +77,8 @@ impl ffi::Player {
 
         self.as_mut().rust_mut().epg_events.configure(None);
         self.as_mut().rust_mut().channel_refresh = channel_refresh::Refresh::Disabled;
-        self.as_mut().rust_mut().comments.configure(false, None);
-        self.as_mut().set_comment_draft(QString::default());
-        self.as_mut().refresh_comment_posting();
-        self.as_mut().clear_comment_history();
-        self.as_mut().rust_mut().activity.configure(false);
-        self.as_mut().set_activity_data(QString::from("[]"));
-        self.as_mut().set_comment_program_title(QString::default());
+        let update = self.as_mut().rust_mut().commentary.disconnect();
+        super::comment_projection::publish(self.as_mut(), Some(update));
         self.as_mut().clear_playback_failure();
         self.as_mut().rust_mut().request.cancel();
         self.as_mut().cancel_connection();
@@ -175,7 +170,7 @@ impl ffi::Player {
                             .rust_mut()
                             .catalog
                             .replace(verified.into_channels(), preferred);
-                        self.as_mut().rust_mut().activity.dirty = true;
+                        self.as_mut().rust_mut().commentary.catalog_changed();
                         self.as_mut().rust_mut().guide_dirty = true;
                         // Physical channel metadata also affects subchannel visibility.
                         // Reset the small browser projection even if EPG revision is unchanged.

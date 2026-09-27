@@ -48,7 +48,7 @@ main → cli::Command → qt::application::LoadedApplication
        ├ Acquisition        /api/servicesの取得・取消し待ち
        ├ ProgramInfo        /api/programsの取得・現行スナップショット
        ├ EPG Controller     番組変更通知の購読・停止待ち
-       ├ Comments/Activity  実況接続・履歴と勢い取得
+       ├ comments::session::Session  実況受信・再生・勢い取得・投稿と下書き
        ├ settings::Session  現在の設定・保存済みスナップショット
        ├ Network            Tokioランタイムと有限JSON用HTTPクライアント
        ├ Remote Control     任意のgRPC/gRPC-Web受付・有界操作キュー・状態通知
@@ -57,7 +57,8 @@ QML Loader                  字幕・番組表・流れる実況・統計表示�
 ```
 
 Playback本体は字幕デコーダーやEPGスナップショットを所有しない。Playbackと字幕の
-寿命の連動はplayback/session.rs、再生のQt投影はplayer/stream.rs、EPGの通知消費と
+寿命の連動はplayback/session.rs、再生操作の調整はplayer/stream.rs、
+再生のQt投影はplayer/stream_projection.rs、EPGの通知消費と
 投影はplayer/epg.rs、設定保存はplayer/preferences.rsに置く。
 音声選択はplayback/audio_streams、PMT照合はaudio_components、主副の変換はaudio_routing。
 PMTメッセージは通常のGStreamer bus pollで処理し、字幕の有効化には依存しない。
@@ -88,6 +89,9 @@ PlayerのFFIにはQML公開APIと必要な型の参照を残し、他のモジ�
 録画にはHTTP再試行や現在放送中の番組情報を適用しない。
 `playing`・`connecting`・対象局・`recording`・録画名はこの状態から取得する。更新は
 `change_stream_state`に集約し、状態全体を置き換えてからQtへ通知する。
+`player/stream_projection.rs`では、名前付きスナップショットの各項目と通知を同じ場所に
+宣言する。`Prepared`が次の表示値を準備し、一括反映後に得られる`Committed`だけが
+差分を通知できる。両者は同じPlayerを排他的に借用し、別のPlayerへの適用や通知の再実行を防ぐ。
 一方の変更通知中に他方を読んでも更新途中の組み合わせにはならない。
 停止失敗時は字幕の購読を解放せず、対象局も保持して次の明示操作で停止を再試行する。
 
@@ -146,6 +150,13 @@ comments_enabled・danmaku_enabled・playingが揃う間だけLoaderで生成す
 詳細な受信上限・再接続・終了契約は [comments-migration.md](comments-migration.md) を参照。
 投稿は操作ごとに既存runtimeで最大1つの短いWebSocketセッションを開始し、
 結果を確認して終了する。自動再送や投稿待ちキューは持たない。[投稿の契約](comment-posting.md)。
+
+`features/comments/session.rs`のSessionは、受信・Replay・Activity・投稿下書きを所有する。
+Playerは選択対象と再生段階をenumで渡し、Sessionが受信可否、キャッシュ予算、
+再生位置との同期、投稿結果による下書き消去を判断する。投稿要求も同じ更新操作で受け付け、
+選局変更による古い下書きの破棄を済ませてから送信する。これらの判断はQtを初期化せず検証できる。
+`player/comment_projection.rs`は結果を翻訳・表示値へ変換し、全項目を反映してから
+モデル更新と変更通知を行う。言語変更による再投影では通信やキャッシュ処理を進めない。
 
 ## 字幕の停止順序
 
