@@ -17,5 +17,5 @@
   <provides><binary>nagametv</binary></provides>
   <requires><internet>always</internet></requires>
   <supports><control>keyboard</control><control>pointing</control></supports>
-  <releases><release version="0.1.0" date="2026-09-13"/></releases>
+  <releases><release version="0.1.0" date="2026-09-28"/></releases>
 </component>
