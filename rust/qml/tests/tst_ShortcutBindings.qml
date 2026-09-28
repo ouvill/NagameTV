@@ -93,7 +93,15 @@ Item {
                 host.showNormal();
                 tryCompare(host, "visibility", Window.Windowed);
             }
-            function test_closed_drawer_does_not_disable_navigation() {
+            function dismissInputs() {
+                return [{tag: "escape", mouse: false}, {tag: "mouse-back", mouse: true}];
+            }
+            function dismiss(data) {
+                if (data.mouse) mouseClick(view, 350, 200, Qt.BackButton);
+                else keyClick(Qt.Key_Escape);
+            }
+            function test_closed_drawer_does_not_disable_navigation_data() { return dismissInputs(); }
+            function test_closed_drawer_does_not_disable_navigation(data) {
                 compare(view.drawer.visible, false);
                 compare(view.context.popupOpen, false);
                 keyClick(Qt.Key_S);
@@ -103,7 +111,7 @@ Item {
                 compare(view.context.popupOpen, true);
                 keyClick(Qt.Key_S);
                 compare(view.channelRequests, 1);
-                keyClick(Qt.Key_Escape);
+                dismiss(data);
                 tryCompare(view.drawer, "visible", false);
                 compare(view.context.popupOpen, false);
                 view.forceActiveFocus();
@@ -192,7 +200,8 @@ Item {
                 compare(view.commentRequests, 0);
                 verify(!view.guideRequests);
             }
-            function test_escape_belongs_to_popup_before_window() {
+            function test_escape_belongs_to_popup_before_window_data() { return dismissInputs(); }
+            function test_escape_belongs_to_popup_before_window(data) {
                 view.popup.open();
                 tryCompare(view.popup, "opened", true);
                 compare(view.context.popupOpen, true);
@@ -200,11 +209,11 @@ Item {
                 compare(view.guideRequests, false);
                 keyClick(Qt.Key_C);
                 compare(view.commentRequests, 0);
-                keyClick(Qt.Key_Escape);
+                dismiss(data);
                 tryCompare(view.popup, "opened", false);
                 compare(view.escapes, 0);
                 view.forceActiveFocus();
-                keyClick(Qt.Key_Escape);
+                dismiss(data);
                 compare(view.escapes, 1);
             }
             function test_screenshot_shortcut_respects_playback_and_modal_state() {
@@ -273,16 +282,18 @@ Item {
                 verify(!view.backend.guide_visible);
                 verify(!view.actions.fullscreen);
             }
-            function test_escape_closes_guide_before_channels() {
+            function test_escape_closes_guide_before_channels_data() { return dismissInputs(); }
+            function test_escape_closes_guide_before_channels(data) {
                 view.actions.channelsVisible = true;
                 view.backend.guide_visible = true;
-                keyClick(Qt.Key_Escape);
+                dismiss(data);
                 verify(!view.backend.guide_visible);
                 compare(view.channelRequests, 0);
-                keyClick(Qt.Key_Escape);
+                dismiss(data);
                 compare(view.channelRequests, 1);
             }
-            function test_library_keeps_playback_keys_local_and_escape_returns_to_viewing() {
+            function test_library_keeps_playback_keys_local_and_escape_returns_to_viewing_data() { return dismissInputs(); }
+            function test_library_keeps_playback_keys_local_and_escape_returns_to_viewing(data) {
                 view.backend.recording = true;
                 view.backend.playback_action = Player.Pause;
                 view.actions.libraryVisible = true;
@@ -300,15 +311,70 @@ Item {
                 compare(view.screenshots, 0);
                 view.popup.open();
                 tryCompare(view.popup, "opened", true);
-                keyClick(Qt.Key_Escape);
+                dismiss(data);
                 tryCompare(view.popup, "visible", false);
                 compare(view.libraryCloses, 0);
                 view.forceActiveFocus();
-                keyClick(Qt.Key_Escape);
+                dismiss(data);
                 compare(view.libraryCloses, 1);
                 verify(view.context.viewing);
                 keyClick(Qt.Key_Space);
                 compare(view.backend.playbackRequests, 1);
+            }
+            function test_mouse_back_preserves_text_and_dismisses_once_per_press() {
+                view.editor.text = "draft";
+                view.editor.forceActiveFocus();
+                mousePress(view.editor, 30, 15, Qt.BackButton, Qt.ControlModifier);
+                compare(view.escapes, 1);
+                mouseRelease(view.editor, 30, 15, Qt.BackButton, Qt.ControlModifier);
+                compare(view.escapes, 1);
+                compare(view.editor.text, "draft");
+                mouseDoubleClickSequence(view.editor, 30, 15, Qt.BackButton);
+                compare(view.escapes, 3);
+            }
+            function test_mouse_back_respects_disabled_bindings_and_popup_policy() {
+                view.bindings.enabled = false;
+                mouseClick(view, 350, 200, Qt.BackButton);
+                compare(view.escapes, 0);
+                view.bindings.enabled = true;
+                view.actions.enabled = false;
+                mouseClick(view, 350, 200, Qt.BackButton);
+                compare(view.escapes, 0);
+                view.actions.enabled = true;
+                view.context.enabled = false;
+                mouseClick(view, 350, 200, Qt.BackButton);
+                compare(view.escapes, 0);
+                view.context.enabled = true;
+                view.popup.closePolicy = Popup.NoAutoClose;
+                view.popup.open();
+                tryCompare(view.popup, "opened", true);
+                const popupEditor = createTemporaryQmlObject('import QtQuick.Controls; TextField { text: "draft" }', view.popup.contentItem);
+                popupEditor.forceActiveFocus();
+                mouseClick(view.popup.contentItem, 30, 30, Qt.BackButton);
+                compare(view.popup.opened, true);
+                compare(view.escapes, 0);
+                view.popup.closePolicy = Popup.CloseOnEscape;
+                mouseClick(view.popup.contentItem, 30, 30, Qt.BackButton);
+                tryCompare(view.popup, "visible", false);
+                compare(view.escapes, 0);
+                compare(popupEditor.text, "draft");
+            }
+            function test_other_mouse_buttons_reach_controls() {
+                const area = createTemporaryQmlObject('import QtQuick; MouseArea { width: 100; height: 100; acceptedButtons: Qt.AllButtons; property int clicks: 0; onClicked: clicks++ }', view);
+                for (const button of [Qt.LeftButton, Qt.RightButton, Qt.MiddleButton, Qt.ForwardButton])
+                    mouseClick(area, 50, 50, button);
+                compare(area.clicks, 4);
+                compare(view.escapes, 0);
+                mouseClick(area, 50, 50, Qt.BackButton);
+                compare(area.clicks, 4);
+                compare(view.escapes, 1);
+            }
+            function test_mouse_back_leaves_fullscreen() {
+                keyClick(Qt.Key_F11);
+                tryCompare(host, "visibility", Window.FullScreen);
+                mouseClick(view, 350, 200, Qt.BackButton);
+                tryCompare(host, "visibility", Window.Windowed);
+                compare(view.escapes, 1);
             }
             function test_fullscreen_restores_window_mode() {
                 const window = host;

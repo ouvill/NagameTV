@@ -72,6 +72,9 @@ pub mod ffi {
         include!("pointer_activity.h");
         #[cxx_name = "installPointerActivity"]
         unsafe fn install_pointer_activity(item: *mut QQuickItem);
+        include!("back_button.h");
+        #[cxx_name = "installBackButton"]
+        unsafe fn install_back_button(item: *mut QQuickItem);
         #[cxx_name = "configureQtQuickOpenGl"]
         fn configure_qt_quick_open_gl();
         #[cfg(target_os = "linux")]

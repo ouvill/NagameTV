@@ -7,6 +7,11 @@ Item {
     required property ViewerActions actions
     required property InputContext inputContext
     Native.ShortcutKey { id: keyMatcher }
+    Item {
+        id: backButtonBinding
+        enabled: root.actions.enabled && root.inputContext.enabled
+        Component.onCompleted: keyMatcher.bind_back_button(backButtonBinding)
+    }
     // Linux IBus can forward keys directly to the focus object, bypassing
     // Qt's window shortcut map. Normal shortcut presses are consumed before
     // Keys.pressed, so this path must use the same enabled bindings exactly once.
