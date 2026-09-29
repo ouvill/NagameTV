@@ -112,7 +112,7 @@ ListView {
         }
         Label {
             anchors.right: parent.right; anchors.bottom: parent.bottom; anchors.bottomMargin: 5
-            text: row.source; textFormat: Text.PlainText
+            text: qsTranslate("Backend", row.source); textFormat: Text.PlainText
             color: Theme.textSecondary; font.pixelSize: Theme.fontMicro
         }
         Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: Theme.overlayHover }

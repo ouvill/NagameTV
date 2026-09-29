@@ -38,7 +38,7 @@ Popup {
         Label { text: qsTranslate("Viewer", "Subtitles"); color: Theme.textPrimary; font.pixelSize: Theme.fontHeading }
         SettingsToggle {
             Layout.fillWidth: true
-            text: qsTranslate("Viewer", "Show subtitles")
+            text: qsTranslate("Main", "Show subtitles")
             checked: popup.backend.subtitle_display
             onToggled: popup.backend.display_subtitles(checked)
         }

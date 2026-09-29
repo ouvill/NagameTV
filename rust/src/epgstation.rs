@@ -13,7 +13,7 @@ use client::{Access, Connection, Fetched};
 
 pub const PAGE_SIZE: u64 = 50;
 const MAX_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
-const MAX_KEYWORD_CHARS: usize = 256;
+pub(crate) const MAX_KEYWORD_CHARS: usize = 256;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {

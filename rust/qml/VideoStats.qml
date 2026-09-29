@@ -78,7 +78,7 @@ Rectangle {
         case "latencyDistribution": return panel.timingDistribution(s.receive_latency, false)
         case "pcrDeviation": return panel.timingValue(s.pcr_deviation, true)
         case "pcrDistribution": return panel.timingDistribution(s.pcr_deviation, true)
-        case "queue": return panel.number(s.queue_buffers, 0) + " frames / " + panel.number(s.queue_ms, 1) + " ms"
+        case "queue": return panel.number(s.queue_buffers, 0) + " " + qsTranslate("Main", "frames") + " / " + panel.number(s.queue_ms, 1) + " ms"
         case "memory": return panel.number(s.queue_bytes / 1048576, 2) + " MiB"
         case "engine": return (s.gstreamer || "—") + (s.decoders?.length ? " / " + s.decoders.join(", ") : "")
         default: return "—"

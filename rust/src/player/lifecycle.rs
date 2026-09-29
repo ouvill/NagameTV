@@ -1,4 +1,5 @@
 //! Presentation state for connection/playback; language changes perform no I/O.
+use super::error_text::{PresentError, Text};
 use super::{
     ffi,
     status::{tr, with_detail},
@@ -25,7 +26,7 @@ pub(super) enum Status {
     Finished,
     Reconnecting,
     NetworkUnavailable,
-    Failure(Failure, String),
+    Failure(Failure, Text),
     PlaybackFailed(crate::playback::failure::Hint),
 }
 impl Status {
@@ -43,14 +44,15 @@ impl Status {
             Self::Reconnecting => tr("The stream connection was interrupted. Reconnecting…"),
             Self::NetworkUnavailable => tr("Network runtime is unavailable"),
             Self::PlaybackFailed(hint) => tr(hint.source()),
-            Self::Failure(kind, detail) => with_detail(
+            Self::Failure(kind, detail) => Text::message(
                 match kind {
                     Failure::Server => "Invalid server settings: %1",
                     Failure::Network => "Network initialization failed: %1",
                     Failure::ChannelFetch => "Could not load channels: %1",
                 },
-                detail,
-            ),
+                [detail.clone()],
+            )
+            .render(),
         }
     }
 }
@@ -66,7 +68,7 @@ impl ffi::Player {
     pub(super) fn status_error(
         self: Pin<&mut Self>,
         kind: Failure,
-        error: impl std::error::Error + 'static,
+        error: impl std::error::Error + PresentError + 'static,
     ) {
         let operation = match kind {
             Failure::Server => "Server configuration",
@@ -78,6 +80,6 @@ impl ffi::Player {
             error = &error as &dyn std::error::Error,
             "Operation failed"
         );
-        self.update_status(Status::Failure(kind, error.to_string()));
+        self.update_status(Status::Failure(kind, error.present()));
     }
 }

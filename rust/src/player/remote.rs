@@ -1,4 +1,5 @@
 //! Execute the same player operations as QML, exclusively on the Qt thread.
+use super::error_text::PresentError;
 use super::{PlayerRust, ffi, stream_state};
 use cxx_qt::CxxQtType;
 use cxx_qt_lib::QString;
@@ -110,8 +111,8 @@ impl PlayerRust {
             } else {
                 model::SubtitleDisplay::Hidden
             },
-            playback_error: self.playback_error.to_string(),
-            settings_error: self.settings_error.to_string(),
+            playback_error: self.playback_error.render().to_string(),
+            settings_error: self.settings_error.render().to_string(),
             current_program,
         }
     }
@@ -131,10 +132,18 @@ impl ffi::Player {
         QString::from(self.rust().remote.status())
     }
     pub fn remote_error(&self) -> QString {
-        QString::from(self.rust().remote.error())
+        self.rust()
+            .remote
+            .error()
+            .map(|error| error.present().render())
+            .unwrap_or_default()
     }
     pub fn remote_save_error(&self) -> QString {
-        QString::from(self.rust().remote.save_error())
+        self.rust()
+            .remote
+            .save_error()
+            .map(|error| error.present().render())
+            .unwrap_or_default()
     }
     pub fn remote_endpoints(&self) -> QString {
         QString::from(self.rust().remote.endpoints())

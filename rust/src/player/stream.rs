@@ -2,6 +2,7 @@
 //!
 //! Delegate resource ordering to playback::Session and retain the single
 //! fresh-connection retry here. Feature workers own their own lifecycles.
+use super::error_text::PresentError;
 use super::stream_state::{Attempt, State};
 use super::{PlaybackStatus, channel_refresh, ffi, subtitle_status};
 use crate::playback;
@@ -232,9 +233,7 @@ impl ffi::Player {
                 // seek before resuming. Keep this source and the paused frame.
                 self.as_mut().change_stream_state(|state| state);
                 self.as_mut()
-                    .set_transport_message(super::transport::Message::Failure(QString::from(
-                        error.to_string(),
-                    )));
+                    .set_transport_message(super::transport::Message::Failure(error.present()));
             }
             Err(error) => {
                 let retry = error

@@ -12,7 +12,8 @@ ColumnLayout {
     enum Phase { Idle, Checking, Failed, Empty, Ready, SaveFailed }
     property int phase: ConnectionForm.Idle
     property int channelCount: 0
-    property string errorDetails: ""
+    readonly property string errorDetails: phase === ConnectionForm.Failed ? backend.status
+        : phase === ConnectionForm.SaveFailed ? backend.settings_error : ""
     property bool detailsVisible: false
     readonly property bool busy: phase === ConnectionForm.Checking || backend.loading
     signal completed
@@ -21,7 +22,6 @@ ColumnLayout {
     function reset() {
         phase = ConnectionForm.Idle;
         server.text = backend.server;
-        errorDetails = "";
         detailsVisible = false;
     }
     function focusInput() { server.forceActiveFocus(); }
@@ -29,9 +29,7 @@ ColumnLayout {
         if (busy || !server.text.trim().length) return;
         phase = ConnectionForm.Checking;
         detailsVisible = false;
-        errorDetails = "";
         if (!backend.connect_server(server.text)) {
-            errorDetails = backend.status;
             phase = ConnectionForm.Failed;
         }
     }
@@ -41,10 +39,8 @@ ColumnLayout {
             if (root.phase !== ConnectionForm.Checking) return;
             root.channelCount = channels;
             if (!success) {
-                root.errorDetails = root.backend.status;
                 root.phase = ConnectionForm.Failed;
             } else if (root.backend.settings_error.length) {
-                root.errorDetails = root.backend.settings_error;
                 root.phase = ConnectionForm.SaveFailed;
             } else {
                 root.phase = channels > 0 ? ConnectionForm.Ready : ConnectionForm.Empty;
@@ -77,7 +73,6 @@ ColumnLayout {
         onAccepted: root.connectToServer()
         onTextEdited: {
             root.phase = ConnectionForm.Idle;
-            root.errorDetails = "";
             root.detailsVisible = false;
         }
     }

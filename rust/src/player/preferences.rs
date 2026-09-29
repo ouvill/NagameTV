@@ -1,4 +1,5 @@
 //! Explicit preference commits shared by UI actions and orderly shutdown.
+use super::error_text::{PresentError, Text};
 use super::ffi;
 use crate::settings::SaveStatus;
 use cxx_qt::CxxQtType;
@@ -134,9 +135,7 @@ impl ffi::Player {
                 "Could not change timeshift settings"
             );
             self.as_mut()
-                .set_transport_message(super::transport::Message::Failure(QString::from(
-                    error.to_string(),
-                )));
+                .set_transport_message(super::transport::Message::Failure(error.present()));
             return false;
         }
         {
@@ -180,11 +179,11 @@ impl ffi::Player {
             // declining to write is not a successful repair of a corrupt file.
             Ok(SaveStatus::Transient) => {}
             Ok(SaveStatus::Saved | SaveStatus::Unchanged) => {
-                self.set_settings_error(QString::default());
+                self.set_settings_error(Text::default());
             }
             Err(error) => {
                 tracing::error!("Settings save failed: {error}");
-                self.set_settings_error(QString::from(error.to_string()));
+                self.set_settings_error(error.present());
             }
         }
     }

@@ -26,6 +26,12 @@ impl ffi::Player {
         self.as_mut().speed_reason_changed();
         self.as_mut().epgstation_changed();
         self.as_mut().refresh_metric_text();
+        self.as_mut().playback_error_changed();
+        self.as_mut().file_error_changed();
+        self.as_mut().settings_error_changed();
+        self.as_mut().log_error_changed();
+        self.as_mut().remote_error_changed();
+        self.as_mut().remote_save_error_changed();
         self.save_settings();
         true
     }

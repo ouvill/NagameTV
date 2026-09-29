@@ -7,6 +7,8 @@ mod audio_routing;
 mod audio_sink;
 pub mod audio_streams;
 mod clock;
+pub(crate) use audio_sink::Error as AudioSinkError;
+pub(crate) use clock::Error as ClockError;
 pub mod deinterlace;
 pub mod failure;
 pub mod input;

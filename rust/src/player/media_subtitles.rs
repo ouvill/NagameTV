@@ -175,16 +175,6 @@ impl ffi::Player {
 }
 
 fn subtitle_error(error: &Error) -> QString {
-    use super::status::{tr, with_detail};
-    match error {
-        Error::Read(error) => with_detail("Could not read subtitles: %1", error),
-        Error::Format => tr("Select a valid SRT or ASS subtitle file"),
-        Error::Encoding => tr("Save the subtitle file as UTF-8"),
-        Error::Capacity => tr("Subtitle data exceeds the supported limit"),
-        Error::Renderer(error) => with_detail("Could not render subtitles: %1", error),
-        Error::Sink(error) => with_detail("Could not receive subtitles: %1", error),
-        Error::Unavailable => tr("Subtitle track is no longer available"),
-        Error::Rejected => tr("Subtitle selection was rejected"),
-        Error::Worker => tr("Subtitle worker stopped unexpectedly"),
-    }
+    use super::error_text::PresentError;
+    error.present().render()
 }

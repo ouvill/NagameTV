@@ -421,7 +421,7 @@ fn check_transport_messages() {
     // Even a diagnostic that happens to match a translation key stays literal.
     player
         .pin_mut()
-        .set_transport_message(Message::Failure("Paused".into()));
+        .set_transport_message(Message::Failure(crate::qt::text::Text::literal("Paused")));
     assert!(player.pin_mut().request_language("ja".into()));
     // An old notice deadline must not clear a later error.
     player
@@ -431,10 +431,103 @@ fn check_transport_messages() {
     player.pin_mut().set_transport_message(Message::None);
     assert!(player.pin_mut().request_language("en".into()));
     assert!(player.transport_error().is_empty());
+    check_error_translation(&mut player);
     assert!(player.pin_mut().shutdown());
     println!(
         "Transport notices retranslate, expire once, renew on repetition and preserve later errors"
     );
+}
+
+fn check_error_translation(player: &mut cxx::UniquePtr<ffi::Player>) {
+    use super::error_text::{PresentError, Text};
+    use super::transport::Message;
+
+    // These failures remain visible across a language change, without repeating
+    // the failed operation or interpreting external details as translation keys.
+    let transport = crate::playback::timeline::Error::RateUnavailable.present();
+    player
+        .pin_mut()
+        .set_transport_message(Message::Failure(transport));
+    player.pin_mut().set_file_error(Text::message(
+        "Could not open the video file: %1",
+        [crate::playback::recording::Error::NotLocal.present()],
+    ));
+    player.pin_mut().set_settings_error(
+        crate::settings::Error::Io {
+            path: "settings %2.toml".into(),
+            source: std::io::Error::other("Paused %1"),
+        }
+        .present(),
+    );
+    player
+        .pin_mut()
+        .set_log_error(crate::error_log::Error::InvalidDirectory.present());
+    player
+        .pin_mut()
+        .set_playback_error(crate::playback::Error::Unavailable.present());
+    player.pin_mut().rust_mut().epgstation_input_error =
+        crate::epgstation::Error::MissingCredentials.present();
+    let observed = Arc::new(Mutex::new(Vec::new()));
+    let changes = observed.clone();
+    let _signal = player.pin_mut().on_file_error_changed(move |player| {
+        changes
+            .lock()
+            .unwrap()
+            .push(player.file_error().to_string());
+    });
+    let remote = crate::remote::Error::AddressInUse {
+        address: "127.0.0.1:50051".parse().unwrap(),
+        source: std::io::Error::from(std::io::ErrorKind::AddrInUse),
+    }
+    .present();
+    let external = crate::epgstation::Error::InvalidCatalogue("Paused %1 日本語").present();
+    for (language, transport, file, settings, log, playback, login, port) in [
+        (
+            "ja",
+            "再生速度を変更できません",
+            "動画ファイルを開けませんでした: ローカルの動画ファイルを選択してください。",
+            "設定ファイルの操作に失敗しました (settings %2.toml): Paused %1",
+            "ログ保存先の絶対パスを取得できません",
+            "再生機能を利用できません",
+            "ユーザー名とパスワードの両方を入力してください",
+            "127.0.0.1:50051: ポートは既に使用されています",
+        ),
+        (
+            "en",
+            "Playback speed cannot be changed",
+            "Could not open the video file: Select a local video file.",
+            "Settings file operation failed (settings %2.toml): Paused %1",
+            "Could not determine an absolute log directory",
+            "Playback unavailable",
+            "Enter both a username and password",
+            "127.0.0.1:50051: port is already in use",
+        ),
+    ] {
+        assert!(player.pin_mut().request_language(language.into()));
+        assert_eq!(player.transport_error().to_string(), transport);
+        assert_eq!(player.file_error().to_string(), file);
+        assert_eq!(observed.lock().unwrap().last().unwrap(), file);
+        // request_language saves preferences and may clear a previous settings
+        // failure. Exercise its projection without performing another write.
+        let settings_error = crate::settings::Error::Io {
+            path: "settings %2.toml".into(),
+            source: std::io::Error::other("Paused %1"),
+        }
+        .present();
+        player.pin_mut().set_settings_error(settings_error);
+        assert_eq!(player.settings_error().to_string(), settings);
+        assert_eq!(player.log_error().to_string(), log);
+        assert_eq!(player.playback_error().to_string(), playback);
+        assert_eq!(player.epgstation_error().to_string(), login);
+        assert_eq!(remote.render().to_string(), port);
+        assert_eq!(
+            external.render().to_string(),
+            "Invalid recording catalogue: Paused %1 日本語"
+        );
+    }
+    assert_eq!(observed.lock().unwrap().len(), 2);
+    assert!(player.rust().media.playback().is_none());
+    assert!(!player.recording_loading());
 }
 
 fn check_stream_state(player: &mut cxx::UniquePtr<ffi::Player>) -> TestResult {

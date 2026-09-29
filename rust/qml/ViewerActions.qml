@@ -41,7 +41,7 @@ Item {
         enabled: root.enabled
     }
     readonly property Action playbackToggle: Operation {
-        text: root.backend.playback_action === Player.Pause ? qsTranslate("Viewer", "Pause")
+        text: root.backend.playback_action === Player.Pause ? qsTranslate("Main", "Pause")
             : root.backend.playback_action === Player.Stop ? qsTranslate("Main", "Stop") : qsTranslate("Viewer", "Play")
         enabled: root.enabled && root.backend.playback_action !== Player.Unavailable
         onTriggered: { root.backend.toggle_playback(); root.activity(); }

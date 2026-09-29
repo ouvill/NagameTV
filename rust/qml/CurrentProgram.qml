@@ -36,7 +36,7 @@ Column {
         objectName: "currentProgramButton"
         width: parent.width
         implicitHeight: contentItem.implicitHeight
-        text: root.program && root.program.scheduleState === "conflict" ? qsTranslate("Viewer", "Conflicting schedules") : root.program ? (root.program.name || root.fallbackTitle || qsTranslate("Viewer", "Program title unavailable")) : root.programStatus === "pending" ? qsTranslate("Viewer", "Acquiring program information…") : root.programStatus === "failed" ? qsTranslate("Viewer", "Could not read program information") : qsTranslate("Main", "No program information")
+        text: root.program && root.program.scheduleState === "conflict" ? qsTranslate("Viewer", "Conflicting schedules") : root.program ? (root.program.name || root.fallbackTitle || qsTranslate("Viewer", "Program title unavailable")) : root.programStatus === "pending" ? qsTranslate("Settings", "Acquiring program information…") : root.programStatus === "failed" ? qsTranslate("Settings", "Could not read program information") : qsTranslate("Main", "No program information")
         enabled: root.program !== null
         onClicked: root.detailsRequested()
         background: Rectangle {

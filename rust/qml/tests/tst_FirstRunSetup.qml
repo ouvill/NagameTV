@@ -80,6 +80,8 @@ TestCase {
         form().detailsVisible = true;
         compare(details.textFormat, Text.PlainText);
         compare(details.text, backend.status);
+        backend.status = "Translated connection failure";
+        compare(details.text, backend.status);
         form().connectToServer();
         finish(true, 0);
         compare(form().phase, ConnectionForm.Empty);
@@ -90,6 +92,8 @@ TestCase {
         finish(true, 4);
         compare(form().phase, ConnectionForm.SaveFailed);
         compare(form().errorDetails, "Disk full");
+        backend.settings_error = "Translated save failure";
+        compare(form().errorDetails, backend.settings_error);
         compare(completed.count, 0);
         form().connectToServer();
         backend.settings_error = "";

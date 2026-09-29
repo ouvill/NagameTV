@@ -1,5 +1,6 @@
 //! Assemble startup preferences and runtime resources before handling UI events.
 use super::PlayerRust;
+use super::error_text::{PresentError, Text};
 use crate::features::program_info::ProgramInfo;
 use crate::{features, playback, services, settings};
 use cxx_qt_lib::QString;
@@ -23,16 +24,16 @@ impl Default for PlayerRust {
                     danmaku_enabled: plan.comments(false),
                     ..Default::default()
                 }),
-                String::new(),
+                Text::default(),
             )
         } else {
             match settings::settings_path().and_then(settings::Loaded::open) {
-                Ok(session) => (session, String::new()),
+                Ok(session) => (session, Text::default()),
                 Err(error) => {
                     tracing::error!("Settings load failed: {error}");
                     (
                         settings::Loaded::transient(settings::Preferences::default()),
-                        error.to_string(),
+                        error.present(),
                     )
                 }
             }
@@ -62,7 +63,7 @@ impl Default for PlayerRust {
                 );
                 super::lifecycle::Status::Failure(
                     super::lifecycle::Failure::Network,
-                    error.to_string(),
+                    error.present(),
                 )
             }
         };
@@ -78,7 +79,7 @@ impl Default for PlayerRust {
         let mut log_error = error_log
             .as_ref()
             .err()
-            .map(ToString::to_string)
+            .map(PresentError::present)
             .unwrap_or_default();
         let diagnostic_recorder = match &error_log {
             Ok(log) => match crate::diagnostics::start(log.directory().to_owned(), plan.locked()) {
@@ -88,7 +89,7 @@ impl Default for PlayerRust {
                         error = &error as &dyn std::error::Error,
                         "Diagnostics initialization failed"
                     );
-                    log_error = error.to_string();
+                    log_error = error.present();
                     None
                 }
             },
@@ -107,18 +108,18 @@ impl Default for PlayerRust {
             media_subtitle_image: Default::default(),
             media_subtitle_error: Default::default(),
             error_log,
-            log_error: QString::from(log_error),
+            log_error,
             server: QString::from(preferences.preferences().server.clone()),
             pending_server: None,
             status: lifecycle_status.render(),
             lifecycle_status,
-            playback_error: QString::default(),
+            playback_error: Text::default(),
             playback_message: QString::default(),
             channel_model: crate::channel_model::ffi::make_channel_model(),
             recording_model: crate::recording_model::ffi::make_recording_model(),
             video_file_model: crate::video_file_model::ffi::make_video_file_model(),
             recording_library: Default::default(),
-            epgstation_input_error: QString::default(),
+            epgstation_input_error: Text::default(),
             channel_program_data: QString::from("[]"),
             channel_visibility_data: QString::from("[]"),
             guide_visibility_data: QString::from("null"),
@@ -132,7 +133,7 @@ impl Default for PlayerRust {
             live_timeline: QString::from("null"),
             transport_message: super::transport::Message::None,
             recording_loader: Default::default(),
-            file_error: QString::default(),
+            file_error: Text::default(),
             subtitles_enabled: plan.subtitles(),
             epg_enabled: plan.epg(),
             comments_enabled: plan.comments(preferences.preferences().comments_enabled),
@@ -178,7 +179,7 @@ impl Default for PlayerRust {
             volume_level,
             audio_muted: audio_output.muted(),
             audio_output,
-            settings_error: QString::from(settings_error),
+            settings_error,
             screenshot_error: QString::default(),
             screenshot_saves: Default::default(),
             seek_preview: Default::default(),

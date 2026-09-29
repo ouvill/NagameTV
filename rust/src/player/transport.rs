@@ -1,4 +1,5 @@
 //! Publish transport controls as one coherent Qt snapshot.
+use super::error_text::{PresentError, Text};
 use super::{ffi, status::tr};
 use crate::playback::{
     self,
@@ -24,7 +25,7 @@ pub(super) struct TimedNotice {
 pub(super) enum Message {
     None,
     Notice(TimedNotice),
-    Failure(QString),
+    Failure(Text),
 }
 
 impl Message {
@@ -61,8 +62,8 @@ impl Message {
                     "Timeshift settings changed. Playback returned to the live edge."
                 }
             }),
-            // Diagnostics are literal data, never translation keys.
-            Self::Failure(detail) => detail.clone(),
+            // Render only application sources; external diagnostics remain literal.
+            Self::Failure(detail) => detail.render(),
         }
     }
 }
@@ -224,7 +225,7 @@ impl ffi::Player {
                 error = &error as &dyn std::error::Error,
                 "Playback transport operation failed"
             );
-            Message::Failure(QString::from(error.to_string()))
+            Message::Failure(error.present())
         });
         let changed = self.rust().transport_message != message;
         self.as_mut().rust_mut().transport_message = message;

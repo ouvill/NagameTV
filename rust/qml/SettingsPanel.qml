@@ -654,7 +654,7 @@ Popup {
                         Problem {
                             objectName: "logError"
                             message: qsTranslate("Settings", "Could not access the logs. Check the error details and try again.")
-                            details: root.backend.log_error ? qsTranslate("Backend", root.backend.log_error) : ""
+                            details: root.backend.log_error
                             visible: details.length > 0
                         }
                         Heading { text: qsTranslate("Settings", "Current activity") }

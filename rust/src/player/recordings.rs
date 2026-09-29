@@ -1,4 +1,5 @@
 //! Translate Qt requests into owned inspections; commit only current results.
+use super::error_text::{PresentError, Text};
 use super::{ffi, stream_state::Attempt};
 use crate::playback::recording::{Purpose, Request};
 use cxx_qt::CxxQtType;
@@ -18,15 +19,15 @@ impl ffi::Player {
                     error = &error as &dyn std::error::Error,
                     "Recording transfer failed"
                 );
-                self.set_file_error(super::status::with_detail(
+                self.set_file_error(Text::message(
                     "Could not open the video file: %1",
-                    error,
+                    [error.present()],
                 ));
                 return false;
             }
         };
         self.as_mut().rust_mut().autoplay_pending = false;
-        self.as_mut().set_file_error(QString::default());
+        self.as_mut().set_file_error(Text::default());
         self.begin_recording(request);
         true
     }
@@ -40,15 +41,15 @@ impl ffi::Player {
                     error = &error as &dyn std::error::Error,
                     "Recording request failed"
                 );
-                self.set_file_error(super::status::with_detail(
+                self.set_file_error(Text::message(
                     "Could not open the video file: %1",
-                    error,
+                    [error.present()],
                 ));
                 return false;
             }
         };
         self.as_mut().rust_mut().autoplay_pending = false;
-        self.as_mut().set_file_error(QString::default());
+        self.as_mut().set_file_error(Text::default());
         self.begin_recording(request);
         true
     }
@@ -84,9 +85,9 @@ impl ffi::Player {
                                 error = &error as &dyn std::error::Error,
                                 "Recording inspection failed"
                             );
-                            self.as_mut().set_file_error(super::status::with_detail(
+                            self.as_mut().set_file_error(Text::message(
                                 "Could not open the video file: %1",
-                                error,
+                                [error.present()],
                             ));
                         }
                         Purpose::Replay => self.as_mut().playback_failed(error.into()),

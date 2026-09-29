@@ -10,6 +10,38 @@ use std::{
 const MAX_BYTES: u64 = 4096;
 pub const DEFAULT_PORT: u16 = 50051;
 
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("remote port must be between 1 and 65535")]
+    Port,
+    #[error("remote address must be an IP address")]
+    Address,
+    #[error("{0} must be Unicode")]
+    EnvironmentUnicode(&'static str),
+    #[error("use an IP-only NAGAMETV_REMOTE_ADDR with NAGAMETV_REMOTE_PORT")]
+    CombinedAddress,
+    #[error("NAGAMETV_REMOTE_ADDR must be an IP address")]
+    EnvironmentAddress,
+    #[error("NAGAMETV_REMOTE_PORT must be between 1 and 65535")]
+    EnvironmentPort,
+    #[error("NAGAMETV_REMOTE_ENABLED must be 0, 1, false or true")]
+    EnvironmentEnabled,
+    #[error("remote settings exceed 4 KiB")]
+    TooLarge,
+    #[error("remote settings directory is missing")]
+    MissingDirectory,
+    #[error("remote settings: {0}")]
+    Parse(#[from] toml::de::Error),
+    #[error("{0}")]
+    Io(#[from] std::io::Error),
+    #[error("{0}")]
+    Encoding(#[from] std::str::Utf8Error),
+    #[error("{0}")]
+    Serialize(#[from] toml::ser::Error),
+    #[error("{0}")]
+    Persist(#[from] tempfile::PersistError),
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "Stored", into = "Stored")]
 pub struct Settings {
@@ -40,10 +72,10 @@ impl Default for Settings {
     }
 }
 impl TryFrom<Stored> for Settings {
-    type Error = String;
+    type Error = Error;
     fn try_from(value: Stored) -> Result<Self, Self::Error> {
         if value.port == 0 {
-            return Err("remote port must be between 1 and 65535".into());
+            return Err(Error::Port);
         }
         Ok(Self {
             enabled: value.enabled,
@@ -61,16 +93,11 @@ impl From<Settings> for Stored {
     }
 }
 impl Settings {
-    pub fn parse(enabled: bool, address: &str, port: i32) -> Result<Self, String> {
+    pub fn parse(enabled: bool, address: &str, port: i32) -> Result<Self, Error> {
         Stored {
             enabled,
-            address: address
-                .trim()
-                .parse()
-                .map_err(|_| "remote address must be an IP address")?,
-            port: port
-                .try_into()
-                .map_err(|_| "remote port must be between 1 and 65535")?,
+            address: address.trim().parse().map_err(|_| Error::Address)?,
+            port: port.try_into().map_err(|_| Error::Port)?,
         }
         .try_into()
     }
@@ -89,12 +116,12 @@ pub struct Overrides {
     port: Option<u16>,
 }
 impl Overrides {
-    pub fn from_env() -> Result<Self, String> {
-        fn read(name: &str) -> Result<Option<String>, String> {
+    pub fn from_env() -> Result<Self, Error> {
+        fn read(name: &'static str) -> Result<Option<String>, Error> {
             match std::env::var(name) {
                 Ok(value) => Ok(Some(value)),
                 Err(std::env::VarError::NotPresent) => Ok(None),
-                Err(std::env::VarError::NotUnicode(_)) => Err(format!("{name} must be Unicode")),
+                Err(std::env::VarError::NotUnicode(_)) => Err(Error::EnvironmentUnicode(name)),
             }
         }
         Self::parse(
@@ -107,7 +134,7 @@ impl Overrides {
         enabled: Option<&str>,
         address: Option<&str>,
         port: Option<&str>,
-    ) -> Result<Self, String> {
+    ) -> Result<Self, Error> {
         let mut result = Self {
             enabled: None,
             address: None,
@@ -117,35 +144,26 @@ impl Overrides {
             // Preserve the original IP:port launch option; new configurations split them.
             if let Ok(endpoint) = address.parse::<SocketAddr>() {
                 if port.is_some() {
-                    return Err(
-                        "use an IP-only NAGAMETV_REMOTE_ADDR with NAGAMETV_REMOTE_PORT".into(),
-                    );
+                    return Err(Error::CombinedAddress);
                 }
                 result.address = Some(endpoint.ip());
                 result.port = Some(endpoint.port());
                 result.enabled = Some(true);
             } else {
-                result.address = Some(
-                    address
-                        .parse()
-                        .map_err(|_| "NAGAMETV_REMOTE_ADDR must be an IP address")?,
-                );
+                result.address = Some(address.parse().map_err(|_| Error::EnvironmentAddress)?);
             }
         }
         if let Some(port) = port {
-            result.port = Some(
-                port.parse()
-                    .map_err(|_| "NAGAMETV_REMOTE_PORT must be between 1 and 65535")?,
-            );
+            result.port = Some(port.parse().map_err(|_| Error::EnvironmentPort)?);
         }
         if result.port == Some(0) {
-            return Err("NAGAMETV_REMOTE_PORT must be between 1 and 65535".into());
+            return Err(Error::EnvironmentPort);
         }
         if let Some(enabled) = enabled {
             result.enabled = Some(match enabled {
                 "1" | "true" => true,
                 "0" | "false" => false,
-                _ => return Err("NAGAMETV_REMOTE_ENABLED must be 0, 1, false or true".into()),
+                _ => return Err(Error::EnvironmentEnabled),
             });
         }
         Ok(result)
@@ -176,21 +194,18 @@ pub struct Preferences {
     persistence: Persistence,
 }
 impl Preferences {
-    pub fn open(path: PathBuf) -> Result<Self, String> {
+    pub fn open(path: PathBuf) -> Result<Self, Error> {
         let current = match fs::File::open(&path) {
             Ok(file) => {
                 let mut bytes = Vec::new();
-                file.take(MAX_BYTES + 1)
-                    .read_to_end(&mut bytes)
-                    .map_err(|e| e.to_string())?;
+                file.take(MAX_BYTES + 1).read_to_end(&mut bytes)?;
                 if bytes.len() as u64 > MAX_BYTES {
-                    return Err("remote settings exceed 4 KiB".into());
+                    return Err(Error::TooLarge);
                 }
-                toml::from_str(std::str::from_utf8(&bytes).map_err(|e| e.to_string())?)
-                    .map_err(|e| format!("remote settings: {e}"))?
+                toml::from_str(std::str::from_utf8(&bytes)?)?
             }
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Settings::default(),
-            Err(error) => return Err(error.to_string()),
+            Err(error) => return Err(error.into()),
         };
         Ok(Self {
             current,
@@ -218,7 +233,7 @@ impl Preferences {
     pub fn session_only(&self) -> bool {
         matches!(self.persistence, Persistence::Session)
     }
-    pub fn configure(&mut self, current: Settings) -> Result<(), String> {
+    pub fn configure(&mut self, current: Settings) -> Result<(), Error> {
         self.current = current;
         match &mut self.persistence {
             Persistence::Session => Ok(()),
@@ -226,18 +241,13 @@ impl Preferences {
                 if *saved == current {
                     return Ok(());
                 }
-                let parent = path
-                    .parent()
-                    .ok_or("remote settings directory is missing")?;
-                fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-                let text = toml::to_string_pretty(&current).map_err(|e| e.to_string())?;
-                let mut temporary =
-                    tempfile::NamedTempFile::new_in(parent).map_err(|e| e.to_string())?;
-                temporary
-                    .write_all(text.as_bytes())
-                    .map_err(|e| e.to_string())?;
-                temporary.as_file().sync_all().map_err(|e| e.to_string())?;
-                temporary.persist(&*path).map_err(|e| e.to_string())?;
+                let parent = path.parent().ok_or(Error::MissingDirectory)?;
+                fs::create_dir_all(parent)?;
+                let text = toml::to_string_pretty(&current)?;
+                let mut temporary = tempfile::NamedTempFile::new_in(parent)?;
+                temporary.write_all(text.as_bytes())?;
+                temporary.as_file().sync_all()?;
+                temporary.persist(&*path)?;
                 *saved = current;
                 Ok(())
             }

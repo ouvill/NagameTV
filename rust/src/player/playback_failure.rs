@@ -1,3 +1,4 @@
+use super::error_text::{PresentError, Text};
 use super::ffi::Player;
 use cxx_qt::CxxQtType;
 use cxx_qt_lib::QString;
@@ -5,7 +6,7 @@ use std::pin::Pin;
 
 impl Player {
     pub(super) fn clear_playback_failure(mut self: Pin<&mut Self>) {
-        self.as_mut().set_playback_error(QString::default());
+        self.as_mut().set_playback_error(Text::default());
         self.as_mut().set_playback_message(QString::default());
     }
 
@@ -13,24 +14,34 @@ impl Player {
         let result = match &self.rust().error_log {
             Ok(log) => log
                 .prepare()
-                .map_err(|error| error.to_string())
+                .map_err(|error| {
+                    tracing::error!(
+                        error = &error as &dyn std::error::Error,
+                        "Log file operation failed"
+                    );
+                    error.present()
+                })
                 .and_then(|()| {
                     let path = QString::from(log.directory().to_string_lossy().as_ref());
                     if crate::qt::ffi::open_local_directory(&path) {
                         Ok(())
                     } else {
-                        // A translation source for the QML boundary, like playback_message.
-                        Err("Could not open the log folder.".to_owned())
+                        tracing::error!("Could not open the log folder");
+                        Err(Text::source("Could not open the log folder."))
                     }
                 }),
-            Err(error) => Err(error.to_string()),
+            Err(error) => {
+                tracing::error!(
+                    error = error as &dyn std::error::Error,
+                    "Log directory is unavailable"
+                );
+                Err(error.present())
+            }
         };
-        if let Err(error) = &result {
-            tracing::error!(%error, "Could not open the log folder");
-        }
+
         let opened = result.is_ok();
         self.as_mut()
-            .set_log_error(QString::from(result.err().unwrap_or_default()));
+            .set_log_error(result.err().unwrap_or_default());
         opened
     }
 
@@ -52,16 +63,24 @@ impl Player {
             .set_playback_message(QString::from(hint.source()));
         let text = error.to_string();
         let result = match &self.rust().error_log {
-            Ok(log) => log.save(&text).map_err(|error| error.to_string()),
-            Err(error) => Err(error.to_string()),
+            Ok(log) => log.save(&text).map_err(|error| {
+                tracing::error!(
+                    error = &error as &dyn std::error::Error,
+                    "Log file operation failed"
+                );
+                error.present()
+            }),
+            Err(error) => {
+                tracing::error!(
+                    error = error as &dyn std::error::Error,
+                    "Log directory is unavailable"
+                );
+                Err(error.present())
+            }
         };
         let log_error = result.err().unwrap_or_default();
-        if !log_error.is_empty() {
-            tracing::error!("{log_error}");
-        }
-        self.as_mut().set_log_error(QString::from(log_error));
-        self.as_mut()
-            .set_playback_error(QString::from(text.as_str()));
+        self.as_mut().set_log_error(log_error);
+        self.as_mut().set_playback_error(error.present());
         self.update_status(super::lifecycle::Status::PlaybackFailed(hint));
     }
 }

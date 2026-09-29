@@ -316,7 +316,7 @@ ColumnLayout {
             id: liveLabel
             objectName: "livePositionLabel"
             visible: root.snapshot !== null
-            text: "LIVE" + (root.snapshot && root.snapshot.live.utc !== null
+            text: qsTranslate("Viewer", "LIVE") + (root.snapshot && root.snapshot.live.utc !== null
                 ? " " + Qt.formatDateTime(new Date(root.snapshot.live.utc), "hh:mm") : "")
             x: root.snapshot ? Math.max(0, Math.min(parent.width - width, track.x + track.position(root.snapshot.live.position) - width / 2)) : 0
             height: root.clockHeight

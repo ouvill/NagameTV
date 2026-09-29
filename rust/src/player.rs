@@ -17,6 +17,7 @@ mod guide;
 mod language;
 mod lifecycle;
 use lifecycle::{Failure as StatusFailure, Status as PlaybackStatus};
+mod error_text;
 mod media_subtitles;
 mod playback_failure;
 mod preferences;
@@ -106,9 +107,9 @@ pub mod ffi {
         #[qproperty(QString, server, READ, NOTIFY)]
         #[qproperty(bool, server_configured, READ = server_configured, NOTIFY)]
         #[qproperty(QString, status, READ, NOTIFY)]
-        #[qproperty(QString, playback_error, READ, NOTIFY)]
+        #[qproperty(QString, playback_error, READ = playback_error, NOTIFY)]
         #[qproperty(QString, playback_message, READ, NOTIFY)]
-        #[qproperty(QString, log_error, READ, NOTIFY)]
+        #[qproperty(QString, log_error, READ = log_error, NOTIFY)]
         #[qproperty(*mut ChannelModel, channels, READ = channels, CONSTANT)]
         #[qproperty(*mut RecordingModel, recordings, READ = recordings, CONSTANT)]
         #[qproperty(*mut VideoFileModel, recording_files, READ = recording_files, CONSTANT)]
@@ -159,7 +160,7 @@ pub mod ffi {
         #[qproperty(bool, recording, READ = recording, NOTIFY)]
         #[qproperty(QString, seek_preview_image, READ = seek_preview_image, NOTIFY)]
         #[qproperty(QString, recording_name, READ = recording_name, NOTIFY)]
-        #[qproperty(QString, file_error, READ, NOTIFY)]
+        #[qproperty(QString, file_error, READ = file_error, NOTIFY)]
         #[qproperty(bool, recording_loading, READ = recording_loading, NOTIFY)]
         #[qproperty(bool, subtitles_enabled, READ, CONSTANT)]
         #[qproperty(bool, epg_enabled, READ, CONSTANT)]
@@ -208,10 +209,14 @@ pub mod ffi {
         #[qproperty(QString, program_status, READ, NOTIFY)]
         #[qproperty(f64, volume_level, READ, NOTIFY)]
         #[qproperty(bool, audio_muted, READ, NOTIFY)]
-        #[qproperty(QString, settings_error, READ, NOTIFY)]
+        #[qproperty(QString, settings_error, READ = settings_error, NOTIFY)]
         #[qproperty(QString, diagnostics, READ, NOTIFY)]
         #[qproperty(QString, build_info, READ = build_info, CONSTANT)]
         type Player = super::PlayerRust;
+        fn playback_error(self: &Player) -> QString;
+        fn file_error(self: &Player) -> QString;
+        fn log_error(self: &Player) -> QString;
+        fn settings_error(self: &Player) -> QString;
         fn channels(self: &Player) -> *mut ChannelModel;
         fn guide_model(self: &Player) -> *mut GuideModel;
         #[qinvokable]
@@ -517,9 +522,9 @@ pub struct PlayerRust {
     pending_server: Option<services::ServerUrl>,
     status: QString,
     lifecycle_status: PlaybackStatus,
-    playback_error: QString,
+    playback_error: error_text::Text,
     playback_message: QString,
-    log_error: QString,
+    log_error: error_text::Text,
     diagnostic_recorder: Option<crate::diagnostics::Client>,
     diagnostic_ui: telemetry::UiState,
     subtitle_cells: usize,
@@ -531,7 +536,7 @@ pub struct PlayerRust {
     recording_model: cxx::UniquePtr<crate::recording_model::ffi::RecordingModel>,
     video_file_model: cxx::UniquePtr<crate::video_file_model::ffi::VideoFileModel>,
     recording_library: crate::epgstation::Library,
-    epgstation_input_error: QString,
+    epgstation_input_error: error_text::Text,
     channel_program_data: QString,
     channel_visibility_data: QString,
     guide_visibility_data: QString,
@@ -545,7 +550,7 @@ pub struct PlayerRust {
     live_timeline: QString,
     transport_message: transport::Message,
     recording_loader: playback::recording::Loader,
-    file_error: QString,
+    file_error: error_text::Text,
     subtitles_enabled: bool,
     epg_enabled: bool,
     comments_enabled: bool,
@@ -591,7 +596,7 @@ pub struct PlayerRust {
     volume_level: f64,
     audio_muted: bool,
     audio_output: playback::audio_output::Output,
-    settings_error: QString,
+    settings_error: error_text::Text,
     screenshot_error: QString,
     screenshot_saves: crate::screenshots::Queue,
     seek_preview: playback::preview::Controller,
@@ -621,7 +626,24 @@ macro_rules! property_setter {
 }
 
 impl ffi::Player {
-    property_setter!(set_file_error, file_error, file_error_changed, QString);
+    pub fn playback_error(&self) -> QString {
+        self.rust().playback_error.render()
+    }
+    pub fn settings_error(&self) -> QString {
+        self.rust().settings_error.render()
+    }
+    pub fn log_error(&self) -> QString {
+        self.rust().log_error.render()
+    }
+    pub fn file_error(&self) -> QString {
+        self.rust().file_error.render()
+    }
+    property_setter!(
+        set_file_error,
+        file_error,
+        file_error_changed,
+        error_text::Text
+    );
     property_setter!(
         set_comment_send_on_enter,
         comment_send_on_enter,
@@ -665,7 +687,12 @@ impl ffi::Player {
         comment_shadow_enabled_changed,
         bool
     );
-    property_setter!(set_log_error, log_error, log_error_changed, QString);
+    property_setter!(
+        set_log_error,
+        log_error,
+        log_error_changed,
+        error_text::Text
+    );
     property_setter!(set_language, language, language_changed, QString);
     property_setter!(set_ui_language, ui_language, ui_language_changed, QString);
     property_setter!(set_server, server, server_changed, QString);
@@ -680,7 +707,7 @@ impl ffi::Player {
         set_playback_error,
         playback_error,
         playback_error_changed,
-        QString
+        error_text::Text
     );
     property_setter!(
         set_channel_program_data,
@@ -777,7 +804,7 @@ impl ffi::Player {
         set_settings_error,
         settings_error,
         settings_error_changed,
-        QString
+        error_text::Text
     );
     property_setter!(
         set_screenshot_error,

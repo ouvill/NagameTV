@@ -1,4 +1,5 @@
 //! Collect owned counters only; process measurement and file writes run off the GUI thread.
+use super::error_text::PresentError;
 use super::{ffi, status::tr};
 use cxx_qt::CxxQtType;
 use cxx_qt_lib::QString;
@@ -117,7 +118,7 @@ impl ffi::Player {
             && let Err(error) = recorder.finish()
         {
             tracing::error!("{error}");
-            self.set_log_error(QString::from(error.to_string()));
+            self.set_log_error(error.present());
         }
     }
 }

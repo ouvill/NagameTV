@@ -431,6 +431,11 @@
         <source>%1 screenshots saved.</source>
         <translation>スクリーンショットを%1枚保存しました</translation>
     </message>
+    <message>
+      <source>frames</source>
+      <extracomment>Keep this label unchanged in Japanese and English.</extracomment>
+      <translation>frames</translation>
+    </message>
 </context>
   <context>
     <name>Backend</name>
@@ -828,6 +833,380 @@
     <message>
         <source>Too many screenshots are waiting to save. Try again shortly.</source>
         <translation>保存待ちのスクリーンショットが多いため、少し待ってから撮影してください。</translation>
+    </message>
+    <message>
+      <source>Could not start retaining playback: %1</source>
+      <translation>一時停止用の保持を開始できません: %1</translation>
+    </message>
+    <message>
+      <source>Seeking is not available yet</source>
+      <translation>シークをまだ利用できません</translation>
+    </message>
+    <message>
+      <source>Playback speed cannot be changed</source>
+      <translation>再生速度を変更できません</translation>
+    </message>
+    <message>
+      <source>Choose a playback speed from 0.5 to 2.0 in steps of 0.1</source>
+      <translation>再生速度は0.5〜2.0倍の0.1刻みで指定してください</translation>
+    </message>
+    <message>
+      <source>The playback position is invalid</source>
+      <translation>再生位置が不正です</translation>
+    </message>
+    <message>
+      <source>The seek request was rejected</source>
+      <translation>シーク要求が拒否されました</translation>
+    </message>
+    <message>
+      <source>Playback was paused because the speed change could not be confirmed. Resuming will restore normal speed.</source>
+      <translation>再生速度の変更を確認できなかったため一時停止しました。再開時は等速に戻します</translation>
+    </message>
+    <message>
+      <source>The seek could not be confirmed</source>
+      <translation>シークの完了を確認できませんでした</translation>
+    </message>
+    <message>
+      <source>Could not monitor the playback position</source>
+      <translation>再生位置の監視に失敗しました</translation>
+    </message>
+    <message>
+      <source>Could not change the playback state: %1</source>
+      <translation>再生状態の変更に失敗しました: %1</translation>
+    </message>
+    <message>
+      <source>TS input: %1</source>
+      <translation>TS入力: %1</translation>
+    </message>
+    <message>
+      <source>TS normalization: %1</source>
+      <translation>TS正規化: %1</translation>
+    </message>
+    <message>
+      <source>The TS input state is invalid</source>
+      <translation>TS入力の内部状態に異常があります</translation>
+    </message>
+    <message>
+      <source>The TS input read position did not advance</source>
+      <translation>TS入力の読み取り位置が進みませんでした</translation>
+    </message>
+    <message>
+      <source>The seek target is outside retained history</source>
+      <translation>シーク先のTSは保持範囲外です</translation>
+    </message>
+    <message>
+      <source>Program information for the seek target is not available yet</source>
+      <translation>シーク先の番組情報をまだ取得できていません</translation>
+    </message>
+    <message>
+      <source>TS exploration was cancelled</source>
+      <translation>TSの探索をキャンセルしました</translation>
+    </message>
+    <message>
+      <source>The seek search reached its time limit</source>
+      <translation>シーク位置の探索が時間上限に達しました</translation>
+    </message>
+    <message>
+      <source>Select a local video file.</source>
+      <translation>ローカルの動画ファイルを選択してください。</translation>
+    </message>
+    <message>
+      <source>Enter a local file URL or a recording URL starting with http:// or https://.</source>
+      <translation>ローカルファイルのURL、またはhttp://かhttps://で始まる録画URLを入力してください。</translation>
+    </message>
+    <message>
+      <source>Invalid recording URL: %1</source>
+      <translation>録画URLが不正です: %1</translation>
+    </message>
+    <message>
+      <source>Could not receive the dropped file: %1. Use Open video file to select it.</source>
+      <translation>ドロップされたファイルを受け取れませんでした: %1。「動画ファイルを開く」から選択してください。</translation>
+    </message>
+    <message>
+      <source>Could not read the video file: %1</source>
+      <translation>動画ファイルを読み取れませんでした: %1</translation>
+    </message>
+    <message>
+      <source>No supported TS, MP4 or Matroska video was found in this file.</source>
+      <translation>このファイルには対応するTS、MP4、Matroska形式の動画がありません。</translation>
+    </message>
+    <message>
+      <source>Video inspection reached its time limit. Try opening the file again.</source>
+      <translation>動画の解析が時間上限に達しました。ファイルを開き直してください。</translation>
+    </message>
+    <message>
+      <source>Video inspection was cancelled.</source>
+      <translation>動画の解析をキャンセルしました。</translation>
+    </message>
+    <message>
+      <source>The video inspection worker stopped unexpectedly.</source>
+      <translation>動画の解析処理が予期せず停止しました。</translation>
+    </message>
+    <message>
+      <source>Could not initialize media inspection: %1</source>
+      <translation>動画の解析を初期化できませんでした: %1</translation>
+    </message>
+    <message>
+      <source>The video file is too large</source>
+      <translation>動画ファイルが大きすぎます</translation>
+    </message>
+    <message>
+      <source>Could not parse the server URL: %1</source>
+      <translation>サーバーURLの解析失敗: %1</translation>
+    </message>
+    <message>
+      <source>Could not initialize networking: %1</source>
+      <translation>ネットワーク実行環境の初期化失敗: %1</translation>
+    </message>
+    <message>
+      <source>The response exceeds %1 bytes</source>
+      <translation>応答が%1バイトの上限を超えています</translation>
+    </message>
+    <message>
+      <source>The channel worker stopped unexpectedly</source>
+      <translation>チャンネル取得処理が予期せず停止しました</translation>
+    </message>
+    <message>
+      <source>Enter an HTTP or HTTPS server URL without credentials</source>
+      <translation>認証情報を含まないHTTPまたはHTTPSのサーバーURLを入力してください</translation>
+    </message>
+    <message>
+      <source>The search keyword must be at most %1 characters</source>
+      <translation>検索キーワードは%1文字以内で入力してください</translation>
+    </message>
+    <message>
+      <source>Enter both a username and password</source>
+      <translation>ユーザー名とパスワードの両方を入力してください</translation>
+    </message>
+    <message>
+      <source>The settings directory could not be found</source>
+      <translation>設定ディレクトリーが見つかりません</translation>
+    </message>
+    <message>
+      <source>Settings file operation failed (%1): %2</source>
+      <translation>設定ファイルの操作に失敗しました (%1): %2</translation>
+    </message>
+    <message>
+      <source>The settings file exceeds the 64 KiB limit</source>
+      <translation>設定ファイルが上限の64KiBを超えています</translation>
+    </message>
+    <message>
+      <source>Could not parse the settings file (%1): %2</source>
+      <translation>設定ファイルの解析に失敗しました (%1): %2</translation>
+    </message>
+    <message>
+      <source>Could not serialize settings: %1</source>
+      <translation>設定ファイルの変換に失敗しました: %1</translation>
+    </message>
+    <message>
+      <source>Could not determine an absolute log directory</source>
+      <translation>ログ保存先の絶対パスを取得できません</translation>
+    </message>
+    <message>
+      <source>Log file operation failed (%1): %2</source>
+      <translation>ログの操作に失敗しました (%1): %2</translation>
+    </message>
+    <message>
+      <source>Diagnostics are already initialized</source>
+      <translation>診断機能は既に初期化されています</translation>
+    </message>
+    <message>
+      <source>Diagnostics have no owner</source>
+      <translation>診断機能の所有者がありません</translation>
+    </message>
+    <message>
+      <source>The diagnostics lock is poisoned</source>
+      <translation>診断機能のロックが破損しました</translation>
+    </message>
+    <message>
+      <source>Could not start the diagnostics worker: %1</source>
+      <translation>診断ワーカーを開始できません: %1</translation>
+    </message>
+    <message>
+      <source>Diagnostic log saving stopped: %1</source>
+      <translation>診断ログ保存が停止しました: %1</translation>
+    </message>
+    <message>
+      <source>The diagnostics worker panicked</source>
+      <translation>診断ワーカーがパニックで停止しました</translation>
+    </message>
+    <message>
+      <source>Diagnostic log operation failed: %1</source>
+      <translation>診断ログの操作に失敗しました: %1</translation>
+    </message>
+    <message>
+      <source>Could not serialize the diagnostic record: %1</source>
+      <translation>診断レコードの変換に失敗しました: %1</translation>
+    </message>
+    <message>
+      <source>The diagnostic record exceeds the size limit</source>
+      <translation>診断レコードがサイズ上限を超えています</translation>
+    </message>
+    <message>
+      <source>The existing diagnostic log exceeds the size limit</source>
+      <translation>既存の診断ログがサイズ上限を超えています</translation>
+    </message>
+    <message>
+      <source>%1: port is already in use</source>
+      <translation>%1: ポートは既に使用されています</translation>
+    </message>
+    <message>
+      <source>Remote control stopped unexpectedly</source>
+      <translation>リモコン機能が予期せず停止しました</translation>
+    </message>
+    <message>
+      <source>Remote API transport failed: %1</source>
+      <translation>リモコンAPIの通信に失敗しました: %1</translation>
+    </message>
+    <message>
+      <source>Remote API task failed: %1</source>
+      <translation>リモコンAPIの処理に失敗しました: %1</translation>
+    </message>
+    <message>
+      <source>Remote API shutdown timed out</source>
+      <translation>リモコンAPIの終了処理がタイムアウトしました</translation>
+    </message>
+    <message>
+      <source>The remote port must be between 1 and 65535</source>
+      <translation>リモコンのポートは1〜65535で指定してください</translation>
+    </message>
+    <message>
+      <source>The remote address must be an IP address</source>
+      <translation>リモコンのアドレスにはIPアドレスを指定してください</translation>
+    </message>
+    <message>
+      <source>%1 must be Unicode</source>
+      <translation>%1はUnicodeで指定してください</translation>
+    </message>
+    <message>
+      <source>Use an IP-only NAGAMETV_REMOTE_ADDR with NAGAMETV_REMOTE_PORT</source>
+      <translation>NAGAMETV_REMOTE_PORTを使う場合、NAGAMETV_REMOTE_ADDRにはIPアドレスだけを指定してください</translation>
+    </message>
+    <message>
+      <source>NAGAMETV_REMOTE_ADDR must be an IP address</source>
+      <translation>NAGAMETV_REMOTE_ADDRにはIPアドレスを指定してください</translation>
+    </message>
+    <message>
+      <source>NAGAMETV_REMOTE_PORT must be between 1 and 65535</source>
+      <translation>NAGAMETV_REMOTE_PORTは1〜65535で指定してください</translation>
+    </message>
+    <message>
+      <source>NAGAMETV_REMOTE_ENABLED must be 0, 1, false or true</source>
+      <translation>NAGAMETV_REMOTE_ENABLEDは0、1、false、trueのいずれかで指定してください</translation>
+    </message>
+    <message>
+      <source>Remote settings exceed 4 KiB</source>
+      <translation>リモコンの設定ファイルが4KiBの上限を超えています</translation>
+    </message>
+    <message>
+      <source>The remote settings directory is missing</source>
+      <translation>リモコンの設定ディレクトリーが見つかりません</translation>
+    </message>
+    <message>
+      <source>Could not parse remote settings: %1</source>
+      <translation>リモコンの設定ファイルを解析できません: %1</translation>
+    </message>
+    <message>
+      <source>%1 (stopping also failed: %2)</source>
+      <translation>%1（停止処理も失敗: %2）</translation>
+    </message>
+    <message>
+      <source>Invalid NAGAMETV_DEINTERLACE=%1; expected yadif, linear, off, gl or va</source>
+      <translation>NAGAMETV_DEINTERLACE=%1は不正です。yadif、linear、off、gl、vaのいずれかを指定してください</translation>
+    </message>
+    <message>
+      <source>NAGAMETV_DEINTERLACE is not valid Unicode</source>
+      <translation>NAGAMETV_DEINTERLACEが有効なUnicodeではありません</translation>
+    </message>
+    <message>
+      <source>Invalid NAGAMETV_AUDIO_SINK=%1; expected pulsesink or fakesink</source>
+      <translation>NAGAMETV_AUDIO_SINK=%1は不正です。pulsesinkまたはfakesinkを指定してください</translation>
+    </message>
+    <message>
+      <source>NAGAMETV_AUDIO_SINK is not valid Unicode</source>
+      <translation>NAGAMETV_AUDIO_SINKが有効なUnicodeではありません</translation>
+    </message>
+    <message>
+      <source>Invalid NAGAMETV_PLAYBACK_CLOCK=%1; expected auto or system</source>
+      <translation>NAGAMETV_PLAYBACK_CLOCK=%1は不正です。autoまたはsystemを指定してください</translation>
+    </message>
+    <message>
+      <source>NAGAMETV_PLAYBACK_CLOCK is not valid Unicode</source>
+      <translation>NAGAMETV_PLAYBACK_CLOCKが有効なUnicodeではありません</translation>
+    </message>
+    <message>
+      <source>Invalid display refresh rate: %1 Hz</source>
+      <translation>ディスプレイのリフレッシュレートが不正です: %1 Hz</translation>
+    </message>
+    <message>
+      <source>Video output: %1</source>
+      <translation>映像出力: %1</translation>
+    </message>
+    <message>
+      <source>GStreamer initialization failed: %1</source>
+      <translation>GStreamerの初期化に失敗しました: %1</translation>
+    </message>
+    <message>
+      <source>GStreamer operation failed: %1</source>
+      <translation>GStreamerの操作に失敗しました: %1</translation>
+    </message>
+    <message>
+      <source>GStreamer state change failed: %1</source>
+      <translation>GStreamerの状態変更に失敗しました: %1</translation>
+    </message>
+    <message>
+      <source>Playback already initialized</source>
+      <translation>再生機能は既に初期化されています</translation>
+    </message>
+    <message>
+      <source>Playback unavailable</source>
+      <translation>再生機能を利用できません</translation>
+    </message>
+    <message>
+      <source>Missing video sink pad</source>
+      <translation>映像出力パッドがありません</translation>
+    </message>
+    <message>
+      <source>Missing Qt video item</source>
+      <translation>Qtの映像表示部品がありません</translation>
+    </message>
+    <message>
+      <source>Video output requires a GStreamer video item on the GUI thread</source>
+      <translation>映像出力にはGUIスレッド上のGStreamer映像部品が必要です</translation>
+    </message>
+    <message>
+      <source>Video output is already attached</source>
+      <translation>映像出力は既に接続されています</translation>
+    </message>
+    <message>
+      <source>Video output has been shut down</source>
+      <translation>映像出力は終了しています</translation>
+    </message>
+    <message>
+      <source>Video output is not ready</source>
+      <translation>映像出力の準備ができていません</translation>
+    </message>
+    <message>
+      <source>Missing GStreamer bus</source>
+      <translation>GStreamerバスがありません</translation>
+    </message>
+    <message>
+      <source>Missing video or audio decoder: %1</source>
+      <translation>映像または音声のデコーダーがありません: %1</translation>
+    </message>
+    <message>
+      <source>The stream has ended</source>
+      <translation>配信が終了しました</translation>
+    </message>
+    <message>
+      <source>ニコ実</source>
+      <extracomment>Keep this label unchanged in Japanese and English.</extracomment>
+      <translation>ニコ実</translation>
+    </message>
+    <message>
+      <source>NX</source>
+      <extracomment>Keep this label unchanged in Japanese and English.</extracomment>
+      <translation>NX</translation>
     </message>
 </context>
   <context>
@@ -1412,6 +1791,11 @@
     <message>
         <source>Watch this channel</source>
         <translation>このチャンネルを視聴</translation>
+    </message>
+    <message>
+      <source>LIVE</source>
+      <extracomment>Keep this label unchanged in Japanese and English.</extracomment>
+      <translation>LIVE</translation>
     </message>
 </context>
   <context>

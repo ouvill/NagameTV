@@ -1,4 +1,5 @@
 //! Qt commands/notifications for the independently owned recording catalogue.
+use super::error_text::{PresentError, Text};
 use super::ffi;
 use crate::services::{FetchError, NetworkError};
 use cxx_qt::CxxQtType;
@@ -38,7 +39,7 @@ impl ffi::Player {
         match request {
             Some(request) => {
                 self.as_mut().rust_mut().autoplay_pending = false;
-                self.as_mut().set_file_error(QString::default());
+                self.as_mut().set_file_error(Text::default());
                 self.begin_recording(request);
                 true
             }
@@ -80,7 +81,7 @@ impl ffi::Player {
     }
     pub fn epgstation_error(&self) -> QString {
         if !self.rust().epgstation_input_error.is_empty() {
-            return self.rust().epgstation_input_error.clone();
+            return self.rust().epgstation_input_error.render();
         }
         match self.rust().recording_library.error() {
             None => QString::default(),
@@ -93,7 +94,7 @@ impl ffi::Player {
                     "Authentication failed. Check your username and password, then sign in again.",
                 )
             }
-            Some(error) => QString::from(error.to_string()),
+            Some(error) => error.present().render(),
         }
     }
     pub fn browse_epgstation(mut self: Pin<&mut Self>, server: QString, keyword: QString) -> bool {
@@ -114,7 +115,7 @@ impl ffi::Player {
                     error = &error as &dyn std::error::Error,
                     "EPGStation login validation failed"
                 );
-                self.as_mut().rust_mut().epgstation_input_error = QString::from(error.to_string());
+                self.as_mut().rust_mut().epgstation_input_error = error.present();
                 self.epgstation_changed();
                 return false;
             }
@@ -137,7 +138,7 @@ impl ffi::Player {
             ),
             None => {
                 tracing::error!("Recording catalogue request failed: network is unavailable");
-                state.epgstation_input_error = super::status::tr("Network is unavailable.");
+                state.epgstation_input_error = Text::source("Network is unavailable.");
                 self.epgstation_changed();
                 return false;
             }
@@ -151,7 +152,7 @@ impl ffi::Player {
         let accepted = result.is_ok();
         self.as_mut().rust_mut().epgstation_input_error = result
             .err()
-            .map(|error| QString::from(error.to_string()))
+            .map(|error| error.present())
             .unwrap_or_default();
         self.publish_recording_library();
         accepted
@@ -180,7 +181,7 @@ impl ffi::Player {
         match request {
             Some(request) => {
                 self.as_mut().rust_mut().autoplay_pending = false;
-                self.as_mut().set_file_error(QString::default());
+                self.as_mut().set_file_error(Text::default());
                 self.begin_recording(request);
                 true
             }

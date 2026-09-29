@@ -4,23 +4,44 @@ pub(crate) mod settings;
 use settings::{Preferences, Settings};
 use viewer_remote::{Bound, Session, Stopping, model};
 
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("{0}")]
+    Settings(#[from] settings::Error),
+    #[error("{0}")]
+    Directory(#[from] crate::settings::Error),
+    #[error("network runtime is unavailable")]
+    NetworkUnavailable,
+    #[error("{address}: port is already in use")]
+    AddressInUse {
+        address: std::net::SocketAddr,
+        source: std::io::Error,
+    },
+    #[error("{0}")]
+    Io(#[from] std::io::Error),
+    #[error("{0}")]
+    Session(#[from] viewer_remote::ServerError),
+    #[error("remote API stopped unexpectedly")]
+    Stopped,
+}
+
 enum AfterStop {
     Disabled,
     Restart,
-    Failed(String),
+    Failed(Error),
 }
 enum Phase {
     Disabled,
     Ready,
     Running(Box<Session>),
     Stopping { task: Stopping, next: AfterStop },
-    Failed(String),
+    Failed(Error),
 }
 
 pub struct Control {
     preferences: Preferences,
     phase: Phase,
-    save_error: String,
+    save_error: Option<settings::Error>,
 }
 
 impl Control {
@@ -29,11 +50,16 @@ impl Control {
             Ok(Preferences::transient(Settings::default()))
         } else {
             crate::settings::settings_path()
-                .map_err(|e| e.to_string())
-                .and_then(|path| Preferences::open(path.with_file_name("remote-control.toml")))
+                .map_err(Error::from)
+                .and_then(|path| {
+                    Preferences::open(path.with_file_name("remote-control.toml"))
+                        .map_err(Error::from)
+                })
         };
         let loaded = loaded.and_then(|preferences| {
-            settings::Overrides::from_env().map(|values| preferences.with_overrides(values))
+            settings::Overrides::from_env()
+                .map(|values| preferences.with_overrides(values))
+                .map_err(Error::from)
         });
         match loaded {
             Ok(preferences) => Self::new(preferences),
@@ -42,7 +68,7 @@ impl Control {
                 Self {
                     preferences: Preferences::transient(Settings::default()),
                     phase: Phase::Failed(error),
-                    save_error: String::new(),
+                    save_error: None,
                 }
             }
         }
@@ -56,7 +82,7 @@ impl Control {
         Self {
             preferences,
             phase,
-            save_error: String::new(),
+            save_error: None,
         }
     }
     pub fn settings(&self) -> Settings {
@@ -74,14 +100,14 @@ impl Control {
             Phase::Failed(_) => "failed",
         }
     }
-    pub fn error(&self) -> &str {
+    pub fn error(&self) -> Option<&Error> {
         match &self.phase {
-            Phase::Failed(error) => error,
-            Phase::Disabled | Phase::Ready | Phase::Running(_) | Phase::Stopping { .. } => "",
+            Phase::Failed(error) => Some(error),
+            Phase::Disabled | Phase::Ready | Phase::Running(_) | Phase::Stopping { .. } => None,
         }
     }
-    pub fn save_error(&self) -> &str {
-        &self.save_error
+    pub fn save_error(&self) -> Option<&settings::Error> {
+        self.save_error.as_ref()
     }
     pub fn session(&self) -> Option<&Session> {
         match &self.phase {
@@ -108,8 +134,7 @@ impl Control {
             .inspect_err(|error| {
                 tracing::error!(%error, "Remote settings save failed");
             })
-            .err()
-            .unwrap_or_default();
+            .err();
         if unchanged && matches!(self.phase, Phase::Running(_) | Phase::Disabled) {
             return;
         }
@@ -156,7 +181,7 @@ impl Control {
         self.phase = match std::mem::replace(&mut self.phase, Phase::Disabled) {
             Phase::Running(session) if session.is_finished() => Phase::Stopping {
                 task: (*session).stop(),
-                next: AfterStop::Failed("remote API stopped unexpectedly".into()),
+                next: AfterStop::Failed(Error::Stopped),
             },
             Phase::Stopping { task, next } => match task.poll() {
                 viewer_remote::Progress::Pending(task) => Phase::Stopping { task, next },
@@ -166,7 +191,7 @@ impl Control {
                         error = &error as &dyn std::error::Error,
                         "Remote API shutdown failed"
                     );
-                    Phase::Failed(error.to_string())
+                    Phase::Failed(error.into())
                 }
             },
             phase @ (Phase::Disabled | Phase::Ready | Phase::Running(_) | Phase::Failed(_)) => {
@@ -188,20 +213,23 @@ impl Control {
             return;
         }
         let result = (|| {
-            let network = network.ok_or_else(|| "network runtime is unavailable".to_owned())?;
+            let network = network.ok_or(Error::NetworkUnavailable)?;
             let bound = Bound::bind(viewer_remote::config::Config::new(
                 self.settings().endpoint(),
             ))
             .map_err(|error| {
                 if error.kind() == std::io::ErrorKind::AddrInUse {
-                    format!("{}: port is already in use", self.settings().endpoint())
+                    Error::AddressInUse {
+                        address: self.settings().endpoint(),
+                        source: error,
+                    }
                 } else {
-                    error.to_string()
+                    Error::Io(error)
                 }
             })?;
             network
                 .start_remote(bound, state, channels)
-                .map_err(|error| error.to_string())
+                .map_err(Error::from)
         })();
         self.phase = match result {
             Ok(session) => {
@@ -212,7 +240,10 @@ impl Control {
                 Phase::Running(Box::new(session))
             }
             Err(error) => {
-                tracing::error!("Remote API could not start: {error}");
+                tracing::error!(
+                    error = &error as &dyn std::error::Error,
+                    "Remote API could not start"
+                );
                 Phase::Failed(error)
             }
         };

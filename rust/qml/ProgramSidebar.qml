@@ -125,7 +125,7 @@ Rectangle {
                 Label {
                     objectName: "programTitle"
                     Layout.fillWidth: true
-                    text: root.program ? (root.program.name || root.fallbackTitle || qsTranslate("Viewer", "Program title unavailable")) : root.programStatus === "pending" ? qsTranslate("Viewer", "Acquiring program information…") : root.programStatus === "failed" ? qsTranslate("Viewer", "Could not read program information") : qsTranslate("Main", "No program information")
+                    text: root.program ? (root.program.name || root.fallbackTitle || qsTranslate("Viewer", "Program title unavailable")) : root.programStatus === "pending" ? qsTranslate("Settings", "Acquiring program information…") : root.programStatus === "failed" ? qsTranslate("Settings", "Could not read program information") : qsTranslate("Main", "No program information")
                     color: Theme.textPrimary
                     font.pixelSize: Theme.fontTitle
                     font.bold: true
