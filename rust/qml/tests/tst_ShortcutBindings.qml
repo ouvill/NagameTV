@@ -259,7 +259,7 @@ Item {
                 compare(view.commentRequests, 0);
                 keyClick(Qt.Key_Left);
                 keyClick(Qt.Key_Right);
-                compare(view.backend.skips, [view.actions.seekSteps.backwardMilliseconds, view.actions.seekSteps.forwardMilliseconds]);
+                compare(view.backend.skips, [-10000, 10000]);
                 const slider = createTemporaryQmlObject('import QtQuick.Controls; Slider { from: 0; to: 100; value: 50; stepSize: 1 }', view);
                 slider.forceActiveFocus();
                 keyClick(Qt.Key_Left);

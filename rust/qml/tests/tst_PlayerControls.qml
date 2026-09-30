@@ -262,17 +262,20 @@ Item {
                 mouseClick(findChild(controls, "screenshotButton"));
                 compare(capture.count, 1);
             }
-            function test_recording_and_timeshift_skip_buttons_use_shared_steps() {
+            function test_recording_and_timeshift_skip_buttons_seek_ten_seconds_in_both_directions() {
                 backend.playing = true;
+                const backward = findChild(controls, "skipBackButton");
+                const forward = findChild(controls, "skipForwardButton");
+                compare(backward.iconLabel, "10");
+                compare(forward.iconLabel, "10");
                 for (const recording of [false, true]) {
                     backend.recording = recording;
                     backend.timeshift = !recording;
                     waitForRendering(controls);
-                    mouseClick(findChild(controls, "skipBackButton"));
-                    mouseClick(findChild(controls, "skipForwardButton"));
+                    mouseClick(backward);
+                    mouseClick(forward);
                 }
-                compare(backend.skips, [actions.seekSteps.backwardMilliseconds, actions.seekSteps.forwardMilliseconds,
-                    actions.seekSteps.backwardMilliseconds, actions.seekSteps.forwardMilliseconds]);
+                compare(backend.skips, [-10000, 10000, -10000, 10000]);
             }
             function test_pause_on_demand_allows_button_and_space_without_seeking() {
                 backend.pauseOnDemand = true;
@@ -548,6 +551,13 @@ Item {
                                 verify(a.x + a.w <= b.x || b.x + b.w <= a.x,
                                     a.name + " overlaps " + b.name + " at " + width);
                             }
+                        }
+                        const speed = findChild(controls, "playbackSpeedButton");
+                        for (const rate of [5, 10, 15, 20]) {
+                            backend.playback_rate = rate;
+                            verify(waitForRendering(speed));
+                            verify(!speed.contentItem.truncated, speed.text + " is fully visible at " + width);
+                            verify(speed.contentItem.contentHeight <= speed.contentItem.height);
                         }
                     }
                 }

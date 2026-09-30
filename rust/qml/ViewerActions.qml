@@ -72,7 +72,7 @@ Item {
         onTriggered: { root.backend.skip(root.seekSteps.backwardMilliseconds); root.activity(); }
     }
     readonly property Action seekForward: Operation {
-        text: qsTranslate("Viewer", "Forward 30 seconds")
+        text: qsTranslate("Viewer", "Forward 10 seconds")
         enabled: root.enabled && root.backend.seekable
         onTriggered: { root.backend.skip(root.seekSteps.forwardMilliseconds); root.activity(); }
     }

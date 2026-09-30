@@ -1613,8 +1613,8 @@
       <translation>10秒戻す</translation>
     </message>
     <message>
-      <source>Forward 30 seconds</source>
-      <translation>30秒送る</translation>
+      <source>Forward 10 seconds</source>
+      <translation>10秒送る</translation>
     </message>
     <message>
       <source>Seeking…</source>

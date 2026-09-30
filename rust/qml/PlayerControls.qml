@@ -73,8 +73,10 @@ DirectionalFocus {
             highlighted: root.backend.playback_rate !== 10
             objectName: "playbackSpeedButton"
             visible: root.backend.media_active
-            implicitWidth: 58; implicitHeight: 42
-            padding: Theme.spaceSm
+            implicitWidth: Math.max(58, contentItem.implicitWidth + leftPadding + rightPadding)
+            implicitHeight: 42
+            leftPadding: Theme.spaceSm
+            rightPadding: Theme.spaceSm
             text: "x" + (root.backend.playback_rate / 10).toFixed(1)
             Accessible.name: qsTranslate("Viewer", "Playback speed: %1").arg(text)
             ThemedToolTip {
