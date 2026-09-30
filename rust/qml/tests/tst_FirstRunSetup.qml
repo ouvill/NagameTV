@@ -54,10 +54,12 @@ TestCase {
     function test_initial_input_is_empty_and_does_not_connect_automatically() {
         compare(field().text, "");
         verify(field().activeFocus);
+        compare(field().interaction, NavigationField.Editing);
         compare(action().enabled, false);
         compare(backend.requests, 0);
         keyClick(Qt.Key_Escape);
         compare(setup.opened, true);
+        compare(field().interaction, NavigationField.Navigating);
         field().text = "   ";
         form().connectToServer();
         compare(backend.requests, 0);
@@ -74,7 +76,7 @@ TestCase {
         finish(false, 0);
         compare(form().phase, ConnectionForm.Failed);
         compare(field().text, "http://example.test:40772");
-        verify(!field().readOnly);
+        verify(field().editingEnabled);
         verify(action().enabled);
         const details = findChild(setup.contentItem, "connectionErrorDetails");
         form().detailsVisible = true;
@@ -112,7 +114,7 @@ TestCase {
         field().text = "http://example.test:40772";
         form().connectToServer();
         finish(true, 4);
-        field().forceActiveFocus();
+        field().focusForEditing();
         keyClick(Qt.Key_End);
         keyClick(Qt.Key_Backspace);
         compare(form().phase, ConnectionForm.Idle);
@@ -120,5 +122,23 @@ TestCase {
         keyClick(Qt.Key_Return);
         compare(backend.requests, 2);
         compare(form().phase, ConnectionForm.Checking);
+    }
+    function test_initial_editing_then_directional_navigation() {
+        keyClick(Qt.Key_H);
+        compare(field().text, "h");
+        keyClick(Qt.Key_Down);
+        verify(field().activeFocus);
+        keyClick(Qt.Key_Escape);
+        keyClick(Qt.Key_Down);
+        verify(action().activeFocus);
+        keyClick(Qt.Key_Up);
+        verify(field().activeFocus);
+        compare(field().interaction, NavigationField.Navigating);
+        keyClick(Qt.Key_Return);
+        compare(field().interaction, NavigationField.Editing);
+        compare(backend.requests, 0);
+        keyClick(Qt.Key_Return);
+        compare(backend.requests, 1);
+        compare(field().interaction, NavigationField.Navigating);
     }
 }

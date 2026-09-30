@@ -20,6 +20,7 @@ QtObject {
     readonly property Item currentField: currentIndex >= 0 ? fields[currentIndex] : null
     readonly property bool navigating: currentField !== null
         && (!(currentField instanceof SettingsChoice) || !(currentField as SettingsChoice).popup.visible)
+        && (!(currentField instanceof NavigationField) || (currentField as NavigationField).interaction === NavigationField.Navigating)
         && (!(focusItem instanceof TextInput) || !(focusItem as TextInput).inputMethodComposing)
     signal boundaryReached(int key)
     readonly property QtObject focusMemory: QtObject { id: memory; property Item field: null }
@@ -34,6 +35,7 @@ QtObject {
     function focusField(field: Item) {
         if (field instanceof SegmentedControl) (field as SegmentedControl).focusCurrent();
         else if (field instanceof ThemedSpinBox) (field as ThemedSpinBox).focusForNavigation();
+        else if (field instanceof NavigationField) (field as NavigationField).focusForNavigation();
         else field.forceActiveFocus(Qt.TabFocusReason);
         Qt.callLater(revealCurrent);
     }
@@ -82,7 +84,8 @@ QtObject {
             number.stepBy(offset);
         } else {
             if (currentField instanceof Slider || currentField instanceof SegmentedControl
-                || currentField instanceof ComboBox || focusItem instanceof TextInput || focusItem instanceof TextEdit) return;
+                || currentField instanceof ComboBox || (focusItem instanceof TextInput && !(currentField instanceof NavigationField))
+                || focusItem instanceof TextEdit) return;
             const next = fields[currentIndex + offset];
             const origin = currentField.mapToItem(null, 0, 0);
             const point = next ? next.mapToItem(null, 0, 0) : null;
@@ -102,6 +105,7 @@ QtObject {
     }
     readonly property Connections horizontalKeys: Connections {
         target: root.currentIndex >= 0 && (root.currentField instanceof ThemedSpinBox
+            || root.currentField instanceof NavigationField
             || (!(root.currentField instanceof Slider) && !(root.currentField instanceof SegmentedControl)
                 && !(root.currentField instanceof ComboBox) && !(root.focusItem instanceof TextInput)
                 && !(root.focusItem instanceof TextEdit))) ? root.focusItem.Keys : null

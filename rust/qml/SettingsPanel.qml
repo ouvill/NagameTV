@@ -94,18 +94,6 @@ Popup {
         }
     }
     Connections {
-        target: root.visible && formNavigation.currentIndex >= 0 ? formNavigation.focusItem.Keys : null
-        function onEscapePressed(event) {
-            if (!formNavigation.navigating) { event.accepted = false; return; }
-            event.accepted = true;
-            if (event.isAutoRepeat) return;
-            const field = formNavigation.currentField;
-            if (field instanceof ThemedSpinBox && (field as ThemedSpinBox).interaction === ThemedSpinBox.Editing)
-                (field as ThemedSpinBox).toggleEditing();
-            else root.focusCategory();
-        }
-    }
-    Connections {
         target: root.visible && formNavigation.currentIndex < 0 && formNavigation.containsFocus(pageScroll)
             ? formNavigation.focusItem.Keys : null
         function onUpPressed(event) { event.accepted = true; root.readPage(-1); }
@@ -358,6 +346,16 @@ Popup {
         }
         ScrollView {
             id: pageScroll
+            // Handle only Escape that the focused editor/choice did not consume.
+            Keys.onEscapePressed: function(event) {
+                if (!formNavigation.navigating) { event.accepted = false; return; }
+                event.accepted = true;
+                if (event.isAutoRepeat) return;
+                const field = formNavigation.currentField;
+                if (field instanceof ThemedSpinBox && (field as ThemedSpinBox).interaction === ThemedSpinBox.Editing)
+                    (field as ThemedSpinBox).toggleEditing();
+                else root.focusCategory();
+            }
             background: Rectangle {
                 color: "transparent"; radius: Theme.controlRadius
                 border.color: Theme.accent

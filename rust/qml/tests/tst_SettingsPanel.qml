@@ -252,6 +252,93 @@ Item {
                 expectFocus("settingsCategory" + index);
                 keyClick(Qt.Key_Return);
             }
+            function test_text_fields_select_edit_and_return_to_category_data() {
+                return [
+                    {tag: "mirakurun", page: SettingsPanel.Connection, name: "serverField", next: "connectServer"},
+                    {tag: "epgstation", page: SettingsPanel.Connection, name: "epgstationServer", next: "epgstationConnect"},
+                    {tag: "address", page: SettingsPanel.Remote, name: "remoteAddress", next: "remotePort"},
+                    {tag: "port", page: SettingsPanel.Remote, name: "remotePort", next: "applyRemote"}
+                ];
+            }
+            function test_text_fields_select_edit_and_return_to_category(data) {
+                keyboardPage(data.page);
+                const field = findChild(panel.contentItem, data.name);
+                for (let i = 0; i < 12 && !field.activeFocus; ++i) keyClick(Qt.Key_Down);
+                expectFocus(data.name);
+                compare(field.interaction, NavigationField.Navigating);
+                const original = field.text;
+                keyClick(Qt.Key_Backspace);
+                compare(field.text, original);
+                keyClick(Qt.Key_Down); expectFocus(data.next);
+                keyClick(Qt.Key_Up); expectFocus(data.name);
+                keyClick(Qt.Key_Return);
+                compare(field.interaction, NavigationField.Editing);
+                verify(inputEvents.forward_key(Qt.Key_Return, Qt.NoModifier, "", true));
+                compare(connections.count + catalogues.count + remoteRequests.count, 0);
+                keyClick(Qt.Key_End);
+                keyClick(Qt.Key_Left);
+                compare(field.cursorPosition, field.text.length - 1);
+                keyClick(Qt.Key_Down); expectFocus(data.name);
+                keyClick(Qt.Key_End); keyClick(Qt.Key_Backspace);
+                compare(field.text, original.slice(0, -1));
+                keyClick(Qt.Key_Back);
+                expectFocus(data.name);
+                compare(field.interaction, NavigationField.Navigating);
+                compare(field.text, original.slice(0, -1));
+                keyClick(Qt.Key_Left); expectFocus("settingsCategory" + data.page);
+                keyClick(Qt.Key_Right); expectFocus(data.name);
+                keyClick(Qt.Key_Back); expectFocus("settingsCategory" + data.page);
+                verify(panel.opened);
+                compare(connections.count + catalogues.count + remoteRequests.count, 0);
+            }
+            function test_pointer_and_tab_enter_text_editing_immediately() {
+                const field = findChild(panel.contentItem, "serverField");
+                mouseClick(field);
+                compare(field.interaction, NavigationField.Editing);
+                keyClick(Qt.Key_End); keyClick(Qt.Key_Backspace);
+                compare(field.text, backend.server.slice(0, -1));
+                keyClick(Qt.Key_Tab); expectFocus("connectServer");
+                keyClick(Qt.Key_Backtab);
+                expectFocus("serverField");
+                compare(field.interaction, NavigationField.Editing);
+                keyClick(Qt.Key_Back);
+                compare(field.interaction, NavigationField.Navigating);
+                // A click also re-enters editing when the field already owns focus.
+                mouseClick(field);
+                compare(field.interaction, NavigationField.Editing);
+                keyClick(Qt.Key_Return);
+                compare(connections.count, 1);
+                compare(connections.signalArguments[0][0], field.text);
+            }
+            function test_busy_connection_fields_cannot_edit_but_allow_navigation() {
+                keyboardPage(SettingsPanel.Connection);
+                const field = expectFocus("serverField");
+                keyClick(Qt.Key_Return);
+                backend.loading = true;
+                compare(field.interaction, NavigationField.Navigating);
+                keyClick(Qt.Key_Return); keyClick(Qt.Key_Backspace);
+                compare(field.text, backend.server);
+                verify(field.readOnly);
+                keyClick(Qt.Key_Down); expectFocus("autoplaySetting");
+                compare(connections.count, 0);
+                backend.loading = false;
+                keyClick(Qt.Key_Up); expectFocus("connectServer");
+                keyClick(Qt.Key_Up); expectFocus("serverField");
+                keyClick(Qt.Key_Return);
+                verify(!field.readOnly);
+            }
+            function test_remote_enter_applies_only_after_editing() {
+                keyboardPage(SettingsPanel.Remote);
+                keyClick(Qt.Key_Down); expectFocus("remoteAddress");
+                keyClick(Qt.Key_Down);
+                const port = expectFocus("remotePort");
+                keyClick(Qt.Key_Return);
+                compare(remoteRequests.count, 0);
+                keyClick(Qt.Key_End); keyClick(Qt.Key_Backspace); keyClick(Qt.Key_2);
+                keyClick(Qt.Key_Return);
+                compare(remoteRequests.count, 1);
+                compare(backend.remote_port, 50052);
+            }
             function test_dpad_categories_rows_numeric_editing_and_back() {
                 expectFocus("settingsCategory0");
                 keyClick(Qt.Key_Right); expectFocus("serverField");
@@ -270,6 +357,11 @@ Item {
                 keyClick(Qt.Key_Return);
                 compare(number.interaction, ThemedSpinBox.Stepping);
                 compare(JSON.parse(backend.live_buffer_options).milliseconds, 300);
+                keyClick(Qt.Key_Return);
+                compare(number.interaction, ThemedSpinBox.Editing);
+                keyClick(Qt.Key_Back);
+                compare(number.interaction, ThemedSpinBox.Stepping);
+                expectFocus("liveBufferMilliseconds");
                 keyClick(Qt.Key_Down); expectFocus("resetLiveBuffer");
                 compare(number.value, 300); // Vertical movement must not alter values.
                 keyClick(Qt.Key_Down); expectFocus("epgstationServer");
@@ -367,11 +459,50 @@ Item {
                 const username = findChild(dialog, "epgstationUsername");
                 const password = findChild(dialog, "epgstationPassword");
                 tryCompare(username, "activeFocus", true);
+                compare(username.interaction, NavigationField.Editing);
+                keyClick(Qt.Key_Down); verify(username.activeFocus);
+                keyClick(Qt.Key_Back);
+                compare(username.interaction, NavigationField.Navigating);
+                verify(dialog.opened);
                 keyClick(Qt.Key_Down); tryCompare(password, "activeFocus", true);
+                compare(password.interaction, NavigationField.Navigating);
+                keyClick(Qt.Key_Return); keyClick(Qt.Key_A);
+                compare(password.text, "a");
+                keyClick(Qt.Key_Back);
+                compare(password.interaction, NavigationField.Navigating);
+                compare(password.text, "a");
+                verify(dialog.opened);
                 keyClick(Qt.Key_Down); tryCompare(findChild(dialog, "epgstationCancelLogin"), "activeFocus", true);
                 keyClick(Qt.Key_Up); tryCompare(password, "activeFocus", true);
                 keyClick(Qt.Key_Back); tryCompare(dialog, "visible", false);
+                compare(password.text, "");
                 verify(panel.opened); compare(logins.count, 0);
+            }
+            function test_login_ime_confirmation_and_enter_to_next_field() {
+                panel.focusEpgstationConnection();
+                tryCompare(findChild(panel.contentItem, "epgstationServer"), "activeFocus", true);
+                findChild(panel.contentItem, "epgstationLogin").clicked();
+                const dialog = findChild(panel, "epgstationLoginDialog");
+                tryCompare(dialog, "opened", true);
+                const username = findChild(dialog, "epgstationUsername");
+                const password = findChild(dialog, "epgstationPassword");
+                verify(inputEvents.compose("なまえ", ""));
+                keyClick(Qt.Key_Return);
+                verify(username.activeFocus);
+                compare(logins.count, 0);
+                verify(inputEvents.compose("なまえ", ""));
+                keyClick(Qt.Key_Back);
+                compare(username.interaction, NavigationField.Editing);
+                verify(dialog.opened);
+                verify(inputEvents.compose("", "名前"));
+                keyClick(Qt.Key_Return);
+                tryCompare(password, "activeFocus", true);
+                compare(password.interaction, NavigationField.Editing);
+                keyClick(Qt.Key_A);
+                keyClick(Qt.Key_Return);
+                compare(logins.count, 1);
+                tryCompare(dialog, "visible", false);
+                compare(password.text, "");
             }
             function test_navigation_keeps_settings_selected_and_respects_guide_availability() {
                 const navigation = findChild(panel.contentItem, "settingsModeNavigation");
@@ -573,11 +704,17 @@ Item {
                 verify(field.readOnly);
                 keyClick(Qt.Key_Return);
                 compare(catalogues.count, 1);
+                compare(field.interaction, NavigationField.Navigating);
+                keyClick(Qt.Key_Down); expectFocus("epgstationCancel");
                 backend.epgstation_busy = false;
                 backend.epgstation_error = "Connection failed";
                 compare(findChild(panel.contentItem, "epgstationConnectionError").text, "Connection failed");
                 verify(!findChild(panel.contentItem, "epgstationConnected").visible);
+                field.focusForNavigation();
                 keyClick(Qt.Key_Return);
+                compare(catalogues.count, 1);
+                keyClick(Qt.Key_Return);
+                compare(catalogues.count, 2);
                 backend.epgstation_server = field.text;
                 backend.epgstation_loaded = true;
                 backend.epgstation_error = "";

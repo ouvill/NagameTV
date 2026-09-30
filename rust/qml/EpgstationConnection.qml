@@ -20,7 +20,7 @@ Item {
     readonly property list<Item> navigationItems: [serverField, connectButton, loginButton, cancelButton, browseButton]
 
     function reset() { serverField.text = serverUrl; loginDialog.close(); }
-    function focusInput() { serverField.forceActiveFocus(); }
+    function focusInput() { serverField.focusForEditing(); }
     function closeLogin() { loginDialog.close(); }
     function connectToServer() {
         if (!busy && serverField.text.trim().length) connectRequested(serverField.text.trim());
@@ -37,12 +37,12 @@ Item {
             font.pixelSize: Theme.fontControl
             font.bold: true
         }
-        SettingsField {
+        NavigationField {
             id: serverField
             objectName: "epgstationServer"
             Layout.fillWidth: true
             text: root.serverUrl
-            readOnly: root.busy
+            editingEnabled: !root.busy
             placeholderText: "http://epgstation:8888"
             Accessible.name: qsTranslate("RecordingLibrary", "EPGStation URL")
             inputMethodHints: Qt.ImhUrlCharactersOnly | Qt.ImhNoPredictiveText
@@ -116,7 +116,7 @@ Item {
         modal: true
         padding: Theme.spaceLg
         background: PanelSurface {}
-        onOpened: username.forceActiveFocus()
+        onOpened: username.focusForEditing()
         onClosed: password.clear()
         FormNavigation {
             focusScope: root
@@ -134,15 +134,15 @@ Item {
                 color: Theme.textPrimary
                 font.pixelSize: Theme.fontHeading
             }
-            SettingsField {
+            NavigationField {
                 id: username
                 objectName: "epgstationUsername"
                 Layout.fillWidth: true
                 placeholderText: qsTranslate("RecordingLibrary", "Username")
                 Accessible.name: placeholderText
-                onAccepted: password.forceActiveFocus()
+                onAccepted: password.focusForEditing()
             }
-            SettingsField {
+            NavigationField {
                 id: password
                 objectName: "epgstationPassword"
                 Layout.fillWidth: true

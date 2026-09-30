@@ -7,8 +7,10 @@ SettingsField {
     id: control
     enum Interaction { Navigating, Editing }
     property int interaction: NavigationField.Navigating
+    property bool editingEnabled: true
     signal navigationRequested(int key)
-    readOnly: interaction === NavigationField.Navigating
+    readOnly: !editingEnabled || interaction === NavigationField.Navigating
+    onEditingEnabledChanged: if (!editingEnabled) finishEditing()
     function focusForNavigation() {
         forceActiveFocus(Qt.OtherFocusReason);
         finishEditing();
@@ -17,7 +19,11 @@ SettingsField {
         interaction = NavigationField.Navigating;
         deselect();
     }
-    function beginEditing() { interaction = NavigationField.Editing; }
+    function focusForEditing() {
+        forceActiveFocus(Qt.OtherFocusReason);
+        beginEditing();
+    }
+    function beginEditing() { if (editingEnabled) interaction = NavigationField.Editing; }
     function editOnFocus() {
         if ([Qt.MouseFocusReason, Qt.TabFocusReason, Qt.BacktabFocusReason].includes(focusReason)) beginEditing();
     }

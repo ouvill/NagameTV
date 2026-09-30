@@ -35,7 +35,7 @@ ColumnLayout {
         textFormat: Text.PlainText
         wrapMode: Text.Wrap
     }
-    component Field: SettingsField {
+    component Field: NavigationField {
         Layout.fillWidth: true
         onTextEdited: root.invalidInput = false
         onAccepted: root.apply(root.backend.remote_enabled)

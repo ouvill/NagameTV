@@ -24,6 +24,10 @@ Popup {
     onAboutToShow: form.reset()
     onOpened: form.focusInput()
     onClosed: form.phase = ConnectionForm.Idle
+    FormNavigation {
+        scrollView: scroll
+        fields: [...form.navigationItems, openRecording]
+    }
     contentItem: Item {
         RecordingDropArea {
             anchors.fill: parent
@@ -87,6 +91,7 @@ Popup {
                     }
                 }
                 ActionButton {
+                    id: openRecording
                     objectName: "setupOpenRecording"
                     Layout.alignment: Qt.AlignHCenter
                     text: qsTranslate("Recording", "Open recording")

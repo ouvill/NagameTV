@@ -25,7 +25,7 @@ ColumnLayout {
         server.text = backend.server;
         detailsVisible = false;
     }
-    function focusInput() { server.forceActiveFocus(); }
+    function focusInput() { server.focusForEditing(); }
     function connectToServer() {
         if (busy || !server.text.trim().length) return;
         phase = ConnectionForm.Checking;
@@ -63,12 +63,12 @@ ColumnLayout {
         font.pixelSize: Theme.fontControl
         font.bold: true
     }
-    SettingsField {
+    NavigationField {
         id: server
         objectName: "serverField"
         Layout.fillWidth: true
         text: root.backend.server
-        readOnly: root.busy
+        editingEnabled: !root.busy
         placeholderText: "http://192.168.1.100:40772"
         Accessible.name: qsTranslate("Settings", "Server URL")
         onAccepted: root.connectToServer()
