@@ -76,6 +76,7 @@ pub enum Phase {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Snapshot {
     pub position: Option<gst::ClockTime>,
+    pub seek_target: Option<gst::ClockTime>,
     pub duration: Option<gst::ClockTime>,
     pub estimated: bool,
     pub range: Option<Range>,
@@ -85,6 +86,12 @@ pub struct Snapshot {
 pub struct Range {
     start: gst::ClockTime,
     end: gst::ClockTime,
+}
+
+enum RangeSample {
+    Pending,
+    Unseekable,
+    Available(Range),
 }
 
 impl Range {
@@ -332,7 +339,10 @@ impl Controller {
         }
     }
     pub fn snapshot(&self) -> Snapshot {
-        self.snapshot
+        Snapshot {
+            seek_target: self.seek_target(),
+            ..self.snapshot
+        }
     }
 
     pub fn requested_rate(&self) -> Rate {
@@ -410,9 +420,11 @@ impl Controller {
         };
     }
 
-    fn sample(&mut self, pipeline: &gst::Element) {
+    fn sample(&mut self, pipeline: &gst::Element) -> RangeSample {
         self.next_sample = Instant::now() + POSITION_SAMPLE_INTERVAL;
-        let duration = pipeline.query_duration::<gst::ClockTime>();
+        let duration = pipeline
+            .query_duration::<gst::ClockTime>()
+            .filter(|duration| *duration > gst::ClockTime::ZERO);
         let mut query = gst::query::Seeking::new(gst::Format::Time);
         let range = if pipeline.query(&mut query) {
             match query.result() {
@@ -422,19 +434,30 @@ impl Controller {
                     gst::GenericFormattedValue::Time(end),
                 ) => end
                     .or(duration)
-                    .filter(|end| *end > start)
-                    .map(|end| Range { start, end }),
-                _ => None,
+                    .and_then(|end| Range::new(start, end))
+                    .map_or(RangeSample::Pending, RangeSample::Available),
+                (false, _, _) => RangeSample::Unseekable,
+                _ => RangeSample::Pending,
             }
         } else {
-            None
+            RangeSample::Pending
         };
-        self.snapshot = Snapshot {
-            position: pipeline.query_position::<gst::ClockTime>(),
-            duration,
-            estimated: self.snapshot.estimated,
-            range,
+        // Missing TIME answers are normal during preroll/buffering. Keep the
+        // last display values for this session instead of resetting the axis.
+        // A flushing seek may also report zero before its segment has output.
+        if !matches!(self.state, State::Seeking(_)) {
+            self.snapshot.position = pipeline
+                .query_position::<gst::ClockTime>()
+                .or(self.snapshot.position);
+        }
+        self.snapshot.duration = duration.or(self.snapshot.duration);
+        self.snapshot.range = match range {
+            RangeSample::Pending => self.snapshot.range,
+            RangeSample::Unseekable => None,
+            RangeSample::Available(range) => Some(range),
         };
+        // Retained display values must never authorize a new native seek.
+        range
     }
 
     pub(super) fn retention_changed(&mut self, change: RetentionChange) {
@@ -468,7 +491,9 @@ impl Controller {
         if matches!(self.state, State::Playing) {
             // The receive edge is fresh on every poll. Comparing it with the
             // 200 ms UI sample can leave fast playback permanently "behind".
-            self.snapshot.position = pipeline.query_position::<gst::ClockTime>();
+            self.snapshot.position = pipeline
+                .query_position::<gst::ClockTime>()
+                .or(self.snapshot.position);
         }
         self.observe_live(range, history.is_some());
         let limited = match (self.phase(), self.snapshot.position) {
@@ -673,8 +698,9 @@ impl Controller {
         if state < gst::State::Paused {
             return Err(Error::Unavailable);
         }
-        self.sample(pipeline);
-        let range = self.snapshot.range.ok_or(Error::Unavailable)?;
+        let RangeSample::Available(range) = self.sample(pipeline) else {
+            return Err(Error::Unavailable);
+        };
         if matches!(
             self.live_position,
             LivePosition::Near | LivePosition::Behind
@@ -705,12 +731,10 @@ impl Controller {
         }
         if matches!(self.state, State::ExpiredPause) {
             if resume == Resume::Playing {
-                self.sample(pipeline);
-                let target = self
-                    .snapshot
-                    .range
-                    .ok_or(Error::Unavailable)?
-                    .recovery_target();
+                let RangeSample::Available(range) = self.sample(pipeline) else {
+                    return Err(Error::Unavailable);
+                };
+                let target = range.recovery_target();
                 self.start_change(pipeline, target, resume, Rate::NORMAL, Completion::Position)?;
                 self.notice = Some(Notice::Expired);
             }
@@ -1070,6 +1094,9 @@ impl Drop for Controller {
 mod startup_tests;
 
 #[cfg(test)]
+mod sampling_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     #[test]
@@ -1137,6 +1164,70 @@ mod tests {
         assert_eq!(controller.phase(), Phase::Paused);
         assert_eq!(controller.snapshot().position, Some(paused));
         assert!(controller.seek_target().is_none());
+    }
+
+    #[test]
+    fn repeated_relative_seeks_accumulate_reverse_and_clamp_before_completion() {
+        gst::init().unwrap();
+        let sink = gst::ElementFactory::make("fakesink").build().unwrap();
+        let mut controller = Controller::new(&sink, StartPosition::Beginning).unwrap();
+        let position = gst::ClockTime::from_seconds(5);
+        let first_target = gst::ClockTime::from_seconds(10);
+        let sequence = gst::Seqnum::next();
+        controller.snapshot.position = Some(position);
+        controller.state = State::Seeking(Seek {
+            sequence,
+            target: first_target,
+            resume: Resume::Paused,
+            next: None,
+            rate: Rate::NORMAL,
+            completion: Completion::Position,
+            deadline: Instant::now() + SEEK_TIMEOUT,
+        });
+        let end = gst::ClockTime::from_seconds(60);
+        let range = Range::new(gst::ClockTime::ZERO, end).unwrap();
+        const STEP_MS: f64 = 10_000.0;
+        for (delta, expected_ms) in [
+            (STEP_MS, 20_000),
+            (STEP_MS, 30_000),
+            (-STEP_MS, 20_000),
+            (-STEP_MS * 3.0, 0),
+            (STEP_MS, 10_000),
+            (STEP_MS * 6.0, end.mseconds() - 1),
+            (-STEP_MS, end.mseconds() - 1 - STEP_MS as u64),
+        ] {
+            let target = controller.relative_target(delta).unwrap();
+            Ready {
+                controller: &mut controller,
+                pipeline: &sink,
+                range,
+            }
+            .seek(target)
+            .unwrap();
+            assert_eq!(
+                controller.snapshot().seek_target,
+                Some(gst::ClockTime::from_mseconds(expected_ms))
+            );
+            assert_eq!(controller.snapshot().position, Some(position));
+            assert_eq!(controller.phase(), Phase::Seeking(Resume::Paused));
+            let State::Seeking(seek) = &controller.state else {
+                panic!("seek must remain active");
+            };
+            assert_eq!(seek.sequence, sequence);
+            assert_eq!(seek.target, first_target);
+        }
+        let before = controller.snapshot();
+        assert!(matches!(
+            controller.relative_target(f64::NAN),
+            Err(Error::InvalidPosition)
+        ));
+        assert_eq!(controller.snapshot(), before);
+        controller.state = State::Paused;
+        assert_eq!(controller.snapshot().seek_target, None);
+        assert_eq!(
+            controller.relative_target(STEP_MS).unwrap(),
+            position.mseconds() as f64 + STEP_MS
+        );
     }
 
     #[test]

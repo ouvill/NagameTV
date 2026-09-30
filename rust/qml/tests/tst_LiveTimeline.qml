@@ -20,6 +20,14 @@ Item {
             property int liveRequests: 0
             property var clockEpochs: []
             function seek_timeline(session, value) { requests.push({session: session, value: value}); return true; }
+            function skip_timeline(session, delta) {
+                const data = JSON.parse(live_timeline);
+                if (data.session !== session) return false;
+                data.seekTarget = (data.seekTarget !== null ? data.seekTarget : data.viewing.position) + delta;
+                data.state = "seeking";
+                requests.push({session: session, value: data.seekTarget});
+                live_timeline = JSON.stringify(data); return true;
+            }
             function return_to_live() { liveRequests++; }
             function timeline_preview(session, value) {
                 const data = JSON.parse(live_timeline);
@@ -31,6 +39,7 @@ Item {
             }
         }
         LiveTimeline { id: timeline; x: 20; y: 100; width: 820; backend: backend }
+        TestInputMethod { id: inputEvents }
         TestCase {
             name: "LiveTimeline"
             when: windowShown
@@ -292,8 +301,52 @@ Item {
                 const slider = findChild(timeline, "liveSeekSlider");
                 slider.forceActiveFocus(); keyClick(Qt.Key_Right);
                 compare(backend.requests.length, 1); compare(backend.requests[0].session, "one");
+                compare(backend.requests[0].value, 20 * minuteMs + 10000);
                 timeline.closing = true;
                 keyClick(Qt.Key_Right); compare(backend.requests.length, 1);
+            }
+            function test_repeated_keys_keep_the_pending_target_and_viewing_position() {
+                const slider = findChild(timeline, "liveSeekSlider");
+                slider.forceActiveFocus();
+                const position = timeline.viewing.position;
+                keyPress(Qt.Key_Right);
+                compare(backend.requests.length, 1);
+                keyRelease(Qt.Key_Right);
+                keyClick(Qt.Key_Right); keyClick(Qt.Key_Left);
+                compare(backend.requests.map(request => request.value),
+                    [position + 10000, position + 20000, position + 10000]);
+                compare(timeline.viewing.position, position);
+                compare(timeline.snapshot.seekTarget, position + 10000);
+                compare(slider.value, position);
+                verify(findChild(timeline, "seekTargetMarker").visible);
+                const next = sample(); next.session = "two"; next.viewing.position = 30 * minuteMs;
+                publish(next);
+                keyClick(Qt.Key_Right);
+                compare(backend.requests[3].session, "two");
+                compare(backend.requests[3].value, next.viewing.position + 10000);
+                verify(inputEvents.forward_key(Qt.Key_Right, Qt.NoModifier, "", true));
+                verify(inputEvents.forward_key(Qt.Key_Right, Qt.NoModifier, "", true));
+                compare(timeline.snapshot.seekTarget, next.viewing.position + 30000);
+            }
+            function test_pending_seek_keeps_confirmed_position_until_arrival() {
+                const slider = findChild(timeline, "liveSeekSlider");
+                const data = sample();
+                const original = data.viewing.position;
+                const target = 40 * minuteMs;
+                data.state = "seeking"; data.seekTarget = target;
+                publish(data);
+                waitForRendering(timeline);
+                compare(slider.value, original);
+                compare(timeline.viewing.position, original);
+                verify(findChild(timeline, "livePlayhead").visible);
+                data.state = "paused"; data.seekTarget = null; data.viewing.position = target;
+                publish(data);
+                compare(slider.value, target);
+                verify(!findChild(timeline, "seekTargetMarker").visible);
+                // Failed/cancelled requests return to the confirmed position.
+                data.state = "seeking"; data.seekTarget = target + 10000; publish(data);
+                data.state = "paused"; data.seekTarget = null; publish(data);
+                compare(slider.value, target);
             }
         }
     }

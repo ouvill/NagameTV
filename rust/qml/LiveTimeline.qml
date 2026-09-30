@@ -21,6 +21,7 @@ ColumnLayout {
     readonly property bool pressed: slider.pressed
     readonly property bool hovered: seekHover.hovered
     readonly property real millisecondsPerSecond: 1000
+    readonly property RecordingSeekSteps seekSteps: RecordingSeekSteps {}
     readonly property real secondsPerMinute: 60
     readonly property real minutesPerHour: 60
     readonly property real minimumTitleWidth: 90
@@ -165,6 +166,10 @@ ColumnLayout {
         KeyNavigation.priority: KeyNavigation.BeforeItem
         KeyNavigation.up: root.upNavigation
         KeyNavigation.down: root.downNavigation
+        Keys.onLeftPressed: root.backend.skip_timeline(root.snapshot.session,
+            slider.mirrored ? root.seekSteps.timelineMilliseconds : -root.seekSteps.timelineMilliseconds)
+        Keys.onRightPressed: root.backend.skip_timeline(root.snapshot.session,
+            slider.mirrored ? -root.seekSteps.timelineMilliseconds : root.seekSteps.timelineMilliseconds)
         Keys.onReturnPressed: function(event) { if (!event.isAutoRepeat) root.adjustmentFinished(); }
         Keys.onEnterPressed: function(event) { if (!event.isAutoRepeat) root.adjustmentFinished(); }
         objectName: "liveSeekSlider"

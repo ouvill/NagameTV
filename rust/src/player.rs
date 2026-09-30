@@ -137,6 +137,7 @@ pub mod ffi {
         #[qproperty(bool, ended, READ = ended, NOTIFY)]
         #[qproperty(bool, seekable, READ = seekable, NOTIFY)]
         #[qproperty(f64, position_ms, READ = position_ms, NOTIFY)]
+        #[qproperty(f64, seek_target_ms, READ = seek_target_ms, NOTIFY)]
         #[qproperty(f64, duration_ms, READ = duration_ms, NOTIFY)]
         #[qproperty(bool, duration_estimated, READ = duration_estimated, NOTIFY)]
         #[qproperty(i32, playback_rate, READ = playback_rate, NOTIFY)]
@@ -319,6 +320,7 @@ pub mod ffi {
         fn ended(self: &Player) -> bool;
         fn seekable(self: &Player) -> bool;
         fn position_ms(self: &Player) -> f64;
+        fn seek_target_ms(self: &Player) -> f64;
         fn duration_ms(self: &Player) -> f64;
         fn duration_estimated(self: &Player) -> bool;
         fn playback_rate(self: &Player) -> i32;
@@ -403,6 +405,8 @@ pub mod ffi {
         fn seek_to(self: Pin<&mut Player>, milliseconds: f64) -> bool;
         #[qinvokable]
         fn seek_timeline(self: Pin<&mut Player>, session: QString, milliseconds: f64) -> bool;
+        #[qinvokable]
+        fn skip_timeline(self: Pin<&mut Player>, session: QString, milliseconds: f64) -> bool;
         #[qinvokable]
         fn timeline_preview(self: &Player, session: QString, milliseconds: f64) -> QString;
         fn seek_preview_image(self: &Player) -> QString;

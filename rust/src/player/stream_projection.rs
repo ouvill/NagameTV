@@ -53,6 +53,7 @@ snapshot! {
     ended: bool = |p| p.ended() => [ended_changed];
     seekable: bool = |p| p.seekable() => [seekable_changed];
     position_ms: f64 = |p| p.position_ms() => [position_ms_changed];
+    seek_target_ms: f64 = |p| p.seek_target_ms() => [seek_target_ms_changed];
     duration_ms: f64 = |p| p.duration_ms() => [duration_ms_changed];
 }
 

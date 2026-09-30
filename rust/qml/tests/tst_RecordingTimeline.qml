@@ -23,15 +23,28 @@ Item {
             function return_to_live() { liveRequests++; }
             property bool seekable: true
             property real position_ms: 5000
+            property real seek_target_ms: -1
             property real duration_ms: 60000
             property string transport_error: ""
             property bool paused: false
             property bool seeking: false
             property bool ended: false
             property var requests: []
-            function seek_to(value) { requests.push(value); position_ms = value; return true; }
+            property bool deferSeekCompletion: false
+            function seek_to(value) {
+                requests.push(value);
+                if (deferSeekCompletion) { seek_target_ms = value; seeking = true; }
+                else position_ms = value;
+                return true;
+            }
+            function skip(delta) {
+                seek_target_ms = Math.max(window_start_ms, Math.min(window_end_ms - 1,
+                    (seek_target_ms >= 0 ? seek_target_ms : position_ms) + delta));
+                requests.push(seek_target_ms); seeking = true; return true;
+            }
         }
         RecordingTimeline { id: timeline; x: 20; y: 100; width: 680; backend: backend }
+        TestInputMethod { id: inputEvents }
         TestCase {
             name: "RecordingTimeline"
             when: windowShown
@@ -42,6 +55,8 @@ Item {
                 backend.window_end_ms = Qt.binding(function() { return backend.duration_ms; });
                 backend.recording = true; backend.current_program_data = "null"; backend.program_progress = 0;
                 backend.requests = []; timeline.closing = false;
+                backend.seek_target_ms = -1; backend.seeking = false;
+                backend.deferSeekCompletion = false;
                 backend.previewRequests = [];
                 timeline.LayoutMirroring.enabled = false;
                 host.requestActivate();
@@ -61,6 +76,26 @@ Item {
                 mouseClick(slider, slider.width / 2, slider.height / 2);
                 compare(backend.requests.length, 1);
                 compare(backend.requests[0], 10000);
+            }
+            function test_unavailable_seek_range_keeps_known_duration_and_position() {
+                const slider = findChild(timeline, "recordingSeekSlider");
+                const label = findChild(timeline, "recordingTime");
+                slider.forceActiveFocus();
+                backend.seekable = false; backend.window_end_ms = -1;
+                compare(slider.enabled, false);
+                compare(slider.to, 60000);
+                compare(slider.value, 5000);
+                compare(label.text, "0:05 / 1:00");
+                keyClick(Qt.Key_Right);
+                compare(backend.requests.length, 0);
+                backend.window_end_ms = 60000; backend.seekable = true;
+                compare(slider.enabled, true);
+                compare(slider.value, 5000);
+                // Stopping clears the session's retained values normally.
+                backend.seekable = false; backend.position_ms = -1;
+                backend.duration_ms = -1; backend.window_end_ms = -1;
+                compare(slider.value, 0);
+                compare(label.text, "--:-- / --:--");
             }
             function test_hover_previews_position_without_seeking() {
                 const slider = findChild(timeline, "recordingSeekSlider");
@@ -131,13 +166,14 @@ Item {
                 slider.forceActiveFocus();
                 keyClick(Qt.Key_Right);
                 compare(backend.requests.length, 1);
-                compare(backend.requests[0], 6000);
+                compare(backend.requests[0], 15000);
                 backend.timeshift = false; backend.window_start_ms = 0; backend.liveRequests = 0;
                 backend.requests = [];
                 mousePress(slider, slider.width * 0.5, slider.height / 2);
                 backend.seekable = false;
                 mouseRelease(slider, slider.width * 0.5, slider.height / 2);
                 compare(backend.requests.length, 0);
+                backend.seek_target_ms = -1; backend.seeking = false;
                 backend.duration_ms = -1;
                 backend.seekable = true;
                 compare(slider.enabled, false);
@@ -145,6 +181,74 @@ Item {
                 compare(timeline.timeLabel(3671000), "1:01:11");
                 backend.duration_ms = 60000;
                 compare(slider.value, backend.position_ms);
+            }
+            function test_repeated_keys_keep_pending_target_and_reverse_direction() {
+                const slider = findChild(timeline, "recordingSeekSlider");
+                const marker = findChild(timeline, "recordingSeekTargetMarker");
+                slider.forceActiveFocus();
+                keyPress(Qt.Key_Right);
+                compare(backend.requests, [15000]); // Accepted on press, before release.
+                keyRelease(Qt.Key_Right);
+                compare(backend.requests.length, 1);
+                verify(marker.visible);
+                compare(slider.value, 5000);
+                compare(findChild(timeline, "recordingTime").text, "0:15 / 1:00");
+                keyClick(Qt.Key_Right); keyClick(Qt.Key_Left);
+                compare(backend.requests, [15000, 25000, 15000]);
+                compare(backend.position_ms, 5000);
+                backend.position_ms = 7000; // An old playback sample must not reset intent.
+                compare(slider.value, 7000);
+                keyClick(Qt.Key_Right);
+                compare(backend.seek_target_ms, 25000);
+                backend.position_ms = backend.seek_target_ms;
+                backend.seek_target_ms = -1; backend.seeking = false;
+                verify(!marker.visible);
+                compare(slider.value, 25000);
+                keyClick(Qt.Key_Right);
+                compare(backend.seek_target_ms, 35000);
+                verify(inputEvents.forward_key(Qt.Key_Right, Qt.NoModifier, "", true));
+                verify(inputEvents.forward_key(Qt.Key_Right, Qt.NoModifier, "", true));
+                compare(backend.seek_target_ms, 55000);
+            }
+            function test_drag_keeps_confirmed_position_and_separate_target_until_arrival() {
+                const slider = findChild(timeline, "recordingSeekSlider");
+                const label = findChild(timeline, "recordingTime");
+                backend.deferSeekCompletion = true;
+                mousePress(slider, slider.width * 0.25, slider.height / 2);
+                mouseMove(slider, slider.width * 0.6, slider.height / 2);
+                const target = slider.value;
+                const time = label.text;
+                mouseRelease(slider, slider.width * 0.6, slider.height / 2);
+                waitForRendering(timeline);
+                compare(slider.value, 5000);
+                compare(label.text, time);
+                compare(backend.position_ms, 5000);
+                verify(findChild(timeline, "recordingSeekTargetMarker").visible);
+                backend.position_ms = target;
+                backend.seek_target_ms = -1; backend.seeking = false;
+                compare(slider.value, target);
+                compare(label.text, time);
+                backend.position_ms = target + 1000;
+                compare(slider.value, target + 1000);
+                keyClick(Qt.Key_Right);
+                compare(slider.value, backend.position_ms);
+                verify(backend.seek_target_ms > backend.position_ms);
+                backend.seek_target_ms = -1; backend.seeking = false;
+                compare(slider.value, backend.position_ms);
+                compare(label.text, timeline.timeLabel(backend.position_ms) + " / 1:00");
+            }
+            function test_keyboard_mirroring_and_disabled_input() {
+                const slider = findChild(timeline, "recordingSeekSlider");
+                timeline.LayoutMirroring.enabled = true;
+                timeline.LayoutMirroring.childrenInherit = true;
+                slider.forceActiveFocus();
+                keyClick(Qt.Key_Left);
+                compare(backend.seek_target_ms, 15000);
+                keyClick(Qt.Key_Right);
+                compare(backend.seek_target_ms, 5000);
+                timeline.closing = true;
+                keyClick(Qt.Key_Left);
+                compare(backend.requests.length, 2);
             }
         }
     }

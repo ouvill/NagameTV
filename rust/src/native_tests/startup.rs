@@ -1623,6 +1623,32 @@ fn check_recording(
         engine,
         "!player.seek_to(NaN) && player.paused && player.transport_error.length > 0"
     )?);
+    // Real key input must accumulate against the latest target even before the
+    // native seek completes, without also firing the video-only shortcuts.
+    assert!(evaluate(
+        engine,
+        "recordingTimeline.enter() && player.seek_to(10000) && player.seek_target_ms === 10000"
+    )?);
+    for (key, target) in [
+        ("Right", 20000),
+        ("Right", 30000),
+        ("Right", 40000),
+        ("Left", 30000),
+    ] {
+        ffi::clickRootKey(engine.pin_mut(), &QString::from(key))?;
+        assert!(evaluate(
+            engine,
+            &format!(
+                "player.seeking && player.seek_target_ms === {target} && recordingTimeline.navigationSlider.value === player.position_ms && player.position_ms > 0 && player.duration_ms > 59000 && player.paused"
+            )
+        )?);
+    }
+    wait_for(
+        app,
+        engine,
+        "!player.seeking && player.seek_target_ms < 0 && player.paused && Math.abs(player.position_ms - 30000) < 1500 && recordingTimeline.navigationSlider.value === player.position_ms",
+    )?;
+    evaluate(engine, "surface.forceActiveFocus(); true")?;
     assert!(evaluate(
         engine,
         "player.seek_to(20000) && player.seek_to(40000) && player.seek_to(15000)"

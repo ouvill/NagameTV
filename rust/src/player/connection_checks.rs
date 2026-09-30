@@ -1026,6 +1026,7 @@ fn check_stream_projection_commit() -> TestResult {
     {
         let mut state = player.pin_mut().rust_mut();
         state.speed.applied = crate::playback::speed::Rate::checked(15).unwrap();
+        state.timeline.seek_target = Some(gstreamer::ClockTime::from_seconds(10));
         state.current_program_data = QString::from("{\"name\":\"old program\"}");
         state.program_progress = 0.5;
         state.subtitle_data = QString::from("old subtitle");
@@ -1037,6 +1038,7 @@ fn check_stream_projection_commit() -> TestResult {
     // already describe the new input when this observer executes.
     let _rate = player.pin_mut().on_playback_rate_changed(move |player| {
         assert_eq!(player.playback_rate(), 10);
+        assert_eq!(player.seek_target_ms(), -1.0);
         assert!(player.connecting());
         assert!(player.recording());
         assert_eq!(player.recording_name().to_string(), "subtitle-clock.ts");

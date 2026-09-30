@@ -182,6 +182,12 @@ impl ffi::Player {
     pub fn duration_estimated(&self) -> bool {
         self.rust().timeline.estimated
     }
+    pub fn seek_target_ms(&self) -> f64 {
+        self.rust()
+            .timeline
+            .seek_target
+            .map_or(-1.0, |value| value.mseconds() as f64)
+    }
     pub fn duration_ms(&self) -> f64 {
         self.rust()
             .timeline
@@ -199,6 +205,9 @@ impl ffi::Player {
     }
     pub fn seek_timeline(self: Pin<&mut Self>, session: QString, milliseconds: f64) -> bool {
         self.control_transport(|media| media.seek_timeline(&session.to_string(), milliseconds))
+    }
+    pub fn skip_timeline(self: Pin<&mut Self>, session: QString, milliseconds: f64) -> bool {
+        self.control_transport(|media| media.skip_timeline(&session.to_string(), milliseconds))
     }
     pub fn timeline_preview(&self, session: QString, milliseconds: f64) -> QString {
         QString::from(

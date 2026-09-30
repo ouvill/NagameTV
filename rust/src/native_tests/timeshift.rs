@@ -22,6 +22,7 @@ const MIN_SEEKABLE_HISTORY: Duration = Duration::from_secs(3);
 const PAUSE_RECEIVE_GROWTH: Duration = Duration::from_secs(1);
 const SPEED_CATCH_UP_DELAY_MS: u64 = 3500;
 const REWIND_TARGET: Duration = Duration::from_secs(1);
+const REPEATED_SEEK_STEP: Duration = Duration::from_millis(500);
 const SEEK_TOLERANCE: Duration = Duration::from_millis(500);
 const LIVE_EDGE_TOLERANCE: Duration = Duration::from_millis(2500);
 // Includes the fixture's 250 ms deliveries and the UI's sampled playhead. This
@@ -255,7 +256,7 @@ pub(super) fn run(
         assert!(evaluate(
             engine,
             &format!(
-                "!{OBSERVER}.previousSession.length || !player.seek_timeline({OBSERVER}.previousSession, 0)"
+                "!{OBSERVER}.previousSession.length || (!player.seek_timeline({OBSERVER}.previousSession, 0) && !player.skip_timeline({OBSERVER}.previousSession, 0))"
             )
         )?);
         evaluate(engine, "viewerActions.playbackToggle.trigger(); true")?;
@@ -300,8 +301,10 @@ pub(super) fn run(
         assert!(evaluate(
             engine,
             &format!(
-                "player.seek_timeline(JSON.parse(player.live_timeline).session, {})",
-                REWIND_TARGET.as_millis()
+                "(function() {{ const session = JSON.parse(player.live_timeline).session; return player.seek_timeline(session, {target}) && player.skip_timeline(session, {step}) && player.seek_target_ms === {forward} && player.skip_timeline(session, -{step}) && player.seek_target_ms === {target}; }})()",
+                target = REWIND_TARGET.as_millis(),
+                step = REPEATED_SEEK_STEP.as_millis(),
+                forward = (REWIND_TARGET + REPEATED_SEEK_STEP).as_millis(),
             )
         )?);
         wait_for(

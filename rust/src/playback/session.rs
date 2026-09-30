@@ -431,6 +431,28 @@ impl Session {
         }
     }
 
+    pub fn skip_timeline(
+        &mut self,
+        session: &str,
+        milliseconds: f64,
+    ) -> std::result::Result<(), super::timeline::Error> {
+        let target = match &self.input {
+            Input::Active {
+                controller,
+                projection: Projection::Live(_),
+                ..
+            } => controller.relative_target(milliseconds)?,
+            Input::Idle
+            | Input::Media { .. }
+            | Input::Active {
+                projection: Projection::Recording,
+                ..
+            } => return Err(super::timeline::Error::Unavailable),
+        };
+        // Preserve the session and retained-history validation of pointer seeks.
+        self.seek_timeline(session, target)
+    }
+
     pub fn return_to_live(&mut self) -> std::result::Result<(), super::timeline::Error> {
         match (&self.playback, &mut self.input) {
             (

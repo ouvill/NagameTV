@@ -9,9 +9,11 @@ ColumnLayout {
     required property var backend
     readonly property real seekStart: Number.isFinite(backend.window_start_ms) ? backend.window_start_ms : 0
     readonly property real axisStart: seekStart
-    readonly property real axisEnd: Math.max(1, seekEnd)
+    readonly property real axisEnd: Math.max(1, seekEnd > seekStart ? seekEnd : backend.duration_ms)
     readonly property real progressStart: axisStart
     readonly property real progressEnd: backend.position_ms
+    readonly property real seekTarget: backend.seek_target_ms
+    readonly property RecordingSeekSteps seekSteps: RecordingSeekSteps {}
     readonly property real millisecondsPerSecond: 1000
     function fraction(time) { return Math.max(0, Math.min(1, (time - axisStart) / Math.max(1, axisEnd - axisStart))); }
     function available(time) { return backend.seekable && time >= seekStart && time <= seekEnd; }
@@ -42,7 +44,7 @@ ColumnLayout {
         Layout.fillWidth: true
         Label {
             objectName: "recordingTime"
-            text: root.timeLabel(slider.pressed ? slider.value : root.backend.position_ms)
+            text: root.timeLabel(slider.pressed ? slider.value : root.seekTarget >= 0 ? root.seekTarget : root.backend.position_ms)
                 + " / " + (root.backend.duration_estimated === true ? "≈" : "") + root.timeLabel(root.backend.duration_ms)
 
             color: Theme.textPrimary
@@ -66,6 +68,8 @@ ColumnLayout {
         KeyNavigation.priority: KeyNavigation.BeforeItem
         KeyNavigation.up: root.upNavigation
         KeyNavigation.down: root.downNavigation
+        Keys.onLeftPressed: root.backend.skip(slider.mirrored ? root.seekSteps.timelineMilliseconds : -root.seekSteps.timelineMilliseconds)
+        Keys.onRightPressed: root.backend.skip(slider.mirrored ? -root.seekSteps.timelineMilliseconds : root.seekSteps.timelineMilliseconds)
         Keys.onReturnPressed: function(event) { if (!event.isAutoRepeat) root.adjustmentFinished(); }
         Keys.onEnterPressed: function(event) { if (!event.isAutoRepeat) root.adjustmentFinished(); }
         objectName: "recordingSeekSlider"
@@ -95,6 +99,15 @@ ColumnLayout {
                 anchors.verticalCenter: parent.verticalCenter
                 anchors.alignWhenCentered: false
                 height: 3; radius: height / 2; color: Theme.textPrimary
+            }
+            Rectangle {
+                objectName: "recordingSeekTargetMarker"
+                visible: root.seekTarget >= 0
+                x: (slider.mirrored ? 1 - root.fraction(root.seekTarget) : root.fraction(root.seekTarget)) * parent.width - width / 2
+                anchors.verticalCenter: parent.verticalCenter
+                anchors.alignWhenCentered: false
+                width: 14; height: width; radius: width / 2
+                color: "transparent"; border.width: 2; border.color: Theme.accent
             }
         }
         handle: Rectangle {
