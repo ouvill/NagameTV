@@ -63,13 +63,17 @@ ColumnLayout {
             font.pixelSize: Theme.fontCaption
         }
     }
-    ThemedSlider {
+    SeekSlider {
         id: slider
         KeyNavigation.priority: KeyNavigation.BeforeItem
         KeyNavigation.up: root.upNavigation
         KeyNavigation.down: root.downNavigation
-        Keys.onLeftPressed: root.backend.skip(slider.mirrored ? root.seekSteps.timelineMilliseconds : -root.seekSteps.timelineMilliseconds)
-        Keys.onRightPressed: root.backend.skip(slider.mirrored ? -root.seekSteps.timelineMilliseconds : root.seekSteps.timelineMilliseconds)
+        Keys.onLeftPressed: {
+            if (root.backend.skip(slider.mirrored ? root.seekSteps.timelineMilliseconds : -root.seekSteps.timelineMilliseconds)) slider.flashSeek();
+        }
+        Keys.onRightPressed: {
+            if (root.backend.skip(slider.mirrored ? -root.seekSteps.timelineMilliseconds : root.seekSteps.timelineMilliseconds)) slider.flashSeek();
+        }
         Keys.onReturnPressed: function(event) { if (!event.isAutoRepeat) root.adjustmentFinished(); }
         Keys.onEnterPressed: function(event) { if (!event.isAutoRepeat) root.adjustmentFinished(); }
         objectName: "recordingSeekSlider"
@@ -79,18 +83,21 @@ ColumnLayout {
         from: root.axisStart
         to: root.axisEnd
         stepSize: root.millisecondsPerSecond
+        indicatedValue: root.seekTarget >= 0 ? root.seekTarget : value
+        positionText: root.timeLabel(indicatedValue)
         background: Item {
             id: track
             x: slider.leftPadding + slider.handle.width / 2
             y: slider.topPadding + slider.availableHeight / 2 - height / 2
             width: slider.availableWidth - slider.handle.width
-            height: slider.pressed || root.hovered ? 10 : 8
+            height: slider.retainedThickness
             function startX(start, end) { return (slider.mirrored ? 1 - root.fraction(end) : root.fraction(start)) * width; }
             Rectangle {
                 objectName: "programTrack"
                 anchors.verticalCenter: parent.verticalCenter
                 anchors.alignWhenCentered: false
-                width: parent.width; height: 4; radius: Theme.indicatorRadius; color: Theme.overlayBorder
+                width: parent.width; height: slider.trackThickness; radius: height / 2; color: Theme.overlayBorder
+                Behavior on height { NumberAnimation { duration: Theme.colorDuration } }
             }
             Rectangle {
                 objectName: "programProgressFill"
@@ -98,7 +105,8 @@ ColumnLayout {
                 width: Math.max(0, root.fraction(root.progressEnd) - root.fraction(root.progressStart)) * parent.width
                 anchors.verticalCenter: parent.verticalCenter
                 anchors.alignWhenCentered: false
-                height: 3; radius: height / 2; color: Theme.textPrimary
+                height: slider.progressThickness; radius: height / 2; color: Theme.textPrimary
+                Behavior on height { NumberAnimation { duration: Theme.colorDuration } }
             }
             Rectangle {
                 objectName: "recordingSeekTargetMarker"
@@ -109,15 +117,6 @@ ColumnLayout {
                 width: 14; height: width; radius: width / 2
                 color: "transparent"; border.width: 2; border.color: Theme.accent
             }
-        }
-        handle: Rectangle {
-            x: slider.leftPadding + slider.visualPosition * (slider.availableWidth - width)
-            y: slider.topPadding + slider.availableHeight / 2 - height / 2
-            implicitWidth: 12; implicitHeight: 12; radius: width / 2
-            visible: root.backend.seekable
-            color: Theme.textPrimary
-            scale: slider.pressed || root.hovered || slider.visualFocus ? 1.2 : 1
-            border.width: slider.visualFocus ? 2 : 0; border.color: Theme.accent
         }
         property var pendingTarget: null
         onEnabledChanged: if (!enabled) pendingTarget = null
@@ -152,7 +151,7 @@ ColumnLayout {
                 / Math.max(1, slider.availableWidth - slider.handle.width)))
             readonly property real target: slider.from + (slider.to - slider.from)
                 * (slider.mirrored ? 1 - fraction : fraction)
-            visible: root.visible && !root.closing && slider.enabled && (root.hovered || root.pressed)
+            visible: root.visible && !root.closing && slider.enabled && !slider.positionLabelVisible && (root.hovered || root.pressed)
             positionMs: slider.pressed ? slider.value : target
             imageSource: root.backend.seek_preview_image || ""
             onRequested: milliseconds => root.backend.request_seek_preview(milliseconds)

@@ -279,6 +279,7 @@ ViewerWindow {
         onLibraryCloseRequested: root.closeRecordingLibrary()
         canCapture: screenshot.canCapture
         onActivity: overlayVisibility.reveal()
+        onSeekFeedbackRequested: recordingTimeline.flashSeek()
         onChannelsVisibilityRequested: function(visible) { root.showChannels = visible; }
         onComposerVisibilityRequested: function(visible) {
             if (visible) { root.showCommentComposer = true; composer.focusEditor(); }
@@ -928,7 +929,7 @@ ViewerWindow {
         guideEnabled: player.epg_enabled
         onModeRequested: function(mode) { root.requestMode(mode); }
         onBoundaryReached: function(key) {
-            if (key === Qt.Key_Down) playerControls.enter();
+            if (key === Qt.Key_Down && !recordingTimeline.enter()) playerControls.enter();
         }
     }
     WindowResizeFrame {

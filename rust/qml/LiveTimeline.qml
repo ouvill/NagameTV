@@ -93,6 +93,11 @@ ColumnLayout {
         return clockLabel(result.utc, time) + " · " + (result.title || qsTranslate("Viewer", "Program information unavailable"))
             + (result.available ? "" : " · " + qsTranslate("Viewer", "Outside retained history"));
     }
+    function positionLabel(time) {
+        if (!snapshot) return "";
+        const result = JSON.parse(backend.timeline_preview(snapshot.session, time) || "null");
+        return clockLabel(result ? result.utc : null, time);
+    }
 
     RowLayout {
         Layout.fillWidth: true
@@ -161,15 +166,19 @@ ColumnLayout {
             font.pixelSize: Theme.fontCaption; color: root.secondaryColor
         }
     }
-    ThemedSlider {
+    SeekSlider {
         id: slider
         KeyNavigation.priority: KeyNavigation.BeforeItem
         KeyNavigation.up: root.upNavigation
         KeyNavigation.down: root.downNavigation
-        Keys.onLeftPressed: root.backend.skip_timeline(root.snapshot.session,
-            slider.mirrored ? root.seekSteps.timelineMilliseconds : -root.seekSteps.timelineMilliseconds)
-        Keys.onRightPressed: root.backend.skip_timeline(root.snapshot.session,
-            slider.mirrored ? -root.seekSteps.timelineMilliseconds : root.seekSteps.timelineMilliseconds)
+        Keys.onLeftPressed: {
+            if (root.backend.skip_timeline(root.snapshot.session,
+                slider.mirrored ? root.seekSteps.timelineMilliseconds : -root.seekSteps.timelineMilliseconds)) slider.flashSeek();
+        }
+        Keys.onRightPressed: {
+            if (root.backend.skip_timeline(root.snapshot.session,
+                slider.mirrored ? -root.seekSteps.timelineMilliseconds : root.seekSteps.timelineMilliseconds)) slider.flashSeek();
+        }
         Keys.onReturnPressed: function(event) { if (!event.isAutoRepeat) root.adjustmentFinished(); }
         Keys.onEnterPressed: function(event) { if (!event.isAutoRepeat) root.adjustmentFinished(); }
         objectName: "liveSeekSlider"
@@ -184,6 +193,10 @@ ColumnLayout {
         from: root.axis ? root.axis.start : 0
         to: root.axis ? root.axis.end : 1
         stepSize: root.millisecondsPerSecond
+        thumbSize: root.playheadSize
+        thumbVisible: root.viewing !== null && !root.viewing.offscreen
+        indicatedValue: root.snapshot && root.snapshot.seekTarget !== null ? root.snapshot.seekTarget : value
+        positionText: positionLabelVisible ? root.positionLabel(indicatedValue) : ""
         property var gesture: null
         property var pendingTarget: null
         onEnabledChanged: if (!enabled) pendingTarget = null
@@ -210,13 +223,15 @@ ColumnLayout {
             x: slider.leftPadding + slider.handle.width / 2
             y: slider.topPadding + slider.availableHeight / 2 - height / 2
             width: slider.availableWidth - slider.handle.width
-            height: slider.pressed || root.hovered ? 10 : 8
+            height: slider.retainedThickness
+            Behavior on height { NumberAnimation { duration: Theme.colorDuration } }
             function position(time) { return (slider.mirrored ? 1 - root.fraction(time) : root.fraction(time)) * width; }
             function startX(start, end) { return slider.mirrored ? position(end) : position(start); }
             Rectangle {
                 objectName: "programTrack"
                 anchors.verticalCenter: parent.verticalCenter; anchors.alignWhenCentered: false
-                width: parent.width; height: 4; radius: Theme.indicatorRadius; color: Theme.track
+                width: parent.width; height: slider.trackThickness; radius: height / 2; color: Theme.track
+                Behavior on height { NumberAnimation { duration: Theme.colorDuration } }
             }
             Repeater {
                 objectName: "retainedRanges"
@@ -237,7 +252,8 @@ ColumnLayout {
                 anchors.verticalCenter: parent.verticalCenter; anchors.alignWhenCentered: false
                 x: span && root.snapshot ? track.startX(span.start, root.snapshot.live.position) : 0
                 width: span && root.snapshot ? Math.max(0, root.fraction(Math.min(span.end, root.snapshot.live.position)) - root.fraction(span.start)) * track.width : 0
-                height: 3; radius: height / 2; color: root.primaryColor
+                height: slider.progressThickness; radius: height / 2; color: root.primaryColor
+                Behavior on height { NumberAnimation { duration: Theme.colorDuration } }
             }
             Repeater {
                 objectName: "programBoundaryMarkers"
@@ -272,14 +288,6 @@ ColumnLayout {
                 width: 14; height: 14; radius: width / 2; color: "transparent"; border.width: 2; border.color: Theme.accent
             }
         }
-        handle: Rectangle {
-            x: slider.leftPadding + slider.visualPosition * (slider.availableWidth - width)
-            y: slider.topPadding + slider.availableHeight / 2 - height / 2
-            implicitWidth: root.playheadSize; implicitHeight: root.playheadSize; radius: width / 2
-            color: "transparent"
-            border.width: slider.pressed || slider.visualFocus ? 2 : 0
-            border.color: root.primaryColor
-        }
         HoverHandler { id: seekHover }
         SeekPreview {
             id: preview
@@ -289,7 +297,7 @@ ColumnLayout {
                 (seekHover.point.position.x - slider.leftPadding - slider.handle.width / 2) / Math.max(1, slider.availableWidth - slider.handle.width)))
             readonly property real target: slider.from + (slider.to - slider.from) * (slider.mirrored ? 1 - fraction : fraction)
             visible: root.visible && !root.closing && slider.enabled
-                && (root.hovered || root.pressed) && root.snapshot !== null
+                && !slider.positionLabelVisible && (root.hovered || root.pressed) && root.snapshot !== null
             positionMs: slider.pressed ? slider.value : target
             available: root.available(root.snapshot, positionMs)
             imageSource: root.backend.seek_preview_image || ""

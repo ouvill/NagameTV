@@ -69,4 +69,15 @@ QtObject {
     readonly property int fadeOutDuration: 100
     readonly property int moveDuration: 160
     readonly property int panelDuration: 240
+    readonly property int seekFeedbackDuration: 1000
+    readonly property int seekThumbSize: 12
+    readonly property int seekThumbActiveSize: 18
+    readonly property int seekFocusGap: 2
+    readonly property int seekFocusWidth: 2
+    readonly property int seekTrackHeight: 4
+    readonly property int seekTrackActiveHeight: 6
+    readonly property int seekProgressHeight: 3
+    readonly property int seekProgressActiveHeight: 5
+    readonly property int seekRetainedHeight: 8
+    readonly property int seekRetainedActiveHeight: 10
 }

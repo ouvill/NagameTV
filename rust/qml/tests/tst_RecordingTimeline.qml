@@ -58,6 +58,8 @@ Item {
                 backend.seek_target_ms = -1; backend.seeking = false;
                 backend.deferSeekCompletion = false;
                 backend.previewRequests = [];
+                host.contentItem.forceActiveFocus();
+                timeline.visible = false; timeline.visible = true;
                 timeline.LayoutMirroring.enabled = false;
                 host.requestActivate();
                 tryCompare(host, "active", true);
@@ -185,9 +187,13 @@ Item {
             function test_repeated_keys_keep_pending_target_and_reverse_direction() {
                 const slider = findChild(timeline, "recordingSeekSlider");
                 const marker = findChild(timeline, "recordingSeekTargetMarker");
-                slider.forceActiveFocus();
+                slider.forceActiveFocus(Qt.TabFocusReason);
+                const label = findChild(slider, "seekPositionLabel");
+                const ring = findChild(slider, "seekFocusRing");
                 keyPress(Qt.Key_Right);
                 compare(backend.requests, [15000]); // Accepted on press, before release.
+                verify(label.visible); compare(label.text, "0:15");
+                tryCompare(ring, "opacity", 1);
                 keyRelease(Qt.Key_Right);
                 compare(backend.requests.length, 1);
                 verify(marker.visible);
@@ -209,6 +215,56 @@ Item {
                 verify(inputEvents.forward_key(Qt.Key_Right, Qt.NoModifier, "", true));
                 verify(inputEvents.forward_key(Qt.Key_Right, Qt.NoModifier, "", true));
                 compare(backend.seek_target_ms, 55000);
+                compare(label.text, "0:55");
+                // The transient timeout must not erase a retained keyboard focus.
+                tryCompare(slider, "feedbackActive", false);
+                verify(slider.emphasized); verify(label.visible); compare(ring.opacity, 1);
+            }
+            function test_transient_feedback_restarts_without_stealing_focus_and_clears_on_disable() {
+                const slider = findChild(timeline, "recordingSeekSlider");
+                const label = findChild(slider, "seekPositionLabel");
+                const ring = findChild(slider, "seekFocusRing");
+                const handleX = slider.handle.x;
+                backend.skip(10000); slider.flashSeek();
+                verify(host.contentItem.activeFocus);
+                verify(label.visible); compare(label.text, "0:15"); tryCompare(ring, "opacity", 0);
+                tryCompare(findChild(slider, "seekThumb"), "width", Theme.seekThumbActiveSize);
+                compare(slider.handle.x, handleX);
+                wait(Theme.seekFeedbackDuration * 0.6);
+                backend.skip(10000); slider.flashSeek();
+                wait(Theme.seekFeedbackDuration * 0.6);
+                verify(slider.feedbackActive); compare(label.text, "0:25");
+                tryCompare(slider, "feedbackActive", false);
+                verify(!label.visible); verify(!slider.emphasized);
+                slider.flashSeek();
+                backend.seekable = false;
+                verify(!slider.feedbackActive); verify(!label.visible);
+                backend.seekable = true;
+                verify(!slider.feedbackActive);
+                slider.flashSeek(); timeline.visible = false; timeline.visible = true;
+                verify(!slider.feedbackActive);
+                compare(backend.previewRequests.length, 0);
+            }
+            function test_feedback_label_clamps_at_both_ends_and_overrides_pointer_preview() {
+                const slider = findChild(timeline, "recordingSeekSlider");
+                const label = findChild(slider, "seekPositionLabel");
+                const preview = findChild(timeline, "recordingSeekPreview");
+                mouseMove(slider, slider.width / 2, slider.height / 2);
+                tryCompare(preview, "visible", true);
+                for (const width of [680, 300]) {
+                    timeline.width = width;
+                    for (const mirrored of [false, true]) {
+                        timeline.LayoutMirroring.enabled = mirrored;
+                        timeline.LayoutMirroring.childrenInherit = true;
+                        for (const target of [0, 59999]) {
+                            backend.seek_target_ms = target; slider.flashSeek();
+                            verify(label.visible); verify(!preview.visible);
+                            verify(label.x >= 0 && label.x + label.width <= slider.width);
+                            compare(label.text, target === 0 ? "0:00" : "0:59");
+                        }
+                    }
+                }
+                timeline.width = 680;
             }
             function test_drag_keeps_confirmed_position_and_separate_target_until_arrival() {
                 const slider = findChild(timeline, "recordingSeekSlider");

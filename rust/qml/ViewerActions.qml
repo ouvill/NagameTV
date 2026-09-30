@@ -22,6 +22,7 @@ Item {
     readonly property bool atLiveEdge: backend.at_live_edge
     signal speedOpened
     signal activity
+    signal seekFeedbackRequested
     signal channelsVisibilityRequested(bool visible)
     signal composerVisibilityRequested(bool visible)
     signal statsVisibilityRequested(bool visible)
@@ -69,12 +70,20 @@ Item {
     readonly property Action seekBackward: Operation {
         text: qsTranslate("Viewer", "Back 10 seconds")
         enabled: root.enabled && root.backend.seekable
-        onTriggered: { root.backend.skip(root.seekSteps.backwardMilliseconds); root.activity(); }
+        onTriggered: {
+            const accepted = root.backend.skip(root.seekSteps.backwardMilliseconds);
+            root.activity();
+            if (accepted) root.seekFeedbackRequested();
+        }
     }
     readonly property Action seekForward: Operation {
         text: qsTranslate("Viewer", "Forward 10 seconds")
         enabled: root.enabled && root.backend.seekable
-        onTriggered: { root.backend.skip(root.seekSteps.forwardMilliseconds); root.activity(); }
+        onTriggered: {
+            const accepted = root.backend.skip(root.seekSteps.forwardMilliseconds);
+            root.activity();
+            if (accepted) root.seekFeedbackRequested();
+        }
     }
     readonly property Action openRecording: Operation {
         text: qsTranslate("Recording", "Open recording")

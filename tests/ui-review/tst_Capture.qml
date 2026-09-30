@@ -27,6 +27,15 @@ TestCase {
         width = 640; height = 360;
         capture("controls-640");
         width = 1280; height = 720;
+        const seek = findChild(gallery, "seekSlider");
+        seek.forceActiveFocus(Qt.TabFocusReason);
+        capture("controls-seek-focus-1280");
+        width = 640; height = 360;
+        capture("controls-seek-focus-640");
+        forceActiveFocus();
+        seek.flashSeek();
+        capture("controls-seek-feedback-640");
+        width = 1280; height = 720;
         const button = findChild(gallery, "button_0_" + ActionButton.Secondary);
         button.forceActiveFocus(Qt.TabFocusReason);
         capture("controls-focus");

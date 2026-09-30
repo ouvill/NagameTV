@@ -17,14 +17,15 @@ COLOR_SOURCES = {
 }
 SHARED_CONTROLS = {
     'ActionButton', 'IconAction', 'SettingsField', 'SettingsChoice',
-    'ThemedSpinBox', 'ThemedSlider', 'ToggleSwitch', 'SegmentedControl',
+    'ThemedSpinBox', 'ThemedSlider', 'SeekSlider', 'ToggleSwitch', 'SegmentedControl',
 }
 LEXEMES = re.compile(r'(?P<string>"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\')|(?P<comment>//[^\n]*|/\*[\s\S]*?\*/)')
 COLOR = re.compile(r'["\'](?:#[0-9a-fA-F]{3,8}|black|white)["\']')
 # These compositions own media geometry or a settings row around a shared control.
 CUSTOMIZATIONS = {
-    ('LiveTimeline', 'ThemedSlider'): 'buffer and program ranges along the seek track',
-    ('RecordingTimeline', 'ThemedSlider'): 'program ranges along the seek track',
+    ('SeekSlider', 'ThemedSlider'): 'shared seek feedback, thumb and track presentation',
+    ('LiveTimeline', 'SeekSlider'): 'buffer and program ranges along the seek track',
+    ('RecordingTimeline', 'SeekSlider'): 'program ranges along the seek track',
     ('SettingsToggle', 'ToggleSwitch'): 'label/description row around the unchanged switch',
 }
 LITERAL_VALUE = re.compile(r'\b(font\.pixelSize|radius|duration)\s*:\s*\d')

@@ -62,6 +62,8 @@ Item {
                 backend.seekable = true; backend.transport_error = ""; backend.requests = []; backend.liveRequests = 0;
                 backend.clockEpochs = [];
                 backend.previewRequests = [];
+                host.contentItem.forceActiveFocus();
+                timeline.visible = false; timeline.visible = true;
                 timeline.width = 820;
                 timeline.closing = false;
                 timeline.LayoutMirroring.enabled = false; timeline.LayoutMirroring.childrenInherit = true;
@@ -307,7 +309,8 @@ Item {
             }
             function test_repeated_keys_keep_the_pending_target_and_viewing_position() {
                 const slider = findChild(timeline, "liveSeekSlider");
-                slider.forceActiveFocus();
+                slider.forceActiveFocus(Qt.TabFocusReason);
+                const label = findChild(slider, "seekPositionLabel");
                 const position = timeline.viewing.position;
                 keyPress(Qt.Key_Right);
                 compare(backend.requests.length, 1);
@@ -317,6 +320,8 @@ Item {
                     [position + 10000, position + 20000, position + 10000]);
                 compare(timeline.viewing.position, position);
                 compare(timeline.snapshot.seekTarget, position + 10000);
+                verify(label.visible); compare(label.text, "20:10");
+                tryCompare(findChild(slider, "seekFocusRing"), "opacity", 1);
                 compare(slider.value, position);
                 verify(findChild(timeline, "seekTargetMarker").visible);
                 const next = sample(); next.session = "two"; next.viewing.position = 30 * minuteMs;
@@ -327,6 +332,28 @@ Item {
                 verify(inputEvents.forward_key(Qt.Key_Right, Qt.NoModifier, "", true));
                 verify(inputEvents.forward_key(Qt.Key_Right, Qt.NoModifier, "", true));
                 compare(timeline.snapshot.seekTarget, next.viewing.position + 30000);
+                compare(label.text, "30:30");
+                tryCompare(slider, "feedbackActive", false);
+                verify(slider.emphasized); verify(label.visible);
+                compare(backend.previewRequests.length, 0);
+            }
+            function test_transient_feedback_uses_target_clock_without_moving_confirmed_cursor() {
+                const slider = findChild(timeline, "liveSeekSlider");
+                const label = findChild(slider, "seekPositionLabel");
+                const epoch = new Date(2026, 8, 30, 20, 0, 0).getTime();
+                backend.clockEpochs = [{start: 0, end: 90 * minuteMs, utc: epoch}];
+                const position = slider.value;
+                backend.skip_timeline("one", 10000); slider.flashSeek();
+                verify(host.contentItem.activeFocus); verify(label.visible);
+                compare(label.text, "20:20:10"); compare(slider.value, position);
+                tryCompare(findChild(slider, "seekFocusRing"), "opacity", 0);
+                const data = JSON.parse(backend.live_timeline);
+                data.viewing.position = data.seekTarget; data.viewing.utc = epoch + data.seekTarget;
+                data.seekTarget = null; data.state = "playing"; publish(data);
+                compare(label.text, "20:20:10");
+                tryCompare(slider, "feedbackActive", false);
+                verify(!label.visible); verify(!slider.emphasized);
+                compare(backend.previewRequests.length, 0);
             }
             function test_pending_seek_keeps_confirmed_position_until_arrival() {
                 const slider = findChild(timeline, "liveSeekSlider");

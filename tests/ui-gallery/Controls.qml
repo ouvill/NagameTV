@@ -16,8 +16,8 @@ Rectangle {
         scale: Math.min(gallery.width / width, gallery.height / height)
         transformOrigin: Item.TopLeft
         ColumnLayout {
-            anchors { fill: parent; margins: Theme.spaceXl }
-            spacing: Theme.spaceLg
+            anchors { fill: parent; margins: Theme.spaceLg }
+            spacing: Theme.spaceMd
             Label {
                 text: "共通部品 / Controls"
                 color: Theme.textPrimary
@@ -98,6 +98,19 @@ Rectangle {
                     SettingsChoice { objectName: "choice"; Layout.fillWidth: true; model: ["選択肢 / Option A", "選択肢 / Option B"] }
                     ThemedSpinBox { objectName: "number"; Layout.fillWidth: true; from: 0; to: 100; value: 50 }
                     ThemedSlider { objectName: "slider"; Layout.fillWidth: true; from: 0; to: 100; value: 50; stepSize: 10 }
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Layout.topMargin: Theme.spaceXl + Theme.spaceLg
+                        spacing: Theme.spaceMd
+                        Label { text: "シーク / Seek"; color: Theme.textSecondary; font.pixelSize: Theme.fontBody }
+                        SeekSlider {
+                            objectName: "seekSlider"
+                            Layout.fillWidth: true
+                            from: 0; to: 60; value: 20; stepSize: 10
+                            positionText: "0:" + String(Math.round(value)).padStart(2, "0")
+                            onMoved: flashSeek()
+                        }
+                    }
                 }
             }
             SegmentedControl {

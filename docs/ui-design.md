@@ -106,6 +106,7 @@ Penpotに表現されていない途中の状態や連続操作時の動きは�
 | アイコンの操作ボタン | [`IconAction`](../rust/qml/IconAction.qml)。裸のアイコンは`flat: true`、選択状態は`active`、閉じる操作の赤い反応は`emphasis: IconAction.Destructive`。 |
 | 文字入力・選択・整数入力 | `SettingsField`、`SettingsChoice`、`ThemedSpinBox`。方向キーでの選択と編集を分ける文字入力には`NavigationField`を使う。枠と背景は`ControlSurface`を共有する。 |
 | 数値調整・切り替え | `ThemedSlider`、`ToggleSwitch`。設定の行には`SettingsSlider`、`SettingsToggle`を使う。 |
+| 再生位置の調整 | `SeekSlider`。左右シークの一時的な強調、フォーカスリング、移動先時刻をライブ・録画で共有する。 |
 | 分割された選択肢 | `SegmentedControl`。外枠は`SegmentedFrame`を共有する。 |
 | ポップアップ・カード | 背景に`PanelSurface`、チャンネルカードに`CardSurface`を使う。 |
 | ツールチップ | `ThemedToolTip`。表示条件と位置は呼び出し元が指定する。 |
@@ -115,7 +116,8 @@ Penpotに表現されていない途中の状態や連続操作時の動きは�
 
 番組表のジャンル色・時間帯色は情報を区別するため、[`GuidePalette.qml`](../rust/qml/GuidePalette.qml)で
 管理し、明るいセルに対応する文字色もそこに置く。字幕・実況の描画色と影はコンテンツ描画側が所有する。
-ライブ・録画のシークバーはバッファーや番組範囲の図形を持つため、`ThemedSlider`の背景を
+`SeekSlider`は`ThemedSlider`を拡張し、シーク用の背景・つまみ・時刻表示を定義する。
+ライブ・録画のシークバーはバッファーや番組範囲の図形を持つため、`SeekSlider`の背景を
 置き換えてよい。`SettingsToggle`は共通のスイッチにラベルと説明を組み合わせるため、
 行の背景と内容を定義する。これらの例外は静的検査にも用途とともに列挙する。
 

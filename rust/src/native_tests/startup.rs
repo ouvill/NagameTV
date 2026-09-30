@@ -1758,10 +1758,72 @@ fn check_recording(
             &format!("JSON.parse(player.current_program_data)?.eventId === {event}"),
         )?;
     }
+    // The visible order is reversible, including restoration of the last button.
+    evaluate(engine, "screenshotNotice.dismiss(); true")?;
+    evaluate(engine, "modeNavigation.enter(); true")?;
+    ffi::clickRootKey(engine.pin_mut(), &QString::from("Down"))?;
+    wait_for(
+        app,
+        engine,
+        "recordingTimeline.navigationSlider.visualFocus",
+    )?;
+    ffi::clickRootKey(engine.pin_mut(), &QString::from("Down"))?;
+    wait_for(app, engine, "playerControls.navigating")?;
+    evaluate(engine, "focusHistory.sidebar = root.activeFocusItem; true")?;
+    ffi::clickRootKey(engine.pin_mut(), &QString::from("Up"))?;
+    wait_for(
+        app,
+        engine,
+        "recordingTimeline.navigationSlider.visualFocus",
+    )?;
+    wait_for(
+        app,
+        engine,
+        "recordingTimeline.navigationSlider.handle.children.find(item => item.objectName === 'seekFocusRing').opacity === 1",
+    )?;
+    capture_navigation(app, engine, "seek-recording-focus.png")?;
+    resize_navigation(app, engine, 640, 360)?;
+    capture_navigation(app, engine, "seek-recording-focus-640.png")?;
+    resize_navigation(app, engine, 1280, 720)?;
+    ffi::clickRootKey(engine.pin_mut(), &QString::from("Down"))?;
+    assert!(evaluate(
+        engine,
+        "root.activeFocusItem === focusHistory.sidebar"
+    )?);
+    ffi::clickRootKey(engine.pin_mut(), &QString::from("Up"))?;
+    ffi::clickRootKey(engine.pin_mut(), &QString::from("Up"))?;
+    wait_for(app, engine, "modeNavigation.navigating")?;
     assert!(evaluate(
         engine,
         "!player.seek_to(NaN) && player.paused && player.transport_error.length > 0"
     )?);
+    // A video shortcut reveals feedback without taking focus or pinning controls.
+    // Paused playback intentionally retains its UI, so resume before hiding it.
+    evaluate(
+        engine,
+        "viewerActions.playbackToggle.trigger(); surface.forceActiveFocus(); true",
+    )?;
+    wait_for(app, engine, "player.playing && overlayVisibility.mayHide")?;
+    evaluate(engine, "overlayVisibility.dismiss(); true")?;
+    assert!(evaluate(engine, "!overlayVisibility.controlsVisible")?);
+    ffi::clickRootKey(engine.pin_mut(), &QString::from("Right"))?;
+    assert!(evaluate(
+        engine,
+        "inputContext.videoFocused && overlayVisibility.controlsVisible && !overlayVisibility.pinned && recordingTimeline.navigationSlider.feedbackActive && recordingTimeline.navigationSlider.positionLabelVisible"
+    )?);
+    capture_navigation(app, engine, "seek-recording-shortcut.png")?;
+    wait_for(
+        app,
+        engine,
+        "!recordingTimeline.navigationSlider.feedbackActive",
+    )?;
+    assert!(evaluate(
+        engine,
+        "inputContext.videoFocused && !recordingTimeline.navigationSlider.emphasized"
+    )?);
+    wait_for(app, engine, "!overlayVisibility.controlsVisible")?;
+    evaluate(engine, "viewerActions.playbackToggle.trigger(); true")?;
+    wait_for(app, engine, "player.paused && !player.seeking")?;
     // Real key input must accumulate against the latest target even before the
     // native seek completes, without also firing the video-only shortcuts.
     assert!(evaluate(

@@ -1,5 +1,6 @@
 pragma ComponentBehavior: Bound
 import QtQuick
+import MinimalViewer
 
 Loader {
     id: root
@@ -8,7 +9,10 @@ Loader {
     property Item upNavigation: null
     property Item downNavigation: null
     signal adjustmentFinished
-    readonly property Item navigationSlider: recordingItem ? recordingItem.navigationSlider : liveItem ? liveItem.navigationSlider : null
+    readonly property SeekSlider navigationSlider: recordingItem ? recordingItem.navigationSlider : liveItem ? liveItem.navigationSlider : null
+    function flashSeek() {
+        if (navigationSlider) navigationSlider.flashSeek();
+    }
     function enter(): bool {
         if (!navigationSlider || !navigationSlider.enabled || !navigationSlider.visible) return false;
         navigationSlider.forceActiveFocus(Qt.TabFocusReason);
