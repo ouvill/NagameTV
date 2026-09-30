@@ -6,6 +6,24 @@ import QtQuick.Controls
 ComboBox {
     id: control
     hoverEnabled: true
+    enum Confirmation { Native, Opening }
+    QtObject { id: confirmation; property int phase: SettingsChoice.Native }
+    function confirm(event) {
+        event.accepted = true;
+        if (event.isAutoRepeat) return;
+        confirmation.phase = popup.visible ? SettingsChoice.Native : SettingsChoice.Opening;
+        // Native acceptance preserves currentIndex/currentValue bindings and
+        // emits activated once. Only opening with Enter needs an extra path.
+        if (confirmation.phase === SettingsChoice.Native) event.accepted = false;
+        else popup.open();
+    }
+    Keys.onReturnPressed: function(event) { confirm(event); }
+    Keys.onEnterPressed: function(event) { confirm(event); }
+    Keys.onReleased: function(event) {
+        if (event.key !== Qt.Key_Return && event.key !== Qt.Key_Enter) return;
+        event.accepted = event.isAutoRepeat || confirmation.phase === SettingsChoice.Opening;
+        if (!event.isAutoRepeat) confirmation.phase = SettingsChoice.Native;
+    }
     property url dropdownIcon: "qrc:/qt/qml/MinimalViewer/assets/icons/chevron-down.svg"
     implicitHeight: Theme.controlHeight
     opacity: enabled ? 1 : Theme.disabledOpacity

@@ -17,6 +17,7 @@ Item {
     implicitWidth: content.implicitWidth
     implicitHeight: content.implicitHeight
     readonly property bool inputFocused: serverField.activeFocus
+    readonly property list<Item> navigationItems: [serverField, connectButton, loginButton, cancelButton, browseButton]
 
     function reset() { serverField.text = serverUrl; loginDialog.close(); }
     function focusInput() { serverField.forceActiveFocus(); }
@@ -50,6 +51,7 @@ Item {
         RowLayout {
             spacing: Theme.spaceMd
             ActionButton {
+                id: connectButton
                 objectName: "epgstationConnect"
                 text: qsTranslate("RecordingLibrary", "Connect")
                 emphasis: ActionButton.Primary
@@ -57,12 +59,14 @@ Item {
                 onClicked: root.connectToServer()
             }
             ActionButton {
+                id: loginButton
                 objectName: "epgstationLogin"
                 text: qsTranslate("RecordingLibrary", "Sign in…")
                 enabled: serverField.text.trim().length > 0 && !root.busy
                 onClicked: loginDialog.open()
             }
             ActionButton {
+                id: cancelButton
                 objectName: "epgstationCancel"
                 visible: root.busy
                 text: qsTranslate("RecordingLibrary", "Cancel")
@@ -96,6 +100,7 @@ Item {
             wrapMode: Text.Wrap
         }
         ActionButton {
+            id: browseButton
             objectName: "epgstationBrowse"
             visible: root.connected && !root.busy
             text: qsTranslate("RecordingLibrary", "Open recordings")
@@ -113,6 +118,10 @@ Item {
         background: PanelSurface {}
         onOpened: username.forceActiveFocus()
         onClosed: password.clear()
+        FormNavigation {
+            focusScope: root
+            fields: [username, password, cancelLogin, submitLogin]
+        }
         function signIn() {
             if (root.busy || !username.text.length || !password.text.length) return;
             root.loginRequested(serverField.text.trim(), username.text, password.text);
@@ -153,10 +162,13 @@ Item {
                 Layout.alignment: Qt.AlignRight
                 spacing: Theme.spaceMd
                 ActionButton {
+                    id: cancelLogin
+                    objectName: "epgstationCancelLogin"
                     text: qsTranslate("RecordingLibrary", "Cancel")
                     onClicked: loginDialog.close()
                 }
                 ActionButton {
+                    id: submitLogin
                     objectName: "epgstationSubmitLogin"
                     text: qsTranslate("RecordingLibrary", "Sign in")
                     emphasis: ActionButton.Primary

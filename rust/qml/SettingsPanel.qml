@@ -34,6 +34,87 @@ Popup {
     signal connectionAccepted
     signal recordingSearchReset
     signal modeRequested(int mode)
+    readonly property list<Item> pageFields: {
+        switch (page) {
+        case SettingsPanel.Connection:
+            return [...connectionForm.navigationItems, autoplay, ...liveBufferSettings.navigationItems, ...epgstationConnection.navigationItems];
+        case SettingsPanel.Display:
+            return [languageBox, subtitleDisplay, subtitleOutline, chooseScreenshotDirectory, openScreenshotDirectory,
+                resetScreenshotDirectory, ...screenshotOptions.navigationItems];
+        case SettingsPanel.Comments:
+            return [commentsEnabled, danmakuEnabled, ...commentPresentation.navigationItems,
+                commentSize.navigationItem, commentOpacity.navigationItem, commentSpeed.navigationItem,
+                commentShadow, sendKey, commentCacheLimit, refreshRecordingComments, clearCommentCache];
+        case SettingsPanel.Shortcuts: return [];
+        case SettingsPanel.Diagnostics: return [statsToggle, buildInformation, openLogFolder, ...logProblem.navigationItems];
+        case SettingsPanel.Remote: return remoteSettings.navigationItems;
+        case SettingsPanel.Timeshift:
+            return timeshiftLoader.item ? (timeshiftLoader.item as TimeshiftSettings).navigationItems : [];
+        default: return [];
+        }
+    }
+    function focusCategory(index = root.page) {
+        const category = categoryButtons.itemAt(index);
+        if (!category) return;
+        category.forceActiveFocus(Qt.TabFocusReason);
+        page = index;
+        revealCategory();
+    }
+    function revealCategory() {
+        const category = categoryButtons.itemAt(page);
+        if (!category || !category.activeFocus) return;
+        navigation.contentY = Math.max(0, Math.min(category.y, Math.max(navigation.contentY,
+            category.y + category.height - navigation.height), navigation.contentHeight - navigation.height));
+    }
+    function enterPage() {
+        pages.ensurePolished();
+        if (!formNavigation.enter()) pageScroll.forceActiveFocus(Qt.TabFocusReason);
+    }
+    function enterLast() {
+        if (!formNavigation.enterLast()) pageScroll.forceActiveFocus(Qt.TabFocusReason);
+    }
+    function readPage(offset: int) {
+        const end = Math.max(0, pageFlick.contentHeight - pageFlick.height);
+        if (offset < 0 && formNavigation.fields.some(field => formNavigation.available(field))) { enterLast(); return; }
+        if (offset < 0 && pageFlick.contentY <= 0) { settingsModes.enter(); return; }
+        if (offset > 0 && pageFlick.contentY >= end) { closeSettings.forceActiveFocus(Qt.TabFocusReason); return; }
+        pageFlick.contentY = Math.max(0, Math.min(end, pageFlick.contentY + offset * pageFlick.height * 0.75));
+    }
+    FormNavigation {
+        id: formNavigation
+        scrollView: pageScroll
+        fields: [...settingsProblem.navigationItems, ...root.pageFields]
+        onBoundaryReached: function(key) {
+            if (key === Qt.Key_Up) settingsModes.enter();
+            else if (key === Qt.Key_Left) root.focusCategory();
+            else if (key === Qt.Key_Down) {
+                pageScroll.forceActiveFocus(Qt.TabFocusReason);
+                root.readPage(1);
+            }
+        }
+    }
+    Connections {
+        target: root.visible && formNavigation.currentIndex >= 0 ? formNavigation.focusItem.Keys : null
+        function onEscapePressed(event) {
+            if (!formNavigation.navigating) { event.accepted = false; return; }
+            event.accepted = true;
+            if (event.isAutoRepeat) return;
+            const field = formNavigation.currentField;
+            if (field instanceof ThemedSpinBox && (field as ThemedSpinBox).interaction === ThemedSpinBox.Editing)
+                (field as ThemedSpinBox).toggleEditing();
+            else root.focusCategory();
+        }
+    }
+    Connections {
+        target: root.visible && formNavigation.currentIndex < 0 && formNavigation.containsFocus(pageScroll)
+            ? formNavigation.focusItem.Keys : null
+        function onUpPressed(event) { event.accepted = true; root.readPage(-1); }
+        function onDownPressed(event) { event.accepted = true; root.readPage(1); }
+        function onLeftPressed(event) { event.accepted = true; root.focusCategory(); }
+        function onEscapePressed(event) { event.accepted = true; if (!event.isAutoRepeat) root.focusCategory(); }
+        function onReturnPressed(event) { event.accepted = true; if (!event.isAutoRepeat) closeSettings.forceActiveFocus(Qt.TabFocusReason); }
+        function onEnterPressed(event) { event.accepted = true; if (!event.isAutoRepeat) closeSettings.forceActiveFocus(Qt.TabFocusReason); }
+    }
     function connectToServer() { connectionForm.connectToServer(); }
     function revealEpgstationConnection() {
         if (!root.visible || root.page !== SettingsPanel.Connection || !epgstationConnection.inputFocused) return;
@@ -51,6 +132,9 @@ Popup {
         });
     }
     onPageChanged: {
+        Qt.callLater(function() {
+            if (root.visible && formNavigation.focusItem && !formNavigation.focusItem.visible) root.focusCategory();
+        });
         pageFlick.contentY = 0;
         if (page === SettingsPanel.Comments) backend.comments_open(true);
         if (opened) pageRevealMotion.restart();
@@ -68,12 +152,14 @@ Popup {
         easing.type: Easing.OutCubic
     }
     onAboutToShow: {
+        formNavigation.reset();
         connectionForm.reset();
         epgstationConnection.reset();
         remoteSettings.reset();
         languageError.visible = false;
         if (!backend.server.length) page = SettingsPanel.Connection;
         if (page === SettingsPanel.Comments) backend.comments_open(true);
+        Qt.callLater(function() { root.focusCategory(); formNavigation.reset(); });
     }
     parent: Overlay.overlay
     FolderDialog {
@@ -114,6 +200,7 @@ Popup {
     }
     component Problem: ColumnLayout {
         id: problem
+        readonly property list<Item> navigationItems: [detailsToggle]
         required property string message
         property string details: ""
         property bool expanded: false
@@ -123,6 +210,7 @@ Popup {
         spacing: Theme.spaceSm
         Notice { text: problem.message; color: Theme.warning }
         ActionButton {
+            id: detailsToggle
             objectName: "problemDetailsToggle"
             visible: problem.details.length > 0
             text: problem.expanded ? qsTranslate("Settings", "Hide details") : qsTranslate("Settings", "Show details")
@@ -189,6 +277,7 @@ Popup {
             y: 136
             width: root.navWidth
             height: Math.min(contentHeight, parent.height - y - root.navLeft)
+            onHeightChanged: Qt.callLater(root.revealCategory)
             contentHeight: (root.categories.length - 1) * root.navStep + 40
             clip: true
             flickableDirection: Flickable.VerticalFlick
@@ -205,6 +294,7 @@ Popup {
                 }
             }
             Repeater {
+                id: categoryButtons
                 model: root.categories
                 Button {
                     id: category
@@ -220,6 +310,17 @@ Popup {
                     hoverEnabled: true
                     text: modelData
                     onClicked: root.page = index
+                    Keys.onUpPressed: {
+                        if (index > 0) root.focusCategory(index - 1);
+                        else settingsModes.enter();
+                    }
+                    Keys.onDownPressed: {
+                        if (index + 1 < root.categories.length) root.focusCategory(index + 1);
+                        else closeSettings.forceActiveFocus(Qt.TabFocusReason);
+                    }
+                    Keys.onRightPressed: root.enterPage()
+                    Keys.onReturnPressed: function(event) { if (!event.isAutoRepeat) { root.page = index; root.enterPage(); } }
+                    Keys.onEnterPressed: function(event) { if (!event.isAutoRepeat) { root.page = index; root.enterPage(); } }
                     contentItem: Label {
                         transform: Translate {
                             x: category.down ? 3 : category.hovered && !category.checked ? 2 : 0
@@ -257,6 +358,11 @@ Popup {
         }
         ScrollView {
             id: pageScroll
+            background: Rectangle {
+                color: "transparent"; radius: Theme.controlRadius
+                border.color: Theme.accent
+                border.width: formNavigation.currentIndex < 0 && pageScroll.activeFocus ? 2 : 0
+            }
             opacity: 0.84 + 0.16 * root.pageReveal
             transform: Translate { y: 10 * (1 - root.pageReveal) }
             objectName: "settingsScroll"
@@ -281,6 +387,7 @@ Popup {
                     width: pageFlick.width
                     spacing: Theme.spaceXl
                     Problem {
+                        id: settingsProblem
                         objectName: "settingsError"
                         visible: details.length > 0
                         message: qsTranslate("Settings", "Could not read or save settings. Your changes may not be available the next time you open the app.")
@@ -303,6 +410,7 @@ Popup {
                         }
                         Detail { text: qsTranslate("Settings", "Changing the server stops playback and loads the new channel list.") }
                         SettingsToggle {
+                            id: autoplay
                             objectName: "autoplaySetting"
                             Layout.topMargin: 12
                             Layout.fillWidth: true
@@ -339,6 +447,7 @@ Popup {
                         }
                     }
                     Loader {
+                        id: timeshiftLoader
                         Layout.fillWidth: true
                         active: root.page === SettingsPanel.Timeshift
                         visible: active
@@ -388,6 +497,7 @@ Popup {
                             Layout.fillWidth: true
                             spacing: 0
                             SettingsToggle {
+                                id: subtitleDisplay
                                 objectName: "subtitleDisplay"
                                 Layout.fillWidth: true
                                 text: qsTranslate("Settings", "Show subtitles")
@@ -399,6 +509,7 @@ Popup {
                                 onClicked: root.backend.display_subtitles(checked)
                             }
                             SettingsToggle {
+                                id: subtitleOutline
                                 objectName: "subtitleForceOutline"
                                 Layout.fillWidth: true
                                 text: qsTranslate("Settings", "Always outline subtitles")
@@ -418,6 +529,7 @@ Popup {
                             Layout.fillWidth: true
                             spacing: Theme.spaceMd
                             ActionButton {
+                                id: chooseScreenshotDirectory
                                 objectName: "chooseScreenshotDirectory"
                                 text: qsTranslate("Settings", "Change folder")
                                 onClicked: {
@@ -426,11 +538,13 @@ Popup {
                                 }
                             }
                             ActionButton {
+                                id: openScreenshotDirectory
                                 objectName: "openScreenshotDirectory"
                                 text: qsTranslate("Settings", "Open folder")
                                 onClicked: root.backend.open_screenshot_directory()
                             }
                             ActionButton {
+                                id: resetScreenshotDirectory
                                 objectName: "resetScreenshotDirectory"
                                 emphasis: ActionButton.Quiet
                                 text: qsTranslate("Settings", "Use default folder")
@@ -438,6 +552,7 @@ Popup {
                             }
                         }
                         ScreenshotFormatChoice {
+                            id: screenshotOptions
                             Layout.fillWidth: true
                             backend: root.backend
                         }
@@ -456,6 +571,7 @@ Popup {
                             Layout.fillWidth: true
                             spacing: 0
                             SettingsToggle {
+                                id: commentsEnabled
                                 objectName: "commentsEnabled"
                                 Layout.fillWidth: true
                                 text: qsTranslate("Settings", "Enable live comments")
@@ -467,6 +583,7 @@ Popup {
                                 onClicked: root.backend.enable_comments(checked)
                             }
                             SettingsToggle {
+                                id: danmakuEnabled
                                 objectName: "danmakuEnabled"
                                 Layout.fillWidth: true
                                 text: qsTranslate("Settings", "Show comments over the video")
@@ -477,6 +594,7 @@ Popup {
                         }
                         Heading { Layout.topMargin: 20; text: qsTranslate("Settings", "Comment appearance") }
                         CommentPresentation {
+                            id: commentPresentation
                             Layout.fillWidth: true
                             enabled: root.backend.comments_enabled
                             displayMode: root.backend.comment_display
@@ -491,6 +609,7 @@ Popup {
                             enabled: root.backend.comments_enabled === true
                             spacing: 0
                             SettingsSlider {
+                                id: commentSize
                                 objectName: "commentSize"
                                 Layout.fillWidth: true
                                 text: qsTranslate("Settings", "Text size")
@@ -499,6 +618,7 @@ Popup {
                                 onMoved: function(value) { root.backend.configure_danmaku(root.backend.danmaku_enabled, value, root.backend.comment_opacity, root.backend.comment_speed); }
                             }
                             SettingsSlider {
+                                id: commentOpacity
                                 objectName: "commentOpacity"
                                 Layout.fillWidth: true
                                 text: qsTranslate("Settings", "Text opacity")
@@ -507,6 +627,7 @@ Popup {
                                 onMoved: function(value) { root.backend.configure_danmaku(root.backend.danmaku_enabled, root.backend.comment_font_size, value, root.backend.comment_speed); }
                             }
                             SettingsSlider {
+                                id: commentSpeed
                                 objectName: "commentSpeed"
                                 Layout.fillWidth: true
                                 text: qsTranslate("Main", "Comment speed")
@@ -516,6 +637,7 @@ Popup {
                             }
                         }
                         SettingsToggle {
+                            id: commentShadow
                             objectName: "commentShadow"
                             Layout.fillWidth: true
                             enabled: root.backend.comments_enabled
@@ -555,12 +677,16 @@ Popup {
                                 Layout.fillWidth: true
                                 Detail { text: qsTranslate("Settings", "Storage target (MiB)") }
                                 ThemedSpinBox {
+                                    id: commentCacheLimit
                                     objectName: "commentCacheLimit"
                                     from: 64; to: 65536; stepSize: 64
                                     editable: true
                                     value: root.backend.comment_cache_limit_mib
                                     Accessible.name: qsTranslate("Settings", "Storage target (MiB)")
-                                    onValueModified: root.backend.configure_comment_cache_limit(value)
+                                    onValueModified: {
+                                        root.backend.configure_comment_cache_limit(value);
+                                        value = Qt.binding(function() { return root.backend.comment_cache_limit_mib; });
+                                    }
                                 }
                             }
                             Detail {
@@ -571,12 +697,14 @@ Popup {
                                 Layout.fillWidth: true
                                 spacing: Theme.spaceSm
                                 ActionButton {
+                                    id: refreshRecordingComments
                                     objectName: "refreshRecordingComments"
                                     text: qsTranslate("Settings", "Fetch this program's comments again")
                                     enabled: root.backend.recording && root.backend.comments_enabled && root.backend.danmaku_enabled
                                     onClicked: root.backend.refresh_recording_comments()
                                 }
                                 ActionButton {
+                                    id: clearCommentCache
                                     objectName: "clearCommentCache"
                                     text: qsTranslate("Settings", "Clear unused comments")
                                     onClicked: root.backend.clear_comment_cache()
@@ -611,6 +739,7 @@ Popup {
                         Layout.fillWidth: true
                         spacing: Theme.spaceXl
                         SettingsToggle {
+                            id: statsToggle
                             objectName: "statsVisible"
                             Layout.fillWidth: true
                             text: qsTranslate("Settings", "Show video statistics")
@@ -619,6 +748,7 @@ Popup {
                         }
                         Heading { text: qsTranslate("Settings", "Build information") }
                         TextArea {
+                            id: buildInformation
                             objectName: "buildInformation"
                             Layout.fillWidth: true
                             readOnly: true
@@ -628,8 +758,8 @@ Popup {
                             color: Theme.textSecondary
                             selectionColor: Theme.surfacePressed
                             font.pixelSize: Theme.fontBody
-                            padding: 0
-                            background: null
+                            padding: Theme.spaceSm
+                            background: ControlSurface { focused: buildInformation.activeFocus }
                             text: [
                                 qsTranslate("Settings", "Version: %1").arg(root.buildInfo.version),
                                 qsTranslate("Settings", "Git commit: %1").arg(root.buildInfo.source.kind === "git"
@@ -647,11 +777,13 @@ Popup {
                         }
                         Heading { text: qsTranslate("Settings", "Logs") }
                         ActionButton {
+                            id: openLogFolder
                             objectName: "openLogFolder"
                             text: qsTranslate("Main", "Open log folder")
                             onClicked: root.backend.open_log_folder()
                         }
                         Problem {
+                            id: logProblem
                             objectName: "logError"
                             message: qsTranslate("Settings", "Could not access the logs. Check the error details and try again.")
                             details: root.backend.log_error
@@ -696,18 +828,26 @@ Popup {
                 wrapMode: Text.Wrap
             }
             ActionButton {
+                id: closeSettings
                 objectName: "closeSettings"
                 text: qsTranslate("Settings", "Back to viewing")
                 onClicked: root.close()
+                Keys.onUpPressed: root.enterLast()
+                Keys.onLeftPressed: root.focusCategory()
             }
         }
         ModeNavigation {
+            id: settingsModes
             objectName: "settingsModeNavigation"
             targetWindow: root.targetWindow
             iconDirectory: root.iconDirectory
             mode: ModeNavigation.Settings
             guideEnabled: root.backend.epg_enabled
             onModeRequested: function(mode) { root.modeRequested(mode); }
+            onBoundaryReached: function(key) {
+                if (key === Qt.Key_Down) root.enterPage();
+                else if (key === Qt.Key_Left) root.focusCategory();
+            }
         }
         Loader {
             anchors.fill: parent

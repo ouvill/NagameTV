@@ -12,6 +12,9 @@ TestCase {
     when: windowShown
     Controls { id: gallery; anchors.fill: parent }
     SignalSpy { id: clicked; signalName: "clicked" }
+    QtObject { id: selection; property int index: 0 }
+    SignalSpy { id: activated; signalName: "activated" }
+    TestInputMethod { id: inputEvents }
     function init() {
         failOnWarning(/.*/);
         width = 1280; height = 720;
@@ -59,6 +62,25 @@ TestCase {
         tryCompare(choice.popup, "opened", true);
         keyClick(Qt.Key_Escape);
         tryCompare(choice.popup, "visible", false);
+    }
+    function test_choice_enter_and_external_selection_binding() {
+        const choice = findChild(gallery, "choice");
+        selection.index = 0;
+        choice.currentIndex = Qt.binding(function() { return selection.index; });
+        activated.target = choice; activated.clear();
+        choice.forceActiveFocus(Qt.TabFocusReason);
+        keyPress(Qt.Key_Return); tryCompare(choice.popup, "opened", true);
+        verify(inputEvents.forward_key(Qt.Key_Return, Qt.NoModifier, "", true));
+        verify(choice.popup.opened); compare(activated.count, 0);
+        keyRelease(Qt.Key_Return);
+        keyClick(Qt.Key_Down); keyClick(Qt.Key_Return);
+        tryCompare(choice.popup, "visible", false);
+        compare(activated.count, 1); compare(choice.currentIndex, 1);
+        selection.index = 1; selection.index = 0;
+        compare(choice.currentIndex, 0);
+        keyClick(Qt.Key_Enter); tryCompare(choice.popup, "opened", true);
+        keyClick(Qt.Key_Escape); tryCompare(choice.popup, "visible", false);
+        compare(activated.count, 1);
     }
     function test_form_keyboard_navigation() {
         const slider = findChild(gallery, "slider");

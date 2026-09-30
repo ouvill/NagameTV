@@ -7,6 +7,7 @@ import QtQuick.Layouts
 ColumnLayout {
     id: root
     required property var backend
+    readonly property list<Item> navigationItems: [number, resetButton]
     readonly property var saved: JSON.parse(backend.live_buffer_options)
     enum EditState { Synced, Pending, Saving }
     property int editState: LiveBufferSettings.Synced
@@ -81,6 +82,7 @@ ColumnLayout {
         wrapMode: Text.Wrap
     }
     ActionButton {
+        id: resetButton
         emphasis: ActionButton.Quiet
         objectName: "resetLiveBuffer"
         text: qsTranslate("Settings", "Reset to %1 ms").arg(root.saved.default_ms)

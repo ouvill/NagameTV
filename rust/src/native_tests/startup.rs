@@ -1806,10 +1806,37 @@ fn check_shortcuts(
     }
     evaluate(
         engine,
-        "player.edit_comment_draft(''); root.openSettings(); true",
+        "player.edit_comment_draft(''); root.openSettings(SettingsPanel.Display); true",
     )?;
     wait_for(app, engine, "settings.opened && inputContext.popupOpen")?;
-    ffi::clickRootKey(engine.pin_mut(), &QString::from("Escape"))?;
+    // Enter the form and a nested choice using real window key events. Back
+    // must unwind the choice, form, and settings without reaching playback.
+    for (key, condition) in [
+        (
+            "Return",
+            "root.activeFocusItem.objectName === 'languageSetting'",
+        ),
+        (
+            "Return",
+            "settings.pageFields[0].popup.opened && settings.opened",
+        ),
+        (
+            "Back",
+            "root.activeFocusItem.objectName === 'languageSetting' && !settings.pageFields[0].popup.visible && settings.opened",
+        ),
+        (
+            "Down",
+            "settings.opened && !inputContext.accepts(InputContext.Playback)",
+        ),
+        (
+            "Back",
+            "root.activeFocusItem.objectName === 'settingsCategory1' && settings.opened",
+        ),
+    ] {
+        ffi::clickRootKey(engine.pin_mut(), &QString::from(key))?;
+        wait_for(app, engine, condition)?;
+    }
+    ffi::clickRootKey(engine.pin_mut(), &QString::from("Back"))?;
     wait_for(app, engine, "!settings.visible && !inputContext.popupOpen")?;
     check_directional_navigation(app, engine)?;
     check_sidebar_navigation(app, engine)?;

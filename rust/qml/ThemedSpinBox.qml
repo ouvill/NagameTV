@@ -7,6 +7,33 @@ SpinBox {
     id: control
     implicitWidth: 180; implicitHeight: Theme.controlHeight
     editable: true
+    enum Interaction { Editing, Stepping }
+    property int interaction: ThemedSpinBox.Editing
+    function focusForNavigation() {
+        interaction = ThemedSpinBox.Stepping;
+        forceActiveFocus(Qt.TabFocusReason);
+    }
+    function stepBy(offset: int) {
+        const previous = value;
+        // Native stepping preserves a caller's value binding.
+        if (offset > 0) increase(); else decrease();
+        restoreInput();
+        if (value !== previous) valueModified();
+    }
+    function toggleEditing() {
+        if (interaction === ThemedSpinBox.Stepping) {
+            interaction = ThemedSpinBox.Editing;
+            input.forceActiveFocus(Qt.TabFocusReason);
+            input.selectAll();
+        } else {
+            const previous = value;
+            if (commitInput() && value !== previous) valueModified();
+            restoreInput();
+            input.deselect();
+            focusForNavigation();
+            input.editingFinished();
+        }
+    }
     leftPadding: 40; rightPadding: 40
     font.pixelSize: Theme.fontControl
     opacity: enabled ? 1 : Theme.disabledOpacity
@@ -29,10 +56,13 @@ SpinBox {
         font: control.font
         color: Theme.textPrimary; selectionColor: Theme.accent; selectedTextColor: Theme.textOnAccent
         horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
-        readOnly: !control.editable
+        readOnly: !control.editable || control.interaction === ThemedSpinBox.Stepping
         validator: control.validator
         inputMethodHints: Qt.ImhDigitsOnly
         selectByMouse: true
+        TapHandler {
+            onPressedChanged: if (pressed) control.interaction = ThemedSpinBox.Editing
+        }
     }
     background: ControlSurface {
         focused: control.activeFocus

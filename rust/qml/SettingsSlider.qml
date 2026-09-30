@@ -12,6 +12,7 @@ Item {
     required property real to
     required property real stepSize
     required property real value
+    readonly property alias navigationItem: slider
     signal moved(real value)
     implicitHeight: Math.max(56, row.implicitHeight + 24)
     RowLayout {
@@ -27,6 +28,7 @@ Item {
             wrapMode: Text.Wrap
         }
         ThemedSlider {
+            id: slider
             objectName: "settingSlider"
             Layout.preferredWidth: Math.min(320, root.width * 0.42)
             from: root.from; to: root.to; stepSize: root.stepSize

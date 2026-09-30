@@ -16,6 +16,7 @@ ColumnLayout {
         : phase === ConnectionForm.SaveFailed ? backend.settings_error : ""
     property bool detailsVisible: false
     readonly property bool busy: phase === ConnectionForm.Checking || backend.loading
+    readonly property list<Item> navigationItems: [server, detailsToggle, action, setupHelp]
     signal completed
     spacing: Theme.spaceLg
 
@@ -112,6 +113,7 @@ ColumnLayout {
         text: qsTranslate("Connection", "Choose a channel to start watching. You can change subtitles and comments later in Settings.")
     }
     ActionButton {
+        id: detailsToggle
         objectName: "connectionDetailsToggle"
         visible: root.errorDetails.length > 0
         text: root.detailsVisible ? qsTranslate("Settings", "Hide details") : qsTranslate("Settings", "Show details")
@@ -139,6 +141,7 @@ ColumnLayout {
         }
     }
     ActionButton {
+        id: setupHelp
         objectName: "serverSetupHelp"
         visible: root.presentation === ConnectionForm.Setup
         Layout.alignment: Qt.AlignHCenter

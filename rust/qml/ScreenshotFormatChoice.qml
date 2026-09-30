@@ -7,6 +7,7 @@ import QtQuick.Layouts
 ColumnLayout {
     id: root
     required property var backend
+    readonly property list<Item> navigationItems: [formats, webpLossless, number, parameterSlider]
     readonly property string value: backend.screenshot_format
     readonly property var parameters: JSON.parse(backend.screenshot_options)
     readonly property bool lossless: parameters.webp_mode === "lossless"
@@ -20,6 +21,7 @@ ColumnLayout {
         backend.configure_screenshot_options(root.value, value, lossless);
     }
     SegmentedControl {
+        id: formats
         objectName: "screenshotFormats"
         objectNamePrefix: "screenshotFormat_"
         Layout.fillWidth: true
@@ -41,6 +43,7 @@ ColumnLayout {
         wrapMode: Text.Wrap
     }
     SettingsToggle {
+        id: webpLossless
         objectName: "screenshotWebpLossless"
         Layout.fillWidth: true
         visible: root.value === "webp"
@@ -68,10 +71,14 @@ ColumnLayout {
                 to: root.parameters.ranges[root.value].max
                 value: root.parameterValue
                 Accessible.name: root.parameterLabel
-                onValueModified: root.changeParameter(value)
+                onValueModified: {
+                    root.changeParameter(value);
+                    value = Qt.binding(function() { return root.parameterValue; });
+                }
             }
         }
         ThemedSlider {
+            id: parameterSlider
             objectName: "screenshotParameterSlider"
             Layout.fillWidth: true
             from: number.from; to: number.to; stepSize: 1

@@ -7,6 +7,7 @@ import QtQuick.Layouts
 ColumnLayout {
     id: root
     required property var backend
+    readonly property list<Item> navigationItems: [modeChoice, storage, memory, files, minutes]
     readonly property var saved: JSON.parse(backend.timeshift_limits)
     enum EditState { Synced, Pending, Saving }
     property int editState: TimeshiftSettings.Synced
@@ -93,6 +94,7 @@ ColumnLayout {
     spacing: Theme.spaceXl
 
     SegmentedControl {
+        id: modeChoice
         objectName: "timeshiftMode"
         objectNamePrefix: "timeshift-mode-"
         Layout.fillWidth: true

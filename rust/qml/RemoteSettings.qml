@@ -7,6 +7,7 @@ import QtQuick.Layouts
 ColumnLayout {
     id: root
     required property var backend
+    readonly property list<Item> navigationItems: [enabledToggle, addressField, portField, applyButton]
     property bool invalidInput: false
     spacing: Theme.spaceLg
     function reset() {

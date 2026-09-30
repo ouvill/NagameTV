@@ -51,6 +51,16 @@ Item {
                     live_buffer_options = JSON.stringify(options);
                     return true;
                 }
+                property string timeshift_storage: "pause_memory"
+                property string timeshift_limits: JSON.stringify({memory_mib:256, filesystem_mib:1024, minutes:60,
+                    min_mib:64, max_mib:65536, min_minutes:1, max_minutes:1440})
+                property real timeshift_bytes_per_second: 0
+                function configure_timeshift_options(storage, memory, files, minutes) {
+                    const options = JSON.parse(timeshift_limits);
+                    options.memory_mib = memory; options.filesystem_mib = files; options.minutes = minutes;
+                    timeshift_storage = storage; timeshift_limits = JSON.stringify(options);
+                    return true;
+                }
                 property bool remote_enabled: false
                 property string remote_address: "0.0.0.0"
                 property int remote_port: 50051
@@ -166,6 +176,7 @@ Item {
             SignalSpy { id: catalogues; target: backend; signalName: "catalogueRequested" }
             SignalSpy { id: logins; target: backend; signalName: "loginRequested" }
             SignalSpy { id: recordingResets; target: panel; signalName: "recordingSearchReset" }
+            TestInputMethod { id: inputEvents }
             function init() {
                 failOnWarning(/.*/);
                 host.requestActivate();
@@ -189,6 +200,10 @@ Item {
                 backend.subtitle_display = true;
                 backend.epg_enabled = true;
                 backend.autoplay = false;
+                backend.configure_live_buffer(250);
+                backend.configure_timeshift_options("pause_memory", 256, 1024, 60);
+                backend.comment_display = "scroll"; backend.comment_placement = "sequential";
+                backend.comment_density = "normal";
                 backend.remote_enabled = false;
                 backend.remote_address = "0.0.0.0";
                 backend.remote_port = 50051;
@@ -224,6 +239,140 @@ Item {
                 findChild(panel.contentItem, "settingsFlickable").contentY = 0;
             }
             function cleanup() { panel.close(); tryCompare(panel, "visible", false); }
+            function expectFocus(name) {
+                const item = findChild(panel.contentItem, name);
+                verify(item !== null, name);
+                tryVerify(() => item.activeFocus, 5000, name + ": focus is " + (host.activeFocusItem ? host.activeFocusItem.objectName : "null"));
+                return item;
+            }
+            function keyboardPage(index) {
+                expectFocus("settingsCategory" + panel.page);
+                while (panel.page < index) keyClick(Qt.Key_Down);
+                while (panel.page > index) keyClick(Qt.Key_Up);
+                expectFocus("settingsCategory" + index);
+                keyClick(Qt.Key_Return);
+            }
+            function test_dpad_categories_rows_numeric_editing_and_back() {
+                expectFocus("settingsCategory0");
+                keyClick(Qt.Key_Right); expectFocus("serverField");
+                keyClick(Qt.Key_Down); expectFocus("connectServer");
+                keyClick(Qt.Key_Down); expectFocus("autoplaySetting");
+                keyClick(Qt.Key_Return); compare(backend.autoplay, true);
+                verify(inputEvents.forward_key(Qt.Key_Return, Qt.NoModifier, "", true));
+                compare(backend.autoplay, true);
+                keyClick(Qt.Key_Down);
+                const number = expectFocus("liveBufferMilliseconds");
+                keyClick(Qt.Key_Right); compare(number.value, 251);
+                keyClick(Qt.Key_Left); compare(number.value, 250);
+                keyClick(Qt.Key_Return);
+                compare(number.interaction, ThemedSpinBox.Editing);
+                keyClick(Qt.Key_3); keyClick(Qt.Key_0); keyClick(Qt.Key_0);
+                keyClick(Qt.Key_Return);
+                compare(number.interaction, ThemedSpinBox.Stepping);
+                compare(JSON.parse(backend.live_buffer_options).milliseconds, 300);
+                keyClick(Qt.Key_Down); expectFocus("resetLiveBuffer");
+                compare(number.value, 300); // Vertical movement must not alter values.
+                keyClick(Qt.Key_Down); expectFocus("epgstationServer");
+                const flick = findChild(panel.contentItem, "settingsFlickable");
+                tryVerify(() => flick.contentY > 0);
+                const field = findChild(panel.contentItem, "epgstationServer");
+                tryVerify(() => field.mapToItem(flick, 0, 0).y >= 0
+                    && field.mapToItem(flick, 0, 0).y + field.height <= flick.height);
+                keyClick(Qt.Key_Back); expectFocus("settingsCategory0");
+                keyClick(Qt.Key_Right); expectFocus("epgstationServer");
+                compare(connections.count, 0); compare(catalogues.count, 0);
+                keyClick(Qt.Key_Back); expectFocus("settingsCategory0");
+                keyClick(Qt.Key_Back); tryCompare(panel, "visible", false);
+            }
+            function test_dpad_choice_popup_owns_arrows_and_back() {
+                keyboardPage(SettingsPanel.Display);
+                const language = expectFocus("languageSetting");
+                keyClick(Qt.Key_Return); tryCompare(language.popup, "opened", true);
+                keyClick(Qt.Key_Up);
+                verify(language.popup.opened);
+                keyClick(Qt.Key_Back); tryCompare(language.popup, "visible", false);
+                verify(panel.opened); expectFocus("languageSetting");
+                keyClick(Qt.Key_Down); expectFocus("subtitleDisplay");
+                backend.subtitles_enabled = false;
+                language.forceActiveFocus(Qt.TabFocusReason);
+                keyClick(Qt.Key_Down); expectFocus("chooseScreenshotDirectory");
+                keyClick(Qt.Key_Right); expectFocus("openScreenshotDirectory");
+                keyClick(Qt.Key_Left); expectFocus("chooseScreenshotDirectory");
+                keyClick(Qt.Key_Back); expectFocus("settingsCategory1");
+            }
+            function test_dpad_comments_skip_disabled_rows_and_adjust_without_scrolling_values() {
+                keyboardPage(SettingsPanel.Comments);
+                expectFocus("commentsEnabled");
+                keyClick(Qt.Key_Down); expectFocus("commentSendKey");
+                keyClick(Qt.Key_Up); expectFocus("commentsEnabled");
+                keyClick(Qt.Key_Return); compare(backend.comments_enabled, true);
+                keyClick(Qt.Key_Down); expectFocus("danmakuEnabled");
+                keyClick(Qt.Key_Down); expectFocus("motion-scroll");
+                keyClick(Qt.Key_Right); compare(backend.comment_display, "pop");
+                keyClick(Qt.Key_Down); expectFocus("placement-sequential");
+                keyClick(Qt.Key_Down); expectFocus("density-normal");
+                keyClick(Qt.Key_Down);
+                const slider = findChild(findChild(panel.contentItem, "commentSize"), "settingSlider");
+                tryCompare(slider, "activeFocus", true);
+                keyClick(Qt.Key_Right); compare(backend.comment_font_size, 22);
+                keyClick(Qt.Key_Down); compare(backend.comment_font_size, 22);
+                keyClick(Qt.Key_Back); expectFocus("settingsCategory2");
+            }
+            function test_dpad_readonly_page_header_and_footer() {
+                keyboardPage(SettingsPanel.Shortcuts);
+                expectFocus("settingsScroll");
+                const flick = findChild(panel.contentItem, "settingsFlickable");
+                keyClick(Qt.Key_Down); tryVerify(() => flick.contentY > 0, 5000,
+                    JSON.stringify({focus: host.activeFocusItem.objectName, height: flick.height, contentHeight: flick.contentHeight}));
+                for (let i = 0; i < 20 && !findChild(panel.contentItem, "closeSettings").activeFocus; ++i) keyClick(Qt.Key_Down);
+                expectFocus("closeSettings");
+                keyClick(Qt.Key_Up); expectFocus("settingsScroll");
+                keyClick(Qt.Key_Left); expectFocus("settingsCategory3");
+                while (panel.page > 0) keyClick(Qt.Key_Up);
+                keyClick(Qt.Key_Up);
+                const header = findChild(panel.contentItem, "settingsModeNavigation");
+                tryCompare(findChild(header, "settingsModeButton"), "activeFocus", true);
+                keyClick(Qt.Key_Down); expectFocus("serverField");
+            }
+            function test_dpad_timeshift_hidden_fields_and_remote_form() {
+                keyboardPage(SettingsPanel.Timeshift);
+                expectFocus("timeshift-mode-pause");
+                keyClick(Qt.Key_Left); compare(backend.timeshift_storage, "off");
+                keyClick(Qt.Key_Down);
+                verify(!findChild(panel.contentItem, "timeshiftMemoryLimit").activeFocus);
+                keyClick(Qt.Key_Back); expectFocus("settingsCategory6");
+                keyClick(Qt.Key_Right); expectFocus("timeshift-mode-off");
+                keyClick(Qt.Key_Right); compare(backend.timeshift_storage, "pause_memory");
+                keyClick(Qt.Key_Down); expectFocus("timeshift-memory");
+                keyClick(Qt.Key_Right); compare(backend.timeshift_storage, "pause_filesystem");
+                keyClick(Qt.Key_Down); const number = expectFocus("timeshiftFileLimit");
+                keyClick(Qt.Key_Right); compare(number.value, 1025);
+                keyClick(Qt.Key_Down); expectFocus("timeshiftMinutes");
+                keyClick(Qt.Key_Back); expectFocus("settingsCategory6");
+                keyboardPage(SettingsPanel.Remote);
+                expectFocus("remoteEnabled");
+                keyClick(Qt.Key_Down); expectFocus("remoteAddress");
+                keyClick(Qt.Key_Down); expectFocus("remotePort");
+                keyClick(Qt.Key_Down); expectFocus("applyRemote");
+                compare(remoteRequests.count, 0);
+            }
+            function test_dpad_login_dialog_is_separate_from_page_navigation() {
+                keyClick(Qt.Key_Right);
+                const login = findChild(panel.contentItem, "epgstationLogin");
+                for (let i = 0; i < 12 && !login.activeFocus; ++i) keyClick(Qt.Key_Down);
+                expectFocus("epgstationLogin");
+                keyClick(Qt.Key_Return);
+                const dialog = findChild(panel, "epgstationLoginDialog");
+                tryCompare(dialog, "opened", true);
+                const username = findChild(dialog, "epgstationUsername");
+                const password = findChild(dialog, "epgstationPassword");
+                tryCompare(username, "activeFocus", true);
+                keyClick(Qt.Key_Down); tryCompare(password, "activeFocus", true);
+                keyClick(Qt.Key_Down); tryCompare(findChild(dialog, "epgstationCancelLogin"), "activeFocus", true);
+                keyClick(Qt.Key_Up); tryCompare(password, "activeFocus", true);
+                keyClick(Qt.Key_Back); tryCompare(dialog, "visible", false);
+                verify(panel.opened); compare(logins.count, 0);
+            }
             function test_navigation_keeps_settings_selected_and_respects_guide_availability() {
                 const navigation = findChild(panel.contentItem, "settingsModeNavigation");
                 compare(navigation.mode, ModeNavigation.Settings);
@@ -309,10 +458,14 @@ Item {
                 backend.comment_send_on_enter = false;
                 compare(choice.currentIndex, 0);
                 choice.forceActiveFocus();
+                keyClick(Qt.Key_Return); tryCompare(choice.popup, "opened", true);
                 keyClick(Qt.Key_Down);
+                keyClick(Qt.Key_Return); tryCompare(choice.popup, "visible", false);
                 compare(backend.comment_send_on_enter, true);
                 compare(choice.currentIndex, 1);
+                keyClick(Qt.Key_Return); tryCompare(choice.popup, "opened", true);
                 keyClick(Qt.Key_Up);
+                keyClick(Qt.Key_Return); tryCompare(choice.popup, "visible", false);
                 compare(backend.comment_send_on_enter, false);
                 backend.comment_send_on_enter = true;
                 compare(choice.currentIndex, 1);
@@ -332,8 +485,8 @@ Item {
                 const limit = findChild(panel.contentItem, "commentCacheLimit");
                 backend.comment_cache_limit_mib = 1024;
                 compare(limit.value, 1024);
-                limit.forceActiveFocus();
-                keyClick(Qt.Key_Up);
+                limit.focusForNavigation();
+                keyClick(Qt.Key_Right);
                 compare(backend.comment_cache_limit_mib, 1088);
                 const refresh = findChild(panel.contentItem, "refreshRecordingComments");
                 backend.recording = false;
@@ -602,12 +755,16 @@ Item {
                 const slider = findChild(panel.contentItem, "screenshotParameterSlider");
                 const lossless = findChild(panel.contentItem, "screenshotWebpLossless");
                 compare(number.value, 6); compare(number.from, 0); compare(number.to, 9);
-                number.forceActiveFocus(); keyClick(Qt.Key_Up);
+                number.focusForNavigation(); keyClick(Qt.Key_Right);
                 compare(JSON.parse(backend.screenshot_options).png_compression, 7);
                 compare(slider.value, 7);
+                keyClick(Qt.Key_Return);
+                keyClick(Qt.Key_8);
+                keyClick(Qt.Key_Return);
+                compare(JSON.parse(backend.screenshot_options).png_compression, 8);
                 backend.configure_screenshot_format("jpg");
                 compare(number.value, 90); compare(number.to, 100);
-                number.forceActiveFocus(); keyClick(Qt.Key_Down);
+                number.focusForNavigation(); keyClick(Qt.Key_Left);
                 backend.configure_screenshot_format("webp");
                 compare(number.value, 90); compare(number.to, 99);
                 lossless.forceActiveFocus(); keyClick(Qt.Key_Space);
@@ -616,7 +773,7 @@ Item {
                 keyClick(Qt.Key_Space);
                 verify(number.visible); compare(number.value, 90);
                 backend.configure_screenshot_format("jpg"); compare(number.value, 89);
-                backend.configure_screenshot_format("png"); compare(number.value, 7);
+                backend.configure_screenshot_format("png"); compare(number.value, 8);
             }
             function test_screenshot_folder_controls_follow_setting_and_show_errors() {
                 selectPage(SettingsPanel.Display);
