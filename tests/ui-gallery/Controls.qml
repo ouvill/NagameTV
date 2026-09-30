@@ -89,6 +89,7 @@ Rectangle {
                 ColumnLayout {
                     Layout.fillWidth: true
                     SettingsField { objectName: "field"; Layout.fillWidth: true; placeholderText: "入力欄 / Text field" }
+                    NavigationField { objectName: "navigationField"; Layout.fillWidth: true; placeholderText: "検索 / Search" }
                     SettingsField { Layout.fillWidth: true; text: "無効 / Disabled"; enabled: false }
                     SettingsToggle { Layout.fillWidth: true; text: "設定項目 / Setting"; description: "選択に必要な説明" }
                 }

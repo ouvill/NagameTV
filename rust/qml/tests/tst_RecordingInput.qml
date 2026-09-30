@@ -25,6 +25,7 @@ TestCase {
     RecordingInput { id: input; anchors.fill: parent; backend: backend }
     SignalSpy { id: started; target: input; signalName: "started" }
     SignalSpy { id: library; target: input; signalName: "libraryRequested" }
+    TestInputMethod { id: inputEvents }
     function init() {
         failOnWarning(/.*/);
         backend.calls = 0;
@@ -88,6 +89,46 @@ TestCase {
         tryCompare(dialog, "opened", true);
         dialog.reject();
         compare(backend.calls, 1);
+    }
+    function test_directional_url_editing_and_nested_back() {
+        input.open();
+        const dialog = findChild(input, "recordingSource");
+        const field = findChild(input, "recordingUrl");
+        tryCompare(dialog, "opened", true);
+        field.text = "http://example.test/video.ts";
+        compare(field.interaction, NavigationField.Navigating);
+        keyClick(Qt.Key_Up);
+        if (findChild(input, "recordingBrowseEpgstation").activeFocus) keyClick(Qt.Key_Left);
+        verify(findChild(input, "recordingChooseFile").activeFocus);
+        keyClick(Qt.Key_Right);
+        verify(findChild(input, "recordingBrowseEpgstation").activeFocus);
+        keyClick(Qt.Key_Down);
+        verify(field.activeFocus);
+        keyClick(Qt.Key_Return);
+        compare(field.interaction, NavigationField.Editing);
+        verify(inputEvents.forward_key(Qt.Key_Return, Qt.NoModifier, "", true));
+        compare(backend.calls, 0);
+        field.cursorPosition = field.text.length;
+        keyClick(Qt.Key_Left);
+        compare(field.cursorPosition, field.text.length - 1);
+        keyClick(Qt.Key_Down);
+        verify(field.activeFocus);
+        verify(inputEvents.compose("けんさく", ""));
+        keyClick(Qt.Key_Return);
+        compare(backend.calls, 0); verify(dialog.opened);
+        verify(inputEvents.compose("けんさく", ""));
+        keyClick(Qt.Key_Escape);
+        compare(field.interaction, NavigationField.Editing);
+        verify(dialog.opened);
+        verify(inputEvents.compose("", "検索"));
+        keyClick(Qt.Key_Escape);
+        compare(field.interaction, NavigationField.Navigating);
+        verify(dialog.opened);
+        keyClick(Qt.Key_Down);
+        verify(findChild(input, "recordingCancelSource").activeFocus);
+        keyClick(Qt.Key_Return);
+        tryCompare(dialog, "visible", false);
+        compare(backend.calls, 0);
     }
     function test_rejected_file_reports_plain_text_without_starting() {
         backend.accept = false;

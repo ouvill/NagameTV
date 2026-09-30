@@ -47,7 +47,7 @@ pub(super) fn wait_for(
         }
         if Instant::now() >= deadline {
             let state = ffi::evaluate_root(engine.pin_mut(), &QString::from(
-                "JSON.stringify({playing: player.playing, loading: player.recording_loading, fileError: player.file_error, playbackError: player.playback_error, duration: player.duration_ms, position: player.position_ms, seekable: player.seekable, subtitles: player.subtitles_active, program: player.current_program_data, video: JSON.parse(player.video_stats()), epgstation: {busy: player.epgstation_busy, loaded: player.epgstation_loaded, count: player.recordings.count, error: player.epgstation_error}})",
+                "JSON.stringify({focus: root.activeFocusItem ? root.activeFocusItem.objectName : null, playing: player.playing, loading: player.recording_loading, fileError: player.file_error, playbackError: player.playback_error, duration: player.duration_ms, position: player.position_ms, seekable: player.seekable, subtitles: player.subtitles_active, program: player.current_program_data, video: JSON.parse(player.video_stats()), epgstation: {busy: player.epgstation_busy, loaded: player.epgstation_loaded, count: player.recordings.count, error: player.epgstation_error}})",
             ))?.value::<QString>().ok_or("missing timeout snapshot")?;
             return Err(format!("Timed out: {source}; playback: {state}").into());
         }
@@ -800,6 +800,141 @@ fn window(
     Ok(())
 }
 
+fn check_recording_directions(
+    app: &QGuiApplication,
+    engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
+) -> TestResult {
+    const FIELD: &str = "root.activeFocusItem.objectName === 'epgstationKeyword'";
+    // ListView forwards focus into its current delegate, while retaining its
+    // own activeFocus. The focused row carries the stable recording ID.
+    const LIST: &str =
+        "root.activeFocusItem !== null && root.activeFocusItem.recordedId !== undefined";
+    evaluate(engine, "recordingLibrary.activate(); true")?;
+    ffi::clickRootKey(engine.pin_mut(), &QString::from("Up"))?;
+    wait_for(
+        app,
+        engine,
+        "root.activeFocusItem.objectName === 'libraryOpenFile' || root.activeFocusItem.objectName === 'libraryOpenUrl'",
+    )?;
+    if evaluate(
+        engine,
+        "root.activeFocusItem.objectName === 'libraryOpenUrl'",
+    )? {
+        ffi::clickRootKey(engine.pin_mut(), &QString::from("Left"))?;
+    }
+    for (key, condition) in [
+        (
+            "Right",
+            "root.activeFocusItem.objectName === 'libraryOpenUrl'",
+        ),
+        (
+            "Return",
+            "root.activeFocusItem.objectName === 'recordingUrl' && inputContext.popupOpen",
+        ),
+        (
+            "Return",
+            "root.activeFocusItem.interaction === NavigationField.Editing",
+        ),
+        (
+            "Back",
+            "root.activeFocusItem.interaction === NavigationField.Navigating && inputContext.popupOpen",
+        ),
+        (
+            "Back",
+            "root.activeFocusItem.objectName === 'libraryOpenUrl' && !inputContext.popupOpen",
+        ),
+        ("Down", FIELD),
+        (
+            "Return",
+            "root.activeFocusItem.interaction === NavigationField.Editing",
+        ),
+        (
+            "Back",
+            "root.activeFocusItem.interaction === NavigationField.Navigating && recordingLibrary.visible",
+        ),
+    ] {
+        ffi::clickRootKey(engine.pin_mut(), &QString::from(key))?;
+        wait_for(app, engine, condition)?;
+    }
+    let keyword = serde_json::to_string(crate::startup_test_server::PAGED_LIBRARY_KEYWORD)?;
+    // Search from the editor, including an empty result and two-page catalogue.
+    ffi::clickRootKey(engine.pin_mut(), &QString::from("Return"))?;
+    evaluate(
+        engine,
+        &format!("root.activeFocusItem.text = {keyword}; true"),
+    )?;
+    ffi::clickRootKey(engine.pin_mut(), &QString::from("Return"))?;
+    let page_size = crate::epgstation::PAGE_SIZE;
+    wait_for(
+        app,
+        engine,
+        &format!("!player.epgstation_busy && player.recordings.count === {page_size}"),
+    )?;
+    ffi::clickRootKey(engine.pin_mut(), &QString::from("Down"))?;
+    wait_for(
+        app,
+        engine,
+        &format!("{LIST} && root.activeFocusItem.index === 0"),
+    )?;
+    ffi::clickRootKey(engine.pin_mut(), &QString::from("Return"))?;
+    assert!(evaluate(
+        engine,
+        "recordingLibrary.visible && !player.recording_loading && !inputContext.popupOpen"
+    )?);
+    for _ in 0..page_size {
+        ffi::clickRootKey(engine.pin_mut(), &QString::from("Down"))?;
+    }
+    wait_for(
+        app,
+        engine,
+        "root.activeFocusItem.objectName === 'epgstationNext'",
+    )?;
+    ffi::clickRootKey(engine.pin_mut(), &QString::from("Return"))?;
+    wait_for(
+        app,
+        engine,
+        &format!(
+            "{LIST} && !player.epgstation_busy && player.epgstation_page === '2' && player.recordings.count === 2 && root.activeFocusItem.index === 0"
+        ),
+    )?;
+    for _ in 0..2 {
+        ffi::clickRootKey(engine.pin_mut(), &QString::from("Down"))?;
+    }
+    wait_for(
+        app,
+        engine,
+        "root.activeFocusItem.objectName === 'epgstationPrevious'",
+    )?;
+    ffi::clickRootKey(engine.pin_mut(), &QString::from("Return"))?;
+    wait_for(
+        app,
+        engine,
+        &format!(
+            "{LIST} && !player.epgstation_busy && player.epgstation_page === '1' && player.recordings.count === {page_size}"
+        ),
+    )?;
+    ffi::clickRootKey(engine.pin_mut(), &QString::from("Up"))?;
+    wait_for(app, engine, FIELD)?;
+    ffi::clickRootKey(engine.pin_mut(), &QString::from("Return"))?;
+    evaluate(
+        engine,
+        "root.activeFocusItem.text = 'no matching recording'; true",
+    )?;
+    ffi::clickRootKey(engine.pin_mut(), &QString::from("Return"))?;
+    wait_for(
+        app,
+        engine,
+        "!player.epgstation_busy && player.recordings.count === 0",
+    )?;
+    ffi::clickRootKey(engine.pin_mut(), &QString::from("Down"))?;
+    assert!(evaluate(engine, FIELD)?);
+    ffi::clickRootKey(engine.pin_mut(), &QString::from("Return"))?;
+    evaluate(engine, "root.activeFocusItem.text = ''; true")?;
+    ffi::clickRootKey(engine.pin_mut(), &QString::from("Return"))?;
+    wait_for_epgstation(app, engine)?;
+    Ok(())
+}
+
 fn check_epgstation_library(
     app: &QGuiApplication,
     engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
@@ -934,12 +1069,14 @@ fn check_epgstation_library(
             ),
         )?;
     }
-    assert!(evaluate(
+    check_recording_directions(app, engine)?;
+    ffi::clickRootKey(engine.pin_mut(), &QString::from("Down"))?;
+    wait_for(
+        app,
         engine,
-        &format!(
-            "{FIND} const play = find(recordingLibrary, 'epgstationPlay'); const enabled = play.enabled; play.clicked(); enabled"
-        )
-    )?);
+        "root.activeFocusItem !== null && root.activeFocusItem.recordedId !== undefined",
+    )?;
+    ffi::clickRootKey(engine.pin_mut(), &QString::from("Return"))?;
     wait_for(
         app,
         engine,
@@ -1113,12 +1250,14 @@ fn check_http_recording(
     let dialog =
         "Array.from(recordingInput.data).find(item => item.objectName === 'recordingSource')";
     wait_for(app, engine, &format!("{dialog}.opened"))?;
-    evaluate(
+    wait_for(
+        app,
         engine,
-        &format!(
-            "Array.from({dialog}.contentItem.children).find(item => item.objectName === 'recordingUrl').text = {url}; recordingInput.submitUrl(); true"
-        ),
+        "root.activeFocusItem.objectName === 'recordingUrl'",
     )?;
+    ffi::clickRootKey(engine.pin_mut(), &QString::from("Return"))?;
+    evaluate(engine, &format!("root.activeFocusItem.text = {url}; true"))?;
+    ffi::clickRootKey(engine.pin_mut(), &QString::from("Return"))?;
     wait_for(
         app,
         engine,

@@ -14,6 +14,8 @@ TestCase {
     SignalSpy { id: clicked; signalName: "clicked" }
     QtObject { id: selection; property int index: 0 }
     SignalSpy { id: activated; signalName: "activated" }
+    SignalSpy { id: accepted; signalName: "accepted" }
+    SignalSpy { id: navigation; signalName: "navigationRequested" }
     TestInputMethod { id: inputEvents }
     function init() {
         failOnWarning(/.*/);
@@ -97,5 +99,43 @@ TestCase {
         toggle.forceActiveFocus(Qt.TabFocusReason);
         keyClick(Qt.Key_Space);
         compare(toggle.checked, true);
+    }
+    function test_field_selection_editing_mouse_tab_and_ime() {
+        const field = findChild(gallery, "navigationField");
+        accepted.target = field; accepted.clear();
+        navigation.target = field; navigation.clear();
+        field.text = "draft";
+        field.focusForNavigation();
+        verify(field.readOnly); verify(!field.cursorVisible);
+        keyClick(Qt.Key_A);
+        compare(field.text, "draft");
+        keyClick(Qt.Key_Right);
+        compare(navigation.count, 1);
+        keyPress(Qt.Key_Return);
+        verify(!field.readOnly); verify(field.cursorVisible);
+        verify(inputEvents.forward_key(Qt.Key_Return, Qt.NoModifier, "", true));
+        keyRelease(Qt.Key_Return);
+        compare(accepted.count, 0);
+        field.cursorPosition = field.text.length;
+        keyClick(Qt.Key_Left);
+        compare(field.cursorPosition, field.text.length - 1);
+        compare(navigation.count, 1);
+        verify(inputEvents.compose("検索", ""));
+        verify(field.inputMethodComposing);
+        keyClick(Qt.Key_Escape);
+        compare(field.interaction, NavigationField.Editing);
+        verify(inputEvents.compose("", "検索"));
+        keyClick(Qt.Key_Return);
+        compare(accepted.count, 1);
+        keyClick(Qt.Key_Escape);
+        verify(field.readOnly); verify(!field.cursorVisible);
+        verify(field.text.includes("検索"));
+        mouseClick(field);
+        verify(!field.readOnly);
+        field.focusForNavigation();
+        findChild(gallery, "field").forceActiveFocus(Qt.TabFocusReason);
+        keyClick(Qt.Key_Tab);
+        verify(field.activeFocus, "Tab focus: " + field.Window.window.activeFocusItem.objectName);
+        verify(!field.readOnly);
     }
 }

@@ -13,6 +13,7 @@ TestCase {
     TestRecordingFiles { id: fixture }
     RecordingFiles { id: dialog; files: fixture.files; recordedId: "9007199254740993" }
     SignalSpy { id: chosen; target: dialog; signalName: "fileChosen" }
+    TestInputMethod { id: inputEvents }
     function init() {
         failOnWarning(/.*/);
         fixture.populate();
@@ -41,6 +42,18 @@ TestCase {
         dialog.open();
         tryCompare(dialog, "opened", true);
         fixture.clear();
+        tryCompare(dialog, "visible", false);
+        compare(chosen.count, 0);
+    }
+    function test_dpad_cancel_and_repeat_do_not_choose_a_file() {
+        const list = findChild(dialog, "recordingFileList");
+        verify(inputEvents.forward_key(Qt.Key_Return, Qt.NoModifier, "", true));
+        compare(chosen.count, 0);
+        keyClick(Qt.Key_Down); keyClick(Qt.Key_Down);
+        verify(findChild(dialog, "recordingFilesCancel").activeFocus);
+        keyClick(Qt.Key_Up);
+        verify(list.activeFocus); compare(list.currentIndex, 1);
+        keyClick(Qt.Key_Down); keyClick(Qt.Key_Return);
         tryCompare(dialog, "visible", false);
         compare(chosen.count, 0);
     }

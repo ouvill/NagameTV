@@ -11,6 +11,7 @@ use std::{
 use wiremock::{Mock, MockServer, Request, Respond, ResponseTemplate, matchers::any};
 
 pub(super) const LIBRARY_RECORDINGS: usize = 12;
+pub(super) const PAGED_LIBRARY_KEYWORD: &str = "directional-pages";
 
 pub(super) struct Server {
     mock: MockServer,
@@ -189,6 +190,25 @@ fn catalogue_response(request: &Request, catalogue: &serde_json::Value) -> Respo
         return ResponseTemplate::new(400);
     };
     let keyword = query.get("keyword").map_or("", |value| value.as_ref());
+    // Keep captured playback IDs unchanged; this search exercises two pages
+    // and a non-playable row through the production UI and real Qt model.
+    if keyword == PAGED_LIBRARY_KEYWORD {
+        let total = crate::epgstation::PAGE_SIZE as usize + 2;
+        let records: Vec<_> = (offset..total.min(offset.saturating_add(limit)))
+            .map(|index| {
+                let mut row = catalogue["records"][0].clone();
+                row["id"] = serde_json::json!(1000 + index);
+                row["name"] = serde_json::json!(format!("{PAGED_LIBRARY_KEYWORD} {index}"));
+                if index == 0 {
+                    row["isRecording"] = serde_json::json!(true);
+                }
+                row
+            })
+            .collect();
+        return ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "total": total, "records": records
+        }));
+    }
     let records: Vec<_> = catalogue["records"]
         .as_array()
         .expect("captured records")

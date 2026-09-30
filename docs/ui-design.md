@@ -36,6 +36,12 @@ URLや検索語、コメントなどの文字入力には、必要に応じて�
 - フォーカス移動、スライダーの値調整、再生ショートカットが同じ入力で重複して動かないようにする。
   対応する操作は、マウスのホバーやクリックを経ずに開始できるようにする。
 
+方向キーで文字入力欄へ移る画面では、項目の選択と文字の編集を分ける。
+選択中はフォーカス枠を表示し、決定で文字カーソルを出して編集を始める。
+編集中の方向キーは文字カーソルやIMEの候補操作に使い、戻る・Escで入力内容を残して選択へ戻る。
+マウスクリック・Tabで入った場合はすぐ編集できるようにする。録画一覧の検索欄と録画URL欄は
+この操作を共通部品`NavigationField`で提供する。
+
 ## Penpotと実装の関係
 
 Penpotを画面構成・配色・寸法・視覚的な方向性の参照にする。
@@ -96,7 +102,7 @@ Penpotに表現されていない途中の状態や連続操作時の動きは�
 | 文字の操作ボタン | [`ActionButton`](../rust/qml/ActionButton.qml)。`emphasis`で`Primary / Secondary / Quiet`を選ぶ。音声・速度の選択肢は`selected`を元データから導く。 |
 | 映像上の文字ボタン | `ActionButton`の`surface: ActionButton.VideoOverlay`。丸い形と半透明の反応を使う。 |
 | アイコンの操作ボタン | [`IconAction`](../rust/qml/IconAction.qml)。裸のアイコンは`flat: true`、選択状態は`active`、閉じる操作の赤い反応は`emphasis: IconAction.Destructive`。 |
-| 文字入力・選択・整数入力 | `SettingsField`、`SettingsChoice`、`ThemedSpinBox`。枠と背景は`ControlSurface`を共有する。 |
+| 文字入力・選択・整数入力 | `SettingsField`、`SettingsChoice`、`ThemedSpinBox`。方向キーでの選択と編集を分ける文字入力には`NavigationField`を使う。枠と背景は`ControlSurface`を共有する。 |
 | 数値調整・切り替え | `ThemedSlider`、`ToggleSwitch`。設定の行には`SettingsSlider`、`SettingsToggle`を使う。 |
 | 分割された選択肢 | `SegmentedControl`。外枠は`SegmentedFrame`を共有する。 |
 | ポップアップ・カード | 背景に`PanelSurface`、チャンネルカードに`CardSurface`を使う。 |

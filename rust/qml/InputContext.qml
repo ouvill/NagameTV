@@ -44,7 +44,8 @@ Item {
         case InputContext.Navigation: return navigationEnabled;
         case InputContext.Playback: return navigationEnabled && playbackControls && viewing && videoFocused;
         case InputContext.Seek: return navigationEnabled && playbackControls && viewing && videoFocused;
-        case InputContext.Dismiss: return !popupOpen;
+        case InputContext.Dismiss: return !popupOpen && !(focusItem instanceof NavigationField
+            && (focusItem as NavigationField).interaction === NavigationField.Editing);
         default: throw new Error("Unknown shortcut scope: " + scope);
         }
     }

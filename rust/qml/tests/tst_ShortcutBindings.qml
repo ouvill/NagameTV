@@ -24,6 +24,7 @@ Item {
                     height: 400
                     property alias actions: actions
                     property alias editor: editor
+                    property alias navigationField: navigationField
                     property alias popup: popup
                     property alias drawer: drawer
                     property alias backend: backend
@@ -66,6 +67,7 @@ Item {
                         width: 300
                         y: 20
                     }
+                    NavigationField { id: navigationField; width: 300; y: 70 }
                     Popup {
                         id: popup
                         width: 200
@@ -329,6 +331,22 @@ Item {
                 verify(view.context.viewing);
                 keyClick(Qt.Key_Space);
                 compare(view.backend.playbackRequests, 1);
+            }
+            function test_navigation_field_back_leaves_editing_before_library_data() { return dismissInputs(); }
+            function test_navigation_field_back_leaves_editing_before_library(data) {
+                view.actions.libraryVisible = true;
+                view.navigationField.focusForNavigation();
+                keyClick(Qt.Key_Return);
+                compare(view.navigationField.interaction, NavigationField.Editing);
+                verify(!view.context.accepts(InputContext.Dismiss));
+                keyClick(Qt.Key_A);
+                dismiss(data);
+                compare(view.navigationField.interaction, NavigationField.Navigating);
+                compare(view.navigationField.text, "a");
+                compare(view.libraryCloses, 0);
+                verify(view.context.accepts(InputContext.Dismiss));
+                dismiss(data);
+                compare(view.libraryCloses, 1);
             }
             function test_mouse_back_preserves_text_and_dismisses_once_per_press() {
                 view.editor.text = "draft";

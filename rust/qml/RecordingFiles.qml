@@ -22,7 +22,7 @@ Dialog {
         color: Theme.textPrimary
         font.pixelSize: Theme.fontHeading
     }
-    onOpened: { list.currentIndex = 0; list.forceActiveFocus(); }
+    onOpened: { list.currentIndex = 0; list.forceActiveFocus(Qt.TabFocusReason); }
     Connections {
         target: root.files
         function onChanged() { if (root.files.count === 0) root.close(); }
@@ -34,9 +34,19 @@ Dialog {
         clip: true
         spacing: Theme.spaceSm
         model: root.files
-        keyNavigationEnabled: true
-        Keys.onReturnPressed: { const button = list.currentItem as ActionButton; if (button) button.clicked(); }
-        Keys.onEnterPressed: { const button = list.currentItem as ActionButton; if (button) button.clicked(); }
+        keyNavigationEnabled: false
+        function choose(event) {
+            if (event.isAutoRepeat) return;
+            const button = currentItem as ActionButton;
+            if (button) button.click();
+        }
+        Keys.onUpPressed: if (currentIndex > 0) decrementCurrentIndex()
+        Keys.onDownPressed: {
+            if (currentIndex + 1 < count) incrementCurrentIndex();
+            else cancelButton.forceActiveFocus(Qt.TabFocusReason);
+        }
+        Keys.onReturnPressed: function(event) { choose(event); }
+        Keys.onEnterPressed: function(event) { choose(event); }
         ScrollBar.vertical: ScrollBar {}
         delegate: ActionButton {
             id: choice
@@ -53,11 +63,15 @@ Dialog {
             onClicked: { root.fileChosen(root.recordedId, choice.videoId); root.close(); }
         }
     }
-    footer: DialogButtonBox {
-        standardButtons: Dialog.Cancel
-        delegate: ActionButton {}
-        background: Item {}
-        padding: Theme.spaceLg
-        onRejected: root.reject()
+    footer: Item {
+        implicitHeight: cancelButton.implicitHeight + Theme.spaceLg * 2
+        ActionButton {
+            id: cancelButton
+            objectName: "recordingFilesCancel"
+            anchors { right: parent.right; margins: Theme.spaceLg; verticalCenter: parent.verticalCenter }
+            text: qsTranslate("Recording", "Cancel")
+            onClicked: root.reject()
+            Keys.onUpPressed: { list.currentIndex = list.count - 1; list.forceActiveFocus(Qt.TabFocusReason); }
+        }
     }
 }

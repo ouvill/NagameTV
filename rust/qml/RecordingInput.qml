@@ -45,65 +45,78 @@ Item {
         title: qsTranslate("Recording", "Open recording")
         padding: Theme.spaceXl
         background: PanelSurface {}
-        onOpened: urlField.forceActiveFocus()
+        onOpened: urlField.focusForNavigation()
         header: Label {
             text: sourceDialog.title
             padding: Theme.spaceXl
             color: Theme.textPrimary
             font.pixelSize: Theme.fontHeading
         }
-        contentItem: ColumnLayout {
-            spacing: Theme.spaceLg
-            RowLayout {
-                Layout.fillWidth: true
-                spacing: Theme.spaceMd
-                ActionButton {
-                    objectName: "recordingChooseFile"
-                    text: qsTranslate("Recording", "Open video file")
+        contentItem: DirectionalFocus {
+            id: sourceNavigation
+            implicitHeight: sourceFields.implicitHeight
+            navigationItems: [chooseFile, browseLibrary, urlField, cancelSource, openSource]
+            ColumnLayout {
+                id: sourceFields
+                anchors.fill: parent
+                spacing: Theme.spaceLg
+                RowLayout {
                     Layout.fillWidth: true
-                    onClicked: root.openFile()
+                    spacing: Theme.spaceMd
+                    ActionButton {
+                        id: chooseFile
+                        objectName: "recordingChooseFile"
+                        text: qsTranslate("Recording", "Open video file")
+                        Layout.fillWidth: true
+                        onClicked: root.openFile()
+                    }
+                    ActionButton {
+                        id: browseLibrary
+                        objectName: "recordingBrowseEpgstation"
+                        text: qsTranslate("RecordingLibrary", "EPGStation recordings")
+                        Layout.fillWidth: true
+                        onClicked: { sourceDialog.close(); root.libraryRequested(); }
+                    }
                 }
-                ActionButton {
-                    objectName: "recordingBrowseEpgstation"
-                    text: qsTranslate("RecordingLibrary", "EPGStation recordings")
+                Label {
+                    text: qsTranslate("Recording", "Recording URL")
+                    color: Theme.textPrimary
+                    font.pixelSize: Theme.fontBody
+                }
+                NavigationField {
+                    id: urlField
+                    objectName: "recordingUrl"
                     Layout.fillWidth: true
-                    onClicked: { sourceDialog.close(); root.libraryRequested(); }
+                    placeholderText: "http://epgstation:8888/api/videos/123"
+                    inputMethodHints: Qt.ImhUrlCharactersOnly | Qt.ImhNoPredictiveText
+                    Accessible.name: qsTranslate("Recording", "Recording URL")
+                    onAccepted: { finishEditing(); root.submitUrl(); }
+                    onNavigationRequested: function(key) { sourceNavigation.move(key); }
                 }
-            }
-            Label {
-                text: qsTranslate("Recording", "Recording URL")
-                color: Theme.textPrimary
-                font.pixelSize: Theme.fontBody
-            }
-            SettingsField {
-                id: urlField
-                objectName: "recordingUrl"
-                Layout.fillWidth: true
-                placeholderText: "http://epgstation:8888/api/videos/123"
-                inputMethodHints: Qt.ImhUrlCharactersOnly | Qt.ImhNoPredictiveText
-                Accessible.name: qsTranslate("Recording", "Recording URL")
-                onAccepted: root.submitUrl()
-            }
-            Label {
-                Layout.fillWidth: true
-                text: qsTranslate("Recording", "Paste the direct URL of a recorded video file.")
-                color: Theme.textSecondary
-                font.pixelSize: Theme.fontCaption
-                wrapMode: Text.Wrap
-            }
-            RowLayout {
-                Layout.alignment: Qt.AlignRight
-                spacing: Theme.spaceMd
-                ActionButton {
-                    text: qsTranslate("Recording", "Cancel")
-                    onClicked: sourceDialog.reject()
+                Label {
+                    Layout.fillWidth: true
+                    text: qsTranslate("Recording", "Paste the direct URL of a recorded video file.")
+                    color: Theme.textSecondary
+                    font.pixelSize: Theme.fontCaption
+                    wrapMode: Text.Wrap
                 }
-                ActionButton {
-                    objectName: "recordingOpenUrl"
-                    text: qsTranslate("Recording", "Open URL")
-                    emphasis: ActionButton.Primary
-                    enabled: urlField.text.trim().length > 0
-                    onClicked: root.submitUrl()
+                RowLayout {
+                    Layout.alignment: Qt.AlignRight
+                    spacing: Theme.spaceMd
+                    ActionButton {
+                        id: cancelSource
+                        objectName: "recordingCancelSource"
+                        text: qsTranslate("Recording", "Cancel")
+                        onClicked: sourceDialog.reject()
+                    }
+                    ActionButton {
+                        id: openSource
+                        objectName: "recordingOpenUrl"
+                        text: qsTranslate("Recording", "Open URL")
+                        emphasis: ActionButton.Primary
+                        enabled: urlField.text.trim().length > 0
+                        onClicked: root.submitUrl()
+                    }
                 }
             }
         }

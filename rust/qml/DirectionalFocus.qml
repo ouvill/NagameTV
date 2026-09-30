@@ -23,10 +23,14 @@ FocusScope {
     function available(item: Item): bool {
         return item !== null && item.visible && item.enabled;
     }
+    function focusItem(item: Item) {
+        if (item instanceof NavigationField) (item as NavigationField).focusForNavigation();
+        else item.forceActiveFocus(Qt.TabFocusReason);
+    }
     function enter() {
         const target = available(memory.item) ? memory.item : available(initialItem) ? initialItem
             : navigationItems.find(item => available(item));
-        if (target) target.forceActiveFocus(Qt.TabFocusReason);
+        if (target) focusItem(target);
     }
     function move(key: int) {
         if (!navigationItems.includes(currentItem)) { enter(); return; }
@@ -46,10 +50,12 @@ FocusScope {
             const distance = along * along + across * across;
             if (distance < bestDistance) { next = item; bestDistance = distance; }
         }
-        if (next) next.forceActiveFocus(Qt.TabFocusReason);
+        if (next) focusItem(next);
         else boundaryReached(key);
     }
     Keys.onPressed: function(event) {
+        if (currentItem instanceof NavigationField
+            && (currentItem as NavigationField).interaction === NavigationField.Editing) return;
         if ((event.modifiers & ~Qt.KeypadModifier) !== Qt.NoModifier) return;
         if (![Qt.Key_Left, Qt.Key_Right, Qt.Key_Up, Qt.Key_Down].includes(event.key)) return;
         event.accepted = true;
