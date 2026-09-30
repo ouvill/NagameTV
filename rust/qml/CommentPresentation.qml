@@ -10,11 +10,13 @@ ColumnLayout {
     property string placementMode: "sequential"
     property string densityMode: "normal"
     property bool evaluationCollision: false
+    readonly property list<Item> navigationItems: [motion, placement, density]
     signal densitySelected(string densityMode)
     signal selected(string displayMode, string placementMode)
     spacing: Theme.spaceSm
     Label { text: qsTranslate("Main", "Comment motion"); color: Theme.textSecondary; font.pixelSize: Theme.fontCaption }
     SegmentedControl {
+        id: motion
         objectName: "commentMotion"
         objectNamePrefix: "motion-"
         Layout.fillWidth: true
@@ -30,6 +32,7 @@ ColumnLayout {
         text: qsTranslate("Main", "Comment placement"); color: Theme.textSecondary; font.pixelSize: Theme.fontCaption
     }
     SegmentedControl {
+        id: placement
         objectName: "commentPlacement"
         objectNamePrefix: "placement-"
         Layout.fillWidth: true
@@ -45,6 +48,7 @@ ColumnLayout {
         text: qsTranslate("Main", "Comment amount"); color: Theme.textSecondary; font.pixelSize: Theme.fontCaption
     }
     SegmentedControl {
+        id: density
         objectName: "commentDensity"
         objectNamePrefix: "density-"
         Layout.fillWidth: true

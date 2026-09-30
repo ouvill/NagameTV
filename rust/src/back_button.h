@@ -9,14 +9,21 @@
 #include <QtQuick/QQuickWindow>
 
 // Translate before Quick delivers the click to controls or popup overlays.
-// Escape then follows the existing focused-popup and shortcut handling.
+// Popups receive Escape for their close policy. Other Back input retains its
+// identity so the viewing action can preserve fullscreen.
 // The binding item owns the filter, including reattachment and destruction.
 class ViewerBackButton final : public QObject {
 public:
-  explicit ViewerBackButton(QQuickItem *item) : QObject(item), item_(item) {
+  explicit ViewerBackButton(QQuickItem *item, bool popupOpen)
+      : QObject(item), item_(item) {
+    setPopupOpen(popupOpen);
     connect(item, &QQuickItem::windowChanged, this,
             [this](QQuickWindow *window) { attach(window); });
     attach(item->window());
+  }
+
+  void setPopupOpen(bool open) {
+    destination_ = open ? Destination::Popup : Destination::Viewing;
   }
 
 protected:
@@ -35,9 +42,7 @@ protected:
       if (key->key() != Qt::Key_Back) return false;
       event->accept();
       if (event->type() == QEvent::KeyPress && !key->isAutoRepeat()) {
-        const QPointer<QQuickWindow> target = window_;
-        sendEscape(target->activeFocusItem(), QEvent::KeyPress);
-        if (target) sendEscape(target->activeFocusItem(), QEvent::KeyRelease);
+        dispatchBack();
       }
       return true;
     }
@@ -55,19 +60,28 @@ protected:
       // Qt sends a second press before its double-click notification.
       // Only presses dismiss; releases and double clicks are consumed above.
       // Mouse modifiers do not change the meaning of the Back button.
-      const QPointer<QQuickWindow> target = window_;
-      sendEscape(target->activeFocusItem(), QEvent::KeyPress);
-      if (target) sendEscape(target->activeFocusItem(), QEvent::KeyRelease);
+      dispatchBack();
     }
     return true;
   }
 
 private:
-  static void sendEscape(QQuickItem *focusItem, QEvent::Type type) {
+  enum class Destination { Popup, Viewing };
+
+  void dispatchBack() {
+    const QPointer<QQuickWindow> target = window_;
+    // Closing a popup can change the destination during the press. Its release
+    // must keep the same key and must not dispatch a second viewing action.
+    const auto key = destination_ == Destination::Popup ? Qt::Key_Escape : Qt::Key_Back;
+    sendKey(target->activeFocusItem(), QEvent::KeyPress, key);
+    if (target) sendKey(target->activeFocusItem(), QEvent::KeyRelease, key);
+  }
+
+  static void sendKey(QQuickItem *focusItem, QEvent::Type type, Qt::Key code) {
     // Use the same focus-item path as IME-forwarded keys. Sending a synthetic
     // press to QQuickWindow can activate its shortcut map AND Keys.pressed.
     // Propagate unhandled keys so an editor inside a popup can close its popup.
-    QKeyEvent key(type, Qt::Key_Escape, Qt::NoModifier);
+    QKeyEvent key(type, code, Qt::NoModifier);
     QPointer<QQuickItem> target = focusItem;
     while (target) {
       key.accept();
@@ -84,14 +98,19 @@ private:
   }
 
   QQuickItem *item_;
+  Destination destination_ = Destination::Viewing;
   QPointer<QQuickWindow> window_;
 };
 
-inline void installBackButton(QQuickItem *item) {
+inline void installBackButton(QQuickItem *item, bool popupOpen) {
   if (!item) return;
-  for (auto *child : item->children())
-    if (dynamic_cast<ViewerBackButton *>(child)) return;
-  new ViewerBackButton(item);
+  for (auto *child : item->children()) {
+    if (auto *filter = dynamic_cast<ViewerBackButton *>(child)) {
+      filter->setPopupOpen(popupOpen);
+      return;
+    }
+  }
+  new ViewerBackButton(item, popupOpen);
 }
 
 #endif

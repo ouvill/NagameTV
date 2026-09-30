@@ -32,7 +32,7 @@ Item {
                     readonly property bool guideRequests: backend.guide_visible
                     property int channelRequests: 0
                     readonly property int steps: backend.channelSteps
-                    readonly property int escapes: escapeSpy.count
+                    readonly property int dismissals: escapeSpy.count + backSpy.count
                     readonly property int commentRequests: commentSpy.count
                     property int screenshots: 0
                     property int libraryCloses: 0
@@ -47,6 +47,7 @@ Item {
                         onChannelsVisibilityRequested: function(visible) { parent.channelRequests++; }
                     }
                     SignalSpy { id: escapeSpy; target: actions.dismissTopmost; signalName: "triggered" }
+                    SignalSpy { id: backSpy; target: actions.goBack; signalName: "triggered" }
                     SignalSpy { id: commentSpy; target: actions; signalName: "composerVisibilityRequested" }
                     Viewer.InputContext {
                         id: inputContext
@@ -212,10 +213,10 @@ Item {
                 compare(view.commentRequests, 0);
                 dismiss(data);
                 tryCompare(view.popup, "opened", false);
-                compare(view.escapes, 0);
+                compare(view.dismissals, 0);
                 view.forceActiveFocus();
                 dismiss(data);
-                compare(view.escapes, 1);
+                compare(view.dismissals, 1);
             }
             function test_screenshot_shortcut_respects_playback_and_modal_state() {
                 keyClick(Qt.Key_S, Qt.ControlModifier);
@@ -333,25 +334,25 @@ Item {
                 view.editor.text = "draft";
                 view.editor.forceActiveFocus();
                 mousePress(view.editor, 30, 15, Qt.BackButton, Qt.ControlModifier);
-                compare(view.escapes, 1);
+                compare(view.dismissals, 1);
                 mouseRelease(view.editor, 30, 15, Qt.BackButton, Qt.ControlModifier);
-                compare(view.escapes, 1);
+                compare(view.dismissals, 1);
                 compare(view.editor.text, "draft");
                 mouseDoubleClickSequence(view.editor, 30, 15, Qt.BackButton);
-                compare(view.escapes, 3);
+                compare(view.dismissals, 3);
             }
             function test_mouse_back_respects_disabled_bindings_and_popup_policy() {
                 view.bindings.enabled = false;
                 mouseClick(view, 350, 200, Qt.BackButton);
-                compare(view.escapes, 0);
+                compare(view.dismissals, 0);
                 view.bindings.enabled = true;
                 view.actions.enabled = false;
                 mouseClick(view, 350, 200, Qt.BackButton);
-                compare(view.escapes, 0);
+                compare(view.dismissals, 0);
                 view.actions.enabled = true;
                 view.context.enabled = false;
                 mouseClick(view, 350, 200, Qt.BackButton);
-                compare(view.escapes, 0);
+                compare(view.dismissals, 0);
                 view.context.enabled = true;
                 view.popup.closePolicy = Popup.NoAutoClose;
                 view.popup.open();
@@ -360,11 +361,11 @@ Item {
                 popupEditor.forceActiveFocus();
                 mouseClick(view.popup.contentItem, 30, 30, Qt.BackButton);
                 compare(view.popup.opened, true);
-                compare(view.escapes, 0);
+                compare(view.dismissals, 0);
                 view.popup.closePolicy = Popup.CloseOnEscape;
                 mouseClick(view.popup.contentItem, 30, 30, Qt.BackButton);
                 tryCompare(view.popup, "visible", false);
-                compare(view.escapes, 0);
+                compare(view.dismissals, 0);
                 compare(popupEditor.text, "draft");
             }
             function test_other_mouse_buttons_reach_controls() {
@@ -372,17 +373,38 @@ Item {
                 for (const button of [Qt.LeftButton, Qt.RightButton, Qt.MiddleButton, Qt.ForwardButton])
                     mouseClick(area, 50, 50, button);
                 compare(area.clicks, 4);
-                compare(view.escapes, 0);
+                compare(view.dismissals, 0);
                 mouseClick(area, 50, 50, Qt.BackButton);
                 compare(area.clicks, 4);
-                compare(view.escapes, 1);
+                compare(view.dismissals, 1);
             }
-            function test_mouse_back_leaves_fullscreen() {
+            function test_dismiss_in_fullscreen_data() { return dismissInputs(); }
+            function test_dismiss_in_fullscreen(data) {
                 keyClick(Qt.Key_F11);
                 tryCompare(host, "visibility", Window.FullScreen);
-                mouseClick(view, 350, 200, Qt.BackButton);
-                tryCompare(host, "visibility", Window.Windowed);
-                compare(view.escapes, 1);
+                view.backend.guide_visible = true;
+                view.popup.open();
+                tryCompare(view.popup, "opened", true);
+                dismiss(data);
+                tryCompare(view.popup, "visible", false);
+                compare(host.visibility, Window.FullScreen);
+                verify(view.backend.guide_visible);
+                compare(view.dismissals, 0);
+                view.forceActiveFocus();
+                dismiss(data);
+                verify(!view.backend.guide_visible);
+                compare(host.visibility, Window.FullScreen);
+                compare(view.dismissals, 1);
+                dismiss(data);
+                tryCompare(host, "visibility", data.key === Qt.Key_Escape ? Window.Windowed : Window.FullScreen);
+                compare(view.dismissals, 2);
+                if (data.key !== Qt.Key_Escape) {
+                    // Repeated Back stays in fullscreen; Escape can still exit.
+                    dismiss(data);
+                    compare(host.visibility, Window.FullScreen);
+                    keyClick(Qt.Key_Escape);
+                    tryCompare(host, "visibility", Window.Windowed);
+                }
             }
             function test_fullscreen_restores_window_mode() {
                 const window = host;

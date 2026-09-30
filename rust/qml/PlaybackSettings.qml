@@ -17,37 +17,60 @@ ScrollView {
     property string placementMode: "sequential"
     property string densityMode: "normal"
     property bool evaluationCollision: false
+    property bool appearanceExpanded: false
     signal densityRequested(string densityMode)
     signal presentationRequested(string displayMode, string placementMode)
     signal danmakuRequested(bool enabled)
     signal adjusted(real textSize, real textOpacity, real speed)
-    signal timeshiftSettingsRequested()
     signal statsRequested(bool visible)
     signal shadowRequested(bool enabled)
+    signal boundaryReached(int key)
+    function enter() { navigation.enter(); }
+    function enterLast() { navigation.enterLast(); }
     clip: true
     contentWidth: availableWidth
+    FormNavigation {
+        id: navigation
+        scrollView: root
+        fields: [danmakuToggle, ...adjustments.navigationItems, appearanceButton,
+            ...presentation.navigationItems, shadowToggle, statsToggle]
+        onBoundaryReached: function(key) { root.boundaryReached(key); }
+    }
 
     ColumnLayout {
         width: root.availableWidth
-        spacing: Theme.spaceXl
-        RowLayout {
+        spacing: Theme.spaceLg
+        SettingsToggle {
+            id: danmakuToggle
+            objectName: "playbackDanmakuToggle"
             Layout.fillWidth: true
             enabled: root.commentsEnabled
-            Label {
-                text: qsTranslate("Main", "Danmaku comments")
-                color: Theme.textPrimary; font.pixelSize: Theme.fontBody
-                Layout.fillWidth: true
-                wrapMode: Text.Wrap
-            }
-            ToggleSwitch {
-                objectName: "playbackDanmakuToggle"
-                text: qsTranslate("Main", "Danmaku comments")
-                checked: root.danmakuEnabled
-                onToggled: root.danmakuRequested(checked)
-            }
+            text: qsTranslate("Main", "Danmaku comments")
+            checked: root.danmakuEnabled
+            onToggled: root.danmakuRequested(checked)
+        }
+        DanmakuAdjustments {
+            id: adjustments
+            Layout.fillWidth: true
+            enabled: root.commentsEnabled
+            textSize: root.textSize
+            textOpacity: root.textOpacity
+            speed: root.speed
+            onAdjusted: function(size, opacity, speed) { root.adjusted(size, opacity, speed); }
+        }
+        DisclosureButton {
+            id: appearanceButton
+            objectName: "playbackAppearanceButton"
+            Layout.fillWidth: true
+            enabled: root.commentsEnabled
+            checked: root.appearanceExpanded
+            text: qsTranslate("Settings", "Comment appearance")
+            onToggled: root.appearanceExpanded = checked
         }
         CommentPresentation {
+            id: presentation
             Layout.fillWidth: true
+            visible: root.appearanceExpanded
             enabled: root.commentsEnabled
             displayMode: root.displayMode
             placementMode: root.placementMode
@@ -56,50 +79,24 @@ ScrollView {
             onDensitySelected: function(density) { root.densityRequested(density); }
             onSelected: function(display, placement) { root.presentationRequested(display, placement); }
         }
-        DanmakuAdjustments {
+        SettingsToggle {
+            id: shadowToggle
+            objectName: "playbackShadowToggle"
             Layout.fillWidth: true
             enabled: root.commentsEnabled
-            textSize: root.textSize
-            textOpacity: root.textOpacity
-            speed: root.speed
-            onAdjusted: function(size, opacity, speed) { root.adjusted(size, opacity, speed); }
-        }
-        RowLayout {
-            Layout.fillWidth: true
-            enabled: root.commentsEnabled
-            Label {
-                text: qsTranslate("Settings", "Drop shadow")
-                color: Theme.textPrimary; font.pixelSize: Theme.fontBody
-                Layout.fillWidth: true; wrapMode: Text.Wrap
-            }
-            ToggleSwitch {
-                objectName: "playbackShadowToggle"
-                text: qsTranslate("Settings", "Drop shadow")
-                checked: root.shadowEnabled
-                onToggled: root.shadowRequested(checked)
-            }
+            visible: root.appearanceExpanded
+            text: qsTranslate("Settings", "Drop shadow")
+            checked: root.shadowEnabled
+            onToggled: root.shadowRequested(checked)
         }
         Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.divider }
-        ActionButton {
-            id: timeshift
-            objectName: "playbackTimeshiftSettings"
+        SettingsToggle {
+            id: statsToggle
+            objectName: "playbackStatsToggle"
             Layout.fillWidth: true
-            text: qsTranslate("Viewer", "Timeshift settings…")
-            onClicked: root.timeshiftSettingsRequested()
-        }
-        RowLayout {
-            Layout.fillWidth: true
-            Label {
-                text: qsTranslate("Main", "Stats for nerds")
-                color: Theme.textPrimary; font.pixelSize: Theme.fontBody
-                Layout.fillWidth: true; wrapMode: Text.Wrap
-            }
-            ToggleSwitch {
-                objectName: "playbackStatsToggle"
-                text: qsTranslate("Main", "Stats for nerds")
-                checked: root.statsVisible
-                onToggled: root.statsRequested(checked)
-            }
+            text: qsTranslate("Main", "Stats for nerds")
+            checked: root.statsVisible
+            onToggled: root.statsRequested(checked)
         }
     }
 }

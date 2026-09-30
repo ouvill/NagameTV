@@ -48,13 +48,16 @@ Item {
                 onPageRequested: function(next) { page = next; }
             }
             SignalSpy { id: statsRequests; target: sidebar; signalName: "statsRequested" }
-            SignalSpy { id: timeshiftRequests; target: sidebar; signalName: "timeshiftSettingsRequested" }
             function reveal(control) {
+                verify(waitForPolish(host));
                 const scroll = findChild(sidebar, "sidebarPlaybackSettings");
                 const flickable = scroll.contentItem;
                 const point = control.mapToItem(flickable.contentItem, 0, 0);
                 flickable.contentY = Math.max(0, Math.min(point.y - 10, flickable.contentHeight - flickable.height));
                 waitForRendering(scroll);
+                const visiblePoint = control.mapToItem(scroll, 0, 0);
+                verify(visiblePoint.y >= 0 && visiblePoint.y + control.height <= scroll.height + 1,
+                    "Control must be visible before clicking: " + control.objectName + ", y=" + visiblePoint.y);
             }
             function sidebarToggle() { return findChild(sidebar, "playbackDanmakuToggle"); }
             function verifyState(value, requests) {
@@ -64,11 +67,13 @@ Item {
             }
             function init() {
                 failOnWarning(/.*/);
+                host.contentItem.forceActiveFocus();
                 backend.enabled = true; backend.danmaku = false;
                 backend.stats = false; backend.shadow = true; backend.size = 21;
                 backend.requests = 0;
                 sidebar.page = ProgramSidebar.Playback;
-                statsRequests.clear(); timeshiftRequests.clear();
+                findChild(sidebar, "sidebarPlaybackSettings").appearanceExpanded = false;
+                statsRequests.clear();
                 host.requestActivate(); tryCompare(host, "active", true);
                 reveal(sidebarToggle());
             }
@@ -90,19 +95,19 @@ Item {
                 mouseClick(sidebarToggle());
                 verifyState(false, 0);
             }
-            function test_stats_and_timeshift_remain_reachable_in_short_sidebar() {
+            function test_stats_remain_reachable_in_short_sidebar() {
                 const stats = findChild(sidebar, "playbackStatsToggle");
                 reveal(stats); mouseClick(stats);
                 compare(backend.stats, true); compare(statsRequests.count, 1);
                 stats.forceActiveFocus(); keyClick(Qt.Key_Space);
                 compare(backend.stats, false); compare(statsRequests.count, 2);
-                const timeshift = findChild(sidebar, "playbackTimeshiftSettings");
-                reveal(timeshift); mouseClick(timeshift);
-                compare(timeshiftRequests.count, 1);
                 compare(sidebar.page, ProgramSidebar.Playback);
             }
             function test_shadow_and_large_font_updates_survive_tab_changes() {
+                const appearance = findChild(sidebar, "playbackAppearanceButton");
+                reveal(appearance); mouseClick(appearance);
                 const shadow = findChild(sidebar, "playbackShadowToggle");
+                tryCompare(shadow, "visible", true);
                 reveal(shadow); mouseClick(shadow); compare(backend.shadow, false);
                 backend.shadow = true; compare(shadow.checked, true);
                 const size = findChild(sidebar, "danmakuTextSize");

@@ -44,7 +44,8 @@ ToggleSwitch {
     background: Rectangle {
         color: control.down ? Theme.selection : control.hovered ? Theme.overlayHover : "transparent"
         radius: Theme.controlRadius
-        border.color: control.visualFocus ? Theme.accent : "transparent"
+        border.color: control.focusVisible ? Theme.accent : "transparent"
+        border.width: control.focusVisible ? 2 : 1
         Behavior on color { ColorAnimation { duration: Theme.colorDuration } }
         Rectangle {
             anchors { left: parent.left; right: parent.right; bottom: parent.bottom }

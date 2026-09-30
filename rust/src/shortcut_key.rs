@@ -1,4 +1,4 @@
-//! Qt key matching and mouse Back binding for QML shortcuts.
+//! Qt key matching and keyboard/mouse Back binding for QML shortcuts.
 #[cxx_qt::bridge]
 mod ffi {
     unsafe extern "C++" {
@@ -19,7 +19,7 @@ mod ffi {
         fn matches(self: &ShortcutKey, sequence: &QString, key: i32, modifiers: i32) -> bool;
 
         #[qinvokable]
-        unsafe fn bind_back_button(self: &ShortcutKey, item: *mut QQuickItem);
+        unsafe fn bind_back_button(self: &ShortcutKey, item: *mut QQuickItem, popup_open: bool);
     }
 }
 
@@ -29,9 +29,9 @@ pub struct Matcher;
 impl ffi::ShortcutKey {
     /// # Safety
     /// QML must supply a live item on the GUI thread; it owns the native filter.
-    pub unsafe fn bind_back_button(&self, item: *mut crate::qt::ffi::QQuickItem) {
+    pub unsafe fn bind_back_button(&self, item: *mut crate::qt::ffi::QQuickItem, popup_open: bool) {
         // SAFETY: The caller supplies the item lifetime and thread guarantees.
-        unsafe { crate::qt::ffi::install_back_button(item) };
+        unsafe { crate::qt::ffi::install_back_button(item, popup_open) };
     }
 
     pub fn matches(&self, sequence: &cxx_qt_lib::QString, key: i32, modifiers: i32) -> bool {

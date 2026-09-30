@@ -509,7 +509,7 @@ Popup {
                             SettingsSlider {
                                 objectName: "commentSpeed"
                                 Layout.fillWidth: true
-                                text: qsTranslate("Main", "Speed")
+                                text: qsTranslate("Main", "Comment speed")
                                 valueText: value.toFixed(1) + "×"
                                 from: 0.5; to: 2; stepSize: 0.1; value: root.backend.comment_speed
                                 onMoved: function(value) { root.backend.configure_danmaku(root.backend.danmaku_enabled, root.backend.comment_font_size, root.backend.comment_opacity, value); }

@@ -1,6 +1,7 @@
 pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Templates as Templates
 import QtQuick.Layouts
 import org.freedesktop.gstreamer.Qt6GLVideoItem 1.0
 import MinimalViewer 1.0
@@ -20,6 +21,8 @@ ViewerWindow {
         property Item channels: null
         property Item guide: null
         property Item library: null
+        property Item sidebar: null
+        property Item settings: null
     }
     function restoreFocus(item) {
         // Wait for the closing panel's visibility/enabled bindings before
@@ -52,6 +55,7 @@ ViewerWindow {
     readonly property SettingsPanel settings: settingsLoader.item as SettingsPanel
     function openSettings(page) {
         if (root.closing) return;
+        if (!settings || !settings.visible) focusHistory.settings = root.activeFocusItem;
         // Construction is synchronous so the first click opens the popup.
         // Retain it after first use to preserve edits and fast repeated opens.
         settingsLoader.active = true;
@@ -98,6 +102,24 @@ ViewerWindow {
     property bool showChannels: false
     property bool showStats: false
     property bool showProgram: false
+    onShowProgramChanged: if (showProgram) {
+        focusHistory.sidebar = root.activeFocusItem;
+        requestSidebarFocus();
+    }
+    function requestSidebarFocus() {
+        const control = inputContext.focusItem as Templates.Control;
+        if (viewerActions.controlsFocused || (control && control.visualFocus))
+            Qt.callLater(focusSidebar);
+    }
+    function focusSidebar() {
+        if (!closing && sidebar.open && sidebar.view && !inputContext.popupOpen)
+            sidebar.view.enter();
+    }
+    function closeSidebar() {
+        const wasOpen = showProgram;
+        showProgram = false;
+        if (wasOpen) restoreFocus(focusHistory.sidebar);
+    }
     property bool showCommentComposer: false
     function closeCommentComposer() {
         root.showCommentComposer = false;
@@ -243,6 +265,7 @@ ViewerWindow {
         composerVisible: root.showCommentComposer
         statsVisible: root.showStats
         programVisible: root.showProgram
+        programFocused: sidebar.view !== null && sidebar.view.activeFocus
         libraryVisible: root.libraryVisible
         controlsFocused: playerControls.navigating || modeNavigation.navigating
             || (recordingTimeline.activeFocus && inputContext.focusItem instanceof Slider && (inputContext.focusItem as Slider).visualFocus)
@@ -262,14 +285,21 @@ ViewerWindow {
             else root.closeCommentComposer();
         }
         onStatsVisibilityRequested: function(visible) { root.showStats = visible; }
-        onProgramVisibilityRequested: function(visible) { root.showProgram = visible; }
+        onProgramVisibilityRequested: function(visible) {
+            if (visible) root.showProgram = true;
+            else root.closeSidebar();
+        }
         onRecordingRequested: recordingInput.open()
         onCaptureRequested: screenshot.capture()
         onAudioRequested: { mediaSubtitleSettings.close(); playerControls.closeSpeed(); audioSettings.toggle(); }
         onSpeedOpened: { mediaSubtitleSettings.close(); audioSettings.close(); }
         onSettingsRequested: {
-            root.showProgram = !(root.showProgram && root.sidebarPage === ProgramSidebar.Playback);
-            root.sidebarPage = ProgramSidebar.Playback;
+            if (root.showProgram && root.sidebarPage === ProgramSidebar.Playback) root.closeSidebar();
+            else {
+                root.sidebarPage = ProgramSidebar.Playback;
+                root.showProgram = true;
+                root.requestSidebarFocus();
+            }
         }
     }
     InputContext {
@@ -585,7 +615,10 @@ ViewerWindow {
                 shortcutEntries: shortcutBindings.entries
                 commentSubmitPolicy: commentSubmitPolicy
                 targetWindow: root
-                onClosed: if (!root.closing) player.save_settings()
+                onClosed: if (!root.closing) {
+                    player.save_settings();
+                    root.restoreFocus(focusHistory.settings);
+                }
                 backend: player
                 statsVisible: root.showStats
                 onStatsRequested: function (visible) {
@@ -857,7 +890,6 @@ ViewerWindow {
             }
             statsVisible: root.showStats
             onStatsRequested: function(visible) { root.showStats = visible; }
-            onTimeshiftSettingsRequested: root.openSettings(SettingsPanel.Timeshift)
             commentModel: player.comment_model
             commentStatus: player.comment_status
             commentProgramTitle: player.comment_program_title
@@ -883,7 +915,7 @@ ViewerWindow {
             fallbackTitle: player.recording_name
             channelLabel: player.recording ? (program && program.station || player.recording_name) : player.selected >= 0 && player.selected < player.channels.count ? root.selectedChannel.label : ""
             logoUrl: !player.recording && player.selected >= 0 && player.selected < player.channels.count ? root.selectedChannel.logo : ""
-            onCloseRequested: root.showProgram = false
+            onCloseRequested: root.closeSidebar()
         }
     }
     ModeNavigation {

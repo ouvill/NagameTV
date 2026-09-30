@@ -4,7 +4,7 @@ import MinimalViewer
 import QtQuick.Controls
 import QtQuick.Layouts
 
-Rectangle {
+FocusScope {
     id: root
     enum Page {
         Program,
@@ -30,7 +30,6 @@ Rectangle {
     signal shadowRequested(bool enabled)
     property bool statsVisible: false
     signal statsRequested(bool visible)
-    signal timeshiftSettingsRequested()
     signal danmakuRequested(bool enabled)
     property var commentModel: null
     property string commentProgramTitle: ""
@@ -42,6 +41,30 @@ Rectangle {
     function openChannels() {
         const channels = channelsLoader.item as SidebarChannels;
         if (channels) channels.openBrowser();
+    }
+    function enter() {
+        if (page === ProgramSidebar.Playback) playback.enter();
+        else if (page === ProgramSidebar.Channels && channelsLoader.item)
+            (channelsLoader.item as SidebarChannels).focusBrowser();
+        else scroll.forceActiveFocus(Qt.TabFocusReason);
+    }
+    function enterLast() {
+        if (page === ProgramSidebar.Playback) playback.enterLast();
+        else if (page === ProgramSidebar.Channels && channelsLoader.item)
+            (channelsLoader.item as SidebarChannels).focusLast();
+        else scroll.forceActiveFocus(Qt.TabFocusReason);
+    }
+    function choosePage(page: int, keyboard: bool) {
+        pageRequested(page);
+        if (keyboard) Qt.callLater(enter);
+    }
+    function scrollProgram(direction: int) {
+        const flick = scroll.contentItem as Flickable;
+        if (!flick) return;
+        const limit = Math.max(0, flick.contentHeight - flick.height);
+        if (direction < 0 && flick.contentY <= 0) closeButton.forceActiveFocus(Qt.TabFocusReason);
+        else if (direction > 0 && flick.contentY >= limit) footer.enter();
+        else flick.contentY = Math.max(0, Math.min(limit, flick.contentY + direction * Theme.controlHeight));
     }
     property string channelVisibility: "[]"
     property string activityJson: "[]"
@@ -58,8 +81,8 @@ Rectangle {
     property real progress: 0
     readonly property var program: JSON.parse(programJson)
     signal closeRequested
-    color: Theme.surface
     clip: true
+    Rectangle { anchors.fill: parent; color: Theme.surface }
     Rectangle {
         width: 1
         height: parent.height
@@ -80,7 +103,7 @@ Rectangle {
             Layout.fillWidth: true
             Label {
                 objectName: "sidebarHeading"
-                text: root.page === ProgramSidebar.Playback ? qsTranslate("Main", "Playback settings")
+                text: root.page === ProgramSidebar.Playback ? qsTranslate("Main", "Viewing settings")
                     : root.page === ProgramSidebar.Channels ? qsTranslate("Main", "Channels") : qsTranslate("Main", "Program information")
                 color: Theme.textPrimary
                 font.pixelSize: Theme.fontTitle
@@ -89,7 +112,10 @@ Rectangle {
                 elide: Text.ElideRight
             }
             IconAction {
+                id: closeButton
                 objectName: "sidebarCloseButton"
+                Keys.onDownPressed: root.enter()
+                Keys.onUpPressed: footer.enter()
                 flat: true
                 iconSource: root.iconDirectory + "panel-right-close.svg"
                 tip: qsTranslate("Main", "Collapse")
@@ -98,6 +124,10 @@ Rectangle {
         }
         ScrollView {
             id: scroll
+            Keys.onUpPressed: root.scrollProgram(-1)
+            Keys.onDownPressed: root.scrollProgram(1)
+            Keys.onReturnPressed: function(event) { if (!event.isAutoRepeat) footer.enter(); }
+            Keys.onEnterPressed: function(event) { if (!event.isAutoRepeat) footer.enter(); }
             visible: root.page === ProgramSidebar.Program
             Layout.fillWidth: true
             Layout.fillHeight: true
@@ -259,12 +289,17 @@ Rectangle {
                 programsJson: root.channelPrograms
                 visibilityJson: root.channelVisibility
                 now: root.now
+                onBoundaryReached: function(key) {
+                    if (key === Qt.Key_Up) closeButton.forceActiveFocus(Qt.TabFocusReason);
+                    else footer.enter();
+                }
                 onSelectRequested: function (index) {
                     root.selectRequested(index);
                 }
             }
         }
         PlaybackSettings {
+            id: playback
             objectName: "sidebarPlaybackSettings"
             visible: root.page === ProgramSidebar.Playback
             Layout.fillWidth: true
@@ -280,45 +315,64 @@ Rectangle {
             speed: root.speed
             shadowEnabled: root.shadowEnabled
             statsVisible: root.statsVisible
+            onBoundaryReached: function(key) {
+                if (key === Qt.Key_Up) closeButton.forceActiveFocus(Qt.TabFocusReason);
+                else footer.enter();
+            }
             onDensityRequested: function(density) { root.densityRequested(density); }
             onPresentationRequested: function(display, placement) { root.presentationRequested(display, placement); }
             onDanmakuRequested: function(enabled) { root.danmakuRequested(enabled); }
             onAdjusted: function(size, opacity, speed) { root.adjusted(size, opacity, speed); }
             onShadowRequested: function(enabled) { root.shadowRequested(enabled); }
             onStatsRequested: function(visible) { root.statsRequested(visible); }
-            onTimeshiftSettingsRequested: root.timeshiftSettingsRequested()
         }
         Rectangle {
             Layout.fillWidth: true
             Layout.preferredHeight: 1
             color: Theme.overlayHover
         }
-        RowLayout {
+        DirectionalFocus {
+            id: footer
             Layout.fillWidth: true
-            spacing: Theme.spaceSm
-            SidebarTab {
-                Layout.fillWidth: true
-                objectName: "playbackSidebarTab"
-                iconSource: root.iconDirectory + "settings-2.svg"
-                selected: root.page === ProgramSidebar.Playback
-                text: qsTranslate("Main", "Playback settings")
-                onClicked: root.pageRequested(ProgramSidebar.Playback)
+            implicitHeight: tabs.implicitHeight
+            navigationItems: [playbackTab, programTab, channelsTab]
+            initialItem: root.page === ProgramSidebar.Playback ? playbackTab
+                : root.page === ProgramSidebar.Program ? programTab : channelsTab
+            onBoundaryReached: function(key) {
+                if (key === Qt.Key_Up) root.enterLast();
+                else if (key === Qt.Key_Down) closeButton.forceActiveFocus(Qt.TabFocusReason);
             }
-            SidebarTab {
-                Layout.fillWidth: true
-                objectName: "programSidebarTab"
-                iconSource: root.iconDirectory + "info.svg"
-                selected: root.page === ProgramSidebar.Program
-                text: qsTranslate("Main", "Program information")
-                onClicked: root.pageRequested(ProgramSidebar.Program)
-            }
-            SidebarTab {
-                Layout.fillWidth: true
-                objectName: "channelsSidebarTab"
-                iconSource: root.iconDirectory + "grid-2x2.svg"
-                selected: root.page === ProgramSidebar.Channels
-                text: qsTranslate("Main", "Channels")
-                onClicked: root.pageRequested(ProgramSidebar.Channels)
+            RowLayout {
+                id: tabs
+                anchors.fill: parent
+                spacing: Theme.spaceSm
+                SidebarTab {
+                    id: playbackTab
+                    Layout.fillWidth: true
+                    objectName: "playbackSidebarTab"
+                    iconSource: root.iconDirectory + "settings-2.svg"
+                    selected: root.page === ProgramSidebar.Playback
+                    text: qsTranslate("Main", "Viewing settings")
+                    onClicked: root.choosePage(ProgramSidebar.Playback, focusVisible)
+                }
+                SidebarTab {
+                    id: programTab
+                    Layout.fillWidth: true
+                    objectName: "programSidebarTab"
+                    iconSource: root.iconDirectory + "info.svg"
+                    selected: root.page === ProgramSidebar.Program
+                    text: qsTranslate("Main", "Program information")
+                    onClicked: root.choosePage(ProgramSidebar.Program, focusVisible)
+                }
+                SidebarTab {
+                    id: channelsTab
+                    Layout.fillWidth: true
+                    objectName: "channelsSidebarTab"
+                    iconSource: root.iconDirectory + "grid-2x2.svg"
+                    selected: root.page === ProgramSidebar.Channels
+                    text: qsTranslate("Main", "Channels")
+                    onClicked: root.choosePage(ProgramSidebar.Channels, focusVisible)
+                }
             }
         }
     }

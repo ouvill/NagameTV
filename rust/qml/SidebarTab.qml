@@ -4,13 +4,17 @@ import QtQuick.Controls
 
 ToolButton {
     id: root
+    readonly property bool focusVisible: keyboard.focused
+    ButtonKeys { id: keyboard; button: root }
+    Keys.onReturnPressed: function(event) { keyboard.confirm(event); }
+    Keys.onEnterPressed: function(event) { keyboard.confirm(event); }
     required property url iconSource
     property bool selected: false
     implicitHeight: 54
     background: Rectangle {
         radius: Theme.panelRadius
         color: root.selected ? Theme.selection : "transparent"
-        border.width: root.visualFocus ? 1 : 0
+        border.width: root.focusVisible ? 2 : 0
         border.color: Theme.accent
     }
     contentItem: Item {

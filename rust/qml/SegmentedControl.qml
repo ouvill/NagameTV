@@ -11,6 +11,7 @@ SegmentedFrame {
     property bool directionalNavigation: true
     signal selected(string value)
     signal downRequested
+    signal upRequested
     readonly property int selectedIndex: options.findIndex(option => option.value === value)
     readonly property real segmentWidth: (width - 6) / Math.max(1, options.length)
     implicitWidth: options.length * 130 + 6
@@ -40,6 +41,9 @@ SegmentedFrame {
             delegate: AbstractButton {
                 id: tab
                 required property var modelData
+                ButtonKeys { id: keyboard; button: tab }
+                Keys.onReturnPressed: function(event) { keyboard.confirm(event); }
+                Keys.onEnterPressed: function(event) { keyboard.confirm(event); }
                 objectName: root.objectNamePrefix + modelData.value
                 width: root.segmentWidth; height: root.height
                 Accessible.name: modelData.label
@@ -51,7 +55,7 @@ SegmentedFrame {
                 Keys.onLeftPressed: function(event) { event.accepted = root.directionalNavigation; if (event.accepted) root.step(-1); }
                 Keys.onRightPressed: function(event) { event.accepted = root.directionalNavigation; if (event.accepted) root.step(1); }
                 Keys.onDownPressed: function(event) { event.accepted = root.directionalNavigation; if (event.accepted) root.downRequested(); }
-                Keys.onUpPressed: function(event) { event.accepted = root.directionalNavigation; }
+                Keys.onUpPressed: function(event) { event.accepted = root.directionalNavigation; if (event.accepted) root.upRequested(); }
                 contentItem: Label {
                     text: tab.modelData.label
                     font.pixelSize: Theme.fontBody
@@ -62,7 +66,7 @@ SegmentedFrame {
                 }
                 background: Rectangle {
                     color: "transparent"; radius: root.segmentCornerRadius
-                    border.width: tab.visualFocus ? 1 : 0; border.color: Theme.accent
+                    border.width: keyboard.focused ? 2 : 0; border.color: Theme.accent
                 }
             }
         }

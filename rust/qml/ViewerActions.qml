@@ -12,6 +12,7 @@ Item {
     property bool composerVisible: false
     property bool statsVisible: false
     property bool programVisible: false
+    property bool programFocused: false
     property bool libraryVisible: false
     property bool controlsFocused: false
     property bool canCapture: false
@@ -38,6 +39,21 @@ Item {
         else targetWindow.showNormal();
     }
     onFullscreenChanged: activity()
+
+    enum DismissMode { PanelsOnly, PanelsOrFullscreen }
+    function dismiss(mode: int) {
+        activity();
+        // Match stacking order: the guide covers the channel browser.
+        if (libraryVisible) libraryCloseRequested();
+        else if (backend.guide_visible) backend.guide_open(false);
+        else if (channelsVisible) channelsVisibilityRequested(false);
+        else if (composerVisible) composerVisibilityRequested(false);
+        else if (programVisible && programFocused) programVisibilityRequested(false);
+        else if (statsVisible) statsVisibilityRequested(false);
+        else if (programVisible) programVisibilityRequested(false);
+        else if (controlsFocused) controlsDismissRequested();
+        else if (mode === ViewerActions.PanelsOrFullscreen) leaveFullscreen();
+    }
 
     component Operation: Action {
         enabled: root.enabled
@@ -110,18 +126,11 @@ Item {
     }
     readonly property Action dismissTopmost: Operation {
         text: qsTranslate("Settings", "Close a panel or leave fullscreen")
-        onTriggered: {
-            root.activity();
-            // Match stacking order: the guide covers the channel browser.
-            if (root.libraryVisible) root.libraryCloseRequested();
-            else if (root.backend.guide_visible) root.backend.guide_open(false);
-            else if (root.channelsVisible) root.channelsVisibilityRequested(false);
-            else if (root.composerVisible) root.composerVisibilityRequested(false);
-            else if (root.statsVisible) root.statsVisibilityRequested(false);
-            else if (root.programVisible) root.programVisibilityRequested(false);
-            else if (root.controlsFocused) root.controlsDismissRequested();
-            else root.leaveFullscreen();
-        }
+        onTriggered: root.dismiss(ViewerActions.PanelsOrFullscreen)
+    }
+    readonly property Action goBack: Operation {
+        text: qsTranslate("Settings", "Close a panel")
+        onTriggered: root.dismiss(ViewerActions.PanelsOnly)
     }
     readonly property Action toggleMute: Operation {
         text: root.backend.audio_muted ? qsTranslate("Viewer", "Unmute") : qsTranslate("Viewer", "Mute")
@@ -157,7 +166,7 @@ Item {
         onTriggered: { root.audioRequested(); root.activity(); }
     }
     readonly property Action toggleSettings: Operation {
-        text: qsTranslate("Main", "Playback settings")
+        text: qsTranslate("Main", "Viewing settings")
         onTriggered: { root.settingsRequested(); root.activity(); }
     }
     readonly property Action toggleProgram: Operation {

@@ -29,6 +29,18 @@ Item {
     Connections { target: channelFilter; function onChanged() { Qt.callLater(root.resetCursor); } }
     Connections { target: root.channels; function onChanged() { root.openBrowser(); } }
     signal selectRequested(int index)
+    signal boundaryReached(int key)
+    function focusBrowser() {
+        if (list.count) list.forceActiveFocus(Qt.TabFocusReason);
+        else tabs.focusCurrent();
+    }
+    function focusLast() {
+        if (list.count) {
+            list.currentIndex = list.count - 1;
+            list.forceActiveFocus(Qt.TabFocusReason);
+            revealCursor();
+        } else tabs.focusCurrent();
+    }
     function resetCursor() {
         if (!list || !channelFilter)
             return;
@@ -68,6 +80,12 @@ Item {
             x: Math.max(0, (tabsArea.width - width) / 2)
             channels: root.channels
             value: root.band
+            directionalNavigation: true
+            onDownRequested: {
+                if (list.count) list.forceActiveFocus(Qt.TabFocusReason);
+                else root.boundaryReached(Qt.Key_Down);
+            }
+            onUpRequested: root.boundaryReached(Qt.Key_Up)
             onSelected: function (band) {
                 root.band = band;
                 list.positionViewAtBeginning();
@@ -90,10 +108,20 @@ Item {
         model: channelFilter
         onModelChanged: Qt.callLater(root.resetCursor)
         activeFocusOnTab: true
-        Keys.onReturnPressed: if (currentIndex >= 0)
-            root.selectRequested(channelFilter.row(currentIndex).channelIndex)
-        Keys.onEnterPressed: if (currentIndex >= 0)
-            root.selectRequested(channelFilter.row(currentIndex).channelIndex)
+        Keys.onUpPressed: {
+            if (currentIndex > 0) decrementCurrentIndex();
+            else tabs.focusCurrent();
+        }
+        Keys.onDownPressed: {
+            if (currentIndex < count - 1) incrementCurrentIndex();
+            else root.boundaryReached(Qt.Key_Down);
+        }
+        Keys.onReturnPressed: function(event) {
+            if (!event.isAutoRepeat && currentIndex >= 0) root.selectRequested(channelFilter.row(currentIndex).channelIndex);
+        }
+        Keys.onEnterPressed: function(event) {
+            if (!event.isAutoRepeat && currentIndex >= 0) root.selectRequested(channelFilter.row(currentIndex).channelIndex);
+        }
         delegate: ItemDelegate {
             id: card
             property real feedbackScale: down ? Theme.cardPressScale : 1
@@ -118,6 +146,14 @@ Item {
                 selected: card.highlighted
                 hovered: card.hovered
                 pressed: card.down
+            }
+            Rectangle {
+                anchors.fill: parent
+                color: "transparent"
+                border.width: 2
+                radius: Theme.panelRadius
+                border.color: Theme.accent
+                visible: list.activeFocus && list.currentIndex === card.index
             }
             contentItem: Item {
                 scale: card.feedbackScale

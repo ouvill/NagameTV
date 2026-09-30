@@ -221,14 +221,6 @@ fn check_danmaku_layout(
         engine,
         "viewerActions.toggleSettings.trigger(); root.showProgram && root.sidebarPage === ProgramSidebar.Playback",
     )?);
-    evaluate(engine, "sidebar.item.timeshiftSettingsRequested(); true")?;
-    wait_for(
-        app,
-        engine,
-        "settings.opened && settings.page === SettingsPanel.Timeshift",
-    )?;
-    evaluate(engine, "settings.close(); true")?;
-    wait_for(app, engine, "!settings.visible")?;
     evaluate(
         engine,
         "player.configure_comment_presentation('scroll','sequential'); danmaku.active = false; commentBounds.aspectRatio = Qt.binding(() => player.video_aspect_ratio); true",
@@ -1681,6 +1673,14 @@ fn check_shortcuts(
             },
         )?;
     }
+    ffi::clickRootKey(engine.pin_mut(), &QString::from("F11"))?;
+    wait_for(app, engine, "viewerActions.fullscreen")?;
+    for _ in 0..2 {
+        ffi::clickRootKey(engine.pin_mut(), &QString::from("Back"))?;
+        assert!(evaluate(engine, "viewerActions.fullscreen")?);
+    }
+    ffi::clickRootKey(engine.pin_mut(), &QString::from("Escape"))?;
+    wait_for(app, engine, "!viewerActions.fullscreen")?;
     ffi::clickRootItem(engine.pin_mut(), &QString::from("audioSettingsButton"))?;
     wait_for(
         app,
@@ -1786,6 +1786,66 @@ fn check_shortcuts(
     ffi::clickRootKey(engine.pin_mut(), &QString::from("Escape"))?;
     wait_for(app, engine, "!settings.visible && !inputContext.popupOpen")?;
     check_directional_navigation(app, engine)?;
+    check_sidebar_navigation(app, engine)?;
+    Ok(())
+}
+
+fn check_sidebar_navigation(
+    app: &QGuiApplication,
+    engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
+) -> TestResult {
+    evaluate(
+        engine,
+        "root.showStats = false; surface.forceActiveFocus(); true",
+    )?;
+    ffi::clickRootKey(engine.pin_mut(), &QString::from("Down"))?;
+    wait_for(app, engine, "playerControls.navigating")?;
+    let focused = |name: &str| {
+        format!("root.activeFocusItem && root.activeFocusItem.objectName === '{name}'")
+    };
+    for _ in 0..20 {
+        if evaluate(engine, &focused("sidePanelButton"))? {
+            break;
+        }
+        ffi::clickRootKey(engine.pin_mut(), &QString::from("Right"))?;
+    }
+    assert!(evaluate(engine, &focused("sidePanelButton"))?);
+    ffi::clickRootKey(engine.pin_mut(), &QString::from("Return"))?;
+    wait_for(
+        app,
+        engine,
+        "root.showProgram && sidebar.reveal === 1 && sidebar.view !== null && sidebar.view.activeFocus",
+    )?;
+    capture_navigation(app, engine, "sidebar-viewing-settings.png")?;
+    if evaluate(engine, "player.comments_enabled")? {
+        for _ in 0..10 {
+            if evaluate(engine, &focused("playbackAppearanceButton"))? {
+                break;
+            }
+            ffi::clickRootKey(engine.pin_mut(), &QString::from("Down"))?;
+        }
+        assert!(evaluate(engine, &focused("playbackAppearanceButton"))?);
+        ffi::clickRootKey(engine.pin_mut(), &QString::from("Return"))?;
+        capture_navigation(app, engine, "sidebar-comment-appearance.png")?;
+        ffi::clickRootKey(engine.pin_mut(), &QString::from("Return"))?;
+    }
+    for _ in 0..10 {
+        if evaluate(engine, &focused("playbackStatsToggle"))? {
+            break;
+        }
+        ffi::clickRootKey(engine.pin_mut(), &QString::from("Down"))?;
+    }
+    wait_for(app, engine, &focused("playbackStatsToggle"))?;
+    ffi::clickRootKey(engine.pin_mut(), &QString::from("Enter"))?;
+    assert!(evaluate(engine, "root.showStats")?);
+    capture_navigation(app, engine, "sidebar-scrolled-settings.png")?;
+    ffi::clickRootKey(engine.pin_mut(), &QString::from("Back"))?;
+    wait_for(app, engine, "!root.showProgram && root.showStats")?;
+    wait_for(app, engine, &focused("sidePanelButton"))?;
+    ffi::clickRootKey(engine.pin_mut(), &QString::from("Back"))?;
+    wait_for(app, engine, "!root.showStats")?;
+    ffi::clickRootKey(engine.pin_mut(), &QString::from("Escape"))?;
+    wait_for(app, engine, "inputContext.videoFocused")?;
     Ok(())
 }
 
@@ -1793,6 +1853,9 @@ fn check_directional_navigation(
     app: &QGuiApplication,
     engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
 ) -> TestResult {
+    // Finish the preceding popup's queued focus restoration before resetting
+    // focus for this independent navigation sequence.
+    app.process_events();
     evaluate(
         engine,
         "root.showProgram = false; surface.forceActiveFocus(); true",

@@ -5,6 +5,10 @@ import QtQuick.Templates as T
 
 T.Switch {
     id: control
+    readonly property bool focusVisible: keyboard.focused
+    ButtonKeys { id: keyboard; button: control }
+    Keys.onReturnPressed: function(event) { keyboard.confirm(event); }
+    Keys.onEnterPressed: function(event) { keyboard.confirm(event); }
     hoverEnabled: true
     focusPolicy: Qt.StrongFocus
     implicitWidth: implicitIndicatorWidth + leftPadding + rightPadding
@@ -20,8 +24,8 @@ T.Switch {
         y: control.topPadding + (control.availableHeight - height) / 2
         radius: Theme.panelRadius
         color: control.checked ? Theme.accent : Theme.switchTrack
-        border.color: control.visualFocus ? Theme.textPrimary : "transparent"
-        scale: control.down ? 0.96 : control.hovered || control.visualFocus ? 1.04 : 1
+        border.color: control.focusVisible ? Theme.textPrimary : "transparent"
+        scale: control.down ? 0.96 : control.hovered || control.focusVisible ? 1.04 : 1
         Behavior on color { ColorAnimation { duration: Theme.moveDuration } }
         Behavior on scale { NumberAnimation { duration: Theme.colorDuration; easing.type: Easing.OutCubic } }
         Rectangle {

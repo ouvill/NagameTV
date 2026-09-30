@@ -10,7 +10,9 @@ Item {
     Item {
         id: backButtonBinding
         enabled: root.actions.enabled && root.inputContext.enabled
-        Component.onCompleted: keyMatcher.bind_back_button(backButtonBinding)
+        readonly property bool popupOpen: root.inputContext.popupOpen
+        Component.onCompleted: keyMatcher.bind_back_button(backButtonBinding, popupOpen)
+        onPopupOpenChanged: keyMatcher.bind_back_button(backButtonBinding, popupOpen)
     }
     // Linux IBus can forward keys directly to the focus object, bypassing
     // Qt's window shortcut map. Normal shortcut presses are consumed before
@@ -79,6 +81,7 @@ Item {
             autoRepeat: true
             condition: qsTranslate("Settings", "Recordings and timeshift")
         },
-        Binding { id: dismiss; objectName: "dismissShortcut"; sequence: "Escape"; operation: root.actions.dismissTopmost; scope: InputContext.Dismiss }
+        Binding { id: dismiss; objectName: "dismissShortcut"; sequence: "Escape"; operation: root.actions.dismissTopmost; scope: InputContext.Dismiss },
+        Binding { id: back; objectName: "backShortcut"; sequence: "Back"; operation: root.actions.goBack; scope: InputContext.Dismiss }
     ]
 }

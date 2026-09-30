@@ -152,6 +152,10 @@
       <translation>再生設定</translation>
     </message>
     <message>
+      <source>Viewing settings</source>
+      <translation>視聴設定</translation>
+    </message>
+    <message>
       <source>Fullscreen</source>
       <translation>全画面</translation>
     </message>
@@ -362,6 +366,10 @@
     <message>
       <source>Speed</source>
       <translation>速度</translation>
+    </message>
+    <message>
+      <source>Comment speed</source>
+      <translation>コメントの速さ</translation>
     </message>
     <message>
       <source>Mirakurun server</source>
@@ -1673,10 +1681,6 @@
       <translation>タイムシフト</translation>
     </message>
     <message>
-      <source>Timeshift settings…</source>
-      <translation>タイムシフト設定…</translation>
-    </message>
-    <message>
       <source>Enable timeshift</source>
       <translation>タイムシフトを有効にする</translation>
     </message>
@@ -2073,6 +2077,10 @@
     <message>
       <source>Close a panel or leave fullscreen</source>
       <translation>画面を閉じる・全画面を解除する</translation>
+    </message>
+    <message>
+      <source>Close a panel</source>
+      <translation>画面を閉じる</translation>
     </message>
     <message>
       <source>Show video statistics</source>
