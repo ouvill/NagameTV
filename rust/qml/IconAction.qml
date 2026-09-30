@@ -12,6 +12,8 @@ ToolButton {
     property int emphasis: IconAction.Secondary
     property int iconSize: Theme.iconSize
     property bool toolTipEnabled: true
+    property bool focusLabelBelow: false
+    property int focusLabelAlignment: Qt.AlignHCenter
     // Player overlays use bare icons until hover, focus, or selection.
     flat: false
     // Animate the visuals; keep the hit area still while the pointer is down.
@@ -20,6 +22,10 @@ ToolButton {
         NumberAnimation { duration: control.down ? Theme.pressDuration : Theme.moveDuration; easing.type: Easing.OutCubic }
     }
     hoverEnabled: true
+    readonly property bool focusVisible: keyboard.focused
+    ButtonKeys { id: keyboard; button: control }
+    Keys.onReturnPressed: function(event) { keyboard.confirm(event); }
+    Keys.onEnterPressed: function(event) { keyboard.confirm(event); }
     opacity: enabled ? 1 : Theme.disabledOpacity
     implicitWidth: Theme.iconButtonSize
     implicitHeight: Theme.iconButtonSize
@@ -30,7 +36,8 @@ ToolButton {
         color: control.emphasis === IconAction.Destructive && (control.down || control.hovered) ? Theme.destructive
             : control.down ? Theme.overlayPressed : control.hovered ? Theme.overlayHover
             : control.active ? Theme.selection : control.flat ? "transparent" : Theme.overlaySurface
-        border.color: control.visualFocus || control.active ? Theme.accent : control.flat ? "transparent" : Theme.overlayBorder
+        border.color: control.focusVisible || control.active ? Theme.accent : control.flat ? "transparent" : Theme.overlayBorder
+        border.width: control.focusVisible ? 2 : 1
         Behavior on color { ColorAnimation { duration: Theme.colorDuration } }
         Behavior on border.color { ColorAnimation { duration: Theme.colorDuration } }
     }
@@ -56,12 +63,26 @@ ToolButton {
     ThemedToolTip {
         objectName: "actionToolTip"
         parent: control
-        visible: control.toolTipEnabled && control.hovered
+        visible: control.toolTipEnabled && control.hovered && !control.focusVisible
         text: control.tip
         delay: 0
         timeout: 3000
         x: (control.width - implicitWidth) / 2
         y: -implicitHeight - 10
         padding: Theme.spaceSm
+    }
+    Label {
+        objectName: "actionFocusLabel"
+        visible: control.toolTipEnabled && control.focusVisible
+        text: control.tip
+        textFormat: Text.PlainText
+        font.pixelSize: Theme.fontCaption
+        color: Theme.textPrimary
+        padding: Theme.spaceSm
+        x: control.focusLabelAlignment === Qt.AlignRight ? control.width - implicitWidth
+            : (control.width - implicitWidth) / 2
+        y: control.focusLabelBelow ? control.height + Theme.spaceSm : -implicitHeight - Theme.spaceSm
+        z: 1
+        background: PanelSurface { radius: Theme.controlRadius; color: Theme.overlaySurface }
     }
 }

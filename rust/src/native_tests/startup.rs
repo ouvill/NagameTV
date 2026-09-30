@@ -228,6 +228,7 @@ fn check_danmaku_layout(
         "settings.opened && settings.page === SettingsPanel.Timeshift",
     )?;
     evaluate(engine, "settings.close(); true")?;
+    wait_for(app, engine, "!settings.visible")?;
     evaluate(
         engine,
         "player.configure_comment_presentation('scroll','sequential'); danmaku.active = false; commentBounds.aspectRatio = Qt.binding(() => player.video_aspect_ratio); true",
@@ -1784,6 +1785,79 @@ fn check_shortcuts(
     wait_for(app, engine, "settings.opened && inputContext.popupOpen")?;
     ffi::clickRootKey(engine.pin_mut(), &QString::from("Escape"))?;
     wait_for(app, engine, "!settings.visible && !inputContext.popupOpen")?;
+    check_directional_navigation(app, engine)?;
+    Ok(())
+}
+
+fn check_directional_navigation(
+    app: &QGuiApplication,
+    engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
+) -> TestResult {
+    evaluate(
+        engine,
+        "root.showProgram = false; surface.forceActiveFocus(); true",
+    )?;
+    wait_for(app, engine, "!sidebar.active && inputContext.videoFocused")?;
+    ffi::clickRootKey(engine.pin_mut(), &QString::from("Return"))?;
+    wait_for(
+        app,
+        engine,
+        "playerControls.navigating && !root.showChannels",
+    )?;
+    capture_navigation(app, engine, "dpad-controls.png")?;
+    // Walk the real layout, including unavailable transport actions. No mouse
+    // positioning or direct button activation is used to enter the browser.
+    for _ in 0..20 {
+        if evaluate(
+            engine,
+            "root.activeFocusItem && root.activeFocusItem.objectName === 'channelsButton'",
+        )? {
+            break;
+        }
+        ffi::clickRootKey(engine.pin_mut(), &QString::from("Right"))?;
+    }
+    assert!(evaluate(
+        engine,
+        "root.activeFocusItem && root.activeFocusItem.objectName === 'channelsButton'"
+    )?);
+    for back in ["Escape", "Back"] {
+        ffi::clickRootKey(engine.pin_mut(), &QString::from("Return"))?;
+        wait_for(
+            app,
+            engine,
+            "root.showChannels && channelPanel.view !== null",
+        )?;
+        ffi::clickRootKey(engine.pin_mut(), &QString::from(back))?;
+        wait_for(
+            app,
+            engine,
+            "!root.showChannels && root.activeFocusItem && root.activeFocusItem.objectName === 'channelsButton'",
+        )?;
+    }
+    ffi::clickRootKey(engine.pin_mut(), &QString::from("Up"))?;
+    wait_for(app, engine, "modeNavigation.navigating")?;
+    capture_navigation(app, engine, "dpad-navigation.png")?;
+    ffi::clickRootKey(engine.pin_mut(), &QString::from("Down"))?;
+    wait_for(app, engine, "playerControls.navigating")?;
+    ffi::clickRootKey(engine.pin_mut(), &QString::from("Escape"))?;
+    wait_for(app, engine, "inputContext.videoFocused")?;
+    if evaluate(engine, "player.channels.count > 0")? {
+        ffi::clickRootKey(engine.pin_mut(), &QString::from("Down"))?;
+        wait_for(app, engine, "playerControls.navigating")?;
+        ffi::clickRootKey(engine.pin_mut(), &QString::from("Return"))?;
+        wait_for(
+            app,
+            engine,
+            "root.showChannels && channelPanel.view !== null",
+        )?;
+        ffi::clickRootKey(engine.pin_mut(), &QString::from("Return"))?;
+        wait_for(
+            app,
+            engine,
+            "!root.showChannels && inputContext.videoFocused",
+        )?;
+        evaluate(engine, "player.stop(); true")?;
+    }
     Ok(())
 }
 

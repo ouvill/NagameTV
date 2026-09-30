@@ -3,8 +3,11 @@ import QtQuick
 import MinimalViewer
 import QtQuick.Controls
 
-Item {
+DirectionalFocus {
     id: root
+    navigationItems: [volume, liveButton, speedButton, backwardButton, playButton, forwardButton,
+        channelsButton, commentButton, screenshot, subtitleButton, danmakuButton, fullscreenButton, more, sideButton]
+    initialItem: playButton.enabled ? playButton : channelsButton
     enum Density { Wide, Narrow, Dense }
     required property ViewerActions actions
     readonly property var backend: actions.backend
@@ -55,6 +58,7 @@ Item {
             iconDirectory: root.iconDirectory
         }
         IconAction {
+            id: liveButton
             objectName: "returnToLiveButton"
             flat: true
             visible: !root.backend.recording
@@ -74,7 +78,7 @@ Item {
             text: "x" + (root.backend.playback_rate / 10).toFixed(1)
             Accessible.name: qsTranslate("Viewer", "Playback speed: %1").arg(text)
             ThemedToolTip {
-                visible: speedButton.hovered && !speedPanel.visible
+                visible: speedButton.hovered && !speedButton.focusVisible && !speedPanel.visible
                 text: speedButton.Accessible.name
             }
             onClicked: speedPanel.toggle()
@@ -96,6 +100,7 @@ Item {
         y: root.stacked ? 0 : (root.height - height) / 2
         spacing: Theme.spaceMd
         IconAction {
+            id: backwardButton
             objectName: "skipBackButton"
             flat: true
             visible: root.transportControls
@@ -105,6 +110,7 @@ Item {
             action: root.actions.seekBackward
         }
         IconAction {
+            id: playButton
             objectName: "playStopButton"
             flat: true
             iconSource: root.iconDirectory + root.actions.playbackIcon
@@ -112,6 +118,7 @@ Item {
             action: root.actions.playbackToggle
         }
         IconAction {
+            id: forwardButton
             objectName: "skipForwardButton"
             flat: true
             visible: root.transportControls
@@ -125,6 +132,7 @@ Item {
         objectName: "viewControls"
         anchors { right: parent.right; verticalCenter: parent.verticalCenter; verticalCenterOffset: root.stacked ? 24 : 0 }
         Control {
+            id: channelsButton
             objectName: "channelsButton"
             visible: !root.backend.recording
             iconSource: root.iconDirectory + "grid-2x2.svg"
@@ -135,6 +143,7 @@ Item {
         Row {
             spacing: root.actionSpacing
             Control {
+                id: commentButton
                 objectName: "postCommentButton"
                 visible: !root.backend.recording
                 iconSource: root.iconDirectory + "pencil.svg"
@@ -159,6 +168,7 @@ Item {
                 onClicked: if (root.backend.media_subtitle_available) root.subtitlesRequested()
             }
             Control {
+                id: danmakuButton
                 objectName: "danmakuButton"
                 visible: root.density === PlayerControls.Wide
                 iconSource: root.iconDirectory + (root.backend.danmaku_enabled ? "message-square.svg" : "message-square-off.svg")
@@ -167,6 +177,7 @@ Item {
                 action: root.actions.toggleDanmaku
             }
             Control {
+                id: fullscreenButton
                 objectName: "fullscreenButton"
                 visible: root.density === PlayerControls.Wide
                 iconSource: root.iconDirectory + "maximize.svg"
@@ -221,6 +232,8 @@ Item {
         }
         Divider {}
         Control {
+            id: sideButton
+            focusLabelAlignment: Qt.AlignRight
             objectName: "sidePanelButton"
             iconSource: root.iconDirectory + (root.actions.programVisible ? "panel-right-close.svg" : "panel-right-open.svg")
             tip: action.text

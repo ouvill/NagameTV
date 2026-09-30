@@ -49,6 +49,20 @@ TestCase {
         wait(100);
         compare(overlay.controlsVisible, true);
     }
+    function test_dismiss_hides_playing_controls_until_next_activity() {
+        overlay.playing = true;
+        overlay.dismiss();
+        compare(overlay.controlsVisible, false);
+        overlay.reveal();
+        compare(overlay.controlsVisible, true);
+        overlay.pinned = true;
+        overlay.dismiss();
+        compare(overlay.controlsVisible, true);
+        overlay.playing = false;
+        overlay.pinned = false;
+        overlay.dismiss();
+        compare(overlay.controlsVisible, true);
+    }
     function test_window_exit_hides_immediately_and_reentry_restarts_timeout() {
         overlay.playing = true;
         overlay.pointerExited();

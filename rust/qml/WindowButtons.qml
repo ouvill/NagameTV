@@ -7,7 +7,9 @@ Rectangle {
     id: root
     required property Window targetWindow
     property url iconDirectory: "qrc:/qt/qml/MinimalViewer/assets/icons/"
+    readonly property list<Item> navigationButtons: [minimizeButton, maximizeButton, closeButton]
     property bool flat: false
+    property bool focusLabelBelow: false
     implicitWidth: Theme.iconButtonSize * 3
     implicitHeight: Theme.iconButtonSize
     radius: height / 2
@@ -20,22 +22,26 @@ Rectangle {
         tip: label
         iconSize: Theme.smallIconSize
         flat: true
+        focusLabelBelow: root.focusLabelBelow
     }
     Row {
         anchors.fill: parent
         Action {
+            id: minimizeButton
             objectName: "minimizeWindow"
             iconName: "minus"
             label: qsTranslate("Viewer", "Minimize")
             onClicked: root.targetWindow.showMinimized()
         }
         Action {
+            id: maximizeButton
             objectName: "maximizeWindow"
             iconName: "square"
             label: root.targetWindow.visibility === Window.Maximized ? qsTranslate("Viewer", "Restore window") : qsTranslate("Viewer", "Maximize")
             onClicked: root.targetWindow.visibility === Window.Maximized ? root.targetWindow.showNormal() : root.targetWindow.showMaximized()
         }
         Action {
+            id: closeButton
             objectName: "closeWindow"
             iconName: "x"
             label: qsTranslate("Main", "Close")

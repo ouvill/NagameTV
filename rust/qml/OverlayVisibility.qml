@@ -23,6 +23,11 @@ Item {
         else
             timeout.stop();
     }
+    function dismiss() {
+        if (!mayHide) return;
+        timeout.stop();
+        controlsVisible = false;
+    }
     function syncVisibility() {
         if (mayHide && pointer.location === OverlayVisibility.Outside) {
             timeout.stop();

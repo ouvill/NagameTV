@@ -144,7 +144,7 @@ Item {
             }
             ActionTestBackend { id: actionBackend }
             ViewerActions { id: actions; backend: actionBackend; targetWindow: host }
-            InputContext { id: inputContext; targetWindow: host }
+            InputContext { videoItem: host.contentItem; id: inputContext; targetWindow: host }
             ShortcutBindings { id: shortcuts; actions: actions; inputContext: inputContext }
             CommentSubmitPolicy {
                 id: commentPolicy

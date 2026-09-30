@@ -24,6 +24,23 @@ protected:
     if (watched != window_ || !item_->isEnabled() || !item_->isVisible()
         || !window_->isActive()) return false;
     switch (event->type()) {
+    case QEvent::KeyPress:
+    case QEvent::KeyRelease: {
+      const auto *key = static_cast<QKeyEvent *>(event);
+      // A held Escape must not close a second popup after the first disappears.
+      if (key->key() == Qt::Key_Escape && key->isAutoRepeat()) {
+        event->accept();
+        return true;
+      }
+      if (key->key() != Qt::Key_Back) return false;
+      event->accept();
+      if (event->type() == QEvent::KeyPress && !key->isAutoRepeat()) {
+        const QPointer<QQuickWindow> target = window_;
+        sendEscape(target->activeFocusItem(), QEvent::KeyPress);
+        if (target) sendEscape(target->activeFocusItem(), QEvent::KeyRelease);
+      }
+      return true;
+    }
     case QEvent::MouseButtonPress:
     case QEvent::MouseButtonDblClick:
     case QEvent::MouseButtonRelease:

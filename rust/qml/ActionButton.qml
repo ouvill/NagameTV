@@ -20,6 +20,10 @@ Button {
     topPadding: Theme.spaceSm
     bottomPadding: Theme.spaceSm
     hoverEnabled: true
+    readonly property bool focusVisible: keyboard.focused
+    ButtonKeys { id: keyboard; button: control }
+    Keys.onReturnPressed: function(event) { keyboard.confirm(event); }
+    Keys.onEnterPressed: function(event) { keyboard.confirm(event); }
     opacity: enabled ? 1 : Theme.disabledOpacity
     Behavior on feedbackScale {
         NumberAnimation { duration: control.down ? Theme.pressDuration : Theme.moveDuration; easing.type: Easing.OutCubic }
@@ -48,7 +52,8 @@ Button {
             : control.hovered ? (control.surface === ActionButton.VideoOverlay ? Theme.overlayHover : Theme.surfaceHover)
             : control.emphasis === ActionButton.Quiet || control.surface === ActionButton.VideoOverlay
                 ? "transparent" : Theme.surfaceRaised
-        border.color: control.visualFocus || control.selected ? Theme.accent : "transparent"
+        border.color: control.focusVisible || control.selected ? Theme.accent : "transparent"
+        border.width: control.focusVisible ? 2 : 1
         Behavior on color { ColorAnimation { duration: Theme.colorDuration } }
         Behavior on border.color { ColorAnimation { duration: Theme.colorDuration } }
     }

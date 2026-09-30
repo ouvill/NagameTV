@@ -19,6 +19,10 @@ ColumnLayout {
     function previewLabel(time) { return timeLabel(time); }
     readonly property real seekEnd: Number.isFinite(backend.window_end_ms)
         ? backend.window_end_ms : backend.duration_ms
+    readonly property alias navigationSlider: slider
+    property Item upNavigation: null
+    property Item downNavigation: null
+    signal adjustmentFinished
     property bool closing: false
     readonly property bool pressed: slider.pressed
     readonly property bool hovered: slider.enabled && seekHover.hovered
@@ -59,6 +63,11 @@ ColumnLayout {
     }
     ThemedSlider {
         id: slider
+        KeyNavigation.priority: KeyNavigation.BeforeItem
+        KeyNavigation.up: root.upNavigation
+        KeyNavigation.down: root.downNavigation
+        Keys.onReturnPressed: function(event) { if (!event.isAutoRepeat) root.adjustmentFinished(); }
+        Keys.onEnterPressed: function(event) { if (!event.isAutoRepeat) root.adjustmentFinished(); }
         objectName: "recordingSeekSlider"
         Layout.fillWidth: true
         enabled: !root.closing && root.backend.seekable && root.seekEnd > root.seekStart

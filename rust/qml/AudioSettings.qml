@@ -71,6 +71,7 @@ Popup {
     modal: false
     dim: false
     focus: true
+    onOpened: volumeSlider.forceActiveFocus(Qt.TabFocusReason)
     closePolicy: Popup.CloseOnEscape | (anchorItem ? Popup.CloseOnPressOutsideParent : Popup.CloseOnPressOutside)
     onAboutToShow: {
         dismissal.phase = AudioSettings.Idle;
@@ -115,6 +116,8 @@ Popup {
                 Layout.fillWidth: true
             }
             IconAction {
+                id: closeButton
+                KeyNavigation.down: muteButton
                 iconSource: popup.iconDirectory + "x.svg"
                 tip: qsTranslate("Main", "Close")
                 implicitWidth: popup.touchTarget
@@ -126,6 +129,10 @@ Popup {
             Layout.fillWidth: true
             spacing: Theme.spaceMd
             IconAction {
+                id: muteButton
+                KeyNavigation.up: closeButton
+                KeyNavigation.down: volumeSlider
+                Keys.onRightPressed: volumeSlider.forceActiveFocus(Qt.TabFocusReason)
                 objectName: "muteButton"
                 implicitWidth: popup.touchTarget
                 implicitHeight: popup.touchTarget
@@ -136,6 +143,11 @@ Popup {
             }
             VolumeSlider {
                 id: volumeSlider
+                KeyNavigation.priority: KeyNavigation.BeforeItem
+                KeyNavigation.up: muteButton
+                KeyNavigation.down: trackOptions.count ? trackOptions.itemAt(0) : closeButton
+                Keys.onReturnPressed: function(event) { if (!event.isAutoRepeat) popup.close(); }
+                Keys.onEnterPressed: function(event) { if (!event.isAutoRepeat) popup.close(); }
                 objectName: "playerVolumeSlider"
                 Layout.fillWidth: true
                 Layout.minimumHeight: popup.touchTarget
@@ -172,6 +184,7 @@ Popup {
                 width: scroll.availableWidth
                 spacing: Theme.spaceSm
                 Repeater {
+                    id: trackOptions
                     model: popup.tracks
                     delegate: ActionButton {
                         id: option
@@ -181,6 +194,13 @@ Popup {
                         objectName: "audioOption" + index
                         required property int index
                         required property var modelData
+                        KeyNavigation.up: index > 0 ? trackOptions.itemAt(index - 1) : volumeSlider
+                        KeyNavigation.down: index + 1 < trackOptions.count ? trackOptions.itemAt(index + 1) : closeButton
+                        onActiveFocusChanged: {
+                            if (!activeFocus) return;
+                            const viewport = scroll.contentItem as Flickable;
+                            if (viewport) viewport.contentY = Math.max(0, Math.min(y, viewport.contentHeight - viewport.height));
+                        }
                         Layout.fillWidth: true
                         Layout.minimumHeight: popup.touchTarget
                         Accessible.checkable: true

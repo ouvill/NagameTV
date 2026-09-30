@@ -56,6 +56,7 @@ Popup {
     modal: false
     dim: false
     focus: true
+    onOpened: speedSlider.forceActiveFocus(Qt.TabFocusReason)
     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutsideParent
     onAboutToShow: { dismissal = PlaybackSpeedPanel.Ready; outsideFocusTarget = null; failure = ""; draft = backend.requested_playback_rate; activity(); }
     onAboutToHide: { dismissal = PlaybackSpeedPanel.Closing; speedSlider.cancelGesture(); activity(); }
@@ -94,6 +95,9 @@ Popup {
             Layout.fillWidth: true
             spacing: Theme.spaceXs
             ActionButton {
+                id: decreaseButton
+                Keys.onRightPressed: speedSlider.forceActiveFocus(Qt.TabFocusReason)
+                KeyNavigation.down: speedPresets.itemAt(0)
                 objectName: "speedDecrease"
                 text: "−"
                 implicitWidth: popup.touchTarget; implicitHeight: popup.touchTarget
@@ -104,6 +108,11 @@ Popup {
             }
             ThemedSlider {
                 id: speedSlider
+                KeyNavigation.priority: KeyNavigation.BeforeItem
+                KeyNavigation.up: decreaseButton
+                KeyNavigation.down: speedPresets.itemAt(0)
+                Keys.onReturnPressed: function(event) { if (!event.isAutoRepeat) popup.close(); }
+                Keys.onEnterPressed: function(event) { if (!event.isAutoRepeat) popup.close(); }
                 objectName: "speedSlider"
                 property int gesture: PlaybackSpeedPanel.Idle
                 from: popup.backend.minimum_playback_rate
@@ -134,6 +143,9 @@ Popup {
                 Keys.onEscapePressed: function(event) { cancelGesture(); popup.close(); event.accepted = true; }
             }
             ActionButton {
+                id: increaseButton
+                Keys.onLeftPressed: speedSlider.forceActiveFocus(Qt.TabFocusReason)
+                KeyNavigation.down: speedPresets.itemAt(speedPresets.count - 1)
                 objectName: "speedIncrease"
                 text: "+"
                 implicitWidth: popup.touchTarget; implicitHeight: popup.touchTarget
@@ -152,12 +164,18 @@ Popup {
             Layout.fillWidth: true
             spacing: Theme.spaceSm
             Repeater {
+                id: speedPresets
                 objectName: "speedPresets"
                 model: popup.presets
                 delegate: ActionButton {
                     id: presetAction
                     selected: popup.backend.requested_playback_rate === modelData
                     required property int modelData
+                    required property int index
+                    KeyNavigation.up: speedSlider
+                    KeyNavigation.left: index > 0 ? speedPresets.itemAt(index - 1) : decreaseButton
+                    KeyNavigation.right: index + 1 < speedPresets.count ? speedPresets.itemAt(index + 1) : increaseButton
+                    KeyNavigation.down: resetButton
                     objectName: "speedPreset" + modelData
                     Layout.fillWidth: true
                     implicitHeight: popup.touchTarget
@@ -171,6 +189,8 @@ Popup {
             }
         }
         ActionButton {
+            id: resetButton
+            KeyNavigation.up: speedPresets.itemAt(0)
             objectName: "speedReset"
             Layout.fillWidth: true
             implicitHeight: popup.touchTarget

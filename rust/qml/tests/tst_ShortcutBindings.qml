@@ -50,6 +50,7 @@ Item {
                     SignalSpy { id: commentSpy; target: actions; signalName: "composerVisibilityRequested" }
                     Viewer.InputContext {
                         id: inputContext
+                        videoItem: parent
                         targetWindow: host
                         enabled: actions.enabled
                         playbackControls: backend.recording || backend.pausable
@@ -94,11 +95,11 @@ Item {
                 tryCompare(host, "visibility", Window.Windowed);
             }
             function dismissInputs() {
-                return [{tag: "escape", mouse: false}, {tag: "mouse-back", mouse: true}];
+                return [{tag: "escape", key: Qt.Key_Escape}, {tag: "key-back", key: Qt.Key_Back}, {tag: "mouse-back", mouse: true}];
             }
             function dismiss(data) {
                 if (data.mouse) mouseClick(view, 350, 200, Qt.BackButton);
-                else keyClick(Qt.Key_Escape);
+                else keyClick(data.key);
             }
             function test_closed_drawer_does_not_disable_navigation_data() { return dismissInputs(); }
             function test_closed_drawer_does_not_disable_navigation(data) {
@@ -261,6 +262,13 @@ Item {
                 keyClick(Qt.Key_Left);
                 verify(slider.value < 50);
                 compare(view.backend.skips.length, 2);
+                const button = createTemporaryQmlObject('import QtQuick.Controls; Button { property int clicks: 0; onClicked: clicks++ }', view);
+                button.forceActiveFocus();
+                keyClick(Qt.Key_Right);
+                keyClick(Qt.Key_Space);
+                compare(view.backend.skips.length, 2);
+                compare(view.backend.playbackRequests, 0);
+                compare(button.clicks, 1);
                 view.forceActiveFocus();
                 view.actions.channelsVisible = true;
                 keyClick(Qt.Key_Space);

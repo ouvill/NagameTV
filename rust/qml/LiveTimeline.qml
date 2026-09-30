@@ -7,6 +7,10 @@ import QtQuick.Layouts
 ColumnLayout {
     id: root
     required property var backend
+    readonly property alias navigationSlider: slider
+    property Item upNavigation: null
+    property Item downNavigation: null
+    signal adjustmentFinished
     property bool closing: false
     readonly property var snapshot: JSON.parse(backend.live_timeline || "null")
     readonly property var axis: slider.gesture ? slider.gesture.axis : snapshot ? snapshot.axis : null
@@ -158,6 +162,11 @@ ColumnLayout {
     }
     ThemedSlider {
         id: slider
+        KeyNavigation.priority: KeyNavigation.BeforeItem
+        KeyNavigation.up: root.upNavigation
+        KeyNavigation.down: root.downNavigation
+        Keys.onReturnPressed: function(event) { if (!event.isAutoRepeat) root.adjustmentFinished(); }
+        Keys.onEnterPressed: function(event) { if (!event.isAutoRepeat) root.adjustmentFinished(); }
         objectName: "liveSeekSlider"
         Layout.fillWidth: true
         implicitHeight: 24

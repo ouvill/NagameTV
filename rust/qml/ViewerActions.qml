@@ -13,6 +13,7 @@ Item {
     property bool statsVisible: false
     property bool programVisible: false
     property bool libraryVisible: false
+    property bool controlsFocused: false
     property bool canCapture: false
     readonly property bool fullscreen: targetWindow !== null && targetWindow.visibility === Window.FullScreen
     property int restoreVisibility: Window.Windowed
@@ -26,6 +27,7 @@ Item {
     signal programVisibilityRequested(bool visible)
     signal recordingRequested
     signal libraryCloseRequested
+    signal controlsDismissRequested
     signal captureRequested
     signal audioRequested
     signal settingsRequested
@@ -117,6 +119,7 @@ Item {
             else if (root.composerVisible) root.composerVisibilityRequested(false);
             else if (root.statsVisible) root.statsVisibilityRequested(false);
             else if (root.programVisible) root.programVisibilityRequested(false);
+            else if (root.controlsFocused) root.controlsDismissRequested();
             else root.leaveFullscreen();
         }
     }

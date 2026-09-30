@@ -6,16 +6,19 @@ Item {
     enum Scope { Window, Navigation, Playback, Seek, Dismiss }
     enum FocusKind { Other, Text, Slider }
     required property Window targetWindow
+    required property Item videoItem
     property bool playbackControls: false
     property bool guideVisible: false
     property bool libraryVisible: false
     property bool channelsVisible: false
     readonly property Item focusItem: targetWindow ? targetWindow.activeFocusItem : null
+    readonly property bool videoFocused: focusItem === videoItem
     readonly property int focusKind: focusItem instanceof TextInput || focusItem instanceof TextEdit
         ? InputContext.Text : focusItem instanceof Slider ? InputContext.Slider : InputContext.Other
     readonly property bool editingText: focusKind === InputContext.Text
-    // A closed Drawer keeps Overlay visible for edge dragging.
-    readonly property bool popupOpen: Overlay.overlay ? Overlay.overlay.children.some(item => item.visible) : false
+    // Closed drawers and passive tooltips also use Overlay. Only a popup
+    // owning keyboard focus takes input away from the underlying screen.
+    readonly property bool popupOpen: Overlay.overlay ? Overlay.overlay.children.some(item => item.visible && item.activeFocus) : false
     readonly property bool viewing: !guideVisible && !libraryVisible && !channelsVisible
     readonly property bool navigationEnabled: enabled && !libraryVisible && !editingText && !popupOpen
 
@@ -39,8 +42,8 @@ Item {
         switch (scope) {
         case InputContext.Window: return true;
         case InputContext.Navigation: return navigationEnabled;
-        case InputContext.Playback: return navigationEnabled && playbackControls && viewing;
-        case InputContext.Seek: return navigationEnabled && playbackControls && viewing && focusKind !== InputContext.Slider;
+        case InputContext.Playback: return navigationEnabled && playbackControls && viewing && videoFocused;
+        case InputContext.Seek: return navigationEnabled && playbackControls && viewing && videoFocused;
         case InputContext.Dismiss: return !popupOpen;
         default: throw new Error("Unknown shortcut scope: " + scope);
         }

@@ -15,9 +15,28 @@ ViewerWindow {
     property bool closing: false
     enum Page { Viewing, Recordings }
     property int page: Main.Viewing
+    QtObject {
+        id: focusHistory
+        property Item channels: null
+        property Item guide: null
+        property Item library: null
+    }
+    function restoreFocus(item) {
+        // Wait for the closing panel's visibility/enabled bindings before
+        // testing the opener. It can still be disabled in the change handler.
+        Qt.callLater(function() {
+            if (root.closing || root.showGuide || root.showChannels || root.libraryVisible || root.showCommentComposer || inputContext.popupOpen) return;
+            overlayVisibility.reveal();
+            // Shared buttons retain whether the opener was used with keys or
+            // the pointer; returning from a mouse-opened panel must not pin controls.
+            if (item && item.visible && item.enabled) item.forceActiveFocus(Qt.OtherFocusReason);
+            else surface.forceActiveFocus();
+        });
+    }
     readonly property bool libraryVisible: !closing && page === Main.Recordings
     function openRecordingLibrary() {
         if (closing) return;
+        if (!libraryVisible) focusHistory.library = root.activeFocusItem;
         setup.close();
         closeSettings();
         player.guide_open(false);
@@ -25,8 +44,9 @@ ViewerWindow {
         recordingLibrary.activate();
     }
     function closeRecordingLibrary() {
+        const wasVisible = libraryVisible;
         page = Main.Viewing;
-        surface.forceActiveFocus();
+        if (wasVisible) root.restoreFocus(focusHistory.library);
         overlayVisibility.reveal();
     }
     readonly property SettingsPanel settings: settingsLoader.item as SettingsPanel
@@ -50,10 +70,18 @@ ViewerWindow {
             player.record_ui_state(showGuide, showChannels, danmaku.view ? danmaku.view.activeCount : 0);
     }
     onShowGuideChanged: {
-        if (showGuide) page = Main.Viewing;
+        if (showGuide) { focusHistory.guide = root.activeFocusItem; page = Main.Viewing; }
+        else {
+            if (root.showChannels && channelPanel.view) channelPanel.view.focusBrowser();
+            else root.restoreFocus(focusHistory.guide);
+        }
         recordUsage();
     }
-    onShowChannelsChanged: recordUsage()
+    onShowChannelsChanged: {
+        if (showChannels) focusHistory.channels = root.activeFocusItem;
+        else root.restoreFocus(focusHistory.channels);
+        recordUsage();
+    }
     Timer { interval: 10000; repeat: true; running: root.usageReady && !root.closing; onTriggered: root.recordUsage() }
     Connections {
         target: player
@@ -170,7 +198,7 @@ ViewerWindow {
         enabled: !root.closing
         playing: player.playing
         // Like main, the persistent sidebar does not pin the video controls.
-        pinned: root.showChannels || root.showGuide || inputContext.popupOpen || inputContext.editingText || playerControls.screenshotHovered || recordingTimeline.pressed || recordingTimeline.hovered
+        pinned: root.showChannels || root.showGuide || inputContext.popupOpen || inputContext.editingText || viewerActions.controlsFocused || playerControls.screenshotHovered || recordingTimeline.pressed || recordingTimeline.hovered
     }
     AudioSettings {
         id: audioSettings
@@ -216,6 +244,15 @@ ViewerWindow {
         statsVisible: root.showStats
         programVisible: root.showProgram
         libraryVisible: root.libraryVisible
+        controlsFocused: playerControls.navigating || modeNavigation.navigating
+            || (recordingTimeline.activeFocus && inputContext.focusItem instanceof Slider && (inputContext.focusItem as Slider).visualFocus)
+        onControlsDismissRequested: {
+            if (recordingTimeline.activeFocus) playerControls.enter();
+            else {
+                surface.forceActiveFocus();
+                overlayVisibility.dismiss();
+            }
+        }
         onLibraryCloseRequested: root.closeRecordingLibrary()
         canCapture: screenshot.canCapture
         onActivity: overlayVisibility.reveal()
@@ -238,6 +275,7 @@ ViewerWindow {
     InputContext {
         id: inputContext
         targetWindow: root
+        videoItem: surface
         enabled: !root.closing
         playbackControls: player.recording || player.pausable
         guideVisible: root.showGuide
@@ -337,6 +375,16 @@ ViewerWindow {
         width: root.viewport.width - (sidebar.open ? root.panelWidth : 0)
         height: root.viewport.height
         focus: true
+        Keys.onPressed: function(event) {
+            if (!inputContext.videoFocused || !inputContext.viewing || inputContext.popupOpen
+                    || (event.modifiers & ~Qt.KeypadModifier) !== Qt.NoModifier) return;
+            if (![Qt.Key_Up, Qt.Key_Down, Qt.Key_Return, Qt.Key_Enter].includes(event.key)) return;
+            event.accepted = true;
+            if (event.isAutoRepeat) return;
+            overlayVisibility.reveal();
+            if (event.key === Qt.Key_Up) modeNavigation.enter();
+            else playerControls.enter();
+        }
         signal activity
         signal pointerExited
         onActivity: overlayVisibility.pointerActivity()
@@ -586,7 +634,9 @@ ViewerWindow {
             }
             padding: 0
             bottomPadding: 22
-            visible: opacity > 0
+            // Keyboard focus can return as soon as the panel is enabled,
+            // including the first frame of its reveal animation.
+            visible: enabled || opacity > 0
             enabled: overlayVisibility.controlsVisible && !root.showChannels && !root.showCommentComposer
             opacity: enabled ? 1 : 0
             Behavior on opacity {
@@ -611,6 +661,9 @@ ViewerWindow {
                 spacing: 0
                 PlaybackTimeline {
                     id: recordingTimeline
+                    upNavigation: modeNavigation
+                    downNavigation: playerControls
+                    onAdjustmentFinished: playerControls.enter()
                     Layout.fillWidth: true
                     Layout.leftMargin: 24
                     Layout.rightMargin: 24
@@ -619,6 +672,9 @@ ViewerWindow {
                 }
                 PlayerControls {
                     id: playerControls
+                    onBoundaryReached: function(key) {
+                        if (key === Qt.Key_Up && !recordingTimeline.enter()) modeNavigation.enter();
+                    }
                     onSubtitlesRequested: { audioSettings.close(); closeSpeed(); mediaSubtitleSettings.open(); }
                     Layout.fillWidth: true
                     Layout.leftMargin: 24
@@ -740,6 +796,7 @@ ViewerWindow {
                 viewingIndex: player.viewing_channel
                 onSelectRequested: function (index) {
                     player.select(index);
+                    focusHistory.channels = surface;
                     root.showChannels = false;
                 }
                 onCloseRequested: root.showChannels = false
@@ -838,6 +895,9 @@ ViewerWindow {
         mode: player.recording ? ModeNavigation.Recording : ModeNavigation.Live
         guideEnabled: player.epg_enabled
         onModeRequested: function(mode) { root.requestMode(mode); }
+        onBoundaryReached: function(key) {
+            if (key === Qt.Key_Down) playerControls.enter();
+        }
     }
     WindowResizeFrame {
         // Resize handles retain their screen-space hit area at small sizes.

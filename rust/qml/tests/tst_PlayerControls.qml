@@ -29,13 +29,14 @@ Item {
         }
         InputContext {
             id: inputContext
+            videoItem: host.contentItem
             targetWindow: host
             playbackControls: backend.recording || backend.pausable
         }
         ShortcutBindings { actions: actions; inputContext: inputContext }
         OverlayVisibility {
             id: overlay
-            pinned: controls.screenshotHovered
+            pinned: controls.screenshotHovered || controls.navigating
             hideDelay: 60
         }
         PlayerControls {
@@ -61,11 +62,13 @@ Item {
         SignalSpy { id: panel; target: actions; signalName: "programVisibilityRequested" }
         SignalSpy { id: comments; target: actions; signalName: "composerVisibilityRequested" }
         SignalSpy { id: subtitles; target: controls; signalName: "subtitlesRequested" }
+        TestInputMethod { id: ime }
         TestCase {
             name: "PlayerControls"
             when: windowShown
             function init() {
                 failOnWarning(/.*/);
+                host.contentItem.forceActiveFocus();
                 overlay.playing = false;
                 backend.playback_action = Player.Play;
                 backend.playbackRequests = 0;
@@ -111,6 +114,102 @@ Item {
                 const before = backend.playbackRequests;
                 mouseClick(play);
                 compare(backend.playbackRequests, before);
+            }
+            function test_directional_buttons_do_not_seek_until_confirmed() {
+                backend.recording = true;
+                backend.playing = true;
+                verify(waitForRendering(controls));
+                host.requestActivate(); tryCompare(host, "active", true);
+                const play = findChild(controls, "playStopButton");
+                const forward = findChild(controls, "skipForwardButton");
+                play.forceActiveFocus(Qt.TabFocusReason);
+                keyClick(Qt.Key_Right);
+                verify(forward.activeFocus);
+                verify(forward.focusVisible);
+                compare(backend.skips.length, 0);
+                keyClick(Qt.Key_Return);
+                compare(backend.skips, [actions.seekSteps.forwardMilliseconds]);
+                verify(forward.focusVisible);
+                ime.forward_key(Qt.Key_Return, Qt.NoModifier, "", true);
+                compare(backend.skips.length, 1);
+                compare(controls.currentItem, forward);
+                keyClick(Qt.Key_Left);
+                verify(play.activeFocus, "focus=" + host.activeFocusItem + "; name=" + host.activeFocusItem.objectName + "; navigating=" + controls.navigating);
+                keyClick(Qt.Key_Enter);
+                compare(backend.playbackRequests, 1);
+                compare(backend.skips.length, 1);
+                host.contentItem.forceActiveFocus();
+                keyClick(Qt.Key_Right);
+                compare(backend.skips.length, 2);
+            }
+            function test_navigation_skips_disabled_controls_and_keeps_focus_on_resize() {
+                host.requestActivate(); tryCompare(host, "active", true);
+                navigation.guideEnabled = false;
+                const recording = findChild(navigation, "recordingModeButton");
+                const settings = findChild(navigation, "settingsModeButton");
+                recording.forceActiveFocus(Qt.TabFocusReason);
+                keyClick(Qt.Key_Right);
+                verify(settings.activeFocus);
+                keyClick(Qt.Key_Return);
+                compare(modes.signalArguments[0][0], ModeNavigation.Settings);
+                backend.playing = true;
+                const screenshot = findChild(controls, "screenshotButton");
+                screenshot.forceActiveFocus(Qt.TabFocusReason);
+                controls.width = 532;
+                verify(waitForRendering(controls));
+                keyClick(Qt.Key_Right);
+                verify(findChild(controls, "moreControlsButton").activeFocus);
+                keyClick(Qt.Key_Up);
+                verify(findChild(controls, "playStopButton").activeFocus);
+            }
+            function test_directional_focus_pins_overlay_without_pointer_and_shows_label() {
+                host.requestActivate(); tryCompare(host, "active", true);
+                const play = findChild(controls, "playStopButton");
+                play.forceActiveFocus(Qt.TabFocusReason);
+                tryCompare(host, "activeFocusItem", play);
+                compare(controls.currentItem, play);
+                compare(controls.currentControl, play);
+                verify(controls.navigating, "scope=" + controls.activeFocus + "; visual=" + play.focusVisible);
+                const tip = findChild(play, "actionFocusLabel");
+                tryCompare(tip, "visible", true);
+                compare(inputContext.popupOpen, false);
+                overlay.playing = true;
+                overlay.pointerExited();
+                wait(overlay.hideDelay * 2);
+                verify(overlay.controlsVisible, "focus=" + host.activeFocusItem + "; navigating=" + controls.navigating + "; scope=" + controls.activeFocus + "; visual=" + play.focusVisible);
+                host.contentItem.forceActiveFocus();
+                tryCompare(overlay, "controlsVisible", false);
+            }
+            function test_audio_and_speed_adjustment_without_pointer() {
+                backend.recording = true; backend.playing = true;
+                verify(waitForRendering(controls));
+                host.requestActivate(); tryCompare(host, "active", true);
+                const button = findChild(controls, "audioSettingsButton");
+                button.forceActiveFocus(Qt.TabFocusReason);
+                tryCompare(host, "activeFocusItem", button);
+                keyClick(Qt.Key_Return);
+                tryCompare(audioPopup, "opened", true);
+                tryCompare(host, "activeFocusItem", findChild(audioPopup, "playerVolumeSlider"));
+                const previous = backend.volume_level;
+                keyClick(Qt.Key_Left);
+                verify(backend.volume_level < previous);
+                keyClick(Qt.Key_Return);
+                tryCompare(audioPopup, "visible", false);
+                verify(button.activeFocus);
+                tryCompare(controls, "navigating", true);
+                keyClick(Qt.Key_Right);
+                verify(findChild(controls, "playbackSpeedButton").activeFocus);
+                keyClick(Qt.Key_Enter);
+                const speed = findChild(controls, "playbackSpeedPanel");
+                tryCompare(speed, "opened", true);
+                tryCompare(host, "activeFocusItem", findChild(speed, "speedSlider"));
+                keyClick(Qt.Key_Right);
+                compare(backend.requested_playback_rate, 11);
+                keyClick(Qt.Key_Enter);
+                tryCompare(speed, "visible", false);
+                verify(findChild(controls, "playbackSpeedButton").activeFocus);
+                tryCompare(controls, "navigating", true);
+                compare(backend.skips.length, 0);
             }
             function test_button_and_space_share_action_and_text_focus_only_blocks_key() {
                 backend.recording = true;
@@ -179,12 +278,12 @@ Item {
                 backend.pauseOnDemand = true;
                 backend.playing = true;
                 backend.playback_action = Player.Pause;
-                controls.forceActiveFocus();
+                host.contentItem.forceActiveFocus();
                 verify(!backend.seekable);
                 verify(!findChild(controls, "skipBackButton").visible);
                 mouseClick(findChild(controls, "playStopButton"));
                 compare(backend.playbackRequests, 1);
-                controls.forceActiveFocus();
+                host.contentItem.forceActiveFocus();
                 keyClick(Qt.Key_Space);
                 compare(backend.playbackRequests, 2);
                 keyClick(Qt.Key_Left);
@@ -241,6 +340,10 @@ Item {
                 audioPopup.close();
                 controls.closeSpeed();
                 findChild(controls, "playerOverflowMenu").close();
+                tryCompare(audioPopup, "visible", false);
+                tryCompare(findChild(controls, "playbackSpeedPanel"), "visible", false);
+                tryCompare(findChild(controls, "playerOverflowMenu"), "visible", false);
+                host.contentItem.forceActiveFocus();
             }
             function test_speed_requests_tenths_and_shows_only_confirmed_rate_on_button() {
                 backend.recording = true; backend.playing = true;

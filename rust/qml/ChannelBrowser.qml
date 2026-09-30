@@ -35,7 +35,7 @@ Pane {
     signal selectRequested(int index)
     signal closeRequested
     function focusBrowser() {
-        list.forceActiveFocus();
+        list.forceActiveFocus(Qt.TabFocusReason);
     }
     function openBrowser() {
         restoreSelection();
@@ -249,8 +249,8 @@ Pane {
                 Keys.onRightPressed: list.moveCandidate(1)
                 Keys.onUpPressed: bands.focusCurrent()
                 Keys.onDownPressed: function(event) { event.accepted = true; }
-                Keys.onReturnPressed: root.selectCurrent()
-                Keys.onEnterPressed: root.selectCurrent()
+                Keys.onReturnPressed: function(event) { if (!event.isAutoRepeat) root.selectCurrent(); }
+                Keys.onEnterPressed: function(event) { if (!event.isAutoRepeat) root.selectCurrent(); }
                 ScrollBar.horizontal: ScrollBar {
                     onPressedChanged: {
                         if (pressed) list.beginScroll();
