@@ -108,7 +108,7 @@ jobs:
             build/ci/cargo-home/registry
             build/ci/cargo-home/git
             build/appimage/tools
-          key: sources-${{ runner.os }}-x86_64-${{ hashFiles('**/Cargo.lock', 'scripts/packaging/build-appimage.sh') }}
+          key: sources-${{ runner.os }}-x86_64-${{ hashFiles('rust/**/Cargo.lock', 'scripts/packaging/build-appimage.sh') }}
           restore-keys: sources-${{ runner.os }}-x86_64-
       - name: Cache compiled Cargo dependencies (Ubuntu 24.04)
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -121,10 +121,10 @@ jobs:
             !build/ci/cargo/**/incremental
             !build/ci/cargo/**/nagametv
             !build/ci/cargo/**/deps/nagametv-*
-          key: cargo-ubuntu24-v1-${{ steps.build-environment.outputs.imageid }}-${{ hashFiles('.cargo/config.toml', '**/Cargo.toml') }}-${{ hashFiles('**/Cargo.lock') }}-${{ github.sha }}
+          key: cargo-ubuntu24-v1-${{ steps.build-environment.outputs.imageid }}-${{ hashFiles('.cargo/config.toml', 'rust/**/Cargo.toml') }}-${{ hashFiles('rust/**/Cargo.lock') }}-${{ github.sha }}
           restore-keys: |
-            cargo-ubuntu24-v1-${{ steps.build-environment.outputs.imageid }}-${{ hashFiles('.cargo/config.toml', '**/Cargo.toml') }}-${{ hashFiles('**/Cargo.lock') }}-
-            cargo-ubuntu24-v1-${{ steps.build-environment.outputs.imageid }}-${{ hashFiles('.cargo/config.toml', '**/Cargo.toml') }}-
+            cargo-ubuntu24-v1-${{ steps.build-environment.outputs.imageid }}-${{ hashFiles('.cargo/config.toml', 'rust/**/Cargo.toml') }}-${{ hashFiles('rust/**/Cargo.lock') }}-
+            cargo-ubuntu24-v1-${{ steps.build-environment.outputs.imageid }}-${{ hashFiles('.cargo/config.toml', 'rust/**/Cargo.toml') }}-
             cargo-ubuntu24-v1-${{ steps.build-environment.outputs.imageid }}-
       - name: Run hardware-free tests
         run: |
@@ -229,7 +229,7 @@ jobs:
           path: |
             build/deb/ubuntu26.04/cargo-home/registry
             build/deb/ubuntu26.04/cargo-home/git
-          key: sources-deb-ubuntu26-${{ hashFiles('**/Cargo.lock') }}
+          key: sources-deb-ubuntu26-${{ hashFiles('rust/**/Cargo.lock') }}
           restore-keys: sources-deb-ubuntu26-
       - name: Cache compiled Cargo dependencies (Ubuntu 26.04)
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -240,10 +240,10 @@ jobs:
             !build/deb/ubuntu26.04/native/cargo/**/incremental
             !build/deb/ubuntu26.04/native/cargo/**/nagametv
             !build/deb/ubuntu26.04/native/cargo/**/deps/nagametv-*
-          key: cargo-ubuntu26-v1-${{ steps.build-environment.outputs.imageid }}-${{ hashFiles('.cargo/config.toml', '**/Cargo.toml') }}-${{ hashFiles('**/Cargo.lock') }}-${{ github.sha }}
+          key: cargo-ubuntu26-v1-${{ steps.build-environment.outputs.imageid }}-${{ hashFiles('.cargo/config.toml', 'rust/**/Cargo.toml') }}-${{ hashFiles('rust/**/Cargo.lock') }}-${{ github.sha }}
           restore-keys: |
-            cargo-ubuntu26-v1-${{ steps.build-environment.outputs.imageid }}-${{ hashFiles('.cargo/config.toml', '**/Cargo.toml') }}-${{ hashFiles('**/Cargo.lock') }}-
-            cargo-ubuntu26-v1-${{ steps.build-environment.outputs.imageid }}-${{ hashFiles('.cargo/config.toml', '**/Cargo.toml') }}-
+            cargo-ubuntu26-v1-${{ steps.build-environment.outputs.imageid }}-${{ hashFiles('.cargo/config.toml', 'rust/**/Cargo.toml') }}-${{ hashFiles('rust/**/Cargo.lock') }}-
+            cargo-ubuntu26-v1-${{ steps.build-environment.outputs.imageid }}-${{ hashFiles('.cargo/config.toml', 'rust/**/Cargo.toml') }}-
             cargo-ubuntu26-v1-${{ steps.build-environment.outputs.imageid }}-
       - name: Build Ubuntu 26.04 deb
         run: |
