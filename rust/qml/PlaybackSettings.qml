@@ -28,6 +28,7 @@ ScrollView {
     function enter() { navigation.enter(); }
     function enterLast() { navigation.enterLast(); }
     clip: true
+    padding: Theme.spaceSm
     contentWidth: availableWidth
     FormNavigation {
         id: navigation

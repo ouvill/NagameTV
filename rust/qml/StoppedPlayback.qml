@@ -58,7 +58,7 @@ Rectangle {
             id: action
             objectName: "stoppedAction"
             anchors.horizontalCenter: parent.horizontalCenter
-            implicitWidth: 180
+            implicitWidth: Math.max(180, contentItem.implicitWidth + leftPadding + rightPadding)
             implicitHeight: 44
             visible: !root.loading
             enabled: !root.loading

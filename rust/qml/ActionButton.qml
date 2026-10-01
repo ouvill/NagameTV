@@ -12,7 +12,8 @@ Button {
     property bool selected: false
     property int textAlignment: Text.AlignHCenter
     property bool wrapText: false
-    property real feedbackScale: down ? Theme.pressScale : 1
+    property real feedbackScale: down ? Theme.pressScale : enabled && focusVisible
+        ? Math.min(Theme.focusScale, 1 + Theme.focusMaxGrowth / Math.max(1, width)) : 1
     implicitWidth: contentItem.implicitWidth + leftPadding + rightPadding
     implicitHeight: Math.max(Theme.controlHeight, contentItem.implicitHeight + topPadding + bottomPadding)
     leftPadding: Theme.spaceLg
@@ -34,8 +35,8 @@ Button {
         textFormat: Text.PlainText
         color: control.emphasis === ActionButton.Primary ? Theme.textOnAccent
             : control.highlighted ? Theme.accent
-            : control.emphasis === ActionButton.Quiet ? Theme.textSecondary : Theme.textPrimary
-        font.pixelSize: Theme.fontBody
+            : control.emphasis === ActionButton.Quiet && !control.focusVisible ? Theme.textSecondary : Theme.textPrimary
+        font.pixelSize: Theme.fontControl
         font.bold: control.emphasis === ActionButton.Primary
         verticalAlignment: Text.AlignVCenter
         horizontalAlignment: control.textAlignment
@@ -49,12 +50,10 @@ Button {
             ? (control.down ? Theme.accentPressed : control.hovered ? Theme.accentHover : Theme.accent)
             : control.down ? (control.surface === ActionButton.VideoOverlay ? Theme.overlayPressed : Theme.surfacePressed)
             : control.selected ? Theme.selection
-            : control.hovered ? (control.surface === ActionButton.VideoOverlay ? Theme.overlayHover : Theme.surfaceHover)
+            : control.hovered || control.focusVisible ? (control.surface === ActionButton.VideoOverlay ? Theme.overlayHover : Theme.surfaceHover)
             : control.emphasis === ActionButton.Quiet || control.surface === ActionButton.VideoOverlay
                 ? "transparent" : Theme.surfaceRaised
-        border.color: control.focusVisible || control.selected ? Theme.accent : "transparent"
-        border.width: control.focusVisible ? 2 : 1
         Behavior on color { ColorAnimation { duration: Theme.colorDuration } }
-        Behavior on border.color { ColorAnimation { duration: Theme.colorDuration } }
+        FocusOutline { focused: control.focusVisible; cornerRadius: parent.radius }
     }
 }

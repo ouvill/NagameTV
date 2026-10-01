@@ -47,13 +47,34 @@ TestCase {
     }
     function test_keyboard_and_disabled_actions() {
         const button = clicked.target;
+        const origin = button.mapToItem(testCase, 0, 0);
+        const size = Qt.size(button.width, button.height);
         button.forceActiveFocus(Qt.TabFocusReason);
-        keyClick(Qt.Key_Space);
+        const outline = findChild(button, "focusOutline");
+        tryCompare(outline, "opacity", 1);
+        tryVerify(function() { return button.feedbackScale > 1; });
+        compare(button.mapToItem(testCase, 0, 0), origin);
+        compare(Qt.size(button.width, button.height), size);
+        keyPress(Qt.Key_Space);
+        tryCompare(button, "feedbackScale", Theme.pressScale);
+        keyRelease(Qt.Key_Space);
         compare(clicked.count, 1);
+        tryVerify(function() { return button.feedbackScale > 1; });
+        const selected = findChild(gallery, "button_2_" + ActionButton.Secondary);
+        const selectedOutline = findChild(selected, "focusOutline");
+        compare(selectedOutline.opacity, 0);
+        selected.forceActiveFocus(Qt.TabFocusReason);
+        tryCompare(selectedOutline, "opacity", 1);
+        tryCompare(outline, "opacity", 0);
+        verify(selected.selected);
+        button.forceActiveFocus(Qt.TabFocusReason);
+        tryCompare(selectedOutline, "opacity", 0);
+        verify(selected.selected);
         const disabled = findChild(gallery, "button_3_" + ActionButton.Secondary);
         clicked.target = disabled; clicked.clear();
         mouseClick(disabled);
         compare(clicked.count, 0);
+        compare(findChild(disabled, "focusOutline").opacity, 0);
     }
     function test_hover_and_choice_popup() {
         const button = clicked.target;

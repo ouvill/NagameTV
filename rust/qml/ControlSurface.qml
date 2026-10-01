@@ -2,12 +2,13 @@ import QtQuick
 import MinimalViewer
 
 Rectangle {
+    id: surface
     required property bool focused
     property bool hovered: false
     property bool pressed: false
     radius: Theme.controlRadius
     color: pressed ? Theme.surfacePressed : hovered ? Theme.surfaceHover : Theme.surfaceRaised
-    border.color: focused ? Theme.accent : Theme.border
+    border.color: Theme.border
     Behavior on color { ColorAnimation { duration: Theme.colorDuration } }
-    Behavior on border.color { ColorAnimation { duration: Theme.colorDuration } }
+    FocusOutline { focused: surface.focused; cornerRadius: surface.radius }
 }

@@ -42,6 +42,14 @@ TestCase {
         mouseMove(button, button.width / 2, button.height / 2);
         tryCompare(button, "hovered", true);
         capture("controls-hover");
+        mouseMove(gallery, gallery.width - 1, gallery.height - 1);
+        for (const name of ["icon_0", "button_2_" + ActionButton.Secondary, "field", "settingToggle"]) {
+            findChild(gallery, name).forceActiveFocus(Qt.TabFocusReason);
+            capture("controls-focus-" + name + "-1280");
+            width = 640; height = 360;
+            capture("controls-focus-" + name + "-640");
+            width = 1280; height = 720;
+        }
         const choice = findChild(gallery, "choice");
         mouseClick(choice);
         tryCompare(choice.popup, "opened", true);

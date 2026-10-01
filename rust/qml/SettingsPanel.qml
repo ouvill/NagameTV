@@ -63,8 +63,8 @@ Popup {
     function revealCategory() {
         const category = categoryButtons.itemAt(page);
         if (!category || !category.activeFocus) return;
-        navigation.contentY = Math.max(0, Math.min(category.y, Math.max(navigation.contentY,
-            category.y + category.height - navigation.height), navigation.contentHeight - navigation.height));
+        navigation.contentY = Math.max(0, Math.min(category.y - Theme.focusOutset, Math.max(navigation.contentY,
+            category.y + category.height + Theme.focusOutset - navigation.height), navigation.contentHeight - navigation.height));
     }
     function enterPage() {
         pages.ensurePolished();
@@ -266,14 +266,15 @@ Popup {
             width: root.navWidth
             height: Math.min(contentHeight, parent.height - y - root.navLeft)
             onHeightChanged: Qt.callLater(root.revealCategory)
-            contentHeight: (root.categories.length - 1) * root.navStep + 40
+            contentHeight: (root.categories.length - 1) * root.navStep + 40 + 2 * Theme.spaceSm
             clip: true
             flickableDirection: Flickable.VerticalFlick
             boundsBehavior: Flickable.StopAtBounds
             ScrollBar.vertical: ScrollBar { policy: navigation.contentHeight > navigation.height ? ScrollBar.AsNeeded : ScrollBar.AlwaysOff }
             Rectangle {
-                y: root.page * root.navStep
-                width: parent.width; height: 40
+                x: Theme.spaceSm
+                y: root.page * root.navStep + Theme.spaceSm
+                width: parent.width - 2 * Theme.spaceSm; height: 40
                 radius: Theme.controlRadius
                 color: Theme.selection
                 Behavior on y {
@@ -289,8 +290,9 @@ Popup {
                     required property int index
                     required property string modelData
                     objectName: "settingsCategory" + index
-                    y: index * root.navStep
-                    width: navigation.width
+                    x: Theme.spaceSm
+                    y: index * root.navStep + Theme.spaceSm
+                    width: navigation.width - 2 * Theme.spaceSm
                     height: 40
                     leftPadding: Theme.spaceLg; rightPadding: Theme.spaceLg
                     checked: root.page === index
@@ -325,8 +327,8 @@ Popup {
                     background: Rectangle {
                         radius: Theme.controlRadius
                         color: category.down ? Theme.selection : category.hovered && !category.checked ? Theme.overlayHover : "transparent"
-                        border.color: category.visualFocus ? Theme.accent : "transparent"
                         Behavior on color { ColorAnimation { duration: Theme.colorDuration } }
+                        FocusOutline { focused: category.visualFocus }
                     }
                 }
             }
@@ -376,13 +378,14 @@ Popup {
                 id: pageFlick
                 objectName: "settingsFlickable"
                 contentWidth: width
-                contentHeight: pages.implicitHeight
+                contentHeight: pages.implicitHeight + 2 * Theme.spaceSm
                 onHeightChanged: Qt.callLater(root.revealEpgstationConnection)
                 onContentHeightChanged: Qt.callLater(root.revealEpgstationConnection)
                 boundsBehavior: Flickable.StopAtBounds
                 ColumnLayout {
                     id: pages
-                    width: pageFlick.width
+                    x: Theme.spaceSm; y: Theme.spaceSm
+                    width: pageFlick.width - 2 * Theme.spaceSm
                     spacing: Theme.spaceXl
                     Problem {
                         id: settingsProblem

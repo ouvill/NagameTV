@@ -63,6 +63,12 @@ QtObject {
     readonly property real disabledOpacity: 0.42
     readonly property real pressScale: 0.97
     readonly property real cardPressScale: 0.985 // Large cards move less than buttons.
+    readonly property real focusScale: 1.05
+    readonly property int focusMaxGrowth: 8 // Cap the growth of wide text buttons.
+    readonly property int focusGap: 2
+    readonly property int focusWidth: 2
+    readonly property int focusOutset: focusGap + focusWidth
+    readonly property int focusDuration: 120
     readonly property int pressDuration: 65
     readonly property int colorDuration: 100
     readonly property int fadeInDuration: 120
@@ -72,8 +78,8 @@ QtObject {
     readonly property int seekFeedbackDuration: 1000
     readonly property int seekThumbSize: 12
     readonly property int seekThumbActiveSize: 18
-    readonly property int seekFocusGap: 2
-    readonly property int seekFocusWidth: 2
+    readonly property int seekFocusGap: focusGap
+    readonly property int seekFocusWidth: focusWidth
     readonly property int seekTrackHeight: 4
     readonly property int seekTrackActiveHeight: 6
     readonly property int seekProgressHeight: 3

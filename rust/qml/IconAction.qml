@@ -17,7 +17,7 @@ ToolButton {
     // Player overlays use bare icons until hover, focus, or selection.
     flat: false
     // Animate the visuals; keep the hit area still while the pointer is down.
-    property real feedbackScale: down ? Theme.pressScale : 1
+    property real feedbackScale: down ? Theme.pressScale : enabled && focusVisible ? Theme.focusScale : 1
     Behavior on feedbackScale {
         NumberAnimation { duration: control.down ? Theme.pressDuration : Theme.moveDuration; easing.type: Easing.OutCubic }
     }
@@ -34,12 +34,12 @@ ToolButton {
         scale: control.feedbackScale
         radius: height / 2
         color: control.emphasis === IconAction.Destructive && (control.down || control.hovered) ? Theme.destructive
-            : control.down ? Theme.overlayPressed : control.hovered ? Theme.overlayHover
-            : control.active ? Theme.selection : control.flat ? "transparent" : Theme.overlaySurface
-        border.color: control.focusVisible || control.active ? Theme.accent : control.flat ? "transparent" : Theme.overlayBorder
-        border.width: control.focusVisible ? 2 : 1
+            : control.down ? Theme.overlayPressed : control.active ? Theme.selection
+            : control.hovered || control.focusVisible ? Theme.overlayHover : control.flat ? "transparent" : Theme.overlaySurface
+        border.color: control.flat ? "transparent" : Theme.overlayBorder
         Behavior on color { ColorAnimation { duration: Theme.colorDuration } }
         Behavior on border.color { ColorAnimation { duration: Theme.colorDuration } }
+        FocusOutline { focused: control.focusVisible; cornerRadius: parent.radius }
     }
     contentItem: Item {
         scale: control.feedbackScale
@@ -76,7 +76,7 @@ ToolButton {
         visible: control.toolTipEnabled && control.focusVisible
         text: control.tip
         textFormat: Text.PlainText
-        font.pixelSize: Theme.fontCaption
+        font.pixelSize: Theme.fontBody
         color: Theme.textPrimary
         padding: Theme.spaceSm
         x: control.focusLabelAlignment === Qt.AlignRight ? control.width - implicitWidth

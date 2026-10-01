@@ -20,7 +20,7 @@ DirectionalFocus {
     readonly property int density: videoWidth >= wideVideoWidth ? PlayerControls.Wide
         : videoWidth >= narrowVideoWidth ? PlayerControls.Narrow : PlayerControls.Dense
     readonly property int actionSize: density === PlayerControls.Dense ? 32 : 42
-    readonly property int actionSpacing: density === PlayerControls.Dense ? 2 : 6
+    readonly property int actionSpacing: Theme.spaceSm
     readonly property int dividerWidth: density === PlayerControls.Dense ? 8 : 18
     readonly property alias audioAnchor: volume
     readonly property alias subtitleAnchor: subtitleButton

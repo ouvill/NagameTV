@@ -82,9 +82,13 @@ TestCase {
     function test_state_routes_action_and_loading_prevents_requests() {
         failOnWarning(/.*/);
         const action = findChild(panel, "stoppedAction");
+        verify(waitForRendering(panel));
+        verify(!action.contentItem.truncated);
         mouseClick(action);
         compare(settings.count, 1);
         panel.hasChannels = true;
+        verify(waitForRendering(panel));
+        verify(!action.contentItem.truncated);
         mouseClick(action);
         compare(channels.count, 1);
         panel.canPlay = true;

@@ -24,7 +24,7 @@ DirectionalFocus {
         id: layout
         spacing: Theme.spaceMd
         Row {
-            spacing: Theme.spaceXs
+            spacing: Theme.spaceSm
             IconAction {
                 id: liveButton
                 objectName: "liveModeButton"

@@ -56,6 +56,8 @@ Rectangle {
                             }
                         }
                         RowLayout {
+                            Layout.leftMargin: Theme.spaceSm
+                            spacing: Theme.spaceSm
                             IconAction {
                                 objectName: "icon_" + sample.index
                                 iconSource: "qrc:/qt/qml/MinimalViewer/assets/icons/play.svg"
@@ -91,7 +93,7 @@ Rectangle {
                     SettingsField { objectName: "field"; Layout.fillWidth: true; placeholderText: "入力欄 / Text field" }
                     NavigationField { objectName: "navigationField"; Layout.fillWidth: true; placeholderText: "検索 / Search" }
                     SettingsField { Layout.fillWidth: true; text: "無効 / Disabled"; enabled: false }
-                    SettingsToggle { Layout.fillWidth: true; text: "設定項目 / Setting"; description: "選択に必要な説明" }
+                    SettingsToggle { objectName: "settingToggle"; Layout.fillWidth: true; text: "設定項目 / Setting"; description: "選択に必要な説明" }
                 }
                 ColumnLayout {
                     Layout.fillWidth: true

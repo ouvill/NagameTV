@@ -10,7 +10,7 @@ Rectangle {
     readonly property list<Item> navigationButtons: [minimizeButton, maximizeButton, closeButton]
     property bool flat: false
     property bool focusLabelBelow: false
-    implicitWidth: Theme.iconButtonSize * 3
+    implicitWidth: Theme.iconButtonSize * 3 + Theme.spaceSm * 2
     implicitHeight: Theme.iconButtonSize
     radius: height / 2
     color: flat ? "transparent" : Theme.overlaySurface
@@ -26,6 +26,7 @@ Rectangle {
     }
     Row {
         anchors.fill: parent
+        spacing: Theme.spaceSm
         Action {
             id: minimizeButton
             objectName: "minimizeWindow"

@@ -5,6 +5,8 @@ import QtQuick.Templates as T
 
 T.Switch {
     id: control
+    enum FocusTarget { Indicator, Row }
+    property int focusTarget: ToggleSwitch.Indicator
     readonly property bool focusVisible: keyboard.focused
     ButtonKeys { id: keyboard; button: control }
     Keys.onReturnPressed: function(event) { keyboard.confirm(event); }
@@ -24,10 +26,14 @@ T.Switch {
         y: control.topPadding + (control.availableHeight - height) / 2
         radius: Theme.panelRadius
         color: control.checked ? Theme.accent : Theme.switchTrack
-        border.color: control.focusVisible ? Theme.textPrimary : "transparent"
-        scale: control.down ? 0.96 : control.hovered || control.focusVisible ? 1.04 : 1
+        scale: control.down ? Theme.pressScale : control.focusVisible && control.focusTarget === ToggleSwitch.Indicator
+            ? Theme.focusScale : 1
         Behavior on color { ColorAnimation { duration: Theme.moveDuration } }
         Behavior on scale { NumberAnimation { duration: Theme.colorDuration; easing.type: Easing.OutCubic } }
+        FocusOutline {
+            focused: control.focusVisible && control.focusTarget === ToggleSwitch.Indicator
+            cornerRadius: parent.radius
+        }
         Rectangle {
             property real position: control.checked ? 1 : 0
             width: control.down ? 23 : 18

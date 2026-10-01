@@ -43,12 +43,14 @@ Popup {
             onToggled: popup.backend.display_subtitles(checked)
         }
         ScrollView {
+            id: trackScroll
             Layout.fillWidth: true
-            Layout.preferredHeight: Math.min(tracks.implicitHeight, 180)
+            Layout.preferredHeight: Math.min(tracks.implicitHeight + topPadding + bottomPadding, 180)
+            padding: Theme.spaceSm
             clip: true
             Column {
                 id: tracks
-                width: parent.width
+                width: trackScroll.availableWidth
                 spacing: Theme.spaceSm
                 Repeater {
                     model: popup.backend.subtitle_tracks

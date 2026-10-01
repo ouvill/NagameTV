@@ -548,7 +548,8 @@ Item {
                         for (let i = 0; i < boxes.length; ++i) {
                             for (let j = i + 1; j < boxes.length; ++j) {
                                 const a = boxes[i], b = boxes[j];
-                                verify(a.x + a.w <= b.x || b.x + b.w <= a.x,
+                                verify(a.x + a.w <= b.x || b.x + b.w <= a.x
+                                    || a.y + a.h <= b.y || b.y + b.h <= a.y,
                                     a.name + " overlaps " + b.name + " at " + width);
                             }
                         }

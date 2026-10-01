@@ -26,11 +26,12 @@ SegmentedFrame {
         if (options[index]) { selected(options[index].value); focusCurrent(); }
     }
     Rectangle {
-        x: 3 + Math.max(0, root.selectedIndex) * root.segmentWidth
-        y: 3; width: root.segmentWidth; height: root.height - 6
+        x: 3 + Math.max(0, root.selectedIndex) * root.segmentWidth + Theme.focusOutset
+        y: Theme.focusOutset
+        width: root.segmentWidth - 2 * Theme.focusOutset; height: root.height - 2 * Theme.focusOutset
         radius: root.segmentCornerRadius
         visible: root.selectedIndex >= 0
-        color: Theme.selection; border.color: Theme.accent
+        color: Theme.selection
         Behavior on x { NumberAnimation { duration: Theme.moveDuration; easing.type: Easing.OutCubic } }
     }
     Row {
@@ -64,9 +65,10 @@ SegmentedFrame {
                     font.bold: tab.checked
                     elide: Text.ElideRight
                 }
-                background: Rectangle {
-                    color: "transparent"; radius: root.segmentCornerRadius
-                    border.width: keyboard.focused ? 2 : 0; border.color: Theme.accent
+                background: FocusOutline {
+                    anchors.margins: 0
+                    cornerRadius: root.segmentCornerRadius
+                    focused: keyboard.focused
                 }
             }
         }

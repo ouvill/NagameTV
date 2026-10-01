@@ -6,10 +6,11 @@ import QtQuick.Layouts
 
 ToggleSwitch {
     id: control
+    focusTarget: ToggleSwitch.Row
     property string description: ""
     implicitHeight: Math.max(56, contentItem.implicitHeight + 24)
-    leftPadding: 0
-    rightPadding: Theme.spaceXs
+    leftPadding: Theme.spaceMd
+    rightPadding: Theme.spaceMd
     topPadding: Theme.spaceMd
     bottomPadding: Theme.spaceMd
     Accessible.description: description
@@ -32,7 +33,7 @@ ToggleSwitch {
                 text: control.description
                 textFormat: Text.PlainText
                 color: Theme.textSecondary
-                font.pixelSize: Theme.fontCaption
+                font.pixelSize: Theme.fontBody
                 wrapMode: Text.Wrap
             }
         }
@@ -41,12 +42,15 @@ ToggleSwitch {
             Layout.preferredHeight: control.indicator.implicitHeight
         }
     }
-    background: Rectangle {
-        color: control.down ? Theme.selection : control.hovered ? Theme.overlayHover : "transparent"
-        radius: Theme.controlRadius
-        border.color: control.focusVisible ? Theme.accent : "transparent"
-        border.width: control.focusVisible ? 2 : 1
-        Behavior on color { ColorAnimation { duration: Theme.colorDuration } }
+    background: Item {
+        Rectangle {
+            anchors.fill: parent
+            anchors.margins: Theme.focusOutset
+            color: control.down ? Theme.selection : control.hovered || control.focusVisible ? Theme.overlayHover : "transparent"
+            radius: Theme.controlRadius
+            Behavior on color { ColorAnimation { duration: Theme.colorDuration } }
+            FocusOutline { focused: control.focusVisible }
+        }
         Rectangle {
             anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
             height: 1

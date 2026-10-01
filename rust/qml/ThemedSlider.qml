@@ -41,9 +41,8 @@ Slider {
             opacity: slider.pressed ? 0.18 : slider.hovered || slider.visualFocus ? 0.1 : 0
             Behavior on opacity { NumberAnimation { duration: Theme.fadeInDuration } }
         }
-        color: slider.pressed || slider.hovered ? Theme.textPrimary : (slider.subdued ? Theme.textSecondary : Theme.accent)
-        border.width: slider.visualFocus ? 2 : 0
-        border.color: Theme.textPrimary
+        color: slider.pressed || slider.hovered || slider.visualFocus ? Theme.textPrimary : (slider.subdued ? Theme.textSecondary : Theme.accent)
+        FocusOutline { focused: slider.visualFocus; cornerRadius: parent.radius }
         Behavior on color {
             ColorAnimation {
                 duration: Theme.colorDuration
