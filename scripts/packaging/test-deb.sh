@@ -10,11 +10,18 @@ case "$1" in
   26.04) image=ubuntu:26.04@sha256:da6fc2be547864451aa253836dd926da33623312df4a9a243e35dc877c378a78 ;;
   *) echo "Unsupported Ubuntu release: $1" >&2; exit 2 ;;
 esac
+apt_archives="$project_dir/build/deb/apt-cache/ubuntu$1/archives"
+mkdir -p "$apt_archives/partial"
 docker info >/dev/null
 docker run --rm -i --mount "type=bind,src=$project_dir,dst=/project,readonly" \
+  --mount "type=bind,src=$apt_archives,dst=/var/cache/apt/archives" \
   --env UBUNTU_RELEASE="$1" --env DEBIAN_FRONTEND=noninteractive \
   "$image" bash -s <<'CHECK'
 set -euo pipefail
+# The official Ubuntu image clears downloaded packages after each apt command.
+# Keep only the archive cache in the mounted build directory for later CI runs.
+rm -f /etc/apt/apt.conf.d/docker-clean
+printf 'APT::Keep-Downloaded-Packages "true";\n' > /etc/apt/apt.conf.d/99keep-downloaded-packages
 apt-get update
 apt-get install --yes --no-install-recommends python3 desktop-file-utils
 version=$(python3 -c 'import tomllib; print(tomllib.load(open("/project/rust/Cargo.toml", "rb"))["package"]["version"])')

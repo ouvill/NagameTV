@@ -3,6 +3,13 @@
 [GitHub Actions](../.github/workflows/ci.yml)でLinux x86_64向けのテストと
 AppImage、Flatpak、Ubuntu 24.04用および26.04用debのビルドを実行する。
 `main`へのpush、pull request、`v*`タグのpush、Actions画面の手動実行（workflow_dispatch）が対象。
+
+Ubuntu 24.04向けdebのクリーン環境試験では、aptが検証したダウンロード済みパッケージを
+CI間でキャッシュする。依存解決・導入・削除の検査は毎回実行し、更新されたパッケージは
+aptが取得し直す。キャッシュは`build/deb/apt-cache/ubuntu24.04/archives`に置く。
+バージョンタグでは、同じコミットの成功済み`main`実行に4種類の配布artifactが残っていれば
+それを再利用してリリース下書きを作る。該当する実行やartifactがない場合は通常どおり
+タグでビルドと検証を実行する。どちらもリリース作成前にチェックサムを確認する。
 配布ファイルとそれぞれのSHA-256の計8ファイルをActions artifactとして14日間保存する。
 全ジョブ成功後、`main`へのpushでは最新ビルドのPre-releaseを作成または更新し、
 `v*`タグのpushではGitHub Releaseの下書きを作成する。pull requestと手動実行では検証とartifact生成のみを行う。
@@ -147,7 +154,8 @@ Assetsが折りたたまれていても取得できるようにし、対象環�
    git push origin v0.1.0
    ```
 
-5. タグのコミットでCIを再実行し、全ジョブ成功後にGitHub Releaseの下書きを作成する。
+5. タグのコミットでCIを実行し、同じコミットの`main`で検証済みの配布artifactがあれば再利用する。
+   なければタグ上でビルドと検証を行う。必要な成果物が揃ったらGitHub Releaseの下書きを作成する。
    AppImage・Flatpak・24.04用deb・26.04用debとSHA-256の計8ファイルを添付し、変更履歴を自動生成する。
    `v0.2.0-rc.1`のようなタグはprereleaseとして扱う。
 6. 下書きから配布ファイルを取得して専用環境・対象OSでGUIと再生を確認し、
