@@ -18,6 +18,7 @@
   <requires><internet>always</internet></requires>
   <supports><control>keyboard</control><control>pointing</control></supports>
   <releases>
+    <release version="0.2.1" date="2026-10-02"/>
     <release version="0.2.0" date="2026-10-01"/>
     <release version="0.1.0" date="2026-09-28"/>
   </releases>
