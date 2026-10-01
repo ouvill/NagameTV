@@ -26,9 +26,9 @@ Linux専用のQt DBus境界は`rust/src/desktop_media.h`、再生状態の投影
 Positionの定期通知は行わず、シーク完了時はSeekedを送る。
 要求の保留は32件、1回のpollで最大8件。遅れて届いたシークは入力の世代も再検証する。
 
-`bash scripts/test-desktop-media.sh`は機器不要。QCoreApplicationと専用D-Busで
+`python3 scripts/test.py desktop-media`は機器不要。QCoreApplicationと専用D-Busで
 合成メタデータの型・プロパティ・操作・通知・不正値・古いシーク・登録解除を確認する。
-`bash scripts/test-startup.sh`は検証済みの専用画面・実GPU・仮想音声を使い、
+`python3 scripts/test.py startup`は検証済みの専用画面・実GPU・仮想音声を使い、
 製品Main.qmlの録画再生中に外部D-Busクライアントからタイトル・一時停止／再開・音量・一時停止を維持した速度変更を確認する。
 GNOME/KDEの実際の通知領域の外観、物理メディアキーはこの専用環境の確認対象外。
 

@@ -98,9 +98,9 @@ PID変更素材はサービスID 1を維持し、PMT PIDを`0x20`から`0x120`�
 # 機器不要の回帰試験（178 passed / 3 ignored）
 CARGO_TARGET_DIR=build/cargo cargo test --manifest-path rust/Cargo.toml --release --locked
 # 機器を検証して通常シーク・時刻不連続・PID変更の録画再生を確認
-bash scripts/test-startup.sh
+python3 scripts/test.py startup
 # PID変更の回帰試験だけを実行
-bash scripts/test-startup.sh recording-pid-change
+python3 scripts/test.py startup -- recording-pid-change
 ```
 
 素材の再生成ではSHA-256の一致を確認し、`cargo fmt --check`と`git diff --check`も成功した。

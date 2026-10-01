@@ -50,12 +50,12 @@ Qtのフォント・グリフキャッシュやアロケーターの保持領域
 
 ## 検証方法
 
-`scripts/test-subtitle-outline.sh` はCPU上のQImageとQCoreApplicationだけで実行する。
+`python3 scripts/test.py subtitle-outline` はCPU上のQImageとQCoreApplicationだけで実行する。
 矩形、小さい輪郭、長音相当の棒、曲線、負のbearingとdescender、複数contour、空のパスを
 直接描いた結果とSVGに変換して描いた結果を比較し、座標変換によるずれを検出する。
 ディスプレイ・GPU・音声は使用しない。
 
-`scripts/test-subtitle-rendering.sh` はDISPLAYとGPUデバイスを検出し、xdpyinfoとglxinfoで
+`python3 scripts/test.py subtitle-rendering` はDISPLAYとGPUデバイスを検出し、xdpyinfoとglxinfoで
 実際に検証してからX11/OpenGLのQt Quick Testを起動する。欠落・検証失敗時は終了し、
 headlessやsoftware rendererに自動変更しない。テスト用の一時ビルドは終了時に削除する。
 Qtのテストproviderも本番のsubtitle_outline.hを呼び、描画結果を模擬しない。
@@ -276,16 +276,14 @@ RSSやCPU時間の改善量は計測していないため、この変更だけ�
 
 ## 仮想画面でのUI試験を明示的に分離（2026-09-07）
 
-scripts/test-subtitle-rendering.shへ先頭引数--ui-onlyを追加した。
+当時の字幕試験スクリプトに先頭引数`--ui-only`を追加した。
+このモードはスクリプト整理時に廃止し、現在は`python3 scripts/test.py subtitle-rendering`で
+専用画面・実GPUを検証する。以下は2026-09-07時点の記録である。
 通常実行は引き続きGPUデバイスとハードウェアOpenGLを必要とし、
 llvmpipe等のソフトウェア描画を拒否する。UIモードは明示指定した場合だけ
 ソフトウェアOpenGLを許可し、開始ログでGPU検証ではないことを表示する。
 表示先の自動変更やGPU検証失敗後の自動代替は行わない。
 DISPLAYの必須条件、xdpyinfoによる接続検証、glxinfoによるOpenGL確認は両モードで共通。
-
-```sh
-DISPLAY=:99 scripts/test-subtitle-rendering.sh --ui-only
-```
 
 検出・検証済みの専用Xvfb :99 / llvmpipeで実行し、既存9件が成功した。
 実際の製品用subtitleOutlinePathヘルパーをQMLから呼び、フォント基準線、

@@ -40,14 +40,14 @@ workshop refresh
 
 ## AppImageパッケージを作る
 
-Dockerが利用できる環境で`./scripts/build-appimage.sh`を実行します。
+Dockerが利用できる環境で`./scripts/packaging/build-appimage.sh`を実行します。
 Ubuntu 24.04専用のビルド環境を使い、Workshopの新しいglibcを同梱ライブラリーへ持ち込みません。
 Linux x86_64向けのAppImageとSHA-256を`build/appimage/`へ出力します。
 必要な追加ツールとOSの互換性条件は[AppImageのビルド手順](appimage.md)を参照してください。
 
 ## Ubuntu debパッケージを作る
 
-`./scripts/build-deb.sh 24.04`または`./scripts/build-deb.sh 26.04`を実行します。
+`./scripts/packaging/build-deb.sh 24.04`または`./scripts/packaging/build-deb.sh 26.04`を実行します。
 対象OSのDocker環境でビルドし、`build/deb/ubuntu24.04/`または`build/deb/ubuntu26.04/`に
 debとSHA-256を出力します。24.04用はQtを同梱し、26.04用はシステムのQtを利用します。
 [debの構成・検証手順](deb.md)を参照してください。
@@ -56,12 +56,12 @@ debとSHA-256を出力します。24.04用はQtを同梱し、26.04用はシス�
 
 ### Fedoraで依存関係を導入する
 
-Fedora向けの[セットアップスクリプト](../scripts/setup-fedora.sh)で、Rustと開発ツール、
+Fedora向けの[セットアップスクリプト](../scripts/dev/setup-fedora.sh)で、Rustと開発ツール、
 Qt/GStreamer、専用GUIテスト用のツールを導入できます。`sudo`の認証とDNFの
 トランザクション確認は端末で行います。
 
 ```sh
-bash scripts/setup-fedora.sh
+bash scripts/dev/setup-fedora.sh
 ```
 
 `--assumeno`を付けると、インストールせずに依存解決の結果を確認できます。
@@ -174,7 +174,7 @@ Flatpak版は[専用の削除手順](flatpak.md#アンインストール)を参�
 その実行で許可する機能を指定します。重複しない任意の組み合わせを使えます。
 `=`は必須で、空値・重複・`none`との混在を拒否します。表示方式の指定には
 `QT_QPA_PLATFORM`を使用してください。Qt固有の未定義の起動引数は受け付けません。
-ビルドした実行ファイルは`python3 scripts/check-cli.py build/nagametv`で機器を使わず検証できます。
+ビルドした実行ファイルは`python3 -m scripts.testing.check_cli build/nagametv`で機器を使わず検証できます。
 ヘルプ・ビルド情報・引数エラーがQt初期化前に終了し、保存データを作らないことを確認します。
 
 ## コメントDBのSQL検査
@@ -188,10 +188,10 @@ SQLまたはスキーマを変更した場合は、Python標準ライブラリ�
 クエリをコンパイルして検査情報を更新します。利用中のキャッシュは操作しません。
 
 ```sh
-python3 scripts/check-comment-sql.py --update
-python3 scripts/check-comment-sql.py
+python3 -m scripts.testing.check_comment_sql --update
+python3 -m scripts.testing.check_comment_sql
 python3 scripts/test.py viewer-comments
-python3 scripts/flatpak-cargo-sources.py
+python3 -m scripts.packaging.flatpak_cargo_sources
 ```
 
 引数なしのSQL検査は、保存済みの検査情報と新規スキーマとの一致を確認します。CIでも実行します。
@@ -213,12 +213,13 @@ GitHub Actionsでの自動テストと配布ビルド、`main`へのpushに伴�
 バージョンタグからGitHub Releaseの下書きを作成する手順は
 [CIとリリース](ci-release.md)を参照してください。
 
+スクリプトの配置と公開コマンドは[一覧](../scripts/README.md)を参照してください。
 共通ランナーは`python3 scripts/test.py`です。初回は固定版の[nextest](https://nexte.st/docs/installation/pre-built-binaries/)を導入します。
 WorkshopとFedoraでは次のコマンドを実行し、`$HOME/.local/bin`を`PATH`へ含めます。
 Workshopには同じ導入処理の`setup-tests`アクションがあります。CIイメージには導入済みです。
 
 ```sh
-bash scripts/install-nextest.sh
+bash scripts/testing/install-nextest.sh
 python3 scripts/test.py --list
 python3 scripts/test.py             # 機器不要: 静的検査、Rust全6パッケージ、Qt接続など
 python3 scripts/test.py app         # アプリのRustテストのみ
@@ -231,25 +232,26 @@ Rustの通常テストはnextestが個別プロセスで実行します。同じ
 nextest内で単独実行します。通常のビルド構成は`dev`です。
 `--test-threads N`でテストの並列数、`--profile release`で最適化した構成に変更できます。
 再生性能やフレーム時間を評価する試験では`--profile release`を指定します。
-Qtスクリプトを直接使う場合は`NAGAMETV_TEST_PROFILE=release`で同じ構成を選べます。
+Qtスイートにも共通ランナーの`--profile release`を指定できます。
+個別の引数は`python3 scripts/test.py startup -- recording-pid-change`のように`--`の後に渡します。
 アプリの主要なpath依存5クレートも明示的に列挙し、nextestの対象外であるdoctestはCargoで別途実行します。
 ビルド情報専用の`viewer-build-info`と翻訳生成用の`viewer-translations`は、
 `checks`に含まれるビルド情報・変更検知の回帰試験で検証します。
 `#[ignore]`の実機・性能プローブ、実EPGStation、配布物の検査は自動では実行しません。
 
 ランナーは必要なバイナリーを先にビルドします。Rustはnextestのビルド情報、Qtは実行ごとのコピーを
-使い、各Qtスクリプトで`cargo run`を繰り返しません。ログと`summary.json`は`build/test-runs/run-*/`に
+使い、各Qtスイートで`cargo run`を繰り返しません。ログと`summary.json`は`build/test-runs/run-*/`に
 保存します。失敗時はそこで停止し、成功・失敗・環境不足・未実行を区別します。
 GUIを選ぶと必要資源を先に検証し、不足時はGUIのビルド・実行へ進みません。
 
-CMakeのビルド、共通ランナー、既存のQtテスト入口は、同じLinuxユーザーの
+CMakeのビルドと共通ランナーは、同じLinuxユーザーの
 `/tmp/nagametv-build-UID/lock`を共有します。別worktreeからの起動も待機するため、
 ビルドと検証が重なりません。Cargoを直接使う診断やClippyも次のラッパーを通します。
 外部のビルドや、ラッパーを使わないコマンドによる負荷までは制御できません。
 別コンテナーのビルドも、このロックの対象外です。
 
 ```sh
-bash scripts/with-build-lock.sh cargo clippy --manifest-path rust/Cargo.toml --locked --all-targets -- -D warnings
+bash scripts/build/with-build-lock.sh cargo clippy --manifest-path rust/Cargo.toml --locked --all-targets -- -D warnings
 ```
 
 通常は`CARGO_TARGET_DIR=build/cargo`を使い、ビルド並列数はCargoによる利用可能CPU数の検出に任せます。
@@ -267,7 +269,7 @@ EPGStationの実装との互換性は、Dockerで固定版の本体を動かす�
 [EPGStationの結合テスト](epgstation.md#固定版の実サーバーとの結合テスト)を参照してください。
 
 ```sh
-CARGO_TARGET_DIR=build/cargo python3 scripts/epgstation-integration.py
+CARGO_TARGET_DIR=build/cargo python3 -m scripts.testing.epgstation_integration
 ```
 
 EPGイベント接続の停止・再試行は、機器不要の独立したクレートでも検証します。
@@ -277,14 +279,14 @@ Tokioの仮想時間を使う試験では、実時間の待機を省いて期限
 python3 scripts/test.py viewer-epg-events
 ```
 
-依存を変更した場合は`python3 scripts/flatpak-cargo-sources.py`で配布用のソース一覧を更新し、
-`python3 scripts/flatpak-cargo-sources.py --check`でロックファイルとの一致を確認します。
+依存を変更した場合は`python3 -m scripts.packaging.flatpak_cargo_sources`で配布用のソース一覧を更新し、
+`python3 -m scripts.packaging.flatpak_cargo_sources --check`でロックファイルとの一致を確認します。
 
 Clippyは通常構成とQt統合テスト構成の両方で、警告をエラーとして検査します。
 
 ```sh
-CARGO_TARGET_DIR=build/cargo SQLX_OFFLINE=true bash scripts/with-build-lock.sh cargo clippy --manifest-path rust/Cargo.toml --release --locked --all-targets -- -D warnings
-CARGO_TARGET_DIR=build/cargo SQLX_OFFLINE=true bash scripts/with-build-lock.sh cargo clippy --manifest-path rust/Cargo.toml --release --locked --all-targets --features native_tests -- -D warnings
+CARGO_TARGET_DIR=build/cargo SQLX_OFFLINE=true bash scripts/build/with-build-lock.sh cargo clippy --manifest-path rust/Cargo.toml --release --locked --all-targets -- -D warnings
+CARGO_TARGET_DIR=build/cargo SQLX_OFFLINE=true bash scripts/build/with-build-lock.sh cargo clippy --manifest-path rust/Cargo.toml --release --locked --all-targets --features native_tests -- -D warnings
 ```
 
 これらのコマンドは表示・GPU・音声機器を使用しません。
@@ -294,9 +296,9 @@ Qtの画面試験は別の実行手順で、表示環境などを確認してか
 RustとQMLのプロパティ・通知・起動処理を変更した場合は、次も実行します。
 
 ```sh
-bash scripts/test-connection.sh
-bash scripts/test-desktop-media.sh
-bash scripts/test-startup.sh
+python3 scripts/test.py connection
+python3 scripts/test.py desktop-media
+python3 scripts/test.py startup
 ```
 
 Linuxのメディア連携テストも機器不要で、専用D-Bus・`python3-dbus`・`python3-gi`を使います。
@@ -306,33 +308,33 @@ Linuxのメディア連携テストも機器不要で、専用D-Bus・`python3-d
 専用画面・実GPU・起動済みPipeWire上の仮想出力を検証した後、製品の`Main.qml`を読み込み、初回・設定済み起動・
 番組表の開閉・再生エラー・終了を確認します。設定先は一時ディレクトリーです。
 画面部品を変更した場合は、その部品のQMLテストも実行してください。
-`bash scripts/test-danmaku.sh`は`rust/qml/tests/`の部品テストを実行します。
+`python3 scripts/test.py danmaku`は`rust/qml/tests/`の部品テストを実行します。
 共通テーマや部品を変更した場合は、次の検査と部品一覧も実行します。
 
 ```sh
-python3 scripts/check-ui-style.py
-python3 scripts/test-ui-style.py
-bash scripts/test-ui-style.sh
+python3 -m scripts.testing.check_ui_style
+python3 scripts/test.py tooling
+python3 scripts/test.py ui-style
 ```
 
 Pythonの2つの検査は機器不要で、CIにも含めます。部品一覧は専用画面・実GPU・仮想音声出力を
 自動検証してから起動し、通常・押下・選択・無効の各状態、ホバー、キーボード操作と
-選択欄の開閉を確認します。画像は別途`bash scripts/capture-ui-style.sh`で生成します。
+選択欄の開閉を確認します。画像は別途`python3 scripts/test.py ui-capture`で生成します。
 1280×720、640×360、フォーカス・ホバー・選択欄の画像を
 `build/ui-review/controls-*.png`へ出力します。自動比較は行わず、ファイルはGit対象外です。
-主要画面は`bash scripts/test-startup.sh`でも確認し、画像を`build/navigation-review/`へ保存します。
+主要画面は`python3 scripts/test.py startup`でも確認し、画像を`build/navigation-review/`へ保存します。
 比較する際は前回の画像を別のディレクトリーへ退避し、同じサイズ・言語・表示内容で見比べます。
 
-チャンネル一覧のホイール操作は`bash scripts/test-channel-wheel.sh`で検証します。
+チャンネル一覧のホイール操作は`python3 scripts/test.py channel-wheel`で検証します。
 どちらも専用GUI環境を検証し、製品のRust製モデルを登録してから実行します。
-`NAGAMETV_TEST_QPA=wayland bash scripts/test-startup.sh video-processing`で専用Wayland画面を使います。
+`NAGAMETV_TEST_QPA=wayland python3 scripts/test.py startup -- video-processing`で専用Wayland画面を使います。
 `NAGAMETV_TEST_QPA=auto`は表示先の明示指定を外し、Qtの自動選択を検証します。
 省略時の試験は`xcb`（VA-API経路だけ`wayland`）です。
 Wayland試験のサイズ変更・入力フォーカスの制約は[専用GUI環境](gui-test-environment.md)を参照してください。
-スクリーンショットの連写・保存・設定変更の試験は`bash scripts/test-screenshot.sh`で実行します。
+スクリーンショットの連写・保存・設定変更の試験は`python3 scripts/test.py screenshot`で実行します。
 この試験も専用セッションを自動起動し、画像を一時ディレクトリーに保存して終了時に削除します。
 元映像の取得・字幕／コメント合成・連写中の描画は
-`bash scripts/test-startup.sh screenshot-playback`で製品の画面を使って検証します。
+`python3 scripts/test.py startup -- screenshot-playback`で製品の画面を使って検証します。
 フレーム番号入りの合成映像をCPUで生成するため、GStreamerの`timeoverlay`と`avenc_mpeg2video`も必要です。
 比較画像と計測値は`build/screenshot-review/`へ出力します。
 
@@ -353,7 +355,7 @@ QMLの静的検査は、ビルド後に次のコマンドで実行します。�
 同じ値を渡します。省略時は`qmake6`でQtのツールを選びます。
 
 ```sh
-CARGO_TARGET_DIR=build/cargo bash scripts/check-qml.sh
+CARGO_TARGET_DIR=build/cargo bash scripts/testing/check-qml.sh
 ```
 
 `check-qml.sh`は`rust/qml/`直下の全QMLを列挙し、評価用部品も含めて
@@ -444,7 +446,7 @@ Git情報をビルド環境へ渡します。独自のソースアーカイブ�
 `.git`も指定値もない場合は`source.kind`を`unavailable`とし、画面に「取得できません」と表示します。
 指定値が不正な場合や、存在するGitリポジトリーの情報取得に失敗した場合はビルドを停止します。
 収集処理と配布用メタデータの機器不要テストは`python3 scripts/test.py checks`に含まれます。
-`scripts/test-build-info.py`は、未追跡ファイルの追加・削除、コミット変更、worktree、
+`tests/tooling/test_build_info.py`は、未追跡ファイルの追加・削除、コミット変更、worktree、
 ソースアーカイブ、情報の明示指定を検証します。実際にCargoを繰り返し実行し、
 Git情報・日時の更新でアプリ側のビルド処理が再実行されず、Qt側の入力や翻訳カタログを
 変更した場合は再実行されることも確認します。翻訳の生成にはQt開発ツールの`lrelease`を使い、
@@ -488,7 +490,7 @@ Git情報・日時の更新でアプリ側のビルド処理が再実行され�
 現在の起動コマンドは`nagametv`、環境変数とCMakeオプションの接頭辞は`NAGAMETV_`です。
 
 長い実録画の冒頭停止・遠方シークを製品画面で調べる場合は、
-`bash scripts/test-startup.sh recording-probe /path/to/recording.ts` を使います。
+`python3 scripts/test.py startup -- recording-probe /path/to/recording.ts` を使います。
 表示・GPU・音声の検証後に実行し、通常の起動試験とは別に約28秒の再生と
 境界前後・長い録画の80%位置へのシークを確認します。全編の検査ではありません。
 

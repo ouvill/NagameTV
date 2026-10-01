@@ -42,7 +42,7 @@ gst-launch-1.0 -q mpegtsmux name=mux ! filesink location=tests/fixtures/recordin
     ! avenc_mpeg2video ! mpegvideoparse ! queue ! mux. \
   audiotestsrc num-buffers=2813 wave=silence \
     ! audio/x-raw,rate=48000,channels=2 ! audioconvert ! avenc_aac ! aacparse ! queue ! mux.
-python3 scripts/fixtures/recording-si.py
+python3 tests/fixtures/generate_recording_si.py
 ```
 
 CPU tests exercise demux/decode into an in-memory sink. The native startup test
@@ -55,7 +55,7 @@ Regenerate both files deterministically from the checked-in `recording.ts`, usin
 only the Python standard library and no hardware:
 
 ```sh
-python3 scripts/fixtures/recording-recovery.py
+python3 tests/fixtures/generate_recording_recovery.py
 ```
 
 Each file joins two copies of the three-second recording. The second half begins
@@ -73,10 +73,10 @@ through the production window and requires frames from both halves and normal
 EOF. Sink rendering counters reset at the PID transition; the test sums observed
 increments across resets. The earlier PID playback failure was a test assertion
 error, corrected on 2026-09-17. Run
-`bash scripts/test-startup.sh recording-pid-change` for the targeted regression
+`python3 scripts/test.py startup -- recording-pid-change` for the targeted regression
 check. Both UI commands validate display, GPU and audio access first.
 
-`scripts/fixtures/recording-output-audit.py` counts decoded buffers per stream ID
+`scripts/testing/recording_output_audit.py` counts decoded buffers per stream ID
 with CPU MPEG-2/AAC decoders and explicit memory sinks. It requires PyGObject,
 GStreamer introspection and libav, and never uses display, GPU or audio devices.
 `--paced` synchronizes to the clock; the deadline is 12 seconds, intended for the
@@ -119,10 +119,10 @@ additions, not the entire original multiplex or every possible decoder failure.
 Regenerate deterministically using Python's standard library, without hardware:
 
 ```sh
-python3 scripts/fixtures/recording-caption-change.py
+python3 tests/fixtures/generate_recording_caption_change.py
 # Isolate caption addition from the second audio/PMT change.
 mkdir -p benchmark/caption-transition
-python3 scripts/fixtures/recording-caption-change.py --scenario caption-only \
+python3 tests/fixtures/generate_recording_caption_change.py --scenario caption-only \
   --output benchmark/caption-transition/caption-only.ts
 ```
 
@@ -142,12 +142,12 @@ use explicit memory sinks and a CPU decoder allowlist; do not add `--paced` to
 this 60-second fixture because that audit has a 12-second wall-clock deadline.
 
 ```sh
-python3 scripts/fixtures/recording-output-audit.py tests/fixtures/recording-caption-change.ts
-python3 scripts/fixtures/recording-output-audit.py benchmark/caption-transition/caption-only.ts
+python3 -m scripts.testing.recording_output_audit tests/fixtures/recording-caption-change.ts
+python3 -m scripts.testing.recording_output_audit benchmark/caption-transition/caption-only.ts
 cargo run --quiet --manifest-path rust/crates/tsreadex/Cargo.toml --locked \
   --example filter < tests/fixtures/recording-caption-change.ts \
   > benchmark/caption-transition/normalized.ts
-python3 scripts/fixtures/recording-output-audit.py benchmark/caption-transition/normalized.ts
+python3 -m scripts.testing.recording_output_audit benchmark/caption-transition/normalized.ts
 ```
 
 On GStreamer 1.28.2 (2026-09-17), the raw two-change case failed near 15 seconds
@@ -206,7 +206,7 @@ original broadcast recording.
 `media-h264.mp4`, `media-h264.mkv`, `media-hevc.mp4` and `media-hevc.mkv`
 contain 12 seconds of synthetic 160×96, 25 fps, 8-bit SDR video and stereo AAC
 (48 kHz test tone). They contain no broadcast material. Regenerate with
-`python3 scripts/fixtures/general-media.py`; this uses CPU OpenH264/x265 and
+`python3 tests/fixtures/generate_general_media.py`; this uses CPU OpenH264/x265 and
 libav AAC encoders with file outputs, without display, GPU or audio devices.
 H.264 MP4 keeps its `moov` index at the end; HEVC MP4 uses faststart.
 `media-hevc-10bit.mp4` uses the same pattern and duration in 10-bit SDR. The
@@ -227,5 +227,5 @@ EPGStation file selection and token-authenticated playback.
 `media-subtitles.mp4` / `media-subtitles.mkv` は `media-h264.mp4` に合成字幕を追加した
 試験用動画です。MP4はテキスト字幕1トラック、MKVはテキスト字幕と装飾付きASSの2トラックを
 持ちます。外部字幕は `media-subtitles.srt` / `.ass` です。
-`/usr/bin/python3 scripts/fixtures/media-subtitles.py` でCPU上のmux処理だけを使って再生成できます。
+`/usr/bin/python3 tests/fixtures/generate_media_subtitles.py` でCPU上のmux処理だけを使って再生成できます。
 映像・音声の生成条件と権利は元の合成動画と同じです。

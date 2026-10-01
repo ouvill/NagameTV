@@ -40,7 +40,8 @@ pub fn run() -> i32 {
         ))
         .expect("test launch plan");
     let directory = std::path::PathBuf::from(
-        std::env::var_os("VIEWER_PORTAL_TEST_DIR").expect("Run scripts/test-portal-dialogs.sh"),
+        std::env::var_os("VIEWER_PORTAL_TEST_DIR")
+            .expect("Run python3 scripts/test.py portal-dialogs"),
     );
     let file = url::Url::from_file_path(directory.join("録画 #100%.ts")).unwrap();
     let folder = url::Url::from_directory_path(directory.join("キャプチャ #100%"))

@@ -20,7 +20,7 @@ Qt内部APIを使う`qml6glsink`は、同じQt SDKとGStreamerに対してソー
 
 ```sh
 git submodule update --init
-./scripts/build-appimage.sh
+./scripts/packaging/build-appimage.sh
 ```
 
 出力先:
@@ -36,7 +36,7 @@ build/appimage/nagametv-0.1.0-x86_64.AppImage.sha256
 並列数を変える場合:
 
 ```sh
-APPIMAGE_BUILD_JOBS=4 ./scripts/build-appimage.sh
+APPIMAGE_BUILD_JOBS=4 ./scripts/packaging/build-appimage.sh
 ```
 
 既にglibc 2.39以下、Qt 6.8以降、GStreamer 1.24以降が揃った環境では、
@@ -49,7 +49,7 @@ HTTPプラグイン用の`libsoup-3.0-dev`と、GIOのTLSモジュールを含�
 
 ```sh
 APPIMAGE_BUILD_DIR="$PWD/build/appimage-native" APPIMAGE_BUILD_JOBS=4 \
-  QMAKE=/path/to/qt/bin/qmake ./scripts/build-appimage.sh --native
+  QMAKE=/path/to/qt/bin/qmake ./scripts/packaging/build-appimage.sh --native
 ```
 
 linuxdeploy・Qtプラグイン・AppImageランタイムは、固定リリースを取得して
@@ -149,8 +149,8 @@ glibc検査の回帰テストは、Cコンパイラーとreadelfがある環境�
 壊れたELFを確認する。表示・GPU・音声は使用しない。
 
 ```sh
-python3 scripts/test-appimage-glibc.py
-python3 scripts/check-appimage-glibc.py /path/to/squashfs-root --max-glibc 2.39
+python3 scripts/test.py tooling
+python3 -m scripts.packaging.check_appimage_glibc /path/to/squashfs-root --max-glibc 2.39
 ```
 
 2026-09-17にUbuntu 26.04 / x86_64、Qt 6.10.2、GStreamer 1.28.2で生成を確認した。

@@ -197,11 +197,11 @@ Label表示、時間経過によるRustの削除通知、停止／再開、録�
 
 ```sh
 CARGO_TARGET_DIR=build/comments-protocol cargo test --locked --manifest-path rust/crates/viewer-comments/Cargo.toml --features network
-scripts/test-danmaku.sh
+python3 scripts/test.py danmaku
 cmake --build build
 ```
 
-scripts/test-danmaku.shはX11とGPUを検出・検証し、不足時には停止する。
+python3 scripts/test.py danmakuはX11とGPUを検出・検証し、不足時には停止する。
 QtQuickTestは開発用qml_tests featureのみでリンクし、通常ビルドへは追加しない。
 QML内にRust型があるため、弾幕を含む試験では単体qmltestrunnerでなくこのランナーを使う。
 長時間RSS、CPU/GPUのフレーム時間、録画映像との実同期、実サービスの色・位置指定は未測定。

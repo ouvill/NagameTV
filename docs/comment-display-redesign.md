@@ -150,8 +150,8 @@ cmake --build build/comment-evaluation
 `--all-features` は意図的に相反する機能を含むため使用せず、通常・評価・配布を別々に検証する。
 
 ```sh
-bash scripts/test-danmaku.sh
-bash scripts/test-danmaku.sh --evaluation-legacy-comments
+python3 scripts/test.py danmaku
+python3 scripts/test.py danmaku -- --evaluation-legacy-comments
 ```
 
 通常版では従来配置専用のQML試験をskipし、評価版で同じ試験を実行する。

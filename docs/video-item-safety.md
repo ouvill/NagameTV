@@ -73,7 +73,7 @@ the GStreamer setter.
 
 ## Regression verification
 
-Run `scripts/test-video-item.sh`. It checks null, an ordinary QQuickItem, a real
+Run `python3 scripts/test.py video-item`. It checks null, an ordinary QQuickItem, a real
 GStreamer video item with a QML-generated subclass, worker-thread rejection,
 and the actual sink's widget setter/getter and detach before destruction.
 It also constructs production `Playback` and exercises its attachment, duplicate

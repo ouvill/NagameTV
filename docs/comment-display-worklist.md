@@ -24,8 +24,8 @@
 
 - Rustコメントコア: 通常41件、評価版62件が成功（外部実サービス試験1件は既定でignore）。
 - アプリのRustテスト: 242件成功、既存の手動試験3件はignore。
-- `scripts/test-connection.sh`: 機器不要のQt結合試験成功。表示／配置の通知時に整合した設定が読めること、不正な組み合わせの拒否を追加確認。
-- `scripts/test-startup.sh`: 製品Main.qmlの起動、再生、タイムシフト、リサイズ、表示方式変更、サイドバーの排他表示を確認。
+- `python3 scripts/test.py connection`: 機器不要のQt結合試験成功。表示／配置の通知時に整合した設定が読めること、不正な組み合わせの拒否を追加確認。
+- `python3 scripts/test.py startup`: 製品Main.qmlの起動、再生、タイムシフト、リサイズ、表示方式変更、サイドバーの排他表示を確認。
 - CMake/Cargoとも配布用＋評価用の組み合わせを拒否。評価用CMake構成のinstallも拒否し、インストール先が作られていないことを確認。
 - コアのClippy（評価用featureを含む）は警告なし。
 - アプリの厳密なClippyは既存の `rust/src/screenshot_native.rs` 154行・179行の `collapsible_if` 2件で停止。
@@ -33,7 +33,7 @@
 - GUI環境は専用Weston/XwaylandとPulseAudio null sinkを起動し、NVIDIA RTX 4070 Tiの実GPU描画・音声loopbackを検証して使用。
 
 - 通常版QML: **236成功・0失敗・18skip**。skipは従来配置専用の試験。評価版QML: **256成功・0失敗・0skip**。
-- `scripts/test-startup.sh screenshot-playback`: 成功。1080p、4:3、非正方画素、横流れ・噴水の保存、回転した文字の表示位置一致、リサイズ、全画面、非表示、連写中の描画、停止を検証。
+- `python3 scripts/test.py startup -- screenshot-playback`: 成功。1080p、4:3、非正方画素、横流れ・噴水の保存、回転した文字の表示位置一致、リサイズ、全画面、非表示、連写中の描画、停止を検証。
   QMLの遅延破棄で旧コメントが一時的に残るケースを修正し、クリア／方式変更直後の保存命令にも混入しないことを確認。
 - `cmake -S . -B build -DMIRAKURUN_DISTRIBUTION=ON` と `cmake --build build`: 成功。通常版バイナリーは `build/mirakurun-viewer`。
 - `git diff --check`、変更したシェルスクリプトの構文、Flatpak JSONの構文: 成功。
@@ -102,9 +102,9 @@
 一覧QMLのリソースを除外し、評価用featureでのみ登録・ロードする。
 関連4公報の必須要件の欠落と、評価版ではその理由を使えないことを対比資料に追記した。
 
-- `scripts/test-danmaku.sh`: 237件成功、評価用の18件をスキップ。一覧リソース不存在とパネルの再生成を確認。
-- `scripts/test-danmaku.sh --evaluation-legacy-comments`: 257件成功。一覧の復元・履歴更新・状態の追従を確認。
-- `scripts/test-connection.sh` / `scripts/test-startup.sh`: 成功。後者は実際の`Main.qml`とPlayerの弾幕ON/OFFも確認。
+- `python3 scripts/test.py danmaku`: 237件成功、評価用の18件をスキップ。一覧リソース不存在とパネルの再生成を確認。
+- `python3 scripts/test.py danmaku -- --evaluation-legacy-comments`: 257件成功。一覧の復元・履歴更新・状態の追従を確認。
+- `python3 scripts/test.py connection` / `python3 scripts/test.py startup`: 成功。後者は実際の`Main.qml`とPlayerの弾幕ON/OFFも確認。
 - `cmake -S . -B build -DMIRAKURUN_DISTRIBUTION=ON` / `cmake --build build`: 成功。全評価フラグはOFF。
 - 配布用設定と`MIRAKURUN_EVALUATION_COMMENT_LIST=ON`の併用がCMakeで拒否されることを確認。
 - `cargo fmt --check`、`git diff --check`、更新文書のローカルリンクを確認。
@@ -125,7 +125,7 @@ AppImage/Flatpakの生成や実サービスへの投稿は今回の変更では�
   リサイズ時の範囲、シーク前後の位置と一時停止を機器不要のRust試験で確認。
 - コメントコア: 通常版46件、評価版67件成功。外部実サービス試験は各1件をignore。
 - アプリのRust試験: 251件成功、既存の手動試験3件をignore。
-- `scripts/test-danmaku.sh`: 専用画面・実GPU・仮想音声の検証後、248件成功、評価用18件をskip。
+- `python3 scripts/test.py danmaku`: 専用画面・実GPU・仮想音声の検証後、248件成功、評価用18件をskip。
 - コアのClippy（評価用featureを含む）、変更したRustファイルの整形、差分の空白検査は成功。
 
 ## 横スクロールの速度を通常・全画面で統一（2026-09-19）
@@ -137,5 +137,5 @@ AppImage/Flatpakの生成や実サービスへの投稿は今回の変更では�
 - 2種類の映像幅、0.5倍・1倍・2倍、均等・ランダム・評価用の衝突回避配置について、
   全画面へ入る／戻るときに同じ映像幅なら新着と表示中のコメントが同じ速度になることを確認。
 - コメントコア: 通常版47件、評価版68件成功。外部実サービス試験は各1件をignore。
-- `scripts/test-danmaku.sh --evaluation-legacy-comments`: 専用環境の検証後、268件成功。
+- `python3 scripts/test.py danmaku -- --evaluation-legacy-comments`: 専用環境の検証後、268件成功。
 - コアのClippy、変更したRustファイルの整形、差分の空白検査は成功。

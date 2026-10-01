@@ -5,13 +5,14 @@
 表示部品の代用品やGStreamerは使用しない。描画方式の変更も行わない。
 
 ```bash
-DISPLAY=:0 python3 scripts/benchmark-subtitle-memory.py benchmark/subtitle-memory-new-run
+python3 -m scripts.dev.benchmark_subtitle_memory benchmark/subtitle-memory-new-run
 ```
 
-出力先は新規ディレクトリーを指定する。スクリプトはX11・GPUデバイス・GLXを検出、
-検証してから実行し、ソフトウェア描画へのフォールバックは行わない。
+出力先は新規ディレクトリーを指定する。共通の[専用GUI環境](gui-test-environment.md)で
+表示・実GPU・仮想音声出力を検証してから実行し、ソフトウェア描画へのフォールバックは行わない。
 Qtの開発用pkg-config設定とC++コンパイラーを使い、既存の描画試験ヘルパーをビルドする。
-音声、放送、キー・ポインター入力は使わない。仮想ディスプレイのUI試験とは別の計測である。
+計測用の描画試験は音声、放送、キー・ポインター入力を使わない。
+以下の過去の採取結果は、当時明示したX11画面で実行した記録である。
 
 1440×810のウィンドウ、960×540の字幕座標、通常書体・縁取りON・glyphHeight 36で、
 32セルを1画面に表示する。U+4E00〜U+4EFFの256文字を3周し、続いて
@@ -64,7 +65,7 @@ renderer.txt、各段階のstatus/smaps_rollupとヘルパーバイナリー。
 ## 縁取りだけを除く比較（2026-09-07）
 
 ```bash
-DISPLAY=:0 python3 scripts/benchmark-subtitle-memory.py --no-outline benchmark/subtitle-memory-no-outline-new-run
+python3 -m scripts.dev.benchmark_subtitle_memory --no-outline benchmark/subtitle-memory-no-outline-new-run
 ```
 
 追加した--no-outlineは試験入力のstrokedだけをfalseにする。文字本体のNativeRendering、

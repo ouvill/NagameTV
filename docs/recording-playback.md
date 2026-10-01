@@ -200,5 +200,5 @@ GPU描画と専用の仮想音声出力を使用し、実サーバー・物理�
 
 ```sh
 CARGO_TARGET_DIR=build/cargo cargo test --manifest-path rust/Cargo.toml --release --locked playback::media
-bash scripts/test-startup.sh
+python3 scripts/test.py startup
 ```

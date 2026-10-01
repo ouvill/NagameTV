@@ -114,12 +114,12 @@ Waylandの起動・入力試験全体は専用環境のサイズ・フォーカ�
 表示フレーム保持を検証する。GPU試験は[専用GUI環境](gui-test-environment.md)で実行する。
 
 ```sh
-NAGAMETV_DEINTERLACE=yadif NAGAMETV_VIDEO_FORMAT=nv12 bash scripts/test-startup.sh video-processing
-NAGAMETV_DEINTERLACE=gl bash scripts/test-startup.sh video-processing
-NAGAMETV_DEINTERLACE=gl NAGAMETV_VIDEO_FORMAT=nv12 bash scripts/test-startup.sh video-processing
-NAGAMETV_DEINTERLACE=va NAGAMETV_VIDEO_FORMAT=nv12 bash scripts/test-startup.sh video-processing
-NAGAMETV_DEINTERLACE=va NAGAMETV_VIDEO_FORMAT=rgba bash scripts/test-startup.sh video-processing
-NAGAMETV_VIDEO_FORMAT=nv12 bash scripts/test-startup.sh screenshot-playback
+NAGAMETV_DEINTERLACE=yadif NAGAMETV_VIDEO_FORMAT=nv12 python3 scripts/test.py startup -- video-processing
+NAGAMETV_DEINTERLACE=gl python3 scripts/test.py startup -- video-processing
+NAGAMETV_DEINTERLACE=gl NAGAMETV_VIDEO_FORMAT=nv12 python3 scripts/test.py startup -- video-processing
+NAGAMETV_DEINTERLACE=va NAGAMETV_VIDEO_FORMAT=nv12 python3 scripts/test.py startup -- video-processing
+NAGAMETV_DEINTERLACE=va NAGAMETV_VIDEO_FORMAT=rgba python3 scripts/test.py startup -- video-processing
+NAGAMETV_VIDEO_FORMAT=nv12 python3 scripts/test.py startup -- screenshot-playback
 ```
 
 `video-processing`はCPUで1080i/1080pのMPEG-2を生成し、製品Main.qmlで再生して、

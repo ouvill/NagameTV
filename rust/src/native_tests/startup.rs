@@ -2258,7 +2258,7 @@ fn checks() -> TestResult {
     let path = settings::settings_path()?;
     assert!(
         !path.exists(),
-        "run with the isolated test-startup.sh configuration"
+        "run via python3 scripts/test.py startup for isolated settings"
     );
     tracing::info!("Startup window check: first run");
     launch_window(None)?;

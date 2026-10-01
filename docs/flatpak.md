@@ -53,13 +53,13 @@ Ubuntuのビルド用環境なら:
 ```sh
 sudo apt install flatpak flatpak-builder elfutils python3 librsvg2-common
 flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
-./scripts/build-flatpak.sh
+./scripts/packaging/build-flatpak.sh
 ```
 
 出力先は`build/flatpak/`。パッケージ名はCargo.tomlのバージョンとビルド環境のCPUアーキテクチャから決まる。
 同じディレクトリーにSHA-256ファイル、ローカルOSTreeリポジトリー`repo/`、ビルド結果`app/`を作る。
 ホストOS側へのQtやGStreamerのインストールは不要。初回はSDKを含む数GBのダウンロードが発生する。
-並列数は`FLATPAK_BUILD_JOBS=4 ./scripts/build-flatpak.sh`のように指定できる。
+並列数は`FLATPAK_BUILD_JOBS=4 ./scripts/packaging/build-flatpak.sh`のように指定できる。
 
 マニフェストは`packaging/flatpak/io.github.ouvill.nagametv.json`。
 作業ツリーのソースをビルドするため、パッケージ化する前のコミットは必須ではない。
@@ -79,7 +79,7 @@ Cargo.lockを変更したら、次を実行して`cargo-sources.json`も更新�
 ビルドスクリプトは更新漏れを検出すると停止する。
 
 ```sh
-python3 scripts/flatpak-cargo-sources.py
+python3 -m scripts.packaging.flatpak_cargo_sources
 ```
 
 ランタイムの更新はFlatpakが管理する。同じブランチの修正更新でQtなどのパッチ版は変わるため、

@@ -3,7 +3,7 @@ import QtTest
 import MinimalViewer as Viewer
 
 // Frame pacing while moving the production guide through a cached schedule.
-// Run through scripts/run-gui-tests.py; no network or physical input required.
+// Run through scripts/testing/gui_session.py; no network or physical input required.
 TestCase {
     id: testCase
     name: "GuideScrolling"

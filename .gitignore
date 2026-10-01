@@ -1,5 +1,7 @@
 .workshop.lock
 build/
+# Build helpers are source files, not generated output.
+!scripts/build/
 # Cargo build-script modules are source files.
 !rust/build/
 rust/build/*

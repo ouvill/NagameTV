@@ -50,7 +50,7 @@ workshop run -- gui-test --check
 Workshop内では次のコマンドを使います。
 
 ```sh
-python3 scripts/run-gui-tests.py --check
+python3 -m scripts.testing.gui_session --check
 ```
 
 ## FedoraなどのLinuxで直接実行
@@ -67,8 +67,8 @@ PulseAudio本体への置き換えやWorkshop用SDKフックの実行は不要�
 
 ```sh
 systemctl --user is-active pipewire.service pipewire-pulse.service wireplumber.service
-python3 scripts/run-gui-tests.py --check
-bash scripts/test-startup.sh
+python3 -m scripts.testing.gui_session --check
+python3 scripts/test.py startup
 ```
 
 接続先は、指定済みの`PULSE_SERVER`、未指定なら起動元の
@@ -89,39 +89,38 @@ bash scripts/test-startup.sh
 仮想出力を作成します。表示先の環境変数を手動で設定する必要はありません。
 
 ```sh
-bash scripts/test-screenshot.sh
-bash scripts/test-startup.sh
-bash scripts/test-pointer-activity.sh
-NAGAMETV_TEST_QPA=wayland bash scripts/test-startup.sh screenshot-playback
-NAGAMETV_TEST_QPA=auto bash scripts/test-startup.sh video-processing
+python3 scripts/test.py screenshot
+python3 scripts/test.py startup
+python3 scripts/test.py pointer-activity
+NAGAMETV_TEST_QPA=wayland python3 scripts/test.py startup -- screenshot-playback
+NAGAMETV_TEST_QPA=auto python3 scripts/test.py startup -- video-processing
 ```
 
 Workshopを使う場合はホストから次のように実行できます。
 
 ```sh
-workshop exec -- bash -lc 'bash scripts/test-startup.sh'
+workshop exec -- bash -lc 'python3 scripts/test.py startup'
 ```
 
 複数の試験を一つの専用セッションで実行することもできます。各試験の設定用一時ディレクトリーは
 従来どおり個別に作成されます。
 
 ```sh
-python3 scripts/run-gui-tests.py -- bash -euc '
-  bash scripts/test-screenshot.sh
-  bash scripts/test-startup.sh
+python3 -m scripts.testing.gui_session -- bash -euc '
+  python3 scripts/test.py screenshot
+  python3 scripts/test.py startup
 '
 ```
 
-字幕試験の`--ui-only`は従来の明示的なソフトウェア描画許可モードです。このモード自体は
-専用画面を作成しません。ホストのデスクトップへ接続せず、別途用意して検証した
-テスト専用X11環境で使用します。通常は引数なしのGPU試験を使ってください。
+字幕試験の旧`--ui-only`は廃止しました。描画試験は共通ランナーの
+`python3 scripts/test.py subtitle-rendering`でこの専用環境を使います。
 
 機器不要のRust・接続・翻訳・字幕アウトライン試験はこのランチャーを使用しません。
 試験ごとの確認範囲は[Qtテスト](qt-tests.md)を参照してください。
 
 ## 起動時の検証と後片付け
 
-[ランチャー](../scripts/run-gui-tests.py)はGPUデバイスへのアクセス権と必要なコマンド、
+[ランチャー](../scripts/testing/gui_session.py)はGPUデバイスへのアクセス権と必要なコマンド、
 既存の音声ソケットを検出します。PipeWire接続と仮想出力の送受信を確認してから、
 固有の一時ディレクトリーに画面とD-Busを起動します。ホストの`DISPLAY`、
 `WAYLAND_DISPLAY`、D-Bus接続先は引き継ぎません。音声は検出した接続先と
@@ -153,7 +152,7 @@ python3 scripts/run-gui-tests.py -- bash -euc '
 プロセス管理・接続先の分離・失敗時の停止処理は機器なしで検証できます。
 
 ```sh
-python3 scripts/test-gui-session.py
+python3 scripts/test.py tooling
 ```
 
 ## 検証環境
@@ -173,7 +172,7 @@ moduleのJSONには番号がないため、削除時の番号は`list short modu
 `llvmpipe`へ切り替わったため、テストを停止しました。`ldconfig`で修復後、
 WestonとXwaylandの両方でNVIDIA GeForce RTX 4070 Ti（595.84）の描画と
 音声loopbackを確認し、`--check`が成功しました。再発防止のためSDKフックにも反映しています。
-`bash scripts/test-startup.sh`も全体が成功しました。初回・保存済み起動、自動再生と
+`python3 scripts/test.py startup`も全体が成功しました。初回・保存済み起動、自動再生と
 環境変数の上書き、番組表、録画再生、タイムシフト、正常終了を確認しています。
 検証中に見つかった既存の番組表テストの競合は、表示対象チャンネルの初期更新を
 待ってから番組を選択し、ダイアログの待機条件を常に真偽値にする修正で解消しました。

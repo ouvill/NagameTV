@@ -1,4 +1,4 @@
-//! Executed only by scripts/epgstation-integration.py against pinned provider code.
+//! Executed only by scripts/testing/epgstation_integration.py against pinned provider code.
 //! Missing endpoints are errors, never silently successful/skipped live checks.
 use super::*;
 use crate::playback::recording::{Loader, Recording as LoadedRecording};
@@ -65,7 +65,7 @@ async fn send(request: reqwest::RequestBuilder) -> Result<reqwest::Response, req
 }
 
 #[test]
-#[ignore = "requires pinned real provider; run python3 scripts/epgstation-integration.py"]
+#[ignore = "requires pinned real provider; run python3 -m scripts.testing.epgstation_integration"]
 fn catalogue_pagination_metadata_and_file_bytes() -> TestResult {
     // Player construction initializes GStreamer before any file inspection.
     // Do the same here: a cold plugin scan must not consume the loader's bounded
@@ -238,7 +238,7 @@ fn catalogue_pagination_metadata_and_file_bytes() -> TestResult {
 }
 
 #[test]
-#[ignore = "requires pinned real provider; run python3 scripts/epgstation-integration.py"]
+#[ignore = "requires pinned real provider; run python3 -m scripts.testing.epgstation_integration"]
 fn authentication_rejects_invalid_credentials_and_scopes_tokens() -> TestResult {
     let endpoint = Authentication::Password.endpoint()?;
     let runtime = runtime()?;
@@ -343,7 +343,7 @@ fn authentication_rejects_invalid_credentials_and_scopes_tokens() -> TestResult 
 }
 
 #[test]
-#[ignore = "requires pinned real provider; run python3 scripts/epgstation-integration.py"]
+#[ignore = "requires pinned real provider; run python3 -m scripts.testing.epgstation_integration"]
 fn cancelled_and_fragmented_logins_leave_the_provider_usable() -> TestResult {
     let endpoint = Authentication::Password.endpoint()?;
     let address = url::Url::parse(&endpoint)?.socket_addrs(|| None)?[0];
@@ -384,7 +384,7 @@ fn cancelled_and_fragmented_logins_leave_the_provider_usable() -> TestResult {
 }
 
 #[test]
-#[ignore = "requires pinned real provider; run python3 scripts/epgstation-integration.py"]
+#[ignore = "requires pinned real provider; run python3 -m scripts.testing.epgstation_integration"]
 fn startup_fixture_matches_real_provider_responses() -> TestResult {
     let real = Authentication::Anonymous.endpoint()?;
     let mock = crate::startup_test_server::Server::new()?;

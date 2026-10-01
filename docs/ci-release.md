@@ -30,7 +30,7 @@ Cargoのコンパイル結果も、Ubuntu 24.04の`build/ci/cargo`と
 キーには実際のDockerイメージID、Cargo設定・マニフェスト、lockfile、コミットを含め、
 一致する設定を優先し、なければ同じイメージの直近キャッシュを復元する。
 設定や依存関係が変わった部分はCargoが再コンパイルする。
-復元後は`with-fresh-local-crates.py`がCargo metadataからpath依存・ローカルパッチを列挙し、
+復元後は`fresh_local_crates.py`がCargo metadataからpath依存・ローカルパッチを列挙し、
 そのパッケージだけを`cargo clean --package`で消してから検証する。
 ファイル時刻が復元した生成物より古い場合も、リポジトリーの実装を確実にコンパイルするためである。
 外部の依存crateとccacheは残す。
@@ -45,8 +45,8 @@ EPGStationは[固定版の本体との結合テスト](epgstation.md#固定版�
 録画一覧などの保存済み実応答と新たな応答を比較し、差があれば失敗する。
 診断ログは`epgstation-contract` artifactとして14日間保存する。
 本体QMLは生成した型情報を使って全ファイルを`qmllint`で検査し、警告0件を合格条件とする。
-評価用部品も静的検査に含める。色・寸法・動きの共通化は`check-ui-style.py`で検査する。
-CIの`scripts/ci.sh`は`cargo fetch --locked`で依存ソースを取得してから
+評価用部品も静的検査に含める。色・寸法・動きの共通化は`check_ui_style.py`で検査する。
+CIの`scripts/testing/ci.sh`は`cargo fetch --locked`で依存ソースを取得してから
 共通ランナー`python3 scripts/test.py cpu --profile release`を実行する。
 オフラインで動くビルド情報の試験にも同じ`CARGO_HOME`を引き継ぐため、
 ダウンロードキャッシュが空のCIでも試験に必要なソースを参照できる。
@@ -74,9 +74,9 @@ docker run --rm --user "$(id -u):$(id -g)" \
   --env CARGO_HOME=/project/build/ci/cargo-home \
   --env CARGO_TARGET_DIR=/project/build/ci/cargo \
   --env CARGO_BUILD_JOBS=2 \
-  nagametv-ci:local bash scripts/ci.sh
+  nagametv-ci:local bash scripts/testing/ci.sh
 CARGO_HOME=/project/build/ci/cargo-home CARGO_TARGET_DIR=/project/build/ci/cargo \
-  CARGO_BUILD_JOBS=2 python3 scripts/epgstation-integration.py --client-image nagametv-ci:local
+  CARGO_BUILD_JOBS=2 python3 -m scripts.testing.epgstation_integration --client-image nagametv-ci:local
 ```
 
 D-Busが数値UID/GIDを解決できるように、ユーザー・グループ情報を読み取り専用で渡す。
@@ -85,7 +85,7 @@ Flatpakのホスト側AppStream生成にはSVGローダーも必要で、CIで�
 字幕描画用の`libass`はKDE SDKの同梱を前提にせず、Flatpakマニフェストで
 バージョンとSHA-256を固定してアプリより先にビルドする。アプリへ静的リンクし、ライセンスも同梱する。
 
-依存関係を導入済みのネイティブ開発環境では`bash scripts/ci.sh`でも実行できる。
+依存関係を導入済みのネイティブ開発環境では`bash scripts/testing/ci.sh`でも実行できる。
 ネイティブ実行の既定の出力先は`build/ci-native/cargo`。
 Docker版とネイティブ版で同じ`CARGO_TARGET_DIR`を共有しないこと。
 パッケージ単体の作成方法は[AppImage](appimage.md)・[Flatpak](flatpak.md)・[deb](deb.md)を参照。
@@ -100,7 +100,7 @@ GitHubの正式版を示すLatestには設定しない。
 `latest-build`タグはビルドしたコミットへ移動し、リリースノートにCargo.tomlのバージョンと完全なコミットSHAを記録する。
 タイトルと本文は日本語で生成し、本文の先頭に各パッケージとSHA-256への直接ダウンロードリンクを載せる。
 Assetsが折りたたまれていても取得できるようにし、対象環境・導入手順・開発ビルドの更新方法も案内する。
-本文は[`latest-build-notes.py`](../scripts/latest-build-notes.py)で生成し、ファイル名は配布処理と共通のメタデータを使う。
+本文は[`latest_build_notes.py`](../scripts/packaging/latest_build_notes.py)で生成し、ファイル名は配布処理と共通のメタデータを使う。
 パッケージ内部のバージョンと配布ファイル名にはCargo.tomlのバージョンを使い、ビルドごとのバージョン更新は不要である。
 バージョン更新によってファイル名が変わった場合は、以前の添付ファイルを削除する。
 
@@ -136,9 +136,9 @@ Assetsが折りたたまれていても取得できるようにし、対象環�
 1. `rust/Cargo.toml`のアプリバージョンを更新し、`rust/Cargo.lock`も更新する。
    `packaging/linux/io.github.ouvill.nagametv.metainfo.xml`の`releases`の先頭に
    同じバージョンとリリース日を追加する。
-2. `python3 scripts/flatpak-cargo-sources.py`で依存一覧を更新する。
+2. `python3 -m scripts.packaging.flatpak_cargo_sources`で依存一覧を更新する。
    サブモジュールを更新した場合はFlatpakマニフェストの`commit`も合わせる。
-3. `python3 scripts/check-release-metadata.py --tag v0.1.0`のように予定のタグを検査し、
+3. `python3 -m scripts.packaging.check_release_metadata --tag v0.1.0`のように予定のタグを検査し、
    変更をコミットして`main`のCI成功を確認する。
 4. リリース対象のコミットにタグを付けてpushする。例:
 
@@ -184,14 +184,14 @@ GitHub Actions公式の`concurrency.queue`（`queue: max`）に対して、actio
 設定変更時の軽量な確認:
 
 ```sh
-python3 scripts/test-release.py
-python3 scripts/check-release-metadata.py
-python3 scripts/flatpak-cargo-sources.py --check
-bash -n scripts/ci.sh scripts/create-release.sh scripts/build-appimage.sh scripts/build-deb.sh scripts/test-deb.sh
+python3 scripts/test.py tooling
+python3 -m scripts.packaging.check_release_metadata
+python3 -m scripts.packaging.flatpak_cargo_sources --check
+bash -n scripts/testing/ci.sh scripts/packaging/create-release.sh scripts/packaging/build-appimage.sh scripts/packaging/build-deb.sh scripts/packaging/test-deb.sh
 actionlint
 ```
 
-2026-09-21のローカル検証では、リリース処理のテスト（`python3 scripts/test-release.py`の24テスト）、ShellCheck、`bash -n`、
+2026-09-21のローカル検証では、リリース処理のテスト（`python3 scripts/test.py tooling`の24テスト）、ShellCheck、`bash -n`、
 上記除外を適用したactionlint、`git diff --check`、メタデータ検証、Flatpak依存一覧チェックはローカルで確認済みである。
 リリース処理テストは一時Gitリポジトリとローカルの疑似GitHub CLI応答を使い、
 バージョン不一致、破損・欠落した成果物、API失敗時の挙動、タグとコミットの対応、

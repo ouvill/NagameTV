@@ -263,9 +263,9 @@ X11接続、NVIDIA GeForce RTX 4070 Tiによる直接OpenGL描画を確認した
 
 実X11/OpenGL環境で以下を実行した（初期化・終了処理も成功件数に含む）。
 
-- `scripts/test-subtitle-rendering.sh`: 9成功。字体・輪郭の画素、リサイズ、
+- `python3 scripts/test.py subtitle-rendering`: 9成功。字体・輪郭の画素、リサイズ、
   字幕消去と表示無効化時のdelegate解放、不要な輪郭再生成の抑制。
-- `scripts/test-pointer-activity.sh`: 3成功。native入力監視の寿命とウィンドウ変更。
+- `python3 scripts/test.py pointer-activity`: 3成功。native入力監視の寿命とウィンドウ変更。
 - `qmltestrunner -input rust/qml/tests`: 71成功。設定接続の受付／拒否、番組表、
   選局UI、ウィンドウ操作などの部品試験。Rustバックエンドの実接続試験ではない。
 

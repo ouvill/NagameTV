@@ -125,8 +125,8 @@ QMLの操作は`guide_open`を呼ぶだけで、表示フラグを別に書き�
 同じ表示状態への要求では選択中の日付を消さない。日付選択部品の遅延処理は
 その部品が所有するTimerで実行し、破棄とともに取り消す。
 
-これらの不変条件とQt通知中の読み取りは`test-connection.sh`、製品のMain.qmlを含む
-画面同士の接続は`test-startup.sh`で確認する。[Qtテスト](qt-tests.md)
+これらの不変条件とQt通知中の読み取りは`python3 scripts/test.py connection`、製品のMain.qmlを含む
+画面同士の接続は`python3 scripts/test.py startup`で確認する。[Qtテスト](qt-tests.md)
 
 ## 起動と完全無効化
 

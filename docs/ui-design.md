@@ -135,15 +135,15 @@ UI変更では、既存部品で表せるか、新しい種類が必要か、画
 共通部品や値を変える場合は、[部品一覧](../tests/ui-gallery/Controls.qml)と、それを使う主要画面を
 通常サイズ・小さいサイズの両方で確認する。機能ごとのデザイン変更も、この共通基準へ反映する。
 
-`python3 scripts/check-ui-style.py`は、UIの色コード・文字サイズ・角丸・アニメーション時間の
+`python3 -m scripts.testing.check_ui_style`は、UIの色コード・文字サイズ・角丸・アニメーション時間の
 直接指定と、共通部品の背景・内容の上書きを検出する。CIでも実行する。この検査はQMLコンパイラーを
 置き換えず、複雑な式や新しい独自部品まで外観の統一を保証するものではない。
-構文・型・プロパティ参照は`bash scripts/check-qml.sh`で本体全QMLを検査し、
+構文・型・プロパティ参照は`bash scripts/testing/check-qml.sh`で本体全QMLを検査し、
 CIでは警告0件を必須とする。ビルドで生成した型情報を使う手順は[開発手順](development.md)を参照。
 
-`bash scripts/test-ui-style.sh`は専用GUI環境で製品の共通部品を並べ、押下中のクリック領域、
+`python3 scripts/test.py ui-style`は専用GUI環境で製品の共通部品を並べ、押下中のクリック領域、
 無効時の操作抑止、キーボード操作、選択欄の開閉を確認する。
-目視レビュー用の画像は`bash scripts/capture-ui-style.sh`で`build/ui-review/`へ保存する。
+目視レビュー用の画像は`python3 scripts/test.py ui-capture`で`build/ui-review/`へ保存する。
 画像の自動比較は行わないため、画像生成は回帰検証の件数に含めない。
 手順は[開発手順](development.md#テストと診断)を参照。
 

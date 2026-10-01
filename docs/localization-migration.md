@@ -30,7 +30,7 @@ TSファイルとQT_LRELEASE変更をCargoの再ビルド条件へ登録する�
 
 ## 検証
 
-scripts/test-localization.shはQCoreApplicationとQtObjectだけで動く専用試験。
+python3 scripts/test.py localizationはQCoreApplicationとQtObjectだけで動く専用試験。
 ディスプレイ・GPU・音声も、代替の描画バックエンドも使わない。
 mainのロケール解決、既存QML文言の日本語・英語への再翻訳、Backendコンテキストの翻訳、
 100往復後の翻訳器1個保持を確認した。カタログをリンクしない別バイナリーでは、

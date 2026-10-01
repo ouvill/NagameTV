@@ -49,7 +49,7 @@ set(CARGO_TARGET_DIR "${CMAKE_BINARY_DIR}/cargo")
 file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS "rust/src/*.rs" "rust/src/*.h")
 add_custom_target(nagametv-build ALL
     COMMAND ${CMAKE_COMMAND} -E env CARGO_TARGET_DIR=${CARGO_TARGET_DIR}
-            bash ${CMAKE_SOURCE_DIR}/scripts/with-build-lock.sh
+            bash ${CMAKE_SOURCE_DIR}/scripts/build/with-build-lock.sh
             cargo build --manifest-path ${CMAKE_SOURCE_DIR}/rust/Cargo.toml --profile ${CARGO_PROFILE} --locked ${CARGO_FEATURE_ARGS}
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
             ${CARGO_TARGET_DIR}/${CARGO_PROFILE_DIR}/nagametv ${CMAKE_BINARY_DIR}/nagametv

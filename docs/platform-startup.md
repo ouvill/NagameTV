@@ -51,7 +51,7 @@ VA-API経路だけはDMA_DRMのEGL importにWaylandが必要なため、未指�
 環境変更関数をunsafeとして呼び出し側の前提を文書化し、呼び出し位置にも安全性の
 理由を記した。
 
-`NAGAMETV_TEST_QPA=wayland bash scripts/test-startup.sh video-processing`で製品画面の映像処理を検証する。
+`NAGAMETV_TEST_QPA=wayland python3 scripts/test.py startup -- video-processing`で製品画面の映像処理を検証する。
 `NAGAMETV_TEST_QPA=auto`ではQtの自動選択を使う。どちらも
 [専用GUI環境](gui-test-environment.md)を起動し、実GPUと仮想音声を検証する。
 
@@ -81,9 +81,9 @@ AppImage／Flatpakは同梱qml6glsinkのWayland対応を別途検証する必要
 ## WaylandのIME診断
 
 IMEが単発キーのショートカットを取り込む場合は、問題が起きるデスクトップで
-`bash scripts/diagnose-ime.sh`を手動実行する。Waylandの文字入力経路を明示し、
+`bash scripts/dev/diagnose-ime.sh`を手動実行する。Waylandの文字入力経路を明示し、
 Qtの入力方式選択・フォーカス・文字入力プロトコルのdebugログを
-`build/ime-wayland-XXXXXX.log`へ保存する。`bash scripts/diagnose-ime.sh ibus`では
+`build/ime-wayland-XXXXXX.log`へ保存する。`bash scripts/dev/diagnose-ime.sh ibus`では
 表示方式をWaylandに保ったまま、IBusへの直接接続を指定する。
 `QT_IM_MODULES`は`QT_IM_MODULE`より優先されるため、両方を指定して比較する。
 環境変数はその起動だけに適用し、デスクトップやIMEの設定ファイルは変更しない。

@@ -16,13 +16,13 @@ connections:
     slot: system:gpu
 
 actions:
-  setup-tests: bash scripts/install-nextest.sh
+  setup-tests: bash scripts/testing/install-nextest.sh
   configure: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DNAGAMETV_DISTRIBUTION=OFF
   build: |
     cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DNAGAMETV_DISTRIBUTION=OFF
     cmake --build build
   test: python3 scripts/test.py "$@"
-  gui-test: python3 scripts/run-gui-tests.py "$@"
-  run: bash scripts/run-viewer.sh "$@"
-  profile-memory: bash scripts/profile-memory.sh "$@"
-  analyze-memory: python3 scripts/analyze-memory.py "$@"
+  gui-test: python3 -m scripts.testing.gui_session "$@"
+  run: bash scripts/dev/run-viewer.sh "$@"
+  profile-memory: bash scripts/dev/profile-memory.sh "$@"
+  analyze-memory: python3 -m scripts.dev.analyze_memory "$@"

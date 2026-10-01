@@ -32,7 +32,7 @@ contentXを再帰的に更新しない。
 
 ```sh
 CARGO_TARGET_DIR=build/cargo SQLX_OFFLINE=true cargo build --manifest-path rust/Cargo.toml --release --locked --features native_tests
-python3 scripts/run-gui-tests.py -- env QT_QPA_PLATFORM=xcb QSG_RHI_BACKEND=opengl \
+python3 -m scripts.testing.gui_session -- env QT_QPA_PLATFORM=xcb QSG_RHI_BACKEND=opengl \
   build/cargo/release/nagametv --native-tests channel-views \
   -input rust/qml/benchmarks/tst_GuidePerformance.qml
 ```
@@ -85,7 +85,7 @@ fixtureの解析・モデル構築だけの中央値は、変更前53 ms、変�
 往復の端では、各表示列の番組が生成済みであることも確認する。
 
 ```sh
-python3 scripts/run-gui-tests.py -- env QT_QPA_PLATFORM=xcb QSG_RHI_BACKEND=opengl \
+python3 -m scripts.testing.gui_session -- env QT_QPA_PLATFORM=xcb QSG_RHI_BACKEND=opengl \
   build/cargo/release/nagametv --native-tests channel-views \
   -input rust/qml/benchmarks/tst_GuideScrolling.qml
 ```

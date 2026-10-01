@@ -32,5 +32,5 @@ available, including `-j1`. Each worker owns its token until completion or panic
 Results retain input order, all workers finish before the loader is generated,
 and the registrar still completes before any QML compilation starts. Construct
 and validate qmlcachegen once per module. This changes scheduling, not AOT options
-or generated type metadata. `scripts/test-qml-build.py` checks ordering, serial
+or generated type metadata. `tests/tooling/test_qml_build.py` checks ordering, serial
 progress and token release using the production scheduler without Qt.

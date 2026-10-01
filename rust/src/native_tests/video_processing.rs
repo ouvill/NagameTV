@@ -1,5 +1,5 @@
 //! Product-window verification of negotiated memory, field rate and captures.
-//! Run only through test-startup.sh, which validates the isolated GPU session.
+//! Run only through python3 scripts/test.py startup, which validates the isolated GPU session.
 use super::{
     screenshots::{capture, file_url, json},
     startup::{TestResult, evaluate, wait_for},

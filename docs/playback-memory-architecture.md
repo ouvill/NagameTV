@@ -171,7 +171,7 @@ Rust専用のヒープ計測クレートではQt/GStreamer/ドライバーのmal
 以下の`before-nagametv`はその保存先。出力先は既存でないディレクトリーを指定する。
 
 ```sh
-python3 scripts/benchmark-playback-memory.py benchmark/memory-comparison \
+python3 -m scripts.dev.benchmark_playback_memory benchmark/memory-comparison \
   --binary /path/to/before-nagametv --binary build/nagametv \
   --ts /path/to/fixture.ts --service-id 1 --repeat 3 --seconds 35
 ```
@@ -290,7 +290,7 @@ RSSの範囲は変更前331.2〜338.2 MiB、変更後329.6〜337.1 MiBで重な�
 再生中の大きなメモリー使用量は解消しなかった。
 
 ```sh
-python3 scripts/benchmark-playback-memory.py benchmark/ts-copy-comparison \
+python3 -m scripts.dev.benchmark_playback_memory benchmark/ts-copy-comparison \
   --binary /path/to/before-nagametv --binary build/nagametv \
   --ts /path/to/interlaced.ts --phase playback --seconds 35 --repeat 3
 ```

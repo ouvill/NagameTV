@@ -14,7 +14,7 @@ python3 scripts/test.py viewer-comments --filter 'test(cache::)'
 全CPU試験は`python3 scripts/test.py cpu`、最適化した構成での検証は
 `python3 scripts/test.py cpu --profile release`です。
 初めて`dev`へ切り替えるときは依存物をコンパイルします。
-型検査だけなら`bash scripts/with-build-lock.sh cargo check --manifest-path rust/Cargo.toml --locked`
+型検査だけなら`bash scripts/build/with-build-lock.sh cargo check --manifest-path rust/Cargo.toml --locked`
 を使えます。CMake・共通ランナー・直接のCargo診断は`build/cargo`を共用し、
 同じ依存物を別の出力先で作り直すことを避けます。`CARGO_TARGET_DIR`による変更は可能です。
 
@@ -28,7 +28,7 @@ Git情報のないアーカイブとラッパーを通さないCargo実行では
 
 この判定は[Cargoのビルドスクリプトの変更検知](https://doc.rust-lang.org/cargo/reference/build-scripts.html#change-detection)を使います。
 `build/`などの無視対象は入力に含めず、ビルド出力の更新で次のビルドが始まる循環を避けます。
-Cargo診断を直接使う場合も`bash scripts/with-build-lock.sh cargo ...`を使ってください。
+Cargo診断を直接使う場合も`bash scripts/build/with-build-lock.sh cargo ...`を使ってください。
 
 Qt/C++生成では、Qt連携のRustファイルとヘッダーを個別に監視します。
 `rust/src`全体の監視を外すことで、Qt非依存のRustファイルを編集しても
@@ -67,7 +67,7 @@ CCACHE_DIR="$PWD/build/ccache" ccache --show-stats
 保存先は`build/ccache`で、`CCACHE_DIR`で変更できます。
 Cargoの出力先を作り直してもキャッシュを残せます。
 ccacheがなければ通常のコンパイルを使い、無効化して比較する場合は
-`CCACHE_DISABLE=1 bash scripts/with-build-lock.sh cargo build --manifest-path rust/Cargo.toml --locked`
+`CCACHE_DISABLE=1 bash scripts/build/with-build-lock.sh cargo build --manifest-path rust/Cargo.toml --locked`
 とします。
 
 明示した`CC`・`CXX`・`HOST_CC`・`HOST_CXX`とターゲット別の指定を優先し、
@@ -120,7 +120,7 @@ workspaceへの統合やクレート分割は依存機能・lockfile・配布構
 
 ```sh
 /usr/bin/time -f 'elapsed=%e maxrss_kb=%M' cmake --build build
-CARGO_TARGET_DIR=build/cargo bash scripts/with-build-lock.sh \
+CARGO_TARGET_DIR=build/cargo bash scripts/build/with-build-lock.sh \
   cargo build --manifest-path rust/Cargo.toml --locked --timings
 ```
 

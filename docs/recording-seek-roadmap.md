@@ -269,7 +269,7 @@ flowchart LR
 
 ```sh
 CARGO_TARGET_DIR=build/cargo cargo test --manifest-path rust/Cargo.toml --release --locked
-bash scripts/test-connection.sh
+python3 scripts/test.py connection
 ```
 
 Rust/QML境界の変更では、ビルド後に製品Main.qmlの起動テストと変更部品のQMLテストを行う。
@@ -278,9 +278,9 @@ Rust/QML境界の変更では、ビルド後に製品Main.qmlの起動テスト�
 ```sh
 cmake -S . -B build
 cmake --build build
-bash scripts/test-startup.sh
+python3 scripts/test.py startup
 # スクリーンショットへの影響を検証する場合
-bash scripts/test-screenshot.sh
+python3 scripts/test.py screenshot
 ```
 
 表示・GPU・音声を使う実行の前に、資源の検出と動作確認を行う。
@@ -313,10 +313,10 @@ tsreadex比較は同じ合成TSでのファイル再生とシークまで実施�
 | 末尾を超える要求とEOSからの再シークの追加試験 | 2 passed（既存シーク試験を拡張） |
 | libaribcaptionの単体・結合テスト | 5 passed（ARIB SI日本語・外字・指定/シフト・切断を含む） |
 | viewer-remoteのテスト | 9 passed |
-| `scripts/test-connection.sh` | 成功（録画の一時停止・シーク・停止通知中の一貫性を含む） |
-| `scripts/test-startup.sh` | 成功（サーバー未設定・再開・前後/連続シーク・番組追従・終端からの復帰・時刻の巻き戻り） |
-| `scripts/test-danmaku.sh`（全QML部品） | 206 passed。追加の録画レイアウト・長さ不明の部品再検証も10 passed |
-| `scripts/test-screenshot.sh` | 6 passed |
+| `python3 scripts/test.py connection` | 成功（録画の一時停止・シーク・停止通知中の一貫性を含む） |
+| `python3 scripts/test.py startup` | 成功（サーバー未設定・再開・前後/連続シーク・番組追従・終端からの復帰・時刻の巻き戻り） |
+| `python3 scripts/test.py danmaku`（全QML部品） | 206 passed。追加の録画レイアウト・長さ不明の部品再検証も10 passed |
+| `python3 scripts/test.py screenshot` | 6 passed |
 | `cmake -S . -B build && cmake --build build` | 成功 |
 | APIドキュメント生成・`buf breaking --against '.git#ref=500fbc8'` | 成功 |
 
@@ -336,7 +336,7 @@ tsreadex比較は同じ合成TSでのファイル再生とシークまで実施�
 - [x] 製品Main.qmlの起動・録画再生・シーク・終了の試験を再実行する。
 
 UI部品はPlayerControls 6件・RecordingTimeline 6件が成功。
-`scripts/test-startup.sh`と`cmake --build build`も成功した。
+`python3 scripts/test.py startup`と`cmake --build build`も成功した。
 
 滑らかさの対策は、2026-09-16の利用者の意向により当面見送る。一時的な負荷だった
 可能性があり、現在の残作業から外す。解決済みとは扱わず、再発の報告があれば調査を再開する。
@@ -361,8 +361,8 @@ UI部品はPlayerControls 6件・RecordingTimeline 6件が成功。
 - [x] tsreadexによる事前整形と元TSを比較する。代表素材で位置・シーク・選択表示の改善を確認。
   [比較結果と再現手順](tsreadex-trial.md)。その後、共通入力へのライブラリー組み込みを実装。[実装状況](ts-input-implementation.md)。
 
-追加後のRust releaseテストは178 passed / 3 ignored、通常の`scripts/test-startup.sh`は成功。
-`scripts/test-startup.sh recording-pid-change`の初回失敗は試験判定の問題だった。
+追加後のRust releaseテストは178 passed / 3 ignored、通常の`python3 scripts/test.py startup`は成功。
+`python3 scripts/test.py startup -- recording-pid-change`の初回失敗は試験判定の問題だった。
 2026-09-17の訂正と再検証結果は検証記録を参照する。
 tsreadexのPID固定を事前変換として試した。製品へのライブラリー組み込みは実装済み。音声補完、字幕の追加先行探索は未着手。
 [詳細な結果・検証コマンド](recording-seek-verification.md#代表ケースの信頼性検証2026-09-16)を参照。

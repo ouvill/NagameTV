@@ -38,10 +38,10 @@ jobs:
         run: |
           args=()
           if [[ "$REF_TYPE" == tag ]]; then args+=(--tag "$REF_NAME"); fi
-          python3 scripts/check-release-metadata.py "${args[@]}" --github-output "$GITHUB_OUTPUT"
-          python3 scripts/flatpak-cargo-sources.py --check
+          python3 -m scripts.packaging.check_release_metadata "${args[@]}" --github-output "$GITHUB_OUTPUT"
+          python3 -m scripts.packaging.flatpak_cargo_sources --check
       - name: Test release guards
-        run: python3 scripts/test-release.py
+        run: python3 -m unittest discover -s tests/tooling -p test_release.py
       - name: Validate GitHub Actions workflows
         run: |
           curl --fail --location --retry 3 \
@@ -50,7 +50,7 @@ jobs:
           echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  $RUNNER_TEMP/actionlint.tar.gz" | sha256sum --check
           tar -xzf "$RUNNER_TEMP/actionlint.tar.gz" -C "$RUNNER_TEMP" actionlint
           "$RUNNER_TEMP/actionlint" -color
-          shellcheck scripts/ci.sh scripts/check-qml.sh scripts/create-release.sh scripts/build-appimage.sh scripts/build-flatpak.sh scripts/build-deb.sh scripts/test-deb.sh scripts/run-native-tests.sh scripts/with-build-lock.sh scripts/install-nextest.sh
+          git ls-files -z 'scripts/**/*.sh' | xargs -0 shellcheck
 
   appimage:
     name: Tests, AppImage and deb (Ubuntu 24.04, x86_64)
@@ -80,7 +80,7 @@ jobs:
             build/ci/cargo-home/registry
             build/ci/cargo-home/git
             build/appimage/tools
-          key: sources-${{ runner.os }}-x86_64-${{ hashFiles('**/Cargo.lock', 'scripts/build-appimage.sh') }}
+          key: sources-${{ runner.os }}-x86_64-${{ hashFiles('**/Cargo.lock', 'scripts/packaging/build-appimage.sh') }}
           restore-keys: sources-${{ runner.os }}-x86_64-
       - name: Cache compiled Cargo dependencies (Ubuntu 24.04)
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -108,7 +108,7 @@ jobs:
             --env CARGO_HOME=/project/build/ci/cargo-home \
             --env CARGO_TARGET_DIR=/project/build/ci/cargo \
             --env CARGO_BUILD_JOBS="$(nproc)" \
-            nagametv-ci:local python3 scripts/with-fresh-local-crates.py bash scripts/ci.sh
+            nagametv-ci:local python3 -m scripts.build.fresh_local_crates bash scripts/testing/ci.sh
       - name: Preserve test logs and execution summaries
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -123,7 +123,7 @@ jobs:
         env:
           CARGO_HOME: /project/build/ci/cargo-home
           CARGO_TARGET_DIR: /project/build/ci/cargo
-        run: CARGO_BUILD_JOBS=$(nproc) python3 scripts/epgstation-integration.py --client-image nagametv-ci:local
+        run: CARGO_BUILD_JOBS=$(nproc) python3 -m scripts.testing.epgstation_integration --client-image nagametv-ci:local
       - name: Preserve EPGStation contract diagnostics
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -139,7 +139,7 @@ jobs:
             --env CARGO_HOME=/project/build/ci/cargo-home \
             --env APPIMAGE_BUILD_DIR=/project/build/ci \
             --env APPIMAGE_BUILD_JOBS="$(nproc)" \
-            nagametv-ci:local bash scripts/build-appimage.sh --native
+            nagametv-ci:local bash scripts/packaging/build-appimage.sh --native
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: appimage-x86_64
@@ -155,10 +155,10 @@ jobs:
         run: |
           docker run --rm --user "$(id -u):$(id -g)" \
             --mount "type=bind,src=$PWD,dst=/project" \
-            nagametv-ci:local bash scripts/build-deb.sh 24.04 --native \
+            nagametv-ci:local bash scripts/packaging/build-deb.sh 24.04 --native \
               --appimage "/project/build/appimage/nagametv-$VERSION-x86_64.AppImage"
       - name: Install and remove deb in a clean Ubuntu 24.04 container
-        run: bash scripts/test-deb.sh 24.04
+        run: bash scripts/packaging/test-deb.sh 24.04
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: deb-ubuntu24.04-amd64
@@ -217,10 +217,10 @@ jobs:
             --env CARGO_HOME=/project/build/deb/ubuntu26.04/cargo-home \
             --env CARGO_TARGET_DIR=/project/build/deb/ubuntu26.04/native/cargo \
             --env DEB_BUILD_JOBS="$(nproc)" \
-            nagametv-deb-ubuntu26:local python3 scripts/with-fresh-local-crates.py \
-              bash scripts/build-deb.sh 26.04 --native
+            nagametv-deb-ubuntu26:local python3 -m scripts.build.fresh_local_crates \
+              bash scripts/packaging/build-deb.sh 26.04 --native
       - name: Install and remove deb in a clean Ubuntu 26.04 container
-        run: bash scripts/test-deb.sh 26.04
+        run: bash scripts/packaging/test-deb.sh 26.04
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: deb-ubuntu26.04-amd64
@@ -254,7 +254,7 @@ jobs:
             flatpak-x86_64-${{ hashFiles('packaging/flatpak/*.json') }}-
             flatpak-x86_64-
       - name: Build Flatpak bundle
-        run: FLATPAK_BUILD_JOBS=$(nproc) dbus-run-session -- bash scripts/build-flatpak.sh
+        run: FLATPAK_BUILD_JOBS=$(nproc) dbus-run-session -- bash scripts/packaging/build-flatpak.sh
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: flatpak-x86_64
@@ -304,7 +304,7 @@ jobs:
           VERSION: ${{ needs.metadata.outputs.version }}
         run: |
           if [[ "$REF_TYPE" == tag ]]; then
-            bash scripts/create-release.sh "$RELEASE_TAG" build/release
+            bash scripts/packaging/create-release.sh "$RELEASE_TAG" build/release
           else
-            bash scripts/create-release.sh "v$VERSION" build/release --latest-build
+            bash scripts/packaging/create-release.sh "v$VERSION" build/release --latest-build
           fi

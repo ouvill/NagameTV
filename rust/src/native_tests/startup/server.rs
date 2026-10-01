@@ -1,6 +1,6 @@
 //! HTTP fixtures for the production-window tests; no display or media devices.
 //! Catalogue/channel JSON was captured from the pinned real EPGStation provider.
-//! scripts/epgstation-integration.py checks for drift and verifies file responses.
+//! scripts/testing/epgstation_integration.py checks for drift and verifies file responses.
 use std::{
     net::TcpListener,
     sync::{

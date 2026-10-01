@@ -105,8 +105,8 @@
         { "type": "dir", "path": "../../translations", "dest": "translations" },
         { "type": "dir", "path": "../linux", "dest": "packaging/linux" },
         { "type": "file", "path": "../../CMakeLists.txt" },
-        { "type": "file", "path": "../../scripts/with-build-lock.sh", "dest": "scripts" },
-        { "type": "file", "path": "../../scripts/build-source-info.py", "dest": "scripts" },
+        { "type": "file", "path": "../../scripts/build/with-build-lock.sh", "dest": "scripts/build" },
+        { "type": "file", "path": "../../scripts/build/source_info.py", "dest": "scripts/build" },
         {
           "type": "git",
           "url": "https://github.com/xqq/libaribcaption.git",

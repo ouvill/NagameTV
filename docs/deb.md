@@ -59,8 +59,8 @@ Pythonは元の作業ツリーのGit情報を取得し、Docker内のビルド�
 
 ```sh
 git submodule update --init --recursive
-./scripts/build-deb.sh 24.04
-./scripts/build-deb.sh 26.04
+./scripts/packaging/build-deb.sh 24.04
+./scripts/packaging/build-deb.sh 26.04
 ```
 
 24.04用は[AppImageのDocker環境](../packaging/appimage/Dockerfile)で
@@ -88,11 +88,11 @@ build/deb/ubuntu26.04/nagametv_0.1.0-1ubuntu26.04_amd64.deb.sha256
 26.04のWorkshopには[プロジェクトSDK](../.workshop/nagametv/hooks/setup-base)が必要なツールを含む。
 
 ```sh
-./scripts/build-deb.sh 26.04 --native
+./scripts/packaging/build-deb.sh 26.04 --native
 # 26.04の既存コンパイルキャッシュを使う場合
-DEB_BUILD_DIR="$PWD/build" ./scripts/build-deb.sh 26.04 --native
+DEB_BUILD_DIR="$PWD/build" ./scripts/packaging/build-deb.sh 26.04 --native
 # CIなどで生成直後のAppImageを再利用する場合（Ubuntu 24.04内）
-./scripts/build-deb.sh 24.04 --native \
+./scripts/packaging/build-deb.sh 24.04 --native \
   --appimage "$PWD/build/appimage/nagametv-0.1.0-x86_64.AppImage"
 ```
 
@@ -110,7 +110,7 @@ DEB_BUILD_DIR="$PWD/build" ./scripts/build-deb.sh 26.04 --native
 Debianパッケージのバージョン命名規則やアップグレード順序、およびリリース処理のガードは、ホスト上で回帰テストを実行して確認する。
 
 ```sh
-python3 scripts/test-release.py
+python3 scripts/test.py tooling
 ```
 
 パッケージの生成後は、クリーンな対象Ubuntuコンテナーで、aptによる依存解決・導入、
@@ -118,8 +118,8 @@ python3 scripts/test-release.py
 表示・GPU・音声にはアクセスしない。コンテナー外のパッケージは変更しない。
 
 ```sh
-bash scripts/test-deb.sh 24.04
-bash scripts/test-deb.sh 26.04
+bash scripts/packaging/test-deb.sh 24.04
+bash scripts/packaging/test-deb.sh 26.04
 ```
 
 これらの検査はGUI起動や映像・音声再生の確認を含まない。

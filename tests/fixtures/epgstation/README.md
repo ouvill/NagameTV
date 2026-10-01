@@ -25,14 +25,14 @@ JSONの整形以外に応答の変更はしていません。認証応答・Cook
 差があれば失敗し、自動では更新しません。
 
 ```sh
-CARGO_TARGET_DIR=build/cargo python3 scripts/epgstation-integration.py
+CARGO_TARGET_DIR=build/cargo python3 -m scripts.testing.epgstation_integration
 ```
 
 意図して提供元や入力データを変更した場合のみ、次のコマンドで再取得し、差分をレビューします。
 実サーバーのテストも同時に実行します。失敗した場合は更新済みJSONを検証済みとして扱わないでください。
 
 ```sh
-CARGO_TARGET_DIR=build/cargo python3 scripts/epgstation-integration.py --update-fixtures
+CARGO_TARGET_DIR=build/cargo python3 -m scripts.testing.epgstation_integration --update-fixtures
 ```
 
 起動用モックではこのJSONを再利用します。検索や認証の簡略化、障害の注入はモック固有の処理です。

@@ -178,13 +178,13 @@ Clippyは `--all-targets --features native_tests -- -D warnings` を通過。
 前後シーク、一時停止維持、出力時計、元TS番組情報、入力フレーム形式を検証する。
 Store試験はメモリー／FSのデータ・追記待ち・期限切れ・終端・失敗と、再接続、掃除を検証する。
 
-`bash scripts/test-startup.sh timeshift` は機器を検出・検証した上で、製品Main.qml、
+`python3 scripts/test.py startup -- timeshift` は機器を検出・検証した上で、製品Main.qml、
 実GPU・音声出力とローカルHTTP配信を使う。両保存先で、一時停止中の受信継続、巻き戻し、
 ライブ復帰、停止を確認する。実チューナーへの接続を代用するものではない。
 
 通常の起動試験ではPID変更／時刻リセット素材がともに150フレーム出力してEOFへ到達した。
 従来の事前変換ファイルの149枚と異なり、共通入力では境界の不連続通知を行う。
-録画の個別監査は `bash scripts/test-startup.sh recording-audit tests/fixtures/recording-pid-change.ts`。
+録画の個別監査は `python3 scripts/test.py startup -- recording-audit tests/fixtures/recording-pid-change.ts`。
 合成素材の音声は無音なので、出力処理の確認と実際の聴取は区別する。
 
 ### NHKの約16秒停止と長時間録画（2026-09-17）
@@ -193,7 +193,7 @@ Store試験はメモリー／FSのデータ・追記待ち・期限切れ・終�
 188バイトTSで、6,943,738,264バイト。約14.806秒で字幕、約14.979秒で第2音声がPMTに追加され、
 主映像・主音声・PCRのPIDは変わっていなかった。
 
-冒頭64 MiBをCPU限定の `recording-output-audit.py` で比較した結果:
+冒頭64 MiBをCPU限定の `recording_output_audit.py` で比較した結果:
 
 | 入力 | 観測 |
 | --- | --- |
@@ -207,7 +207,7 @@ PMT変更ごとのフィルター初期化を止めるだけでは改善しな�
 概算長は3,616,822 ms。これは全編を再生した検証や音声の聴取確認ではない。
 元TSと診断ログは無視対象の `benchmark/timeshift-fixes/` に置き、放送内容を試験fixtureに含めない。
 
-再現コマンドは `bash scripts/test-startup.sh recording-probe PATH`。
+再現コマンドは `python3 scripts/test.py startup -- recording-probe PATH`。
 ハードウェアを検出・検証し、製品画面で28秒の出力進行と境界前後・長い録画の遠方シークを調べる。
 機器不要の回帰試験では、補完PMT／字幕データ、探索の読み取り量と取消し、時計リセット時の概算拒否、
 容量を繰り返し超えた保持領域と期限切れ再開を確認する。
@@ -254,7 +254,7 @@ PMT変更がストリーム構成更新になる設計は
 実際のtsdemuxのpad追加／削除通知とバッファープローブを使う、機器不要の回帰試験を追加した。
 これは字幕同期の修正であり、元TSの全体停止を解決したという意味ではない。
 
-診断は `python3 scripts/fixtures/recording-output-audit.py PATH...`。
+診断は `python3 -m scripts.testing.recording_output_audit PATH...`。
 GStreamerの版と上限付きpad変更履歴もJSONに出力する。入力・結果は無視対象の
 `benchmark/subtitle-ui-review/` に保存し、放送素材をリポジトリーには追加しない。
 

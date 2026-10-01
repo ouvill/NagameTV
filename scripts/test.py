@@ -13,13 +13,16 @@ import sys
 import tempfile
 import time
 
-from test_support import ROOT, build_environment, ensure_lock, lock_fds
+# This stable file entry point also works when invoked outside the repository.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from scripts.build.support import ROOT, build_environment, ensure_lock, lock_fds
+from scripts.testing.suites import SUITES, Requirement
 
 CRATES = ("viewer-comments", "viewer-epg-events", "viewer-diagnostics", "viewer-remote", "tsreadex")
 RUST = ("app", *CRATES)
-NATIVE = ("connection", "desktop-media", "localization", "subtitle-outline")
-GUI = ("danmaku", "ui-style", "channel-wheel", "startup", "screenshot", "video-item",
-       "pointer-activity", "portal-dialogs", "subtitle-rendering")
+NATIVE = tuple(name for name, suite in SUITES.items() if suite.requirement == Requirement.CPU)
+GUI = tuple(name for name, suite in SUITES.items() if suite.requirement == Requirement.GUI
+            and name != "ui-capture")
 GROUPS = {"rust": RUST, "native": NATIVE, "gui": GUI,
           "cpu": ("checks", *RUST, *NATIVE), "all": ("checks", *RUST, *NATIVE, *GUI)}
 
@@ -88,12 +91,16 @@ def plan(suites, directory, args):
     build, checks, tests = [], [], []
     if "checks" in suites:
         checks = [Step("format", ["cargo", "fmt", "--manifest-path", "rust/Cargo.toml", "--check"])]
-        for name in ("check-release-metadata", "check-ui-style", "flatpak-cargo-sources"):
-            checks.append(Step(name, [sys.executable, f"scripts/{name}.py",
-                                     *(["--check"] if name == "flatpak-cargo-sources" else [])]))
-        checks.extend(Step(path.stem, [sys.executable, str(path)])
-                      for path in sorted((ROOT / "scripts").glob("test-*.py")))
-        checks.append(Step("comment-sql", [sys.executable, "scripts/check-comment-sql.py"]))
+        for module in ("packaging.check_release_metadata", "testing.check_ui_style",
+                       "packaging.flatpak_cargo_sources"):
+            checks.append(Step(module.rsplit(".", 1)[-1], [sys.executable, "-m", f"scripts.{module}",
+                               *(["--check"] if module.endswith("flatpak_cargo_sources") else [])]))
+        checks.append(Step("comment-sql", [sys.executable, "-m", "scripts.testing.check_comment_sql"]))
+    if "checks" in suites or "tooling" in suites:
+        checks.insert(0, Step("tooling", [sys.executable, "-m", "unittest", "discover",
+                                         "-s", "tests/tooling", "-p", "test_*.py"]))
+    if "checks" in suites or "localization" in suites:
+        checks.append(Step("localization-catalog", [sys.executable, "-m", "scripts.testing.check_localization"]))
     if any(suite in RUST for suite in suites):
         checks.insert(0, Step("nextest-version", ["cargo", "nextest", "--version"]))
     for suite in suites:
@@ -121,18 +128,25 @@ def plan(suites, directory, args):
         if suite in CRATES and not args.filter:
             tests.append(Step(f"doc-{suite}", ["cargo", "test", *cargo_args,
                                               "--profile", args.profile, "--doc"]))
-    if any(suite in (*NATIVE, *GUI) for suite in suites):
-        build.append(Step("build-qt", [sys.executable, "scripts/run-test-binary.py",
-                                      "--prepare", str(directory / "nagametv")]))
+    if any(suite in SUITES for suite in suites):
+        build.append(Step("build-qt", [sys.executable, "-m", "scripts.testing.binary",
+                                      "--prepare", str(directory / "nagametv"),
+                                      *(["--evaluation-legacy-comments"] if
+                                        args.suite_args == ["--evaluation-legacy-comments"] else [])]))
     if "checks" in suites and "app" in suites:
-        tests.insert(0, Step("qml-lint", ["bash", "scripts/check-qml.sh"]))
-    tests.extend(Step(suite, ["bash", f"scripts/test-{suite}.sh"])
-                 for suite in suites if suite in (*NATIVE, *GUI))
+        tests.insert(0, Step("qml-lint", ["bash", "scripts/testing/check-qml.sh"]))
+    for suite in suites:
+        if suite not in SUITES:
+            continue
+        command = [sys.executable, "-m", "scripts.testing.suites", suite, *args.suite_args]
+        if SUITES[suite].requirement == Requirement.GUI:
+            command = [sys.executable, "-m", "scripts.testing.gui_session", "--", *command]
+        tests.append(Step(suite, command))
     if "connection" in suites:
-        tests.append(Step("cli", [sys.executable, "scripts/check-cli.py", str(directory / "nagametv")]))
-    if any(suite in GUI for suite in suites):
+        tests.append(Step("cli", [sys.executable, "-m", "scripts.testing.check_cli", str(directory / "nagametv")]))
+    if any(suite in SUITES and SUITES[suite].requirement == Requirement.GUI for suite in suites):
         # A missing required resource stops the run before dependent builds/tests.
-        checks.insert(0, Step("gui-environment", [sys.executable, "scripts/run-gui-tests.py", "--check"],
+        checks.insert(0, Step("gui-environment", [sys.executable, "-m", "scripts.testing.gui_session", "--check"],
                               environment_check=True))
     return [*checks, *build, *tests]
 
@@ -146,16 +160,29 @@ def main():
                         help="parent directory for per-run logs and binaries")
     parser.add_argument("--test-threads", type=int, help="nextest concurrency (default: 2)")
     parser.add_argument("--filter", help="nextest filterset; only allowed with Rust suites")
-    args = parser.parse_args()
+    arguments = sys.argv[1:]
+    delimiter = arguments.index("--") if "--" in arguments else len(arguments)
+    args = parser.parse_args(arguments[:delimiter])
+    args.suite_args = arguments[delimiter + 1:]
     if args.list:
         for group, members in GROUPS.items():
             print(f"{group}: {', '.join(members)}")
+        print("tooling: hardware-free tests of scripts (also included in checks)")
+        print("ui-capture: manual GUI images for review (explicit selection only)")
         return 0
     suites = []
     for name in args.suites or ["cpu"]:
-        if name not in (*GROUPS, "checks", *RUST, *NATIVE, *GUI):
+        if name not in (*GROUPS, "checks", "tooling", *RUST, *SUITES):
             parser.error(f"unknown suite: {name}; use --list")
         suites.extend(suite for suite in GROUPS.get(name, (name,)) if suite not in suites)
+    if args.suite_args:
+        if len(args.suites) != 1 or args.suites[0] not in SUITES:
+            parser.error("arguments after -- require one explicit Qt suite")
+        from scripts.testing.suites import validate_arguments
+        try:
+            validate_arguments(args.suites[0], args.suite_args)
+        except ValueError as error:
+            parser.error(str(error))
     if args.filter and any(suite not in RUST for suite in suites):
         parser.error("--filter requires explicit Rust suites (for example: app --filter 'test(settings::)')")
     if args.test_threads is not None and args.test_threads < 1:

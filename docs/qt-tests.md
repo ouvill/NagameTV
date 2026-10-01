@@ -22,20 +22,20 @@ Host desktop connections and physical audio devices are not required.
 
 | Command | Preserved coverage | Hardware |
 | --- | --- | --- |
-| `bash scripts/test-localization.sh` | Locale resolution, existing QML retranslation, date stability, dynamic snapshots, literal diagnostic arguments, 100 repeated language switches and translator ownership; a separate process removes the real catalog resource and checks failure cleanup | None: QCoreApplication and QtObject |
-| `bash scripts/test-connection.sh` | Real Player and local HTTP fixtures: pending/failed saves, empty catalogs, save failures, shutdown, coherent stream properties during Qt signals, retry allowance and guide visibility/day notification order; channel source/proxy models with QAbstractItemModelTester, exact 64-bit service IDs, filtering, replacement and source destruction | None: QCoreApplication and HTTP |
-| `bash scripts/test-danmaku.sh` | QML component tests in `rust/qml/tests/`, including channel views using the production Rust models | Validated private X11 display and GPU |
-| `bash scripts/test-ui-style.sh` | Production control catalogue, press/release hit areas, disabled actions, keyboard input, popup dismissal | Validated private X11 display and GPU |
-| `bash scripts/test-channel-wheel.sh` | Channel browser and sidebar wheel input, cursor movement, snapping and filtering using the production Rust models | Validated private X11 display and GPU |
-| `bash scripts/test-startup.sh` | Production Main.qml in separate processes: first run, two saved startups, channel restoration, guide open/close, native playback failure and clean shutdown; QML warnings fail the test | Validated private X11 display, GPU and virtual PipeWire output |
-| `bash scripts/test-screenshot.sh` | Real Player, parallel PNG/JPG/WebP saving, immutable images/settings, accepted saves surviving UI unavailability, Unicode/escaped folders and failure recovery | Validated X11 display and GPU |
-| `bash scripts/test-startup.sh screenshot-playback` | Production Main.qml, native 1080p numbered frames, captions and comments, visibility, resize/fullscreen, pixel aspect ratio, burst capture, seek/stop and frame interval measurements | Validated private X11 display, GPU and virtual PipeWire output |
-| `bash scripts/test-video-item.sh` | Video-item attachment, terminal shutdown, failed native transitions, and retained subtitle subscriptions until a successful stop | Validated X11 display and GPU; native graph stays in NULL |
-| `bash scripts/test-desktop-media.sh` | Linux MPRIS wire types, metadata, commands, property/seek signals, stale seeks, rejected values and registration cleanup on private D-Bus | None: QCoreApplication and synthetic metadata |
-| `bash scripts/test-subtitle-outline.sh` | Six pixel-exact QPainterPath/SVG comparisons: full height, small ink/cubic curves, midline, overhang/descender, separate contours, empty path | None: QCoreApplication and in-memory QImage rasterization |
-| `bash scripts/test-pointer-activity.sh` | Duplicate installation, repeated positions, disabled items, window changes, observer deletion and event delivery after item destruction | Validated X11 display and GPU |
-| `bash scripts/test-portal-dialogs.sh` | Real Qt portal plugin on a private D-Bus session: file/folder selection, FileTransfer TS/M2TS inspection, invalid transfers, Unicode paths and production QML drop areas including first-run setup | Validated X11 display and GPU; the suite itself does not use audio |
-| `bash scripts/test-subtitle-rendering.sh` | Existing Qt Quick Test assertions, using the Rust TestOutlineProvider and the production outline helper | Validated X11 display and GPU |
+| `python3 scripts/test.py localization` | Locale resolution, existing QML retranslation, date stability, dynamic snapshots, literal diagnostic arguments, 100 repeated language switches and translator ownership; a separate process removes the real catalog resource and checks failure cleanup | None: QCoreApplication and QtObject |
+| `python3 scripts/test.py connection` | Real Player and local HTTP fixtures: pending/failed saves, empty catalogs, save failures, shutdown, coherent stream properties during Qt signals, retry allowance and guide visibility/day notification order; channel source/proxy models with QAbstractItemModelTester, exact 64-bit service IDs, filtering, replacement and source destruction | None: QCoreApplication and HTTP |
+| `python3 scripts/test.py danmaku` | QML component tests in `rust/qml/tests/`, including channel views using the production Rust models | Validated private X11 display and GPU |
+| `python3 scripts/test.py ui-style` | Production control catalogue, press/release hit areas, disabled actions, keyboard input, popup dismissal | Validated private X11 display and GPU |
+| `python3 scripts/test.py channel-wheel` | Channel browser and sidebar wheel input, cursor movement, snapping and filtering using the production Rust models | Validated private X11 display and GPU |
+| `python3 scripts/test.py startup` | Production Main.qml in separate processes: first run, two saved startups, channel restoration, guide open/close, native playback failure and clean shutdown; QML warnings fail the test | Validated private X11 display, GPU and virtual PipeWire output |
+| `python3 scripts/test.py screenshot` | Real Player, parallel PNG/JPG/WebP saving, immutable images/settings, accepted saves surviving UI unavailability, Unicode/escaped folders and failure recovery | Validated X11 display and GPU |
+| `python3 scripts/test.py startup -- screenshot-playback` | Production Main.qml, native 1080p numbered frames, captions and comments, visibility, resize/fullscreen, pixel aspect ratio, burst capture, seek/stop and frame interval measurements | Validated private X11 display, GPU and virtual PipeWire output |
+| `python3 scripts/test.py video-item` | Video-item attachment, terminal shutdown, failed native transitions, and retained subtitle subscriptions until a successful stop | Validated X11 display and GPU; native graph stays in NULL |
+| `python3 scripts/test.py desktop-media` | Linux MPRIS wire types, metadata, commands, property/seek signals, stale seeks, rejected values and registration cleanup on private D-Bus | None: QCoreApplication and synthetic metadata |
+| `python3 scripts/test.py subtitle-outline` | Six pixel-exact QPainterPath/SVG comparisons: full height, small ink/cubic curves, midline, overhang/descender, separate contours, empty path | None: QCoreApplication and in-memory QImage rasterization |
+| `python3 scripts/test.py pointer-activity` | Duplicate installation, repeated positions, disabled items, window changes, observer deletion and event delivery after item destruction | Validated X11 display and GPU |
+| `python3 scripts/test.py portal-dialogs` | Real Qt portal plugin on a private D-Bus session: file/folder selection, FileTransfer TS/M2TS inspection, invalid transfers, Unicode paths and production QML drop areas including first-run setup | Validated X11 display and GPU; the suite itself does not use audio |
+| `python3 scripts/test.py subtitle-rendering` | Existing Qt Quick Test assertions, using the Rust TestOutlineProvider and the production outline helper | Validated X11 display and GPU |
 
 The subtitle rendering command continues to accept Qt Quick Test arguments
 after its optional `--ui-only` flag. The other suites run all Rust assertions;
@@ -46,7 +46,7 @@ not automatically start an isolated session or fall back after a GPU check fails
 Build without accessing hardware:
 
 ```sh
-bash scripts/with-build-lock.sh cargo build --manifest-path rust/Cargo.toml --locked --features native_tests
+bash scripts/build/with-build-lock.sh cargo build --manifest-path rust/Cargo.toml --locked --features native_tests
 ```
 
 Use the validating scripts for hardware-dependent execution.
@@ -58,7 +58,7 @@ set `NAGAMETV_TEST_PROFILE=release` for standalone scripts or `--profile release
 on the common runner when measuring playback performance or frame timings.
 Only `dev` and `release` are accepted.
 
-`bash scripts/capture-ui-style.sh` separately generates regular/small-size,
+`python3 scripts/test.py ui-capture` separately generates regular/small-size,
 focus, hover and popup images in `build/ui-review/` for human review.
 These images are not compared automatically and are not counted as visual regression coverage.
 
@@ -78,7 +78,7 @@ Native runners initialize terminal logging, and the startup suite checks that a
 rejected login reports an authentication failure as soon as the request finishes.
 The EPGStation catalogue, channels and video metadata come from
 [captured real-provider responses](../tests/fixtures/epgstation/README.md).
-The separate hardware-free `python3 scripts/epgstation-integration.py` suite runs
+The separate hardware-free `python3 -m scripts.testing.epgstation_integration` suite runs
 the pinned EPGStation HTTP service in Docker and checks these snapshots and the
 mock's file responses against it. GUI success alone does not verify a real server.
 
@@ -87,7 +87,7 @@ environment override, using the restored channel. Screenshot tests copy their
 fixture and production component into a temporary directory and run the native
 test runner with the real Player; saved images are removed at exit. They use a
 rendered rectangle as a fixed image input for the queue tests. The production
-capture path is independently exercised by `test-startup.sh screenshot-playback`:
+capture path is independently exercised by `python3 scripts/test.py startup -- screenshot-playback`:
 a CPU-generated, numbered MPEG-2 video is played through the real GL sink and
 compared to Qt's displayed frame. It checks authored subtitle/comment overlays,
 clipping, hidden layers, frozen burst captures, resize/fullscreen and 4:3/non-square
@@ -126,14 +126,14 @@ sums sampled increments across resets instead of treating the final counter as
 a file total. Sampling can miss the final increments before a reset; the threshold
 allows a small margin but cannot pass if only one 75-frame half plays.
 
-`bash scripts/test-startup.sh recording-pid-change` runs the PID case alone
+`python3 scripts/test.py startup -- recording-pid-change` runs the PID case alone
 with the same hardware validation and isolated settings. Failures print playback
 state and video/audio diagnostics. The earlier reported stall was a false test
 failure caused by reset counters, corrected on 2026-09-17. Position continuity and
 seeking across PID changes remain separate validation work. See the
 [recording verification record](recording-seek-verification.md#代表ケースの信頼性検証2026-09-16).
 
-`bash scripts/test-startup.sh recording-audit PATH` compares a six-second recovery
+`python3 scripts/test.py startup -- recording-audit PATH` compares a six-second recovery
 fixture through the production window. It logs position and audio selection every
 100 ms, then checks paused seeks to 4500, 1000 and 4500 ms (500 ms tolerance),
 resumes and requires rendered output and normal EOF. Position decreases and audio
@@ -143,7 +143,7 @@ See the [tsreadex comparison](tsreadex-trial.md) for inputs, CPU output counting
 real audio sink diagnostics and known failures in the original input.
 
 GTK warnings and criticals also fail the startup suite. To check the native Linux
-fallback, run `bash scripts/test-startup.sh` in a session without a FileChooser
+fallback, run `python3 scripts/test.py startup` in a session without a FileChooser
 portal. Production startup selects Qt Quick dialogs in this case.
 
 The portal dialog suite requires Qt's `xdgdesktopportal` platform theme,
@@ -185,7 +185,7 @@ its Rust outline provider. It preserves Qt Quick Test arguments and the stroke
 setting. Its baseline includes the Rust application module and differs from the
 former small C++ executable; compare memory measurements using the same runner.
 
-`bash scripts/test-startup.sh timeshift` uses a paced local HTTP TS source and
+`python3 scripts/test.py startup -- timeshift` uses a paced local HTTP TS source and
 production Main.qml with the validated display/GPU/audio. It tests both memory
 and filesystem retention: the window advances while paused, a backward seek
 retains pause, return-to-live resumes playback, and stop releases the session.
@@ -198,7 +198,7 @@ owners, sequential discontinuities and paused boundary seeks. The product test
 observes the anonymous file descriptor during playback and its release after stop;
 an empty directory alone is not treated as proof of resource release.
 
-`bash scripts/test-startup.sh recording-probe PATH` accepts a longer real broadcast
+`python3 scripts/test.py startup -- recording-probe PATH` accepts a longer real broadcast
 recording. It checks output progress through 28 seconds (six seconds without new
 rendering fails), paused seeks to 20 and 10 seconds, and a seek to 80% for files
 longer than one minute. It logs the provisional duration and audio selection.

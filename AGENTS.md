@@ -49,7 +49,28 @@ check the wording, links and diff; application builds and GUI tests are unnecess
 Use `python3 scripts/test.py` for tests (`--list` lists suites). It runs Rust tests
 with nextest and shares a build/test lock with CMake and the Qt test scripts.
 Wrap direct Cargo diagnostics, including Clippy, in
-`bash scripts/with-build-lock.sh COMMAND ...` so they do not overlap a test run.
+`bash scripts/build/with-build-lock.sh COMMAND ...` so they do not overlap a test run.
+
+## Development scripts
+
+Use [the script guide](scripts/README.md) for public commands and placement.
+Keep ordinary build helpers in `scripts/build`, test execution in
+`scripts/testing`, distribution automation in `scripts/packaging`, and manual
+development tools in `scripts/dev`. Script regression tests belong in
+`tests/tooling`; fixture generators stay with the data in `tests/fixtures`.
+
+Extend `scripts/test.py` and its suite definitions for new tests instead of
+adding per-suite launch scripts. Keep hardware requirements explicit and use
+the shared validated GUI session. Build helpers must not depend on test or
+diagnostic modules. Prefer Python for orchestration and data handling; retain
+short shell wrappers for OS commands. Use importable Python module names and
+`python3 -m scripts.<area>.<module>` from the repository root.
+
+Before keeping a new script, identify its recurring use, caller, prerequisites
+and output in the script guide or the relevant task documentation. Keep
+one-off investigation code in ignored work directories unless it becomes a
+documented, reusable tool or regression test. Update callers, CI, Workshop,
+packaging source lists and documentation together when moving an entry point.
 
 ## Workshop hardware requirements
 

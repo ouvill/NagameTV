@@ -167,13 +167,13 @@ Qt engine破棄時に残ったタスクはabortし、所有元のNetwork runtime
 ローカルで生成し、スキーマを外部レジストリーへアップロードしない。
 
 ```sh
-bash scripts/generate-remote-docs.sh
+bash scripts/dev/generate-remote-docs.sh
 CARGO_TARGET_DIR=build/cargo cargo test --manifest-path rust/crates/viewer-remote/Cargo.toml --locked
 ```
 
 通信試験はloopbackだけを使用し、表示・GPU・音声は使用しない。
-変更後は本体のRust試験と `scripts/test-connection.sh`、機器検証付きの
-`scripts/test-startup.sh` も実行する。
+変更後は本体のRust試験と `python3 scripts/test.py connection`、機器検証付きの
+`python3 scripts/test.py startup` も実行する。
 APIを含む比較元コミットができたら、
 `buf breaking --against '.git#ref=比較元コミット'` でスキーマ互換性を検査する。
 意味上の互換性はprotoコメントと操作テストで維持する。
@@ -183,20 +183,20 @@ APIを含む比較元コミットができたら、
 - 通信crateの8試験成功。認証情報なしのgRPCとHTTP/1.1のバイナリーgRPC-Web、入力検証、
   状態購読・再接続、上限、取消し・期限切れ、停止時の購読終了・ソケット解放を確認した。
 - 本体のRust試験158件成功・既存の手動試験3件ignored。
-  `test-connection.sh` では実PlayerへのRPC、音量・ミュート反映、未準備時の拒否、
+  `python3 scripts/test.py connection` では実PlayerへのRPC、音量・ミュート反映、未準備時の拒否、
   自動再生待ち解除とAPI終了を機器なしで確認した。設定画面への接続後は、
   2つのPlayerのポート競合・別ポートへの変更・連続再設定・OFF時のソケット解放、
   保存失敗と再試行、他の設定の保存がリモート設定を置き換えないことも確認した。
 - 設定画面のQML試験23件成功。初期値、ON/OFF、不正入力、受付失敗、
   接続先と今回限りの設定表示を確認した。フォルダー選択の既存試験は、ダイアログを
   閉じた後に親画面の描画を待ってから次のキー入力を送るようにした。
-  `test-localization.sh` の翻訳切り替え・カタログ欠落試験も成功。
+  `python3 scripts/test.py localization` の翻訳切り替え・カタログ欠落試験も成功。
 - 初期実装ではX11・GPU・PulseAudioの検証後、通常起動したアプリのgRPC-Webへ接続し、
   局一覧取得・音量変更・選局、HTTP 503を返すローカル配信元での非同期再生失敗、停止を確認した。
   実放送の受信成功・Connectクライアント・Flatpakパッケージ再生成は今回の確認に含めない。
   認証なしのAPI動作は、機器不要の通信試験・実Player連携試験で確認した。
 - Buf format/lint・ドキュメント生成、Clippy、CMakeリリースビルドが成功。
-- `test-startup.sh` は認証撤去後の再実行で全項目成功。
+- `python3 scripts/test.py startup` は認証撤去後の再実行で全項目成功。
   設定画面への接続後も全項目成功し、製品Main.qmlからの有効化、設定ページの表示、
   無効化とソケット解放を追加で確認した。
   初期実装の検証時には保存済み起動の局一覧待ちでタイムアウトし、変更前の
@@ -205,7 +205,7 @@ APIを含む比較元コミットができたら、
   原因は未特定で、今回の認証撤去によって修正されたとは扱わない。
 - IP取得を `local-ip-address 0.6.13` へ置き換えた後、Linuxの実インターフェース一覧と
   製品の接続先整形を確認した。IPv4・IPv6のワイルドカードと明示IPを確認し、
-  link-local IPv6を除外できている。Clippy、`test-connection.sh`、CMakeリリースビルド、
+  link-local IPv6を除外できている。Clippy、`python3 scripts/test.py connection`、CMakeリリースビルド、
   書式検査とFlatpak依存一覧の整合性検査も成功。Windows・macOSでの実行確認は行っていない。
 
 参考: [tonic-web](https://docs.rs/tonic-web/0.14.6/tonic_web/)、

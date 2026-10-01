@@ -50,7 +50,7 @@ GUI試験は専用Weston/Xwayland、NVIDIA RTX 4070 TiとPipeWire仮想出力で
 固定中の期限取消し、固定解除後の再計時、終了時のタイマー停止を検証する。
 QMLスイート24件成功（初期化・終了処理を含む）。
 
-`scripts/test-pointer-activity.sh` は実際のnative helperを使い、重複インストール防止、
+`python3 scripts/test.py pointer-activity` は実際のnative helperを使い、重複インストール防止、
 同位置の除外、無効なitemの無視、ウィンドウ付け替え、破棄後のfilter解放を検証する。
 Qt Test 3件成功（本体1件と初期化・終了）。表示・GPUの検出と検証後に実行する。
 

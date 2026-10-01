@@ -51,12 +51,12 @@ benchmark/tsreadex/source/tsreadex -n 1 tests/fixtures/recording-pid-change.ts >
 
 # CPUデコーダーとメモリーsinkのみ。表示・GPU・音声機器を使わない。
 # Python PyGObject / Gst introspection / GStreamer libavが必要。
-python3 scripts/fixtures/recording-output-audit.py --paced tests/fixtures/recording-pid-change.ts benchmark/tsreadex/recording-pid-change-normalized.ts
+python3 -m scripts.testing.recording_output_audit --paced tests/fixtures/recording-pid-change.ts benchmark/tsreadex/recording-pid-change-normalized.ts
 
 # 表示・GPU・音声機器を検証してから実行。元TSはシーク不一致でexit 1。
-GST_DEBUG_NO_COLOR=1 GST_DEBUG=basesink:6 bash scripts/test-startup.sh recording-audit tests/fixtures/recording-pid-change.ts > benchmark/tsreadex/native-original.log 2>&1
+GST_DEBUG_NO_COLOR=1 GST_DEBUG=basesink:6 python3 scripts/test.py startup -- recording-audit tests/fixtures/recording-pid-change.ts > benchmark/tsreadex/native-original.log 2>&1
 # 整形後はexit 0。
-GST_DEBUG_NO_COLOR=1 GST_DEBUG=basesink:6 bash scripts/test-startup.sh recording-audit benchmark/tsreadex/recording-pid-change-normalized.ts > benchmark/tsreadex/native-normalized.log 2>&1
+GST_DEBUG_NO_COLOR=1 GST_DEBUG=basesink:6 python3 scripts/test.py startup -- recording-audit benchmark/tsreadex/recording-pid-change-normalized.ts > benchmark/tsreadex/native-normalized.log 2>&1
 ```
 
 入力SHA-256: `6109cf96c1cb693ee2dd456c196ab349b17dc513bbe88ee2348896dcbf6f8ed9`。
@@ -73,5 +73,5 @@ tsreadexの標準出力をパイプで挟むだけでは同じシーク構成に
 実録画の音声切り替え・コーデック変更・字幕・番組情報保持と、パッケージへの同梱は未検証。
 
 診断コードの検証は、上記CPU比較、製品audit（整形後成功・元TSは指定位置不一致）、
-通常の`bash scripts/test-startup.sh`が成功。`cargo fmt --check`、`git diff --check`、
+通常の`python3 scripts/test.py startup`が成功。`cargo fmt --check`、`git diff --check`、
 `cargo clippy --release --locked --all-targets --features native_tests -- -D warnings`も成功した。

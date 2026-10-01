@@ -61,10 +61,10 @@ cmake -S . -B build
 cmake --build build
 
 # CPUのみ。公式アーカイブを取得・検証して、78秒から120秒分のTSを作る
-python3 scripts/publicity/prepare.py
+python3 -m scripts.dev.publicity.prepare
 
 # 専用画面・実GPU・仮想音声を自動検証し、撮影・画像の配置まで行う
-bash scripts/capture-publicity.sh
+bash scripts/dev/capture-publicity.sh
 ```
 
 最初の取得は約188 MiBです。原素材・中間TS・ログはGit管理外の
@@ -85,5 +85,5 @@ UIの配置やアニメーション時間を変更した後は、画像5枚を�
 ツールチップ・意図しないダイアログ・文字切れがないことを確認してください。
 撮影結果はUI回帰テストの代わりにはなりません。
 
-番組の編成・説明文は`scripts/publicity/schedule.py`、局名・撮影操作は`capture.py`、
+番組の編成・説明文は`scripts/dev/publicity/schedule.py`、局名・撮影操作は`capture.py`、
 TSへの番組情報の書き込みは`fixture.py`にあります。

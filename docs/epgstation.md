@@ -107,9 +107,9 @@ QML部品テストで確認します。
 
 ```sh
 CARGO_TARGET_DIR=build/cargo cargo test --manifest-path rust/Cargo.toml --release --locked epgstation
-bash scripts/test-connection.sh
-bash scripts/test-danmaku.sh
-bash scripts/test-startup.sh
+python3 scripts/test.py connection
+python3 scripts/test.py danmaku
+python3 scripts/test.py startup
 ```
 
 2026-09-24に、Rustテスト331件（除外5件）、QML部品テスト324件（対象外18件）、
@@ -126,7 +126,7 @@ LinuxでDockerと通常のRustビルド環境を用意し、次を実行しま�
 チューナーは使いません。Dockerが使えない場合や起動に失敗した場合は検査を失敗させます。
 
 ```sh
-CARGO_TARGET_DIR=build/cargo python3 scripts/epgstation-integration.py
+CARGO_TARGET_DIR=build/cargo python3 -m scripts.testing.epgstation_integration
 ```
 
 [固定したコミットとNodeイメージ](../tests/epgstation/provider.json)から、上流のlockfileを
