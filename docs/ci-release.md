@@ -25,6 +25,9 @@ aptが取得し直す。キャッシュは`build/deb/apt-cache/ubuntu24.04/archi
 
 AppImageとテストは[配布用Dockerfile](../packaging/appimage/Dockerfile)の`ci`ステージを使う。
 Ubuntu 24.04、Rust 1.98.1、Qt 6.8.3、GStreamer 1.24を共用し、テスト用にrustfmtを追加する。
+nextestは固定版0.9.146の公式バイナリーをSHA-256で検証して導入する。
+Dockerレイヤーのキャッシュがない場合も、nextest自体のコンパイルは行わない。
+更新時は[ローカル用インストーラー](../scripts/testing/install-nextest.sh)の版・チェックサムも合わせる。
 FlatpakはマニフェストのKDE 6.10 SDKを使う。26.04用debは[専用Dockerfile](../packaging/deb/Dockerfile)でUbuntuのQt/GStreamerを使う。
 GitHubの実行ホストはいずれも`ubuntu-24.04`。
 CIのビルド並列数は実行ホストの`nproc`に合わせる。公開リポジトリー用の標準Linux runnerは
@@ -74,6 +77,8 @@ CIの`scripts/testing/ci.sh`は`cargo fetch --locked`で依存ソースを取得
 ダウンロードキャッシュが空のCIでも試験に必要なソースを参照できる。
 Rustはnextestで個別プロセスに分離し、Qt試験は一度ビルドした実行ファイルを共用する。
 ローカルの既定は`dev`、CIは`release`で、ビルドと検証は共通ロックで直列化する。
+Releaseのデバッグ情報は[共通Cargo設定](../.cargo/config.toml)で`line-tables-only`に揃える。
+アプリと独立crateで同じ依存関係を異なるデバッグ情報設定でコンパイルし直すことを避ける。
 各検査のログと実行結果は、失敗時も`test-results` artifactとして14日間保存する。
 詳しい選択方法とログの保存先は[開発手順](development.md#テストと診断)を参照。
 debの導入試験は開発パッケージのない対象Ubuntuコンテナーで行い、

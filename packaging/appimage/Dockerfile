@@ -62,5 +62,12 @@ FROM appimage AS ci
 RUN apt-get update && apt-get install -y --no-install-recommends dbus-daemon python3-dbus python3-gi nodejs \
     && rm -rf /var/lib/apt/lists/*
 RUN rustup component add rustfmt && chmod -R a+rX /opt/rustup /opt/cargo
-RUN cargo install cargo-nextest --locked --version 0.9.146 \
-    && chmod -R a+rX /opt/cargo
+# Match scripts/testing/install-nextest.sh. Avoid compiling the test runner and
+# retaining its registry in the image whenever the CI layer cache is cold.
+RUN curl --fail --location --retry 3 -o /tmp/nextest.tar.gz \
+        https://github.com/nextest-rs/nextest/releases/download/cargo-nextest-0.9.146/cargo-nextest-0.9.146-x86_64-unknown-linux-gnu.tar.gz \
+    && echo '682c21b777c333e96fd532e114d3a5a894e0729ab88d94c0a9f20f8419695428  /tmp/nextest.tar.gz' | sha256sum --check \
+    && tar -xzf /tmp/nextest.tar.gz -C /opt/cargo/bin cargo-nextest \
+    && chmod a+rx /opt/cargo/bin/cargo-nextest \
+    && cargo nextest --version \
+    && rm /tmp/nextest.tar.gz

@@ -57,6 +57,31 @@ class BuildCacheTests(unittest.TestCase):
 
 
 class RestoredCargoCacheTests(unittest.TestCase):
+    def test_release_dependencies_are_reused_across_standalone_roots(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / ".cargo").mkdir()
+            shutil.copyfile(ROOT / ".cargo/config.toml", root / ".cargo/config.toml")
+            env = dict(os.environ, CARGO_TARGET_DIR=str(root / "target"), CARGO_NET_OFFLINE="true")
+            artifacts = None
+            for name in ("application", "standalone"):
+                crate = root / name
+                crate.mkdir()
+                manifest = crate / "Cargo.toml"
+                manifest.write_text(
+                    f'[package]\nname="{name}"\nversion="0.0.0"\nedition="2024"\n'
+                    '[lib]\npath="lib.rs"\n[dependencies]\njobserver="=0.1.35"\n'
+                    + ('[profile.release]\ndebug=1\n' if name == "application" else ''))
+                (crate / "lib.rs").write_text("pub fn client() -> jobserver::Client { jobserver::Client::new(1).unwrap() }\n")
+                subprocess.run(["cargo", "build", "--manifest-path", str(manifest), "--release"],
+                               cwd=root, env=env, check=True, pass_fds=lock_fds())
+                current = {path.name: path.stat().st_mtime_ns
+                           for path in (root / "target/release/deps").glob("libjobserver-*.rlib")}
+                self.assertEqual(len(current), 1, "profile mismatch rebuilt the shared dependency")
+                if artifacts is not None:
+                    self.assertEqual(current, artifacts)
+                artifacts = current
+
     def test_changed_path_dependency_with_old_mtime_and_registry_reuse(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
