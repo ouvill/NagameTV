@@ -12,6 +12,8 @@ Pythonは元の作業ツリーのGit情報を取得し、Docker内のビルド�
 Canonical Workshopでは既存の`docker-ce` SDKを使う。
 [Dockerfile](../packaging/appimage/Dockerfile)がUbuntu 24.04、Rust 1.98.1、
 Qt 6.8.3の公式SDK、UbuntuのGStreamer 1.24を用意する。
+QtWebEngineのQMLプラグインに必要なQt WebChannelとQt Positioningも含め、
+SDK作成時に共有ライブラリーの不足を検査する。
 Ubuntu 24.04標準のQtはアプリの要件を満たさないため使用しない。
 Qt内部APIを使う`qml6glsink`は、同じQt SDKとGStreamerに対してソースからビルドする。
 ホストのQt/GStreamer、Cargoのコンパイル済みキャッシュは持ち込まない。
@@ -45,6 +47,7 @@ curl、Python 3.11以降、sha256sum、flock、desktop-file-validate、readelf�
 Qtのqmake・qmlimportscanner・画像プラグイン、
 [GStreamerプラグイン一覧](../packaging/appimage/gstreamer-plugins.txt)の全ファイルが必要。
 HTTPプラグイン用の`libsoup-3.0-dev`と、GIOのTLSモジュールを含む`glib-networking`も必要。
+QtWebEngine・Qt WebChannel・Qt Positioningと、QtWebEngineが依存する`libxkbfile1`も用意する。
 このモードだけ、ビルドディレクトリーとQtを指定できる:
 
 ```sh
@@ -113,6 +116,8 @@ Linuxでは、実行ファイルを削除しても動作中のプロセスが終
 - CMakeのinstall規則から実行ファイル、デスクトップ情報、アイコン、ライセンスを取り込む。
 - linuxdeployのQtプラグインが製品QMLのimportを走査し、Qtライブラリー、QMLモジュール、
   X11・SVG・入力メソッドなどのプラグインを収集する。テスト用QMLは対象に含めない。
+- QMLから読み込むQtWebEngineは追加モジュールとして指定し、`QtWebEngineProcess`、
+  Chromiumのリソース・ロケール、Qt Positioningが同梱されたことを検査する。
 - GStreamerは[プラグイン一覧](../packaging/appimage/gstreamer-plugins.txt)のライブラリーと
   plugin scanner、共有ライブラリー依存を同梱する。MPEG-TS、MPEG-2/H.264、AAC、
   インターレース解除、Qtへの映像表示、PulseAudio出力を含む。

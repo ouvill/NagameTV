@@ -19,7 +19,7 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-ins
 RUN python3 -m venv /opt/aqt \
     && /opt/aqt/bin/pip install --no-cache-dir aqtinstall==3.3.0 \
     && /opt/aqt/bin/aqt install-qt linux desktop 6.8.3 linux_gcc_64 \
-        --outputdir /opt/qt --modules qtimageformats qtshadertools qtwebengine qtwebchannel
+        --outputdir /opt/qt --modules qtimageformats qtshadertools qtwebengine qtwebchannel qtpositioning
 ENV PATH="/opt/qt/6.8.3/gcc_64/bin:/opt/cargo/bin:${PATH}" \
     QMAKE=/opt/qt/6.8.3/gcc_64/bin/qmake \
     QT_LRELEASE=/opt/qt/6.8.3/gcc_64/bin/lrelease \
@@ -49,10 +49,16 @@ RUN curl --fail --location --retry 3 -o /tmp/rustup-init \
     && chmod -R a+rX /opt/rustup /opt/cargo \
     && rm /tmp/rustup-init
 # Packaging needs file for appimagetool and libsoup's location for the HTTP
-# plugin, which loads libsoup and the GIO TLS backend dynamically.
+# plugin, which loads libsoup and the GIO TLS backend dynamically. Qt WebEngine
+# also needs XKB's file library even when only inspecting its QML plugin.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    file libsoup-3.0-dev glib-networking \
+    file libsoup-3.0-dev glib-networking libxkbfile1 \
     && rm -rf /var/lib/apt/lists/*
+# QML-only dependencies are not linked by the Rust application. Catch an
+# incomplete SDK before spending time compiling and packaging the application.
+RUN ldd /opt/qt/6.8.3/gcc_64/qml/QtWebEngine/libqtwebenginequickplugin.so > /tmp/qt-webengine-deps \
+    && if grep -q 'not found' /tmp/qt-webengine-deps; then cat /tmp/qt-webengine-deps >&2; exit 1; fi \
+    && rm /tmp/qt-webengine-deps
 WORKDIR /project
 
 # CI uses the distribution toolchain and libraries, plus the formatting tool.

@@ -136,7 +136,9 @@ install -Dm644 "$gio_tls_module" "$app_dir/usr/lib/gio/modules/libgiognutls.so"
 mkdir "$stage_dir/qml"
 cp "$project_dir"/rust/qml/*.qml "$stage_dir/qml/"
 export QML_SOURCES_PATHS="$stage_dir/qml"
-export EXTRA_QT_MODULES=svg
+# WebEngine is loaded through QML, so ELF discovery alone does not select the
+# deployer for its helper process, Chromium resources and locale data.
+export EXTRA_QT_MODULES='svg;webenginecore'
 export APPIMAGE_EXTRACT_AND_RUN=1
 export PATH="$tools_dir:$PATH"
 
@@ -153,6 +155,12 @@ export PATH="$tools_dir:$PATH"
 # collects the installed imageformats plugins and their ELF dependencies.
 for codec in jpeg webp; do
   [[ -n $(find "$app_dir/usr" -name "libq$codec.so" -print -quit) ]] || fail "Missing bundled Qt $codec encoder"
+done
+for resource in libexec/QtWebEngineProcess lib/libQt6Positioning.so.6 \
+    resources/icudtl.dat resources/qtwebengine_resources.pak \
+    resources/qtwebengine_resources_100p.pak resources/qtwebengine_resources_200p.pak \
+    resources/v8_context_snapshot.bin translations/qtwebengine_locales/en-US.pak; do
+  [[ -s $app_dir/usr/$resource ]] || fail "Missing bundled Qt WebEngine resource: $resource"
 done
 desktop-file-validate "$app_dir/$app_id.desktop"
 export ARCH=x86_64
