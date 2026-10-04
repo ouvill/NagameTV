@@ -48,6 +48,7 @@ impl PresentError for crate::playback::Error {
                 }
             },
             MediaSubtitle(error) => error.present(),
+            DataBroadcast(error) => detail("Data broadcast could not start: %1", error),
             VideoOutput(error) => detail("Video output: %1", error),
             Initialization(error) => detail("GStreamer initialization failed: %1", error),
             Operation(error) => detail("GStreamer operation failed: %1", error),

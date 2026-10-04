@@ -1,33 +1,21 @@
-//! Checked wire representations for ISO/IEC 13818-1 TS/PAT/PMT and ARIB descriptors.
-//!
-//! ARIB STD-B10 Part 2 §§6.2.18, 6.2.22 and the data component descriptor:
-//! https://www.arib.or.jp/english/html/overview/doc/6-STD-B10v5_13-E1.pdf
-//! Bit positions below describe big-endian wire words, never native memory layout.
+//! ARIB caption stream selection on shared MPEG-2 TS/PSI syntax.
 use bitfield::bitfield;
-
-pub(crate) const TS_PACKET_SIZE: usize = 188;
-pub(crate) const SYNC_BYTE: u8 = 0x47;
-pub(crate) const STUFFING_BYTE: u8 = 0xff;
-pub(crate) const PAT_TABLE_ID: u8 = 0x00;
-pub(crate) const PMT_TABLE_ID: u8 = 0x02;
+use std::ops::Deref;
+#[cfg(test)]
+pub(crate) use viewer_mpegts::{MAX_PSI_SECTION_LENGTH, SECTION_PREFIX_SIZE, section_size};
+pub(crate) use viewer_mpegts::{
+    PAT_TABLE_ID, PMT_TABLE_ID, ParseError, Pid, STUFFING_BYTE, SYNC_BYTE, TS_PACKET_SIZE,
+    TransportPacket, crc32_mpeg, same_payload_packet,
+};
+#[cfg(test)]
 pub(super) const TS_HEADER_SIZE: usize = 4;
-pub(super) const SECTION_PREFIX_SIZE: usize = 3;
-const SECTION_HEADER_SIZE: usize = 8;
+#[cfg(test)]
 const CRC_SIZE: usize = 4;
-pub(super) const MAX_PSI_SECTION_LENGTH: usize = 1021;
 const PRIVATE_PES_STREAM: u8 = 0x06;
 const ARIB_CAPTION_COMPONENT: u16 = 0x0008;
 const STREAM_IDENTIFIER_DESCRIPTOR: u8 = 0x52;
 const HIERARCHICAL_TRANSMISSION_DESCRIPTOR: u8 = 0xc0;
 const DATA_COMPONENT_DESCRIPTOR: u8 = 0xfd;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(crate) struct Pid(pub u16);
-impl Pid {
-    pub const PAT: Self = Self(0x0000);
-    pub const NULL: Self = Self(0x1fff);
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) struct ComponentTag(pub u8);
 impl ComponentTag {
@@ -93,71 +81,21 @@ fn is_video_stream(stream_type: u8) -> bool {
     )
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ParseError {
-    Incomplete,
-    Invalid(&'static str),
-}
-
-bitfield! {
-    struct TsHeader(u32);
-    u8, sync, _: 31, 24;
-    bool, transport_error, _: 23;
-    bool, payload_start, _: 22;
-    u16, pid, _: 20, 8;
-    u8, scrambling, _: 7, 6;
-    u8, adaptation_control, _: 5, 4;
-    u8, continuity_counter, _: 3, 0;
-}
-bitfield! {
-    struct AdaptationFlags(u8);
-    bool, discontinuity, _: 7;
-    bool, pcr, _: 4;
-    bool, opcr, _: 3;
-    bool, splice, _: 2;
-    bool, private_data, _: 1;
-    bool, extension, _: 0;
-}
-bitfield! {
-    struct SectionLength(u16);
-    bool, syntax, _: 15;
-    bool, private, _: 14;
-    u8, reserved, _: 13, 12;
-    u16, length, _: 11, 0;
-}
-bitfield! {
-    struct SectionVersion(u8);
-    u8, reserved, _: 7, 6;
-    u8, version, _: 5, 1;
-    bool, current, _: 0;
-}
 bitfield! {
     struct PidField(u16);
     u8, reserved, _: 15, 13;
     u16, pid, _: 12, 0;
 }
 bitfield! {
-    struct LoopLength(u16);
-    u8, reserved, _: 15, 12;
-    u16, length, _: 11, 0;
-}
-bitfield! {
     struct HierarchyFlags(u8);
     u8, reserved, _: 7, 1;
     bool, high, _: 0;
 }
-
 struct Cursor<'a> {
     rest: &'a [u8],
     exhausted: ParseError,
 }
 impl<'a> Cursor<'a> {
-    fn new(rest: &'a [u8]) -> Self {
-        Self {
-            rest,
-            exhausted: ParseError::Incomplete,
-        }
-    }
     // Once an outer length is satisfied, missing inner bytes indicate a bad
     // length/field, not a request for more transport input.
     fn bounded(rest: &'a [u8]) -> Self {
@@ -185,242 +123,25 @@ impl<'a> Cursor<'a> {
         }
         Ok(Pid(field.pid()))
     }
-    fn descriptor_loop(&mut self) -> Result<&'a [u8], ParseError> {
-        let field = LoopLength(self.word()?);
-        if field.reserved() != 0b1111 {
-            return Err(ParseError::Invalid("loop reserved bits"));
-        }
-        self.take(usize::from(field.length()))
-    }
 }
 
 #[derive(Debug)]
-pub(crate) struct TransportPacket<'a> {
-    pub pid: Pid,
-    pub start: bool,
-    pub payload: &'a [u8],
-    pub continuity_counter: u8,
-    pub discontinuity: bool,
-    pub pcr: Option<u64>,
-}
-impl<'a> TransportPacket<'a> {
-    pub fn parse(bytes: &'a [u8]) -> Result<Self, ParseError> {
-        if bytes.len() < TS_PACKET_SIZE {
-            return Err(ParseError::Incomplete);
-        }
-        if bytes.len() != TS_PACKET_SIZE {
-            return Err(ParseError::Invalid("TS packet size"));
-        }
-        let mut cursor = Cursor::bounded(bytes);
-        let header_bytes = cursor.take(TS_HEADER_SIZE)?;
-        let header = TsHeader(u32::from_be_bytes(
-            header_bytes
-                .try_into()
-                .map_err(|_| ParseError::Incomplete)?,
-        ));
-        if header.sync() != SYNC_BYTE {
-            return Err(ParseError::Invalid("TS sync"));
-        }
-        if header.transport_error() {
-            return Err(ParseError::Invalid("transport error"));
-        }
-        if header.scrambling() != 0 {
-            return Err(ParseError::Invalid("scrambled TS payload"));
-        }
-        let (has_adaptation, has_payload) = match header.adaptation_control() {
-            1 => (false, true),
-            2 => (true, false),
-            3 => (true, true),
-            _ => return Err(ParseError::Invalid("reserved adaptation control")),
-        };
-        let mut discontinuity = false;
-        let mut pcr = None;
-        if has_adaptation {
-            let length = usize::from(cursor.byte()?);
-            let mut adaptation = Cursor::bounded(
-                cursor
-                    .take(length)
-                    .map_err(|_| ParseError::Invalid("adaptation length"))?,
-            );
-            if length > 0 {
-                let flags = AdaptationFlags(adaptation.byte()?);
-                discontinuity = flags.discontinuity();
-                // Validate flagged fields even though only discontinuity is needed.
-                if flags.pcr() {
-                    let value = adaptation.take(6)?;
-                    pcr = Some(
-                        (u64::from(value[0]) << 25)
-                            | (u64::from(value[1]) << 17)
-                            | (u64::from(value[2]) << 9)
-                            | (u64::from(value[3]) << 1)
-                            | u64::from(value[4] >> 7),
-                    );
-                }
-                if flags.opcr() {
-                    adaptation.take(6)?;
-                }
-                if flags.splice() {
-                    adaptation.take(1)?;
-                }
-                if flags.private_data() {
-                    let n = usize::from(adaptation.byte()?);
-                    adaptation.take(n)?;
-                }
-                if flags.extension() {
-                    let n = usize::from(adaptation.byte()?);
-                    adaptation.take(n)?;
-                }
-            }
-            if has_payload == cursor.rest.is_empty() {
-                return Err(ParseError::Invalid("adaptation/payload size"));
-            }
-        }
-        Ok(Self {
-            pid: Pid(header.pid()),
-            start: header.payload_start(),
-            payload: if has_payload { cursor.rest } else { &[] },
-            continuity_counter: header.continuity_counter(),
-            discontinuity,
-            pcr,
-        })
-    }
-}
-
-/// H.222.0 §2.4.3.3 allows a duplicate payload packet to carry an updated PCR.
-/// Every other byte, including adaptation flags and OPCR, must remain identical.
-/// https://www.itu.int/rec/T-REC-H.222.0/en
-pub(crate) fn same_payload_packet(
-    previous: &[u8; TS_PACKET_SIZE],
-    current: &[u8; TS_PACKET_SIZE],
-) -> bool {
-    let Ok(packet) = TransportPacket::parse(current) else {
-        return false;
-    };
-    if packet.payload.is_empty() {
-        return false;
-    }
-    let header = TsHeader(u32::from_be_bytes([
-        current[0], current[1], current[2], current[3],
-    ]));
-    const ADAPTATION_AND_PAYLOAD: u8 = 3;
-    const ADAPTATION_LENGTH_SIZE: usize = 1;
-    const ADAPTATION_FLAGS_SIZE: usize = 1;
-    const PCR_SIZE: usize = 6;
-    const FLAGS_OFFSET: usize = TS_HEADER_SIZE + ADAPTATION_LENGTH_SIZE;
-    const PCR_OFFSET: usize = FLAGS_OFFSET + ADAPTATION_FLAGS_SIZE;
-    if header.adaptation_control() == ADAPTATION_AND_PAYLOAD
-        && current[TS_HEADER_SIZE] > 0
-        && AdaptationFlags(current[FLAGS_OFFSET]).pcr()
-    {
-        // Packet validation above guarantees that the entire PCR is present.
-        previous[..PCR_OFFSET] == current[..PCR_OFFSET]
-            && previous[PCR_OFFSET + PCR_SIZE..] == current[PCR_OFFSET + PCR_SIZE..]
-    } else {
-        previous == current
-    }
-}
-
-/// Required total size from the section prefix; does not require its body yet.
-pub(crate) fn section_size(bytes: &[u8]) -> Result<usize, ParseError> {
-    let mut cursor = Cursor::new(bytes);
-    cursor.byte()?;
-    let header = SectionLength(cursor.word()?);
-    let length = usize::from(header.length());
-    if !header.syntax() || header.private() || header.reserved() != 0b11 {
-        return Err(ParseError::Invalid("PAT/PMT section syntax"));
-    }
-    if !(SECTION_HEADER_SIZE - SECTION_PREFIX_SIZE + CRC_SIZE..=MAX_PSI_SECTION_LENGTH)
-        .contains(&length)
-    {
-        return Err(ParseError::Invalid("PSI section length"));
-    }
-    Ok(SECTION_PREFIX_SIZE + length)
-}
-
-#[derive(Debug)]
-pub(crate) struct PsiSection<'a> {
-    pub table_id: u8,
-    pub extension: u16,
-    pub version: u8,
-    pub section_number: u8,
-    pub last_section_number: u8,
-    body: &'a [u8],
-}
+pub(crate) struct PsiSection<'a>(pub viewer_mpegts::PsiSection<'a>);
 impl<'a> PsiSection<'a> {
     pub fn parse(bytes: &'a [u8]) -> Result<Self, ParseError> {
-        let size = section_size(bytes)?;
-        if bytes.len() < size {
-            return Err(ParseError::Incomplete);
-        }
-        if bytes.len() != size {
-            return Err(ParseError::Invalid("trailing section bytes"));
-        }
-        if crc32_mpeg(bytes) != 0 {
-            return Err(ParseError::Invalid("PSI CRC"));
-        }
-        let mut cursor = Cursor::bounded(bytes);
-        let table_id = cursor.byte()?;
-        cursor.take(2)?;
-        let extension = cursor.word()?;
-        let version = SectionVersion(cursor.byte()?);
-        if version.reserved() != 0b11 || !version.current() {
-            return Err(ParseError::Invalid("non-current PSI section"));
-        }
-        let section_number = cursor.byte()?;
-        let last_section_number = cursor.byte()?;
-        if section_number > last_section_number {
-            return Err(ParseError::Invalid("section numbering"));
-        }
-        Ok(Self {
-            table_id,
-            extension,
-            version: version.version(),
-            section_number,
-            last_section_number,
-            body: &bytes[SECTION_HEADER_SIZE..size - CRC_SIZE],
-        })
-    }
-    pub fn pat_programs(&self) -> Result<Vec<(u16, Pid)>, ParseError> {
-        if self.table_id != PAT_TABLE_ID {
-            return Err(ParseError::Invalid("not a PAT"));
-        }
-        let mut cursor = Cursor::bounded(self.body);
-        let mut programs = Vec::new();
-        while !cursor.rest.is_empty() {
-            let service = cursor.word()?;
-            let pid = cursor.pid()?;
-            // Program zero points to the network table, not a program map.
-            if service != 0 {
-                if pid == Pid::PAT || pid == Pid::NULL {
-                    return Err(ParseError::Invalid("program map PID"));
-                }
-                programs.push((service, pid));
-            }
-        }
-        Ok(programs)
+        viewer_mpegts::PsiSection::parse(bytes).map(Self)
     }
     pub fn program_map(&self) -> Result<ProgramMap, ParseError> {
-        if self.table_id != PMT_TABLE_ID
-            || self.section_number != 0
-            || self.last_section_number != 0
-        {
-            return Err(ParseError::Invalid("not a single-section PMT"));
-        }
-        let mut cursor = Cursor::bounded(self.body);
-        let pcr_pid = cursor.pid()?; // PCR_PID may be the null PID.
-        Descriptors::parse(cursor.descriptor_loop()?)?;
+        let map = self.0.program_map()?;
+        Descriptors::parse(map.program_descriptors)?;
         let mut captions = Vec::new();
         let mut presentation_pids = Vec::new();
         let mut video_pids = Vec::new();
-        let mut seen_pids = std::collections::HashSet::new();
         let mut seen_component_tags = std::collections::HashSet::new();
-        while !cursor.rest.is_empty() {
-            let stream_type = cursor.byte()?;
-            let pid = cursor.pid()?;
-            if pid == Pid::PAT || pid == Pid::NULL || !seen_pids.insert(pid) {
-                return Err(ParseError::Invalid("elementary stream PID"));
-            }
-            let descriptors = Descriptors::parse(cursor.descriptor_loop()?)?;
+        for stream in map.streams {
+            let stream_type = stream.stream_type;
+            let pid = stream.pid;
+            let descriptors = Descriptors::parse(stream.descriptors)?;
             if let Some(tag) = descriptors.component_tag
                 && !seen_component_tags.insert(tag)
             {
@@ -445,15 +166,20 @@ impl<'a> PsiSection<'a> {
             }
         }
         Ok(ProgramMap {
-            service: self.extension,
-            pcr_pid,
+            service: map.service,
+            pcr_pid: map.pcr_pid,
             presentation_pids,
             video_pids,
             captions,
         })
     }
 }
-
+impl<'a> Deref for PsiSection<'a> {
+    type Target = viewer_mpegts::PsiSection<'a>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
 #[derive(Default)]
 struct Descriptors {
     component_tag: Option<ComponentTag>,
@@ -505,22 +231,6 @@ impl Descriptors {
         }
         Ok(result)
     }
-}
-
-/// ISO/IEC 13818-1 CRC-32: initial all ones, no reflection or final XOR.
-pub(crate) fn crc32_mpeg(bytes: &[u8]) -> u32 {
-    const POLYNOMIAL: u32 = 0x04c1_1db7;
-    bytes.iter().fold(u32::MAX, |mut crc, byte| {
-        crc ^= u32::from(*byte) << 24;
-        for _ in 0..u8::BITS {
-            crc = if crc & (1 << 31) != 0 {
-                (crc << 1) ^ POLYNOMIAL
-            } else {
-                crc << 1
-            };
-        }
-        crc
-    })
 }
 
 #[cfg(test)]

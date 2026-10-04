@@ -193,7 +193,7 @@ fn generate(path: &Path, width: i32, height: i32, par: &str) -> TestResult {
     }
     Ok(())
 }
-fn colored(image: &QImage, channel: usize) -> (usize, i32, i32, i32, i32) {
+pub(super) fn colored(image: &QImage, channel: usize) -> (usize, i32, i32, i32, i32) {
     let mut bounds = (0, image.width(), image.height(), 0, 0);
     for y in 0..image.height() {
         for x in 0..image.width() {

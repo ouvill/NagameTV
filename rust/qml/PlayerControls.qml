@@ -6,7 +6,7 @@ import QtQuick.Controls
 DirectionalFocus {
     id: root
     navigationItems: [volume, liveButton, speedButton, backwardButton, playButton, forwardButton,
-        channelsButton, commentButton, screenshot, subtitleButton, danmakuButton, fullscreenButton, more, sideButton]
+        channelsButton, commentButton, screenshot, subtitleButton, dataBroadcastButton, danmakuButton, fullscreenButton, more, sideButton]
     initialItem: playButton.enabled ? playButton : channelsButton
     enum Density { Wide, Narrow, Dense }
     required property ViewerActions actions
@@ -25,6 +25,8 @@ DirectionalFocus {
     readonly property alias audioAnchor: volume
     readonly property alias subtitleAnchor: subtitleButton
     signal subtitlesRequested
+    signal dataBroadcastRequested
+    property bool dataBroadcastActive: false
     readonly property bool speedVisible: speedPanel.visible
     readonly property bool stacked: width < 620
     function closeSpeed() { speedPanel.close(); }
@@ -170,6 +172,16 @@ DirectionalFocus {
                 onClicked: if (root.backend.media_subtitle_available) root.subtitlesRequested()
             }
             Control {
+                id: dataBroadcastButton
+                objectName: "dataBroadcastButton"
+                visible: root.density === PlayerControls.Wide && root.backend.media_active
+                    && root.backend.data_broadcast_available
+                iconSource: root.iconDirectory + "tv.svg"
+                tip: qsTranslate("Viewer", "Data broadcast")
+                active: root.dataBroadcastActive
+                onClicked: root.dataBroadcastRequested()
+            }
+            Control {
                 id: danmakuButton
                 objectName: "danmakuButton"
                 visible: root.density === PlayerControls.Wide
@@ -218,6 +230,15 @@ DirectionalFocus {
                         text: qsTranslate("Viewer", "Subtitles")
                         onTriggered: if (root.backend.media_subtitle_available) root.subtitlesRequested()
                         icon.source: root.iconDirectory + (root.backend.subtitle_display ? "captions.svg" : "captions-off.svg")
+                    }
+                    Entry {
+                        objectName: "overflowDataBroadcast"
+                        visible: root.backend.media_active && root.backend.data_broadcast_available
+                        text: qsTranslate("Viewer", "Data broadcast")
+                        icon.source: root.iconDirectory + "tv.svg"
+                        checkable: true
+                        checked: root.dataBroadcastActive
+                        onTriggered: root.dataBroadcastRequested()
                     }
                     Entry {
                         objectName: "overflowDanmaku"

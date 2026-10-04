@@ -42,7 +42,7 @@ SUITES = {
     "subtitle-rendering": Suite(Requirement.GUI, ("--native-tests", "subtitle-rendering", "-input", "tests/subtitles")),
     "ui-capture": Suite(Requirement.GUI, ("--native-tests", "channel-views", "-input", "tests/ui-review")),
 }
-STARTUP_CASES = ("startup", "recording-pid-change", "timeshift", "screenshot-playback", "video-processing")
+STARTUP_CASES = ("startup", "recording-pid-change", "timeshift", "data-broadcast", "screenshot-playback", "video-processing")
 RECORDING_CASES = ("recording-audit", "recording-probe")
 PORTAL_TIMEOUT_SECONDS = 5
 PORTAL_POLL_SECONDS = 0.05

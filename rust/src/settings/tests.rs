@@ -213,6 +213,53 @@ subtitles_enabled = true
 }
 
 #[test]
+fn experimental_data_broadcast_defaults_off_even_with_legacy_prefetch()
+-> Result<(), Box<dyn std::error::Error>> {
+    let dir = tempfile::tempdir()?;
+    let path = dir.path().join("settings.toml");
+    fs::write(
+        &path,
+        "data_broadcast_prefetch = true\nfuture_setting = 'keep'\n",
+    )?;
+    let mut session = open(path.clone())?;
+    assert!(!Preferences::default().data_broadcast_enabled);
+    assert!(!session.preferences().data_broadcast_enabled);
+    for enabled in [true, false] {
+        session.change(Change::DataBroadcastEnabled(enabled));
+        assert_eq!(session.flush()?, SaveStatus::Saved);
+        let restored = open(path.clone())?;
+        assert_eq!(restored.preferences().data_broadcast_enabled, enabled);
+        assert!(restored.preferences().data_broadcast_prefetch);
+        assert_eq!(
+            restored.preferences().extra["future_setting"].as_str(),
+            Some("keep")
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn data_broadcast_prefetch_defaults_off_and_survives_restart()
+-> Result<(), Box<dyn std::error::Error>> {
+    let dir = tempfile::tempdir()?;
+    let path = dir.path().join("settings.toml");
+    fs::write(&path, "future_setting = 'keep'\n")?;
+    let mut session = open(path.clone())?;
+    assert!(!session.preferences().data_broadcast_prefetch);
+    for enabled in [true, false] {
+        session.change(Change::DataBroadcastPrefetch(enabled));
+        assert_eq!(session.flush()?, SaveStatus::Saved);
+        let restored = open(path.clone())?;
+        assert_eq!(restored.preferences().data_broadcast_prefetch, enabled);
+        assert_eq!(
+            restored.preferences().extra["future_setting"].as_str(),
+            Some("keep")
+        );
+    }
+    Ok(())
+}
+
+#[test]
 fn subtitle_visibility_uses_the_existing_key_and_survives_restart()
 -> Result<(), Box<dyn std::error::Error>> {
     let dir = tempfile::tempdir()?;

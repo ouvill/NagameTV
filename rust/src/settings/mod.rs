@@ -153,6 +153,8 @@ pub enum Change {
     Volume(Volume),
     SubtitleDisplay(bool),
     SubtitleForceOutline(bool),
+    DataBroadcastEnabled(bool),
+    DataBroadcastPrefetch(bool),
     Comments(bool),
     CommentCacheLimit(CommentCacheLimit),
     Danmaku {
@@ -234,6 +236,8 @@ impl Session {
             Change::Volume(volume) => preferences.volume = volume,
             Change::SubtitleDisplay(display) => preferences.show_subtitles = display,
             Change::SubtitleForceOutline(enabled) => preferences.subtitle_force_outline = enabled,
+            Change::DataBroadcastEnabled(enabled) => preferences.data_broadcast_enabled = enabled,
+            Change::DataBroadcastPrefetch(enabled) => preferences.data_broadcast_prefetch = enabled,
             Change::Comments(enabled) => preferences.comments_enabled = enabled,
             Change::CommentCacheLimit(limit) => preferences.comment_cache_limit_mib = limit,
             Change::Danmaku {

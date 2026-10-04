@@ -88,6 +88,7 @@ fn live_catch_up_recovers_when_receive_index_is_ahead_of_decodable_video()
         framing: Framing::transport(),
         service: 1,
         filter: tsreadex::Filter::new(1)?,
+        data_broadcast: None,
         clock: Index::new(1, false),
         bootstrap: Vec::new(),
         time_ns: 0,

@@ -3,6 +3,7 @@
 #[allow(dead_code)]
 #[path = "../native_test_bridge.rs"]
 mod bridge;
+mod data_broadcast;
 #[cfg(target_os = "linux")]
 mod desktop_media;
 mod localization;
@@ -40,6 +41,15 @@ enum Suite {
     Startup,
     StartupWindow,
     Timeshift,
+    DataBroadcast,
+    DataBroadcastLive {
+        server: String,
+        service: u64,
+        output: PathBuf,
+        /// Record a second capture after another user data-button press.
+        #[arg(long)]
+        press_data_again: bool,
+    },
     VideoProcessing,
     ScreenshotPlayback,
     RecordingPidChange,
@@ -89,6 +99,13 @@ pub fn run(arguments: Vec<OsString>) -> i32 {
         Suite::Startup => startup::run(),
         Suite::StartupWindow => startup::run_window(),
         Suite::Timeshift => startup::run_timeshift(),
+        Suite::DataBroadcast => startup::run_data_broadcast(),
+        Suite::DataBroadcastLive {
+            server,
+            service,
+            output,
+            press_data_again,
+        } => startup::run_data_broadcast_live(server, service, output, press_data_again),
         Suite::VideoProcessing => startup::run_video_processing(),
         Suite::ScreenshotPlayback => startup::run_screenshots(),
         Suite::RecordingPidChange => startup::run_pid_change(),

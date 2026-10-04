@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="EUC-JP"?>
+<bml><head>
+<script><![CDATA[
+var ready = false;
+function finish() { ready = true; }
+function load() { browser.setInterval("finish();", 300, 1); }
+function open() { if (ready) browser.launchDocument("/40/0001/top.bml"); }
+]]></script>
+<bevent><beitem type="DataButtonPressed" subscribe="subscribe" onoccur="open();"/></bevent>
+</head>
+<body invisible="invisible" onload="load();" style="resolution:960x540;used-key-list:none;">
+<object type="video/X-arib-mpeg2" style="left:0px;top:0px;width:960px;height:540px;"/>
+</body></bml>

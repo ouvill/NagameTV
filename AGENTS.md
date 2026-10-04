@@ -24,6 +24,11 @@ For code changes, follow the relevant sections of
 Read the sections needed for the task; a small edit does not require a full
 repository or documentation review.
 
+Use trunk-based development with short-lived branches and small, reviewable
+integrations. Gate unfinished user paths behind default-off runtime feature
+flags at the Rust ownership boundary. Follow the flag lifecycle and verification
+rules in [the development guide](docs/development.md#トランクベース開発とフィーチャーフラグ).
+
 Actively use enums for exclusive states and Typestate for
 operations with prerequisites or ordering constraints. Keep constructors and
 mutation APIs narrow enough that callers cannot bypass these guarantees.

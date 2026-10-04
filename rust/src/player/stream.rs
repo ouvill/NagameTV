@@ -93,6 +93,12 @@ impl ffi::Player {
         {
             return true;
         }
+        // Decide against the source that owned the open request. Automatic
+        // reconnect may already have torn down the previous stream state.
+        if !self.rust().data_broadcast_mode.continues(&attempt) {
+            self.as_mut().data_broadcast_open(false);
+            self.as_mut().rust_mut().data_broadcast_mode.close();
+        }
         let server = self.server().to_string();
         // Audio selection always needs position-scoped EIT, independently of
         // Mirakurun EPG and comment settings. Their UI/network gates stay separate.
@@ -170,6 +176,8 @@ impl ffi::Player {
         }
     }
     pub fn stop(mut self: Pin<&mut Self>) {
+        self.as_mut().data_broadcast_open(false);
+        self.as_mut().rust_mut().data_broadcast_mode.close();
         self.as_mut().cancel_recording_open();
         // An explicit stop supersedes startup autoplay, including a still-empty catalog.
         self.as_mut().rust_mut().autoplay_pending = false;
@@ -275,6 +283,8 @@ impl ffi::Player {
         self.as_mut().poll_features();
     }
     pub fn shutdown(mut self: Pin<&mut Self>) -> bool {
+        self.as_mut().data_broadcast_open(false);
+        self.as_mut().rust_mut().data_broadcast_mode.close();
         self.as_mut().cancel_epgstation();
         self.as_mut().cancel_recording_open();
         // Retained native screenshot buffers may still need the GL context for

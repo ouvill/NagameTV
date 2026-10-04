@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="EUC-JP"?>
+<bml><head>
+<script><![CDATA[
+function load() { browser.lockModuleOnMemoryEx("/40/0004"); }
+function loaded() { browser.launchDocument("/40/0004/startup.bml"); }
+]]></script>
+<bevent><beitem type="ModuleLocked" module_ref="/40/0004" subscribe="subscribe" onoccur="loaded();"/></bevent>
+</head>
+<body onload="load();" style="resolution:960x540;used-key-list:none;">
+<object type="video/X-arib-mpeg2" style="left:0px;top:0px;width:960px;height:540px;"/>
+</body></bml>

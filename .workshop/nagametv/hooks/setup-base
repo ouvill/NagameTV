@@ -45,6 +45,8 @@ apt-get install --yes --no-install-recommends \
   mesa-utils \
   imagemagick \
   ninja-build \
+  nodejs \
+  npm \
   openbox \
   mpv \
   pkg-config \
@@ -68,11 +70,14 @@ apt-get install --yes --no-install-recommends \
   qml6-module-qtquick-shapes \
   qml6-module-qtquick-templates \
   qml6-module-qtquick-window \
+  qml6-module-qtwebengine \
+  qml6-module-qtwebchannel \
   qml6-module-qttest \
   qt6-base-dev \
   qt6-declarative-dev \
   qt6-declarative-dev-tools \
   qt6-l10n-tools \
+  qt6-webengine-dev \
   qt6-image-formats-plugins \
   qt6-svg-plugins \
   qt6-wayland \

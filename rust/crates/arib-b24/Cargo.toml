@@ -1,0 +1,11 @@
+[package]
+name = "arib-b24"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+bitfield = "0.19.5"
+flate2 = "1.1"
+thiserror = "2.0"
+viewer-mpegts = { path = "../viewer-mpegts" }

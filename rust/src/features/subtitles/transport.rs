@@ -244,7 +244,7 @@ impl TransportParser {
             return;
         };
         if pid == Pid::PAT && section.table_id == wire::PAT_TABLE_ID {
-            let Some(programs_by_service) = self.pat.push(&section) else {
+            let Some(programs_by_service) = self.pat.push(&section.0) else {
                 return;
             };
             if let Some(programs) = &mut self.programs {

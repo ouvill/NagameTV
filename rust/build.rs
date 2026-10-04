@@ -110,6 +110,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "../assets/icons/radio-off.svg",
         "../assets/fonts/rounded-mplus-1m-arib.ttf",
         "../assets/fonts/LICENSE-Rounded-Mplus-1m-for-ARIB.txt",
+        "../assets/web-bml/index.html",
+        "../assets/web-bml/bundle.js",
+        "../assets/web-bml/bundle.js.LICENSE.txt",
+        "../assets/web-bml/LICENSE-web-bml.txt",
     ])
     .file("src/player.rs")
     .file("src/qt.rs")

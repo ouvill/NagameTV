@@ -22,6 +22,7 @@ impl Default for PlayerRust {
                     // Explicit feature experiments enable the commentary display
                     // as before, independently of normal startup defaults.
                     danmaku_enabled: plan.comments(false),
+                    data_broadcast_enabled: plan.data_broadcast(false),
                     ..Default::default()
                 }),
                 Text::default(),
@@ -138,6 +139,7 @@ impl Default for PlayerRust {
             epg_enabled: plan.epg(),
             comments_enabled: plan.comments(preferences.preferences().comments_enabled),
             comments_allowed: !plan.locked() || plan.comments(false),
+            data_broadcast_allowed: !plan.locked() || plan.data_broadcast(false),
             danmaku_enabled: preferences.preferences().danmaku_enabled,
             comment_font_size: preferences.preferences().comment_font_size.into(),
             comment_opacity: preferences.preferences().comment_opacity.into(),
@@ -158,6 +160,8 @@ impl Default for PlayerRust {
             comment_timeline_revision: 0,
             comment_cache_bytes: 0.0,
             subtitles_active: false,
+            data_broadcast_mode: Default::default(),
+            data_broadcast_endpoint: QString::default(),
             subtitle_display: preferences.preferences().show_subtitles,
             subtitle_data: QString::default(),
             subtitle_status: super::status::tr("Stopped"),

@@ -1,0 +1,9 @@
+[package]
+name = "viewer-mpegts"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+bitfield = "0.19.5"
+thiserror = "2.0"

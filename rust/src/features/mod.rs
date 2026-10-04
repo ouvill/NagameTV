@@ -1,5 +1,6 @@
 pub mod channel_catalog;
 pub mod comments;
+pub mod data_broadcast;
 pub mod program_info;
 pub(crate) mod subscriptions;
 pub mod subtitles;

@@ -127,4 +127,18 @@ TestCase {
         wait(50)
         compare(subtitleOutlines.calls, calls)
     }
+    function test_plain_text_scales_with_video_window() {
+        holder.caption = screen("文字だけ", false, true)
+        holder.width = 1280
+        holder.height = 720
+        const caption = findChild(holder, "plainCaption")
+        const margin = caption.anchors.bottomMargin
+        const width = caption.width
+        compare(caption.font.pixelSize, 28)
+        holder.width = 640
+        holder.height = 360
+        compare(caption.font.pixelSize, 14)
+        compare(caption.anchors.bottomMargin, margin / 2)
+        compare(caption.width, width / 2)
+    }
 }

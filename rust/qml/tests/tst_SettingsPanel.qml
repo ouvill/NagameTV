@@ -41,6 +41,11 @@ Item {
                 property bool subtitles_enabled: true
                 property bool subtitle_display: true
                 property bool subtitle_force_outline: false
+                property bool data_broadcast_prefetch: false
+                property bool data_broadcast_enabled: false
+                property bool data_broadcast_allowed: true
+                function configure_data_broadcast(value) { data_broadcast_enabled = value; }
+                function configure_data_broadcast_prefetch(value) { data_broadcast_prefetch = value; }
                 function configure_subtitle_outline(value) { subtitle_force_outline = value; }
                 property bool epg_enabled: true
                 property bool autoplay: false
@@ -198,6 +203,9 @@ Item {
                 backend.acceptLanguage = true;
                 backend.subtitles_enabled = true;
                 backend.subtitle_display = true;
+                backend.data_broadcast_prefetch = false;
+                backend.data_broadcast_enabled = false;
+                backend.data_broadcast_allowed = true;
                 backend.epg_enabled = true;
                 backend.autoplay = false;
                 backend.configure_live_buffer(250);
@@ -387,10 +395,32 @@ Item {
                 keyClick(Qt.Key_Down); expectFocus("subtitleDisplay");
                 backend.subtitles_enabled = false;
                 language.forceActiveFocus(Qt.TabFocusReason);
+                keyClick(Qt.Key_Down); expectFocus("dataBroadcastEnabledSetting");
                 keyClick(Qt.Key_Down); expectFocus("chooseScreenshotDirectory");
                 keyClick(Qt.Key_Right); expectFocus("openScreenshotDirectory");
                 keyClick(Qt.Key_Left); expectFocus("chooseScreenshotDirectory");
                 keyClick(Qt.Key_Back); expectFocus("settingsCategory1");
+            }
+            function test_data_broadcast_opt_in_controls_prefetch_and_respects_restrictions() {
+                keyboardPage(SettingsPanel.Display);
+                const enable = findChild(panel, "dataBroadcastEnabledSetting");
+                const prefetch = findChild(panel, "dataBroadcastPrefetchSetting");
+                verify(!enable.checked);
+                verify(!prefetch.enabled);
+                enable.forceActiveFocus(Qt.TabFocusReason);
+                keyClick(Qt.Key_Return);
+                tryCompare(backend, "data_broadcast_enabled", true);
+                verify(prefetch.enabled);
+                keyClick(Qt.Key_Down); expectFocus("dataBroadcastPrefetchSetting");
+                keyClick(Qt.Key_Return);
+                tryCompare(backend, "data_broadcast_prefetch", true);
+                keyClick(Qt.Key_Up); expectFocus("dataBroadcastEnabledSetting");
+                keyClick(Qt.Key_Return);
+                tryCompare(backend, "data_broadcast_enabled", false);
+                verify(!prefetch.enabled);
+                verify(prefetch.checked);
+                backend.data_broadcast_allowed = false;
+                verify(!enable.enabled);
             }
             function test_dpad_comments_skip_disabled_rows_and_adjust_without_scrolling_values() {
                 keyboardPage(SettingsPanel.Comments);

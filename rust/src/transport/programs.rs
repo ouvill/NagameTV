@@ -8,7 +8,6 @@ use super::{
 };
 use serde::Serialize;
 use std::collections::HashMap;
-pub(super) use syntax::section_size;
 
 const SDT_PID: Pid = Pid(0x11);
 const TIME_TABLE_PID: Pid = Pid(0x14);

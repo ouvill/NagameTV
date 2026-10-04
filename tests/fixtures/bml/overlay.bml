@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="EUC-JP"?>
+<bml><head>
+<script><![CDATA[
+var opened = false;
+var ticks = 0;
+var closedAt = -1;
+function start() { browser.setInterval("tick();", 200, 0); }
+function tick() {
+    ticks++;
+    document.getElementById("ticks").firstChild.data = "" + ticks;
+    if (closedAt >= 0 && ticks == closedAt + 4) document.getElementById("body").normalStyle.usedKeyList = "numeric-tuning";
+}
+function data() {
+    opened = !opened;
+    closedAt = opened ? -1 : ticks;
+    document.getElementById("body").normalStyle.usedKeyList = opened ? "basic data-button numeric-tuning" : "none";
+    document.getElementById("menu").normalStyle.visibility = opened ? "visible" : "hidden";
+    if (opened) document.getElementById("lastKey").focus();
+}
+function key() {
+    document.getElementById("lastKey").firstChild.data = "" + document.currentEvent.keyCode;
+    if (document.currentEvent.keyCode == 22) document.getElementById("body").normalStyle.usedKeyList = "numeric-tuning";
+}
+]]></script>
+<bevent><beitem type="DataButtonPressed" subscribe="subscribe" onoccur="data();"/></bevent>
+</head>
+<body id="body" onload="start();" style="resolution:960x540;used-key-list:none;">
+<object type="video/X-arib-mpeg2" style="position:absolute;left:0px;top:0px;width:960px;height:540px;"/>
+<p style="position:absolute;left:40px;top:20px;width:400px;height:50px;background-color-index:7;">Automatic weather overlay</p>
+<p id="ticks" style="position:absolute;left:40px;top:70px;width:200px;height:50px;">0</p>
+<div id="menu" style="visibility:hidden;position:absolute;left:40px;top:150px;width:500px;height:200px;background-color-index:7;">
+<p id="lastKey" onkeydown="key();" style="nav-index:0;width:400px;height:100px;">0</p>
+</div>
+</body></bml>

@@ -21,6 +21,10 @@
 `build/` は `testing/` や `dev/` に依存させません。
 配布設定とDockerfileは従来どおりリポジトリー直下の `packaging/` に置きます。
 
+web-bml のブラウザー用 JS を更新するときは `python3 -m scripts.build.update_web_bml` を実行します。
+Git、Node.js、npm とネットワークが必要で、固定コミットから `assets/web-bml/bundle.js` と
+ライセンスを生成します。通常のビルドや実行時には Node.js を使いません。
+
 ## ビルドとテスト
 
 ```sh
@@ -29,6 +33,10 @@ cmake --build build
 python3 scripts/test.py --list
 python3 scripts/test.py                          # 機器不要の標準テスト
 python3 scripts/test.py tooling                  # スクリプト自身の回帰テスト
+python3 scripts/test.py arib-b24                 # データカルーセルの機器不要テスト
+python3 scripts/test.py viewer-web-bml            # web-bml への変換の機器不要テスト
+python3 scripts/test.py web-bml-adapter           # ブラウザー接続・起動制御。開発用Node.jsが必要
+python3 scripts/test.py viewer-mpegts            # 共通TS・PAT/PMTの機器不要テスト
 python3 scripts/test.py connection localization  # 機器不要のQt試験
 python3 scripts/test.py danmaku ui-style          # 専用画面・実GPU・仮想音声を検証
 python3 scripts/test.py startup -- recording-pid-change

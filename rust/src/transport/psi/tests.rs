@@ -1,4 +1,5 @@
 use super::*;
+use crate::transport::wire::{self, SECTION_PREFIX_SIZE};
 use proptest::prelude::*;
 
 const CRC_BYTES: usize = 4;
@@ -132,9 +133,9 @@ proptest! {
             for complete in sections.push(start, &payload) {
                 prop_assert_eq!(wire::section_size(&complete), Ok(complete.len()));
             }
-            if let Some(pending) = &sections.pending {
-                prop_assert!(!pending.is_empty());
-                prop_assert!(pending.len() < SECTION_PREFIX_SIZE + wire::MAX_PSI_SECTION_LENGTH);
+            if let Some(pending) = sections.pending_len() {
+                prop_assert!(pending > 0);
+                prop_assert!(pending < SECTION_PREFIX_SIZE + wire::MAX_PSI_SECTION_LENGTH);
             }
         }
         let valid = section(1);

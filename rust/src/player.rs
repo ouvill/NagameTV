@@ -17,6 +17,7 @@ mod guide;
 mod language;
 mod lifecycle;
 use lifecycle::{Failure as StatusFailure, Status as PlaybackStatus};
+mod data_broadcast;
 mod error_text;
 mod media_subtitles;
 mod playback_failure;
@@ -192,6 +193,13 @@ pub mod ffi {
         #[qproperty(bool, comment_post_available, READ, NOTIFY)]
         #[qproperty(bool, comment_post_busy, READ, NOTIFY)]
         #[qproperty(bool, comment_send_on_enter, READ, NOTIFY)]
+        #[qproperty(bool, data_broadcast_requested, READ = data_broadcast_requested, NOTIFY)]
+        #[qproperty(bool, data_broadcast_activate, READ = data_broadcast_activate, NOTIFY)]
+        #[qproperty(bool, data_broadcast_prefetch, READ = data_broadcast_prefetch, NOTIFY)]
+        #[qproperty(bool, data_broadcast_enabled, READ = data_broadcast_enabled, NOTIFY)]
+        #[qproperty(bool, data_broadcast_allowed, READ, CONSTANT)]
+        #[qproperty(bool, data_broadcast_available, READ = data_broadcast_available, NOTIFY)]
+        #[qproperty(QString, data_broadcast_endpoint, READ, NOTIFY)]
         #[qproperty(bool, subtitles_active, READ, NOTIFY)]
         #[qproperty(bool, subtitle_display, READ, NOTIFY)]
         #[qproperty(bool, subtitle_force_outline, READ = subtitle_force_outline, NOTIFY)]
@@ -374,6 +382,31 @@ pub mod ffi {
         fn configure_subtitle_outline(self: Pin<&mut Player>, enabled: bool);
         #[qinvokable]
         fn poll_subtitles(self: Pin<&mut Player>);
+        fn data_broadcast_requested(self: &Player) -> bool;
+        fn data_broadcast_activate(self: &Player) -> bool;
+        fn data_broadcast_prefetch(self: &Player) -> bool;
+        fn data_broadcast_enabled(self: &Player) -> bool;
+        #[qinvokable]
+        fn configure_data_broadcast(self: Pin<&mut Player>, enabled: bool);
+        #[qinvokable]
+        fn configure_data_broadcast_prefetch(self: Pin<&mut Player>, enabled: bool);
+        #[qinvokable]
+        fn data_broadcast_receiving(self: &Player) -> bool;
+        #[qinvokable]
+        fn data_broadcast_open(self: Pin<&mut Player>, open: bool) -> bool;
+        fn data_broadcast_available(self: &Player) -> bool;
+        #[qinvokable]
+        fn data_broadcast_connected(self: &Player) -> bool;
+        #[qinvokable]
+        fn data_broadcast_url(self: &Player) -> QString;
+        #[qinvokable]
+        fn data_broadcast_console(
+            self: &Player,
+            level: i32,
+            message: QString,
+            source: QString,
+            line: i32,
+        );
         #[qinvokable]
         fn browser_open(self: Pin<&mut Player>, open: bool);
         #[qinvokable]
@@ -579,6 +612,9 @@ pub struct PlayerRust {
     comment_timeline_revision: u32,
     comment_cache_bytes: f64,
     subtitles_active: bool,
+    data_broadcast_mode: data_broadcast::Mode,
+    data_broadcast_allowed: bool,
+    data_broadcast_endpoint: QString,
     subtitle_display: bool,
     subtitle_data: QString,
     subtitle_status: QString,

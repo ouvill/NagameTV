@@ -229,3 +229,60 @@ EPGStation file selection and token-authenticated playback.
 持ちます。外部字幕は `media-subtitles.srt` / `.ass` です。
 `/usr/bin/python3 tests/fixtures/generate_media_subtitles.py` でCPU上のmux処理だけを使って再生成できます。
 映像・音声の生成条件と権利は元の合成動画と同じです。
+
+## BML presentation fixtures
+
+`bml/` contains hand-written BML, with no broadcast material. The startup
+data-broadcast test sends it through a private WebSocket to the bundled web-bml.
+The hidden startup document opens a top page on the data key. Enter opens a child
+document whose external script is withheld until the test observes navigation;
+Back returns to the top and then to standby. The test checks input and focus,
+resuming the retained browser, a single activation per open request, Esc as BML Back,
+and cleanup through the feature setting.
+The hidden startup retains `basic data-button` to verify receiver navigation
+while the engine is hidden, and focus restoration on redisplay even when the
+requested key groups do not change.
+`startup-visible.bml` starts with visible television video and still needs the data
+key. It retains the default key mask without a focus/access-key target, reproducing
+ABC's video-only page after closing with d. The test checks real Down input,
+guide navigation, and reopening the same WebEngine view with d.
+`startup-preload.bml` first locks a module, supplied after navigation finishes,
+and launches that visible startup document from its ModuleLocked handler. These
+cases check that activation waits for startup resource requests and navigation.
+`startup-timer.bml` has no data-key subscriber and navigates after a timer; the
+opening request must survive until the destination subscribes to DataButtonPressed.
+`startup-initializing.bml` subscribes immediately but ignores input until its
+300 ms initialization timer completes, reproducing another startup race.
+The hidden-startup scenario first supplies a complete program identity with no BML
+entry, checks the unavailable state, then adds an entry in the PMT and verifies
+recovery without recreating the browser.
+Presentation and geometry reach QML through the real Qt WebChannel. The final
+scenario keeps the WebEngineView alive through application shutdown to exercise
+delivery teardown as well as cleanup through the feature setting.
+The top page has an opaque white background and a video window. Pixel samples
+verify that the native moving-ball fixture remains visible through that window
+after opening, navigating back and resuming from standby; geometry alone would
+miss an opaque background covering the video.
+Red moves the top page's video window and blue restores it. The test also resizes
+the product window to verify geometry delivery through change notifications,
+without periodic polling by the browser adapter.
+The hidden-startup case adds authored green ARIB captions and a red fixed comment
+to the production overlays. Pixel bounds verify that both appear inside the video
+cutout after BML movement, window resizing and navigation, and return to the
+full-size picture in standby. Bitmap-caption bounds use the same viewport.
+`bml/transport.rs` generates PAT/PMT, DII and DDB packets from the authored
+`overlay.bml`. Hardware-free decoder tests use those packets to check manual and
+automatic entry detection and monitor-to-display transitions. The startup test
+adds the same carousel to `recording-seek.ts`, exercising the production Rust
+receiver and WebEngine together. The overlay changes its key groups on d/red
+input and from a timer after d closes its menu; it checks automatic startup,
+per-group keyboard routing, continued execution after Esc, and feature disablement.
+The same test starts with the experimental feature disabled, including an
+automatic-start carousel with prefetch saved as enabled. It checks that d and
+direct open requests cannot start reception or a browser. Toggling the real
+settings control enables reception on the existing playback connection; toggling
+it off destroys the browser, releases its listening socket and restores player
+input. Both settings values are checked on disk without changing user settings.
+No generated TS is checked in.
+Run `python3 scripts/test.py startup -- data-broadcast`; the runner validates the
+private display, GPU and virtual audio output before starting the product window.

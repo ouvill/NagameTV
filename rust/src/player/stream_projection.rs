@@ -23,6 +23,10 @@ macro_rules! snapshot {
 }
 
 snapshot! {
+    data_broadcast_available: bool = |p| p.data_broadcast_available() => [data_broadcast_available_changed];
+    data_broadcast_requested: bool = |p| p.data_broadcast_requested() => [data_broadcast_requested_changed];
+    data_broadcast_activate: bool = |p| p.data_broadcast_activate() => [data_broadcast_activate_changed];
+    data_broadcast_endpoint: QString = |p| p.data_broadcast_endpoint().clone() => [data_broadcast_endpoint_changed];
     seek_preview_revision: u64 = |p| p.rust().seek_preview.revision() => [seek_preview_image_changed];
     applied_rate: playback::speed::Rate = |p| p.rust().speed.applied => [playback_rate_changed];
     requested_rate: playback::speed::Rate = |p| p.rust().speed.requested => [requested_playback_rate_changed];
@@ -239,6 +243,7 @@ impl<'a> Prepared<'a> {
     }
     fn commit(mut self) -> Committed<'a> {
         self.next.commit(&mut self.player.as_mut().rust_mut());
+        super::data_broadcast::synchronize(&mut self.player.as_mut().rust_mut());
         let after = Snapshot::capture(&self.player);
         Committed {
             player: self.player,

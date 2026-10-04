@@ -2,7 +2,9 @@
 use std::str::FromStr;
 
 #[derive(Debug, PartialEq, Eq, thiserror::Error)]
-#[error("invalid or repeated feature: {0} (expected none / subtitles / epg / comments)")]
+#[error(
+    "invalid or repeated feature: {0} (expected none / subtitles / epg / comments / data-broadcast)"
+)]
 pub struct FeatureError(String);
 
 /// Independent feature choices. Only a validated allowlist can construct this value.
@@ -11,6 +13,7 @@ pub struct FeatureSet {
     subtitles: bool,
     epg: bool,
     comments: bool,
+    data_broadcast: bool,
 }
 
 impl FromStr for FeatureSet {
@@ -21,6 +24,7 @@ impl FromStr for FeatureSet {
             subtitles: false,
             epg: false,
             comments: false,
+            data_broadcast: false,
         };
         if value == "none" {
             return Ok(features);
@@ -30,6 +34,7 @@ impl FromStr for FeatureSet {
                 "subtitles" if !features.subtitles => features.subtitles = true,
                 "epg" if !features.epg => features.epg = true,
                 "comments" if !features.comments => features.comments = true,
+                "data-broadcast" if !features.data_broadcast => features.data_broadcast = true,
                 _ => return Err(FeatureError(name.to_owned())),
             }
         }
@@ -68,6 +73,12 @@ impl LaunchPlan {
         match self {
             Self::Preferences => preference,
             Self::Restricted(features) => features.comments,
+        }
+    }
+    pub fn data_broadcast(self, preference: bool) -> bool {
+        match self {
+            Self::Preferences => preference,
+            Self::Restricted(features) => features.data_broadcast,
         }
     }
 }

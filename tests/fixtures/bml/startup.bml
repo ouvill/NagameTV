@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="EUC-JP"?>
+<bml><head>
+<script><![CDATA[
+function openData() { browser.launchDocument("/40/0001/top.bml"); }
+]]></script>
+<bevent><beitem type="DataButtonPressed" subscribe="subscribe" onoccur="openData();"/></bevent>
+</head>
+<body invisible="invisible" style="resolution:960x540;used-key-list:basic data-button;">
+</body></bml>

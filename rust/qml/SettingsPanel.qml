@@ -39,7 +39,7 @@ Popup {
         case SettingsPanel.Connection:
             return [...connectionForm.navigationItems, autoplay, ...liveBufferSettings.navigationItems, ...epgstationConnection.navigationItems];
         case SettingsPanel.Display:
-            return [languageBox, subtitleDisplay, subtitleOutline, chooseScreenshotDirectory, openScreenshotDirectory,
+            return [languageBox, subtitleDisplay, subtitleOutline, dataBroadcastEnabled, dataBroadcastPrefetch, chooseScreenshotDirectory, openScreenshotDirectory,
                 resetScreenshotDirectory, ...screenshotOptions.navigationItems];
         case SettingsPanel.Comments:
             return [commentsEnabled, danmakuEnabled, ...commentPresentation.navigationItems,
@@ -518,6 +518,27 @@ Popup {
                                 enabled: root.backend.subtitles_enabled
                                 onClicked: root.backend.configure_subtitle_outline(checked)
                             }
+                        }
+                        Heading { Layout.topMargin: 20; text: qsTranslate("Viewer", "Data broadcast") }
+                        SettingsToggle {
+                            id: dataBroadcastEnabled
+                            objectName: "dataBroadcastEnabledSetting"
+                            Layout.fillWidth: true
+                            text: qsTranslate("Settings", "Enable data broadcast (experimental)")
+                            description: qsTranslate("Settings", "Some broadcasts may not display or respond correctly.")
+                            checked: root.backend.data_broadcast_enabled
+                            enabled: root.backend.data_broadcast_allowed
+                            onClicked: root.backend.configure_data_broadcast(checked)
+                        }
+                        SettingsToggle {
+                            id: dataBroadcastPrefetch
+                            objectName: "dataBroadcastPrefetchSetting"
+                            Layout.fillWidth: true
+                            text: qsTranslate("Settings", "Prefetch data broadcast")
+                            description: qsTranslate("Settings", "Keep data broadcast content ready while watching live TV. Uses additional memory and processing. Broadcasts can start automatically even when prefetch is off.")
+                            checked: root.backend.data_broadcast_prefetch
+                            enabled: root.backend.data_broadcast_enabled
+                            onClicked: root.backend.configure_data_broadcast_prefetch(checked)
                         }
                         Heading { Layout.topMargin: 20; text: qsTranslate("Settings", "Screenshots") }
                         Detail {

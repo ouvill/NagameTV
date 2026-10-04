@@ -39,7 +39,16 @@ pub(super) fn wait_for(
     engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
     source: &str,
 ) -> TestResult {
-    let deadline = Instant::now() + Duration::from_secs(5);
+    wait_for_timeout(app, engine, source, Duration::from_secs(5))
+}
+
+pub(super) fn wait_for_timeout(
+    app: &QGuiApplication,
+    engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
+    source: &str,
+    timeout: Duration,
+) -> TestResult {
+    let deadline = Instant::now() + timeout;
     loop {
         app.process_events();
         if evaluate(engine, source)? {
@@ -47,7 +56,7 @@ pub(super) fn wait_for(
         }
         if Instant::now() >= deadline {
             let state = ffi::evaluate_root(engine.pin_mut(), &QString::from(
-                "JSON.stringify({focus: root.activeFocusItem ? root.activeFocusItem.objectName : null, playing: player.playing, loading: player.recording_loading, fileError: player.file_error, playbackError: player.playback_error, duration: player.duration_ms, position: player.position_ms, seekable: player.seekable, subtitles: player.subtitles_active, program: player.current_program_data, video: JSON.parse(player.video_stats()), epgstation: {busy: player.epgstation_busy, loaded: player.epgstation_loaded, count: player.recordings.count, error: player.epgstation_error}})",
+                "JSON.stringify({bml: {requested: player.data_broadcast_requested, showing: root.showDataBroadcast, keys: inputContext.dataBroadcastKeys, focused: inputContext.dataBroadcastFocused, presentation: dataBroadcast.view ? dataBroadcast.view.presentation : null}, focus: root.activeFocusItem ? root.activeFocusItem.objectName : null, playing: player.playing, loading: player.recording_loading, fileError: player.file_error, playbackError: player.playback_error, duration: player.duration_ms, position: player.position_ms, seekable: player.seekable, subtitles: player.subtitles_active, program: player.current_program_data, video: JSON.parse(player.video_stats()), epgstation: {busy: player.epgstation_busy, loaded: player.epgstation_loaded, count: player.recordings.count, error: player.epgstation_error}})",
             ))?.value::<QString>().ok_or("missing timeout snapshot")?;
             return Err(format!("Timed out: {source}; playback: {state}").into());
         }
@@ -451,6 +460,13 @@ enum WindowCheck {
     Startup,
     PidChange,
     Timeshift,
+    DataBroadcast,
+    DataBroadcastLive {
+        server: String,
+        service: u64,
+        output: std::path::PathBuf,
+        press_data_again: bool,
+    },
     Screenshots,
     VideoProcessing,
     RecordingAudit(std::path::PathBuf),
@@ -506,6 +522,30 @@ fn window(
         }
         WindowCheck::Timeshift => {
             let result = super::timeshift::run(app, &mut engine);
+            assert!(evaluate(&mut engine, "root.close(); root.closing")?);
+            app.process_events();
+            return result;
+        }
+        WindowCheck::DataBroadcast => {
+            let result = super::timeshift::run_data_broadcast(app, &mut engine);
+            assert!(evaluate(&mut engine, "root.close(); root.closing")?);
+            app.process_events();
+            return result;
+        }
+        WindowCheck::DataBroadcastLive {
+            server,
+            service,
+            output,
+            press_data_again,
+        } => {
+            let result = super::timeshift::run_data_broadcast_live(
+                app,
+                &mut engine,
+                &server,
+                service,
+                &output,
+                press_data_again,
+            );
             assert!(evaluate(&mut engine, "root.close(); root.closing")?);
             app.process_events();
             return result;
@@ -2336,6 +2376,22 @@ pub fn run_window() -> i32 {
 
 pub fn run_timeshift() -> i32 {
     run_window_check(WindowCheck::Timeshift)
+}
+pub fn run_data_broadcast() -> i32 {
+    run_window_check(WindowCheck::DataBroadcast)
+}
+pub fn run_data_broadcast_live(
+    server: String,
+    service: u64,
+    output: std::path::PathBuf,
+    press_data_again: bool,
+) -> i32 {
+    run_window_check(WindowCheck::DataBroadcastLive {
+        server,
+        service,
+        output,
+        press_data_again,
+    })
 }
 pub fn run_video_processing() -> i32 {
     run_window_check(WindowCheck::VideoProcessing)

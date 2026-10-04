@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="EUC-JP"?>
+<bml><head>
+<script><![CDATA[
+function openData() { browser.launchDocument("/40/0001/top.bml"); }
+]]></script>
+<bevent><beitem type="DataButtonPressed" subscribe="subscribe" onoccur="openData();"/></bevent>
+</head>
+<body style="resolution:960x540;">
+<object type="video/X-arib-mpeg2" style="left:0px;top:0px;width:960px;height:540px;"/>
+</body></bml>

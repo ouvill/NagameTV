@@ -22,6 +22,8 @@ qml6-module-qtquick-layouts
 qml6-module-qtquick-shapes
 qml6-module-qtquick-templates
 qml6-module-qtquick-window
+qml6-module-qtwebengine
+qml6-module-qtwebchannel
 qt6-image-formats-plugins
 qt6-qpa-plugins
 qt6-svg-plugins

@@ -10,7 +10,7 @@ fi
 for command in Xvfb Xwayland cargo ccache cmake curl dbus-daemon dbus-run-session dbus-send \
   desktop-file-validate dpkg-deb dpkg-shlibdeps eu-strip flatpak glxinfo readelf strip \
   flatpak-builder flock gh git gst-inspect-1.0 gst-launch-1.0 import lld mpv ninja \
-  openbox pactl parec pipewire pipewire-pulse pkg-config python3 qmake6 qtpaths6 rustc \
+  openbox pactl parec pipewire pipewire-pulse pkg-config node npm python3 qmake6 qtpaths6 rustc \
   sha256sum weston wireplumber xdpyinfo xdotool xprop; do
   if ! command -v "$command" >/dev/null 2>&1; then
     missing+=("$command")
@@ -74,7 +74,7 @@ if [[ -z "$qt_host_libexecs" || ! -x "$qt_host_libexecs/qmlimportscanner" ]]; th
 fi
 for module in QtCore QtQml QtQml/Models QtQml/WorkerScript QtQuick QtQuick/Controls \
   QtQuick/Dialogs QtQuick/Effects QtQuick/Layouts QtQuick/Shapes QtQuick/Templates \
-  QtQuick/Window QtTest; do
+  QtQuick/Window QtWebEngine QtWebChannel QtTest; do
   if [[ -z "$qt_qml_dir" || ! -f "$qt_qml_dir/$module/qmldir" ]]; then
     missing+=("QML:$module")
   fi

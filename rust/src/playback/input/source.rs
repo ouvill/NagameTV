@@ -88,7 +88,16 @@ impl Feedback {
 #[derive(Clone)]
 pub(super) struct Feeder {
     reader: Arc<Mutex<Reader>>,
+    broadcast_change: Arc<Mutex<BroadcastChange>>,
     pub(super) feedback: Arc<Feedback>,
+}
+
+#[derive(Default)]
+enum BroadcastChange {
+    #[default]
+    Unchanged,
+    Attach(data_broadcast::Tap),
+    Detach,
 }
 
 impl Feeder {
@@ -99,11 +108,23 @@ impl Feeder {
         };
         Ok(Self {
             reader: Arc::new(Mutex::new(reader)),
+            broadcast_change: Arc::default(),
             feedback: Arc::new(Feedback {
                 activity,
                 ..Feedback::default()
             }),
         })
+    }
+
+    fn set_data_broadcast(&self, tap: Option<data_broadcast::Tap>) -> Result<(), Error> {
+        // The reader can hold its mutex during a recording URL read. Queue
+        // only the latest subscription so a UI toggle never waits on that I/O.
+        *self.broadcast_change.lock().map_err(|_| Error::Poisoned)? = match tap {
+            Some(tap) => BroadcastChange::Attach(tap),
+            None => BroadcastChange::Detach,
+        };
+        self.feedback.activity.notify(Change::Control);
+        Ok(())
     }
 
     pub fn suspend(&self, suspended: bool) {
@@ -137,6 +158,14 @@ impl Feeder {
                 .lock()
                 .map_err(|_| Error::Poisoned)
                 .and_then(|mut reader| {
+                    let change = std::mem::take(
+                        &mut *self.broadcast_change.lock().map_err(|_| Error::Poisoned)?,
+                    );
+                    match change {
+                        BroadcastChange::Unchanged => {}
+                        BroadcastChange::Attach(tap) => reader.data_broadcast = Some(tap),
+                        BroadcastChange::Detach => reader.data_broadcast = None,
+                    }
                     if let Some(target) = requests.lock().map_err(|_| Error::Poisoned)?.take()
                         && !(target == 0 && reader.offset == reader.framing.offset())
                     {
@@ -205,6 +234,9 @@ pub(in crate::playback) struct Input {
     sources: Arc<Mutex<Vec<gst::glib::WeakRef<AppSrc>>>>,
 }
 impl Input {
+    pub fn set_data_broadcast(&mut self, tap: Option<data_broadcast::Tap>) -> Result<(), Error> {
+        self.feeder.set_data_broadcast(tap)
+    }
     pub fn recording(
         playbin: &gst::Element,
         recording: &crate::playback::recording::TransportStream,

@@ -19,7 +19,7 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-ins
 RUN python3 -m venv /opt/aqt \
     && /opt/aqt/bin/pip install --no-cache-dir aqtinstall==3.3.0 \
     && /opt/aqt/bin/aqt install-qt linux desktop 6.8.3 linux_gcc_64 \
-        --outputdir /opt/qt --modules qtimageformats qtshadertools
+        --outputdir /opt/qt --modules qtimageformats qtshadertools qtwebengine qtwebchannel
 ENV PATH="/opt/qt/6.8.3/gcc_64/bin:/opt/cargo/bin:${PATH}" \
     QMAKE=/opt/qt/6.8.3/gcc_64/bin/qmake \
     QT_LRELEASE=/opt/qt/6.8.3/gcc_64/bin/lrelease \
@@ -59,7 +59,7 @@ WORKDIR /project
 # Neither stage needs display, GPU or audio access.
 FROM appimage AS ci
 # Hardware-free MPRIS contract tests use a private D-Bus and a Python client.
-RUN apt-get update && apt-get install -y --no-install-recommends dbus-daemon python3-dbus python3-gi \
+RUN apt-get update && apt-get install -y --no-install-recommends dbus-daemon python3-dbus python3-gi nodejs \
     && rm -rf /var/lib/apt/lists/*
 RUN rustup component add rustfmt && chmod -R a+rX /opt/rustup /opt/cargo
 RUN cargo install cargo-nextest --locked --version 0.9.146 \

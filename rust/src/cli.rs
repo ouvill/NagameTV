@@ -14,7 +14,7 @@ struct Arguments {
         group = "mode",
         long,
         require_equals = true,
-        value_name = "none|subtitles,epg,comments"
+        value_name = "none|subtitles,epg,comments,data-broadcast"
     )]
     features: Option<FeatureSet>,
     // The test runner owns these arguments, including Qt Quick Test switches.
@@ -86,20 +86,30 @@ mod tests {
         assert!(normal.subtitles() && normal.epg());
         assert!(!normal.comments(false));
         assert!(normal.comments(true));
+        assert!(!normal.data_broadcast(false));
+        assert!(normal.data_broadcast(true));
         for (value, expected) in [
-            ("none", [false, false, false]),
-            ("subtitles,epg", [true, true, false]),
-            ("comments", [false, false, true]),
+            ("none", [false, false, false, false]),
+            ("subtitles,epg", [true, true, false, false]),
+            ("comments", [false, false, true, false]),
+            ("data-broadcast", [false, false, false, true]),
+            ("subtitles,data-broadcast", [true, false, false, true]),
         ] {
             let Command::Launch(plan) = parse(&[&format!("--features={value}")]).unwrap() else {
                 panic!("launch");
             };
             assert!(plan.locked());
             assert_eq!(
-                [plan.subtitles(), plan.epg(), plan.comments(false)],
+                [
+                    plan.subtitles(),
+                    plan.epg(),
+                    plan.comments(false),
+                    plan.data_broadcast(false)
+                ],
                 expected
             );
             assert_eq!(plan.comments(false), plan.comments(true));
+            assert_eq!(plan.data_broadcast(false), plan.data_broadcast(true));
         }
     }
 
@@ -111,6 +121,7 @@ mod tests {
             vec!["--features="],
             vec!["--features=none,epg"],
             vec!["--features=epg,epg"],
+            vec!["--features=data-broadcast,data-broadcast"],
             vec!["--features=none", "--features=epg"],
             vec!["--build-info", "--features=none"],
             vec!["--build-info", "unexpected"],

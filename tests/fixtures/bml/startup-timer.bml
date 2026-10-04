@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="EUC-JP"?>
+<bml><head>
+<script><![CDATA[
+function start() { browser.setInterval("next();", 500, 1); }
+function next() { browser.launchDocument("/40/0004/startup.bml"); }
+]]></script>
+</head>
+<body onload="start();" invisible="invisible" style="resolution:960x540;used-key-list:none;">
+<object type="video/X-arib-mpeg2" style="left:0px;top:0px;width:960px;height:540px;"/>
+</body></bml>

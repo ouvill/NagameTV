@@ -447,6 +447,7 @@
 </context>
   <context>
     <name>Backend</name>
+    <message><source>Data broadcast could not start: %1</source><translation>データ放送を開始できません: %1</translation></message>
     <message><source>Could not read subtitles: %1</source><translation>字幕を読み込めませんでした: %1</translation></message>
     <message><source>Select a valid SRT or ASS subtitle file</source><translation>有効な SRT または ASS 字幕ファイルを選択してください</translation></message>
     <message><source>Save the subtitle file as UTF-8</source><translation>字幕ファイルを UTF-8 で保存してください</translation></message>
@@ -1219,6 +1220,9 @@
 </context>
   <context>
     <name>Viewer</name>
+    <message><source>Data broadcast</source><translation>データ放送</translation></message>
+    <message><source>Data broadcast is unavailable for this stream</source><translation>このストリームではデータ放送を利用できません</translation></message>
+    <message><source>Data broadcast browser stopped</source><translation>データ放送のブラウザーが停止しました</translation></message>
     <message><source>Off</source><translation>無効</translation></message>
     <message><source>Only when paused</source><translation>一時停止時のみ</translation></message>
     <message><source>Always enabled</source><translation>常に有効</translation></message>
@@ -1804,6 +1808,10 @@
 </context>
   <context>
     <name>Settings</name>
+    <message><source>Enable data broadcast (experimental)</source><translation>データ放送を有効にする（実験的）</translation></message>
+    <message><source>Some broadcasts may not display or respond correctly.</source><translation>放送によっては表示や操作が正しく動作しないことがあります。</translation></message>
+    <message><source>Prefetch data broadcast</source><translation>データ放送を先読み</translation></message>
+    <message><source>Keep data broadcast content ready while watching live TV. Uses additional memory and processing. Broadcasts can start automatically even when prefetch is off.</source><translation>視聴中のチャンネルの素材を保持し、開くときの待ち時間を短くします。メモリーとCPUの使用量が増えます。先読みがオフでも、放送の指定による自動起動は行います。</translation></message>
     <message><source>Recordings and pausable live TV</source><translation>録画再生中・一時停止できるライブ視聴中</translation></message>
     <message><source>Higher quality increases file size.</source><translation>高画質にするとファイルが大きくなります。</translation></message>
     <message><source>Higher compression saves space but takes longer.</source><translation>圧縮を強くすると容量は減りますが、保存に時間がかかります。</translation></message>

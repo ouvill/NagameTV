@@ -49,6 +49,8 @@ pub enum Error {
     Deinterlace(#[from] deinterlace::Error),
     #[error("{0}")]
     MediaSubtitle(#[from] crate::media_subtitles::Error),
+    #[error("{0}")]
+    DataBroadcast(#[from] crate::features::data_broadcast::Error),
     #[error("Video output: {0}")]
     VideoOutput(String),
     #[error("{0}")]

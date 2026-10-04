@@ -7,6 +7,9 @@ Item {
     required property string captionJson
     required property var outlineProvider
     property bool forceOutline: false
+    // Plain-text cues have no broadcast plane coordinates. Scale their
+    // fallback layout from the same 720-line picture used for comments.
+    readonly property real plainTextScale: height / 720
     property url fontSource: "qrc:/qt/qml/MinimalViewer/assets/fonts/rounded-mplus-1m-arib.ttf"
     readonly property var cue: captionJson.length ? JSON.parse(captionJson) : null
     readonly property var cells: cue ? cue.cells : []
@@ -69,12 +72,12 @@ Item {
         visible: overlay.cells.length === 0
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.bottom: parent.bottom
-        anchors.bottomMargin: 38
-        width: Math.min(parent.width * 0.82, 1040)
+        anchors.bottomMargin: 38 * overlay.plainTextScale
+        width: Math.min(parent.width * 0.82, 1040 * overlay.plainTextScale)
         text: overlay.cue ? overlay.cue.text : ""
         textFormat: Text.PlainText
         color: "white"
-        font.pixelSize: 28
+        font.pixelSize: Math.max(1, Math.round(28 * overlay.plainTextScale))
         font.bold: true
         horizontalAlignment: Text.AlignHCenter
         wrapMode: Text.Wrap

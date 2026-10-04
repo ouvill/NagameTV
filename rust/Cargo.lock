@@ -80,6 +80,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 
 [[package]]
+name = "arib-b24"
+version = "0.1.0"
+dependencies = [
+ "bitfield",
+ "flate2",
+ "thiserror 2.0.20",
+ "viewer-mpegts",
+]
+
+[[package]]
 name = "assert-json-diff"
 version = "2.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2093,12 +2103,15 @@ checksum = "1d87ecb2933e8aeadb3e3a02b828fed80a7528047e68b4f424523a0981a3a084"
 name = "nagametv"
 version = "0.2.1"
 dependencies = [
+ "arib-b24",
  "bitfield",
  "clap",
  "cxx",
  "cxx-qt",
  "cxx-qt-build",
  "cxx-qt-lib",
+ "futures-util",
+ "getrandom 0.3.4",
  "gstreamer",
  "gstreamer-app",
  "gstreamer-base",
@@ -2116,6 +2129,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.20",
  "tokio",
+ "tokio-tungstenite",
  "toml 0.9.12+spec-1.1.0",
  "tonic",
  "tracing",
@@ -2126,8 +2140,10 @@ dependencies = [
  "viewer-comments",
  "viewer-diagnostics",
  "viewer-epg-events",
+ "viewer-mpegts",
  "viewer-remote",
  "viewer-translations",
+ "viewer-web-bml",
  "wiremock",
 ]
 
@@ -4092,6 +4108,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "viewer-mpegts"
+version = "0.1.0"
+dependencies = [
+ "bitfield",
+ "thiserror 2.0.20",
+]
+
+[[package]]
 name = "viewer-remote"
 version = "0.1.0"
 dependencies = [
@@ -4111,6 +4135,18 @@ dependencies = [
 [[package]]
 name = "viewer-translations"
 version = "0.1.0"
+
+[[package]]
+name = "viewer-web-bml"
+version = "0.1.0"
+dependencies = [
+ "arib-b24",
+ "base64",
+ "mime",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+]
 
 [[package]]
 name = "walkdir"

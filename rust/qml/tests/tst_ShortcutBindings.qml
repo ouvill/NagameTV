@@ -37,6 +37,10 @@ Item {
                     readonly property int commentRequests: commentSpy.count
                     property int screenshots: 0
                     property int libraryCloses: 0
+                    property bool dataBroadcastRunning: false
+                    property int dataBroadcastBacks: 0
+                    property int dataButtons: 0
+                    property list<string> remoteKeys: []
                     ActionTestBackend { id: backend }
                     Viewer.ViewerActions {
                         id: actions
@@ -45,6 +49,7 @@ Item {
                         canCapture: true
                         onCaptureRequested: parent.screenshots++
                         onLibraryCloseRequested: { parent.libraryCloses++; libraryVisible = false; }
+                        onDataBroadcastBackRequested: parent.dataBroadcastBacks++
                         onChannelsVisibilityRequested: function(visible) { parent.channelRequests++; }
                     }
                     SignalSpy { id: escapeSpy; target: actions.dismissTopmost; signalName: "triggered" }
@@ -59,8 +64,19 @@ Item {
                         guideVisible: actions.backend.guide_visible
                         libraryVisible: actions.libraryVisible
                         channelsVisible: actions.channelsVisible
+                        dataBroadcastOpen: actions.dataBroadcastOpen
+                        dataBroadcastKeys: actions.dataBroadcastOpen ? ["basic", "data-button"] : []
                     }
                     Viewer.ShortcutBindings { id: bindings; actions: actions; inputContext: inputContext }
+                    Viewer.DataBroadcastInput {
+                        inputContext: inputContext
+                        available: parent.dataBroadcastRunning
+                        onDataButton: parent.dataButtons++
+                        onRemoteKey: function(key) {
+                            parent.remoteKeys = parent.remoteKeys.concat([key]);
+                            if (key === "Backspace") actions.dataBroadcastBackRequested();
+                        }
+                    }
                     Drawer { id: drawer; width: 200; height: 300; focus: true }
                     TextField {
                         id: editor
@@ -423,6 +439,85 @@ Item {
                     keyClick(Qt.Key_Escape);
                     tryCompare(host, "visibility", Window.Windowed);
                 }
+            }
+            function test_data_broadcast_back_and_escape() {
+                host.showFullScreen();
+                tryCompare(host, "visibility", Window.FullScreen);
+                view.dataBroadcastRunning = true;
+                view.actions.dataBroadcastOpen = true;
+                keyClick(Qt.Key_Back);
+                compare(view.dataBroadcastBacks, 1);
+                keyClick(Qt.Key_Escape);
+                compare(view.dataBroadcastBacks, 2);
+                compare(host.visibility, Window.FullScreen);
+                verify(view.actions.dataBroadcastOpen);
+                verify(!view.context.navigationEnabled);
+            }
+            function test_data_broadcast_claims_only_requested_groups() {
+                view.dataBroadcastRunning = true;
+                view.context.dataBroadcastOpen = true;
+                view.context.dataBroadcastKeys = ["numeric-tuning"];
+                verify(view.context.navigationEnabled);
+                keyClick(Qt.Key_1);
+                compare(view.remoteKeys.join(","), "1");
+                keyClick(Qt.Key_G);
+                verify(view.backend.guide_visible);
+                keyClick(Qt.Key_Escape);
+                verify(!view.backend.guide_visible);
+                view.context.dataBroadcastKeys = ["data-button"];
+                keyClick(Qt.Key_G);
+                compare(view.remoteKeys.join(","), "1,g");
+                verify(!view.backend.guide_visible);
+                verify(view.context.navigationEnabled);
+                view.context.dataBroadcastKeys = ["basic"];
+                verify(!view.context.navigationEnabled);
+                keyClick(Qt.Key_Down);
+                compare(view.remoteKeys.join(","), "1,g,ArrowDown");
+                view.popup.open();
+                tryCompare(view.popup, "opened", true);
+                verify(!view.context.bmlAccepts("Down"));
+                keyClick(Qt.Key_Escape);
+                tryCompare(view.popup, "visible", false);
+            }
+            function test_hidden_engine_leaves_receiver_keys_available() {
+                view.dataBroadcastRunning = true;
+                view.context.dataBroadcastKeys = ["basic", "data-button", "numeric-tuning"];
+                view.context.dataBroadcastOpen = true;
+                keyClick(Qt.Key_Down);
+                compare(view.remoteKeys.join(","), "ArrowDown");
+                // Visibility can change without changing the requested keys.
+                view.context.dataBroadcastOpen = false;
+                verify(view.context.navigationEnabled);
+                keyClick(Qt.Key_Down);
+                keyClick(Qt.Key_1);
+                keyClick(Qt.Key_Return);
+                compare(view.remoteKeys.join(","), "ArrowDown");
+                keyClick(Qt.Key_G);
+                verify(view.backend.guide_visible);
+                keyClick(Qt.Key_Escape);
+                verify(!view.backend.guide_visible);
+                keyClick(Qt.Key_D);
+                compare(view.dataButtons, 1);
+                view.context.dataBroadcastOpen = true;
+                keyClick(Qt.Key_Down);
+                compare(view.remoteKeys.join(","), "ArrowDown,ArrowDown");
+            }
+            function test_standby_dismisses_foreground_panel_first() {
+                host.showFullScreen();
+                tryCompare(host, "visibility", Window.FullScreen);
+                view.dataBroadcastRunning = true;
+                view.backend.guide_visible = true;
+                keyClick(Qt.Key_Escape);
+                verify(!view.backend.guide_visible);
+                compare(host.visibility, Window.FullScreen);
+                keyClick(Qt.Key_Back);
+                compare(view.dataBroadcastBacks, 0);
+                compare(host.visibility, Window.FullScreen);
+                keyClick(Qt.Key_Escape);
+                tryCompare(host, "visibility", Window.Windowed);
+                compare(view.dataBroadcastBacks, 0);
+                keyClick(Qt.Key_D);
+                compare(view.dataButtons, 1);
             }
             function test_fullscreen_restores_window_mode() {
                 const window = host;

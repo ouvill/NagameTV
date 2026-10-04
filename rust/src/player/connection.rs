@@ -75,6 +75,7 @@ impl ffi::Player {
             return true;
         }
 
+        self.as_mut().data_broadcast_open(false);
         self.as_mut().rust_mut().epg_events.configure(None);
         self.as_mut().rust_mut().channel_refresh = channel_refresh::Refresh::Disabled;
         let update = self.as_mut().rust_mut().commentary.disconnect();

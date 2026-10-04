@@ -1,6 +1,7 @@
 //! Product Main.qml and real output; the HTTP fixture only replaces the tuner.
+use super::bridge::ffi;
 use super::startup::{TestResult, evaluate, wait_for};
-use cxx_qt_lib::{QGuiApplication, QQmlApplicationEngine};
+use cxx_qt_lib::{QGuiApplication, QQmlApplicationEngine, QString};
 use std::{
     io::{Read, Write},
     net::{TcpListener, TcpStream},
@@ -43,6 +44,7 @@ const LIVE_METADATA_READY: &str = "player.program_status === 'available' && JSON
 enum Traffic {
     Broadcast,
     CapacityPressure,
+    DataBroadcast { automatic: bool },
 }
 
 struct Server {
@@ -117,9 +119,16 @@ fn serve(
     {
         streams.fetch_add(1, Ordering::AcqRel);
         let ts = include_bytes!("../../../tests/fixtures/recording-seek.ts");
+        let augmented;
+        let ts: &[u8] = if let Traffic::DataBroadcast { automatic } = traffic {
+            augmented = super::data_broadcast::fixture::with_overlay(ts, automatic);
+            &augmented
+        } else {
+            ts
+        };
         const PACKET: usize = crate::transport::wire::TS_PACKET_SIZE;
         let send_interval = match traffic {
-            Traffic::Broadcast => BROADCAST_SEND_INTERVAL,
+            Traffic::Broadcast | Traffic::DataBroadcast { .. } => BROADCAST_SEND_INTERVAL,
             Traffic::CapacityPressure => SEND_INTERVAL,
         };
         let intervals = FIXTURE_SECONDS
@@ -138,7 +147,7 @@ fn serve(
         let mut null_packet = [crate::transport::wire::STUFFING_BYTE; PACKET];
         null_packet[..null_header.len()].copy_from_slice(&null_header);
         let padding = match traffic {
-            Traffic::Broadcast => Vec::new(),
+            Traffic::Broadcast | Traffic::DataBroadcast { .. } => Vec::new(),
             Traffic::CapacityPressure => null_packet.repeat(PAD_BYTES_PER_INTERVAL / PACKET),
         };
         write!(
@@ -169,6 +178,496 @@ fn serve(
             body.len()
         )?;
     }
+    Ok(())
+}
+
+fn check_data_broadcast(
+    app: &QGuiApplication,
+    engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
+) -> TestResult {
+    // Open through the same mouse path as the toolbar button in production.
+    evaluate(engine, "setup.close(); overlayVisibility.reveal(); true")?;
+    wait_for(
+        app,
+        engine,
+        "playerControls.visible && player.data_broadcast_available && !setup.visible",
+    )?;
+    ffi::clickRootItem(engine.pin_mut(), &QString::from("dataBroadcastButton"))?;
+    wait_for(app, engine, "root.showDataBroadcast")?;
+    wait_for(
+        app,
+        engine,
+        "dataBroadcast.item !== null && dataBroadcast.item.browserReady",
+    )?;
+    wait_for(app, engine, "player.data_broadcast_connected()")?;
+    // This TS has no BML. Merely creating a browser does not claim keys.
+    wait_for(app, engine, "inputContext.navigationEnabled")?;
+    evaluate(engine, "surface.forceActiveFocus(); true")?;
+    ffi::clickRootKey(engine.pin_mut(), &QString::from("Escape"))?;
+    assert!(evaluate(
+        engine,
+        "dataBroadcast.view !== null && player.data_broadcast_requested"
+    )?);
+    evaluate(engine, "player.configure_data_broadcast(false); true")?;
+    wait_for(app, engine, "dataBroadcast.view === null")?;
+    evaluate(engine, "player.configure_data_broadcast(true); true")?;
+    Ok(())
+}
+
+pub(super) fn run_data_broadcast(
+    app: &QGuiApplication,
+    engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
+) -> TestResult {
+    let server = Server::new(Traffic::Broadcast)?;
+    assert!(evaluate(
+        engine,
+        &format!(
+            "player.connect_server({})",
+            serde_json::to_string(&server.url)?
+        )
+    )?);
+    wait_for(
+        app,
+        engine,
+        "player.server_configured && !player.loading && player.selected >= 0",
+    )?;
+    evaluate(engine, "player.play(); true")?;
+    wait_for(app, engine, "player.playing && player.media_active")?;
+    check_data_broadcast_disabled(app, engine)?;
+    toggle_data_broadcast_setting(app, engine, "dataBroadcastEnabledSetting")?;
+    wait_for(
+        app,
+        engine,
+        "player.data_broadcast_enabled && player.data_broadcast_available",
+    )?;
+    assert!(
+        crate::settings::Loaded::open(crate::settings::settings_path()?)?
+            .preferences()
+            .data_broadcast_enabled
+    );
+    evaluate(engine, "settings.close(); true")?;
+    check_data_broadcast_prefetch(app, engine)?;
+    check_data_broadcast(app, engine)?;
+    super::data_broadcast::run(app, engine)?;
+    check_data_broadcast_transitions(app, engine)?;
+    evaluate(engine, "player.stop(); true")?;
+    for automatic in [true, false] {
+        evaluate(
+            engine,
+            "player.configure_data_broadcast(false); player.configure_data_broadcast_prefetch(true); true",
+        )?;
+        let broadcast = Server::new(Traffic::DataBroadcast { automatic })?;
+        assert!(evaluate(
+            engine,
+            &format!(
+                "player.connect_server({})",
+                serde_json::to_string(&broadcast.url)?
+            )
+        )?);
+        wait_for(
+            app,
+            engine,
+            "player.server_configured && !player.loading && player.selected >= 0",
+        )?;
+        evaluate(engine, "player.select(0); player.play(); true")?;
+        wait_for(
+            app,
+            engine,
+            "player.playing && player.media_active && !player.recording",
+        )?;
+        // Even an automatic-start PMT plus a saved prefetch preference cannot
+        // bypass the opt-in. Re-enable on the same input without reconnecting.
+        check_data_broadcast_disabled(app, engine)?;
+        let connections = broadcast.streams.load(Ordering::Acquire);
+        toggle_data_broadcast_setting(app, engine, "dataBroadcastEnabledSetting")?;
+        evaluate(
+            engine,
+            "settings.close(); player.configure_data_broadcast_prefetch(false); true",
+        )?;
+        super::data_broadcast::run_entry(app, engine, automatic)?;
+        evaluate(engine, "root.setDataBroadcast(true); true")?;
+        wait_for(
+            app,
+            engine,
+            "root.showDataBroadcast && player.data_broadcast_connected()",
+        )?;
+        let endpoint = ffi::evaluate_root(
+            engine.pin_mut(),
+            &QString::from("player.data_broadcast_endpoint"),
+        )?
+        .value::<QString>()
+        .ok_or("data broadcast endpoint")?
+        .to_string();
+        let endpoint = url::Url::parse(&endpoint)?;
+        let socket =
+            std::net::SocketAddr::from(([127, 0, 0, 1], endpoint.port().ok_or("loopback port")?));
+        toggle_data_broadcast_setting(app, engine, "dataBroadcastEnabledSetting")?;
+        evaluate(engine, "settings.close(); true")?;
+        wait_for(
+            app,
+            engine,
+            "!settings.visible && inputContext.navigationEnabled && !inputContext.dataBroadcastFocused",
+        )?;
+        check_data_broadcast_disabled(app, engine)?;
+        assert!(
+            !crate::settings::Loaded::open(crate::settings::settings_path()?)?
+                .preferences()
+                .data_broadcast_enabled
+        );
+        assert!(
+            std::net::TcpStream::connect(socket).is_err(),
+            "disabled receiver still owns its listener"
+        );
+        assert_eq!(
+            broadcast.streams.load(Ordering::Acquire),
+            connections,
+            "toggling the feature restarted playback"
+        );
+        evaluate(engine, "player.stop(); true")?;
+    }
+    Ok(())
+}
+
+fn check_data_broadcast_disabled(
+    app: &QGuiApplication,
+    engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
+) -> TestResult {
+    evaluate(engine, "setup.close(); surface.forceActiveFocus(); true")?;
+    ffi::clickRootKey(engine.pin_mut(), &QString::from("D"))?;
+    assert!(evaluate(engine, "!player.data_broadcast_open(true)")?);
+    let deadline = Instant::now() + Duration::from_millis(500);
+    while Instant::now() < deadline {
+        app.process_events();
+        assert!(evaluate(
+            engine,
+            "!player.data_broadcast_enabled && !player.data_broadcast_available && !player.data_broadcast_receiving() && !player.data_broadcast_connected() && !player.data_broadcast_requested && player.data_broadcast_endpoint === '' && dataBroadcast.view === null && !playerControls.navigationItems.find(item => item.objectName === 'dataBroadcastButton').visible && player.playing"
+        )?);
+        thread::sleep(ACCEPT_POLL);
+    }
+    Ok(())
+}
+
+fn toggle_data_broadcast_setting(
+    app: &QGuiApplication,
+    engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
+    setting: &str,
+) -> TestResult {
+    evaluate(engine, "root.openSettings(SettingsPanel.Display); true")?;
+    wait_for(app, engine, "settings.opened && settings.pageReveal === 1")?;
+    evaluate(
+        engine,
+        &format!(
+            "settings.pageFields.find(item => item.objectName === '{setting}').forceActiveFocus(Qt.TabFocusReason); true"
+        ),
+    )?;
+    wait_for(
+        app,
+        engine,
+        &format!("root.activeFocusItem.objectName === '{setting}'"),
+    )?;
+    ffi::clickRootItem(engine.pin_mut(), &QString::from(setting))?;
+    Ok(())
+}
+
+fn check_data_broadcast_prefetch(
+    app: &QGuiApplication,
+    engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
+) -> TestResult {
+    assert!(evaluate(
+        engine,
+        "!player.data_broadcast_prefetch && !player.data_broadcast_receiving()"
+    )?);
+    evaluate(engine, "setup.close(); true")?;
+    toggle_data_broadcast_setting(app, engine, "dataBroadcastPrefetchSetting")?;
+    wait_for(
+        app,
+        engine,
+        "player.data_broadcast_prefetch && player.data_broadcast_receiving()",
+    )?;
+    assert!(evaluate(
+        engine,
+        "!player.data_broadcast_requested && dataBroadcast.view === null && !player.data_broadcast_connected()"
+    )?);
+    assert!(
+        crate::settings::Loaded::open(crate::settings::settings_path()?)?
+            .preferences()
+            .data_broadcast_prefetch
+    );
+    evaluate(
+        engine,
+        "settings.close(); root.setDataBroadcast(true); true",
+    )?;
+    wait_for(
+        app,
+        engine,
+        "dataBroadcast.view !== null && player.data_broadcast_connected()",
+    )?;
+    // Changing the prefetch preference while displaying BML must leave its
+    // browser, endpoint and decoder running, without reloading the page.
+    assert!(evaluate(
+        engine,
+        "(() => { const view = dataBroadcast.view; const endpoint = player.data_broadcast_endpoint; player.configure_data_broadcast_prefetch(false); return player.data_broadcast_requested && dataBroadcast.view === view && player.data_broadcast_endpoint === endpoint && player.data_broadcast_receiving(); })()"
+    )?);
+    evaluate(
+        engine,
+        "player.configure_data_broadcast_prefetch(true); root.setDataBroadcast(false); true",
+    )?;
+    wait_for(
+        app,
+        engine,
+        "dataBroadcast.view === null && !player.data_broadcast_connected() && player.data_broadcast_receiving()",
+    )?;
+    toggle_data_broadcast_setting(app, engine, "dataBroadcastPrefetchSetting")?;
+    wait_for(
+        app,
+        engine,
+        "!player.data_broadcast_prefetch && !player.data_broadcast_receiving()",
+    )?;
+    assert!(
+        !crate::settings::Loaded::open(crate::settings::settings_path()?)?
+            .preferences()
+            .data_broadcast_prefetch
+    );
+    evaluate(engine, "settings.close(); true")?;
+    wait_for(app, engine, "!settings.visible")?;
+    println!(
+        "Data broadcast prefetch: settings persist, no browser until opened, live preference changes retain the open view"
+    );
+    Ok(())
+}
+
+fn check_data_broadcast_transitions(
+    app: &QGuiApplication,
+    engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
+) -> TestResult {
+    const CLOSED: &str = "!player.data_broadcast_requested && player.data_broadcast_endpoint === '' && dataBroadcast.view === null && !root.showDataBroadcast";
+    evaluate(
+        engine,
+        "player.configure_data_broadcast_prefetch(true); true",
+    )?;
+    // Re-selecting the same service keeps even a hidden standby browser.
+    assert!(evaluate(
+        engine,
+        "root.dataBroadcastSessionOpen && dataBroadcast.view !== null && !root.showDataBroadcast"
+    )?);
+    assert!(evaluate(
+        engine,
+        "(() => { const view = dataBroadcast.view; player.select(player.selected); return root.dataBroadcastSessionOpen && dataBroadcast.view === view; })()"
+    )?);
+    evaluate(engine, "player.select(player.selected === 0 ? 1 : 0); true")?;
+    wait_for(app, engine, CLOSED)?;
+    wait_for(app, engine, "player.playing && player.media_active")?;
+    assert!(evaluate(engine, CLOSED)?);
+    assert!(evaluate(engine, "!player.data_broadcast_connected()")?);
+    wait_for(app, engine, "player.data_broadcast_receiving()")?;
+
+    // Explicit stop must not reopen data broadcasting on the next Play.
+    evaluate(engine, "root.setDataBroadcast(true); true")?;
+    wait_for(
+        app,
+        engine,
+        "dataBroadcast.view !== null && player.data_broadcast_connected()",
+    )?;
+    evaluate(engine, "player.stop(); true")?;
+    wait_for(app, engine, CLOSED)?;
+    assert!(evaluate(engine, "!player.data_broadcast_available")?);
+    assert!(evaluate(engine, "!player.data_broadcast_receiving()")?);
+    evaluate(engine, "player.play(); true")?;
+    wait_for(app, engine, "player.playing && player.media_active")?;
+    assert!(evaluate(engine, CLOSED)?);
+    wait_for(app, engine, "player.data_broadcast_receiving()")?;
+
+    // Cover both live -> file and file -> file through the asynchronous loader.
+    for name in ["recording-seek.ts", "recording-pid-change.ts"] {
+        evaluate(engine, "root.setDataBroadcast(true); true")?;
+        wait_for(
+            app,
+            engine,
+            "dataBroadcast.view !== null && player.data_broadcast_connected()",
+        )?;
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../tests/fixtures")
+            .join(name);
+        let url = url::Url::from_file_path(path).map_err(|()| "invalid recording fixture path")?;
+        assert!(evaluate(
+            engine,
+            &format!(
+                "player.open_recording({})",
+                serde_json::to_string(url.as_str())?
+            )
+        )?);
+        wait_for(
+            app,
+            engine,
+            "!player.recording_loading && player.recording && player.playing",
+        )?;
+        assert!(evaluate(engine, CLOSED)?);
+        assert!(evaluate(engine, "!player.data_broadcast_receiving()")?);
+    }
+    evaluate(
+        engine,
+        "player.configure_data_broadcast_prefetch(false); true",
+    )?;
+    println!(
+        "Data broadcast mode: standby ends on channel/file changes; Stop cancels automatic reopening"
+    );
+    Ok(())
+}
+
+fn capture_live_bml(
+    app: &QGuiApplication,
+    engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
+    service: u64,
+    output: &std::path::Path,
+) -> TestResult {
+    // A visible startup document can contain only video. Retain its URL and
+    // rectangle beside the screenshot so success requires visual review too.
+    let observer =
+        "import QtQuick; Item { objectName: 'bmlLiveObserver'; property var snapshot: null; }";
+    // Reuse the observer. Deferred deletion is not guaranteed to run in this
+    // manual process_events loop; finding an old observer could otherwise
+    // accept its previous result and leave the new callback pending at exit.
+    const LIVE_OBSERVER: &str =
+        "root.contentItem.children.find(child => child.objectName === 'bmlLiveObserver')";
+    evaluate(
+        engine,
+        &format!(
+            "(() => {{ const observer = {LIVE_OBSERVER} || Qt.createQmlObject({}, root.contentItem); observer.snapshot = null; dataBroadcast.view.runJavaScript('window.nagamePresentation()', function(value) {{ observer.snapshot = value; }}); return true; }})()",
+            serde_json::to_string(observer)?
+        ),
+    )?;
+    wait_for(app, engine, &format!("{LIVE_OBSERVER}.snapshot !== null"))?;
+    let mut snapshot = super::screenshots::json(engine, &format!("{LIVE_OBSERVER}.snapshot"))?;
+    snapshot["input"] = super::screenshots::json(
+        engine,
+        "({focus: root.activeFocusItem ? String(root.activeFocusItem) : null, bmlFocus: inputContext.dataBroadcastFocused, videoFocus: inputContext.videoFocused, navigation: inputContext.navigationEnabled, bmlUp: inputContext.bmlAccepts('Up'), popup: inputContext.popupOpen, editing: inputContext.editingText})",
+    )?;
+    std::fs::write(
+        output.with_extension("json"),
+        serde_json::to_vec_pretty(&snapshot)?,
+    )?;
+    tracing::info!(operation = "observe live BML document", service, snapshot = %snapshot);
+    let status = std::process::Command::new("import")
+        .arg("-window")
+        .arg("root")
+        .arg(output)
+        .status()?;
+    if !status.success() {
+        return Err(format!(
+            "could not capture the private display at {}: {status}",
+            output.display()
+        )
+        .into());
+    }
+    Ok(())
+}
+
+/// Manual integration probe against an explicitly supplied live Mirakurun.
+/// The public GUI session validates display, GPU and audio before this runs.
+pub(super) fn run_data_broadcast_live(
+    app: &QGuiApplication,
+    engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
+    server: &str,
+    service: u64,
+    output: &std::path::Path,
+    press_data_again: bool,
+) -> TestResult {
+    evaluate(engine, "player.configure_data_broadcast(true); true")?;
+    assert!(evaluate(
+        engine,
+        &format!("player.connect_server({})", serde_json::to_string(server)?)
+    )?);
+    wait_for(
+        app,
+        engine,
+        "player.server_configured && !player.loading && player.channels.count > 0",
+    )?;
+    evaluate(engine, "setup.close(); true")?;
+    let select = format!(
+        "(() => {{ for (let i = 0; i < player.channels.count; i++) {{ if (String(player.channels.row(i).serviceId) === '{service}') {{ player.select(i); return true; }} }} return false; }})()"
+    );
+    if !evaluate(engine, &select)? {
+        return Err(format!("service {service} is not in the Mirakurun catalogue").into());
+    }
+    evaluate(engine, "player.play(); true")?;
+    // Live tuner acquisition can take longer than the local fixture's deadline.
+    super::startup::wait_for_timeout(
+        app,
+        engine,
+        "player.playing && player.media_active",
+        Duration::from_secs(30),
+    )?;
+    evaluate(
+        engine,
+        "surface.forceActiveFocus(); root.setDataBroadcast(true); true",
+    )?;
+    wait_for(
+        app,
+        engine,
+        "dataBroadcast.item !== null && dataBroadcast.item.browserReady",
+    )?;
+    wait_for(app, engine, "player.data_broadcast_connected()")?;
+    // Some broadcast startup scripts initialize empty NVRAM over six 10-second
+    // timer cycles. Observe beyond that period before judging the first screen.
+    let deadline = Instant::now() + Duration::from_secs(90);
+    let mut availability_check = Instant::now() + Duration::from_secs(1);
+    while Instant::now() < deadline {
+        app.process_events();
+        let now = Instant::now();
+        if now >= availability_check {
+            if evaluate(
+                engine,
+                "dataBroadcast.view.presentation === DataBroadcastView.Unavailable",
+            )? {
+                break;
+            }
+            availability_check = now + Duration::from_secs(1);
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+    capture_live_bml(app, engine, service, output)?;
+    if !evaluate(
+        engine,
+        "dataBroadcast.view !== null && (dataBroadcast.view.presentation === DataBroadcastView.Presenting || dataBroadcast.view.presentation === DataBroadcastView.Unavailable)",
+    )? {
+        return Err(format!(
+            "BML did not reach a visible, loaded document; capture: {}",
+            output.display()
+        )
+        .into());
+    }
+    evaluate(engine, "surface.forceActiveFocus(); true")?;
+    let input = ffi::evaluate_root(
+        engine.pin_mut(),
+        &QString::from("JSON.stringify({focus: root.activeFocusItem ? root.activeFocusItem.objectName : null, bmlFocus: inputContext.dataBroadcastFocused, navigation: inputContext.navigationEnabled, guideShortcut: shortcutBindings.entries.find(binding => binding.objectName === 'guideShortcut').enabled})"),
+    )?
+    .value::<QString>()
+    .ok_or("missing data broadcast input state")?;
+    if !evaluate(
+        engine,
+        "!inputContext.navigationEnabled && !shortcutBindings.entries.find(binding => binding.objectName === 'guideShortcut').enabled",
+    )? {
+        return Err(format!("data broadcast left application shortcuts enabled: {input}").into());
+    }
+    if press_data_again {
+        ffi::clickRootKey(engine.pin_mut(), &QString::from("D"))?;
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while Instant::now() < deadline {
+            app.process_events();
+            thread::sleep(Duration::from_millis(10));
+        }
+        capture_live_bml(
+            app,
+            engine,
+            service,
+            &output.with_extension("after-data-key.png"),
+        )?;
+        if evaluate(engine, "inputContext.navigationEnabled")? {
+            ffi::clickRootKey(engine.pin_mut(), &QString::from("Down"))?;
+            wait_for(app, engine, "playerControls.activeFocus")?;
+        }
+    }
+    evaluate(engine, "player.stop(); true")?;
     Ok(())
 }
 
@@ -463,6 +962,7 @@ pub(super) fn run(
             "player.playing && !player.timeshift && !player.seekable && JSON.parse(player.video_stats()).rendered > 0 && ({LIVE_METADATA_READY})"
         ),
     )?;
+    check_data_broadcast_disabled(app, engine)?;
     observe_playback(
         app,
         engine,

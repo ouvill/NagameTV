@@ -23,12 +23,14 @@ ViewerWindow {
         property Item library: null
         property Item sidebar: null
         property Item settings: null
+        property Item dataBroadcast: null
     }
-    function restoreFocus(item) {
+    function restoreFocus(item, onlyWithoutDataBroadcast) {
         // Wait for the closing panel's visibility/enabled bindings before
         // testing the opener. It can still be disabled in the change handler.
         Qt.callLater(function() {
             if (root.closing || root.showGuide || root.showChannels || root.libraryVisible || root.showCommentComposer || inputContext.popupOpen) return;
+            if (onlyWithoutDataBroadcast && root.showDataBroadcast) return;
             overlayVisibility.reveal();
             // Shared buttons retain whether the opener was used with keys or
             // the pointer; returning from a mouse-opened panel must not pin controls.
@@ -94,13 +96,39 @@ ViewerWindow {
             root.raise();
             root.requestActivate();
         }
-        function onPlayingChanged() { root.recordUsage(); }
+        function onPlayingChanged() {
+            root.recordUsage();
+        }
         function onDanmaku_enabledChanged() { root.recordUsage(); }
         function onComments_enabledChanged() { root.recordUsage(); }
     }
     readonly property bool showGuide: player.guide_visible
     property bool showChannels: false
     property bool showStats: false
+    // The retained browser can be in BML standby while playback owns input.
+    readonly property bool dataBroadcastSessionOpen: player.data_broadcast_requested
+    readonly property bool showDataBroadcast: dataBroadcast.active && dataBroadcast.view !== null && dataBroadcast.view.presenting
+    onShowDataBroadcastChanged: {
+        if (!showDataBroadcast && !root.closing) root.restoreFocus(focusHistory.dataBroadcast, true);
+    }
+    function setDataBroadcast(open) {
+        if (open) {
+            if (showDataBroadcast) return;
+            focusHistory.dataBroadcast = root.activeFocusItem;
+            if (dataBroadcast.view) dataBroadcast.view.activate();
+            else player.data_broadcast_open(true);
+        } else {
+            if (!dataBroadcastSessionOpen) return;
+            player.data_broadcast_open(false);
+        }
+    }
+    function pressDataButton() {
+        if (dataBroadcast.view) dataBroadcast.view.dataButton();
+        else setDataBroadcast(true);
+    }
+    function sendDataBroadcastKey(domKey) {
+        if (dataBroadcast.view) dataBroadcast.view.remoteKey(domKey);
+    }
     property bool showProgram: false
     onShowProgramChanged: if (showProgram) {
         focusHistory.sidebar = root.activeFocusItem;
@@ -269,6 +297,7 @@ ViewerWindow {
         libraryVisible: root.libraryVisible
         controlsFocused: playerControls.navigating || modeNavigation.navigating
             || (recordingTimeline.activeFocus && inputContext.focusItem instanceof Slider && (inputContext.focusItem as Slider).visualFocus)
+        dataBroadcastOpen: inputContext.bmlAccepts("Back")
         onControlsDismissRequested: {
             if (recordingTimeline.activeFocus) playerControls.enter();
             else {
@@ -276,6 +305,7 @@ ViewerWindow {
                 overlayVisibility.dismiss();
             }
         }
+        onDataBroadcastBackRequested: if (dataBroadcast.view) dataBroadcast.view.remoteBack()
         onLibraryCloseRequested: root.closeRecordingLibrary()
         canCapture: screenshot.canCapture
         onActivity: overlayVisibility.reveal()
@@ -312,11 +342,38 @@ ViewerWindow {
         guideVisible: root.showGuide
         libraryVisible: root.libraryVisible
         channelsVisible: root.showChannels
+        dataBroadcastOpen: root.showDataBroadcast
+        dataBroadcastFocused: dataBroadcast.view !== null && dataBroadcast.view.activeFocus
+        dataBroadcastKeys: dataBroadcast.view ? dataBroadcast.view.usedKeyGroups : []
+        function updateDataBroadcastFocus() {
+            if (!viewing || popupOpen || editingText) return;
+            if (dataBroadcastOpen && dataBroadcastKeys.includes("basic") && dataBroadcast.view)
+                dataBroadcast.view.forceActiveFocus(Qt.OtherFocusReason);
+            else if (dataBroadcastFocused)
+                surface.forceActiveFocus();
+        }
+        onDataBroadcastKeysChanged: {
+            // The same snapshot can make a hidden view visible. Apply focus
+            // after its visibility bindings, using the latest key mask.
+            Qt.callLater(inputContext.updateDataBroadcastFocus);
+        }
+        onDataBroadcastOpenChanged: Qt.callLater(inputContext.updateDataBroadcastFocus)
+        // WebEngine can acquire native focus on navigation or a mouse click,
+        // even when the current video-only document claims no keys.
+        onDataBroadcastFocusedChanged: {
+            if (dataBroadcastFocused) Qt.callLater(inputContext.updateDataBroadcastFocus);
+        }
     }
     ShortcutBindings {
         id: shortcutBindings
         actions: viewerActions
         inputContext: inputContext
+    }
+    DataBroadcastInput {
+        inputContext: inputContext
+        available: player.data_broadcast_available && player.media_active && !root.closing
+        onRemoteKey: function(key) { root.sendDataBroadcastKey(key); }
+        onDataButton: root.pressDataButton()
     }
     CommentSubmitPolicy {
         id: commentSubmitPolicy
@@ -407,7 +464,7 @@ ViewerWindow {
         height: root.viewport.height
         focus: true
         Keys.onPressed: function(event) {
-            if (!inputContext.videoFocused || !inputContext.viewing || inputContext.popupOpen
+            if (inputContext.bmlAccepts("Up") || !inputContext.videoFocused || !inputContext.viewing || inputContext.popupOpen
                     || (event.modifiers & ~Qt.KeypadModifier) !== Qt.NoModifier) return;
             if (![Qt.Key_Up, Qt.Key_Down, Qt.Key_Return, Qt.Key_Enter].includes(event.key)) return;
             event.accepted = true;
@@ -427,79 +484,106 @@ ViewerWindow {
             width: parent.width
             height: sidebar.open ? Math.min(parent.height, width * 9 / 16) : parent.height
             anchors.verticalCenter: parent.verticalCenter
-            GstGLQt6VideoItem {
-                id: video
-                anchors.fill: parent
-            }
-            VideoCommentBounds {
-                id: commentBounds
-                viewportWidth: video.width
-                viewportHeight: video.height
-                aspectRatio: player.video_aspect_ratio
-                evaluationWide: player.evaluation_wide_comments
-            }
-            Loader {
-                id: danmaku
-                readonly property DanmakuOverlay view: item as DanmakuOverlay
-                x: commentBounds.x
-                y: commentBounds.y
-                width: commentBounds.width
-                height: commentBounds.height
+            Item {
+                id: videoViewport
+                // Move, resize and clip the complete television picture together.
+                // BML remains above this group and exposes its video cutout.
+                readonly property var bmlVideoRect: dataBroadcast.view ? dataBroadcast.view.videoRect : null
+                x: bmlVideoRect ? bmlVideoRect.x : 0
+                y: bmlVideoRect ? bmlVideoRect.y : 0
+                width: bmlVideoRect ? bmlVideoRect.width : parent.width
+                height: bmlVideoRect ? bmlVideoRect.height : parent.height
                 clip: true
-                active: !root.closing && player.comments_enabled && player.danmaku_enabled && player.media_active
-                sourceComponent: DanmakuOverlay {
-                    id: playbackComments
-                    playbackClock: player
-                    paused: player.paused || player.seeking || player.ended
-                    property int timelineRevision: player.comment_timeline_revision
-                    property bool replayReady: false
-                    function syncTimeline() {
-                        if (!replayReady) return;
-                        player.sync_comment_timeline(controller);
+                GstGLQt6VideoItem {
+                    id: video
+                    anchors.fill: parent
+                }
+                VideoCommentBounds {
+                    id: commentBounds
+                    viewportWidth: video.width
+                    viewportHeight: video.height
+                    aspectRatio: player.video_aspect_ratio
+                    evaluationWide: player.evaluation_wide_comments
+                }
+                Loader {
+                    id: danmaku
+                    readonly property DanmakuOverlay view: item as DanmakuOverlay
+                    x: commentBounds.x
+                    y: commentBounds.y
+                    width: commentBounds.width
+                    height: commentBounds.height
+                    clip: true
+                    active: !root.closing && player.comments_enabled && player.danmaku_enabled && player.media_active
+                    sourceComponent: DanmakuOverlay {
+                        id: playbackComments
+                        playbackClock: player
+                        paused: player.paused || player.seeking || player.ended
+                        property int timelineRevision: player.comment_timeline_revision
+                        property bool replayReady: false
+                        function syncTimeline() {
+                            if (!replayReady) return;
+                            player.sync_comment_timeline(controller);
+                        }
+                        onTimelineRevisionChanged: syncTimeline()
+                        Component.onCompleted: { configure(); replayReady = true; syncTimeline(); }
+                        displayMode: player.comment_display
+                        placementMode: player.comment_placement
+                        densityMode: player.comment_density
+                        // The saved text size is relative to a 1280 x 720 picture.
+                        // This item's height follows the fitted video, excluding bars.
+                        readonly property int referenceVideoHeight: 720
+                        fontSize: Math.max(1, Math.round(player.comment_font_size * height / referenceVideoHeight))
+                        textOpacity: player.comment_opacity
+                        speed: player.comment_speed
+                        shadowEnabled: player.comment_shadow_enabled
+                        fullScreen: root.visibility === Window.FullScreen
+                        readonly property real topInSurface: videoPicture.y + videoViewport.y + danmaku.y
+                        titleOverlapsVideo: programIdentity.visible
+                            && programIdentity.y < topInSurface + danmaku.height
+                            && programIdentity.y + programIdentity.height > topInSurface
+                        titleBottomInVideo: programIdentity.y + programIdentity.height - topInSurface
+                        controlsOverlapVideo: (bottomPanel.visible || composer.visible)
+                            && controlsTopInVideo < danmaku.height
+                            && surface.height > topInSurface
+                        controlsTopInVideo: (composer.visible
+                            ? composer.y + composer.height - composer.occupiedHeight : bottomPanel.y) - topInSurface
                     }
-                    onTimelineRevisionChanged: syncTimeline()
-                    Component.onCompleted: { configure(); replayReady = true; syncTimeline(); }
-                    displayMode: player.comment_display
-                    placementMode: player.comment_placement
-                    densityMode: player.comment_density
-                    // The saved text size is relative to a 1280 x 720 picture.
-                    // This item's height follows the fitted video, excluding bars.
-                    readonly property int referenceVideoHeight: 720
-                    fontSize: Math.max(1, Math.round(player.comment_font_size * height / referenceVideoHeight))
-                    textOpacity: player.comment_opacity
-                    speed: player.comment_speed
-                    shadowEnabled: player.comment_shadow_enabled
-                    fullScreen: root.visibility === Window.FullScreen
-                    titleOverlapsVideo: programIdentity.visible
-                        && programIdentity.y < videoPicture.y + danmaku.y + danmaku.height
-                        && programIdentity.y + programIdentity.height > videoPicture.y + danmaku.y
-                    titleBottomInVideo: programIdentity.y + programIdentity.height - videoPicture.y - danmaku.y
-                    controlsOverlapVideo: (bottomPanel.visible || composer.visible)
-                        && controlsTopInVideo < danmaku.height
-                        && surface.height > videoPicture.y + danmaku.y
-                    controlsTopInVideo: (composer.visible
-                        ? composer.y + composer.height - composer.occupiedHeight : bottomPanel.y) - videoPicture.y - danmaku.y
+                }
+                MediaCaption {
+                    objectName: "mediaCaption"
+                    anchors.fill: parent
+                    visible: !root.closing && player.media_subtitle_available && player.subtitle_display
+                    image: player.media_subtitle_image
+                }
+                Loader {
+                    // Match a 16:9 broadcast's letterboxed video area.
+                    id: captions
+                    readonly property SubtitleOverlay view: item as SubtitleOverlay
+                    anchors.centerIn: parent
+                    width: Math.min(parent.width, parent.height * 16 / 9)
+                    height: width * 9 / 16
+                    active: !root.closing && player.subtitles_active && player.subtitle_display
+                    sourceComponent: Component {
+                        SubtitleOverlay {
+                            forceOutline: player.subtitle_force_outline
+                            captionJson: player.subtitle_data
+                            outlineProvider: player
+                        }
+                    }
                 }
             }
-            MediaCaption {
-                objectName: "mediaCaption"
-                anchors.fill: parent
-                visible: !root.closing && player.media_subtitle_available && player.subtitle_display
-                image: player.media_subtitle_image
-            }
             Loader {
-                // Match a 16:9 broadcast's letterboxed video area.
-                id: captions
-                readonly property SubtitleOverlay view: item as SubtitleOverlay
-                anchors.centerIn: parent
-                width: Math.min(parent.width, parent.height * 16 / 9)
-                height: width * 9 / 16
-                active: !root.closing && player.subtitles_active && player.subtitle_display
-                sourceComponent: Component {
-                    SubtitleOverlay {
-                        forceOutline: player.subtitle_force_outline
-                        captionJson: player.subtitle_data
-                        outlineProvider: player
+                id: dataBroadcast
+                readonly property DataBroadcastView view: item as DataBroadcastView
+                anchors.fill: parent
+                z: 2
+                active: root.dataBroadcastSessionOpen && player.data_broadcast_endpoint !== "" && player.media_active && !root.closing
+                sourceComponent: DataBroadcastView {
+                    backend: player
+                    activateOnLoad: player.data_broadcast_activate
+                    onFailed: function(reason) {
+                        console.error("Data broadcast:", reason);
+                        root.setDataBroadcast(false);
                     }
                 }
             }
@@ -706,6 +790,8 @@ ViewerWindow {
                 }
                 PlayerControls {
                     id: playerControls
+                    dataBroadcastActive: root.showDataBroadcast
+                    onDataBroadcastRequested: root.pressDataButton()
                     onBoundaryReached: function(key) {
                         if (key === Qt.Key_Up && !recordingTimeline.enter()) modeNavigation.enter();
                     }

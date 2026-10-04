@@ -1,11 +1,16 @@
 //! One owner for native playback and its subtitle generation. Only a successful
 //! stop lends the capability to install a replacement subtitle session/stream.
+mod broadcast;
 use super::{Error, Playback, Result};
-use crate::{channels::BroadcastService, features::subtitles};
+use crate::{
+    channels::BroadcastService,
+    features::{data_broadcast, subtitles},
+};
 
 pub struct Session {
     playback: Option<Playback>,
     subtitles: SubtitleSession,
+    data_broadcast: Option<broadcast::Broadcast>,
     input: Input,
     live_buffer: crate::settings::LiveBuffer,
 }
@@ -145,6 +150,7 @@ impl Session {
         Self {
             playback,
             subtitles: SubtitleSession::Disabled,
+            data_broadcast: None,
             input: Input::Idle,
             live_buffer,
         }
@@ -182,6 +188,18 @@ impl Session {
             SubtitleSession::Broadcast(session) => Some(session),
             SubtitleSession::Disabled | SubtitleSession::Media(_) => None,
         }
+    }
+
+    pub fn data_broadcast(&self) -> Option<&data_broadcast::Session> {
+        self.data_broadcast.as_ref()?.session()
+    }
+    pub fn configure_data_broadcast(&mut self, enabled: bool) -> Result<()> {
+        if let Some(broadcast) = &mut self.data_broadcast
+            && let Input::Active { source, .. } = &mut self.input
+        {
+            broadcast.configure(source, enabled)?;
+        }
+        Ok(())
     }
 
     pub fn transport_control(
@@ -543,6 +561,7 @@ impl Session {
         // A failed native transition cannot reach either resource release or
         // construction of Stopped. The caller retains this owner for retry.
         self.subtitles = SubtitleSession::Disabled;
+        self.data_broadcast = None;
         self.input = Input::Idle;
         Ok(Stopped(self))
     }
@@ -552,6 +571,7 @@ impl Session {
             playback.shutdown()?;
         }
         self.subtitles = SubtitleSession::Disabled;
+        self.data_broadcast = None;
         self.input = Input::Idle;
         Ok(())
     }
@@ -561,6 +581,7 @@ impl Session {
             playback.shutdown_before_drop();
         }
         self.subtitles = SubtitleSession::Disabled;
+        self.data_broadcast = None;
         self.input = Input::Idle;
     }
 }
@@ -595,6 +616,7 @@ impl Stopped<'_> {
         self.start_uri(
             "appsrc://",
             (service != 0).then_some(service),
+            broadcast.map(|broadcast| broadcast.network_id),
             if subtitles_enabled {
                 SubtitleInput::Live(broadcast)
             } else {
@@ -632,7 +654,7 @@ impl Stopped<'_> {
                             file.external_subtitle().cloned(),
                         )?));
                 }
-                self.start_uri("appsrc://", None, SubtitleInput::Disabled, input)
+                self.start_uri("appsrc://", None, None, SubtitleInput::Disabled, input)
             }
         }
     }
@@ -655,6 +677,7 @@ impl Stopped<'_> {
         self.start_uri(
             "appsrc://",
             Some(file.service()),
+            None,
             if subtitles_enabled {
                 SubtitleInput::Recording(file.service())
             } else {
@@ -668,6 +691,7 @@ impl Stopped<'_> {
         self,
         uri: &str,
         service: Option<u16>,
+        original_network_id: Option<u16>,
         subtitle_input: SubtitleInput,
         input: Input,
     ) -> Result<SubtitleStart> {
@@ -695,6 +719,13 @@ impl Stopped<'_> {
             }
             Some(Err(error)) => SubtitleStart::Failed(error),
         };
+        if let Input::Active { .. } = &input
+            && let Some(service) = service
+        {
+            // Eligibility does not start a worker or bind a socket. Runtime
+            // policy creates the receiver only after playback owns this input.
+            self.0.data_broadcast = Some(broadcast::Broadcast::new(service, original_network_id));
+        }
         self.0.input = input;
         if let Err(error) = playback.play(uri, service) {
             let failure = match self.0.stop() {
@@ -735,6 +766,7 @@ pub(super) fn check_stop_ownership() {
     let mut session = Session {
         playback: Some(playback),
         subtitles: SubtitleSession::Broadcast(subtitles),
+        data_broadcast: None,
         input: Input::Idle,
         live_buffer: Default::default(),
     };

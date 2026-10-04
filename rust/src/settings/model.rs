@@ -71,6 +71,8 @@ pub struct Preferences {
     #[serde(rename = "subtitles_enabled")]
     pub show_subtitles: bool,
     pub subtitle_force_outline: bool,
+    pub data_broadcast_enabled: bool,
+    pub data_broadcast_prefetch: bool,
     pub comments_enabled: bool,
     pub comment_cache_limit_mib: super::CommentCacheLimit,
     pub danmaku_enabled: bool,
@@ -105,6 +107,8 @@ impl Default for Preferences {
             volume: Volume::default(),
             show_subtitles: false,
             subtitle_force_outline: false,
+            data_broadcast_enabled: false,
+            data_broadcast_prefetch: false,
             // main receives history independently of the scrolling overlay.
             // Its settings have no comments_enabled field; preserve reception
             // when importing them, including danmaku_enabled=true preferences.

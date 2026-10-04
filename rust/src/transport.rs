@@ -67,7 +67,7 @@ pub(crate) fn recording_service(data: &[u8]) -> Option<u16> {
         previous = Some((packet.continuity_counter, *bytes));
         for data in sections.push(packet.start, packet.payload) {
             if let Ok(section) = PsiSection::parse(&data)
-                && let Some(programs) = pat.push(&section)
+                && let Some(programs) = pat.push(&section.0)
                 && let Some(service) = programs.keys().next()
             {
                 return Some(*service);

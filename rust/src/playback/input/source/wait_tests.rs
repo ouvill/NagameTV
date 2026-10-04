@@ -7,6 +7,30 @@ const DEADLINE: Duration = Duration::from_secs(5);
 // at its blocking wait before either measuring idleness or sending a change.
 const QUIET_WINDOW: Duration = Duration::from_millis(50);
 
+#[test]
+fn data_broadcast_switch_does_not_wait_for_the_reader() -> Result<(), Box<dyn std::error::Error>> {
+    let LiveInput { feeder, .. } = live()?;
+    // Hold the same lock as a slow HTTP recording read. Both enabling and
+    // disabling must return while that read is still in progress.
+    let reading = feeder.reader.lock().unwrap();
+    let switching = feeder.clone();
+    let (sent, received) = mpsc::channel();
+    let thread = std::thread::spawn(move || {
+        let (tap, _receiver) = data_broadcast::Tap::test_pair();
+        let result = switching
+            .set_data_broadcast(Some(tap))
+            .and_then(|()| switching.set_data_broadcast(None));
+        if sent.send(result).is_err() {
+            // The test may time out while a regression holds the reader lock.
+        }
+    });
+    let result = received.recv_timeout(DEADLINE);
+    drop(reading);
+    thread.join().expect("broadcast switch panicked");
+    result.expect("broadcast switch waited for input I/O")?;
+    Ok(())
+}
+
 struct ReadTask {
     feeder: Feeder,
     finished: Receiver<Result<Option<gst::Buffer>, Error>>,
@@ -61,6 +85,7 @@ fn live() -> Result<LiveInput, Box<dyn std::error::Error>> {
         framing: Framing::transport(),
         service: 1,
         filter: tsreadex::Filter::new(1)?,
+        data_broadcast: None,
         clock: Index::new(1, false),
         bootstrap: Vec::new(),
         time_ns: 0,

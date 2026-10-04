@@ -121,6 +121,9 @@ fn checks() -> TestResult {
         player.rust().media.playback().is_none(),
         "test must not initialize playback"
     );
+    assert!(!player.pin_mut().data_broadcast_open(true));
+    assert!(!player.data_broadcast_requested());
+    assert!(player.data_broadcast_endpoint().is_empty());
     // Preference notifications must observe the committed value; this touches
     // no decoder even when the feature is enabled for this settings-only check.
     player.pin_mut().rust_mut().subtitles_enabled = true;
@@ -222,6 +225,7 @@ fn checks() -> TestResult {
     // All Qt signal observers see the complete stream state, and a duplicate
     // Play cannot replenish the one automatic retry of an active attempt.
     check_stream_state(&mut player)?;
+    check_data_broadcast_mode(&mut player)?;
     check_viewing_channel()?;
     crate::channel_model::checks::run()?;
     crate::guide_model::checks::run()?;
@@ -593,6 +597,120 @@ fn check_stream_state(player: &mut cxx::UniquePtr<ffi::Player>) -> TestResult {
         *transport.lock().unwrap(),
         [(true, true, true, false), (false, false, false, false)]
     );
+    Ok(())
+}
+
+fn check_data_broadcast_mode(player: &mut cxx::UniquePtr<ffi::Player>) -> TestResult {
+    use super::stream_state::{Attempt, State};
+    use crate::playback::{input::Retention, timeline::Phase};
+    let changes = Arc::new(Mutex::new(Vec::new()));
+    // Restricted --features=none cannot be bypassed through the settings API.
+    assert!(!player.data_broadcast_enabled());
+    player.pin_mut().configure_data_broadcast(true);
+    assert!(!player.data_broadcast_enabled());
+    // Exercise a normal launch's opt-in policy with the same hardware-free
+    // Player. The production startup test checks this through real settings.
+    player.pin_mut().rust_mut().data_broadcast_allowed = true;
+    let enabled_changes = Arc::new(Mutex::new(Vec::new()));
+    let enabled_observed = enabled_changes.clone();
+    let _enabled_signal = player
+        .pin_mut()
+        .on_data_broadcast_enabled_changed(move |p| {
+            assert_eq!(
+                p.data_broadcast_enabled(),
+                p.rust().preferences.preferences().data_broadcast_enabled
+            );
+            if !p.data_broadcast_enabled() {
+                assert!(!p.data_broadcast_requested());
+                assert!(p.data_broadcast_endpoint().is_empty());
+                assert!(!p.data_broadcast_available());
+            }
+            enabled_observed
+                .lock()
+                .unwrap()
+                .push(p.data_broadcast_enabled());
+        });
+    let prefetch_changes = Arc::new(Mutex::new(Vec::new()));
+    let prefetch_observed = prefetch_changes.clone();
+    let _prefetch_signal = player
+        .pin_mut()
+        .on_data_broadcast_prefetch_changed(move |p| {
+            assert_eq!(
+                p.data_broadcast_prefetch(),
+                p.rust().preferences.preferences().data_broadcast_prefetch
+            );
+            prefetch_observed
+                .lock()
+                .unwrap()
+                .push(p.data_broadcast_prefetch());
+        });
+    let observed = changes.clone();
+    let _signal = player
+        .pin_mut()
+        .on_data_broadcast_requested_changed(move |p| {
+            // This CPU check has no receive session. Notifications must never
+            // expose an endpoint left over from the previous mode.
+            assert!(p.data_broadcast_endpoint().is_empty());
+            observed.lock().unwrap().push(p.data_broadcast_requested());
+        });
+    let attempt = Attempt::new(
+        &player.rust().catalog.channels()[0],
+        Retention::Memory.into(),
+    );
+    player
+        .pin_mut()
+        .update_stream_state(State::Connecting(attempt).started());
+    for prefetch in [true, true, false] {
+        player.pin_mut().configure_data_broadcast_prefetch(prefetch);
+        assert!(!player.data_broadcast_requested());
+        assert!(player.data_broadcast_endpoint().is_empty());
+    }
+    assert_eq!(*prefetch_changes.lock().unwrap(), [true, false]);
+    assert!(!player.pin_mut().data_broadcast_open(true));
+    for enabled in [true, true] {
+        player.pin_mut().configure_data_broadcast(enabled);
+    }
+    assert!(player.pin_mut().data_broadcast_open(true));
+    assert!(player.pin_mut().data_broadcast_open(true));
+    player
+        .pin_mut()
+        .change_stream_state(|state| state.transport(Phase::Paused));
+    player.pin_mut().change_stream_state(|state| state);
+    let retry = player
+        .pin_mut()
+        .rust_mut()
+        .stream_state
+        .take_retry()
+        .unwrap();
+    player.pin_mut().end_stream()?;
+    assert!(player.data_broadcast_requested());
+    assert!(player.rust().data_broadcast_mode.continues(&retry));
+    player
+        .pin_mut()
+        .update_stream_state(State::Connecting(retry).started());
+    assert!(player.data_broadcast_requested());
+    player.pin_mut().stop();
+    assert!(!player.data_broadcast_requested());
+    assert!(!player.pin_mut().data_broadcast_open(true));
+    assert_eq!(*changes.lock().unwrap(), [true, false]);
+    // Disabling an active mode clears intent before notifying Qt, and a later
+    // enable must not revive the previous manual open request.
+    let attempt = Attempt::new(
+        &player.rust().catalog.channels()[0],
+        Retention::Memory.into(),
+    );
+    player
+        .pin_mut()
+        .update_stream_state(State::Connecting(attempt).started());
+    assert!(player.pin_mut().data_broadcast_open(true));
+    player.pin_mut().configure_data_broadcast(false);
+    assert!(!player.pin_mut().data_broadcast_open(true));
+    player.pin_mut().configure_data_broadcast(true);
+    assert!(!player.data_broadcast_requested());
+    player.pin_mut().configure_data_broadcast(false);
+    assert_eq!(*enabled_changes.lock().unwrap(), [true, false, true, false]);
+    player.pin_mut().stop();
+    player.pin_mut().rust_mut().data_broadcast_allowed = false;
     Ok(())
 }
 

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="EUC-JP"?>
+<bml><head>
+<script><![CDATA[
+function closeData() { browser.launchDocument("/40/0000/startup.bml"); }
+function key() {
+    if (document.currentEvent.keyCode == 19) browser.launchDocument("/40/0000/startup.bml");
+    if (document.currentEvent.keyCode == 18) browser.launchDocument("/40/0002/child.bml");
+    if (document.currentEvent.keyCode == 22) document.getElementById("video").normalStyle.left = "90px";
+    if (document.currentEvent.keyCode == 21) document.getElementById("video").normalStyle.left = "60px";
+}
+]]></script>
+<bevent><beitem type="DataButtonPressed" subscribe="subscribe" onoccur="closeData();"/></bevent>
+</head>
+<body style="resolution:960x540;background-color-index:7;used-key-list:basic data-button;">
+<object id="video" type="video/X-arib-mpeg2" style="position:absolute;left:60px;top:120px;width:480px;height:270px;"/>
+<p style="nav-index:0;width:500px;height:100px;" onkeydown="key();">Data broadcast top</p>
+</body></bml>

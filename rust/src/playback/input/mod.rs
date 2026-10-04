@@ -13,7 +13,10 @@ mod source;
 mod store;
 #[cfg(test)]
 mod tests;
-use crate::transport::{framing::Framing, wire::TS_PACKET_SIZE};
+use crate::{
+    features::data_broadcast,
+    transport::{framing::Framing, wire::TS_PACKET_SIZE},
+};
 use index::{Anchor, Index};
 pub(super) use source::{Input, ReadProgress};
 #[cfg(test)]
@@ -212,6 +215,7 @@ struct Reader {
     framing: Framing,
     service: u16,
     filter: tsreadex::Filter,
+    data_broadcast: Option<data_broadcast::Tap>,
     clock: Index,
     bootstrap: Vec<u8>,
     time_ns: u64,
@@ -246,6 +250,9 @@ impl Reader {
         })
     }
     fn apply(&mut self, anchor: Anchor, deadline: Instant) -> Result<(), Error> {
+        if let Some(tap) = &self.data_broadcast {
+            tap.reset();
+        }
         self.filter = tsreadex::Filter::new(self.service)?;
         self.clock = self.clock.reader();
         self.clock.seed(&anchor);
@@ -336,14 +343,22 @@ impl Reader {
                 if reconnected {
                     self.clock.discontinuity();
                     self.filter = tsreadex::Filter::new(self.service)?;
+                    if let Some(tap) = &self.data_broadcast {
+                        tap.reset();
+                    }
                 }
                 let data = data.as_ref();
                 let consumed =
                     std::num::NonZeroUsize::new(data.len()).ok_or(Error::NoReadProgress)?;
                 let mut bytes = Vec::with_capacity(data.len());
-                bytes.extend_from_slice(self.filter.push(&std::mem::take(&mut self.bootstrap))?);
+                let bootstrap = std::mem::take(&mut self.bootstrap);
+                if let Some(tap) = &self.data_broadcast {
+                    tap.push(&bootstrap);
+                }
+                bytes.extend_from_slice(self.filter.push(&bootstrap)?);
                 let mut time_ns = self.time_ns;
                 let mut discontinuity = false;
+                let mut raw = Vec::new();
                 for (offset, packet) in self.framing.packets(data) {
                     if let Some(anchor) = self.clock.packet(self.offset + offset, packet) {
                         if !bytes.is_empty() {
@@ -357,6 +372,11 @@ impl Reader {
                         self.time_ns = time_ns;
                         discontinuity = self.epoch != anchor.epoch;
                         if discontinuity {
+                            if let Some(tap) = &self.data_broadcast {
+                                tap.submit(std::mem::take(&mut raw));
+                                tap.reset();
+                                tap.push(&anchor.bootstrap);
+                            }
                             self.filter = tsreadex::Filter::new(self.service)?;
                             bytes.extend_from_slice(self.filter.push(&anchor.bootstrap)?);
                         }
@@ -366,7 +386,18 @@ impl Reader {
                         self.service = self.clock.service();
                         self.filter = tsreadex::Filter::new(self.service)?;
                     }
+                    if let Some(tap) = &self.data_broadcast
+                        && tap.active()
+                    {
+                        if raw.len() + TS_PACKET_SIZE > data_broadcast::TAP_CHUNK_BYTES {
+                            tap.submit(std::mem::take(&mut raw));
+                        }
+                        raw.extend_from_slice(packet);
+                    }
                     bytes.extend_from_slice(self.filter.push(packet)?);
+                }
+                if let Some(tap) = &self.data_broadcast {
+                    tap.submit(raw);
                 }
                 if let Shared::File(shared) = &self.shared {
                     let mut state = shared.lock().map_err(|_| Error::Poisoned)?;
@@ -565,6 +596,7 @@ fn file_reader_inspected(
         framing,
         service,
         filter: tsreadex::Filter::new(service)?,
+        data_broadcast: None,
         clock,
         bootstrap: Vec::new(),
         time_ns: 0,
@@ -694,6 +726,7 @@ fn live_reader(
         framing: Framing::transport(),
         service,
         filter,
+        data_broadcast: None,
         clock: Index::new(service, false),
         bootstrap: Vec::new(),
         time_ns: 0,

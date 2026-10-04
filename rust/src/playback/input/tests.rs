@@ -6,6 +6,42 @@ const TEST_DEADLINE: Duration = Duration::from_secs(5);
 const TEST_POLL: Duration = Duration::from_millis(5);
 
 #[test]
+fn data_broadcast_tap_receives_pid_removed_by_playback_filter()
+-> Result<(), Box<dyn std::error::Error>> {
+    const DATA_PID: u16 = 0x1eee;
+    let mut recording = include_bytes!("../../../../tests/fixtures/recording.ts").to_vec();
+    let mut data_packet = [0xff; TS_PACKET_SIZE];
+    data_packet[..4].copy_from_slice(&[0x47, 0x40 | (DATA_PID >> 8) as u8, DATA_PID as u8, 0x10]);
+    recording.extend_from_slice(&data_packet);
+    let directory = tempfile::tempdir()?;
+    let path = directory.path().join("with-data-pid.ts");
+    std::fs::write(&path, recording)?;
+    let (mut reader, _worker) = file_reader(&path, 1, false)?;
+    let (tap, mut received) = data_broadcast::Tap::test_pair();
+    reader.data_broadcast = Some(tap);
+    let mut raw = Vec::new();
+    let mut filtered = Vec::new();
+    loop {
+        match reader.next()? {
+            Output::Data { bytes, .. } => filtered.extend(bytes),
+            Output::End => break,
+            Output::Filtered { .. } => {}
+            Output::Awaiting | Output::Expired => panic!("file did not complete"),
+        }
+        raw.extend(received.try_bytes());
+    }
+    raw.extend(received.try_bytes());
+    assert!(raw.as_chunks::<TS_PACKET_SIZE>().0.contains(&data_packet));
+    assert!(
+        !filtered
+            .as_chunks::<TS_PACKET_SIZE>()
+            .0
+            .contains(&data_packet)
+    );
+    Ok(())
+}
+
+#[test]
 fn received_and_decoded_video_use_the_same_timeline() -> Result<(), Box<dyn std::error::Error>> {
     const MIN_DECODED_FRAMES: usize = 20;
     const DIAGNOSTIC_FRAMES: usize = 10;
@@ -534,6 +570,7 @@ fn exercise_expired_pause(expiry: Expiry) -> Result<(), Box<dyn std::error::Erro
         framing: Framing::transport(),
         service: 1,
         filter: tsreadex::Filter::new(1)?,
+        data_broadcast: None,
         clock: Index::new(1, false),
         bootstrap: Vec::new(),
         time_ns: 0,

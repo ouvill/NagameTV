@@ -57,6 +57,8 @@
 | ドキュメント | 概要 |
 | :--- | :--- |
 | **[共通TS入力とタイムシフト再生](ts-input-implementation.md)** | ライブ・録画共通のTS入力（tsreadex → appsrc → playbin3）とライブ振り返り機構 |
+| **[STD-B24実装対応リスト](std-b24-implementation.md)** | データ放送の規格項目ごとの対応状況と、BMLビューワー手前までの残件 |
+| **[データ放送の受信と表示](data-broadcast-design.md)** | 受信セッション、再接続、状態の所有者、web-bml互換性処理 |
 | **[音声機能と出力制御](audio-output.md)** | 音量、ミュート、複数トラック・二重音声（主/副音声）、再生時計同期、バッファ余裕設定 |
 | **[チャンネル選局とブラウザー](channel-browser.md)** | 放送波分類（地デジ/BS/CS/CATV）、ソート規則、局ロゴ、カルーセルUI |
 | **[番組表と予定番組 (EPG)](guide-calendar.md)** | 7日分カレンダー番組表、番組詳細情報、取得ストリーム |

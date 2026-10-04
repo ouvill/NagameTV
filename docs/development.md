@@ -5,6 +5,35 @@
 実装とレビューでは[コード規約](coding-conventions.md)の変更に関係する節を参照します。
 状態・前提条件・操作順序を表す設計では、enumとTypestateを優先します。
 
+## トランクベース開発とフィーチャーフラグ
+
+`main`を開発の中心にし、短期間の作業ブランチから、レビューと検証ができる大きさで
+変更を取り込みます。大きな機能も、機能全体の完成を待たず、独立して検証できる部分から
+統合します。新しい作業は更新した`main`から始めます。
+
+未完成の利用経路は、既定OFFのフィーチャーフラグで制御します。フラグの判断はRustの
+設定・機能の生成境界に集約し、QMLは公開された状態に従って操作部を表示します。
+OFFでは専用ワーカー・通信・ブラウザーを起動せず、自動起動やショートカットからも
+機能を開始できないようにします。実行中にOFFへ変更するときは、所有者が資源を解放し、
+通常操作へ戻します。共通の解析処理など、既存機能も使う部分は通常の検証対象です。
+
+取り込み前に、OFFでの既存機能の回帰試験と、ONで今回変更した動作の試験を行います。
+フラグで隠れているコードも通常のビルド・静的検査に含めます。設定の保存・復元と、
+実行中の切り替えも検証します。実行時フラグではビルド・配布依存を除外できないため、
+依存追加の影響は別途確認します。
+
+フラグを追加したら、既定値・担当箇所・有効化方法・解除条件をこの表に記録します。
+安定化後に既定値を変える変更は、検証結果を添えて行います。一時的な実験フラグを
+撤去するときは、設定の互換性を保ち、不要な分岐と試験も整理します。
+
+| フラグ | 既定値・有効化方法 | 担当箇所 | 実験扱いを解除する条件 |
+| --- | --- | --- | --- |
+| `data_broadcast_enabled` | OFF。「設定 → 表示 → データ放送を有効にする（実験的）」 | `player::data_broadcast`、`playback::session::broadcast` | 対象局と操作の検証結果を[対応表](std-b24-implementation.md)へ記録し、起動・選局・シーク・終了・入力復帰の回帰試験と、継続視聴時のメモリー・処理負荷の確認を完了する |
+
+データ放送はQt WebEngineのビルド・配布依存を維持します。
+`--features=data-broadcast`は、保存設定を使わずこの機能だけを有効にする検証用の起動方法です。
+`--features=none`など、データ放送を含まない指定では設定画面からも有効化できません。
+
 ## Canonical Workshopの開発環境
 
 [`.workshop/dev.yaml`](../.workshop/dev.yaml)はUbuntu 26.04を使用します。
@@ -88,6 +117,7 @@ GUIテストは既存のPipeWire／pipewire-pulseaudio／WirePlumberと実GPUを
 - Rust / Cargo（Rust 1.98.1でビルド確認）
 - CMake 3.24以降、C/C++コンパイラー、pkg-config、libclang、Python 3.11以降（ビルド入力の検出用）
 - Qt 6.8以降のQuick / Controls / Dialogs / Layouts / Shapes / EffectsとQtCore QMLモジュール、LinuxではQt DBus、SVG・JPEG・WebP画像プラグイン、翻訳用の`lrelease`
+- データ放送表示用のQt WebEngine Quick、`QtWebEngine`と`QtWebChannel` QMLモジュール（Ubuntuでは`qt6-webengine-dev`、`qml6-module-qtwebengine`、`qml6-module-qtwebchannel`）
 - GStreamer 1.24以降と開発ライブラリー（`gstreamer-mpegts-1.0`を含む）
 - GStreamerの`qml6glsink`、OpenGL関連プラグイン、`tsdemux`・`qtdemux`・`matroskademux`、映像・音声デコーダー、音声出力プラグイン、速度変更用の`scaletempo`（Good Plug-insの`audiofx`）、シークプレビュー用の`pngenc`（Good Plug-insの`png`）
 
@@ -170,7 +200,7 @@ Flatpak版は[専用の削除手順](flatpak.md#アンインストール)を参�
 `--build-info`は、それぞれバージョンとビルド情報JSONを出力します。これらの情報表示と
 引数エラーは画面・GPU・音声・保存設定を使用しません。未知の引数は終了コード2になります。
 
-検証用の`--features=none`または`--features=subtitles,epg,comments`は従来どおり
+検証用の`--features=none`または`--features=subtitles,epg,comments,data-broadcast`は
 その実行で許可する機能を指定します。重複しない任意の組み合わせを使えます。
 `=`は必須で、空値・重複・`none`との混在を拒否します。表示方式の指定には
 `QT_QPA_PLATFORM`を使用してください。Qt固有の未定義の起動引数は受け付けません。
@@ -221,7 +251,7 @@ Workshopには同じ導入処理の`setup-tests`アクションがあります�
 ```sh
 bash scripts/testing/install-nextest.sh
 python3 scripts/test.py --list
-python3 scripts/test.py             # 機器不要: 静的検査、Rust全6パッケージ、Qt接続など
+python3 scripts/test.py             # 機器不要: 静的検査、Rust全8パッケージ、Qt接続など
 python3 scripts/test.py app         # アプリのRustテストのみ
 python3 scripts/test.py danmaku ui-style  # GPU環境を検証してQML部品を確認
 python3 scripts/test.py app --filter 'test(settings::)'
@@ -234,7 +264,7 @@ nextest内で単独実行します。通常のビルド構成は`dev`です。
 再生性能やフレーム時間を評価する試験では`--profile release`を指定します。
 Qtスイートにも共通ランナーの`--profile release`を指定できます。
 個別の引数は`python3 scripts/test.py startup -- recording-pid-change`のように`--`の後に渡します。
-アプリの主要なpath依存5クレートも明示的に列挙し、nextestの対象外であるdoctestはCargoで別途実行します。
+アプリの主要なpath依存クレートと独立したデータ放送デコーダーも明示的に列挙し、nextestの対象外であるdoctestはCargoで別途実行します。
 ビルド情報専用の`viewer-build-info`と翻訳生成用の`viewer-translations`は、
 `checks`に含まれるビルド情報・変更検知の回帰試験で検証します。
 `#[ignore]`の実機・性能プローブ、実EPGStation、配布物の検査は自動では実行しません。
@@ -277,6 +307,10 @@ Tokioの仮想時間を使う試験では、実時間の待機を省いて期限
 
 ```sh
 python3 scripts/test.py viewer-epg-events
+python3 scripts/test.py arib-b24
+python3 scripts/test.py viewer-web-bml
+python3 scripts/test.py web-bml-adapter # JSの状態遷移・接続プロトコル。Node.jsが必要
+python3 scripts/test.py viewer-mpegts
 ```
 
 依存を変更した場合は`python3 -m scripts.packaging.flatpak_cargo_sources`で配布用のソース一覧を更新し、
@@ -290,6 +324,7 @@ CARGO_TARGET_DIR=build/cargo SQLX_OFFLINE=true bash scripts/build/with-build-loc
 ```
 
 これらのコマンドは表示・GPU・音声機器を使用しません。
+標準のCPU試験に含む`web-bml-adapter`にはNode.js 18以降が必要です。製品の実行時には使用しません。
 音声切り替えのCPU結合試験にはGStreamer Bad Plug-insの`testsrcbin`が必要です。
 Qtの画面試験は別の実行手順で、表示環境などを確認してから起動します。[Qtテスト](qt-tests.md)
 
@@ -299,7 +334,24 @@ RustとQMLのプロパティ・通知・起動処理を変更した場合は、�
 python3 scripts/test.py connection
 python3 scripts/test.py desktop-media
 python3 scripts/test.py startup
+python3 scripts/test.py startup -- data-broadcast # フラグON/OFF・接続・BMLの待機と再表示・キー操作
 ```
+
+実放送のデータ放送画面を調べる場合は、利用可能なMirakurunとサービスIDを指定します。
+
+```sh
+CARGO_TARGET_DIR=build/cargo bash scripts/build/with-build-lock.sh cargo build --manifest-path rust/Cargo.toml --features native_tests
+python3 -m scripts.testing.gui_session -- build/cargo/debug/nagametv --native-tests data-broadcast-live http://MIRAKURUN:40772 SERVICE_ID build/data-broadcast-live.png
+```
+
+専用GUIセッションが表示・GPU・音声を検証し、指定先への接続と画面画像の保存を行います。画像の取得にはImageMagickの`import`が必要です。
+同名の`.json`にはBMLの文書URL・表示状態・映像矩形・キー受付とQtのフォーカスを保存します。起動文書が可視でも
+テレビ映像だけの場合があるため、終了コードや表示状態だけで成功とはせず、画像も確認してください。
+90秒の初期化待ち後に d ボタンをもう一度押した結果も調べる場合は、末尾に`--press-data-again`を追加します。
+追加操作後の画像とJSONには`.after-data-key`を付け、初回の結果を残します。
+この操作は実際のQtキー配送を通し、方向キーがプレイヤーへ返った場合は下キーで操作部へ移れることも確認します。
+入口がないと判定できた番組は90秒を待たずに記録します。
+この手動確認は外部放送に依存するため、通常のテストスイートには含めません。
 
 Linuxのメディア連携テストも機器不要で、専用D-Bus・`python3-dbus`・`python3-gi`を使います。
 [MPRIS連携の仕様と検証範囲](desktop-media.md)を参照してください。

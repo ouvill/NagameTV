@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="EUC-JP"?>
+<bml><head>
+<script src="/40/0003/show.ecm"/>
+<script><![CDATA[
+function key() {
+    if (document.currentEvent.keyCode == 19) browser.launchDocument("/40/0001/top.bml");
+}
+]]></script>
+</head>
+<body id="body" invisible="invisible" onload="show();" style="resolution:960x540;used-key-list:basic data-button;">
+<p style="nav-index:0;width:500px;height:100px;" onkeydown="key();">Data broadcast child</p>
+</body></bml>
