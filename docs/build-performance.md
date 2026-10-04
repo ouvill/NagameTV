@@ -201,7 +201,7 @@ Docker環境の準備、キャッシュ転送、実EPGStationの結合テスト�
 
 ## CI履歴の追加調査（2026-10-05）
 
-2026-09-28〜10-01の成功した12実行を対象に、GitHub Actionsのステップ時間と
+2026-09-28〜10-01（UTC）の成功した12実行を対象に、GitHub Actionsのステップ時間と
 共通テストランナーのログを調べました。変更内容やキャッシュ状態が異なるため、
 この範囲の最短・最長を改善前後の比較には使いません。
 
@@ -212,11 +212,14 @@ Docker環境の準備、キャッシュ転送、実EPGStationの結合テスト�
 | CPUテスト工程内のコンパイル合計 | 208秒 | 1,000秒 |
 | AppImage生成・検証 | 150秒 | 310秒 |
 | 実EPGStationとの結合試験 | 153秒 | 195秒 |
+| GitHub Releaseの作成・更新ジョブ（実行された11件） | 20秒 | 50秒 |
 
 [10月1日のmain実行](https://github.com/ouvill/NagameTV/actions/runs/36929815266)では
 CPUテスト工程内のコンパイルが約1,000秒、Rust・Qtのテスト実行とCLI検査が約57秒でした。
 Docker環境を作り直した[v0.2.1の実行](https://github.com/ouvill/NagameTV/actions/runs/36914844274)では、
 nextestのソースからの導入だけで約181秒かかっています。
+この12実行ではUbuntu 24.04のテスト・AppImage・debジョブが最後まで残り、
+全体の待ち時間を決めていました。Releaseの作成・更新よりも、その前のビルドと検証が支配的です。
 
 [別のmain実行](https://github.com/ouvill/NagameTV/actions/runs/36909139143)では、
 debの導入試験が1,277秒かかりました。その後追加されたaptキャッシュも、
@@ -235,5 +238,40 @@ GNU tarの`TAR_OPTIONS`へ移しています。復元後のローカルcrateのc
 Release設定の統一は、同じ外部依存を持つ2つの独立crateを実際にビルドする回帰試験で確認します。
 コンパイル結果の数と更新時刻から、2つ目のcrateでその依存が再コンパイルされないことを検査します。
 
+### 同じアプリのソースでの比較
+
+キャッシュ設計変更後の[`83f1067`](https://github.com/ouvill/NagameTV/actions/runs/37226792693)と、
+nextest導入・Release設定を変更した[`2059a5e`](https://github.com/ouvill/NagameTV/actions/runs/37227572385)を、
+それぞれ手動実行しました。アプリのソースは同じで、Cargo・ccacheは両方とも未ヒットです。
+各1回、別のGitHubホストランナーでの測定です。
+
+| 工程 | 変更前 | 変更後 |
+| --- | ---: | ---: |
+| Ubuntu 24.04のDocker環境準備 | 427秒 | 204秒 |
+| Docker環境準備内のnextest導入レイヤー | 194.2秒 | 0.5秒 |
+| CPUテスト工程全体 | 1,008秒 | 1,235秒 |
+| CPUテスト工程内のコンパイル合計 | 870.26秒 | 1,061.85秒 |
+| `viewer-comments`のテスト準備でコンパイルしたcrate数 | 179 | 84 |
+
+CPU試験は両方とも51工程すべて成功しました。環境準備は223秒短縮し、
+Release設定の統一で重複コンパイルも減りましたが、CI全体の短縮はこの比較では確認できていません。
+変更後はアプリ本体のコンパイルも515.37秒から647.97秒へ伸びており、
+設定変更の効果と実行環境のばらつきは切り分けていません。
+mainに共有キャッシュが作成された後の所要時間は別途測定が必要です。
+
+この比較実行には、その後追加したapt・Cargoアーカイブの修正とReleaseのclean修正は含みません。
+これらは実際の`@actions/cache`で作ったアーカイブと、dev・release両方での回帰試験で検証しています。
+両方の実行でFlatpak、Ubuntu 26.04のdeb、実EPGStationとの結合試験も成功しましたが、
+AppImage生成後のUbuntu 24.04向けdeb変換はQt Positioningの不足により失敗しました。
+配布SDKへ`qtpositioning`、OS側へ`libxkbfile1`を追加し、アプリのコンパイル前に
+QtWebEngineの共有ライブラリー不足を検出するようにしています。
+QML経由で必要になるQtWebEngineの補助プロセス・リソースも明示的に同梱し、必須ファイルを検査します。
+
+修正後のDockerイメージをWorkshopで構築し、比較用CIで作った実行ファイルと
+インストール資源を使い、依存ライブラリーを新しいSDKから収集し直しました。
+AppImageの348 ELFすべてがglibc 2.39の上限検査に通り、deb変換、クリーンなUbuntu 24.04での
+導入・全ELFのリンク・整合性・削除の検査も成功しました。最終変更でのtooling試験89件、
+actionlint、変更したシェルのShellCheckも成功しています。
+これは配布工程を対象にした再検証で、最終変更を含むGitHub Actions全体の再実行はしていません。
+
 調査ログと工程別データはGit対象外の`build/ci-cache-study/`に保存しています。
-設定変更後のGitHub Actionsでの短縮幅は、同じアプリのソースでの実行結果を比較して確認します。
