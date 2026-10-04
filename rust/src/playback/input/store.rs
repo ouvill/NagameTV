@@ -1,5 +1,6 @@
 //! Bounded raw TS retention. Logical offsets never refer to reused physical bytes.
 use super::index::Index;
+use memmap2::MmapMut;
 use std::{collections::VecDeque, ops::Range, sync::Arc, time::Duration};
 
 pub(super) const SEGMENT_BYTES: usize = 1024 * 1024;
@@ -39,10 +40,18 @@ impl RetentionState {
     }
 }
 enum Bytes {
-    Memory(Arc<Vec<u8>>),
+    Memory(Arc<MmapMut>),
     File,
 }
 impl Bytes {
+    fn memory() -> std::io::Result<Self> {
+        // Anonymous mappings return pages to the OS when the last reader drops
+        // them. Small Vec allocations instead left an entire paused history in
+        // glibc's arenas after live return. Keep the same bounded read leases;
+        // mutation still requires exclusive Arc ownership. No file mapping or
+        // process-wide allocator purge is involved.
+        Ok(Self::Memory(Arc::new(MmapMut::map_anon(READ_BYTES)?)))
+    }
     fn writable(&mut self, size: usize) -> bool {
         match self {
             Self::Memory(bytes) => size < READ_BYTES && Arc::get_mut(bytes).is_some(),
@@ -58,7 +67,7 @@ impl Bytes {
 pub(super) enum ReadBytes {
     Owned(Vec<u8>),
     Shared {
-        bytes: Arc<Vec<u8>>,
+        bytes: Arc<MmapMut>,
         range: Range<usize>,
     },
 }
@@ -225,10 +234,7 @@ impl Store {
             };
         let replacement = if reset {
             let (storage, bytes) = match retention.effective(policy).storage() {
-                Retention::Off | Retention::Memory => (
-                    Storage::Memory,
-                    Bytes::Memory(Arc::new(Vec::with_capacity(READ_BYTES))),
-                ),
+                Retention::Off | Retention::Memory => (Storage::Memory, Bytes::memory()?),
                 Retention::Filesystem => (Storage::Filesystem(buffer()?), Bytes::File),
             };
             Some((
@@ -311,9 +317,7 @@ impl Store {
                         size: 0,
                         end_ns: segment.end_ns,
                         bytes: match storage {
-                            Storage::Memory => {
-                                Bytes::Memory(Arc::new(Vec::with_capacity(READ_BYTES)))
-                            }
+                            Storage::Memory => Bytes::memory()?,
                             Storage::Filesystem(_) => Bytes::File,
                         },
                     });
@@ -335,9 +339,9 @@ impl Store {
                     }
                 };
                 match (&mut last.bytes, &mut storage) {
-                    (Bytes::Memory(bytes), _) => Arc::get_mut(bytes)
-                        .expect("unpublished copy")
-                        .extend_from_slice(data.as_ref()),
+                    (Bytes::Memory(bytes), _) => Arc::get_mut(bytes).expect("unpublished copy")
+                        [last.size..last.size + count]
+                        .copy_from_slice(data.as_ref()),
                     (Bytes::File, Storage::Filesystem(buffer)) => {
                         buffer.write(last.start, last.size, data.as_ref())?
                     }
@@ -395,7 +399,7 @@ impl Store {
                     }
                 }
                 let bytes = match &self.storage {
-                    Storage::Memory => Bytes::Memory(Arc::new(Vec::with_capacity(READ_BYTES))),
+                    Storage::Memory => Bytes::memory()?,
                     Storage::Filesystem(_) => Bytes::File,
                 };
                 self.segments.push_back(Segment {
@@ -411,9 +415,9 @@ impl Store {
             );
             let packets = &remaining[..count];
             match &mut segment.bytes {
-                Bytes::Memory(bytes) => Arc::get_mut(bytes)
-                    .expect("writable chunk has no reader")
-                    .extend_from_slice(packets),
+                Bytes::Memory(bytes) => Arc::get_mut(bytes).expect("writable chunk has no reader")
+                    [segment.size..segment.size + count]
+                    .copy_from_slice(packets),
                 Bytes::File => {
                     let Storage::Filesystem(buffer) = &mut self.storage else {
                         unreachable!("file segment belongs to filesystem storage")
@@ -703,7 +707,7 @@ mod tests {
             unreachable!()
         };
         assert_eq!(Arc::strong_count(&bytes), 1);
-        assert_eq!(bytes.capacity(), READ_BYTES);
+        assert_eq!(bytes.len(), READ_BYTES);
         Ok(())
     }
 
@@ -814,6 +818,52 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "linux")]
+    fn memory_history_releases_resident_pages_after_return_to_live()
+    -> Result<(), Box<dyn std::error::Error>> {
+        use super::super::{Activation, Limits, Policy};
+        const HISTORY_MIB: u32 = 64;
+        const ALLOWED_GROWTH_KIB: u64 = 8 * 1024;
+        let policy = Policy::new(
+            Retention::Memory,
+            Limits::new(HISTORY_MIB, HISTORY_MIB, 1).unwrap(),
+        )
+        .with_activation(Activation::OnPause);
+        let mut store = Store::new(policy, 1, false)?;
+        let mut packet = [0xff; super::super::TS_PACKET_SIZE];
+        packet[..4].copy_from_slice(&[0x47, 0x1f, 0xff, 0x10]);
+        let block = packet.repeat(READ_BYTES / packet.len());
+        let resident = || {
+            viewer_diagnostics::measurement::process_memory()
+                .private_kib
+                .ok_or("Linux smaps_rollup private memory is unavailable")
+        };
+        // nextest runs each test in its own process. Use resident private pages,
+        // not virtual size or malloc's accounting; leave room for the live tail
+        // and metadata. This is a CPU-only test of the real retention store.
+        store.append(&block)?;
+        let before = resident()?;
+        for cycle in 0..3 {
+            assert!(store.begin_pause(0)?);
+            for _ in 0..(HISTORY_MIB as usize * SEGMENT_BYTES).div_ceil(READ_BYTES) {
+                store.append(&block)?;
+            }
+            let full = resident()?;
+            store.finish_pause()?;
+            let released = resident()?;
+            eprintln!(
+                "history cycle={cycle} private_kib: before={before} full={full} released={released}"
+            );
+            assert!(!store.retaining());
+            assert!(
+                released <= before + ALLOWED_GROWTH_KIB,
+                "history was dropped but its resident pages remain: {released} KiB (before {before})"
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
     fn configured_memory_budget_bounds_allocations_and_discards_the_old_cursor()
     -> std::io::Result<()> {
         use super::super::{Limits, Policy, limits::MIN_CAPACITY_MIB};
@@ -829,7 +879,7 @@ mod tests {
                 .segments
                 .iter()
                 .map(|segment| match &segment.bytes {
-                    Bytes::Memory(bytes) => bytes.capacity(),
+                    Bytes::Memory(bytes) => bytes.len(),
                     Bytes::File => unreachable!(),
                 })
                 .sum();
