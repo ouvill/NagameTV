@@ -15,7 +15,6 @@ Item {
     property bool programFocused: false
     property bool libraryVisible: false
     property bool controlsFocused: false
-    property bool dataBroadcastOpen: false
     property bool canCapture: false
     readonly property bool fullscreen: targetWindow !== null && targetWindow.visibility === Window.FullScreen
     property int restoreVisibility: Window.Windowed
@@ -31,7 +30,6 @@ Item {
     signal recordingRequested
     signal libraryCloseRequested
     signal controlsDismissRequested
-    signal dataBroadcastBackRequested
     signal captureRequested
     signal audioRequested
     signal settingsRequested
@@ -46,10 +44,6 @@ Item {
     enum DismissMode { PanelsOnly, PanelsOrFullscreen }
     function dismiss(mode: int) {
         activity();
-        if (dataBroadcastOpen) {
-            dataBroadcastBackRequested();
-            return;
-        }
         // Match stacking order: the guide covers the channel browser.
         if (libraryVisible) libraryCloseRequested();
         else if (backend.guide_visible) backend.guide_open(false);

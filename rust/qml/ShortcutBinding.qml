@@ -11,7 +11,7 @@ Shortcut {
     property bool available: true
     context: Qt.WindowShortcut
     autoRepeat: false
-    enabled: active && operation.enabled && available && inputContext.accepts(scope) && !inputContext.bmlAccepts(sequence)
+    enabled: active && operation.enabled && available && inputContext.accepts(scope)
     onActivated: operation.trigger()
     onActivatedAmbiguously: console.warn("Ambiguous shortcut: " + portableText)
 }

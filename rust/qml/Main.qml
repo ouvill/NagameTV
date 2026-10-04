@@ -23,14 +23,12 @@ ViewerWindow {
         property Item library: null
         property Item sidebar: null
         property Item settings: null
-        property Item dataBroadcast: null
     }
-    function restoreFocus(item, onlyWithoutDataBroadcast) {
+    function restoreFocus(item) {
         // Wait for the closing panel's visibility/enabled bindings before
         // testing the opener. It can still be disabled in the change handler.
         Qt.callLater(function() {
             if (root.closing || root.showGuide || root.showChannels || root.libraryVisible || root.showCommentComposer || inputContext.popupOpen) return;
-            if (onlyWithoutDataBroadcast && root.showDataBroadcast) return;
             overlayVisibility.reveal();
             // Shared buttons retain whether the opener was used with keys or
             // the pointer; returning from a mouse-opened panel must not pin controls.
@@ -105,16 +103,12 @@ ViewerWindow {
     readonly property bool showGuide: player.guide_visible
     property bool showChannels: false
     property bool showStats: false
-    // The retained browser can be in BML standby while playback owns input.
+    // The retained browser can be in BML standby while its event loop runs.
     readonly property bool dataBroadcastSessionOpen: player.data_broadcast_requested
     readonly property bool showDataBroadcast: dataBroadcast.active && dataBroadcast.view !== null && dataBroadcast.view.presenting
-    onShowDataBroadcastChanged: {
-        if (!showDataBroadcast && !root.closing) root.restoreFocus(focusHistory.dataBroadcast, true);
-    }
     function setDataBroadcast(open) {
         if (open) {
             if (showDataBroadcast) return;
-            focusHistory.dataBroadcast = root.activeFocusItem;
             if (dataBroadcast.view) dataBroadcast.view.activate();
             else player.data_broadcast_open(true);
         } else {
@@ -297,7 +291,6 @@ ViewerWindow {
         libraryVisible: root.libraryVisible
         controlsFocused: playerControls.navigating || modeNavigation.navigating
             || (recordingTimeline.activeFocus && inputContext.focusItem instanceof Slider && (inputContext.focusItem as Slider).visualFocus)
-        dataBroadcastOpen: inputContext.bmlAccepts("Back")
         onControlsDismissRequested: {
             if (recordingTimeline.activeFocus) playerControls.enter();
             else {
@@ -305,7 +298,6 @@ ViewerWindow {
                 overlayVisibility.dismiss();
             }
         }
-        onDataBroadcastBackRequested: if (dataBroadcast.view) dataBroadcast.view.remoteBack()
         onLibraryCloseRequested: root.closeRecordingLibrary()
         canCapture: screenshot.canCapture
         onActivity: overlayVisibility.reveal()
@@ -342,38 +334,12 @@ ViewerWindow {
         guideVisible: root.showGuide
         libraryVisible: root.libraryVisible
         channelsVisible: root.showChannels
-        dataBroadcastOpen: root.showDataBroadcast
-        dataBroadcastFocused: dataBroadcast.view !== null && dataBroadcast.view.activeFocus
-        dataBroadcastKeys: dataBroadcast.view ? dataBroadcast.view.usedKeyGroups : []
-        function updateDataBroadcastFocus() {
-            if (!viewing || popupOpen || editingText) return;
-            if (dataBroadcastOpen && dataBroadcastKeys.includes("basic") && dataBroadcast.view)
-                dataBroadcast.view.forceActiveFocus(Qt.OtherFocusReason);
-            else if (dataBroadcastFocused)
-                surface.forceActiveFocus();
-        }
-        onDataBroadcastKeysChanged: {
-            // The same snapshot can make a hidden view visible. Apply focus
-            // after its visibility bindings, using the latest key mask.
-            Qt.callLater(inputContext.updateDataBroadcastFocus);
-        }
-        onDataBroadcastOpenChanged: Qt.callLater(inputContext.updateDataBroadcastFocus)
-        // WebEngine can acquire native focus on navigation or a mouse click,
-        // even when the current video-only document claims no keys.
-        onDataBroadcastFocusedChanged: {
-            if (dataBroadcastFocused) Qt.callLater(inputContext.updateDataBroadcastFocus);
-        }
+        sidebarFocused: sidebar.open && sidebar.view !== null && sidebar.view.activeFocus
     }
     ShortcutBindings {
         id: shortcutBindings
         actions: viewerActions
         inputContext: inputContext
-    }
-    DataBroadcastInput {
-        inputContext: inputContext
-        available: player.data_broadcast_available && player.media_active && !root.closing
-        onRemoteKey: function(key) { root.sendDataBroadcastKey(key); }
-        onDataButton: root.pressDataButton()
     }
     CommentSubmitPolicy {
         id: commentSubmitPolicy
@@ -464,7 +430,7 @@ ViewerWindow {
         height: root.viewport.height
         focus: true
         Keys.onPressed: function(event) {
-            if (inputContext.bmlAccepts("Up") || !inputContext.videoFocused || !inputContext.viewing || inputContext.popupOpen
+            if (!inputContext.videoFocused || !inputContext.viewing || inputContext.popupOpen
                     || (event.modifiers & ~Qt.KeypadModifier) !== Qt.NoModifier) return;
             if (![Qt.Key_Up, Qt.Key_Down, Qt.Key_Return, Qt.Key_Enter].includes(event.key)) return;
             event.accepted = true;
@@ -790,8 +756,6 @@ ViewerWindow {
                 }
                 PlayerControls {
                     id: playerControls
-                    dataBroadcastActive: root.showDataBroadcast
-                    onDataBroadcastRequested: root.pressDataButton()
                     onBoundaryReached: function(key) {
                         if (key === Qt.Key_Up && !recordingTimeline.enter()) modeNavigation.enter();
                     }
@@ -953,6 +917,11 @@ ViewerWindow {
         shuttingDown: root.closing
         onOpenChanged: if (open && view) view.openChannels()
         sourceComponent: ProgramSidebar {
+            dataBroadcastAvailable: player.media_active && player.data_broadcast_available
+            dataBroadcastPresenting: root.showDataBroadcast
+            dataBroadcastKeys: dataBroadcast.view ? dataBroadcast.view.usedKeyGroups : []
+            onDataBroadcastRequested: root.pressDataButton()
+            onDataBroadcastKeyRequested: function(key) { root.sendDataBroadcastKey(key); }
             evaluationCommentList: player.evaluation_comment_list
             evaluationCollision: player.evaluation_collision_layout
             displayMode: player.comment_display

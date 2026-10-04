@@ -24,6 +24,11 @@ QtObject {
     readonly property color error: "#ffb4ab"
     readonly property color destructive: "#a94b3f"
     readonly property color live: "#e36b6b"
+    // Receiver color keys retain their broadcast identity in every UI language.
+    readonly property color remoteBlue: "#639cf4"
+    readonly property color remoteRed: "#ef7777"
+    readonly property color remoteGreen: "#75c68b"
+    readonly property color remoteYellow: "#e5cc64"
 
     // Translucent surfaces retain contrast over video, independent of its colors.
     readonly property color overlaySurface: "#e6171819"

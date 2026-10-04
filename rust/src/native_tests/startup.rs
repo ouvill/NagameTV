@@ -56,7 +56,7 @@ pub(super) fn wait_for_timeout(
         }
         if Instant::now() >= deadline {
             let state = ffi::evaluate_root(engine.pin_mut(), &QString::from(
-                "JSON.stringify({bml: {requested: player.data_broadcast_requested, showing: root.showDataBroadcast, keys: inputContext.dataBroadcastKeys, focused: inputContext.dataBroadcastFocused, presentation: dataBroadcast.view ? dataBroadcast.view.presentation : null}, focus: root.activeFocusItem ? root.activeFocusItem.objectName : null, playing: player.playing, loading: player.recording_loading, fileError: player.file_error, playbackError: player.playback_error, duration: player.duration_ms, position: player.position_ms, seekable: player.seekable, subtitles: player.subtitles_active, program: player.current_program_data, video: JSON.parse(player.video_stats()), epgstation: {busy: player.epgstation_busy, loaded: player.epgstation_loaded, count: player.recordings.count, error: player.epgstation_error}})",
+                "JSON.stringify({bml: {requested: player.data_broadcast_requested, showing: root.showDataBroadcast, keys: (dataBroadcast.view ? dataBroadcast.view.usedKeyGroups : []), focused: (dataBroadcast.view !== null && dataBroadcast.view.activeFocus), presentation: dataBroadcast.view ? dataBroadcast.view.presentation : null}, focus: root.activeFocusItem ? root.activeFocusItem.objectName : null, playing: player.playing, loading: player.recording_loading, fileError: player.file_error, playbackError: player.playback_error, duration: player.duration_ms, position: player.position_ms, seekable: player.seekable, subtitles: player.subtitles_active, program: player.current_program_data, video: JSON.parse(player.video_stats()), epgstation: {busy: player.epgstation_busy, loaded: player.epgstation_loaded, count: player.recordings.count, error: player.epgstation_error}})",
             ))?.value::<QString>().ok_or("missing timeout snapshot")?;
             return Err(format!("Timed out: {source}; playback: {state}").into());
         }
@@ -284,7 +284,7 @@ fn wait_navigation_frames(
     Ok(())
 }
 
-fn capture_navigation(
+pub(super) fn capture_navigation(
     app: &QGuiApplication,
     engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
     name: &str,

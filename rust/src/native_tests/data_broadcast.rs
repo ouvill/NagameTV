@@ -349,6 +349,91 @@ pub(super) fn run(
     run_startup(app, engine, TIMER_STARTUP)
 }
 
+pub(super) fn click_remote(
+    app: &QGuiApplication,
+    engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
+    button: &str,
+) -> TestResult {
+    evaluate(
+        engine,
+        "surface.forceActiveFocus(); overlayVisibility.reveal(); root.showProgram = true; true",
+    )?;
+    wait_for(app, engine, "sidebar.view !== null && sidebar.reveal === 1")?;
+    ffi::clickRootItem(engine.pin_mut(), &QString::from("remoteSidebarTab"))?;
+    wait_for(app, engine, "sidebar.view.page === ProgramSidebar.Remote")?;
+    ffi::clickRootItem(engine.pin_mut(), &QString::from(button))?;
+    ffi::clickRootKey(engine.pin_mut(), &QString::from("Escape"))?;
+    wait_for(app, engine, "!root.showProgram && sidebar.reveal === 0")?;
+    wait_for(app, engine, "inputContext.videoFocused")
+}
+
+fn check_remote(
+    app: &QGuiApplication,
+    engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
+) -> TestResult {
+    evaluate(
+        engine,
+        "overlayVisibility.reveal(); root.showProgram = true; true",
+    )?;
+    wait_for(app, engine, "sidebar.view !== null && sidebar.reveal === 1")?;
+    ffi::clickRootItem(engine.pin_mut(), &QString::from("remoteSidebarTab"))?;
+    wait_for(
+        app,
+        engine,
+        "sidebar.view.page === ProgramSidebar.Remote && inputContext.sidebarFocused",
+    )?;
+    // Pointer input must reach the real BML document while the sidebar owns focus.
+    evaluate(
+        engine,
+        &format!("{OBSERVER}.previousVideoRect = dataBroadcast.view.videoRect; true"),
+    )?;
+    ffi::clickRootItem(engine.pin_mut(), &QString::from("remoteKey_r"))?;
+    wait_for(
+        app,
+        engine,
+        &format!("dataBroadcast.view.videoRect.x > {OBSERVER}.previousVideoRect.x + 1"),
+    )?;
+    ffi::clickRootItem(engine.pin_mut(), &QString::from("remoteKey_b"))?;
+    wait_for(
+        app,
+        engine,
+        &format!("Math.abs(dataBroadcast.view.videoRect.x - {OBSERVER}.previousVideoRect.x) < 1"),
+    )?;
+    for (width, height) in [(1280, 720), (640, 360)] {
+        evaluate(
+            engine,
+            &format!("root.width = {width}; root.height = {height}; true"),
+        )?;
+        super::startup::capture_navigation(app, engine, &format!("data-remote-{width}.png"))?;
+        assert!(evaluate(
+            engine,
+            "inputContext.sidebarFocused && !dataBroadcast.view.activeFocus"
+        )?);
+    }
+    evaluate(engine, "root.width = 1280; root.height = 720; true")?;
+    ffi::clickRootItem(engine.pin_mut(), &QString::from("remoteKey_Backspace"))?;
+    wait_for(
+        app,
+        engine,
+        "!root.showDataBroadcast && root.showProgram && inputContext.sidebarFocused",
+    )?;
+    ffi::clickRootItem(engine.pin_mut(), &QString::from("remoteDataButton"))?;
+    wait_document(app, engine, "/40/0001/top.bml")?;
+    assert!(evaluate(
+        engine,
+        "root.showProgram && inputContext.sidebarFocused"
+    )?);
+    ffi::clickRootKey(engine.pin_mut(), &QString::from("Escape"))?;
+    wait_for(
+        app,
+        engine,
+        "!root.showProgram && inputContext.navigationEnabled",
+    )?;
+    wait_for(app, engine, "sidebar.reveal === 0")?;
+    assert!(evaluate(engine, "root.showDataBroadcast")?);
+    Ok(())
+}
+
 fn send_content(server: &Server, startup: &str) -> TestResult {
     server.send(json!({ "type": "pmt", "components": [{
         "pid": 0x101, "componentId": COMPONENT, "streamType": 0x0d, "dataComponentId": 0x000c,
@@ -359,6 +444,87 @@ fn send_content(server: &Server, startup: &str) -> TestResult {
     server.send(module(1, "top.bml", TOP, "x-arib-bml"))?;
     server.send(module(2, "child.bml", CHILD, "x-arib-bml"))?;
     Ok(())
+}
+
+fn check_keyboard_isolation(
+    app: &QGuiApplication,
+    engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
+) -> TestResult {
+    browser(
+        app,
+        engine,
+        r#"window.nativeKeyEvents = 0;
+        window.remoteKeyEvents = 0;
+        window.addEventListener('keydown', () => window.nativeKeyEvents++, true);
+        window.addEventListener('keyup', () => window.nativeKeyEvents++, true);
+        const remoteKey = window.nagameRemoteKey;
+        window.nagameRemoteKey = key => { window.remoteKeyEvents++; remoteKey(key); };
+        true"#,
+    )?;
+    // Suppress playback side effects while checking every former BML binding.
+    // The input context stays enabled, so accidental BML shortcuts still fire.
+    evaluate(
+        engine,
+        "viewerActions.enabled = false; surface.forceActiveFocus(); true",
+    )?;
+    for key in [
+        "Left",
+        "Right",
+        "Up",
+        "Down",
+        "Return",
+        "Enter",
+        "Space",
+        "Back",
+        "Backspace",
+        "X",
+        "Escape",
+        "D",
+        "B",
+        "R",
+        "G",
+        "Y",
+        "0",
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9",
+    ] {
+        evaluate(engine, "surface.forceActiveFocus(); true")?;
+        ffi::clickRootKey(engine.pin_mut(), &QString::from(key))?;
+    }
+    browser(
+        app,
+        engine,
+        "window.nativeKeyEvents === 0 && window.remoteKeyEvents === 0",
+    )?;
+    wait_document(app, engine, "/40/0001/top.bml")?;
+    evaluate(
+        engine,
+        "viewerActions.enabled = true; surface.forceActiveFocus(); true",
+    )?;
+    // Displaying and operating BML must leave native focus with the receiver.
+    assert!(evaluate(engine, "!dataBroadcast.view.activeFocus")?);
+    ffi::clickRootKey(engine.pin_mut(), &QString::from("Down"))?;
+    wait_for(app, engine, "playerControls.activeFocus")?;
+    ffi::clickRootKey(engine.pin_mut(), &QString::from("G"))?;
+    wait_for(app, engine, "root.showGuide")?;
+    ffi::clickRootKey(engine.pin_mut(), &QString::from("Escape"))?;
+    wait_for(app, engine, "!root.showGuide")?;
+    ffi::clickRootKey(engine.pin_mut(), &QString::from("Back"))?;
+    wait_for(app, engine, "inputContext.videoFocused")?;
+    ffi::clickRootKey(engine.pin_mut(), &QString::from("Escape"))?;
+    browser(
+        app,
+        engine,
+        "window.nativeKeyEvents === 0 && window.remoteKeyEvents === 0",
+    )?;
+    wait_document(app, engine, "/40/0001/top.bml")
 }
 
 fn run_startup(
@@ -440,15 +606,8 @@ fn run_startup(
     }
     check_video_window(app, engine)?;
     if startup == STARTUP {
-        // Explicit focus on a player control must not steal BML's claimed keys.
-        evaluate(engine, "playerControls.enter(); true")?;
-        for key in ["Left", "Right", "Up", "Down", "G"] {
-            ffi::clickRootKey(engine.pin_mut(), &QString::from(key))?;
-            assert!(evaluate(
-                engine,
-                "!root.showGuide && root.showDataBroadcast && playerControls.activeFocus"
-            )?);
-        }
+        check_remote(app, engine)?;
+        check_keyboard_isolation(app, engine)?;
         // Geometry notifications must reach Qt without the former 100 ms poll.
         evaluate(
             engine,
@@ -498,8 +657,8 @@ fn run_startup(
     if startup != STARTUP {
         if startup == VISIBLE_STARTUP {
             // A visible video-only document retains the default basic mask,
-            // but has no BML key target. d must return actual D-pad control.
-            ffi::clickRootKey(engine.pin_mut(), &QString::from("D"))?;
+            // but has no BML key target. The remote must follow that availability.
+            click_remote(app, engine, "remoteDataButton")?;
             wait_document(app, engine, "/40/0000/startup.bml")?;
             wait_for(
                 app,
@@ -510,17 +669,19 @@ fn run_startup(
                 engine,
                 "root.showDataBroadcast && dataBroadcast.view.usedKeyList === 'basic data-button' && !dataBroadcast.view.inputAvailable"
             )?);
-            evaluate(engine, "dataBroadcast.view.forceActiveFocus(); true")?;
-            wait_for(app, engine, "inputContext.videoFocused")?;
             ffi::clickRootKey(engine.pin_mut(), &QString::from("Down"))?;
             wait_for(app, engine, "playerControls.activeFocus")?;
             ffi::clickRootKey(engine.pin_mut(), &QString::from("G"))?;
             wait_for(app, engine, "root.showGuide")?;
             ffi::clickRootKey(engine.pin_mut(), &QString::from("Escape"))?;
             wait_for(app, engine, "!root.showGuide")?;
-            ffi::clickRootKey(engine.pin_mut(), &QString::from("D"))?;
+            click_remote(app, engine, "remoteDataButton")?;
             wait_document(app, engine, "/40/0001/top.bml")?;
-            wait_for(app, engine, "inputContext.bmlAccepts('Up')")?;
+            wait_for(
+                app,
+                engine,
+                "dataBroadcast.view.usedKeyGroups.includes('basic')",
+            )?;
             assert!(evaluate(
                 engine,
                 &format!("dataBroadcast.view === {OBSERVER}.retainedView")
@@ -533,7 +694,7 @@ fn run_startup(
             wait_for(app, engine, "dataBroadcast.view === null")?;
             evaluate(engine, "player.configure_data_broadcast(true); true")?;
         } else {
-            ffi::clickRootKey(engine.pin_mut(), &QString::from("Back"))?;
+            click_remote(app, engine, "remoteKey_Backspace")?;
             wait_for(
                 app,
                 engine,
@@ -605,8 +766,8 @@ fn run_startup(
         check_video_window(app, engine)?;
     }
 
-    // A hidden document awaiting its external script must keep BML input.
-    ffi::clickRootKey(engine.pin_mut(), &QString::from("Return"))?;
+    // A pending document retains the remote mask without taking keyboard focus.
+    click_remote(app, engine, "remoteKey_Enter")?;
     wait_for(
         app,
         engine,
@@ -614,7 +775,7 @@ fn run_startup(
     )?;
     assert!(evaluate(
         engine,
-        "root.showDataBroadcast && !inputContext.navigationEnabled"
+        "root.showDataBroadcast && inputContext.navigationEnabled"
     )?);
     server.send(module(3, "show.ecm", SCRIPT, "x-arib-ecmascript"))?;
     wait_for(
@@ -622,11 +783,11 @@ fn run_startup(
         engine,
         "dataBroadcast.view.presentation === DataBroadcastView.Presenting",
     )?;
-    ffi::clickRootKey(engine.pin_mut(), &QString::from("Escape"))?;
+    click_remote(app, engine, "remoteKey_Backspace")?;
     wait_document(app, engine, "/40/0001/top.bml")?;
     check_video_window(app, engine)?;
     assert!(evaluate(engine, "root.showDataBroadcast")?);
-    ffi::clickRootKey(engine.pin_mut(), &QString::from("Escape"))?;
+    click_remote(app, engine, "remoteKey_Backspace")?;
     wait_for(
         app,
         engine,
@@ -635,7 +796,7 @@ fn run_startup(
     assert!(evaluate(
         engine,
         &format!(
-            "root.dataBroadcastSessionOpen && dataBroadcast.view === {OBSERVER}.retainedView && !playerControls.dataBroadcastActive"
+            "root.dataBroadcastSessionOpen && dataBroadcast.view === {OBSERVER}.retainedView && !root.showDataBroadcast"
         )
     )?);
     browser(app, engine, "window.nagameSocketReady === true")?;
@@ -650,7 +811,7 @@ fn run_startup(
     )?);
     check_overlays(app, engine)?;
 
-    // Wait past the activation interval: Esc/Back must not reopen the document.
+    // Wait past the activation interval: remote Back must not reopen the document.
     let deadline = Instant::now() + Duration::from_millis(2300);
     while Instant::now() < deadline {
         app.process_events();
@@ -659,11 +820,11 @@ fn run_startup(
     }
     ffi::clickRootKey(engine.pin_mut(), &QString::from("Down"))?;
     wait_for(app, engine, "playerControls.activeFocus")?;
-    ffi::clickRootItem(engine.pin_mut(), &QString::from("dataBroadcastButton"))?;
+    click_remote(app, engine, "remoteDataButton")?;
     wait_for(
         app,
         engine,
-        "root.showDataBroadcast && dataBroadcast.view.presentation === DataBroadcastView.Presenting && inputContext.dataBroadcastFocused",
+        "root.showDataBroadcast && dataBroadcast.view.presentation === DataBroadcastView.Presenting && inputContext.videoFocused",
     )?;
     assert!(evaluate(
         engine,
@@ -671,7 +832,7 @@ fn run_startup(
     )?);
     browser(app, engine, "window.nagameSocketReady === true")?;
     check_video_window(app, engine)?;
-    ffi::clickRootKey(engine.pin_mut(), &QString::from("Back"))?;
+    click_remote(app, engine, "remoteKey_Backspace")?;
     wait_for(
         app,
         engine,
@@ -722,7 +883,7 @@ pub(super) fn run_entry(
             assert!(evaluate(engine, "dataBroadcast.view === null")?);
             thread::sleep(Duration::from_millis(10));
         }
-        ffi::clickRootKey(engine.pin_mut(), &QString::from("D"))?;
+        click_remote(app, engine, "remoteDataButton")?;
     }
     wait_for(
         app,
@@ -753,25 +914,25 @@ pub(super) fn run_entry(
         app.process_events();
         assert!(evaluate(
             engine,
-            "inputContext.dataBroadcastKeys.length === 0"
+            "dataBroadcast.view.usedKeyGroups.length === 0"
         )?);
         thread::sleep(Duration::from_millis(10));
     }
     assert!(evaluate(
         engine,
-        "inputContext.navigationEnabled && !inputContext.bmlAccepts('G')"
+        "inputContext.navigationEnabled && !dataBroadcast.view.activeFocus"
     )?);
-    ffi::clickRootKey(engine.pin_mut(), &QString::from("D"))?;
+    click_remote(app, engine, "remoteDataButton")?;
     wait_for(
         app,
         engine,
-        "inputContext.bmlAccepts('Up') && inputContext.bmlAccepts('G') && inputContext.bmlAccepts('1')",
+        "dataBroadcast.view.usedKeyGroups.includes('basic') && dataBroadcast.view.usedKeyGroups.includes('data-button') && dataBroadcast.view.usedKeyGroups.includes('numeric-tuning')",
     )?;
-    ffi::clickRootKey(engine.pin_mut(), &QString::from("R"))?;
+    click_remote(app, engine, "remoteKey_r")?;
     wait_for(
         app,
         engine,
-        "!inputContext.bmlAccepts('Up') && !inputContext.bmlAccepts('G') && inputContext.bmlAccepts('1')",
+        "!dataBroadcast.view.usedKeyGroups.includes('basic') && !dataBroadcast.view.usedKeyGroups.includes('data-button') && dataBroadcast.view.usedKeyGroups.includes('numeric-tuning')",
     )?;
     ffi::clickRootKey(engine.pin_mut(), &QString::from("G"))?;
     wait_for(app, engine, "root.showGuide")?;
@@ -791,11 +952,11 @@ pub(super) fn run_entry(
         )?,
         "closing guide replaced BML view"
     );
-    ffi::clickRootKey(engine.pin_mut(), &QString::from("D"))?;
+    click_remote(app, engine, "remoteDataButton")?;
     wait_for(
         app,
         engine,
-        "inputContext.dataBroadcastKeys.length === 0 && root.showDataBroadcast",
+        "dataBroadcast.view.usedKeyGroups.length === 0 && root.showDataBroadcast",
     )?;
     assert!(evaluate(
         engine,
@@ -805,7 +966,7 @@ pub(super) fn run_entry(
     wait_for(
         app,
         engine,
-        "inputContext.bmlAccepts('1') && !inputContext.bmlAccepts('Up') && root.showDataBroadcast",
+        "dataBroadcast.view.usedKeyGroups.includes('numeric-tuning') && !dataBroadcast.view.usedKeyGroups.includes('basic') && root.showDataBroadcast",
     )?;
     evaluate(engine, "surface.forceActiveFocus(); true")?;
     ffi::clickRootKey(engine.pin_mut(), &QString::from("Escape"))?;

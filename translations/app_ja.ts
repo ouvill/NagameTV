@@ -1220,6 +1220,18 @@
 </context>
   <context>
     <name>Viewer</name>
+    <message><source>Remote</source><translation>リモコン</translation></message>
+    <message><source>Data broadcast remote</source><translation>データ放送リモコン</translation></message>
+    <message><source>Up</source><translation>上</translation></message>
+    <message><source>Down</source><translation>下</translation></message>
+    <message><source>Left</source><translation>左</translation></message>
+    <message><source>Right</source><translation>右</translation></message>
+    <message><source>OK</source><translation>決定</translation></message>
+    <message><source>Back</source><translation>戻る</translation></message>
+    <message><source>Blue</source><translation>青</translation></message>
+    <message><source>Red</source><translation>赤</translation></message>
+    <message><source>Green</source><translation>緑</translation></message>
+    <message><source>Yellow</source><translation>黄</translation></message>
     <message><source>Data broadcast</source><translation>データ放送</translation></message>
     <message><source>Data broadcast is unavailable for this stream</source><translation>このストリームではデータ放送を利用できません</translation></message>
     <message><source>Data broadcast browser stopped</source><translation>データ放送のブラウザーが停止しました</translation></message>

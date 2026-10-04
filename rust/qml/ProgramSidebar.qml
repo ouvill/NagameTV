@@ -9,7 +9,8 @@ FocusScope {
     enum Page {
         Program,
         Channels,
-        Playback
+        Playback,
+        Remote
     }
     property bool recording: false
     property string fallbackTitle: ""
@@ -35,6 +36,15 @@ FocusScope {
     property string commentProgramTitle: ""
     property string commentStatus: ""
     property int page: ProgramSidebar.Playback
+    property bool dataBroadcastAvailable: false
+    property bool dataBroadcastPresenting: false
+    property list<string> dataBroadcastKeys: []
+    signal dataBroadcastRequested
+    signal dataBroadcastKeyRequested(string domKey)
+    onDataBroadcastAvailableChanged: {
+        if (!dataBroadcastAvailable && page === ProgramSidebar.Remote)
+            choosePage(ProgramSidebar.Playback, activeFocus);
+    }
     required property ChannelModel channelModel
     property int selectedChannel: -1
     property int viewingIndex: -1
@@ -44,12 +54,16 @@ FocusScope {
     }
     function enter() {
         if (page === ProgramSidebar.Playback) playback.enter();
+        else if (page === ProgramSidebar.Remote && remoteLoader.item)
+            (remoteLoader.item as DataBroadcastRemote).enter();
         else if (page === ProgramSidebar.Channels && channelsLoader.item)
             (channelsLoader.item as SidebarChannels).focusBrowser();
         else scroll.forceActiveFocus(Qt.TabFocusReason);
     }
     function enterLast() {
         if (page === ProgramSidebar.Playback) playback.enterLast();
+        else if (page === ProgramSidebar.Remote && remoteLoader.item)
+            (remoteLoader.item as DataBroadcastRemote).enterLast();
         else if (page === ProgramSidebar.Channels && channelsLoader.item)
             (channelsLoader.item as SidebarChannels).focusLast();
         else scroll.forceActiveFocus(Qt.TabFocusReason);
@@ -104,6 +118,7 @@ FocusScope {
             Label {
                 objectName: "sidebarHeading"
                 text: root.page === ProgramSidebar.Playback ? qsTranslate("Main", "Viewing settings")
+                    : root.page === ProgramSidebar.Remote ? qsTranslate("Viewer", "Data broadcast remote")
                     : root.page === ProgramSidebar.Channels ? qsTranslate("Main", "Channels") : qsTranslate("Main", "Program information")
                 color: Theme.textPrimary
                 font.pixelSize: Theme.fontTitle
@@ -326,6 +341,26 @@ FocusScope {
             onShadowRequested: function(enabled) { root.shadowRequested(enabled); }
             onStatsRequested: function(visible) { root.statsRequested(visible); }
         }
+        Loader {
+            id: remoteLoader
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            active: root.dataBroadcastAvailable && root.page === ProgramSidebar.Remote
+            visible: active
+            sourceComponent: DataBroadcastRemote {
+                objectName: "dataBroadcastRemote"
+                available: root.dataBroadcastAvailable
+                presenting: root.dataBroadcastPresenting
+                usedKeyGroups: root.dataBroadcastKeys
+                onDataButton: root.dataBroadcastRequested()
+                onCloseRequested: root.closeRequested()
+                onRemoteKey: function(key) { root.dataBroadcastKeyRequested(key); }
+                onBoundaryReached: function(key) {
+                    if (key === Qt.Key_Up) closeButton.forceActiveFocus(Qt.TabFocusReason);
+                    else if (key === Qt.Key_Down) footer.enter();
+                }
+            }
+        }
         Rectangle {
             Layout.fillWidth: true
             Layout.preferredHeight: 1
@@ -335,9 +370,10 @@ FocusScope {
             id: footer
             Layout.fillWidth: true
             implicitHeight: tabs.implicitHeight
-            navigationItems: [playbackTab, programTab, channelsTab]
+            navigationItems: [playbackTab, programTab, channelsTab, remoteTab]
             initialItem: root.page === ProgramSidebar.Playback ? playbackTab
-                : root.page === ProgramSidebar.Program ? programTab : channelsTab
+                : root.page === ProgramSidebar.Program ? programTab
+                : root.page === ProgramSidebar.Remote ? remoteTab : channelsTab
             onBoundaryReached: function(key) {
                 if (key === Qt.Key_Up) root.enterLast();
                 else if (key === Qt.Key_Down) closeButton.forceActiveFocus(Qt.TabFocusReason);
@@ -372,6 +408,16 @@ FocusScope {
                     selected: root.page === ProgramSidebar.Channels
                     text: qsTranslate("Main", "Channels")
                     onClicked: root.choosePage(ProgramSidebar.Channels, focusVisible)
+                }
+                SidebarTab {
+                    id: remoteTab
+                    Layout.fillWidth: true
+                    objectName: "remoteSidebarTab"
+                    visible: root.dataBroadcastAvailable
+                    iconSource: root.iconDirectory + "remote-control.svg"
+                    selected: root.page === ProgramSidebar.Remote
+                    text: qsTranslate("Viewer", "Remote")
+                    onClicked: root.choosePage(ProgramSidebar.Remote, focusVisible)
                 }
             }
         }

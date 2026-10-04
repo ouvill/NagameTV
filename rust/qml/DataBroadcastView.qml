@@ -24,7 +24,11 @@ WebEngineView {
     // Chromium animation frame during navigation; hiding the WebEngineView
     // would suspend that frame and strand the next document in standby.
     opacity: presenting ? 1 : 0
-    enabled: presenting
+    // Only the sidebar remote sends BML keys. Keep Chromium out of native
+    // keyboard/pointer focus, including document navigation and Tab traversal.
+    enabled: false
+    activeFocusOnTab: false
+    settings.focusOnNavigationEnabled: false
     function restartBrowser(activateOnLoad) {
         resumeActivation = activateOnLoad;
         activationRevision++;
@@ -61,9 +65,6 @@ WebEngineView {
             runJavaScript("window.nagameDataButton()");
         }
         else activate();
-    }
-    function remoteBack() {
-        if (browserReady) runJavaScript("window.nagameRemoteBack && window.nagameRemoteBack()")
     }
     function remoteKey(domKey) {
         if (browserReady)

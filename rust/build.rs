@@ -77,6 +77,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     .crate_include_root(None)
     .include_dir(std::path::Path::new(&std::env::var("CARGO_MANIFEST_DIR")?).join("src"))
     .qrc_resources([
+        "../assets/icons/remote-control.svg",
         "../assets/icons/camera.svg",
         "../assets/icons/folder-open.svg",
         "../assets/icons/info.svg",

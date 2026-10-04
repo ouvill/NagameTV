@@ -185,14 +185,14 @@ fn check_data_broadcast(
     app: &QGuiApplication,
     engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
 ) -> TestResult {
-    // Open through the same mouse path as the toolbar button in production.
+    // Open through the production sidebar remote.
     evaluate(engine, "setup.close(); overlayVisibility.reveal(); true")?;
     wait_for(
         app,
         engine,
         "playerControls.visible && player.data_broadcast_available && !setup.visible",
     )?;
-    ffi::clickRootItem(engine.pin_mut(), &QString::from("dataBroadcastButton"))?;
+    super::data_broadcast::click_remote(app, engine, "remoteDataButton")?;
     wait_for(app, engine, "root.showDataBroadcast")?;
     wait_for(
         app,
@@ -306,7 +306,7 @@ pub(super) fn run_data_broadcast(
         wait_for(
             app,
             engine,
-            "!settings.visible && inputContext.navigationEnabled && !inputContext.dataBroadcastFocused",
+            "!settings.visible && inputContext.navigationEnabled && !(dataBroadcast.view !== null && dataBroadcast.view.activeFocus)",
         )?;
         check_data_broadcast_disabled(app, engine)?;
         assert!(
@@ -340,7 +340,7 @@ fn check_data_broadcast_disabled(
         app.process_events();
         assert!(evaluate(
             engine,
-            "!player.data_broadcast_enabled && !player.data_broadcast_available && !player.data_broadcast_receiving() && !player.data_broadcast_connected() && !player.data_broadcast_requested && player.data_broadcast_endpoint === '' && dataBroadcast.view === null && !playerControls.navigationItems.find(item => item.objectName === 'dataBroadcastButton').visible && player.playing"
+            "!player.data_broadcast_enabled && !player.data_broadcast_available && !player.data_broadcast_receiving() && !player.data_broadcast_connected() && !player.data_broadcast_requested && player.data_broadcast_endpoint === '' && dataBroadcast.view === null && !playerControls.navigationItems.some(item => item.objectName === 'dataBroadcastButton') && (sidebar.view === null || !sidebar.view.dataBroadcastAvailable) && player.playing"
         )?);
         thread::sleep(ACCEPT_POLL);
     }
@@ -540,7 +540,7 @@ fn capture_live_bml(
     let mut snapshot = super::screenshots::json(engine, &format!("{LIVE_OBSERVER}.snapshot"))?;
     snapshot["input"] = super::screenshots::json(
         engine,
-        "({focus: root.activeFocusItem ? String(root.activeFocusItem) : null, bmlFocus: inputContext.dataBroadcastFocused, videoFocus: inputContext.videoFocused, navigation: inputContext.navigationEnabled, bmlUp: inputContext.bmlAccepts('Up'), popup: inputContext.popupOpen, editing: inputContext.editingText})",
+        "({focus: root.activeFocusItem ? String(root.activeFocusItem) : null, bmlFocus: (dataBroadcast.view !== null && dataBroadcast.view.activeFocus), videoFocus: inputContext.videoFocused, navigation: inputContext.navigationEnabled, popup: inputContext.popupOpen, editing: inputContext.editingText})",
     )?;
     std::fs::write(
         output.with_extension("json"),
@@ -639,18 +639,18 @@ pub(super) fn run_data_broadcast_live(
     evaluate(engine, "surface.forceActiveFocus(); true")?;
     let input = ffi::evaluate_root(
         engine.pin_mut(),
-        &QString::from("JSON.stringify({focus: root.activeFocusItem ? root.activeFocusItem.objectName : null, bmlFocus: inputContext.dataBroadcastFocused, navigation: inputContext.navigationEnabled, guideShortcut: shortcutBindings.entries.find(binding => binding.objectName === 'guideShortcut').enabled})"),
+        &QString::from("JSON.stringify({focus: root.activeFocusItem ? root.activeFocusItem.objectName : null, bmlFocus: (dataBroadcast.view !== null && dataBroadcast.view.activeFocus), navigation: inputContext.navigationEnabled, guideShortcut: shortcutBindings.entries.find(binding => binding.objectName === 'guideShortcut').enabled})"),
     )?
     .value::<QString>()
     .ok_or("missing data broadcast input state")?;
     if !evaluate(
         engine,
-        "!inputContext.navigationEnabled && !shortcutBindings.entries.find(binding => binding.objectName === 'guideShortcut').enabled",
+        "inputContext.navigationEnabled && shortcutBindings.entries.find(binding => binding.objectName === 'guideShortcut').enabled",
     )? {
-        return Err(format!("data broadcast left application shortcuts enabled: {input}").into());
+        return Err(format!("data broadcast blocked application shortcuts: {input}").into());
     }
     if press_data_again {
-        ffi::clickRootKey(engine.pin_mut(), &QString::from("D"))?;
+        super::data_broadcast::click_remote(app, engine, "remoteDataButton")?;
         let deadline = Instant::now() + Duration::from_secs(10);
         while Instant::now() < deadline {
             app.process_events();
