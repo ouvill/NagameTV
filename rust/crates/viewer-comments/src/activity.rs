@@ -126,19 +126,28 @@ mod tests {
     use super::*;
     #[test]
     fn titles_are_optional_bounded_and_independent_of_force() -> Result<(), Error> {
-        let snapshot = Snapshot::parse(br#"[
+        let snapshot = Snapshot::parse(
+            br#"[
             {"id":"jk1","threads":[],"program_present":{"title":"  <b>News</b>  "}},
             {"id":"jk2","threads":[],"program_present":null},
             {"id":"jk4","threads":[]},
             {"id":"jk5","threads":[],"program_present":{"title":" "}}
-        ]"#)?;
+        ]"#,
+        )?;
         assert_eq!(snapshot.program_title(1), Some("<b>News</b>"));
         assert_eq!(snapshot.get(1), None);
-        for id in [2, 4, 5] { assert_eq!(snapshot.program_title(id), None); }
+        for id in [2, 4, 5] {
+            assert_eq!(snapshot.program_title(id), None);
+        }
         let bytes = serde_json::to_vec(&serde_json::json!([{
             "id":"jk1", "threads":[], "program_present":{"title":"あ".repeat(600)}
         }]))?;
-        assert_eq!(Snapshot::parse(&bytes)?.program_title(1).map(|s| s.chars().count()), Some(512));
+        assert_eq!(
+            Snapshot::parse(&bytes)?
+                .program_title(1)
+                .map(|s| s.chars().count()),
+            Some(512)
+        );
         Ok(())
     }
     #[test]
