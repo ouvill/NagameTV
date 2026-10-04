@@ -251,7 +251,8 @@ Workshopには同じ導入処理の`setup-tests`アクションがあります�
 ```sh
 bash scripts/testing/install-nextest.sh
 python3 scripts/test.py --list
-python3 scripts/test.py             # 機器不要: 静的検査、Rust全8パッケージ、Qt接続など
+python3 scripts/test.py             # 機器不要: 静的検査、Rustテスト、Qt接続など
+python3 scripts/test.py core        # Qt/GStreamer不要のRustクレートのみ
 python3 scripts/test.py app         # アプリのRustテストのみ
 python3 scripts/test.py danmaku ui-style  # GPU環境を検証してQML部品を確認
 python3 scripts/test.py app --filter 'test(settings::)'
@@ -265,13 +266,18 @@ nextest内で単独実行します。通常のビルド構成は`dev`です。
 Qtスイートにも共通ランナーの`--profile release`を指定できます。
 個別の引数は`python3 scripts/test.py startup -- recording-pid-change`のように`--`の後に渡します。
 アプリの主要なpath依存クレートと独立したデータ放送デコーダーも明示的に列挙し、nextestの対象外であるdoctestはCargoで別途実行します。
+`core`はこれらの独立クレートをまとめて選択します。字幕デコーダー`libaribcaption`の
+所有権試験も含み、アプリのロックファイルから`--package libaribcaption`で選択するため、
+Qt/GStreamerはコンパイルしません。C++コンパイラー・CMake・libclangは必要です。
 ビルド情報専用の`viewer-build-info`と翻訳生成用の`viewer-translations`は、
 `checks`に含まれるビルド情報・変更検知の回帰試験で検証します。
 `#[ignore]`の実機・性能プローブ、実EPGStation、配布物の検査は自動では実行しません。
 
-ランナーは必要なバイナリーを先にビルドします。Rustはnextestのビルド情報、Qtは実行ごとのコピーを
-使い、各Qtスイートで`cargo run`を繰り返しません。ログと`summary.json`は`build/test-runs/run-*/`に
-保存します。失敗時はそこで停止し、成功・失敗・環境不足・未実行を区別します。
+標準実行では静的検査とブラウザー接続試験に続き、Qt不要のRustクレート、アプリ、Qtスイートを
+検証します。Rustはクレートごとにビルド・nextest・doctestを実行し、失敗したら後続の
+ビルドへ進みません。nextestには直前のビルド情報を渡します。Qt用バイナリーは一度だけ
+準備し、実行ごとのコピーを各Qtスイートで共有します。
+ログと`summary.json`は`build/test-runs/run-*/`に保存し、成功・失敗・環境不足・未実行を区別します。
 GUIを選ぶと必要資源を先に検証し、不足時はGUIのビルド・実行へ進みません。
 
 CMakeのビルドと共通ランナーは、同じLinuxユーザーの
@@ -304,6 +310,9 @@ CARGO_TARGET_DIR=build/cargo python3 -m scripts.testing.epgstation_integration
 
 EPGイベント接続の停止・再試行は、機器不要の独立したクレートでも検証します。
 Tokioの仮想時間を使う試験では、実時間の待機を省いて期限前後の動作を確認します。
+リモート操作のタイムアウト試験も、HTTP/2で要求が届いてからTokioの時計を進めます。
+`Pending`の実行権を失う期限は`std::time::Instant`を使うため、現在時刻を明示した別の
+境界試験で確認します。実再生の時計や10秒を超える逐次受信の試験は、実時間での検証を残します。
 
 ```sh
 python3 scripts/test.py viewer-epg-events

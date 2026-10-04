@@ -232,24 +232,64 @@ async fn state_stream_starts_with_snapshot_and_recovers_latest_on_reconnect() {
     assert!(stream.message().await.unwrap().is_none());
 }
 
+#[test]
+fn execution_right_expires_at_the_deadline() {
+    let deadline = Instant::now();
+    for (now, allowed) in [
+        (deadline - Duration::from_nanos(1), true),
+        (deadline, false),
+        (deadline + Duration::from_nanos(1), false),
+    ] {
+        let (reply, mut result) = oneshot::channel();
+        let pending = Pending {
+            command: Command::Stop,
+            reply,
+            deadline,
+            stop: CancellationToken::new(),
+        };
+        let executing = pending.claim_at(now);
+        assert_eq!(executing.is_some(), allowed);
+        if let Some(executing) = executing {
+            assert_eq!(executing.command(), Command::Stop);
+            executing.complete(Ok(()));
+            assert!(result.try_recv().unwrap().is_ok());
+        } else {
+            assert!(matches!(
+                result.try_recv().unwrap(),
+                Err(CommandError::Expired)
+            ));
+        }
+    }
+}
+
 #[tokio::test]
-async fn timeout_and_client_cancellation_discard_unclaimed_commands() {
+async fn timeout_returns_deadline_exceeded_and_discards_the_unclaimed_command() {
     let mut session = session();
     let mut client = client(&session).await;
-    let mut requester = client.clone();
-    let call =
-        tokio::spawn(async move { requester.stop(Request::new(proto::StopRequest {})).await });
+    let call = tokio::spawn(async move { client.stop(Request::new(proto::StopRequest {})).await });
     let pending = next(&mut session).await;
+    // Establish real HTTP/2 I/O before advancing the runtime's Tokio clock.
+    // Resume before awaiting network I/O so an idle runtime cannot auto-advance.
+    // Pending's std::Instant deadline is checked separately by the boundary test.
+    tokio::time::pause();
+    tokio::time::advance(COMMAND_TIMEOUT).await;
+    tokio::time::resume();
     assert_eq!(
         call.await.unwrap().unwrap_err().code(),
         Code::DeadlineExceeded
     );
     assert!(pending.claim().is_none());
+    session.stop().wait().await.unwrap();
+}
 
+#[tokio::test]
+async fn client_cancellation_discards_the_unclaimed_command() {
+    let mut session = session();
+    let mut client = client(&session).await;
     let call = tokio::spawn(async move { client.stop(Request::new(proto::StopRequest {})).await });
     let pending = next(&mut session).await;
     call.abort();
-    let _ = call.await;
+    assert!(call.await.unwrap_err().is_cancelled());
     tokio::time::timeout(Duration::from_secs(1), async {
         while !pending.reply.is_closed() {
             tokio::time::sleep(Duration::from_millis(1)).await;

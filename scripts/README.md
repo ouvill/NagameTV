@@ -32,11 +32,13 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DNAGAMETV_DISTRIBUTION=OFF
 cmake --build build
 python3 scripts/test.py --list
 python3 scripts/test.py                          # 機器不要の標準テスト
+python3 scripts/test.py core                     # Qt/GStreamer不要のRustクレートをまとめて検証
 python3 scripts/test.py tooling                  # スクリプト自身の回帰テスト
 python3 scripts/test.py arib-b24                 # データカルーセルの機器不要テスト
 python3 scripts/test.py viewer-web-bml            # web-bml への変換の機器不要テスト
 python3 scripts/test.py web-bml-adapter           # ブラウザー接続・起動制御。開発用Node.jsが必要
 python3 scripts/test.py viewer-mpegts            # 共通TS・PAT/PMTの機器不要テスト
+python3 scripts/test.py libaribcaption           # 字幕デコーダーの所有権試験。C++/CMake/libclangが必要
 python3 scripts/test.py connection localization  # 機器不要のQt試験
 python3 scripts/test.py danmaku ui-style          # 専用画面・実GPU・仮想音声を検証
 python3 scripts/test.py startup -- recording-pid-change
@@ -47,6 +49,9 @@ python3 scripts/test.py danmaku -- --evaluation-legacy-comments
 `startup -- recording-audit TS_PATH`、`startup -- recording-probe TS_PATH`、
 QML試験の関数指定や `-o` も同じ形式です。`checks` には `tooling` と翻訳カタログ検査を
 含み、同時に選んでも各検査は一度だけ実行します。
+標準実行ではQt不要のRustクレートを先に検証します。クレートごとにビルド・実行するため、
+テスト失敗後に残りのクレートやQtをビルドしません。`core`はアプリ・Qtの検証を含まないので、
+変更範囲に応じて選択します。CIと引数なしの実行は引き続き全CPUスイートを検証します。
 
 GUI試験は [gui_session.py](testing/gui_session.py) が専用画面と音声出力を所有し、
 検証成功後に [suites.py](testing/suites.py) がテストを実行します。

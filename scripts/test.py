@@ -18,12 +18,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from scripts.build.support import ROOT, build_environment, ensure_lock, lock_fds
 from scripts.testing.suites import SUITES, Requirement
 
-CRATES = ("viewer-comments", "viewer-epg-events", "viewer-diagnostics", "viewer-remote", "tsreadex", "viewer-mpegts", "arib-b24", "viewer-web-bml")
-RUST = ("app", *CRATES)
+CRATES = ("viewer-diagnostics", "viewer-mpegts", "arib-b24", "viewer-web-bml", "tsreadex",
+          "libaribcaption", "viewer-remote", "viewer-epg-events", "viewer-comments")
+RUST = (*CRATES, "app")
 NATIVE = tuple(name for name, suite in SUITES.items() if suite.requirement == Requirement.CPU)
 GUI = tuple(name for name, suite in SUITES.items() if suite.requirement == Requirement.GUI
             and name != "ui-capture")
-GROUPS = {"rust": RUST, "native": NATIVE, "gui": GUI,
+GROUPS = {"core": CRATES, "rust": RUST, "native": NATIVE, "gui": GUI,
           "cpu": ("checks", "web-bml-adapter", *RUST, *NATIVE), "all": ("checks", "web-bml-adapter", *RUST, *NATIVE, *GUI)}
 
 
@@ -88,7 +89,7 @@ class Step:
 
 
 def plan(suites, directory, args):
-    build, checks, tests = [], [], []
+    checks, tests = [], []
     if "web-bml-adapter" in suites:
         tests.append(Step("web-bml-adapter", ["node", "--test", "tests/web-bml/adapter.test.mjs"]))
     if "checks" in suites:
@@ -108,14 +109,18 @@ def plan(suites, directory, args):
     for suite in suites:
         if suite not in RUST:
             continue
-        manifest = "rust/Cargo.toml" if suite == "app" else f"rust/crates/{suite}/Cargo.toml"
-        features = ["--features", "network"] if suite in CRATES[:2] else []
+        # libaribcaption uses the application's lockfile; select only the decoder
+        # package for compilation, without building the application's Qt layer.
+        manifest = "rust/Cargo.toml" if suite in ("app", "libaribcaption") else f"rust/crates/{suite}/Cargo.toml"
+        features = ["--features", "network"] if suite in ("viewer-comments", "viewer-epg-events") else []
         cargo_args = ["--manifest-path", manifest, "--locked", *features]
         metadata = directory / f"{suite}-binaries.json"
         cargo_metadata = directory / f"{suite}-cargo.json"
-        build.append(Step(f"metadata-{suite}", ["cargo", "metadata", *cargo_args,
+        tests.append(Step(f"metadata-{suite}", ["cargo", "metadata", *cargo_args,
                                                "--format-version", "1"], output=cargo_metadata))
-        build.append(Step(f"build-{suite}", ["cargo", "nextest", "list", *cargo_args,
+        if suite == "libaribcaption":
+            cargo_args.extend(["--package", suite])
+        tests.append(Step(f"build-{suite}", ["cargo", "nextest", "list", *cargo_args,
             "--cargo-profile", args.profile, "--config-file", str(ROOT / ".config/nextest.toml"),
             "--message-format", "json", "--list-type", "binaries-only"], output=metadata))
         command = ["cargo", "nextest", "run", "--cargo-metadata", str(cargo_metadata),
@@ -125,18 +130,18 @@ def plan(suites, directory, args):
             command.extend(["--test-threads", str(args.test_threads)])
         if args.filter:
             command.extend(["-E", args.filter])
+        if "checks" in suites and suite == "app":
+            tests.append(Step("qml-lint", ["bash", "scripts/testing/check-qml.sh"]))
         tests.append(Step(suite, command))
         # nextest does not execute rustdoc examples. Preserve library doctests.
         if suite in CRATES and not args.filter:
             tests.append(Step(f"doc-{suite}", ["cargo", "test", *cargo_args,
                                               "--profile", args.profile, "--doc"]))
     if any(suite in SUITES for suite in suites):
-        build.append(Step("build-qt", [sys.executable, "-m", "scripts.testing.binary",
+        tests.append(Step("build-qt", [sys.executable, "-m", "scripts.testing.binary",
                                       "--prepare", str(directory / "nagametv"),
                                       *(["--evaluation-legacy-comments"] if
                                         args.suite_args == ["--evaluation-legacy-comments"] else [])]))
-    if "checks" in suites and "app" in suites:
-        tests.insert(0, Step("qml-lint", ["bash", "scripts/testing/check-qml.sh"]))
     for suite in suites:
         if suite not in SUITES:
             continue
@@ -150,12 +155,12 @@ def plan(suites, directory, args):
         # A missing required resource stops the run before dependent builds/tests.
         checks.insert(0, Step("gui-environment", [sys.executable, "-m", "scripts.testing.gui_session", "--check"],
                               environment_check=True))
-    return [*checks, *build, *tests]
+    return [*checks, *tests]
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("suites", nargs="*", help="cpu, rust, native, gui, all, or individual suite names")
+    parser.add_argument("suites", nargs="*", help="cpu, core, rust, native, gui, all, or individual suite names")
     parser.add_argument("--list", action="store_true", help="list suites without building or accessing hardware")
     parser.add_argument("--profile", choices=("dev", "release"), default="dev")
     parser.add_argument("--log-dir", type=Path, default=ROOT / "build/test-runs",

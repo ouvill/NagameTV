@@ -109,15 +109,15 @@ class RunnerTests(unittest.TestCase):
         self.env["PATH"] = str(self.directory) + os.pathsep + self.env["PATH"]
         self.env["RUNNER_FIXTURE"] = str(self.directory)
 
-    def run_suite(self, suite):
-        result = subprocess.run([sys.executable, str(ROOT / "scripts/test.py"), suite,
+    def run_suite(self, *suites):
+        result = subprocess.run([sys.executable, str(ROOT / "scripts/test.py"), *suites,
                                  "--log-dir", str(self.directory / "reports")],
                                 env=self.env, text=True, capture_output=True, timeout=30)
         lines = [line for line in result.stdout.splitlines() if line.startswith("Summary: ")]
         self.assertEqual(len(lines), 1, result.stdout + result.stderr)
         return result, json.loads(Path(lines[0].removeprefix("Summary: ")).read_text())
 
-    def test_nextest_failure_stops_run_and_reports_unexecuted_doctests(self):
+    def test_nextest_failure_skips_later_crate_and_qt_builds_and_reports_them(self):
         self.fake_cargo("""import json, sys
 args = sys.argv[1:]
 if args[0] == 'metadata' or args[:2] == ['nextest', 'list']:
@@ -130,7 +130,7 @@ elif args[:2] == ['nextest', 'run']:
 if args[:2] == ['nextest', 'list']:
     assert args[args.index('--cargo-profile') + 1] == 'dev'
 """)
-        result, report = self.run_suite("viewer-diagnostics")
+        result, report = self.run_suite("viewer-diagnostics", "viewer-mpegts", "connection")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("fixture assertion failed", result.stderr)
         statuses = {step["name"]: step["status"] for step in report["steps"]}
@@ -138,6 +138,39 @@ if args[:2] == ['nextest', 'list']:
         self.assertEqual(statuses["build-viewer-diagnostics"], "passed")
         self.assertEqual(statuses["viewer-diagnostics"], "failed")
         self.assertEqual(statuses["doc-viewer-diagnostics"], "not-run")
+        self.assertEqual(statuses["metadata-viewer-mpegts"], "not-run")
+        self.assertEqual(statuses["build-viewer-mpegts"], "not-run")
+        self.assertEqual(statuses["viewer-mpegts"], "not-run")
+        self.assertEqual(statuses["build-qt"], "not-run")
+        self.assertEqual(statuses["connection"], "not-run")
+
+    def test_doctest_failure_skips_later_crate_builds(self):
+        self.fake_cargo("""import sys
+args = sys.argv[1:]
+if args[0] == 'metadata' or args[:2] == ['nextest', 'list']:
+    print('{}')
+elif args[0] == 'test':
+    assert '--doc' in args
+    print('fixture doctest failed', file=sys.stderr)
+    sys.exit(101)
+""")
+        result, report = self.run_suite("viewer-diagnostics", "viewer-mpegts")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("fixture doctest failed", result.stderr)
+        statuses = {step["name"]: step["status"] for step in report["steps"]}
+        self.assertEqual(statuses["viewer-diagnostics"], "passed")
+        self.assertEqual(statuses["doc-viewer-diagnostics"], "failed")
+        self.assertEqual(statuses["build-viewer-mpegts"], "not-run")
+
+    def test_gui_preflight_precedes_builds_and_qt_preparation_is_shared(self):
+        steps = runner.plan(["app", "connection", "danmaku", "ui-style"], Path("/unused"),
+                            Namespace(profile="dev", suite_args=[], filter=None, test_threads=None))
+        names = [step.name for step in steps]
+        self.assertEqual(names[0], "gui-environment")
+        self.assertTrue(steps[0].environment_check)
+        self.assertEqual(names.count("build-qt"), 1)
+        for suite in ("connection", "danmaku", "ui-style"):
+            self.assertLess(names.index("build-qt"), names.index(suite))
 
     def test_localization_builds_once_and_runs_two_private_binary_processes(self):
         binary = self.directory / "fixture-binary"

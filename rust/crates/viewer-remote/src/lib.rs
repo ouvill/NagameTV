@@ -41,9 +41,14 @@ pub struct Executing {
 
 impl Pending {
     pub fn claim(self) -> Option<Executing> {
+        self.claim_at(Instant::now())
+    }
+
+    fn claim_at(self, now: Instant) -> Option<Executing> {
         if self.stop.is_cancelled() || self.reply.is_closed() {
             None
-        } else if Instant::now() >= self.deadline {
+        } else if now >= self.deadline {
+            // A client can disconnect after is_closed(); its expired reply is then unwanted.
             let _ = self.reply.send(Err(CommandError::Expired));
             None
         } else {
