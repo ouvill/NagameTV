@@ -38,7 +38,7 @@ C++やQMLのコンパイル結果を再利用できます。Qt連携・ヘッダ
 デバッグ情報はファイル名と行番号を残します。変数を調べる場合は
 `CARGO_PROFILE_DEV_DEBUG=2`を指定します。
 `release`の最適化・デバッグ情報の設定は維持しています。
-独立crateのReleaseテストも、共通Cargo設定でアプリと同じ`line-tables-only`に揃えています。
+独立crateのReleaseテストも、共通Cargo設定でアプリと同じ`debug=1`に揃えています。
 以前は独立crateが既定の`debug=0`を使うため、同じ依存関係にも別のコンパイル結果が必要でした。
 設定の意味は[Cargoのプロファイル](https://doc.rust-lang.org/cargo/reference/profiles.html)を参照してください。
 再生速度やフレーム時間の評価には`release`を使います。

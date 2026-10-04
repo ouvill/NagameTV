@@ -77,7 +77,7 @@ CIの`scripts/testing/ci.sh`は`cargo fetch --locked`で依存ソースを取得
 ダウンロードキャッシュが空のCIでも試験に必要なソースを参照できる。
 Rustはnextestで個別プロセスに分離し、Qt試験は一度ビルドした実行ファイルを共用する。
 ローカルの既定は`dev`、CIは`release`で、ビルドと検証は共通ロックで直列化する。
-Releaseのデバッグ情報は[共通Cargo設定](../.cargo/config.toml)で`line-tables-only`に揃える。
+Releaseのデバッグ情報は[共通Cargo設定](../.cargo/config.toml)でアプリと同じ`debug=1`に揃える。
 アプリと独立crateで同じ依存関係を異なるデバッグ情報設定でコンパイルし直すことを避ける。
 各検査のログと実行結果は、失敗時も`test-results` artifactとして14日間保存する。
 詳しい選択方法とログの保存先は[開発手順](development.md#テストと診断)を参照。

@@ -60,11 +60,14 @@ class RestoredCargoCacheTests(unittest.TestCase):
     def test_release_dependencies_are_reused_across_standalone_roots(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            (root / ".cargo").mkdir()
-            shutil.copyfile(ROOT / ".cargo/config.toml", root / ".cargo/config.toml")
             env = dict(os.environ, CARGO_TARGET_DIR=str(root / "target"), CARGO_NET_OFFLINE="true")
             artifacts = None
             for name in ("application", "standalone"):
+                if name == "standalone":
+                    # Match the application's existing debug=1 artifacts, not
+                    # merely two roots overridden by the same new setting.
+                    (root / ".cargo").mkdir()
+                    shutil.copyfile(ROOT / ".cargo/config.toml", root / ".cargo/config.toml")
                 crate = root / name
                 crate.mkdir()
                 manifest = crate / "Cargo.toml"

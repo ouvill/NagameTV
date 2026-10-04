@@ -5,9 +5,9 @@
 debug = "line-tables-only"
 
 # Standalone crate tests must match the application's release profile. Otherwise
-# Cargo builds shared dependencies again with debug=0 for each standalone root.
+# Cargo builds shared dependencies again with debug=0 in standalone tests.
 [profile.release]
-debug = "line-tables-only"
+debug = 1
 
 [build]
 # Share artifacts between CMake, the test runner and direct Cargo diagnostics.
