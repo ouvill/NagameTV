@@ -20,7 +20,10 @@ def clean_local_packages(manifest, env):
     for package in packages:
         command.extend(["--package", package["id"]])
     print("Rebuilding local Cargo packages: " + ", ".join(p["name"] for p in packages), flush=True)
-    subprocess.run(command, env=env, check=True, pass_fds=lock_fds())
+    # With --package, Cargo defaults to cleaning only the dev profile. CI uses
+    # release, so explicitly cover both profiles supported by our test runner.
+    for profile in ("dev", "release"):
+        subprocess.run([*command, "--profile", profile], env=env, check=True, pass_fds=lock_fds())
 
 
 def main():

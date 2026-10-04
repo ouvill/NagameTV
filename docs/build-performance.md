@@ -218,6 +218,16 @@ CPUテスト工程内のコンパイルが約1,000秒、Rust・Qtのテスト実
 Docker環境を作り直した[v0.2.1の実行](https://github.com/ouvill/NagameTV/actions/runs/36914844274)では、
 nextestのソースからの導入だけで約181秒かかっています。
 
+[別のmain実行](https://github.com/ouvill/NagameTV/actions/runs/36909139143)では、
+debの導入試験が1,277秒かかりました。その後追加されたaptキャッシュも、
+10月1日の直近のmain実行ではroot所有の`lock`と`partial`を読めず保存に失敗していました。
+保存対象を`archives/*.deb`へ絞り、取得済みパッケージを次回へ残せるように修正しています。
+
+Cargoキャッシュにも、globで選んだディレクトリーをtarが再帰的に保存すると
+除外指定が効かない問題がありました。実行ファイルとincrementalの除外は
+GNU tarの`TAR_OPTIONS`へ移しています。復元後のローカルcrateのcleanもdev・releaseの
+両方を明示し、変更されたソースの時刻が古くてもReleaseの実装を再コンパイルさせます。
+
 この調査に基づき、nextestの導入を検証済みの公式バイナリーへ変更し、
 アプリと独立crateのRelease設定を統一しました。Ubuntu 24.04の一時コンテナーで、
 ダウンロード・SHA-256検証・展開・バージョン確認は4.81秒で完了しました。

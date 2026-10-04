@@ -120,14 +120,11 @@ jobs:
           # incremental state; local Workshop artifacts never enter this path.
           path: |
             build/ci/cargo
-            !build/ci/cargo/**/incremental
-            !build/ci/cargo/**/nagametv
-            !build/ci/cargo/**/deps/nagametv-*
           # Dependencies change with the environment/manifests, not every commit.
-          key: cargo-ubuntu24-v2-${{ steps.build-environment.outputs.imageid }}-${{ hashFiles('.cargo/config.toml', 'rust/**/Cargo.toml') }}-${{ hashFiles('rust/**/Cargo.lock') }}
+          key: cargo-ubuntu24-v3-${{ steps.build-environment.outputs.imageid }}-${{ hashFiles('.cargo/config.toml', 'rust/**/Cargo.toml') }}-${{ hashFiles('rust/**/Cargo.lock') }}
           restore-keys: |
-            cargo-ubuntu24-v2-${{ steps.build-environment.outputs.imageid }}-${{ hashFiles('.cargo/config.toml', 'rust/**/Cargo.toml') }}-
-            cargo-ubuntu24-v2-${{ steps.build-environment.outputs.imageid }}-
+            cargo-ubuntu24-v3-${{ steps.build-environment.outputs.imageid }}-${{ hashFiles('.cargo/config.toml', 'rust/**/Cargo.toml') }}-
+            cargo-ubuntu24-v3-${{ steps.build-environment.outputs.imageid }}-
       - name: Restore C++ compilation cache (Ubuntu 24.04)
         id: ccache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -204,9 +201,10 @@ jobs:
         id: apt
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: build/deb/apt-cache/ubuntu24.04/archives
-          key: apt-ubuntu24-v1-${{ github.sha }}
-          restore-keys: apt-ubuntu24-v1-
+          # apt's root-owned lock/partial cannot be archived by the runner user.
+          path: build/deb/apt-cache/ubuntu24.04/archives/*.deb
+          key: apt-ubuntu24-v2-${{ github.sha }}
+          restore-keys: apt-ubuntu24-v2-
       - name: Install and remove deb in a clean Ubuntu 24.04 container
         run: bash scripts/packaging/test-deb.sh 24.04
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -232,12 +230,13 @@ jobs:
       - name: Save compiled Cargo dependencies (Ubuntu 24.04)
         if: github.ref == 'refs/heads/main' && steps.cargo.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        env:
+          # The cache glob selects a directory; GNU tar then recurses into it.
+          # Exclude generated binaries/incremental data at the archive boundary.
+          TAR_OPTIONS: --exclude=incremental --exclude=nagametv --exclude=*/deps/nagametv-*
         with:
           path: |
             build/ci/cargo
-            !build/ci/cargo/**/incremental
-            !build/ci/cargo/**/nagametv
-            !build/ci/cargo/**/deps/nagametv-*
           key: ${{ steps.cargo.outputs.cache-primary-key }}
       - name: Save C++ compilation cache (Ubuntu 24.04)
         if: github.ref == 'refs/heads/main' && steps.ccache.outputs.cache-hit != 'true'
@@ -249,7 +248,7 @@ jobs:
         if: github.ref == 'refs/heads/main' && steps.apt.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: build/deb/apt-cache/ubuntu24.04/archives
+          path: build/deb/apt-cache/ubuntu24.04/archives/*.deb
           key: ${{ steps.apt.outputs.cache-primary-key }}
 
   deb:
@@ -288,13 +287,10 @@ jobs:
         with:
           path: |
             build/deb/ubuntu26.04/native/cargo
-            !build/deb/ubuntu26.04/native/cargo/**/incremental
-            !build/deb/ubuntu26.04/native/cargo/**/nagametv
-            !build/deb/ubuntu26.04/native/cargo/**/deps/nagametv-*
-          key: cargo-ubuntu26-v2-${{ steps.build-environment.outputs.imageid }}-${{ hashFiles('.cargo/config.toml', 'rust/**/Cargo.toml') }}-${{ hashFiles('rust/**/Cargo.lock') }}
+          key: cargo-ubuntu26-v3-${{ steps.build-environment.outputs.imageid }}-${{ hashFiles('.cargo/config.toml', 'rust/**/Cargo.toml') }}-${{ hashFiles('rust/**/Cargo.lock') }}
           restore-keys: |
-            cargo-ubuntu26-v2-${{ steps.build-environment.outputs.imageid }}-${{ hashFiles('.cargo/config.toml', 'rust/**/Cargo.toml') }}-
-            cargo-ubuntu26-v2-${{ steps.build-environment.outputs.imageid }}-
+            cargo-ubuntu26-v3-${{ steps.build-environment.outputs.imageid }}-${{ hashFiles('.cargo/config.toml', 'rust/**/Cargo.toml') }}-
+            cargo-ubuntu26-v3-${{ steps.build-environment.outputs.imageid }}-
       - name: Restore C++ compilation cache (Ubuntu 26.04)
         id: ccache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -340,12 +336,11 @@ jobs:
       - name: Save compiled Cargo dependencies (Ubuntu 26.04)
         if: github.ref == 'refs/heads/main' && steps.cargo.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        env:
+          TAR_OPTIONS: --exclude=incremental --exclude=nagametv --exclude=*/deps/nagametv-*
         with:
           path: |
             build/deb/ubuntu26.04/native/cargo
-            !build/deb/ubuntu26.04/native/cargo/**/incremental
-            !build/deb/ubuntu26.04/native/cargo/**/nagametv
-            !build/deb/ubuntu26.04/native/cargo/**/deps/nagametv-*
           key: ${{ steps.cargo.outputs.cache-primary-key }}
       - name: Save C++ compilation cache (Ubuntu 26.04)
         if: github.ref == 'refs/heads/main' && steps.ccache.outputs.cache-hit != 'true'

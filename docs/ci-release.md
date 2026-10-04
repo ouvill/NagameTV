@@ -7,6 +7,8 @@ AppImage、Flatpak、Ubuntu 24.04用および26.04用debのビルドを実行す
 Ubuntu 24.04向けdebのクリーン環境試験では、aptが検証したダウンロード済みパッケージを
 CI間でキャッシュする。依存解決・導入・削除の検査は毎回実行し、更新されたパッケージは
 aptが取得し直す。キャッシュは`build/deb/apt-cache/ubuntu24.04/archives`に置く。
+保存対象は`*.deb`に限定する。コンテナー内のaptが作る`lock`と`partial`は
+ホストのrunnerユーザーが読めないため、ディレクトリー全体を保存すると権限エラーになる。
 バージョンタグでは、同じコミットの成功済み`main`実行に4種類の配布artifactが残っていれば
 それを再利用してリリース下書きを作る。該当する実行やartifactがない場合は通常どおり
 タグでビルドと検証を実行する。どちらもリリース作成前にチェックサムを確認する。
@@ -41,10 +43,13 @@ Cargoのキーには実際のDockerイメージID、Cargo設定・マニフェ�
 コミットSHAは含めず、依存関係が同じ実行で大きなキャッシュを毎回保存することを避ける。
 設定や依存関係が変わった部分はCargoが再コンパイルする。
 復元後は`fresh_local_crates.py`がCargo metadataからpath依存・ローカルパッチを列挙し、
-そのパッケージだけを`cargo clean --package`で消してから検証する。
+そのパッケージだけを`cargo clean --package --profile dev`と`--profile release`で消してから検証する。
+`--package`付きのcleanはプロファイルを省略するとdevだけが対象になるため、両方を明示する。
 ファイル時刻が復元した生成物より古い場合も、リポジトリーの実装を確実にコンパイルするためである。
 外部の依存crateとccacheは残す。
 アプリの実行ファイルとincrementalデータは保存対象から外す。
+ディレクトリーを選ぶcacheのglobでは、その後のtarの再帰探索を除外できないため、
+Ubuntu runnerのGNU tarへ`TAR_OPTIONS`で除外条件を渡す。
 Workshopのコンパイル結果は取り込まない。キャッシュがなくても通常ビルドできる。
 
 `build/ccache`はCargoと分離し、Ubuntuごとに500 MBを上限として保存する。
