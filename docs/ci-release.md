@@ -33,9 +33,9 @@ CIのビルド並列数は実行ホストの`nproc`に合わせる。公開リ�
 Dockerレイヤー、Cargoのダウンロード、配布用ツール、Flatpakのビルド状態をキャッシュする。
 Cargoのコンパイル結果も、Ubuntu 24.04の`build/ci/cargo`と
 26.04の`build/deb/ubuntu26.04/native/cargo`を別々に保存する。
-両ジョブの`build/ccache`もそれぞれのキャッシュへ保存し、Qt/C++の再コンパイルを減らす。
-キーには実際のDockerイメージID、Cargo設定・マニフェスト、lockfile、コミットを含め、
+Cargoのキーには実際のDockerイメージID、Cargo設定・マニフェスト、lockfileを含め、
 一致する設定を優先し、なければ同じイメージの直近キャッシュを復元する。
+コミットSHAは含めず、依存関係が同じ実行で大きなキャッシュを毎回保存することを避ける。
 設定や依存関係が変わった部分はCargoが再コンパイルする。
 復元後は`fresh_local_crates.py`がCargo metadataからpath依存・ローカルパッチを列挙し、
 そのパッケージだけを`cargo clean --package`で消してから検証する。
@@ -43,6 +43,21 @@ Cargoのコンパイル結果も、Ubuntu 24.04の`build/ci/cargo`と
 外部の依存crateとccacheは残す。
 アプリの実行ファイルとincrementalデータは保存対象から外す。
 Workshopのコンパイル結果は取り込まない。キャッシュがなくても通常ビルドできる。
+
+`build/ccache`はCargoと分離し、Ubuntuごとに500 MBを上限として保存する。
+C++のキーにはイメージIDとコミットSHAを含め、ソース変更後の結果も次の実行で使えるようにする。
+Flatpakのビルド状態とaptのダウンロードもコミットごとに更新する。
+Cargoの保存先を分割したため、新しいキーの初回実行ではコンパイルが必要になる。
+
+キャッシュの保存は`main`上の実行に限定し、PR・タグ・作業ブランチでは復元だけを行う。
+Dockerレイヤーも同じ方針とする。`actions/cache/restore`と`actions/cache/save`を分け、
+保存時は復元ステップと同じキー・パスを使う。完全一致したキーへは再保存しない。
+ビルドや検証はキャッシュの有無にかかわらず毎回実行する。
+[GitHubのキャッシュガイド](https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching#restrictions-for-accessing-a-cache)
+に従い、各ブランチは`main`のキャッシュを再利用する。PRのキャッシュはそのPRに限られ、
+別のPRや`main`では使えないため、共有できない大容量データの保存を避ける。
+依存関係を変更するPRでは、`main`へ取り込むまで追加分のビルドや取得を毎回行う。
+保存と復元の分離は[actions/cacheの公式例](https://github.com/actions/cache/blob/main/caching-strategies.md#reusing-primary-key-from-restore-cache-as-input-to-save-action)も参照。
 
 Rustテストはアプリに加えて`viewer-comments`・`viewer-epg-events`（どちらも`network`付き）、
 `viewer-diagnostics`・`viewer-remote`・`tsreadex`を各lockfileの`--locked`で実行する。

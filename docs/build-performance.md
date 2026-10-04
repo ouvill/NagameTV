@@ -85,8 +85,10 @@ QMLの事前コンパイルは、ファイルごとにCargoのjobserverから追
 この並列数の調整は[Cargoのビルドスクリプトの規約](https://doc.rust-lang.org/cargo/reference/build-scripts.html#jobserver)
 に従います。
 
-CIではUbuntu 24.04と26.04のCargo生成物とccacheを別々にキャッシュします。
-実際のDockerイメージIDとCargoの設定・依存情報をキーに含め、同じ環境の過去の結果を再利用します。
+CIではUbuntu 24.04と26.04を分け、Cargo生成物とccacheも別々にキャッシュします。
+Cargoのキーは実際のDockerイメージIDと設定・依存情報で決め、コミットだけが変わった場合は
+同じキャッシュを再利用します。ccacheは500 MBを上限としてコミットごとに更新します。
+保存は`main`上で行い、PR・タグ・作業ブランチでは共有キャッシュを復元します。
 実行ファイルとincrementalデータは保存対象から外します。
 復元後はリポジトリー内のcrateとローカルパッチだけをCargoでcleanし、外部依存とccacheを残します。
 ソースの時刻が生成物より古くても、以前の実装を誤って再利用しないためです。

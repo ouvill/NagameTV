@@ -100,9 +100,11 @@ jobs:
           load: true
           tags: nagametv-ci:local
           cache-from: type=gha,scope=ubuntu24-ci
-          cache-to: type=gha,mode=max,scope=ubuntu24-ci
-      - name: Cache source downloads and verified packaging tools
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+          # Branches restore main's layers without exporting duplicate caches.
+          cache-to: ${{ github.ref == 'refs/heads/main' && 'type=gha,mode=max,scope=ubuntu24-ci' || '' }}
+      - name: Restore source downloads and verified packaging tools
+        id: sources
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             build/ci/cargo-home/registry
@@ -110,22 +112,35 @@ jobs:
             build/appimage/tools
           key: sources-${{ runner.os }}-x86_64-${{ hashFiles('rust/**/Cargo.lock', 'scripts/packaging/build-appimage.sh') }}
           restore-keys: sources-${{ runner.os }}-x86_64-
-      - name: Cache compiled Cargo dependencies (Ubuntu 24.04)
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - name: Restore compiled Cargo dependencies (Ubuntu 24.04)
+        id: cargo
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           # Separate native ABIs/toolchains. Do not cache copied test runners or
           # incremental state; local Workshop artifacts never enter this path.
           path: |
             build/ci/cargo
-            build/ccache
             !build/ci/cargo/**/incremental
             !build/ci/cargo/**/nagametv
             !build/ci/cargo/**/deps/nagametv-*
-          key: cargo-ubuntu24-v1-${{ steps.build-environment.outputs.imageid }}-${{ hashFiles('.cargo/config.toml', 'rust/**/Cargo.toml') }}-${{ hashFiles('rust/**/Cargo.lock') }}-${{ github.sha }}
+          # Dependencies change with the environment/manifests, not every commit.
+          key: cargo-ubuntu24-v2-${{ steps.build-environment.outputs.imageid }}-${{ hashFiles('.cargo/config.toml', 'rust/**/Cargo.toml') }}-${{ hashFiles('rust/**/Cargo.lock') }}
           restore-keys: |
-            cargo-ubuntu24-v1-${{ steps.build-environment.outputs.imageid }}-${{ hashFiles('.cargo/config.toml', 'rust/**/Cargo.toml') }}-${{ hashFiles('rust/**/Cargo.lock') }}-
-            cargo-ubuntu24-v1-${{ steps.build-environment.outputs.imageid }}-${{ hashFiles('.cargo/config.toml', 'rust/**/Cargo.toml') }}-
-            cargo-ubuntu24-v1-${{ steps.build-environment.outputs.imageid }}-
+            cargo-ubuntu24-v2-${{ steps.build-environment.outputs.imageid }}-${{ hashFiles('.cargo/config.toml', 'rust/**/Cargo.toml') }}-
+            cargo-ubuntu24-v2-${{ steps.build-environment.outputs.imageid }}-
+      - name: Restore C++ compilation cache (Ubuntu 24.04)
+        id: ccache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: build/ccache
+          key: ccache-ubuntu24-v1-${{ steps.build-environment.outputs.imageid }}-${{ github.sha }}
+          restore-keys: ccache-ubuntu24-v1-${{ steps.build-environment.outputs.imageid }}-
+      - name: Limit C++ cache size
+        run: |
+          docker run --rm --user "$(id -u):$(id -g)" \
+            --mount "type=bind,src=$PWD,dst=/project" \
+            --env CCACHE_DIR=/project/build/ccache \
+            nagametv-ci:local ccache --max-size 500M
       - name: Run hardware-free tests
         run: |
           # D-Bus needs NSS entries for the runner's UID/GID inside Docker.
@@ -185,8 +200,9 @@ jobs:
             --mount "type=bind,src=$PWD,dst=/project" \
             nagametv-ci:local bash scripts/packaging/build-deb.sh 24.04 --native \
               --appimage "/project/build/appimage/nagametv-$VERSION-x86_64.AppImage"
-      - name: Cache Ubuntu 24.04 deb test downloads
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - name: Restore Ubuntu 24.04 deb test downloads
+        id: apt
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: build/deb/apt-cache/ubuntu24.04/archives
           key: apt-ubuntu24-v1-${{ github.sha }}
@@ -202,6 +218,39 @@ jobs:
           if-no-files-found: error
           compression-level: 0
           retention-days: 14
+
+      # Keep shared caches on main; PR and tag caches cannot seed other branches.
+      - name: Save source downloads and verified packaging tools
+        if: github.ref == 'refs/heads/main' && steps.sources.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            build/ci/cargo-home/registry
+            build/ci/cargo-home/git
+            build/appimage/tools
+          key: ${{ steps.sources.outputs.cache-primary-key }}
+      - name: Save compiled Cargo dependencies (Ubuntu 24.04)
+        if: github.ref == 'refs/heads/main' && steps.cargo.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            build/ci/cargo
+            !build/ci/cargo/**/incremental
+            !build/ci/cargo/**/nagametv
+            !build/ci/cargo/**/deps/nagametv-*
+          key: ${{ steps.cargo.outputs.cache-primary-key }}
+      - name: Save C++ compilation cache (Ubuntu 24.04)
+        if: github.ref == 'refs/heads/main' && steps.ccache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: build/ccache
+          key: ${{ steps.ccache.outputs.cache-primary-key }}
+      - name: Save Ubuntu 24.04 deb test downloads
+        if: github.ref == 'refs/heads/main' && steps.apt.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: build/deb/apt-cache/ubuntu24.04/archives
+          key: ${{ steps.apt.outputs.cache-primary-key }}
 
   deb:
     name: deb (Ubuntu 26.04, amd64)
@@ -223,28 +272,42 @@ jobs:
           load: true
           tags: nagametv-deb-ubuntu26:local
           cache-from: type=gha,scope=ubuntu26-deb
-          cache-to: type=gha,mode=max,scope=ubuntu26-deb
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+          cache-to: ${{ github.ref == 'refs/heads/main' && 'type=gha,mode=max,scope=ubuntu26-deb' || '' }}
+      - name: Restore source downloads (Ubuntu 26.04)
+        id: sources
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             build/deb/ubuntu26.04/cargo-home/registry
             build/deb/ubuntu26.04/cargo-home/git
           key: sources-deb-ubuntu26-${{ hashFiles('rust/**/Cargo.lock') }}
           restore-keys: sources-deb-ubuntu26-
-      - name: Cache compiled Cargo dependencies (Ubuntu 26.04)
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - name: Restore compiled Cargo dependencies (Ubuntu 26.04)
+        id: cargo
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             build/deb/ubuntu26.04/native/cargo
-            build/ccache
             !build/deb/ubuntu26.04/native/cargo/**/incremental
             !build/deb/ubuntu26.04/native/cargo/**/nagametv
             !build/deb/ubuntu26.04/native/cargo/**/deps/nagametv-*
-          key: cargo-ubuntu26-v1-${{ steps.build-environment.outputs.imageid }}-${{ hashFiles('.cargo/config.toml', 'rust/**/Cargo.toml') }}-${{ hashFiles('rust/**/Cargo.lock') }}-${{ github.sha }}
+          key: cargo-ubuntu26-v2-${{ steps.build-environment.outputs.imageid }}-${{ hashFiles('.cargo/config.toml', 'rust/**/Cargo.toml') }}-${{ hashFiles('rust/**/Cargo.lock') }}
           restore-keys: |
-            cargo-ubuntu26-v1-${{ steps.build-environment.outputs.imageid }}-${{ hashFiles('.cargo/config.toml', 'rust/**/Cargo.toml') }}-${{ hashFiles('rust/**/Cargo.lock') }}-
-            cargo-ubuntu26-v1-${{ steps.build-environment.outputs.imageid }}-${{ hashFiles('.cargo/config.toml', 'rust/**/Cargo.toml') }}-
-            cargo-ubuntu26-v1-${{ steps.build-environment.outputs.imageid }}-
+            cargo-ubuntu26-v2-${{ steps.build-environment.outputs.imageid }}-${{ hashFiles('.cargo/config.toml', 'rust/**/Cargo.toml') }}-
+            cargo-ubuntu26-v2-${{ steps.build-environment.outputs.imageid }}-
+      - name: Restore C++ compilation cache (Ubuntu 26.04)
+        id: ccache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: build/ccache
+          key: ccache-ubuntu26-v1-${{ steps.build-environment.outputs.imageid }}-${{ github.sha }}
+          restore-keys: ccache-ubuntu26-v1-${{ steps.build-environment.outputs.imageid }}-
+      - name: Limit C++ cache size
+        run: |
+          docker run --rm --user "$(id -u):$(id -g)" \
+            --mount "type=bind,src=$PWD,dst=/project" \
+            --env CCACHE_DIR=/project/build/ccache \
+            nagametv-deb-ubuntu26:local ccache --max-size 500M
       - name: Build Ubuntu 26.04 deb
         run: |
           docker run --rm --user "$(id -u):$(id -g)" \
@@ -266,6 +329,31 @@ jobs:
           compression-level: 0
           retention-days: 14
 
+      - name: Save source downloads (Ubuntu 26.04)
+        if: github.ref == 'refs/heads/main' && steps.sources.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            build/deb/ubuntu26.04/cargo-home/registry
+            build/deb/ubuntu26.04/cargo-home/git
+          key: ${{ steps.sources.outputs.cache-primary-key }}
+      - name: Save compiled Cargo dependencies (Ubuntu 26.04)
+        if: github.ref == 'refs/heads/main' && steps.cargo.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            build/deb/ubuntu26.04/native/cargo
+            !build/deb/ubuntu26.04/native/cargo/**/incremental
+            !build/deb/ubuntu26.04/native/cargo/**/nagametv
+            !build/deb/ubuntu26.04/native/cargo/**/deps/nagametv-*
+          key: ${{ steps.cargo.outputs.cache-primary-key }}
+      - name: Save C++ compilation cache (Ubuntu 26.04)
+        if: github.ref == 'refs/heads/main' && steps.ccache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: build/ccache
+          key: ${{ steps.ccache.outputs.cache-primary-key }}
+
   flatpak:
     name: Flatpak (x86_64)
     needs: metadata
@@ -282,7 +370,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends flatpak flatpak-builder elfutils dbus-daemon librsvg2-common
           flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - name: Restore Flatpak build state
+        id: flatpak
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: build/flatpak/state
           key: flatpak-x86_64-${{ hashFiles('packaging/flatpak/*.json') }}-${{ github.sha }}
@@ -300,6 +390,13 @@ jobs:
           if-no-files-found: error
           compression-level: 0
           retention-days: 14
+
+      - name: Save Flatpak build state
+        if: github.ref == 'refs/heads/main' && steps.flatpak.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: build/flatpak/state
+          key: ${{ steps.flatpak.outputs.cache-primary-key }}
 
   release:
     name: GitHub Release
