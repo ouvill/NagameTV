@@ -140,6 +140,7 @@ inline void shadow(QPainter &painter, const QPainterPath &shape, double offset, 
 }
 }
 namespace viewer_screenshot {
+inline void drcs(QPainter &painter, const QImage &image, double x, double y, double width, double height) { painter.drawImage(QRectF(x, y, width, height), image); }
 inline void mediaCaption(QPainter &painter, const QImage &image, int width, int height) { painter.drawImage(QRectF(0, 0, width, height), image); }
 }
 #endif

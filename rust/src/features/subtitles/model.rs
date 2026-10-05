@@ -1,4 +1,9 @@
+use libaribcaption::Drcs;
 use serde::Serialize;
+use std::sync::Arc;
+
+pub(crate) const MAX_SCREEN_MASK_BYTES: usize = 1024 * 1024;
+pub(crate) const MAX_PENDING_MASK_BYTES: usize = 8 * 1024 * 1024;
 
 /// A decoded ARIB caption screen ready to be transferred to Qt.
 #[derive(Debug, Serialize)]
@@ -27,6 +32,17 @@ impl SubtitleCue {
         }
     }
 
+    /// Conservative retained-mask cost, including repeated cell references.
+    pub fn mask_bytes(&self) -> usize {
+        self.cells
+            .iter()
+            .map(|cell| match &cell.glyph {
+                SubtitleGlyph::Text => 0,
+                SubtitleGlyph::Drcs { bitmap } => bitmap.pixels().len(),
+            })
+            .sum()
+    }
+
     /// A clear-screen flag can accompany a new caption.  It means "replace the
     /// previous screen", not "discard this caption".  Only an empty cue is a
     /// request to clear without presenting a replacement.
@@ -35,10 +51,21 @@ impl SubtitleCue {
     }
 }
 
+#[derive(Debug, Serialize)]
+#[serde(tag = "kind", rename_all = "lowercase")]
+pub enum SubtitleGlyph {
+    Text,
+    Drcs {
+        #[serde(skip)]
+        bitmap: Arc<Drcs>,
+    },
+}
+
 /// One ARIB character cell with its broadcast presentation attributes.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SubtitleCell {
+    pub glyph: SubtitleGlyph,
     pub text: String,
     pub x: i32,
     pub y: i32,

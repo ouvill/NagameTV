@@ -198,6 +198,9 @@ impl Values {
         player.current_program_data = current_program_data;
         player.program_progress = program_progress;
         player.program_status = program_status;
+        if subtitle_data.is_empty() {
+            player.subtitle_images = Default::default();
+        }
         player.subtitle_data = subtitle_data;
         player.subtitle_cells = subtitle_cells;
         player.seek_preview.synchronize(

@@ -7,3 +7,4 @@ description = "Ownership-safe ARIB caption decoding, independent of player and U
 
 [dependencies]
 libaribcaption-sys = { path = "../libaribcaption-sys" }
+thiserror = "2.0"

@@ -135,6 +135,19 @@ pub mod ffi {
         #[qproperty(bool, benchmark_stroke, READ, CONSTANT)]
         type TestOutlineProvider = super::OutlineProvider;
         #[qinvokable]
+        fn drcs_fixture(
+            self: Pin<&mut TestOutlineProvider>,
+            pixels: u8,
+            stroked: bool,
+            mixed: bool,
+        ) -> QString;
+        #[qinvokable]
+        fn subtitle_drcs_image(
+            self: &TestOutlineProvider,
+            index: i32,
+            force_outline: bool,
+        ) -> QImage;
+        #[qinvokable]
         fn subtitle_glyph_outline(
             self: Pin<&mut TestOutlineProvider>,
             text: &QString,
@@ -180,6 +193,8 @@ pub mod ffi {
 pub struct ActivityItem;
 
 pub struct OutlineProvider {
+    images: crate::qt::drcs::Images,
+    revision: u64,
     calls: i32,
     benchmark_stroke: bool,
 }
@@ -187,12 +202,49 @@ impl Default for OutlineProvider {
     fn default() -> Self {
         Self {
             calls: 0,
+            images: Default::default(),
+            revision: 0,
             benchmark_stroke: std::env::var("VIEWER_SUBTITLE_BENCHMARK_STROKE").as_deref()
                 != Ok("0"),
         }
     }
 }
 impl ffi::TestOutlineProvider {
+    pub fn drcs_fixture(
+        mut self: Pin<&mut Self>,
+        pixels: u8,
+        stroked: bool,
+        mixed: bool,
+    ) -> cxx_qt_lib::QString {
+        let mut cue = crate::features::subtitles::drcs_test_cue(pixels, mixed);
+        for (index, cell) in cue.cells.iter_mut().enumerate() {
+            cell.x = 100 + index as i32 * 80;
+            cell.y = 200;
+            cell.width = 80;
+            cell.height = 90;
+            cell.glyph_width = 60;
+            cell.glyph_height = 60;
+            cell.foreground = "#ff00ff00".into();
+            cell.background = "#00000000".into();
+            cell.stroke = "#ffff0000".into();
+            cell.stroked = stroked;
+        }
+        // Test setup failures must fail the native/QML suite.
+        let images = crate::qt::drcs::Images::prepare(&cue).unwrap();
+        let revision = self.rust().revision + 1;
+        self.as_mut().rust_mut().images = images;
+        self.as_mut().rust_mut().revision = revision;
+        let mut data = serde_json::to_value(&cue).unwrap();
+        data["revision"] = serde_json::Value::String(revision.to_string());
+        cxx_qt_lib::QString::from(serde_json::to_string(&data).unwrap())
+    }
+    pub fn subtitle_drcs_image(&self, index: i32, force_outline: bool) -> cxx_qt_lib::QImage {
+        // Missing indices represent ordinary text cells in test presentations.
+        usize::try_from(index)
+            .ok()
+            .and_then(|i| self.rust().images.get(i, force_outline))
+            .unwrap_or_default()
+    }
     pub fn subtitle_glyph_outline(
         mut self: Pin<&mut Self>,
         text: &QString,

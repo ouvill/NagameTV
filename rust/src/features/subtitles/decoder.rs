@@ -1,4 +1,4 @@
-use super::model::{SubtitleCell, SubtitleCue};
+use super::model::{SubtitleCell, SubtitleCue, SubtitleGlyph};
 use libaribcaption::{Caption, Color, Decoder};
 
 pub(super) struct AribDecoder(Decoder);
@@ -36,10 +36,14 @@ fn to_cue(caption: Caption) -> SubtitleCue {
     let mut cells = Vec::new();
     for region in caption.regions {
         for character in region.characters {
-            if character.text.is_empty() {
+            if character.text.is_empty() && matches!(character.glyph, libaribcaption::Glyph::Text) {
                 continue;
             }
             cells.push(SubtitleCell {
+                glyph: match character.glyph {
+                    libaribcaption::Glyph::Text => SubtitleGlyph::Text,
+                    libaribcaption::Glyph::Drcs(bitmap) => SubtitleGlyph::Drcs { bitmap },
+                },
                 text: character.text,
                 x: character.x,
                 y: character.y,

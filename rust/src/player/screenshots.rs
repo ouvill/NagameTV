@@ -219,7 +219,9 @@ impl ffi::Player {
 
     pub fn stage_screenshot(&self, overlay: QString) {
         if let Some(playback) = self.rust().media.playback() {
-            match crate::screenshots::overlay::Overlay::parse(&overlay.to_string()) {
+            match crate::screenshots::overlay::Overlay::parse(&overlay.to_string())
+                .and_then(|overlay| overlay.with_drcs(&self.rust().subtitle_images))
+            {
                 Ok(overlay) => {
                     let overlay = if *self.subtitle_display() && self.media_subtitle_available() {
                         overlay.with_media_caption(self.media_subtitle_image())
@@ -311,7 +313,7 @@ impl ffi::Player {
             Error::Unavailable => self.set_screenshot_error(tr(
                 "Could not capture the picture. Try again while the video is playing.",
             )),
-            Error::Encode | Error::WorkerStopped => {
+            Error::Encode | Error::WorkerStopped | Error::DrcsUnavailable => {
                 tracing::error!("Screenshot operation failed: {error}");
                 self.set_screenshot_error(tr(
                             "Could not save the captured image. Try again or choose another format in Settings.",

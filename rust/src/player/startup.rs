@@ -105,6 +105,8 @@ impl Default for PlayerRust {
             diagnostic_recorder,
             diagnostic_ui: Default::default(),
             subtitle_cells: 0,
+            subtitle_images: Default::default(),
+            subtitle_revision: 0,
             subtitle_model: crate::subtitle_model::ffi::make_subtitle_model(),
             media_subtitle_image: Default::default(),
             media_subtitle_error: Default::default(),

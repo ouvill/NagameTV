@@ -17,6 +17,7 @@ pub mod ffi {
             image: &QImage,
             width: f64,
             height: f64,
+            stretch: bool,
         );
     }
     impl cxx_qt::Initialize for MediaCaption {}
@@ -25,7 +26,9 @@ pub mod ffi {
         #[qml_element]
         #[base = QQuickPaintedItem]
         #[qproperty(QImage, image, READ, WRITE = set_image, NOTIFY)]
+        #[qproperty(bool, stretch, READ, WRITE = set_stretch, NOTIFY)]
         type MediaCaption = super::Caption;
+        fn set_stretch(self: Pin<&mut MediaCaption>, stretch: bool);
         fn set_image(self: Pin<&mut MediaCaption>, image: QImage);
         #[cxx_override]
         unsafe fn paint(self: Pin<&mut MediaCaption>, painter: *mut QPainter);
@@ -40,8 +43,16 @@ pub mod ffi {
 #[derive(Default)]
 pub struct Caption {
     image: QImage,
+    stretch: bool,
 }
 impl ffi::MediaCaption {
+    pub fn set_stretch(mut self: Pin<&mut Self>, stretch: bool) {
+        if self.rust().stretch != stretch {
+            self.as_mut().rust_mut().stretch = stretch;
+            self.as_mut().stretch_changed();
+            self.update();
+        }
+    }
     pub fn set_image(mut self: Pin<&mut Self>, image: QImage) {
         self.as_mut().rust_mut().image = image;
         self.as_mut().image_changed();
@@ -51,7 +62,13 @@ impl ffi::MediaCaption {
     /// Qt lends a painter only for this paint callback.
     pub unsafe fn paint(self: Pin<&mut Self>, painter: *mut ffi::QPainter) {
         unsafe {
-            ffi::paint_media_caption(painter, &self.rust().image, self.width(), self.height())
+            ffi::paint_media_caption(
+                painter,
+                &self.rust().image,
+                self.width(),
+                self.height(),
+                self.rust().stretch,
+            )
         }
     }
 }

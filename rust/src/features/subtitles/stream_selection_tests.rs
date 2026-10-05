@@ -415,10 +415,11 @@ fn rewind_does_not_reuse_management_or_drcs_from_the_previous_position() {
     let before = parser.push(&caption_packet(PRIMARY_PID, &text, 180_000, 1));
     assert_eq!(before.len(), 1);
     assert_eq!((before[0].plane_width, before[0].plane_height), (720, 480));
-    // Unrecognized DRCS bitmaps are not exported by the existing UI adapter.
-    // A defined bitmap has no text cell; an undefined code emits a Geta cell.
+    // Defined DRCS survives the UI conversion even with no Unicode text.
     assert!(
-        before[0].cells.is_empty(),
+        before[0].cells.len() == 1
+            && !before[0].is_clear_only()
+            && matches!(&before[0].cells[0].glyph, super::model::SubtitleGlyph::Drcs { bitmap } if bitmap.pixels() == [255, 0, 0, 255]),
         "DRCS must exist before the seek"
     );
     parser.discontinuity();
@@ -456,7 +457,8 @@ fn rewind_does_not_reuse_management_or_drcs_from_the_previous_position() {
     assert_eq!(recovered.len(), 1);
     assert_eq!(recovered[0].text, before[0].text);
     assert!(
-        recovered[0].cells.is_empty(),
+        recovered[0].cells.len() == 1
+            && matches!(&recovered[0].cells[0].glyph, super::model::SubtitleGlyph::Drcs { bitmap } if bitmap.pixels() == [255, 0, 0, 255]),
         "the resent DRCS must be decoded again"
     );
     assert_eq!(

@@ -1149,6 +1149,9 @@ fn check_stream_projection_commit() -> TestResult {
         state.program_progress = 0.5;
         state.subtitle_data = QString::from("old subtitle");
         state.subtitle_cells = 1;
+        state.subtitle_images = crate::qt::drcs::Images::prepare(
+            &crate::features::subtitles::drcs_test_cue(0x90, false),
+        )?;
     }
     let observed = Arc::new(Mutex::new(0));
     let changes = observed.clone();
@@ -1164,6 +1167,7 @@ fn check_stream_projection_commit() -> TestResult {
         assert_eq!(*player.program_progress(), 0.0);
         assert!(player.subtitle_data().is_empty());
         assert_eq!(player.rust().subtitle_cells, 0);
+        assert!(player.subtitle_drcs_image(0, false).is_null());
         assert_eq!(player.live_timeline().to_string(), "null");
         *changes.lock().unwrap() += 1;
     });

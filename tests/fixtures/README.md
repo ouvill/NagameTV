@@ -85,8 +85,10 @@ alongside the hardware-validated production `recording-audit` suite.
 
 Subtitle recovery uses authored ARIB management, statement and DRCS data groups
 in `rust/src/features/subtitles/stream_selection_tests.rs`, without broadcast
-content. These tests cover decoder state and queued captions; arbitrary DRCS
-bitmap rendering is outside the existing UI adapter's capabilities.
+content. The shared authored packets in
+`rust/crates/libaribcaption/tests/fixtures/drcs.rs` also exercise owned bitmap
+export and redefinition. Rust image/screenshot tests and `subtitle-rendering`
+cover bitmap presentation, outline switching, scaling and capture lifetime.
 
 ## Caption stream addition near 15 seconds
 

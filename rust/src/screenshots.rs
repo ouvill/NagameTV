@@ -16,6 +16,8 @@ pub enum Error {
     Capacity,
     #[error("No presented video frame is available")]
     Unavailable,
+    #[error("A DRCS image is missing from the screenshot presentation")]
+    DrcsUnavailable,
     #[error("No absolute screenshot directory is available")]
     Directory,
     #[error("Could not encode the captured image")]

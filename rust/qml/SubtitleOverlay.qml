@@ -1,6 +1,7 @@
 pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls
+import MinimalViewer
 
 Item {
     id: overlay
@@ -22,8 +23,14 @@ Item {
             const cell = captionCells.itemAt(i) as CaptionCell;
             if (!cell || !cell.visible) continue;
             commands.push({kind: "rect", x: cell.x, y: cell.y, width: cell.width, height: cell.height, color: cell.color.toString()});
+            if (cell.drcs) {
+                commands.push({kind: "drcs", index: cell.index, force_outline: overlay.forceOutline,
+                    x: cell.x + cell.bitmap.x, y: cell.y + cell.bitmap.y,
+                    width: cell.bitmap.width, height: cell.bitmap.height});
+                continue;
+            }
             const glyph = cell.captureGlyph;
-            commands.push(captureText.command(glyph, cell.x + glyph.x, cell.y + glyph.y,
+            commands.push(captureText.command(glyph, cell.x + (cell.width - glyph.width) / 2, cell.y + (cell.height - glyph.height) / 2,
                 glyph.captureScaleX, glyph.outlineColor.toString(), glyph.outlined ? glyph.outlineRadius * 2 : 0,
                 null, false, false));
         }
@@ -40,24 +47,44 @@ Item {
     }
     component CaptionCell: Rectangle {
         id: captionCell
-        readonly property alias captureGlyph: renderedGlyph
+        readonly property var captureGlyph: textLoader.item
         required property var modelData
+        required property int index
+        readonly property bool drcs: modelData.glyph !== undefined && modelData.glyph.kind === "drcs"
+        readonly property alias bitmap: bitmapLoader
+        readonly property int drcsPadding: Math.max(1, Math.ceil(modelData.glyphHeight * 0.06)) + (modelData.bold ? 1 : 0)
         readonly property real sx: overlay.width / Math.max(1, overlay.cue.planeWidth)
         readonly property real sy: overlay.height / Math.max(1, overlay.cue.planeHeight)
         x: modelData.x * sx; y: modelData.y * sy
         width: Math.max(1, modelData.width * sx)
         height: Math.max(1, modelData.height * sy)
         color: modelData.background
-        SubtitleGlyph {
-            id: renderedGlyph
-            objectName: "subtitleGlyph"
+        Loader {
+            id: bitmapLoader
+            active: captionCell.drcs
             anchors.centerIn: parent
-            forceOutline: overlay.forceOutline
-            cell: captionCell.modelData
-            outlineProvider: overlay.outlineProvider
-            scaleX: captionCell.sx
-            scaleY: captionCell.sy
-            fontFamily: subtitleFont.status === FontLoader.Ready ? subtitleFont.name : "Noto Sans CJK JP"
+            width: (captionCell.modelData.glyphWidth + 2 * captionCell.drcsPadding) * captionCell.sx
+            height: (captionCell.modelData.glyphHeight + 2 * captionCell.drcsPadding) * captionCell.sy
+            sourceComponent: MediaCaption {
+                objectName: "drcsGlyph"
+                // Presentation revision changes even when only DRCS pixels change.
+                image: { const revision = overlay.cue.revision; return overlay.outlineProvider.subtitle_drcs_image(captionCell.index, overlay.forceOutline); }
+                stretch: true
+            }
+        }
+        Loader {
+            id: textLoader
+            active: !captionCell.drcs
+            anchors.centerIn: parent
+            sourceComponent: SubtitleGlyph {
+                objectName: "subtitleGlyph"
+                forceOutline: overlay.forceOutline
+                cell: captionCell.modelData
+                outlineProvider: overlay.outlineProvider
+                scaleX: captionCell.sx
+                scaleY: captionCell.sy
+                fontFamily: subtitleFont.status === FontLoader.Ready ? subtitleFont.name : "Noto Sans CJK JP"
+            }
         }
     }
     Repeater {

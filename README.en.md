@@ -50,7 +50,7 @@ The detailed documentation linked below is currently available in Japanese.
 ### Subtitles and audio
 
 - **Video subtitles**: Select embedded text subtitles in MP4/MKV files or external SRT and ASS/SSA files from the playback controls. [Subtitle and comment support](docs/recording-playback.md#一般動画の字幕)
-- **ARIB subtitles**: Display subtitles for terrestrial and BS broadcasts using a font with ARIB extended characters, with an option to always draw outlines.
+- **ARIB subtitles**: Display subtitles for terrestrial and BS broadcasts using a font with ARIB extended characters and transmitted DRCS bitmaps, with an option to always draw outlines.
 - **Audio track selection**: Switch between primary and secondary audio tracks.
 - **Dual mono audio**: For dual mono broadcasts, choose primary audio only, secondary audio only, or both channels as stereo output.
 - **Volume control**: Adjust volume with a slider, mute audio, and retain the volume level when playback resumes.

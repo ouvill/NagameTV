@@ -1,4 +1,7 @@
-use super::SubtitleCue;
+use super::{
+    SubtitleCue,
+    model::{MAX_PENDING_MASK_BYTES, MAX_SCREEN_MASK_BYTES},
+};
 use std::collections::VecDeque;
 
 const PTS_WRAP: i128 = 1 << 33;
@@ -73,7 +76,8 @@ impl Timeline {
     }
 
     pub fn push(&mut self, cue: SubtitleCue) {
-        if cue.cells.len() > 2048
+        if cue.mask_bytes() > MAX_SCREEN_MASK_BYTES
+            || cue.cells.len() > 2048
             || cue.text.len() > 128 * 1024
             || cue.cells.iter().map(|c| c.text.len()).sum::<usize>() > 128 * 1024
         {
@@ -84,7 +88,15 @@ impl Timeline {
             tracing::warn!("ARIB caption has no presentation timestamp; cannot synchronize it");
             return;
         };
-        if self.pending.len() >= MAX_PENDING {
+        if self.pending.len() >= MAX_PENDING
+            || self
+                .pending
+                .iter()
+                .map(|(_, cue)| cue.mask_bytes())
+                .sum::<usize>()
+                + cue.mask_bytes()
+                > MAX_PENDING_MASK_BYTES
+        {
             tracing::warn!("Subtitle timeline is full; dropping the incoming caption");
             return;
         }
@@ -148,6 +160,81 @@ mod tests {
     // Failures intentionally fail the test; they are not assumed impossible IO.
     use super::*;
 
+    #[test]
+    fn drcs_only_cues_display_and_release_masks_on_reset_and_expiry() {
+        let mut timeline = timeline();
+        let mut cue = super::super::drcs_test_cue(0x90, false);
+        let super::super::model::SubtitleGlyph::Drcs { bitmap } = &cue.cells[0].glyph else {
+            panic!("bitmap")
+        };
+        let weak = std::sync::Arc::downgrade(bitmap);
+        cue.pts_ms = Some(10_000);
+        cue.duration_ms = Some(100);
+        timeline.push(cue);
+        assert!(matches!(
+            timeline.poll(Some(2_000_000_000)),
+            SubtitleUpdate::Show(_)
+        ));
+        assert!(weak.upgrade().is_none());
+        assert!(matches!(
+            timeline.poll(Some(2_100_000_000)),
+            SubtitleUpdate::Clear
+        ));
+        let cue = super::super::drcs_test_cue(0x90, false);
+        let super::super::model::SubtitleGlyph::Drcs { bitmap } = &cue.cells[0].glyph else {
+            panic!("bitmap")
+        };
+        let weak = std::sync::Arc::downgrade(bitmap);
+        timeline.push(cue);
+        timeline.reset();
+        assert!(weak.upgrade().is_none());
+    }
+    #[test]
+    fn bounds_mask_bytes_across_pending_cues() {
+        use super::super::model::SubtitleGlyph;
+        let large = std::sync::Arc::new(
+            libaribcaption::Drcs::from_packed(
+                255,
+                255,
+                2,
+                1,
+                &vec![0xff; (255usize * 255).div_ceil(8)],
+            )
+            .unwrap(),
+        );
+        let mut timeline = Timeline::default();
+        for _ in 0..200 {
+            let mut cue = super::super::drcs_test_cue(0x90, true);
+            for cell in &mut cue.cells {
+                cell.glyph = SubtitleGlyph::Drcs {
+                    bitmap: large.clone(),
+                };
+            }
+            timeline.push(cue);
+        }
+        assert!(
+            timeline
+                .pending
+                .iter()
+                .map(|(_, c)| c.mask_bytes())
+                .sum::<usize>()
+                <= MAX_PENDING_MASK_BYTES
+        );
+        assert!(timeline.pending_count() < MAX_PENDING);
+        timeline.reset();
+        let mut oversized = super::super::drcs_test_cue(0x90, false);
+        oversized.cells.clear();
+        for _ in 0..17 {
+            let mut cell = super::super::drcs_test_cue(0x90, false).cells.remove(0);
+            cell.glyph = SubtitleGlyph::Drcs {
+                bitmap: large.clone(),
+            };
+            oversized.cells.push(cell);
+        }
+        timeline.push(oversized);
+        assert_eq!(timeline.pending_count(), 0);
+        assert_eq!(std::sync::Arc::strong_count(&large), 1);
+    }
     #[test]
     fn clearing_caption_stream_preserves_video_clock_mapping() {
         let mut timeline = Timeline::default();

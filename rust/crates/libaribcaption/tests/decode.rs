@@ -33,3 +33,39 @@ fn decodes_upstream_sample_and_owns_result_after_decoder_drop() {
         assert!(ch.section_width > 0 && ch.section_height > 0);
     }
 }
+
+#[path = "fixtures/drcs.rs"]
+mod drcs;
+
+#[test]
+fn drcs_redefinition_and_decoder_drop_do_not_change_retained_pixels() {
+    use libaribcaption::Glyph;
+    let mut decoder = Decoder::new().unwrap();
+    decoder.decode(&drcs::management(8, &[]), 0).unwrap();
+    let first = decoder
+        .decode(&drcs::bitmap_statement(0x90, true), 1000)
+        .unwrap()
+        .unwrap();
+    let second = decoder
+        .decode(&drcs::bitmap_statement(0x60, false), 2000)
+        .unwrap()
+        .unwrap();
+    decoder.flush();
+    drop(decoder);
+    let Glyph::Drcs(mask) = &first.regions[0].characters[0].glyph else {
+        panic!("expected bitmap")
+    };
+    assert_eq!(mask.pixels(), &[255, 0, 0, 255]);
+    assert_eq!((mask.width(), mask.height()), (2, 2));
+    assert!(
+        first
+            .regions
+            .iter()
+            .flat_map(|r| &r.characters)
+            .any(|c| matches!(c.glyph, Glyph::Text) && !c.text.is_empty())
+    );
+    let Glyph::Drcs(mask) = &second.regions[0].characters[0].glyph else {
+        panic!("expected bitmap")
+    };
+    assert_eq!(mask.pixels(), &[0, 255, 255, 0]);
+}

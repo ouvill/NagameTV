@@ -4,7 +4,7 @@ mod decoder;
 mod fixture;
 mod gst_clock;
 mod ingest;
-mod model;
+pub(crate) mod model;
 mod timing;
 pub(crate) use gst_clock::SubtitleClock;
 pub(crate) use timing::SubtitleUpdate;
@@ -150,4 +150,17 @@ impl Drop for Session {
         self.bus.unset_sync_handler();
         self.clock.set_enabled(false);
     }
+}
+
+#[cfg(any(test, feature = "native_tests"))]
+#[path = "../../../crates/libaribcaption/tests/fixtures/drcs.rs"]
+pub(crate) mod drcs_fixture;
+
+#[cfg(any(test, feature = "native_tests"))]
+pub(crate) fn drcs_test_cue(pixels: u8, mixed: bool) -> SubtitleCue {
+    let mut decoder = decoder::AribDecoder::new().expect("test decoder");
+    decoder.decode_pes(&drcs_fixture::management(8, &[]), 0);
+    decoder
+        .decode_pes(&drcs_fixture::bitmap_statement(pixels, mixed), 1000)
+        .expect("authored DRCS")
 }

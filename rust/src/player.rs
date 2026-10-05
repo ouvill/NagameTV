@@ -466,6 +466,8 @@ pub mod ffi {
         #[qinvokable]
         fn subtitle_glyph_outline(self: &Player, text: QString, font: QFont) -> QString;
         #[qinvokable]
+        fn subtitle_drcs_image(self: &Player, index: i32, force_outline: bool) -> QImage;
+        #[qinvokable]
         fn volume(self: Pin<&mut Player>, value: f64);
         #[qinvokable]
         fn mute(self: Pin<&mut Player>, muted: bool);
@@ -565,6 +567,8 @@ pub struct PlayerRust {
     diagnostic_recorder: Option<crate::diagnostics::Client>,
     diagnostic_ui: telemetry::UiState,
     subtitle_cells: usize,
+    subtitle_images: crate::qt::drcs::Images,
+    subtitle_revision: u64,
     subtitle_model: cxx::UniquePtr<crate::subtitle_model::ffi::SubtitleModel>,
     media_subtitle_image: cxx_qt_lib::QImage,
     media_subtitle_error: QString,
@@ -799,12 +803,15 @@ impl ffi::Player {
         subtitle_display_changed,
         bool
     );
-    property_setter!(
-        set_subtitle_data,
-        subtitle_data,
-        subtitle_data_changed,
-        QString
-    );
+    fn set_subtitle_data(mut self: Pin<&mut Self>, value: QString) {
+        if value.is_empty() {
+            self.as_mut().rust_mut().subtitle_images = Default::default();
+        }
+        if self.rust().subtitle_data != value {
+            self.as_mut().rust_mut().subtitle_data = value;
+            self.subtitle_data_changed();
+        }
+    }
     property_setter!(
         set_subtitle_status,
         subtitle_status,

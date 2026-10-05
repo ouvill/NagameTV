@@ -40,6 +40,48 @@ TestCase {
             bold: false, italic: false, underline: false, stroked: stroked, ruby: false
         }] })
     }
+    function test_drcs_pixels_redefinition_outline_scale_and_capture() {
+        holder.caption = subtitleOutlines.drcs_fixture(0x90, false, true)
+        let bitmap = findChild(holder, "drcsGlyph")
+        verify(bitmap !== null)
+        verify(waitForRendering(holder))
+        let picture = grabImage(holder)
+        let sx = picture.width / holder.width
+        let sy = picture.height / holder.height
+        verify(picture.green(Math.floor(120*sx), Math.floor(225*sy)) > 200)
+        verify(picture.red(Math.floor(120*sx), Math.floor(225*sy)) < 40)
+        compare(picture.pixel(Math.floor(155*sx), Math.floor(225*sy)), picture.pixel(10,10))
+        let layer = holder.item.screenshotLayer(holder)
+        compare(layer.commands[1].kind, "drcs")
+        compare(layer.commands[1].index, 0)
+        compare(layer.commands[1].force_outline, false)
+        compare(layer.commands[3].kind, "text")
+        holder.item.forceOutline = true
+        verify(waitForRendering(holder))
+        layer = holder.item.screenshotLayer(holder)
+        compare(layer.commands[1].force_outline, true)
+        picture = grabImage(holder)
+        verify(picture.red(Math.floor(108*sx), Math.floor(225*sy)) < 40)
+        holder.item.forceOutline = false
+        // Same cell/code/layout: only bitmap data and revision change.
+        holder.caption = subtitleOutlines.drcs_fixture(0x60, true, false)
+        verify(waitForRendering(holder))
+        picture = grabImage(holder)
+        compare(picture.pixel(Math.floor(120*sx), Math.floor(225*sy)), picture.pixel(10,10))
+        verify(picture.green(Math.floor(155*sx), Math.floor(225*sy)) > 200)
+        verify(picture.red(Math.floor(155*sx), Math.floor(225*sy)) < 40)
+        verify(picture.green(Math.floor(138*sx), Math.floor(225*sy)) < 50)
+        holder.width = 480; holder.height = 270
+        verify(waitForRendering(holder))
+        picture = grabImage(holder)
+        sx = picture.width / holder.width; sy = picture.height / holder.height
+        verify(picture.green(Math.floor(77*sx), Math.floor(112*sy)) > 200)
+        verify(picture.red(Math.floor(77*sx), Math.floor(112*sy)) < 40)
+        holder.caption = ""
+        compare(findChild(holder, "drcsGlyph"), null)
+        holder.active = false
+        compare(holder.item, null)
+    }
     function test_baseline_font_and_outline_pixels_data() {
         return [{tag: "small kana", text: "ぁ"}, {tag: "midline bar", text: "ー"},
                 {tag: "descender", text: "g"}, {tag: "kanji", text: "字"}]
@@ -105,9 +147,9 @@ TestCase {
         holder.width = 480
         holder.height = 270
         const glyph = findChild(holder, "subtitleGlyph")
-        compare(glyph.parent.x, 50)
-        compare(glyph.parent.y, 100)
-        compare(glyph.parent.width, 40)
+        compare(glyph.parent.parent.x, 50)
+        compare(glyph.parent.parent.y, 100)
+        compare(glyph.parent.parent.width, 40)
         compare(glyph.font.pixelSize, 30)
         fuzzyCompare(glyph.outlineRadius, 1.8, 0.001)
         compare(findChild(glyph, "outlineLoader").y, glyph.baselineOffset)

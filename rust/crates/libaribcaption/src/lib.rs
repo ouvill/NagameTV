@@ -1,28 +1,28 @@
 //! Ownership-safe Japanese ARIB STD-B24 decoder (JIS, profile A, first language).
 //! Input is caption PES payload, not MPEG-TS. Results own their data and have no
-//! UI dependency. Rendering and DRCS bitmap export are not exposed yet.
+//! UI dependency. DRCS masks are validated and owned independently of the decoder.
 
+mod drcs;
 pub mod text;
+pub use drcs::Drcs;
+use std::{collections::HashMap, sync::Arc};
 
 use libaribcaption_sys as sys;
-use std::{ffi::CStr, fmt, ptr::NonNull, slice};
+use std::{ffi::CStr, ptr::NonNull, slice};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum Error {
+    #[error("could not allocate ARIB decoder")]
     Allocation,
+    #[error("could not initialize ARIB decoder")]
     Initialization,
+    #[error("could not decode ARIB caption payload")]
     Decode,
+    #[error("invalid or missing DRCS bitmap")]
+    InvalidDrcs,
+    #[error("decoded DRCS masks exceed the caption memory budget")]
+    DrcsCapacity,
 }
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Self::Allocation => "could not allocate ARIB decoder",
-            Self::Initialization => "could not initialize ARIB decoder",
-            Self::Decode => "could not decode ARIB caption payload",
-        })
-    }
-}
-impl std::error::Error for Error {}
 
 /// RGBA components, independent of UI-specific color notation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -44,7 +44,14 @@ impl Color {
 }
 
 #[derive(Debug, Clone)]
+pub enum Glyph {
+    Text,
+    Drcs(Arc<Drcs>),
+}
+
+#[derive(Debug, Clone)]
 pub struct Character {
+    pub glyph: Glyph,
     pub text: String,
     pub x: i32,
     pub y: i32,
@@ -136,7 +143,7 @@ impl Decoder {
             sys::ARIBCC_DECODE_STATUS_GOT_CAPTION => {
                 // Guard releases returned allocations even if conversion unwinds.
                 let mut caption = NativeCaption(raw);
-                Ok(Some(caption.copy_to_owned()))
+                caption.copy_to_owned().map(Some)
             }
             sys::ARIBCC_DECODE_STATUS_NO_CAPTION => Ok(None),
             _ => Err(Error::Decode),
@@ -166,7 +173,9 @@ impl Drop for NativeCaption {
     }
 }
 impl NativeCaption {
-    fn copy_to_owned(&mut self) -> Caption {
+    fn copy_to_owned(&mut self) -> Result<Caption, Error> {
+        let mut masks = HashMap::new();
+        let mut mask_bytes = 0usize;
         let raw = &mut self.0;
         let text = if raw.text.is_null() {
             String::new()
@@ -197,7 +206,24 @@ impl NativeCaption {
                             .iter()
                             .position(|byte| *byte == 0)
                             .unwrap_or(bytes.len());
+                        let glyph = match ch.type_ {
+                            sys::ARIBCC_CHARTYPE_DRCS | sys::ARIBCC_CHARTYPE_DRCS_REPLACED => {
+                                if let std::collections::hash_map::Entry::Vacant(entry) =
+                                    masks.entry(ch.drcs_code)
+                                {
+                                    let bitmap = drcs::copy_native(raw.drcs_map, ch.drcs_code)?;
+                                    mask_bytes += bitmap.pixels().len();
+                                    if mask_bytes > drcs::MAX_CAPTION_MASK_BYTES {
+                                        return Err(Error::DrcsCapacity);
+                                    }
+                                    entry.insert(Arc::new(bitmap));
+                                }
+                                Glyph::Drcs(Arc::clone(&masks[&ch.drcs_code]))
+                            }
+                            _ => Glyph::Text,
+                        };
                         characters.push(Character {
+                            glyph,
                             text: String::from_utf8_lossy(&bytes[..length]).into_owned(),
                             x: ch.x,
                             y: ch.y,
@@ -232,7 +258,7 @@ impl NativeCaption {
                 });
             }
         }
-        Caption {
+        Ok(Caption {
             text,
             pts_ms: raw.pts,
             duration_ms: (raw.wait_duration != sys::ARIBCC_RS_DURATION_INDEFINITE)
@@ -241,7 +267,7 @@ impl NativeCaption {
             plane_width: raw.plane_width,
             plane_height: raw.plane_height,
             regions,
-        }
+        })
     }
 }
 

@@ -22,6 +22,14 @@ mod ffi {
         #[namespace = ""]
         type QString = cxx_qt_lib::QString;
         fn paintImage(image: &mut QImage, overlay: &Overlay);
+        fn drcs(
+            painter: Pin<&mut QPainter>,
+            image: &QImage,
+            x: f64,
+            y: f64,
+            width: f64,
+            height: f64,
+        );
         fn mediaCaption(painter: Pin<&mut QPainter>, image: &QImage, width: i32, height: i32);
         fn transform(painter: Pin<&mut QPainter>, x: f64, y: f64, sx: f64, sy: f64);
         fn rotate(painter: Pin<&mut QPainter>, x: f64, y: f64, degrees: f64);
@@ -84,6 +92,16 @@ enum Command {
         pose: Option<Pose>,
     },
     Text(Text),
+    Drcs {
+        index: usize,
+        force_outline: bool,
+        x: f64,
+        y: f64,
+        width: f64,
+        height: f64,
+        #[serde(skip)]
+        image: Option<QImage>,
+    },
 }
 #[derive(Debug, Deserialize)]
 struct Text {
@@ -123,14 +141,51 @@ struct Shadow {
     offset: f64,
     radius: f64,
 }
+const MAX_DRCS_SNAPSHOT_BYTES: usize = 16 * 1024 * 1024;
 const MAX_SNAPSHOT_BYTES: usize = 1024 * 1024;
 const MAX_COMMANDS: usize = 2048;
 const OVERLAY_LAYERS: usize = 2;
 impl Overlay {
-    pub fn media_caption_bytes(&self) -> usize {
-        self.media_caption.as_ref().map_or(0, |image| {
-            image.width().max(0) as usize * image.height().max(0) as usize * 4
-        })
+    pub fn with_drcs(mut self, images: &crate::qt::drcs::Images) -> Result<Self, Error> {
+        for layer in &mut self.layers {
+            for command in &mut layer.commands {
+                if let Command::Drcs {
+                    index,
+                    force_outline,
+                    image,
+                    ..
+                } = command
+                {
+                    *image = Some(
+                        images
+                            .get(*index, *force_outline)
+                            .ok_or(Error::DrcsUnavailable)?,
+                    );
+                }
+            }
+        }
+        // Count conservatively even when multiple commands share the same image.
+        if self.image_bytes() > MAX_DRCS_SNAPSHOT_BYTES {
+            return Err(Error::Capacity);
+        }
+        Ok(self)
+    }
+    pub fn image_bytes(&self) -> usize {
+        let drcs_bytes = self
+            .layers
+            .iter()
+            .flat_map(|layer| &layer.commands)
+            .map(|command| match command {
+                Command::Drcs {
+                    image: Some(image), ..
+                } => image.width() as usize * image.height() as usize * 4,
+                _ => 0,
+            })
+            .sum::<usize>();
+        drcs_bytes
+            + self.media_caption.as_ref().map_or(0, |image| {
+                image.width().max(0) as usize * image.height().max(0) as usize * 4
+            })
     }
     pub fn with_media_caption(mut self, image: &QImage) -> Self {
         self.media_caption = Some(crate::qt::ffi::share_screenshot_image(image));
@@ -202,6 +257,18 @@ impl Overlay {
                         painter.as_mut().restore();
                     }
                     Command::Text(text) => text.paint(painter.as_mut()),
+                    Command::Drcs {
+                        image,
+                        x,
+                        y,
+                        width,
+                        height,
+                        ..
+                    } => {
+                        if let Some(image) = image {
+                            ffi::drcs(painter.as_mut(), image, *x, *y, *width, *height);
+                        }
+                    }
                 }
             }
             painter.as_mut().restore();
@@ -257,6 +324,15 @@ impl Text {
     }
 }
 pub fn compose(image: QImage, width: u32, height: u32, overlay: &Overlay) -> Result<QImage, Error> {
+    // An unresolved DRCS reference is a failed snapshot, never an invisible glyph.
+    if overlay
+        .layers
+        .iter()
+        .flat_map(|layer| &layer.commands)
+        .any(|command| matches!(command, Command::Drcs { image: None, .. }))
+    {
+        return Err(Error::DrcsUnavailable);
+    }
     let mut image = if image.width() == width as i32 && image.height() == height as i32 {
         image
     } else {
@@ -277,6 +353,40 @@ pub fn compose(image: QImage, width: u32, height: u32, overlay: &Overlay) -> Res
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn drcs_capture_owns_pixels_after_presentation_replacement_and_clips() {
+        let mut cue = crate::features::subtitles::drcs_test_cue(0x90, false);
+        cue.cells[0].glyph_width = 20;
+        cue.cells[0].glyph_height = 20;
+        cue.cells[0].foreground = "#ffff0000".into();
+        let images = crate::qt::drcs::Images::prepare(&cue).unwrap();
+        let json = r#"{"width":40,"height":40,"layers":[{"x":0,"y":0,"width":20,"height":40,"commands":[{"kind":"drcs","index":0,"force_outline":false,"x":0,"y":0,"width":24,"height":24}]}]}"#;
+        let overlay = Overlay::parse(json).unwrap().with_drcs(&images).unwrap();
+        assert_eq!(overlay.image_bytes(), 24 * 24 * 4);
+        drop(images);
+        let mut image =
+            QImage::from_width_height_and_format(40, 40, cxx_qt_lib::QImageFormat::Format_ARGB32);
+        image.fill(&QColor::from_rgb(0, 0, 0));
+        assert!(
+            compose(
+                crate::qt::ffi::share_screenshot_image(&image),
+                40,
+                40,
+                &Overlay::parse(json).unwrap()
+            )
+            .is_err()
+        );
+        let image = compose(image, 40, 40, &overlay).unwrap();
+        assert_eq!(image.pixel_color(5, 5), QColor::from_rgb(255, 0, 0));
+        assert_eq!(image.pixel_color(18, 5), QColor::from_rgb(0, 0, 0));
+        assert_eq!(image.pixel_color(21, 18), QColor::from_rgb(0, 0, 0));
+        assert!(
+            Overlay::parse(json)
+                .unwrap()
+                .with_drcs(&crate::qt::drcs::Images::default())
+                .is_err()
+        );
+    }
     #[test]
     fn rotation_uses_the_captured_center_and_keeps_layer_clipping() {
         let overlay = Overlay::parse(
@@ -325,7 +435,7 @@ mod tests {
         caption.fill(&QColor::from_rgba(0, 0, 0, 0));
         caption.set_pixel_color(25, 15, &QColor::from_rgb(0, 255, 0));
         let overlay = overlay.with_media_caption(&caption);
-        assert_eq!(overlay.media_caption_bytes(), 200 * 100 * 4);
+        assert_eq!(overlay.image_bytes(), 200 * 100 * 4);
         let image = compose(image, 200, 100, &overlay).unwrap();
         assert_eq!(image.pixel_color(25, 15), QColor::from_rgb(0, 255, 0));
         assert_eq!(image.pixel_color(26, 15), QColor::from_rgb(255, 0, 0));

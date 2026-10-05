@@ -11,6 +11,7 @@ pub(super) enum Status {
     Parsing,
     Failed(Error),
     PresentationFailed(serde_json::Error),
+    ImageFailed(crate::qt::drcs::Error),
 }
 
 impl Status {
@@ -18,7 +19,7 @@ impl Status {
         match self {
             Self::Stopped => "Stopped",
             Self::Parsing => "Parsing subtitles",
-            Self::PresentationFailed(_) => {
+            Self::PresentationFailed(_) | Self::ImageFailed(_) => {
                 "Could not prepare subtitles for display. Stop playback and play again."
             }
             Self::Failed(error) => match error {
@@ -43,6 +44,12 @@ impl ffi::Player {
     pub(super) fn update_subtitle_status(mut self: Pin<&mut Self>, status: Status) {
         match &status {
             Status::Failed(error) => tracing::error!("Subtitle processing failed: {error}"),
+            Status::ImageFailed(error) => {
+                tracing::error!(
+                    error = error as &dyn std::error::Error,
+                    "DRCS image preparation failed"
+                );
+            }
             Status::PresentationFailed(error) => {
                 tracing::error!("Subtitle presentation failed: {error}")
             }
