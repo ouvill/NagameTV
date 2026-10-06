@@ -131,8 +131,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     .file("src/recording_model.rs")
     .file("src/video_file_model.rs")
     .cpp_file("src/channel_model_types.h")
-    .qt_module("Quick")
-    .qt_module("WebEngineQuick");
+    .qt_module("Quick");
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("linux") {
         builder = builder.qt_module("DBus");
     }
@@ -149,6 +148,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .qt_module("Svg")
             .qt_module("Test")
             .file("src/native_test_bridge.rs");
+    }
+    // Ubuntu's WebEngine development package may omit the .prl required by
+    // qt-build-utils. Its pkg-config file provides both headers and link flags.
+    let web_engine = pkg_config::Config::new()
+        .atleast_version("6.8.0")
+        .probe("Qt6WebEngineQuick")?;
+    for path in web_engine.include_paths {
+        builder = builder.include_dir(path);
     }
     let ass = pkg_config::Config::new()
         .atleast_version("0.17.0")

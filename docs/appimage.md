@@ -52,8 +52,12 @@ QtWebEngine・Qt WebChannel・Qt Positioningと、QtWebEngineが依存する`lib
 
 ```sh
 APPIMAGE_BUILD_DIR="$PWD/build/appimage-native" APPIMAGE_BUILD_JOBS=4 \
+  PKG_CONFIG_PATH=/path/to/qt/lib/pkgconfig \
   QMAKE=/path/to/qt/bin/qmake ./scripts/packaging/build-appimage.sh --native
 ```
+
+`QMAKE`と`PKG_CONFIG_PATH`は同じQt SDKを指定する。
+Qt WebEngine Quickのヘッダーとリンク情報は`pkg-config`から取得する。
 
 linuxdeploy・Qtプラグイン・AppImageランタイムは、固定リリースを取得して
 SHA-256を確認し、`build/appimage/tools/`にキャッシュする。
