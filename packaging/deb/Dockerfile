@@ -7,9 +7,10 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-ins
     build-essential binutils ca-certificates ccache cmake curl desktop-file-utils dpkg-dev git \
     libclang-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
     libgstreamer-plugins-bad1.0-dev libass-dev pkg-config python3 qmake6 \
-    qt6-base-dev qt6-declarative-dev qt6-declarative-dev-tools qt6-l10n-tools util-linux \
+    qt6-base-dev qt6-declarative-dev qt6-declarative-dev-tools qt6-l10n-tools qt6-webengine-dev util-linux \
     $(sed '/^#/d; /^$/d' /tmp/runtime-dependencies.txt) \
     && rm -rf /var/lib/apt/lists/* /tmp/runtime-dependencies.txt
+RUN pkg-config --atleast-version=6.8.0 Qt6WebEngineQuick
 
 ENV RUSTUP_HOME=/opt/rustup CARGO_HOME=/opt/cargo
 ENV PATH="/opt/cargo/bin:${PATH}"
