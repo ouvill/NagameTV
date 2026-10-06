@@ -3,6 +3,8 @@
   "runtime": "org.kde.Platform",
   "runtime-version": "6.10",
   "sdk": "org.kde.Sdk",
+  "base": "io.qt.qtwebengine.BaseApp",
+  "base-version": "6.10",
   "sdk-extensions": [
     "org.freedesktop.Sdk.Extension.rust-stable",
     "org.freedesktop.Sdk.Extension.llvm21"
@@ -17,10 +19,23 @@
     "--socket=pulseaudio",
     "--device=dri",
     "--filesystem=xdg-pictures/nagametv:create",
-    "--env=QT_QPA_PLATFORM=xcb"
+    "--env=QT_QPA_PLATFORM=xcb",
+    "--env=QTWEBENGINEPROCESS_PATH=/app/bin/QtWebEngineProcess",
+    "--env=QTWEBENGINE_DICTIONARIES_PATH=/app/qtwebengine_dictionaries"
+  ],
+  "cleanup-commands": [
+    "/app/cleanup-BaseApp.sh"
   ],
   "build-options": {
     "append-path": "/usr/lib/sdk/rust-stable/bin",
+    "arch": {
+      "x86_64": {
+        "prepend-pkg-config-path": "/app/lib/x86_64-linux-gnu/pkgconfig"
+      },
+      "aarch64": {
+        "prepend-pkg-config-path": "/app/lib/aarch64-linux-gnu/pkgconfig"
+      }
+    },
     "env": {
       "LIBCLANG_PATH": "/usr/lib/sdk/llvm21/lib",
       "CARGO_NET_OFFLINE": "true"

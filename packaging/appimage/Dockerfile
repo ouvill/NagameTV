@@ -19,7 +19,7 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-ins
 RUN python3 -m venv /opt/aqt \
     && /opt/aqt/bin/pip install --no-cache-dir aqtinstall==3.3.0 \
     && /opt/aqt/bin/aqt install-qt linux desktop 6.8.3 linux_gcc_64 \
-        --outputdir /opt/qt --modules qtimageformats qtshadertools qtwebengine qtwebchannel qtpositioning
+        --outputdir /opt/qt --modules qtimageformats qtshadertools qtwebengine qtwebchannel qtpositioning qtserialport
 ENV PATH="/opt/qt/6.8.3/gcc_64/bin:/opt/cargo/bin:${PATH}" \
     QMAKE=/opt/qt/6.8.3/gcc_64/bin/qmake \
     QT_LRELEASE=/opt/qt/6.8.3/gcc_64/bin/lrelease \
@@ -56,7 +56,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 # QML-only dependencies are not linked by the Rust application. Catch an
 # incomplete SDK before spending time compiling and packaging the application.
-RUN ldd /opt/qt/6.8.3/gcc_64/qml/QtWebEngine/libqtwebenginequickplugin.so > /tmp/qt-webengine-deps \
+RUN ldd /opt/qt/6.8.3/gcc_64/qml/QtWebEngine/libqtwebenginequickplugin.so \
+        /opt/qt/6.8.3/gcc_64/plugins/position/libqtposition_nmea.so > /tmp/qt-webengine-deps \
     && if grep -q 'not found' /tmp/qt-webengine-deps; then cat /tmp/qt-webengine-deps >&2; exit 1; fi \
     && rm /tmp/qt-webengine-deps
 WORKDIR /project

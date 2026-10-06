@@ -68,6 +68,10 @@ flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/fl
 ## 依存関係
 
 - Qtは`org.kde.Platform//6.10`を使用し、対応する`org.kde.Sdk`でビルドする。
+- KDEランタイムに含まれないQt WebEngineは、
+  [QtWebEngine BaseApp](https://github.com/flathub/io.qt.qtwebengine.BaseApp)の6.10ブランチから同梱する。
+  QMLモジュール、補助プロセス、Chromiumのリソースを配布物に含め、
+  コンパイル後にBaseAppの開発用ファイルを削除する。
 - ランタイムにない`qml6glsink`はGStreamer Good Plug-ins 1.26.11から追加ビルドする。
   そのほかの再生プラグインとコーデックはランタイムとその拡張を使用する。
 - libaribcaptionとtsreadexはリポジトリーのサブモジュールと同じ固定コミットから静的リンクする。
