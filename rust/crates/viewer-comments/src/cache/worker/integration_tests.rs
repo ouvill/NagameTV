@@ -70,10 +70,16 @@ fn cached_seek_is_readable_while_an_archive_writer_holds_the_database() {
     current.view.as_mut().unwrap().interval = Interval::new(UTC, UTC + 10).unwrap();
     controller.configure(Some(current.clone()));
     let deadline = Instant::now() + Duration::from_secs(3);
-    while controller.snapshot().records.is_empty() {
+    // Records are published before the initial pin write. Wait for the target
+    // publication too, so the external writer only competes with an unchanged pin.
+    loop {
+        let snapshot = controller.snapshot();
+        if !snapshot.records.is_empty() && snapshot.target.is_some() {
+            break;
+        }
         assert!(
             Instant::now() < deadline,
-            "initial cache read did not finish"
+            "initial cache read and pin did not finish"
         );
         thread::sleep(POLL_INTERVAL);
     }
