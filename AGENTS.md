@@ -24,6 +24,9 @@ For code changes, follow the relevant sections of
 Read the sections needed for the task; a small edit does not require a full
 repository or documentation review.
 
+Write **How** in code, **What** in test code, **Why** in commit logs,
+and **Why not** in code comments.
+
 Use trunk-based development with short-lived branches and small, reviewable
 integrations. Gate unfinished user paths behind default-off runtime feature
 flags at the Rust ownership boundary. Follow the flag lifecycle and verification
