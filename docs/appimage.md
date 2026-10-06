@@ -118,6 +118,9 @@ Linuxでは、実行ファイルを削除しても動作中のプロセスが終
   X11・SVG・入力メソッドなどのプラグインを収集する。テスト用QMLは対象に含めない。
 - QMLから読み込むQtWebEngineは追加モジュールとして指定し、`QtWebEngineProcess`、
   Chromiumのリソース・ロケール、Qt Positioningが同梱されたことを検査する。
+  アプリは[Qtの初期化手順](https://doc.qt.io/qt-6.8/qtwebenginequick.html)に従い、
+  メインスレッドで`QGuiApplication`を作る前に`QtWebEngineQuick::initialize()`を呼ぶ。
+  Qt 6.8ではQMLの読込スレッドに初期化を任せると起動時に終了するためである。
 - GStreamerは[プラグイン一覧](../packaging/appimage/gstreamer-plugins.txt)のライブラリーと
   plugin scanner、共有ライブラリー依存を同梱する。MPEG-TS、MPEG-2/H.264、AAC、
   インターレース解除、Qtへの映像表示、PulseAudio出力を含む。

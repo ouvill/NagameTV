@@ -12,6 +12,7 @@
 #include <QtGui/QImage>
 #include <QtGui/QImageWriter>
 #include <QtGui/QScreen>
+#include <QtWebEngineQuick/QtWebEngineQuick>
 #include <stdexcept>
 inline QSize availableWindowSize(QQuickItem *item) {
   const auto *window = item ? item->window() : nullptr;
@@ -38,6 +39,9 @@ inline void configureQtQuickOpenGl() {
     QCoreApplication::setApplicationName(QStringLiteral("nagametv"));
     QGuiApplication::setDesktopFileName(QStringLiteral("io.github.ouvill.nagametv"));
     QQuickWindow::setGraphicsApi(QSGRendererInterface::OpenGL);
+    // Initialize on the process main thread before QGuiApplication. Qt 6.8
+    // otherwise initializes from the QML import worker and aborts at startup.
+    QtWebEngineQuick::initialize();
 }
 inline void useQtQuickDialogs() {
     QCoreApplication::setAttribute(Qt::AA_DontUseNativeDialogs);

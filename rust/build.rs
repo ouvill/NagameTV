@@ -131,7 +131,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     .file("src/recording_model.rs")
     .file("src/video_file_model.rs")
     .cpp_file("src/channel_model_types.h")
-    .qt_module("Quick");
+    .qt_module("Quick")
+    .qt_module("WebEngineQuick");
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("linux") {
         builder = builder.qt_module("DBus");
     }
