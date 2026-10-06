@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="EUC-JP"?>
+<!DOCTYPE bml PUBLIC "-//ARIB//DTD BML 1.0//JA" "http://www.arib.or.jp/B24/DTD/bml_1_0.dtd">
+<?bml bml-version="1.0"?>
 <bml><head>
+<title>Automatic weather overlay</title>
 <script><![CDATA[
 var opened = false;
 var ticks = 0;
@@ -22,10 +25,10 @@ function key() {
     if (document.currentEvent.keyCode == 22) document.getElementById("body").normalStyle.usedKeyList = "numeric-tuning";
 }
 ]]></script>
-<bevent><beitem type="DataButtonPressed" subscribe="subscribe" onoccur="data();"/></bevent>
+<bevent><beitem id="dataButtonEvent" type="DataButtonPressed" subscribe="subscribe" onoccur="data();"/></bevent>
 </head>
 <body id="body" onload="start();" style="resolution:960x540;used-key-list:none;">
-<object type="video/X-arib-mpeg2" style="position:absolute;left:0px;top:0px;width:960px;height:540px;"/>
+<div><object type="video/X-arib-mpeg2" style="position:absolute;left:0px;top:0px;width:960px;height:540px;"/></div>
 <p style="position:absolute;left:40px;top:20px;width:400px;height:50px;background-color-index:7;">Automatic weather overlay</p>
 <p id="ticks" style="position:absolute;left:40px;top:70px;width:200px;height:50px;">0</p>
 <div id="menu" style="visibility:hidden;position:absolute;left:40px;top:150px;width:500px;height:200px;background-color-index:7;">

@@ -1,7 +1,10 @@
 //! Shared wire fixture for CPU decoder tests and the production-window tests.
 const DATA_PID: u16 = 0x1f00;
 const DOWNLOAD: u32 = 1;
-const BLOCK_SIZE: u16 = 4096;
+// STD-B24 fascicle 3 §6.2.2: network-originated DII transactions use bits 31..30 = 10.
+const TRANSACTION: u32 = 0x8000_0001;
+// A full DDB plus its headers and CRC must fit the 4093-byte section-length limit.
+const BLOCK_SIZE: u16 = 2048;
 pub const SERVICE: u16 = 1;
 pub const PMT_PID: u16 = 0x0020;
 
@@ -60,9 +63,9 @@ fn component(automatic: bool) -> [u8; 16] {
         0,
         0x0c,
         if automatic { 0x33 } else { 0x23 },
-        0x70,
-        0xf8,
-        0xa0,
+        0x7f,
+        0xf7, // Any data event; no transmitted DSM-CC event-message sections.
+        0x3f, // No on-demand retrieval or file storage; reserved bits are set.
     ]
 }
 
@@ -89,10 +92,10 @@ pub fn tables(automatic: Option<bool>, counter: u8) -> Vec<u8> {
     bytes
 }
 
-fn message(kind: u16, body: &[u8]) -> Vec<u8> {
+fn message(kind: u16, identifier: u32, body: &[u8]) -> Vec<u8> {
     let mut bytes = vec![0x11, 3];
     bytes.extend(kind.to_be_bytes());
-    bytes.extend(DOWNLOAD.to_be_bytes());
+    bytes.extend(identifier.to_be_bytes());
     bytes.extend([0xff, 0]);
     bytes.extend((body.len() as u16).to_be_bytes());
     bytes.extend(body);
@@ -116,14 +119,18 @@ pub fn carousel(counter: &mut u8) -> Vec<u8> {
     let mut bytes = packets(
         DATA_PID,
         counter,
-        &section(0x3b, 1, &message(0x1002, &info)),
+        &section(
+            0x3b,
+            TRANSACTION as u16,
+            &message(0x1002, TRANSACTION, &info),
+        ),
     );
     let mut block = vec![0, 0, 0, 0xff, 0, 0]; // module 0, version 0, block 0
     block.extend(content);
     bytes.extend(packets(
         DATA_PID,
         counter,
-        &section(0x3c, 0, &message(0x1003, &block)),
+        &section(0x3c, 0, &message(0x1003, DOWNLOAD, &block)),
     ));
     bytes
 }

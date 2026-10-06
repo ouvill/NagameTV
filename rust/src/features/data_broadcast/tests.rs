@@ -3,6 +3,79 @@ use super::*;
 use serde_json::{Value, json};
 
 #[test]
+fn synthetic_carousel_uses_broadcast_identifiers_and_matching_block_data() {
+    // STD-B24 fascicle 3 §§6.2.2, 6.3.2, 6.5: the DII transaction is
+    // network-originated, while the DDB header identifies the download itself.
+    let mut receiver = arib_b24::transport::SectionPackets::new(0x1f00).unwrap();
+    let raw: Vec<_> = fixture::carousel(&mut 0)
+        .as_chunks::<188>()
+        .0
+        .iter()
+        .flat_map(|packet| receiver.push(packet).unwrap())
+        .collect();
+    let sections: Vec<_> = raw
+        .iter()
+        .map(|section| arib_b24::Section::parse(section).unwrap())
+        .collect();
+    let [
+        arib_b24::Section::Info(info),
+        arib_b24::Section::Block(block),
+    ] = sections.as_slice()
+    else {
+        panic!("fixture must contain one DII and one DDB");
+    };
+    assert_eq!(info.transaction_id >> 30, 0b10);
+    assert_eq!(info.download_id, block.download_id);
+    assert_ne!(info.transaction_id, info.download_id);
+    assert_eq!(
+        u16::from_be_bytes(raw[0][3..5].try_into().unwrap()),
+        info.transaction_id as u16
+    );
+    assert_eq!(info.modules.len(), 1);
+    let module = &info.modules[0];
+    assert_eq!(module.id, block.module_id);
+    assert_eq!(module.version, block.module_version);
+    assert_eq!(module.size as usize, block.data.len());
+    assert_eq!(block.block_number, 0);
+    assert_eq!(
+        u16::from_be_bytes(raw[1][3..5].try_into().unwrap()),
+        block.module_id
+    );
+    assert_eq!((raw[1][5] >> 1) & 31, block.module_version & 31);
+    // DDB syntax has 27 bytes after section_length in addition to block data.
+    assert!(usize::from(info.block_size) + 27 <= 4093);
+    assert!(block.data.len() <= usize::from(info.block_size));
+    assert_eq!(
+        block.data.as_slice(),
+        include_bytes!("../../../../tests/fixtures/bml/overlay.bml")
+    );
+}
+
+#[test]
+fn synthetic_pmt_only_advertises_the_carousel_services_it_provides() {
+    for automatic in [false, true] {
+        let mut receiver = arib_b24::transport::SectionPackets::new(fixture::PMT_PID).unwrap();
+        let sections: Vec<_> = fixture::tables(Some(automatic), 0)
+            .as_chunks::<188>()
+            .0
+            .iter()
+            .flat_map(|packet| receiver.push(packet).unwrap())
+            .collect();
+        assert_eq!(sections.len(), 1);
+        let components =
+            arib_b24::transport::data_components_from_pmt(&sections[0], fixture::SERVICE).unwrap();
+        assert_eq!(components.len(), 1);
+        let info = components[0].bxml_info().unwrap();
+        assert_eq!(info.entry_point.as_ref().unwrap().auto_start, automatic);
+        assert_eq!(info.entry_point.as_ref().unwrap().document_resolution, 3);
+        let carousel = info.carousel.as_ref().unwrap();
+        assert!(!carousel.event_sections);
+        assert!(!carousel.ondemand_retrieval);
+        assert!(!carousel.file_storable);
+    }
+}
+
+#[test]
 fn monitor_discovers_startup_changes_without_receiving_modules() {
     let mut decoder = Decoder::new(fixture::SERVICE, None).unwrap();
     decoder.collecting = false;

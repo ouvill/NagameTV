@@ -286,5 +286,7 @@ settings control enables reception on the existing playback connection; toggling
 it off destroys the browser, releases its listening socket and restores player
 input. Both settings values are checked on disk without changing user settings.
 No generated TS is checked in.
+`overlay.bml` declares BML 1.0; the other BML files are simplified browser
+control fixtures. This suite does not establish full STD-B24 conformance.
 Run `python3 scripts/test.py startup -- data-broadcast`; the runner validates the
 private display, GPU and virtual audio output before starting the product window.
