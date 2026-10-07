@@ -1,0 +1,9 @@
+#!/bin/sh
+set -eu
+
+if ! /home/workshop/.local/bin/herdr --version; then
+  workshopctl set-health error "Herdr is missing or cannot run"
+  exit 1
+fi
+
+workshopctl set-health okay

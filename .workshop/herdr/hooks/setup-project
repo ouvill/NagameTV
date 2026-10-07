@@ -1,0 +1,13 @@
+#!/bin/sh
+set -eu
+
+installer_path="$(mktemp)"
+trap 'rm -f "$installer_path"' EXIT
+
+curl --fail --silent --show-error --location \
+  https://herdr.dev/install.sh \
+  --output "$installer_path"
+
+HERDR_INSTALL_DIR="$HOME/.local/bin" sh "$installer_path"
+
+"$HOME/.local/bin/herdr" --version

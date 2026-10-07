@@ -1,0 +1,8 @@
+name: herdr
+title: Herdr terminal multiplexer
+base: ubuntu@26.04
+version: "1"
+summary: Herdr for terminal-based coding agents
+description: |
+  Installs the latest stable Herdr release using its official installer.
+license: Apache-2.0

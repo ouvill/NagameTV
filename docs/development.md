@@ -42,6 +42,12 @@ OFFでは専用ワーカー・通信・ブラウザーを起動せず、自動�
 GitHub CLI（`gh`）もプロジェクトSDKに含まれます。
 OpenCodeはCanonical提供の[OpenCode SDK](https://github.com/canonical/opencode-sdk)を
 `latest/stable`チャンネルから導入します。
+Claude CodeもCanonical提供の[Claude Code SDK](https://github.com/canonical/claude-code-sdk)を
+`latest/stable`チャンネルから導入します。
+herdrは[プロジェクトSDK](../.workshop/herdr/hooks/setup-project)が
+[公式インストーラー](https://herdr.dev/docs/install/)で最新の安定版を導入します。
+このフックはプロジェクトSDKのセットアップ時に実行され、`curl`とSHA-256検証用の
+`sha256sum`を使って`~/.local/bin/herdr`を配置します。
 配布用AppImageは別のUbuntu 24.04 Docker環境を使います。
 依存パッケージを追加するときはこの一覧と[check-health](../.workshop/nagametv/hooks/check-health)を更新します。
 check-healthはコマンド・開発ライブラリー・QML・GStreamerプラグインファイルの存在を確認し、
@@ -58,6 +64,10 @@ SDK定義の変更を既存のWorkshopへ反映するには、**ホスト側**�
 ```sh
 workshop refresh
 ```
+
+導入後は`workshop exec -- claude --version`と`workshop exec -- herdr --version`で確認できます。
+Claude Codeの初回認証は`workshop exec -- claude`で行います。
+herdrは`workshop exec -- herdr`で起動します。
 
 起動済みコンテナー内で手動導入したパッケージだけに依存しないようにします。
 再構築時のフック実行については[WorkshopのSDK仕様](https://documentation.ubuntu.com/canonical-workshop/stable/reference/sdks/)を参照してください。

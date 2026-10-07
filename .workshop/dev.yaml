@@ -4,11 +4,14 @@ sdks:
   - name: codex
   - name: opencode
     channel: latest/stable
+  - name: claude-code
+    channel: latest/stable
   - name: rust
   - name: docker-ce
     channel: latest/stable
   - name: project-codex-latest
   - name: project-nagametv
+  - name: project-herdr
   - name: project-gui
 
 connections:
