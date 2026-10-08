@@ -55,11 +55,20 @@ inline void doubleClickRoot(QQmlApplicationEngine &engine, const QPoint &positio
     QTest::mouseDClick(window, Qt::LeftButton, Qt::NoModifier, position);
 }
 
+inline QQuickItem *findTestVisualItem(QQuickItem *item, const QString &name) {
+    if (!item) return nullptr;
+    if (item->objectName() == name) return item;
+    for (auto *child : item->childItems()) {
+        if (auto *found = findTestVisualItem(child, name)) return found;
+    }
+    return nullptr;
+}
 inline void clickRootItem(QQmlApplicationEngine &engine, const QString &name) {
     const auto roots = engine.rootObjects();
     auto *window = roots.isEmpty() ? nullptr : qobject_cast<QQuickWindow *>(roots.first());
-    auto *item = window ? window->findChild<QQuickItem *>(name) : nullptr;
-    if (!item) throw std::runtime_error("QQuickItem is missing");
+    // ListView delegates need not belong to the window's QObject ownership tree.
+    auto *item = findTestVisualItem(window ? window->contentItem() : nullptr, name);
+    if (!item) throw std::runtime_error("QQuickItem is missing: " + name.toStdString());
     QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier,
                      item->mapToScene(QPointF(item->width() / 2, item->height() / 2)).toPoint());
 }

@@ -235,6 +235,7 @@ Rectangle {
                 delegate: RecordingRow {}
                 component RecordingRow: Item {
                     id: row
+                    objectName: "epgstationRecording-" + row.recordedId
                     required property int index
                     required property string recordedId
                     required property string programName
@@ -256,7 +257,23 @@ Rectangle {
                             filesDialog.open();
                         }
                     }
-                    CardSurface { anchors.fill: parent; selected: row.ListView.isCurrentItem && list.activeFocus; hovered: false; pressed: false }
+                    CardSurface {
+                        anchors.fill: parent
+                        selected: row.ListView.isCurrentItem && list.activeFocus
+                        hovered: rowPointer.containsMouse || playButton.hovered
+                        pressed: rowPointer.pressed || playButton.down
+                    }
+                    MouseArea {
+                        id: rowPointer
+                        anchors.fill: parent
+                        enabled: playButton.enabled
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            list.forceActiveFocus(Qt.MouseFocusReason);
+                            row.choose();
+                        }
+                    }
                     RowLayout {
                         id: content
                         anchors { left: parent.left; right: parent.right; top: parent.top; margins: Theme.spaceLg }

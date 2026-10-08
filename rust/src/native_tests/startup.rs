@@ -917,6 +917,7 @@ fn check_recording_directions(
         &format!("{LIST} && root.activeFocusItem.index === 0"),
     )?;
     ffi::clickRootKey(engine.pin_mut(), &QString::from("Return"))?;
+    ffi::clickRootItem(engine.pin_mut(), &QString::from("epgstationRecording-1000"))?;
     assert!(evaluate(
         engine,
         "recordingLibrary.visible && !player.recording_loading && !inputContext.popupOpen"
@@ -1132,12 +1133,7 @@ fn check_epgstation_library(
             "{FIND} const list = find(recordingLibrary, 'epgstationRecordings'); list.positionViewAtIndex(1, ListView.Contain); list.itemAtIndex(1) !== null"
         ),
     )?;
-    evaluate(
-        engine,
-        &format!(
-            "{FIND} find(find(recordingLibrary, 'epgstationRecordings').itemAtIndex(1), 'epgstationPlay').clicked(); true"
-        ),
-    )?;
+    ffi::clickRootItem(engine.pin_mut(), &QString::from("epgstationRecording-2"))?;
     wait_for(
         app,
         engine,
@@ -1210,12 +1206,7 @@ fn check_epgstation_library(
             "{FIND} const list = find(recordingLibrary, 'epgstationRecordings'); list.positionViewAtIndex(2, ListView.Contain); list.itemAtIndex(2) !== null"
         ),
     )?;
-    evaluate(
-        engine,
-        &format!(
-            "{FIND} find(find(recordingLibrary, 'epgstationRecordings').itemAtIndex(2), 'epgstationPlay').clicked(); true"
-        ),
-    )?;
+    ffi::clickRootItem(engine.pin_mut(), &QString::from("epgstationRecording-3"))?;
     wait_for(
         app,
         engine,
