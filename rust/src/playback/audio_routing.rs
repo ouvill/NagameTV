@@ -61,7 +61,7 @@ impl Routing {
         let result = self
             .0
             .state
-            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |state| {
+            .try_update(Ordering::AcqRel, Ordering::Acquire, |state| {
                 if state >> 2 != format.generation || state & 3 == 0 {
                     return None;
                 }
@@ -104,21 +104,19 @@ impl Routing {
     fn flush(&self) {
         // FLUSH does not replace sticky CAPS or STREAM_START. Invalidate the side
         // choice while retaining their identity; neither event must be resent.
-        let _ = self
-            .0
+        self.0
             .state
-            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |state| {
-                Some((state.wrapping_add(4) & !3) | u64::from(state & 3 != 0))
+            .update(Ordering::AcqRel, Ordering::Acquire, |state| {
+                (state.wrapping_add(4) & !3) | u64::from(state & 3 != 0)
             });
     }
     fn renegotiate(&self, stereo: bool) {
         // Upper 62 bits identify negotiation generations; lower two bits are one valid state.
         // Wrapping prevents arithmetic panic even after the generation space is exhausted.
-        let _ = self
-            .0
+        self.0
             .state
-            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |state| {
-                Some((state.wrapping_add(4) & !3) | u64::from(stereo))
+            .update(Ordering::AcqRel, Ordering::Acquire, |state| {
+                (state.wrapping_add(4) & !3) | u64::from(stereo)
             });
     }
     #[cfg(test)]
