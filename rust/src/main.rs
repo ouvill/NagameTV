@@ -37,6 +37,7 @@ mod shortcut_key;
 mod startup_test_server;
 mod subtitle_model;
 mod transport;
+mod updates;
 mod video_file_model;
 #[cfg(feature = "video_item_tests")]
 mod video_item_tests;

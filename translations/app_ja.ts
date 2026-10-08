@@ -2274,7 +2274,67 @@
         <source>Higher values improve image quality and increase file size.</source>
         <translation>値を大きくすると画質がよくなり、ファイルサイズも大きくなります。</translation>
     </message>
-</context>
+    <message>
+      <source>Updates</source>
+      <translation>アップデート</translation>
+    </message>
+    <message>
+      <source>Check GitHub for a newer stable release. Pre-releases are excluded.</source>
+      <translation>GitHubで新しい正式リリースを確認します。プレリリースは対象外です。</translation>
+    </message>
+    <message>
+      <source>Check for updates automatically</source>
+      <translation>アップデートを自動で確認</translation>
+    </message>
+    <message>
+      <source>Check once every 24 hours while the app is running.</source>
+      <translation>アプリの起動中に24時間ごとに確認します。</translation>
+    </message>
+    <message>
+      <source>Last checked: %1</source>
+      <translation>最終確認日時: %1</translation>
+    </message>
+    <message>
+      <source>No successful check yet.</source>
+      <translation>まだ確認に成功していません。</translation>
+    </message>
+    <message>
+      <source>Could not save or load update history. Automatic checking is paused; you can still check manually.</source>
+      <translation>確認履歴を保存または読み込みできませんでした。自動確認は停止しています。手動での確認は利用できます。</translation>
+    </message>
+    <message>
+      <source>Checking for updates…</source>
+      <translation>アップデートを確認中…</translation>
+    </message>
+    <message>
+      <source>Check for updates</source>
+      <translation>アップデートを確認</translation>
+    </message>
+    <message>
+      <source>Version %1 is available.</source>
+      <translation>バージョン %1 が公開されています。</translation>
+    </message>
+    <message>
+      <source>No newer stable release is available.</source>
+      <translation>新しい正式リリースはありません。</translation>
+    </message>
+    <message>
+      <source>No stable release has been published yet.</source>
+      <translation>正式リリースはまだ公開されていません。</translation>
+    </message>
+    <message>
+      <source>Open download page</source>
+      <translation>配布ページを開く</translation>
+    </message>
+    <message>
+      <source>Could not check for updates. Please try again.</source>
+      <translation>アップデートを確認できませんでした。もう一度お試しください。</translation>
+    </message>
+    <message>
+      <source>Could not open the download page. Please try again.</source>
+      <translation>配布ページを開けませんでした。もう一度お試しください。</translation>
+    </message>
+  </context>
   <context>
     <name>Connection</name>
     <message>

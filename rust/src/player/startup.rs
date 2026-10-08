@@ -97,6 +97,10 @@ impl Default for PlayerRust {
             Err(_) => None,
         };
         let media = playback::Session::new(playback, preferences.preferences().live_buffer_ms);
+        let updates = crate::updates::Checker::load(
+            !plan.locked(),
+            preferences.preferences().auto_update_check,
+        );
         let mut player = Self {
             #[cfg(target_os = "linux")]
             desktop_media: Default::default(),
@@ -199,6 +203,7 @@ impl Default for PlayerRust {
             request: Default::default(),
             channel_refresh: Default::default(),
             network: network.ok(),
+            updates,
             remote: crate::remote::Control::load(plan.locked()),
             media,
         };

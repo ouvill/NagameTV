@@ -1,6 +1,28 @@
 use super::*;
 
 #[test]
+fn automatic_updates_default_on_and_the_choice_survives_restart()
+-> Result<(), Box<dyn std::error::Error>> {
+    let directory = tempfile::tempdir()?;
+    let path = directory.path().join("settings.toml");
+    fs::write(&path, "autoplay = true\nfuture_setting = 'keep'\n")?;
+    assert!(open(path.clone())?.preferences().auto_update_check);
+    for enabled in [false, true] {
+        let mut session = open(path.clone())?;
+        session.change(Change::AutoUpdateCheck(enabled));
+        session.flush()?;
+        let restored = open(path.clone())?;
+        assert_eq!(restored.preferences().auto_update_check, enabled);
+        assert!(restored.preferences().autoplay);
+        assert_eq!(
+            restored.preferences().extra["future_setting"].as_str(),
+            Some("keep")
+        );
+    }
+    Ok(())
+}
+
+#[test]
 fn window_size_is_optional_for_old_settings_and_survives_restart()
 -> Result<(), Box<dyn std::error::Error>> {
     let old: Preferences = toml::from_str("autoplay = true")?;

@@ -209,6 +209,7 @@ impl ffi::Player {
         self.as_mut().poll_channels();
         self.as_mut().poll_recording();
         self.as_mut().poll_recording_library();
+        self.as_mut().poll_updates();
         let result = self.as_mut().rust_mut().media.poll();
         let notice = self.as_mut().rust_mut().media.take_notice();
         self.poll_audio_choice();
@@ -301,6 +302,8 @@ impl ffi::Player {
             self.as_mut().rust_mut().desktop_media =
                 super::desktop_media::Registration::Unavailable;
         }
+        self.as_mut().rust_mut().updates.stop();
+        self.as_mut().updates_changed();
         self.as_mut().rust_mut().remote.stop();
         self.as_mut().rust_mut().epg_events.configure(None);
         self.as_mut().rust_mut().channel_refresh = channel_refresh::Refresh::Disabled;

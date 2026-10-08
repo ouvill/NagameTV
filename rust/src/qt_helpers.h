@@ -68,6 +68,9 @@ inline QString playbackLogDirectory() {
 inline bool openLocalDirectory(const QString &path) {
   return QDesktopServices::openUrl(QUrl::fromLocalFile(path));
 }
+inline bool openExternalUrl(const QUrl &url) {
+  return QDesktopServices::openUrl(url);
+}
 
 // Installed once at startup, before Qt or playback creates worker threads.
 #include "rust/cxx.h"

@@ -230,6 +230,7 @@ fn checks() -> TestResult {
     crate::channel_model::checks::run()?;
     crate::guide_model::checks::run()?;
     super::recording_library_checks::run()?;
+    super::updates_checks::run()?;
     check_playback_actions(&mut player)?;
     check_recording_input(&mut player)?;
     check_recording_notifications(&mut player)?;

@@ -52,6 +52,8 @@ pub mod ffi {
         fn playback_log_directory() -> QString;
         #[cxx_name = "openLocalDirectory"]
         fn open_local_directory(path: &QString) -> bool;
+        #[cxx_name = "openExternalUrl"]
+        fn open_external_url(url: &QUrl) -> bool;
         #[cxx_name = "installQtLogging"]
         fn install_qt_logging(callback: fn(level: u8, category: &str, message: &str));
         #[cxx_name = "installQtGcLogging"]

@@ -42,9 +42,22 @@ mod subtitle_rendering;
 mod subtitle_status;
 mod telemetry;
 mod transport;
+mod updates;
+#[cfg(feature = "native_tests")]
+mod updates_checks;
 
 #[cxx_qt::bridge]
 pub mod ffi {
+    #[qenum(Player)]
+    enum UpdateStatus {
+        UpdateIdle,
+        UpdateChecking,
+        UpdateAvailable,
+        UpdateCurrent,
+        UpdateNoRelease,
+        UpdateFailed,
+    }
+
     #[qenum(Player)]
     enum PlaybackAction {
         Unavailable,
@@ -221,7 +234,29 @@ pub mod ffi {
         #[qproperty(QString, settings_error, READ = settings_error, NOTIFY)]
         #[qproperty(QString, diagnostics, READ, NOTIFY)]
         #[qproperty(QString, build_info, READ = build_info, CONSTANT)]
+        #[qproperty(UpdateStatus, update_check_status, READ = update_check_status, NOTIFY = updates_changed)]
+        #[qproperty(QString, update_version, READ = update_version, NOTIFY = updates_changed)]
+        #[qproperty(QString, update_error, READ = update_error, NOTIFY = updates_changed)]
+        #[qproperty(bool, auto_update_check, READ = auto_update_check, NOTIFY = updates_changed)]
+        #[qproperty(bool, automatic_updates_allowed, READ = automatic_updates_allowed, CONSTANT)]
+        #[qproperty(f64, update_last_checked, READ = update_last_checked, NOTIFY = updates_changed)]
+        #[qproperty(QString, update_history_error, READ = update_history_error, NOTIFY = updates_changed)]
         type Player = super::PlayerRust;
+        fn update_check_status(self: &Player) -> UpdateStatus;
+        fn update_version(self: &Player) -> QString;
+        fn update_error(self: &Player) -> QString;
+        fn auto_update_check(self: &Player) -> bool;
+        fn automatic_updates_allowed(self: &Player) -> bool;
+        fn update_last_checked(self: &Player) -> f64;
+        fn update_history_error(self: &Player) -> QString;
+        #[qinvokable]
+        fn configure_auto_update_check(self: Pin<&mut Player>, enabled: bool);
+        #[qsignal]
+        fn updates_changed(self: Pin<&mut Player>);
+        #[qinvokable]
+        fn check_updates(self: Pin<&mut Player>);
+        #[qinvokable]
+        fn open_update_release(self: Pin<&mut Player>) -> bool;
         fn playback_error(self: &Player) -> QString;
         fn file_error(self: &Player) -> QString;
         fn log_error(self: &Player) -> QString;
@@ -655,6 +690,7 @@ pub struct PlayerRust {
     channel_refresh: channel_refresh::Refresh,
     remote: crate::remote::Control,
     network: Option<services::Network>,
+    updates: crate::updates::Checker,
     media: playback::Session,
 }
 
@@ -906,6 +942,8 @@ impl ffi::Player {
 
 impl Drop for PlayerRust {
     fn drop(&mut self) {
+        // The runtime joins cancelled HTTP workers when Player's network is dropped.
+        self.updates.stop();
         self.remote.stop();
         self.epg_events.configure(None);
         // The media owner enforces native shutdown before subtitle destruction,

@@ -2036,6 +2036,40 @@ fn check_shortcuts(
         ffi::clickRootKey(engine.pin_mut(), &QString::from("Escape"))?;
         wait_for(app, engine, "!root.showChannels")?;
     }
+    evaluate(engine, "root.openSettings(SettingsPanel.Updates); true")?;
+    wait_for(
+        app,
+        engine,
+        "settings.opened && settings.page === SettingsPanel.Updates",
+    )?;
+    assert!(evaluate(
+        engine,
+        "player.update_check_status === Player.UpdateIdle && player.update_error === '' && !player.auto_update_check && player.automatic_updates_allowed && settings.pageFields[1].enabled && !settings.pageFields[2].visible"
+    )?);
+    ffi::clickRootKey(engine.pin_mut(), &QString::from("Return"))?;
+    wait_for(
+        app,
+        engine,
+        "root.activeFocusItem.objectName === 'autoUpdateCheck'",
+    )?;
+    assert!(evaluate(
+        engine,
+        "player.configure_auto_update_check(true); const enabled = player.auto_update_check; player.configure_auto_update_check(false); enabled && !player.auto_update_check"
+    )?);
+    assert!(
+        !settings::Loaded::open(settings::settings_path()?)?
+            .preferences()
+            .auto_update_check
+    );
+    ffi::clickRootKey(engine.pin_mut(), &QString::from("Down"))?;
+    wait_for(
+        app,
+        engine,
+        "root.activeFocusItem.objectName === 'checkUpdates'",
+    )?;
+    capture_navigation(app, engine, "settings-updates.png")?;
+    evaluate(engine, "settings.close(); true")?;
+    wait_for(app, engine, "!settings.visible")?;
     evaluate(
         engine,
         "player.edit_comment_draft(''); root.openSettings(SettingsPanel.Display); true",
@@ -2434,6 +2468,10 @@ fn run_window_check(check: WindowCheck) -> i32 {
         assert!(!app.is_null());
         #[cfg(target_os = "linux")]
         dialogs.finish(&app);
+        // GUI fixtures must not depend on live GitHub release availability.
+        let mut fixture = settings::Loaded::open(settings::settings_path()?)?.activate(None, None);
+        fixture.change(settings::Change::AutoUpdateCheck(false));
+        fixture.flush()?;
         let preferences = settings::Loaded::open(settings::settings_path()?)?;
         window(&app, preferences.preferences(), check)
     })();

@@ -7,7 +7,7 @@ import QtQuick.Dialogs
 
 Popup {
     id: root
-    enum Page { Connection, Display, Comments, Shortcuts, Diagnostics, Remote, Timeshift }
+    enum Page { Connection, Display, Comments, Shortcuts, Diagnostics, Remote, Timeshift, Updates }
     required property var backend
     readonly property var buildInfo: JSON.parse(backend.build_info)
     required property list<ShortcutBinding> shortcutEntries
@@ -28,7 +28,8 @@ Popup {
     readonly property var categories: [
         qsTranslate("Settings", "Connection"), qsTranslate("Settings", "Display"),
         qsTranslate("Main", "Comments"), qsTranslate("Settings", "Shortcuts"),
-        qsTranslate("Settings", "Diagnostics"), qsTranslate("Remote", "Remote control"), qsTranslate("Viewer", "Timeshift")
+        qsTranslate("Settings", "Diagnostics"), qsTranslate("Remote", "Remote control"), qsTranslate("Viewer", "Timeshift"),
+        qsTranslate("Settings", "Updates")
     ]
     signal statsRequested(bool visible)
     signal connectionAccepted
@@ -47,6 +48,7 @@ Popup {
                 commentShadow, sendKey, commentCacheLimit, refreshRecordingComments, clearCommentCache];
         case SettingsPanel.Shortcuts: return [];
         case SettingsPanel.Diagnostics: return [statsToggle, buildInformation, openLogFolder, ...logProblem.navigationItems];
+        case SettingsPanel.Updates: return [autoUpdateCheck, checkUpdates, openUpdateRelease, ...updateProblem.navigationItems, ...updateHistoryProblem.navigationItems];
         case SettingsPanel.Remote: return remoteSettings.navigationItems;
         case SettingsPanel.Timeshift:
             return timeshiftLoader.item ? (timeshiftLoader.item as TimeshiftSettings).navigationItems : [];
@@ -754,6 +756,72 @@ Popup {
                                     keys: modelData.nativeText
                                 }
                             }
+                        }
+                    }
+                    ColumnLayout {
+                        visible: root.page === SettingsPanel.Updates
+                        Layout.fillWidth: true
+                        spacing: Theme.spaceXl
+                        Heading { text: qsTranslate("Settings", "Version: %1").arg(root.buildInfo.version) }
+                        Detail { text: qsTranslate("Settings", "Check GitHub for a newer stable release. Pre-releases are excluded.") }
+                        SettingsToggle {
+                            id: autoUpdateCheck
+                            objectName: "autoUpdateCheck"
+                            Layout.fillWidth: true
+                            text: qsTranslate("Settings", "Check for updates automatically")
+                            description: qsTranslate("Settings", "Check once every 24 hours while the app is running.")
+                            checked: root.backend.auto_update_check
+                            enabled: root.backend.automatic_updates_allowed
+                            onClicked: root.backend.configure_auto_update_check(checked)
+                        }
+                        Detail {
+                            objectName: "updateLastChecked"
+                            text: root.backend.update_last_checked >= 0
+                                ? qsTranslate("Settings", "Last checked: %1").arg(new Date(root.backend.update_last_checked * 1000).toLocaleString(Qt.locale(), Locale.ShortFormat))
+                                : qsTranslate("Settings", "No successful check yet.")
+                        }
+                        ActionButton {
+                            id: checkUpdates
+                            objectName: "checkUpdates"
+                            text: root.backend.update_check_status === Player.UpdateChecking
+                                ? qsTranslate("Settings", "Checking for updates…") : qsTranslate("Settings", "Check for updates")
+                            enabled: root.backend.update_check_status !== Player.UpdateChecking
+                            onClicked: root.backend.check_updates()
+                        }
+                        Detail {
+                            objectName: "updateResult"
+                            visible: text.length > 0
+                            text: {
+                                switch (root.backend.update_check_status) {
+                                case Player.UpdateAvailable: return qsTranslate("Settings", "Version %1 is available.").arg(root.backend.update_version);
+                                case Player.UpdateCurrent: return qsTranslate("Settings", "No newer stable release is available.");
+                                case Player.UpdateNoRelease: return qsTranslate("Settings", "No stable release has been published yet.");
+                                default: return "";
+                                }
+                            }
+                        }
+                        ActionButton {
+                            id: openUpdateRelease
+                            objectName: "openUpdateRelease"
+                            visible: root.backend.update_check_status === Player.UpdateAvailable
+                            text: qsTranslate("Settings", "Open download page")
+                            onClicked: root.backend.open_update_release()
+                        }
+                        Problem {
+                            id: updateProblem
+                            objectName: "updateProblem"
+                            visible: root.backend.update_error.length > 0
+                            message: root.backend.update_check_status === Player.UpdateFailed
+                                ? qsTranslate("Settings", "Could not check for updates. Please try again.")
+                                : qsTranslate("Settings", "Could not open the download page. Please try again.")
+                            details: root.backend.update_error
+                        }
+                        Problem {
+                            id: updateHistoryProblem
+                            objectName: "updateHistoryProblem"
+                            visible: root.backend.update_history_error.length > 0
+                            message: qsTranslate("Settings", "Could not save or load update history. Automatic checking is paused; you can still check manually.")
+                            details: root.backend.update_history_error
                         }
                     }
                     ColumnLayout {

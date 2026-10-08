@@ -111,6 +111,18 @@ Item {
                 property string build_info: JSON.stringify({version: "0.1.0", source: {kind: "git", commit: "a".repeat(40), worktree: "dirty"},
                     built_unix_seconds: 1700000000, target: "x86_64-unknown-linux-gnu", profile: "release", rustc: "rustc 1.98.1", features: ["DISTRIBUTION"]})
                 property string status: ""
+                property int update_check_status: Player.UpdateIdle
+                property string update_version: ""
+                property string update_error: ""
+                property bool auto_update_check: true
+                property bool automatic_updates_allowed: true
+                property real update_last_checked: -1
+                property string update_history_error: ""
+                function configure_auto_update_check(value) { auto_update_check = value; }
+                property int updateChecks: 0
+                property int updateOpens: 0
+                function check_updates() { updateChecks++; update_check_status = Player.UpdateChecking; update_version = ""; update_error = ""; }
+                function open_update_release() { updateOpens++; return true; }
                 property string language: "en"
                 property string subtitle_status: ""
                 property bool comments_enabled: false
@@ -197,6 +209,15 @@ Item {
                 backend.acceptConnection = false;
                 backend.diagnostics = "";
                 backend.status = "";
+                backend.update_check_status = Player.UpdateIdle;
+                backend.update_version = "";
+                backend.update_error = "";
+                backend.auto_update_check = true;
+                backend.automatic_updates_allowed = true;
+                backend.update_last_checked = -1;
+                backend.update_history_error = "";
+                backend.updateChecks = 0;
+                backend.updateOpens = 0;
                 backend.settings_error = "";
                 backend.server = "http://example.test:40772";
                 backend.language = "en";
@@ -247,6 +268,85 @@ Item {
                 findChild(panel.contentItem, "settingsFlickable").contentY = 0;
             }
             function cleanup() { panel.close(); tryCompare(panel, "visible", false); }
+            function test_manual_update_checks_and_download_requires_a_new_release() {
+                panel.focusCategory(SettingsPanel.Updates);
+                panel.enterPage();
+                const check = findChild(panel.contentItem, "checkUpdates");
+                const download = findChild(panel.contentItem, "openUpdateRelease");
+                const result = findChild(panel.contentItem, "updateResult");
+                compare(backend.updateChecks, 0);
+                verify(!download.visible);
+                verify(!result.visible);
+                check.forceActiveFocus();
+                keyClick(Qt.Key_Space);
+                compare(backend.updateChecks, 1);
+                verify(!check.enabled);
+                compare(check.text, "Checking for updates…");
+                backend.update_version = "0.4.0";
+                backend.update_check_status = Player.UpdateAvailable;
+                tryCompare(download, "visible", true);
+                compare(result.text, "Version 0.4.0 is available.");
+                download.forceActiveFocus(Qt.TabFocusReason);
+                keyClick(Qt.Key_Return);
+                compare(backend.updateOpens, 1);
+                panel.close();
+                tryCompare(panel, "visible", false);
+                panel.open();
+                tryCompare(panel, "opened", true);
+                panel.focusCategory(SettingsPanel.Updates);
+                panel.enterPage();
+                compare(backend.updateChecks, 1);
+                verify(download.visible);
+            }
+            function test_update_results_and_retry_data() {
+                return [
+                    {tag: "current", state: Player.UpdateCurrent, message: "No newer stable release is available.", error: ""},
+                    {tag: "unpublished", state: Player.UpdateNoRelease, message: "No stable release has been published yet.", error: ""},
+                    {tag: "failed", state: Player.UpdateFailed, message: "", error: "HTTP 403"}
+                ];
+            }
+            function test_automatic_update_preference_and_last_success() {
+                panel.focusCategory(SettingsPanel.Updates);
+                panel.enterPage();
+                const toggle = expectFocus("autoUpdateCheck");
+                verify(toggle.checked);
+                keyClick(Qt.Key_Return);
+                compare(backend.auto_update_check, false);
+                keyClick(Qt.Key_Space);
+                compare(backend.auto_update_check, true);
+                compare(backend.updateChecks, 0);
+                const checked = findChild(panel.contentItem, "updateLastChecked");
+                compare(checked.text, "No successful check yet.");
+                backend.update_last_checked = 1700000000;
+                compare(checked.text, "Last checked: " + new Date(1700000000000).toLocaleString(Qt.locale(), Locale.ShortFormat));
+            }
+            function test_history_error_and_restricted_launch_keep_manual_check_available() {
+                backend.automatic_updates_allowed = false;
+                backend.auto_update_check = false;
+                backend.update_history_error = "Permission denied";
+                panel.focusCategory(SettingsPanel.Updates);
+                panel.enterPage();
+                verify(!findChild(panel.contentItem, "autoUpdateCheck").enabled);
+                verify(findChild(panel.contentItem, "updateHistoryProblem").visible);
+                expectFocus("checkUpdates");
+                keyClick(Qt.Key_Return);
+                compare(backend.updateChecks, 1);
+                verify(findChild(panel.contentItem, "updateHistoryProblem").visible);
+            }
+            function test_update_results_and_retry(data) {
+                panel.focusCategory(SettingsPanel.Updates);
+                panel.enterPage();
+                backend.update_check_status = data.state;
+                backend.update_error = data.error;
+                compare(findChild(panel.contentItem, "updateResult").text, data.message);
+                verify(!findChild(panel.contentItem, "openUpdateRelease").visible);
+                compare(findChild(panel.contentItem, "updateProblem").visible, data.error.length > 0);
+                findChild(panel.contentItem, "checkUpdates").forceActiveFocus();
+                keyClick(Qt.Key_Space);
+                compare(backend.updateChecks, 1);
+                verify(!findChild(panel.contentItem, "updateProblem").visible);
+                compare(findChild(panel.contentItem, "updateResult").text, "");
+            }
             function expectFocus(name) {
                 const item = findChild(panel.contentItem, name);
                 verify(item !== null, name);

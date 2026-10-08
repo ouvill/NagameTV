@@ -143,6 +143,7 @@ pub enum Change {
     Language(Language),
     Service(String),
     Autoplay(bool),
+    AutoUpdateCheck(bool),
     LiveBuffer(LiveBuffer),
     Timeshift(crate::playback::input::Retention),
     TimeshiftActivation(crate::playback::input::Activation),
@@ -224,6 +225,7 @@ impl Session {
             Change::Language(language) => preferences.language = language,
             Change::Service(service) => preferences.service_id = service,
             Change::Autoplay(enabled) => preferences.autoplay = enabled,
+            Change::AutoUpdateCheck(enabled) => preferences.auto_update_check = enabled,
             Change::LiveBuffer(value) => preferences.live_buffer_ms = value,
             Change::Timeshift(retention) => preferences.timeshift = retention,
             Change::TimeshiftActivation(activation) => {
