@@ -45,7 +45,7 @@ features = ["rt", "time", "sync", "net", "io-util", "macros"]
 optional = true
 
 [dependencies.tokio-tungstenite]
-version = "0.28"
+version = "0.30"
 default-features = false
 features = ["connect", "rustls-tls-webpki-roots"]
 optional = true
