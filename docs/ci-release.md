@@ -24,6 +24,7 @@ aptが取得し直す。キャッシュは`build/deb/apt-cache/ubuntu24.04/archi
 | Tests, AppImage and deb (Ubuntu 24.04, x86_64) | アプリのRust書式、Rustテスト、独立crateのテスト、Pythonテスト、本体全QMLの静的検査、UI共通ルールの検査、機器不要のQt試験、AppImageの生成と全ELFのglibc上限検査、24.04用debの生成・導入・依存解決・削除 |
 | deb (Ubuntu 26.04, amd64) | Ubuntu 26.04のQt/GStreamerでビルドし、debの生成・導入・依存解決・削除 |
 | Flatpak (x86_64) | KDE SDK内でのオフラインコンパイル、FlatpakとSHA-256の生成 |
+| Dependency review（pull requestのみ） | 追加・更新する依存関係の既知の脆弱性。実行時・開発用・用途不明の依存関係を対象に、重大度low以上で失敗する |
 
 AppImageとテストは[配布用Dockerfile](../packaging/appimage/Dockerfile)の`ci`ステージを使う。
 Ubuntu 24.04、Rust 1.98.1、Qt 6.8.3、GStreamer 1.24を共用し、テスト用にrustfmtを追加する。
@@ -201,14 +202,34 @@ artifactの保存期限を過ぎた場合は、ビルドを含む全ジョブを
 固定リリースの差し替えにはタグの強制移動と添付ファイルの変更を伴うため、不変性が有効なリリースは更新できない。
 既存の`latest-build`が通常リリース（非Pre-release）または不変リリース（immutable）であった場合は、書き込みを行わずに停止する。
 
-`main`の保護ルールを設定する場合は、上記4つのCIジョブを必須チェックに指定する。
+`main`の保護ルールを設定する場合は、上記のCIジョブを必須チェックに指定する。
 リリースジョブはpull requestで実行しないため、必須チェックには指定しない。
 ワークフローの追加自体ではGitHub側の保護ルールは変更されない。
 
 外部ActionはコミットSHAで固定し、[Dependabot](../.github/dependabot.yml)で毎週更新を提案する。
-UbuntuベースイメージのdigestもDependabotの対象。Rust・Qt・GStreamer・actionlintの
+配布用UbuntuベースイメージのdigestとRustの依存crateもDependabotの対象。
+Rustは本体の`rust/Cargo.lock`と、独立テストで使う各crateのロックファイルを対象にする。
+minor・patch更新はまとめ、major更新は個別のPRにする。Rustの通常更新PRは同時に5件までとし、
+更新内容をレビューして既存CIを通してからマージする。0.x系ではminor更新でも互換性が変わり得る。
+Rustツールチェーン・Qt・GStreamer・actionlintの
 バージョンとSHA-256は対応するDockerfile／スクリプト／ワークフローで明示的に更新する。
 Flatpakの同一SDKブランチ内の更新とUbuntuのapt更新は可変のため、ビット単位の再現性は保証しない。
+
+`rust/Cargo.lock`を更新するPRでは、`python3 -m scripts.packaging.flatpak_cargo_sources`を実行し、
+生成された`packaging/flatpak/cargo-sources.json`も同じブランチでコミットする。
+Dependabotはこの生成ファイルを更新しないため、再生成するまでは`Release metadata`が失敗する。
+独立crateだけのロックファイル更新では、この再生成は不要。
+
+[Dependency review](../.github/workflows/dependency-review.yml)は、各PRの依存差分を
+GitHubの依存関係グラフで検査する。結果はActionsのログとサマリーに表示する。
+このジョブは`contents: read`で実行し、追加のシークレットを必要としない。
+ライセンス検査は無効にしている。
+検査対象や設定の仕様は[Actionの公式文書](https://github.com/actions/dependency-review-action)を参照。
+
+既存の依存関係への継続的な脆弱性通知と修正PRには、リポジトリーのSettings → Advanced Securityで
+Dependency graph・Dependabot alerts・Dependabot security updatesを有効にする。
+この設定変更はYAMLの追加とは別に必要であり、週次のバージョン更新設定だけでは有効にならない。
+[GitHubの設定手順](https://docs.github.com/en/code-security/how-tos/secure-your-supply-chain/secure-your-dependencies/configure-security-updates)を参照。
 
 GitHub Actions公式の`concurrency.queue`（`queue: max`）に対して、actionlint 1.7.12は未対応である。
 そのため、[actionlint設定](../.github/actionlint.yaml)でこのキーの未対応診断のみを除外している。

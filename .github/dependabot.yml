@@ -1,5 +1,26 @@
 version: 2
 updates:
+  - package-ecosystem: cargo
+    # Independent test crates have their own lockfiles; /rust alone misses them.
+    directories:
+      - /rust
+      - /rust/crates/arib-b24
+      - /rust/crates/tsreadex
+      - /rust/crates/viewer-build-info
+      - /rust/crates/viewer-comments
+      - /rust/crates/viewer-diagnostics
+      - /rust/crates/viewer-epg-events
+      - /rust/crates/viewer-mpegts
+      - /rust/crates/viewer-remote
+      - /rust/crates/viewer-translations
+      - /rust/crates/viewer-web-bml
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      rust-minor-and-patch:
+        patterns: ['*']
+        update-types: [minor, patch]
   - package-ecosystem: github-actions
     directory: /
     schedule:
