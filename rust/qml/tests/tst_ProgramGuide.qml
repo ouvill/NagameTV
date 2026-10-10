@@ -374,6 +374,31 @@ TestCase {
         timeline.now = timeline.dayStart - 1
         verify(!badge.visible)
     }
+    function test_selected_day_returns_to_opening_position() {
+        const view = findChild(guide, "guideTimeline")
+        const timeline = view.parent
+        const selector = findChild(guide, "guideDay")
+        timeline.now = timeline.dayStart + 12 * 3600000
+        timeline.resetPosition()
+        const opening = view.contentY
+        verify(opening > 0)
+        view.contentY = 0
+        selector.forceActiveFocus()
+        keyClick(Qt.Key_Return)
+        compare(view.contentY, opening)
+        compare(guide.dayOffset, 0)
+        selector.compact = true
+        verify(waitForRendering(selector))
+        view.contentY = 0
+        mouseClick(findChild(selector, "currentGuideDay"))
+        compare(view.contentY, opening)
+        selector.compact = false
+        verify(waitForRendering(selector))
+        view.contentY = 0
+        mouseClick(findChild(selector, "guideDate0"))
+        compare(view.contentY, opening)
+        compare(guide.dayOffset, 0)
+    }
     function test_seven_calendar_days_and_selection() {
         compare(guide.days.length, 7)
         verify(guide.requests.length > 0)
@@ -734,10 +759,26 @@ TestCase {
         compare(findChild(guide, "guideColumn29"), null)
         const first = findChild(guide, "guideCell")
         verify(first !== null)
-        compare(first.color, "#ffffe0")
-        compare(list.parent.genreColor(15), "#f0f0f0")
-        compare(list.parent.genreColor(undefined), "#f0f0f0")
-        compare(list.parent.genreColor(null), "#f0f0f0")
+        compare(first.genreFill, "#2a291b")
+        compare(findChild(first, "guideGenreMarker").color, "#d9c76a")
+        verify(!first.onAir)
+        verify(!first.finished)
+        compare(first.opacity, 1)
+        const timeline = list.parent
+        timeline.now = guide.days[1].start + 90000
+        verify(first.onAir)
+        verify(!first.finished)
+        timeline.now = guide.days[1].start + 3600000
+        verify(!first.onAir)
+        verify(first.finished)
+        compare(first.opacity, 0.6)
+        timeline.now = guide.days[1].start - 1
+        verify(!first.onAir)
+        compare(first.opacity, 1)
+        compare(list.parent.genreColor(15), "#1f221f")
+        compare(list.parent.genreColor(undefined), "#1f221f")
+        compare(list.parent.genreColor(null), "#1f221f")
+        compare(list.parent.genreMarker(15), "#8c918c")
         mouseClick(first, 20, 30)
         const loader = findChild(guide, "scheduledDetailsLoader")
         verify(loader.item !== null)

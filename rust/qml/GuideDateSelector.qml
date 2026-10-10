@@ -12,13 +12,15 @@ SegmentedFrame {
     property string uiLanguage: Qt.uiLanguage
     readonly property var dateLocale: Qt.locale(uiLanguage)
     signal selected(int index)
+    // Choosing the day already shown asks the owner to return to its opening position.
+    signal currentRequested
     implicitWidth: compact ? 202 : 572
     implicitHeight: 40
     clip: true
     activeFocusOnTab: true
     function selectDay(index) {
-        if (index >= 0 && index < days.length && index !== currentIndex)
-            selected(index)
+        if (index === currentIndex) currentRequested()
+        else if (index >= 0 && index < days.length) selected(index)
     }
     function itemX(index) { return 3 + (index === 0 ? 0 : 62 + (index - 1) * 84) }
     function itemWidth(index) { return index === 0 ? 62 : 84 }
@@ -44,6 +46,8 @@ SegmentedFrame {
     Keys.onRightPressed: selectDay(currentIndex + 1)
     Keys.onDownPressed: selectDay(currentIndex + 1)
     Keys.onUpPressed: selectDay(currentIndex - 1)
+    Keys.onReturnPressed: currentRequested()
+    Keys.onEnterPressed: currentRequested()
     Flickable {
         id: flick
         objectName: "guideDateFlick"
@@ -78,6 +82,12 @@ SegmentedFrame {
     }
     Item {
         anchors.fill: parent; visible: root.compact
+        MouseArea {
+            objectName: "currentGuideDay"
+            anchors.fill: parent
+            cursorShape: Qt.PointingHandCursor
+            onClicked: root.currentRequested()
+        }
         Label { id: compactLabel; anchors.centerIn: parent; text: root.label(root.currentIndex); color: Theme.textPrimary; font.pixelSize: Theme.fontCaption; font.bold: true }
         SequentialAnimation {
             id: fade

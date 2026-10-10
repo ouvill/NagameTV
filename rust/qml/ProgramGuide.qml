@@ -97,6 +97,7 @@ Rectangle {
             onCloseRequested: root.closeRequested()
             onModeRequested: function(mode) { root.modeRequested(mode) }
             onDayRequested: function(index) { root.dayOffset = index }
+            onCurrentDayRequested: timeline.resetPosition()
             onBandRequested: function(band) { root.band = band; root.selectedProgram = null }
         }
         GuideTimeline {

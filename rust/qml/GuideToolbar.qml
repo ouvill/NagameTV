@@ -18,6 +18,7 @@ Rectangle {
     signal modeRequested(int mode)
     signal bandRequested(string band)
     signal dayRequested(int index)
+    signal currentDayRequested
     readonly property real singleRowHeight: navigation.headerHeight
     readonly property real secondRowHeight: 44
     readonly property real sideMargin: navigation.edgeMargin
@@ -77,6 +78,7 @@ Rectangle {
             compact: filters.width < root.bandWidth + root.expandedDateWidth
             iconDirectory: root.iconDirectory
             onSelected: function(index) { root.dayRequested(index) }
+            onCurrentRequested: root.currentDayRequested()
         }
         Item { Layout.fillWidth: true }
     }

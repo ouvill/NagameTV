@@ -30,6 +30,7 @@ Releaseや紹介記事の書き出し:
 ## 撮影条件
 
 - 2026-09-21、アプリのコミット `6dc5352eba02562e41471e986c77be6d00d42d6d` を撮影。
+  `guide.png`と`guide-details.png`は、番組表の暗い配色を反映するため2026-10-11に同じ手順で再撮影。
 - 製品の`build/nagametv`と`Main.qml`をそのまま使用。製品コードの変更はありません。
 - UbuntuのWorkshop、Qt Quick / GStreamer、NVIDIA GeForce RTX 4070 Ti。
 - [専用GUI環境](gui-test-environment.md)で画面・実GPU・仮想音声を検証してから起動。
