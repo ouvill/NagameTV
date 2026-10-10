@@ -2526,6 +2526,10 @@
       <translation>録画一覧を表示するには、設定の「接続」でEPGStationを設定してください。</translation>
     </message>
     <message>
+      <source>%1 min</source>
+      <translation>%1分</translation>
+    </message>
+    <message>
       <source>Recordings</source>
       <translation>録画</translation>
     </message>

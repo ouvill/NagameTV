@@ -285,7 +285,8 @@ Rectangle {
                                 Layout.fillWidth: true
                                 text: row.programName
                                 color: Theme.textPrimary
-                                font.pixelSize: Theme.fontBody
+                                font.pixelSize: Theme.fontControl
+                                font.weight: Font.DemiBold
                                 textFormat: Text.PlainText
                                 wrapMode: Text.Wrap
                                 maximumLineCount: 2
@@ -295,9 +296,10 @@ Rectangle {
                                 Layout.fillWidth: true
                                 text: row.channelName + "  " + new Date(row.startMs).toLocaleString(Qt.locale(root.backend.ui_language), "yyyy/MM/dd HH:mm")
                                       + " – " + new Date(row.endMs).toLocaleTimeString(Qt.locale(root.backend.ui_language), "HH:mm")
+                                      + (row.endMs > row.startMs ? "  ·  " + qsTranslate("RecordingLibrary", "%1 min").arg(Math.round((row.endMs - row.startMs) / 60000)) : "")
                                 color: Theme.textSecondary
                                 textFormat: Text.PlainText
-                                font.pixelSize: Theme.fontCaption
+                                font.pixelSize: Theme.fontBody
                                 elide: Text.ElideRight
                             }
                             Label {
