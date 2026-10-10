@@ -70,6 +70,8 @@ Dockerにも表示・音声ソケットやGPUデバイスを渡さない。
 
 ## 起動する
 
+Ubuntu 24.04で視聴確認済み。
+
 ```sh
 chmod +x ./nagametv-0.1.0-x86_64.AppImage
 ./nagametv-0.1.0-x86_64.AppImage
@@ -166,46 +168,6 @@ glibc検査の回帰テストは、Cコンパイラーとreadelfがある環境�
 python3 scripts/test.py tooling
 python3 -m scripts.packaging.check_appimage_glibc /path/to/squashfs-root --max-glibc 2.39
 ```
-
-2026-09-17にUbuntu 26.04 / x86_64、Qt 6.10.2、GStreamer 1.28.2で生成を確認した。
-
-- AppImageのSHA-256、展開、デスクトップ情報の検証。
-- 同梱した309個のELFファイルの共有ライブラリー解決、18個のGStreamerプラグインとscannerの存在。
-- 主要なGStreamer要素10種類の登録と、同梱プラグインによるMPEG-2/AACのTS試験素材のデコード完了。
-  この試験はCPUのみを使い、映像・音声を出力しない。
-- X11、NVIDIA GPUのOpenGL、PulseAudio出力を検証した環境で、展開したAppRunから製品画面を表示。
-  設定・キャッシュは一時ディレクトリーへ分離し、QMLの読み込みエラーがないことを確認した。
-
-別のOS、FUSEによる通常起動、実放送の映像・音声出力、Portalは今回の確認に含めていない。
-この生成物を古いUbuntuなどでも動作確認済みとして扱わない。
-
-2026-09-18にはWorkshopのSDK依存を補完して再ビルドし、SHA-256と、追加したQt Portalプラグインの
-同梱・共有ライブラリー解決を確認した。実際のPortalダイアログ操作は引き続き未検証。
-
-2026-09-19には再生時計を比較できる版を生成し、SHA-256、展開、322個のELFの依存解決、
-主要な再生要素の登録、同梱プラグインによるMPEG-2/AAC素材のCPUデコードを確認した。
-この生成物の同梱ライブラリーは**glibc 2.43以上**を要求する。AppImageでもこの条件は残る。
-検証済みの専用GPU・仮想音声環境で、展開した製品AppRunを`auto`と`system`で起動した。
-HTTPで実時間配信する合成TSを再生し、映像の描画、実際の時計名、PulseAudioの有効な出力と
-monitor上の音声サンプル、停止・再生、正常終了を両条件で確認した。
-この試験では`--features=none`を指定し、字幕・EPG・コメントは対象外とした。
-物理画面までの遅延、実スピーカーでの音ずれ、長時間視聴、他OS、FUSE起動は未検証。
-
-同日、Ubuntu 24.04で`GLIBC_2.43 not found`となる報告を再現し、配布ビルドを
-Ubuntu 24.04 / Qt 6.8.3 / GStreamer 1.24へ切り替えた。切り替え後の生成物では次を確認した。
-
-- SHA-256と展開、311個のELFの要求がglibc 2.39以下であること。
-- QtをインストールしていないUbuntu 24.04コンテナーで、全ELFの依存解決と、
-  実行ファイルの引数解析までの起動（Qt初期化前に終了）。旧版のglibcエラーは解消した。
-- 同コンテナーで主要なGStreamer要素10種類の登録、MPEG-2/AAC素材のCPUデコード、
-  テスト用CAを信頼したローカルHTTPS取得。libsoupとGIOのTLSモジュールも同梱物を使用した。
-- Ubuntu 26.04のWorkshop内の専用GPU・仮想音声環境で、最終AppImageを展開したAppRunから
-  `auto`・`system`両方の時計設定で映像描画・音声サンプル・停止／再開・正常終了を確認した。
-  この再生試験も`--features=none`を使用した。
-- glibc検査の回帰テスト6件（WorkshopとUbuntu 24.04の両環境）。
-
-Ubuntu 24.04の実デスクトップでの画面・音声、物理機器、FUSE起動は引き続き未検証。
-Ubuntu 24.04でのライブラリー互換性検査と、WorkshopでのGUI再生検査を区別する。
 
 パッケージ作成後はSHA-256と展開内容を機器なしで確認できる。
 
