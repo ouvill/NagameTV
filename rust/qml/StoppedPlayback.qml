@@ -14,6 +14,16 @@ Rectangle {
     property string playbackMessage: ""
     property bool recording: false
     property bool showDetails: false
+    // Without a channel model the centered prompt is the whole screen.
+    property ChannelModel channels: null
+    property int selected: -1
+    property string programsJson: "[]"
+    property string visibilityJson: "[]"
+    property real now: 0
+    // Loading stays inside the overview so a channel refresh does not replace it.
+    readonly property bool overviewVisible: channels !== null && hasChannels && !recording && !playbackError.length
+    signal selectRequested(int index)
+    signal recordingsRequested
     onPlaybackErrorChanged: if (!playbackError.length)
         showDetails = false
     signal playRequested
@@ -22,9 +32,27 @@ Rectangle {
     signal reconnectRequested
     signal openFileRequested
     color: Theme.surface
+    Loader {
+        objectName: "stoppedOverviewLoader"
+        anchors.fill: parent
+        active: root.overviewVisible
+        sourceComponent: StoppedOverview {
+            channels: root.channels
+            selected: root.selected
+            programsJson: root.programsJson
+            visibilityJson: root.visibilityJson
+            now: root.now
+            loading: root.loading
+            onPlayRequested: root.playRequested()
+            onSelectRequested: function(index) { root.selectRequested(index); }
+            onRecordingsRequested: root.recordingsRequested()
+            onOpenFileRequested: root.openFileRequested()
+        }
+    }
     Column {
         anchors.centerIn: parent
         spacing: Theme.spaceLg
+        visible: !root.overviewVisible
         Label {
             anchors.horizontalCenter: parent.horizontalCenter
             text: root.playbackError.length ? qsTranslate("Viewer", "Playback unavailable") : root.recording ? qsTranslate("Recording", "Recording") : qsTranslate("Main", "Live TV")

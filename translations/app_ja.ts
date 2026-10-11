@@ -1813,6 +1813,10 @@
         <translation>このチャンネルを視聴</translation>
     </message>
     <message>
+      <source>On air now</source>
+      <translation>いま放送中</translation>
+    </message>
+    <message>
       <source>LIVE</source>
       <extracomment>Keep this label unchanged in Japanese and English.</extracomment>
       <translation>LIVE</translation>
