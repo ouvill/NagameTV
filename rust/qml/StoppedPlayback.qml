@@ -20,8 +20,12 @@ Rectangle {
     property string programsJson: "[]"
     property string visibilityJson: "[]"
     property real now: 0
-    // Loading stays inside the overview so a channel refresh does not replace it.
-    readonly property bool overviewVisible: channels !== null && hasChannels && !recording && !playbackError.length
+    // A stream that is starting shows only its progress: listing other channels
+    // during a channel change reads as if the choice had not been taken.
+    property bool connecting: false
+    // A channel refresh stays inside the overview, which started that refresh.
+    readonly property bool overviewVisible: channels !== null && hasChannels && !recording && !connecting
+        && !playbackError.length
     signal selectRequested(int index)
     signal recordingsRequested
     onPlaybackErrorChanged: if (!playbackError.length)

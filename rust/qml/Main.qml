@@ -151,7 +151,7 @@ ViewerWindow {
     property int sidebarPage: ProgramSidebar.Playback
     // The stopped overview lists every channel's current program, as the browser does.
     readonly property bool stoppedOverview: !player.media_active && !player.recording
-        && player.channels.count > 0 && !player.playback_error.length
+        && !player.connecting && player.channels.count > 0 && !player.playback_error.length
     readonly property bool summariesVisible: !closing && (channelPanel.active || stoppedOverview
         || (sidebar.active && sidebarPage === ProgramSidebar.Channels))
     readonly property bool commentaryVisible: !closing && sidebar.active && sidebarPage === ProgramSidebar.Program
@@ -587,6 +587,7 @@ ViewerWindow {
                 hasServer: player.server_configured
                 loading: player.loading || player.connecting
                 channels: player.channels
+                connecting: player.connecting
                 selected: player.selected
                 programsJson: player.channel_program_data
                 visibilityJson: player.channel_visibility_data

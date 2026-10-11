@@ -118,7 +118,14 @@ TestCase {
         verify(panel.overviewVisible);
         verify(findChild(panel, "overviewLoading").visible);
         verify(!findChild(panel, "overviewWatch").enabled);
+        panel.connecting = true;
+        verify(!panel.overviewVisible);
+        compare(loader.item, null);
+        verify(findChild(panel, "stoppedLoading").visible);
+        verify(!action.visible);
+        panel.connecting = false;
         panel.loading = false;
+        verify(panel.overviewVisible);
         panel.playbackError = "failed";
         verify(!panel.overviewVisible);
         compare(loader.item, null);
