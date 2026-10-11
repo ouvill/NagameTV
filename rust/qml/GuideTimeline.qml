@@ -47,8 +47,6 @@ Item {
     readonly property int timeBandHours: 3
     readonly property var timeBandColors: GuidePalette.timeBands
     property double now: Date.now()
-    // Cell states follow the minute; the per-second clock would re-evaluate every cell.
-    readonly property double currentMinute: Math.floor(now / 60000) * 60000
     readonly property bool today: now >= dayStart && now < dayEnd
     readonly property real currentTimeY: channelHeaderHeight + (now - dayStart) / 60000 * pixelsPerMinute
     // Boundary bindings can update separately during a date change.
@@ -125,10 +123,6 @@ Item {
     function genreColor(genre) {
         const colors = GuidePalette.genres
         return Number.isInteger(genre) && genre >= 0 && genre < colors.length ? colors[genre] : GuidePalette.defaultGenre
-    }
-    function genreMarker(genre) {
-        const colors = GuidePalette.genreMarkers
-        return Number.isInteger(genre) && genre >= 0 && genre < colors.length ? colors[genre] : GuidePalette.defaultMarker
     }
     function scrollHorizontally(event) {
         const delta = event.angleDelta.y || event.angleDelta.x
@@ -311,17 +305,7 @@ Item {
                                     : slot.name || qsTranslate("Viewer", "No program information")
                                 width: slot.width; height: slot.height
                                 clip: true
-                                readonly property bool onAir: slot.begin <= root.currentMinute && root.currentMinute < slot.end
-                                readonly property bool finished: slot.end <= root.currentMinute
-                                readonly property color genreFill: root.genreColor(slot.genre)
-                                color: cellPointer.containsMouse ? Qt.lighter(genreFill, GuidePalette.onAirLightness * GuidePalette.hoverLightness)
-                                    : onAir ? Qt.lighter(genreFill, GuidePalette.onAirLightness) : genreFill
-                                opacity: finished && !highlighted ? GuidePalette.finishedOpacity : 1
-                                Rectangle {
-                                    objectName: "guideGenreMarker"
-                                    width: GuidePalette.markerWidth; height: parent.height
-                                    color: root.genreMarker(slot.genre)
-                                }
+                                color: root.genreColor(slot.genre)
                                 readonly property bool highlighted: (!!root.selectedProgram && slot.watchKey === root.selectedProgram.watchKey)
                                     || (root.activeFocus && column.index === root.cursorColumn && root.cursorKey.length > 0 && slot.watchKey === root.cursorKey)
                                 border.width: highlighted ? 2 : 0
@@ -330,8 +314,8 @@ Item {
                                     objectName: "guideShortProgram"
                                     font.family: root.programFontFamily
                                     visible: cell.layoutMode === GuideTimeline.OneLine
-                                    x: root.cellPadding + GuidePalette.markerWidth - root.textSpacing
-                                    width: parent.width - x - root.cellPadding; height: parent.height
+                                    x: root.cellPadding - root.textSpacing
+                                    width: parent.width - x * 2; height: parent.height
                                     text: cell.startLabel + " " + cell.title
                                     textFormat: Text.PlainText; elide: Text.ElideRight
                                     color: GuidePalette.programText; font.pixelSize: Theme.fontCaption; font.weight: Font.Medium
@@ -340,7 +324,7 @@ Item {
                                 Item {
                                     visible: cell.layoutMode === GuideTimeline.Full
                                     anchors.fill: parent
-                                    anchors.leftMargin: root.cellPadding + GuidePalette.markerWidth; anchors.rightMargin: root.cellPadding
+                                    anchors.leftMargin: root.cellPadding; anchors.rightMargin: root.cellPadding
                                     anchors.topMargin: root.cellTopPadding; anchors.bottomMargin: root.cellTopPadding
                                     Text {
                                         id: startLabel
@@ -374,7 +358,7 @@ Item {
                                         maximumLineCount: Math.max(1, Math.floor(height / descriptionLineHeight))
                                     }
                                 }
-                                MouseArea { id: cellPointer; anchors.fill: parent; hoverEnabled: true; onClicked: {
+                                MouseArea { anchors.fill: parent; onClicked: {
                                     root.cursorColumn = column.index
                                     root.cursorKey = slot.watchKey
                                     root.cursorTime = slot.begin
