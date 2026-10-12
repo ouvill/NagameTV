@@ -39,7 +39,7 @@ protected:
         event->accept();
         return true;
       }
-      if (key->key() != Qt::Key_Back) return false;
+      if (key->key() != Qt::Key_Back && !isAltLeft(key)) return false;
       event->accept();
       if (event->type() == QEvent::KeyPress && !key->isAutoRepeat()) {
         dispatchBack();
@@ -67,6 +67,28 @@ protected:
 
 private:
   enum class Destination { Popup, Viewing };
+
+  // Remote-control mice such as I-O DATA IS-RCKBR send their Back button as
+  // Alt+Left. Once the press is taken, Left belongs to Back until its real
+  // release: Alt may be released first, and the remaining repeats and release
+  // must not reach the seek shortcut or focused controls as a plain Left.
+  bool isAltLeft(const QKeyEvent *key) {
+#ifdef Q_OS_MACOS
+    // Option+Left moves the text cursor by one word on macOS.
+    Q_UNUSED(key);
+    return false;
+#else
+    if (key->key() != Qt::Key_Left) return false;
+    const bool held = altLeftHeld_;
+    if (key->type() == QEvent::KeyRelease) {
+      if (!key->isAutoRepeat()) altLeftHeld_ = false;
+      return held;
+    }
+    if (key->isAutoRepeat()) return held;
+    altLeftHeld_ = (key->modifiers() & ~Qt::KeypadModifier) == Qt::AltModifier;
+    return altLeftHeld_;
+#endif
+  }
 
   void dispatchBack() {
     const QPointer<QQuickWindow> target = window_;
@@ -99,6 +121,7 @@ private:
 
   QQuickItem *item_;
   Destination destination_ = Destination::Viewing;
+  bool altLeftHeld_ = false;
   QPointer<QQuickWindow> window_;
 };
 

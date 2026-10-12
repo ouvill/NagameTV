@@ -92,17 +92,21 @@ Item {
                 host.requestActivate();
                 tryCompare(host, "active", true);
                 view.forceActiveFocus();
+                // Back input is dispatched to the focus item, which the first
+                // activation of the window establishes after it reports active.
+                tryCompare(host, "activeFocusItem", view);
             }
             function cleanup() {
                 host.showNormal();
                 tryCompare(host, "visibility", Window.Windowed);
             }
             function dismissInputs() {
-                return [{tag: "escape", key: Qt.Key_Escape}, {tag: "key-back", key: Qt.Key_Back}, {tag: "mouse-back", mouse: true}];
+                return [{tag: "escape", key: Qt.Key_Escape}, {tag: "key-back", key: Qt.Key_Back},
+                    {tag: "alt-left", key: Qt.Key_Left, modifiers: Qt.AltModifier}, {tag: "mouse-back", mouse: true}];
             }
             function dismiss(data) {
                 if (data.mouse) mouseClick(view, 350, 200, Qt.BackButton);
-                else keyClick(data.key);
+                else keyClick(data.key, data.modifiers ?? Qt.NoModifier);
             }
             function test_closed_drawer_does_not_disable_navigation_data() { return dismissInputs(); }
             function test_closed_drawer_does_not_disable_navigation(data) {
@@ -358,6 +362,22 @@ Item {
                 compare(view.editor.text, "draft");
                 mouseDoubleClickSequence(view.editor, 30, 15, Qt.BackButton);
                 compare(view.dismissals, 3);
+            }
+            function test_alt_left_goes_back_without_seeking() {
+                view.backend.recording = true;
+                view.backend.playing = true;
+                view.backend.playback_action = Player.Pause;
+                keyPress(Qt.Key_Left, Qt.AltModifier);
+                compare(view.dismissals, 1);
+                // Remote-control mice may release Alt before Left.
+                keyRelease(Qt.Key_Left);
+                compare(view.dismissals, 1);
+                compare(view.backend.skips, []);
+                keyClick(Qt.Key_Left);
+                compare(view.backend.skips, [-10000]);
+                compare(view.dismissals, 1);
+                keyClick(Qt.Key_Left, Qt.AltModifier | Qt.ShiftModifier);
+                compare(view.dismissals, 1);
             }
             function test_mouse_back_respects_disabled_bindings_and_popup_policy() {
                 view.bindings.enabled = false;
