@@ -55,7 +55,7 @@ QML試験の関数指定や `-o` も同じ形式です。`checks` には `toolin
 
 GUI試験は [gui_session.py](testing/gui_session.py) が専用画面と音声出力を所有し、
 検証成功後に [suites.py](testing/suites.py) がテストを実行します。
-コンポジターはWestonが既定で、`NAGAMETV_TEST_COMPOSITOR=sway`でswayを選択できます。
+swayのheadlessバックエンドを使い、既定のQt表示先は専用rootful XwaylandとOpenboxです。
 必要なパッケージ・GPU・音声要件は[GUIテスト専用環境](../docs/gui-test-environment.md)を参照してください。
 機器不足や接続先の変更は失敗として扱います。旧字幕試験の `--ui-only` は廃止し、
 描画試験をこの専用環境に統一しました。物理機器を使わない字幕形状の検査には

@@ -8,7 +8,7 @@ WorkshopではホストからGPUだけを共有し、PipeWireはコンテナー�
 | 資源 | 使用する環境 |
 |---|---|
 | 描画 | ホストから共有した実GPU。ソフトウェア描画は拒否します。 |
-| 画面・入力 | Weston（既定）またはswayのheadlessバックエンドと実GPUのGLレンダラー、専用XwaylandとOpenbox。1920×1080の仮想画面です。 |
+| 画面・入力 | swayのheadlessバックエンドと実GPUのGLES2レンダラー、専用XwaylandとOpenbox。1920×1080・60Hzの仮想画面です。 |
 | 音声 | 起動済みのPipeWire／pipewire-pulse上に実行ごとの`module-null-sink`とmonitorを作成。スピーカーへ音を出しません。 |
 | セッションバス | 専用`dbus-daemon`。ホストのPortalには接続しません。 |
 
@@ -16,27 +16,26 @@ WorkshopではホストからGPUだけを共有し、PipeWireはコンテナー�
 物理モニター、GNOME/KDE固有のウィンドウ操作、実音声デバイスの遅延や聴取品質は
 この環境では確認できません。GPUの処理能力はホストの作業と共有します。
 
-`NAGAMETV_TEST_COMPOSITOR=weston|sway`でコンポジターを選択します。未指定時はWestonです。
-不正な値や選択したコマンドの不足はエラーになり、他方へ切り替えません。
 swayはwlrootsのheadlessバックエンドとGLES2レンダラーを使い、アクセス可能なDRM render nodeを
 パス順で一つ選んで起動します。出力は`HEADLESS-1`の1920×1080・60Hz・scale 1に固定します。
+必要なコマンドやGPUが使えない場合はエラーになり、別のコンポジターやソフトウェア描画へ切り替えません。
 
-どちらのコンポジターでもXwaylandはrootfulモードで起動し、X11ウィンドウの管理をOpenboxに任せます。
-物理入力機器のないWestonのrootless構成では、ダイアログを閉じた後に親画面へ
-フォーカスが戻らない場合があります。専用のX11ウィンドウマネージャーにより、
-キーボード操作やダイアログの開閉をテスト内で完結させます。
+Xwaylandはrootfulモードで起動し、X11ウィンドウの管理をOpenboxに任せます。
+ダイアログを閉じた後のフォーカス復帰とキーボード操作は、この構成で検証します。
 
 `NAGAMETV_TEST_QPA=wayland`または`auto`で映像処理・キャプチャの試験をWayland上で実行できます。
-Westonのkiosk-shellはWaylandウィンドウを全画面に固定します。swayではWaylandウィンドウを
-floatingにして、クライアントが指定したサイズで表示します。sway内蔵のrootless Xwaylandは無効にし、
+Waylandウィンドウはfloatingにして、クライアントが指定したサイズで表示します。
+リサイズと全画面の切り替えは`startup -- screenshot-playback`で検証します。
+sway内蔵のrootless Xwaylandは無効にし、
 専用rootful Xwaylandを枠なしの1920×1080ウィンドウとして配置・フォーカスします。
 このウィンドウを全画面状態にしないことで、後から起動したWaylandアプリも表示できます。
 フォーカス・キーボード操作を含む起動試験全体の既定QPAは、引き続きX11です。
+native Waylandでの起動・入力試験全体は、sway上では未確認です。
 
 ## Workshopの準備
 
 [Workshop定義](../.workshop/dev.yaml)のGUI用接続は`gui:gpu → system:gpu`のみです。
-Weston、sway（`swaymsg`を含む）、Xwayland、PipeWire、WirePlumberなどは[プロジェクトSDK](../.workshop/nagametv/hooks/setup-base)で
+sway（`swaymsg`を含む）、Xwayland、PipeWire、WirePlumberなどは[プロジェクトSDK](../.workshop/nagametv/hooks/setup-base)で
 導入します。既存Workshopへの定義変更の反映方法は[開発手順](development.md)を参照してください。
 PulseAudioのサーバーパッケージは外し、`pactl`／`parec`を含む`pulseaudio-utils`は残します。
 [GUI SDKのsetup-project](../.workshop/gui/hooks/setup-project)がPipeWire、pipewire-pulse、
@@ -59,13 +58,12 @@ Workshop内では次のコマンドを使います。
 
 ```sh
 python3 -m scripts.testing.gui_session --check
-NAGAMETV_TEST_COMPOSITOR=sway python3 -m scripts.testing.gui_session --check
 ```
 
 ## FedoraなどのLinuxで直接実行
 
 Workshopは不要です。[ネイティブのビルド依存](development.md#ネイティブ版をビルドする)に加え、
-選択したコンポジター（Westonまたはswayと`swaymsg`）、Xwayland、Openbox、`xdpyinfo`、`xprop`、`glxinfo`、D-Bus、Python 3.11以降、
+sway、`swaymsg`、Xwayland、Openbox、`xdpyinfo`、`xprop`、`glxinfo`、D-Bus、Python 3.11以降、
 GStreamerの`gst-launch-1.0`／`pulsesink`／`audiotestsrc`、`pactl`、`parec`が必要です。
 通常のユーザーで実行し、実GPUへアクセスできる状態にしてください。
 音声サーバーはPipeWireとPulseAudio互換サーバー、接続管理はWirePlumberを使います。
@@ -103,8 +101,6 @@ python3 scripts/test.py startup
 python3 scripts/test.py pointer-activity
 NAGAMETV_TEST_QPA=wayland python3 scripts/test.py startup -- screenshot-playback
 NAGAMETV_TEST_QPA=auto python3 scripts/test.py startup -- video-processing
-NAGAMETV_TEST_COMPOSITOR=sway python3 scripts/test.py startup
-NAGAMETV_TEST_COMPOSITOR=sway NAGAMETV_TEST_QPA=wayland python3 scripts/test.py startup -- screenshot-playback
 ```
 
 Workshopを使う場合はホストから次のように実行できます。
@@ -147,8 +143,8 @@ swayの設定は一時ディレクトリーに生成し、ホストの設定は�
 - 自分の名前・所有モジュールに一致する出力がPipeWireのnull sinkであること。他の出力は許可します。
 - GStreamerの`pulsesink`へ送ったテスト音を、仮想出力のmonitorから取得できること。
 - Xwaylandが`-displayfd`で通知した専用表示先への接続と、Openboxの起動完了。
-- 選択したコンポジターのログにあるGL rendererと、XwaylandのOpenGL情報が実GPUを示すこと。
-- swayの場合、専用IPCで出力の解像度・60Hz・scale 1と、Xwaylandの表示・内容矩形とフォーカスを確認すること。
+- swayのログにあるGL rendererと、XwaylandのOpenGL情報が実GPUを示すこと。
+- swayの専用IPCで出力の解像度・60Hz・scale 1と、Xwaylandの表示・内容矩形とフォーカスを確認すること。
 
 録音開始待ちは、自分のmonitorへ接続した録音プロセスを確認します。
 他のアプリケーションの録音ストリームでは成功扱いにしません。
@@ -162,7 +158,7 @@ swayの設定は一時ディレクトリーに生成し、ホストの設定は�
 テストコマンドの終了コードは呼び出し元に返します。
 
 サーバーとGPU検証のログは`build/gui-tests/session-*/`に保存します。
-swayでは`sway.log`、`sway-outputs.json`、`sway-xwayland.json`に検証時の状態を残します。
+`sway.log`、`sway-outputs.json`、`sway-xwayland.json`に検証時の状態を残します。
 テスト自身の標準出力・標準エラーは呼び出し元へそのまま出力します。
 
 プロセス管理・接続先の分離・失敗時の停止処理は機器なしで検証できます。
@@ -172,6 +168,14 @@ python3 scripts/test.py tooling
 ```
 
 ## 検証環境
+
+2026-10-13（sway固定化後）: コンポジター指定なしの`--check`、`tooling`（99件）、
+`gui ui-capture`（GUI 10スイート）が成功しました。既定QPAはX11のままです。
+`NAGAMETV_TEST_QPA=wayland`の`startup -- screenshot-playback`と、
+`NAGAMETV_TEST_QPA=auto`の`startup -- video-processing`も成功しました。
+前者のQt画面画像は960×600、1280×720、640×360、全画面時1920×1080でした。
+実行にはインストール済みのsway 1.11を使用し、過去のフレーム周期の再測定は行っていません。
+以下の記録はコンポジターを選択できた時期と、それ以前の環境での検証です。
 
 2026-10-13: Ubuntu 26.04のWorkshopで、SDK定義と同じ`sway`パッケージを
 `--no-install-recommends`で導入し、sway 1.11／wlroots 0.19.2／NVIDIA GeForce RTX 4070 Ti
@@ -218,11 +222,8 @@ SIGINT・SIGTERM・コンポジター終了時のテスト停止および後片�
 
 ## 参照仕様
 
-- [Westonのバックエンドとレンダラー](https://wayland.pages.freedesktop.org/weston/toc/running-weston.html)
-- [kiosk-shellの全画面制約](https://wayland.pages.freedesktop.org/weston/toc/kiosk-shell.html)
 - [sway 1.11の設定・floating・Xwayland制御](https://github.com/swaywm/sway/blob/1.11/sway/sway.5.scd)
 - [swayのIPC仕様（出力・ウィンドウ矩形・フォーカス）](https://github.com/swaywm/sway/blob/1.11/sway/sway-ipc.7.scd)
-- [Ubuntu 26.04のWeston・Xwayland起動仕様](https://manpages.ubuntu.com/manpages/resolute/man1/weston.1.html)
 - [PipeWireのPulseAudio互換サーバー](https://docs.pipewire.org/page_module_protocol_pulse.html)
 - [PipeWireのnull sink](https://pipewire.pages.freedesktop.org/pipewire/page_pulse_module_null_sink.html)
 - [WirePlumberの出力選択とフォールバック制御](https://pipewire.pages.freedesktop.org/wireplumber/policies/linking.html)

@@ -54,6 +54,9 @@ VA-API経路だけはDMA_DRMのEGL importにWaylandが必要なため、未指�
 `NAGAMETV_TEST_QPA=wayland python3 scripts/test.py startup -- video-processing`で製品画面の映像処理を検証する。
 `NAGAMETV_TEST_QPA=auto`ではQtの自動選択を使う。どちらも
 [専用GUI環境](gui-test-environment.md)を起動し、実GPUと仮想音声を検証する。
+専用画面はswayを使い、通常の起動・入力試験は既定のX11（rootful Xwayland＋Openbox）で行う。
+native Waylandのサイズ変更と全画面切り替えは`startup -- screenshot-playback`で確認済みだが、
+起動・入力試験全体はsway上では未確認である。
 
 ## 変更の経緯
 
@@ -93,4 +96,4 @@ debugログには入力した文字が含まれることがあるため、再現
 これは実際のデスクトップでの手動診断用であり、自動GUIテストからホストの画面へ
 接続する用途には使わない。`using input method:`の行で実際の選択を確認する。
 `QComposeInputContext`の場合は日本語IMEへ接続できておらず、日本語入力の検証は
-できない。専用Westonで画面が表示されることだけでは、GNOME等のIME動作の証明にならない。
+できない。専用swayで画面が表示されることだけでは、GNOME等のIME動作の証明にならない。

@@ -97,7 +97,7 @@ failure over silent degradation. Tests documented as hardware-free must remain
 hardware-free.
 
 The checked-in [isolated GUI test environment](docs/gui-test-environment.md) is
-an explicitly configured display/audio test mode: Weston (default) or sway headless with real GPU
+an explicitly configured display/audio test mode: sway headless with real GPU
 rendering, private rootful Xwayland/Openbox and a per-run PipeWire null sink.
 Workshop starts PipeWire and pipewire-pulse as environment services; tests never
 start or stop an audio server. On native Linux (including Fedora), GUI tests may

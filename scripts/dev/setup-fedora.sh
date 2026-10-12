@@ -26,5 +26,5 @@ exec sudo dnf install "$@" -- \
     google-noto-sans-cjk-vf-fonts \
     nodejs npm \
     python3 python3-dbus python3-gobject dbus-daemon dbus-tools \
-    weston sway xorg-x11-server-Xwayland openbox glx-utils \
+    sway xorg-x11-server-Xwayland openbox glx-utils \
     xdpyinfo xprop xwininfo xdotool pulseaudio-utils ImageMagick

@@ -111,7 +111,8 @@ Waylandの起動・入力試験全体は専用環境のサイズ・フォーカ�
 [表示方式の選択と検証範囲](platform-startup.md)を参照。
 
 ハードウェア不要のRust試験は形式選択、CPUのフィールド倍速出力、NV12のstride・レンジ変換、
-表示フレーム保持を検証する。GPU試験は[専用GUI環境](gui-test-environment.md)で実行する。
+表示フレーム保持を検証する。現在のGPU試験はswayの[専用GUI環境](gui-test-environment.md)で実行する。
+native Waylandのリサイズ・全画面切り替えは確認済みで、起動・入力試験全体はsway上では未確認である。
 
 ```sh
 NAGAMETV_DEINTERLACE=yadif NAGAMETV_VIDEO_FORMAT=nv12 python3 scripts/test.py startup -- video-processing

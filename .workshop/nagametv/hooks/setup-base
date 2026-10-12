@@ -84,7 +84,6 @@ apt-get install --yes --no-install-recommends \
   qt6-xdgdesktopportal-platformtheme \
   sway \
   util-linux \
-  weston \
   wireplumber \
   x11-utils \
   xdotool \
