@@ -8,6 +8,83 @@ const BROADCAST_START_MS: i64 = 1_800_000_000_000;
 const EPOCH: u64 = 1;
 
 #[test]
+fn hidden_controls_do_not_publish_live_positions_or_resets() {
+    let mut history = three_programs();
+    let mut presenter = Presenter::new();
+    let mut publication = Publication::default();
+    for position in [SECOND_MS, 2 * SECOND_MS] {
+        let snapshot = project(
+            &mut presenter,
+            &mut history,
+            0,
+            SHOW_MS,
+            Phase::Playing,
+            position,
+        );
+        assert!(publication.project(Some(&snapshot)).is_none());
+    }
+    assert!(publication.project(None).is_none());
+    assert!(publication.show(true));
+    assert!(!publication.show(false));
+    assert!(publication.project(None).is_none());
+}
+
+#[test]
+fn revealing_controls_publishes_the_current_position_without_another_tick() {
+    let mut history = three_programs();
+    let mut presenter = Presenter::new();
+    let mut publication = Publication::default();
+    let old = project(
+        &mut presenter,
+        &mut history,
+        0,
+        SHOW_MS,
+        Phase::Playing,
+        SECOND_MS,
+    );
+    assert!(publication.show(true));
+    let old_json = publication.project(Some(&old)).unwrap();
+    publication.show(false);
+    let latest = project(
+        &mut presenter,
+        &mut history,
+        0,
+        SHOW_MS,
+        Phase::Playing,
+        10 * SECOND_MS,
+    );
+    assert!(publication.project(Some(&latest)).is_none());
+    assert!(publication.show(true));
+    let revealed = publication.project(Some(&latest)).unwrap();
+    assert_ne!(revealed, old_json);
+    assert_eq!(revealed, latest.serialize());
+}
+
+#[test]
+fn visible_controls_publish_each_new_snapshot_and_reset() {
+    let mut history = three_programs();
+    let mut presenter = Presenter::new();
+    let mut publication = Publication::default();
+    assert!(publication.show(true));
+    assert!(!publication.show(true));
+    for position in [SECOND_MS, 2 * SECOND_MS] {
+        let snapshot = project(
+            &mut presenter,
+            &mut history,
+            0,
+            SHOW_MS,
+            Phase::Playing,
+            position,
+        );
+        assert_eq!(
+            publication.project(Some(&snapshot)),
+            Some(snapshot.serialize())
+        );
+    }
+    assert_eq!(publication.project(None).as_deref(), Some("null"));
+}
+
+#[test]
 #[ignore = "manual CPU benchmark; run with --ignored --nocapture"]
 fn benchmark_live_program_projection() {
     use std::{hint::black_box, time::Instant};

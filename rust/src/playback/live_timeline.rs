@@ -14,6 +14,28 @@ use std::{
 };
 
 const NS_PER_MS: u64 = 1_000_000;
+
+/// Interest in the live controls' presentation, independent of media history.
+#[derive(Default)]
+pub struct Publication {
+    visible: bool,
+}
+
+impl Publication {
+    /// Return whether the caller must sample and publish immediately.
+    pub fn show(&mut self, visible: bool) -> bool {
+        let revealed = visible && !self.visible;
+        self.visible = visible;
+        revealed
+    }
+
+    pub fn project(&self, snapshot: Option<&Snapshot>) -> Option<String> {
+        // Hidden controls must not trigger scene updates: those extra renders
+        // can let the video sink replace a field before Qt captures it.
+        self.visible
+            .then(|| snapshot.map_or_else(|| "null".into(), Snapshot::serialize))
+    }
+}
 const CLOCK_TOLERANCE_MS: i64 = 1_500; // TDT has whole-second precision.
 const MAX_EPOCHS: usize = 128;
 const MAX_PROGRAMS: usize = 512;

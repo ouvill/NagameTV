@@ -675,6 +675,10 @@ pub(super) fn run(
     app: &QGuiApplication,
     engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
 ) -> TestResult {
+    evaluate(
+        engine,
+        "overlayVisibility.pinned = true; overlayVisibility.reveal(); true",
+    )?;
     let observer_source =
         serde_json::to_string(include_str!("../../../tests/live-timeline-observer.qml"))?;
     assert!(evaluate(

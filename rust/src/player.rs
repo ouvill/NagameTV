@@ -474,6 +474,8 @@ pub mod ffi {
         #[qinvokable]
         fn seek_timeline(self: Pin<&mut Player>, session: QString, milliseconds: f64) -> bool;
         #[qinvokable]
+        fn live_timeline_open(self: Pin<&mut Player>, visible: bool);
+        #[qinvokable]
         fn skip_timeline(self: Pin<&mut Player>, session: QString, milliseconds: f64) -> bool;
         #[qinvokable]
         fn timeline_preview(self: &Player, session: QString, milliseconds: f64) -> QString;
@@ -624,6 +626,7 @@ pub struct PlayerRust {
     speed: playback::speed::Snapshot,
     timeshift_bytes_per_second: f64,
     live_timeline: QString,
+    live_timeline_publication: playback::live_timeline::Publication,
     transport_message: transport::Message,
     recording_loader: playback::recording::Loader,
     file_error: error_text::Text,

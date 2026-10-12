@@ -69,6 +69,18 @@ impl Message {
 }
 
 impl ffi::Player {
+    pub fn live_timeline_open(mut self: Pin<&mut Self>, visible: bool) {
+        if self
+            .as_mut()
+            .rust_mut()
+            .live_timeline_publication
+            .show(visible)
+        {
+            // Waiting for the next poll would show the old playhead during reveal.
+            self.change_stream_state(std::convert::identity);
+        }
+    }
+
     pub fn playback_rate(&self) -> i32 {
         self.rust().speed.applied.tenths()
     }

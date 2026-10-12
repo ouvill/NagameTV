@@ -235,6 +235,7 @@ fn checks() -> TestResult {
     check_recording_input(&mut player)?;
     check_recording_notifications(&mut player)?;
     check_stream_projection_commit()?;
+    check_live_timeline_publication();
     check_commentary_projection()?;
     check_guide_state();
     check_autoplay()?;
@@ -1178,6 +1179,31 @@ fn check_stream_projection_commit() -> TestResult {
     player.pin_mut().change_stream_state(|state| state);
     assert_eq!(*observed.lock().unwrap(), 1);
     Ok(())
+}
+
+fn check_live_timeline_publication() {
+    let mut player = ffi::new_player();
+    // A hidden, retained presentation must not stand in for current media state.
+    player.pin_mut().rust_mut().live_timeline = QString::from("{\"session\":\"old\"}");
+    let observed = Arc::new(Mutex::new(Vec::new()));
+    let changes = observed.clone();
+    let _timeline = player.pin_mut().on_live_timeline_changed(move |player| {
+        changes
+            .lock()
+            .unwrap()
+            .push(player.live_timeline().to_string());
+    });
+    player.pin_mut().change_stream_state(std::convert::identity);
+    player.pin_mut().live_timeline_open(false);
+    assert!(observed.lock().unwrap().is_empty());
+    assert_ne!(player.live_timeline().to_string(), "null");
+
+    player.pin_mut().live_timeline_open(true);
+    assert_eq!(observed.lock().unwrap().as_slice(), &["null"]);
+    assert_eq!(player.live_timeline().to_string(), "null");
+    player.pin_mut().live_timeline_open(true);
+    player.pin_mut().change_stream_state(std::convert::identity);
+    assert_eq!(observed.lock().unwrap().len(), 1);
 }
 
 fn check_commentary_projection() -> TestResult {

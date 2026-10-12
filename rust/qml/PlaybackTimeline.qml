@@ -6,6 +6,10 @@ Loader {
     id: root
     required property var backend
     property bool closing: false
+    readonly property bool liveTimelineVisible: visible && !backend.recording && !closing
+    onLiveTimelineVisibleChanged: backend.live_timeline_open(liveTimelineVisible)
+    Component.onCompleted: backend.live_timeline_open(liveTimelineVisible)
+    Component.onDestruction: if (!closing) backend.live_timeline_open(false)
     property Item upNavigation: null
     property Item downNavigation: null
     signal adjustmentFinished

@@ -14,6 +14,9 @@ Item {
             function request_seek_preview(milliseconds) { previewRequests.push(milliseconds); }
             function clear_seek_preview() { seek_preview_image = ""; }
             property string live_timeline: "null"
+            property bool recording: false
+            property var timelineVisibility: []
+            function live_timeline_open(visible) { timelineVisibility.push(visible); }
             property bool seekable: true
             property string transport_error: ""
             property var requests: []
@@ -39,9 +42,27 @@ Item {
             }
         }
         LiveTimeline { id: timeline; x: 20; y: 100; width: 820; backend: backend }
+        Item {
+            id: publicationParent
+            visible: false
+            PlaybackTimeline { id: publication; width: 820; backend: backend }
+        }
         TestInputMethod { id: inputEvents }
         TestCase {
             name: "LiveTimeline"
+            function test_publication_follows_parent_visibility_and_closing() {
+                backend.timelineVisibility = [];
+                publicationParent.visible = true;
+                compare(backend.timelineVisibility, [true]);
+                publicationParent.visible = false;
+                compare(backend.timelineVisibility, [true, false]);
+                publicationParent.visible = true;
+                compare(backend.timelineVisibility, [true, false, true]);
+                publication.closing = true;
+                compare(backend.timelineVisibility, [true, false, true, false]);
+                publicationParent.visible = false;
+                publication.closing = false;
+            }
             when: windowShown
             readonly property real minuteMs: 60 * 1000
             function sample() {

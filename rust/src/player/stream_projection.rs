@@ -108,9 +108,7 @@ impl Values {
         let source_changed = before.recording != next.stream_state.recording().is_some()
             || before.recording_name.to_string()
                 != next.stream_state.recording().map_or("", |file| file.name());
-        if source_changed
-            || (!next.stream_state.active() && before.live_timeline.to_string() != "null")
-        {
+        if source_changed || (!next.stream_state.active() && before.media_active) {
             this.current_projection = Default::default();
             this.program_publication = Default::default();
             this.recording_program_bodies = Default::default();
@@ -143,9 +141,13 @@ impl Values {
                 next.current_program_data = QString::from(this.program_publication.json());
             }
             next.program_progress = progress;
-            next.live_timeline = QString::from(snapshot.serialize());
+            if let Some(json) = this.live_timeline_publication.project(Some(&snapshot)) {
+                next.live_timeline = QString::from(json);
+            }
         } else {
-            next.live_timeline = QString::from("null");
+            if let Some(json) = this.live_timeline_publication.project(None) {
+                next.live_timeline = QString::from(json);
+            }
             if next.stream_state.active() {
                 if next.stream_state.seeking() {
                     next.program_status = QString::from("pending");

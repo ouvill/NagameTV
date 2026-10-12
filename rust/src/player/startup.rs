@@ -138,6 +138,7 @@ impl Default for PlayerRust {
             speed: Default::default(),
             timeshift_bytes_per_second: 0.0,
             live_timeline: QString::from("null"),
+            live_timeline_publication: Default::default(),
             transport_message: super::transport::Message::None,
             recording_loader: Default::default(),
             file_error: Text::default(),
