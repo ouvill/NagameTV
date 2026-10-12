@@ -4,6 +4,7 @@
 import argparse
 from array import array
 from contextlib import contextmanager, ExitStack
+from enum import Enum
 import json
 import os
 from pathlib import Path
@@ -27,6 +28,7 @@ POLL_SECONDS = 0.05
 SIGNAL_EXIT_BASE = 128
 OUTPUT_WIDTH = 1920
 OUTPUT_HEIGHT = 1080
+OUTPUT_REFRESH_HZ = 60
 AUDIO_RATE = 48000
 AUDIO_CHANNELS = 2
 AUDIO_SINK_PREFIX = "nagametv_test_"
@@ -35,6 +37,19 @@ AUDIO_MONITOR_LATENCY_MS = 20
 AUDIO_PROBE_BUFFERS = 10
 MIN_AUDIO_PROBE_PEAK = 1000
 SOFTWARE_RENDERERS = ("llvmpipe", "softpipe", "software rasterizer", "swrast")
+
+
+class Compositor(Enum):
+    WESTON = "weston"
+    SWAY = "sway"
+
+    @classmethod
+    def select(cls, env):
+        value = env.get("NAGAMETV_TEST_COMPOSITOR", cls.WESTON.value)
+        try:
+            return cls(value)
+        except ValueError as error:
+            raise RuntimeError(f"Invalid NAGAMETV_TEST_COMPOSITOR: {value!r}; expected weston or sway.") from error
 
 
 class DetectedAudioServer:
@@ -71,24 +86,24 @@ class DetectedAudioServer:
             raise RuntimeError("The selected PipeWire Pulse socket was replaced; stop and rerun the test.")
 
 
-def isolated_environment(runtime, inherited, audio_server, sink):
+def isolated_environment(runtime, inherited, audio_server, sink, compositor=Compositor.WESTON):
     """Keep only the selected audio endpoint; isolate display, settings and bus."""
     excluded = {
-        "DISPLAY", "WAYLAND_DISPLAY", "WAYLAND_SOCKET", "XAUTHORITY",
+        "DISPLAY", "WAYLAND_DISPLAY", "WAYLAND_SOCKET", "XAUTHORITY", "SWAYSOCK", "I3SOCK",
         "SESSION_MANAGER", "DESKTOP_STARTUP_ID", "WESTON_CONFIG_FILE",
         "QT_QUICK_BACKEND", "QSG_RHI_BACKEND", "QT_QPA_PLATFORM",
         "QT_QPA_PLATFORMTHEME", "QT_QPA_PLATFORM_PLUGIN_PATH",
     }
     env = {key: value for key, value in inherited.items()
            if key not in excluded and not key.startswith(
-               ("PULSE_", "PIPEWIRE_", "DBUS_", "XDG_SESSION_", "NAGAMETV_GUI_"))}
+               ("PULSE_", "PIPEWIRE_", "DBUS_", "XDG_SESSION_", "NAGAMETV_GUI_", "SWAY_", "WLR_"))}
     env.update({
         "XDG_RUNTIME_DIR": str(runtime),
         "XDG_CONFIG_HOME": str(runtime / "config"),
         "XDG_CACHE_HOME": str(runtime / "cache"),
         "XDG_STATE_HOME": str(runtime / "state"),
         "XDG_DATA_HOME": str(runtime / "data"),
-        "XDG_CURRENT_DESKTOP": "weston",
+        "XDG_CURRENT_DESKTOP": compositor.value,
         "PULSE_SERVER": audio_server.address,
         "PULSE_SINK": sink,
         "PULSE_SOURCE": f"{sink}.monitor",
@@ -104,17 +119,22 @@ def isolated_environment(runtime, inherited, audio_server, sink):
     return env
 
 
-def detect_resources():
+def detect_resources(compositor=Compositor.WESTON):
     if sys.platform != "linux":
-        raise RuntimeError("Isolated GUI tests require Linux (DRM, Weston and a running PipeWire Pulse server).")
-    required = ("weston", "Xwayland", "openbox", "pactl", "parec",
+        raise RuntimeError("Isolated GUI tests require Linux (DRM, a compositor and a running PipeWire Pulse server).")
+    required = ("Xwayland", "openbox", "pactl", "parec",
                 "dbus-daemon", "dbus-send", "xdpyinfo", "xprop", "glxinfo", "gst-launch-1.0")
+    required += ("sway", "swaymsg") if compositor is Compositor.SWAY else ("weston",)
     missing = [name for name in required if shutil.which(name) is None]
     if missing:
         raise RuntimeError(f"Missing test dependencies: {', '.join(missing)}; see docs/gui-test-environment.md.")
-    devices = [*Path("/dev/dri").glob("renderD*"), Path("/dev/nvidiactl")]
-    if not any(path.exists() and os.access(path, os.R_OK | os.W_OK) for path in devices):
+    devices = sorted(Path("/dev/dri").glob("renderD*"))
+    if compositor is Compositor.WESTON:
+        devices.append(Path("/dev/nvidiactl"))
+    device = next((path for path in devices if path.exists() and os.access(path, os.R_OK | os.W_OK)), None)
+    if device is None:
         raise RuntimeError("No accessible GPU render device; connect system:gpu. Software rendering is not allowed.")
+    return device
 
 
 def stop_process_group(process):
@@ -195,6 +215,97 @@ def validate_renderer(info):
     # Mesa exposes this field; proprietary NVIDIA drivers may omit it.
     if re.search(r"Accelerated:\s*no", info, re.IGNORECASE):
         raise RuntimeError("OpenGL acceleration is disabled.")
+
+
+def validate_compositor_renderer(compositor, log):
+    renderers = [renderer.strip() for renderer in re.findall(r"GL renderer:[ \t]*([^\r\n]+)", log)]
+    if not renderers or not all(renderers) or any(name in renderer.lower()
+                            for renderer in renderers for name in SOFTWARE_RENDERERS):
+        raise RuntimeError(f"{compositor.value} did not initialize a hardware GL renderer.")
+    return renderers[-1]
+
+
+def sway_request(processes, request, *args):
+    return json.loads(processes.probe("swaymsg", "--socket", processes.env["SWAYSOCK"],
+                                     "--raw", "--type", request, *args))
+
+
+def sway_command(processes, command):
+    results = sway_request(processes, "command", command)
+    if not results or any(item.get("success") is not True for item in results):
+        raise RuntimeError(f"sway command failed: {command}: {results}")
+
+
+def sway_window(processes, pid):
+    def visit(node):
+        if node.get("pid") == pid and node.get("type") in ("con", "floating_con"):
+            return node
+        for child in (*node.get("nodes", []), *node.get("floating_nodes", [])):
+            match = visit(child)
+            if match is not None:
+                return match
+        return None
+    return visit(sway_request(processes, "get_tree"))
+
+
+def prepare_sway_xwayland(processes, pid):
+    window = processes.until("sway Xwayland window", lambda: sway_window(processes, pid))
+    # A fullscreen Xwayland surface would hide subsequent native Wayland clients.
+    sway_command(processes, f"[con_id={window['id']}] floating enable, fullscreen disable, border none, "
+                 f"resize set width {OUTPUT_WIDTH} px height {OUTPUT_HEIGHT} px, move position 0 0, focus")
+
+    def ready():
+        window = sway_window(processes, pid)
+        return (window is not None and window.get("focused") is True
+                and window.get("fullscreen_mode") == 0
+                and window.get("rect") == {"x": 0, "y": 0, "width": OUTPUT_WIDTH, "height": OUTPUT_HEIGHT}
+                and window.get("window_rect") == {"x": 0, "y": 0, "width": OUTPUT_WIDTH, "height": OUTPUT_HEIGHT})
+
+    processes.until("focused 1920x1080 Xwayland surface on sway", ready)
+    (processes.logs / "sway-xwayland.json").write_text(json.dumps(sway_window(processes, pid), indent=2) + "\n")
+
+
+def start_compositor(processes, runtime, compositor, device):
+    env = processes.env
+    if compositor is Compositor.WESTON:
+        processes.start("weston", ["weston", "--no-config", "--backend=headless",
+            "--renderer=gl", "--shell=kiosk-shell.so", "--idle-time=0", "--socket=nagametv-wayland",
+            f"--width={OUTPUT_WIDTH}", f"--height={OUTPUT_HEIGHT}"])
+        processes.until("private Wayland socket", (runtime / "nagametv-wayland").is_socket)
+        env["WAYLAND_DISPLAY"] = "nagametv-wayland"
+    else:
+        config = runtime / "sway.conf"
+        config.write_text(
+            "xwayland disable\nswaybg_command -\nswaynag_command -\n"
+            f"output HEADLESS-1 mode {OUTPUT_WIDTH}x{OUTPUT_HEIGHT}@{OUTPUT_REFRESH_HZ}Hz\n"
+            "output HEADLESS-1 scale 1\noutput HEADLESS-1 position 0 0\n"
+            "default_border none\ndefault_floating_border none\n"
+            "floating_minimum_size 1 x 1\nfloating_maximum_size -1 x -1\n"
+            'for_window [app_id=".*"] floating enable\nfocus_follows_mouse no\n')
+        env.update(SWAYSOCK=str(runtime / "sway-ipc.sock"), WLR_BACKENDS="headless",
+                   WLR_HEADLESS_OUTPUTS="1", WLR_RENDERER="gles2",
+                   WLR_RENDER_DRM_DEVICE=str(device), WLR_LIBINPUT_NO_DEVICES="1")
+        processes.start("sway", ["sway", "--config", str(config), "--debug"])
+        processes.until("private sway IPC socket", (runtime / "sway-ipc.sock").is_socket)
+
+        def wayland_socket():
+            sockets = [path for path in runtime.glob("wayland-*") if path.is_socket()]
+            if len(sockets) > 1:
+                raise RuntimeError("sway created multiple Wayland sockets in the private runtime directory.")
+            return sockets[0].name if sockets else None
+
+        env["WAYLAND_DISPLAY"] = processes.until("private sway Wayland socket", wayland_socket)
+        outputs = sway_request(processes, "get_outputs")
+        (processes.logs / "sway-outputs.json").write_text(json.dumps(outputs, indent=2) + "\n")
+        if (len(outputs) != 1 or outputs[0].get("name") != "HEADLESS-1"
+                or outputs[0].get("active") is not True or outputs[0].get("scale") != 1
+                or outputs[0].get("rect") != {"x": 0, "y": 0, "width": OUTPUT_WIDTH, "height": OUTPUT_HEIGHT}
+                or outputs[0].get("current_mode") != {
+                    "width": OUTPUT_WIDTH, "height": OUTPUT_HEIGHT, "refresh": OUTPUT_REFRESH_HZ * 1000}):
+            raise RuntimeError("sway did not provide the private 1920x1080@60Hz output; see sway-outputs.json.")
+        renderer = validate_compositor_renderer(compositor, (processes.logs / "sway.log").read_text())
+        print(f"sway GL renderer: {renderer}", flush=True)
+    (runtime / "wayland-display").write_text(env["WAYLAND_DISPLAY"])
 
 
 def owned_audio_modules(client, sink):
@@ -340,11 +451,16 @@ def require_inherited_session(env):
         expected = {
             "XDG_RUNTIME_DIR": directory,
             "DISPLAY": (runtime / "display").read_text().strip(),
-            "WAYLAND_DISPLAY": "nagametv-wayland",
+            "WAYLAND_DISPLAY": (runtime / "wayland-display").read_text().strip(),
             "PULSE_SERVER": (runtime / "pulse-server").read_text().strip(),
             "PULSE_SINK": (runtime / "pulse-sink").read_text().strip(),
             "DBUS_SESSION_BUS_ADDRESS": f"unix:path={runtime}/bus",
         }
+        compositor = Compositor.select(env)
+        if (runtime / "compositor").read_text().strip() != compositor.value:
+            raise ValueError("compositor changed")
+        if compositor is Compositor.SWAY:
+            expected["SWAYSOCK"] = str(runtime / "sway-ipc.sock")
         expected["PULSE_SOURCE"] = f"{expected['PULSE_SINK']}.monitor"
         if any(env.get(key) != value for key, value in expected.items()):
             raise ValueError("connection variables changed")
@@ -366,12 +482,14 @@ class ValidatedSession:
     @classmethod
     @contextmanager
     def open(cls, logs):
-        detect_resources()
+        compositor = Compositor.select(os.environ)
+        device = detect_resources(compositor)
         audio_server = DetectedAudioServer.detect(os.environ)
         with tempfile.TemporaryDirectory(prefix="nagametv-gui-", dir="/tmp") as directory, ExitStack() as stack:
             runtime = Path(directory)
             sink = AUDIO_SINK_PREFIX + uuid.uuid4().hex
-            env = isolated_environment(runtime, os.environ, audio_server, sink)
+            env = isolated_environment(runtime, os.environ, audio_server, sink, compositor)
+            (runtime / "compositor").write_text(compositor.value)
             (runtime / "pulse-client.conf").write_text("autospawn = no\nenable-shm = no\n")
             processes = _Processes(stack, env, logs)
             audio = stack.enter_context(ValidatedAudio.open(audio_server, env, runtime, logs))
@@ -384,19 +502,18 @@ class ValidatedSession:
             # A rootful Xwayland has its own X11 window manager. Unlike Weston's
             # rootless XWM, Openbox restores focus after dialogs even with no
             # physical input seat on this headless compositor.
-            processes.start("weston", ["weston", "--no-config", "--backend=headless",
-                "--renderer=gl", "--shell=kiosk-shell.so", "--idle-time=0", "--socket=nagametv-wayland",
-                f"--width={OUTPUT_WIDTH}", f"--height={OUTPUT_HEIGHT}"])
-            processes.until("private Wayland socket", (runtime / "nagametv-wayland").is_socket)
-            env["WAYLAND_DISPLAY"] = "nagametv-wayland"
+            start_compositor(processes, runtime, compositor, device)
             # -displayfd allocates a free X display and signals readiness. Never
             # guess a number or connect to a display inherited from the caller.
             number_file = runtime / "display-number"
             with number_file.open("wb") as display_output:
-                processes.start("xwayland", ["Xwayland", "-displayfd", str(display_output.fileno()),
-                    "-nolisten", "tcp", "-noreset", "-glamor", "gl", "-fullscreen",
+                xwayland = processes.start("xwayland", ["Xwayland", "-displayfd", str(display_output.fileno()),
+                    "-nolisten", "tcp", "-noreset", "-glamor", "gl",
+                    *(["-fullscreen"] if compositor is Compositor.WESTON else []),
                     "-geometry", f"{OUTPUT_WIDTH}x{OUTPUT_HEIGHT}"], pass_fds=(display_output.fileno(),))
                 processes.until("Xwayland readiness", lambda: number_file.stat().st_size > 0)
+            if compositor is Compositor.SWAY:
+                prepare_sway_xwayland(processes, xwayland.pid)
             number = number_file.read_text().strip()
             if not re.fullmatch(r"\d+", number):
                 raise RuntimeError(f"Invalid private Xwayland display number: {number!r}")
@@ -414,10 +531,7 @@ class ValidatedSession:
             graphics = processes.probe("glxinfo", "-B")
             (logs / "graphics.log").write_text(graphics)
             validate_renderer(graphics)
-            compositor_log = (logs / "weston.log").read_text()
-            renderer = re.search(r"GL renderer: (.+)", compositor_log)
-            if renderer is None or any(name in renderer[1].lower() for name in SOFTWARE_RENDERERS):
-                raise RuntimeError("Weston did not initialize a hardware GL renderer.")
+            validate_compositor_renderer(compositor, (logs / f"{compositor.value}.log").read_text())
             print(graphics, flush=True)
             (runtime / "pulse-server").write_text(audio_server.address)
             (runtime / "pulse-sink").write_text(sink)

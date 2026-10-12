@@ -401,6 +401,8 @@ Pythonの2つの検査は機器不要で、CIにも含めます。部品一覧�
 どちらも専用GUI環境を検証し、製品のRust製モデルを登録してから実行します。
 `NAGAMETV_TEST_QPA=wayland python3 scripts/test.py startup -- video-processing`で専用Wayland画面を使います。
 `NAGAMETV_TEST_QPA=auto`は表示先の明示指定を外し、Qtの自動選択を検証します。
+`NAGAMETV_TEST_COMPOSITOR=sway`で専用画面をswayへ切り替えられます。既定はWestonです。
+設定と検証内容は[GUIテスト専用環境](gui-test-environment.md)を参照してください。
 省略時の試験は`xcb`（VA-API経路だけ`wayland`）です。
 Wayland試験のサイズ変更・入力フォーカスの制約は[専用GUI環境](gui-test-environment.md)を参照してください。
 スクリーンショットの連写・保存・設定変更の試験は`python3 scripts/test.py screenshot`で実行します。

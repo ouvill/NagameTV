@@ -85,6 +85,9 @@ class GuiSessionTests(unittest.TestCase):
 
     def test_host_routes_and_stale_session_are_removed(self):
         inherited = dict(DISPLAY=":99", WAYLAND_DISPLAY="host", WAYLAND_SOCKET="42",
+                         SWAYSOCK="host-sway", I3SOCK="host-i3", SWAY_CONFIG="host-config",
+                         WLR_BACKENDS="wayland", WLR_RENDERER_ALLOW_SOFTWARE="1",
+                         WLR_RENDER_DRM_DEVICE="/host/device", WLR_HEADLESS_OUTPUTS="3",
                          XAUTHORITY="host-auth", PULSE_SERVER="host-pulse", PULSE_COOKIE="host-cookie",
                          PIPEWIRE_REMOTE="host-pipewire", DBUS_SESSION_BUS_ADDRESS="host-bus",
                          DBUS_STARTER_ADDRESS="host-starter", NAGAMETV_GUI_SESSION_DIR="stale",
@@ -93,7 +96,9 @@ class GuiSessionTests(unittest.TestCase):
         env = gui.isolated_environment(Path("/tmp/test-session"), inherited, self.server, TEST_SINK)
         for name in ("DISPLAY", "WAYLAND_DISPLAY", "WAYLAND_SOCKET", "XAUTHORITY",
                      "PIPEWIRE_REMOTE", "PULSE_COOKIE", "DBUS_STARTER_ADDRESS",
-                     "NAGAMETV_GUI_SESSION_DIR", "QT_QUICK_BACKEND"):
+                     "NAGAMETV_GUI_SESSION_DIR", "QT_QUICK_BACKEND", "SWAYSOCK", "I3SOCK",
+                     "SWAY_CONFIG", "WLR_BACKENDS", "WLR_RENDERER_ALLOW_SOFTWARE",
+                     "WLR_RENDER_DRM_DEVICE", "WLR_HEADLESS_OUTPUTS"):
             self.assertNotIn(name, env)
         self.assertEqual(env["PULSE_SERVER"], self.server.address)
         self.assertEqual(env["PULSE_SINK"], TEST_SINK)
@@ -214,8 +219,11 @@ class GuiSessionTests(unittest.TestCase):
 
     def test_nested_gui_script_rejects_changed_audio_routes(self):
         env = gui.isolated_environment(self.runtime, dict(os.environ), self.server, TEST_SINK)
-        env.update(NAGAMETV_GUI_SESSION_DIR=str(self.runtime), DISPLAY=":99", WAYLAND_DISPLAY="nagametv-wayland")
+        env.update(NAGAMETV_GUI_SESSION_DIR=str(self.runtime), NAGAMETV_TEST_COMPOSITOR="weston",
+                   DISPLAY=":99", WAYLAND_DISPLAY="nagametv-wayland")
         (self.runtime / "display").write_text(env["DISPLAY"])
+        (self.runtime / "wayland-display").write_text(env["WAYLAND_DISPLAY"])
+        (self.runtime / "compositor").write_text("weston")
         (self.runtime / "pulse-server").write_text(env["PULSE_SERVER"])
         (self.runtime / "pulse-sink").write_text(env["PULSE_SINK"])
         command = [sys.executable, "-c", "import os; from scripts.testing.gui_session import require_inherited_session; require_inherited_session(os.environ)"]
@@ -226,6 +234,131 @@ class GuiSessionTests(unittest.TestCase):
                                         text=True, capture_output=True)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn("Invalid or closed", result.stderr)
+
+    def test_compositor_selection_defaults_to_weston_and_rejects_invalid_values_before_detection(self):
+        self.assertIs(gui.Compositor.select({}), gui.Compositor.WESTON)
+        for compositor in gui.Compositor:
+            self.assertIs(gui.Compositor.select({"NAGAMETV_TEST_COMPOSITOR": compositor.value}), compositor)
+        for value in ("", "SWAY", "auto", "sway weston"):
+            with self.subTest(value=value), patch.dict(os.environ, NAGAMETV_TEST_COMPOSITOR=value), \
+                 patch.object(gui, "detect_resources") as detect:
+                with self.assertRaisesRegex(RuntimeError, "Invalid NAGAMETV_TEST_COMPOSITOR"):
+                    with gui.ValidatedSession.open(self.runtime):
+                        self.fail("Invalid compositor selection escaped")
+                detect.assert_not_called()
+
+    def test_only_selected_compositor_is_required_and_missing_dependency_does_not_fall_back(self):
+        for compositor, missing in ((gui.Compositor.SWAY, "weston"), (gui.Compositor.WESTON, "sway")):
+            with self.subTest(compositor=compositor), \
+                 patch.object(gui.shutil, "which", side_effect=lambda name: None if name == missing else name), \
+                 patch.object(gui.Path, "glob", return_value=[Path("/test/renderD128")]), \
+                 patch.object(gui.Path, "exists", return_value=True), \
+                 patch.object(gui.os, "access", return_value=True):
+                self.assertEqual(gui.detect_resources(compositor), Path("/test/renderD128"))
+        for missing in ("sway", "swaymsg"):
+            with self.subTest(missing=missing), \
+                 patch.object(gui.shutil, "which", side_effect=lambda name: None if name == missing else name):
+                with self.assertRaisesRegex(RuntimeError, missing):
+                    gui.detect_resources(gui.Compositor.SWAY)
+
+    def test_sway_requires_a_drm_render_node_even_with_nvidia_control_device(self):
+        with patch.object(gui.shutil, "which", return_value="found"), \
+             patch.object(gui.Path, "glob", return_value=[]), \
+             patch.object(gui.Path, "exists", return_value=True), \
+             patch.object(gui.os, "access", return_value=True):
+            with self.assertRaisesRegex(RuntimeError, "No accessible GPU render device"):
+                gui.detect_resources(gui.Compositor.SWAY)
+
+    def sway_fixture(self, *, renderer="NVIDIA GPU", refresh=60000):
+        env = gui.isolated_environment(self.runtime, {}, self.server, TEST_SINK, gui.Compositor.SWAY)
+        processes = gui._Processes(self.enterContext(ExitStack()), env, self.runtime)
+
+        def start(name, command):
+            self.assertEqual(name, "sway")
+            self.assertEqual(command[:2], ["sway", "--config"])
+            self.assertEqual(Path(command[2]).parent, self.runtime)
+            for name in ("sway-ipc.sock", "wayland-1"):
+                endpoint = self.enterContext(socket.socket(socket.AF_UNIX))
+                endpoint.bind(str(self.runtime / name))
+            (self.runtime / "sway.log").write_text(f"[wlr] [render/gles2/renderer.c:1] GL renderer: {renderer}\n")
+
+        self.enterContext(patch.object(processes, "start", side_effect=start))
+        outputs = [{"name": "HEADLESS-1", "active": True, "scale": 1,
+                    "rect": {"x": 0, "y": 0, "width": 1920, "height": 1080},
+                    "current_mode": {"width": 1920, "height": 1080, "refresh": refresh}}]
+        self.enterContext(patch.object(processes, "probe", return_value=json.dumps(outputs)))
+        return processes
+
+    def test_sway_uses_private_config_sockets_and_floating_native_windows(self):
+        processes = self.sway_fixture()
+        gui.start_compositor(processes, self.runtime, gui.Compositor.SWAY, Path("/test/renderD128"))
+        self.assertEqual(processes.env["WAYLAND_DISPLAY"], "wayland-1")
+        self.assertEqual(processes.env["WLR_BACKENDS"], "headless")
+        self.assertEqual(processes.env["WLR_RENDERER"], "gles2")
+        self.assertEqual(processes.env["WLR_RENDER_DRM_DEVICE"], "/test/renderD128")
+        self.assertNotIn("WLR_RENDERER_ALLOW_SOFTWARE", processes.env)
+        self.assertNotIn("DISPLAY", processes.env)
+        config = (self.runtime / "sway.conf").read_text()
+        self.assertIn("xwayland disable\n", config)
+        self.assertIn('for_window [app_id=".*"] floating enable\n', config)
+        self.assertNotIn("fullscreen enable", config)
+        self.assertNotIn("include", config)
+        processes.probe.assert_called_with("swaymsg", "--socket", str(self.runtime / "sway-ipc.sock"),
+                                           "--raw", "--type", "get_outputs")
+
+    def test_sway_rejects_wrong_output_mode_before_publishing_display(self):
+        processes = self.sway_fixture(refresh=144000)
+        with self.assertRaisesRegex(RuntimeError, "1920x1080@60Hz"):
+            gui.start_compositor(processes, self.runtime, gui.Compositor.SWAY, Path("/test/renderD128"))
+        self.assertFalse((self.runtime / "wayland-display").exists())
+
+    def test_sway_rejects_software_compositor_before_publishing_display(self):
+        processes = self.sway_fixture(renderer="llvmpipe")
+        with self.assertRaisesRegex(RuntimeError, "hardware GL renderer"):
+            gui.start_compositor(processes, self.runtime, gui.Compositor.SWAY, Path("/test/renderD128"))
+        self.assertFalse((self.runtime / "wayland-display").exists())
+
+    def test_compositor_renderer_must_be_hardware_even_if_xwayland_is_accelerated(self):
+        for compositor in gui.Compositor:
+            for renderer in (*gui.SOFTWARE_RENDERERS, ""):
+                with self.subTest(compositor=compositor, renderer=renderer):
+                    with self.assertRaisesRegex(RuntimeError, "hardware GL renderer"):
+                        gui.validate_compositor_renderer(compositor, f"GL renderer: {renderer}\n")
+            with self.assertRaises(RuntimeError):
+                gui.validate_compositor_renderer(compositor, "GL renderer: llvmpipe\nGL renderer: NVIDIA GPU\n")
+            self.assertEqual(gui.validate_compositor_renderer(compositor, "GL renderer: AMD GPU\n"), "AMD GPU")
+
+    def test_sway_xwayland_waits_for_content_size_and_focus_on_the_owned_window(self):
+        processes = gui._Processes(self.enterContext(ExitStack()), {"SWAYSOCK": "/private/sway"}, self.runtime)
+        window = {"id": 8, "type": "con", "pid": 123, "fullscreen_mode": 0, "focused": True,
+                  "rect": {"x": 0, "y": 0, "width": 1920, "height": 1080},
+                  "window_rect": {"x": 0, "y": 0, "width": 1920, "height": 1080}}
+        tree = {"nodes": [{"pid": 999, "type": "con"}], "floating_nodes": [window]}
+        replies = [tree, [{"success": True}], {"floating_nodes": [{**window, "focused": False}]},
+                   {"floating_nodes": [{**window, "window_rect": {"width": 800, "height": 600}}]}, tree, tree]
+        with patch.object(processes, "probe", side_effect=[json.dumps(reply) for reply in replies]) as probe:
+            gui.prepare_sway_xwayland(processes, 123)
+        command = probe.call_args_list[1].args[-1]
+        self.assertIn("[con_id=8]", command)
+        self.assertIn("fullscreen disable", command)
+        self.assertTrue(command.endswith("focus"))
+        with patch.object(processes, "probe", return_value='[{"success": false, "error": "bad command"}]'):
+            with self.assertRaisesRegex(RuntimeError, "bad command"):
+                gui.sway_command(processes, "invalid")
+
+    def test_nested_sway_session_pins_compositor_and_both_display_sockets(self):
+        env = gui.isolated_environment(self.runtime, {"NAGAMETV_TEST_COMPOSITOR": "sway"},
+                                       self.server, TEST_SINK, gui.Compositor.SWAY)
+        env.update(NAGAMETV_GUI_SESSION_DIR=str(self.runtime), DISPLAY=":8", WAYLAND_DISPLAY="wayland-1",
+                   SWAYSOCK=str(self.runtime / "sway-ipc.sock"))
+        for name, value in {"display": ":8", "wayland-display": "wayland-1", "compositor": "sway",
+                            "pulse-server": env["PULSE_SERVER"], "pulse-sink": TEST_SINK}.items():
+            (self.runtime / name).write_text(value)
+        gui.require_inherited_session(env)
+        for name, value in (("SWAYSOCK", "/host/sway"), ("WAYLAND_DISPLAY", "host"),
+                            ("DISPLAY", ":99"), ("NAGAMETV_TEST_COMPOSITOR", "weston")):
+            with self.subTest(name=name), self.assertRaisesRegex(RuntimeError, "Invalid or closed"):
+                gui.require_inherited_session({**env, name: value})
 
     def test_pulseaudio_daemon_is_rejected_before_mutation(self):
         backend, env = self.audio_fixture()

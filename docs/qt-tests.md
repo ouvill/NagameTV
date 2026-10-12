@@ -12,13 +12,19 @@ normal application builds. Test QObjects are generated from
 `rust/src/native_tests/`; no standalone C++ test executables are needed.
 
 GUI scripts automatically start an [isolated test session](gui-test-environment.md):
-GPU-rendered Weston headless, private rootful Xwayland/Openbox, a private D-Bus session and
+GPU-rendered Weston headless (default) or sway headless, private rootful Xwayland/Openbox, a private D-Bus session and
 per-run clocked virtual output on an already running PipeWire Pulse server.
 The environment owns the audio server; tests only own their virtual outputs.
 Workshop starts the audio services in its SDK hook; native Linux can use the
 existing local PipeWire server. Every session validates the display, GPU and
 audio loopback before running its command, including suites that do not use audio.
 Host desktop connections and physical audio devices are not required.
+Select sway with `NAGAMETV_TEST_COMPOSITOR=sway`; invalid or unavailable selections fail
+without switching compositors. Sway uses a private configuration and IPC socket,
+a 1920×1080 output at 60 Hz, and floating native Wayland windows. Both compositors
+keep the rootful Xwayland/Openbox path for the default X11 QPA. For native Wayland
+playback/capture coverage, run
+`NAGAMETV_TEST_COMPOSITOR=sway NAGAMETV_TEST_QPA=wayland python3 scripts/test.py startup -- screenshot-playback`.
 
 | Command | Preserved coverage | Hardware |
 | --- | --- | --- |

@@ -82,6 +82,7 @@ apt-get install --yes --no-install-recommends \
   qt6-svg-plugins \
   qt6-wayland \
   qt6-xdgdesktopportal-platformtheme \
+  sway \
   util-linux \
   weston \
   wireplumber \

@@ -11,7 +11,7 @@ for command in Xvfb Xwayland cargo ccache cmake curl dbus-daemon dbus-run-sessio
   desktop-file-validate dpkg-deb dpkg-shlibdeps eu-strip flatpak glxinfo readelf strip \
   flatpak-builder flock gh git gst-inspect-1.0 gst-launch-1.0 import lld mpv ninja \
   openbox pactl parec pipewire pipewire-pulse pkg-config node npm python3 qmake6 qtpaths6 rustc \
-  sha256sum weston wireplumber xdpyinfo xdotool xprop; do
+  sha256sum sway swaymsg weston wireplumber xdpyinfo xdotool xprop; do
   if ! command -v "$command" >/dev/null 2>&1; then
     missing+=("$command")
   fi
