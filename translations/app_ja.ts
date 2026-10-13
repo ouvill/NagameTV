@@ -1220,6 +1220,11 @@
 </context>
   <context>
     <name>Viewer</name>
+    <message><source>Remove from favorites</source><translation>お気に入りから外す</translation></message>
+    <message><source>Add to favorites</source><translation>お気に入りに追加</translation></message>
+    <message><source>%1 min left</source><translation>あと%1分</translation></message>
+    <message><source>Continue watching</source><translation>続きから見る</translation></message>
+    <message><source>Favorites</source><translation>お気に入り</translation></message>
     <message><source>Remote</source><translation>リモコン</translation></message>
     <message><source>Data broadcast remote</source><translation>データ放送リモコン</translation></message>
     <message><source>Up</source><translation>上</translation></message>
@@ -1824,6 +1829,7 @@
 </context>
   <context>
     <name>Settings</name>
+    <message><source>Last channel</source><translation>前に見ていたチャンネル</translation></message>
     <message><source>Enable data broadcast (experimental)</source><translation>データ放送を有効にする（実験的）</translation></message>
     <message><source>Some broadcasts may not display or respond correctly.</source><translation>放送によっては表示や操作が正しく動作しないことがあります。</translation></message>
     <message><source>Prefetch data broadcast</source><translation>データ放送を先読み</translation></message>
@@ -2510,6 +2516,8 @@
 </context>
   <context>
     <name>RecordingLibrary</name>
+    <message><source>Watched</source><translation>視聴済み</translation></message>
+    <message><source>Resume</source><translation>続きから</translation></message>
     <message><source>Choose a video file</source><translation>再生するファイルを選択</translation></message>
     <message><source>Original TS</source><translation>元TS</translation></message>
     <message><source>Encoded video</source><translation>エンコード済み動画</translation></message>

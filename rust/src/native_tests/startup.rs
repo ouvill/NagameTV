@@ -2130,7 +2130,12 @@ fn check_sidebar_navigation(
         engine,
         "root.showStats = false; surface.forceActiveFocus(); true",
     )?;
-    ffi::clickRootKey(engine.pin_mut(), &QString::from("Down"))?;
+    if evaluate(engine, "root.stoppedOverview")? {
+        // Down enters the home page first; this sequence starts at the controls.
+        evaluate(engine, "playerControls.enter(); true")?;
+    } else {
+        ffi::clickRootKey(engine.pin_mut(), &QString::from("Down"))?;
+    }
     wait_for(app, engine, "playerControls.navigating")?;
     let focused = |name: &str| {
         format!("root.activeFocusItem && root.activeFocusItem.objectName === '{name}'")
@@ -2194,6 +2199,22 @@ fn check_directional_navigation(
     )?;
     wait_for(app, engine, "!sidebar.active && inputContext.videoFocused")?;
     ffi::clickRootKey(engine.pin_mut(), &QString::from("Return"))?;
+    // While nothing plays, the home page lies between the video and the
+    // playback controls: confirm enters it and Down walks through its rows.
+    let focused = |name: &str| {
+        format!("root.activeFocusItem && root.activeFocusItem.objectName === '{name}'")
+    };
+    let home = evaluate(engine, "root.stoppedOverview")?;
+    if home {
+        wait_for(app, engine, &focused("overviewWatch"))?;
+        capture_navigation(app, engine, "dpad-home.png")?;
+        for _ in 0..20 {
+            if evaluate(engine, "playerControls.navigating")? {
+                break;
+            }
+            ffi::clickRootKey(engine.pin_mut(), &QString::from("Down"))?;
+        }
+    }
     wait_for(
         app,
         engine,
@@ -2230,14 +2251,31 @@ fn check_directional_navigation(
         )?;
     }
     ffi::clickRootKey(engine.pin_mut(), &QString::from("Up"))?;
+    if home {
+        // Up from the controls returns to the last row of the home page.
+        wait_for(app, engine, &focused("overviewChannelCell"))?;
+        ffi::clickRootKey(engine.pin_mut(), &QString::from("Down"))?;
+        wait_for(app, engine, "playerControls.navigating")?;
+        evaluate(engine, "surface.forceActiveFocus(); true")?;
+        wait_for(app, engine, "inputContext.videoFocused")?;
+        ffi::clickRootKey(engine.pin_mut(), &QString::from("Up"))?;
+    }
     wait_for(app, engine, "modeNavigation.navigating")?;
     capture_navigation(app, engine, "dpad-navigation.png")?;
     ffi::clickRootKey(engine.pin_mut(), &QString::from("Down"))?;
+    if home {
+        wait_for(app, engine, &focused("overviewWatch"))?;
+        evaluate(engine, "playerControls.enter(); true")?;
+    }
     wait_for(app, engine, "playerControls.navigating")?;
     ffi::clickRootKey(engine.pin_mut(), &QString::from("Escape"))?;
     wait_for(app, engine, "inputContext.videoFocused")?;
     if evaluate(engine, "player.channels.count > 0")? {
-        ffi::clickRootKey(engine.pin_mut(), &QString::from("Down"))?;
+        if home {
+            evaluate(engine, "playerControls.enter(); true")?;
+        } else {
+            ffi::clickRootKey(engine.pin_mut(), &QString::from("Down"))?;
+        }
         wait_for(app, engine, "playerControls.navigating")?;
         ffi::clickRootKey(engine.pin_mut(), &QString::from("Return"))?;
         wait_for(

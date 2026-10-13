@@ -54,6 +54,7 @@ Item {
         },
         Binding { id: previous; objectName: "previousChannelShortcut"; sequence: "PgUp"; operation: root.actions.previousChannel; scope: InputContext.Navigation },
         Binding { id: next; objectName: "nextChannelShortcut"; sequence: "PgDown"; operation: root.actions.nextChannel; scope: InputContext.Navigation },
+        Binding { id: last; objectName: "lastChannelShortcut"; sequence: "L"; operation: root.actions.lastChannel; scope: InputContext.Navigation },
         Binding {
             id: playback
             objectName: "playbackShortcut"

@@ -198,6 +198,11 @@ ViewerWindow {
             root.settings.focusEpgstationConnection();
         }
     }
+    // The home page sits between the mode buttons and the playback controls.
+    function enterHome(fromBelow: bool): bool {
+        const stopped = stoppedLoader.item as StoppedPlayback;
+        return stopped !== null && stopped.enter(fromBelow);
+    }
     function openConnectionSettings() {
         if (root.setupRequired) setup.open();
         else {
@@ -436,12 +441,17 @@ ViewerWindow {
         Keys.onPressed: function(event) {
             if (!inputContext.videoFocused || !inputContext.viewing || inputContext.popupOpen
                     || (event.modifiers & ~Qt.KeypadModifier) !== Qt.NoModifier) return;
+            if (event.key >= Qt.Key_0 && event.key <= Qt.Key_9 && !player.recording && player.channels.count > 0) {
+                event.accepted = true;
+                if (!event.isAutoRepeat) channelNumber.press(event.key - Qt.Key_0);
+                return;
+            }
             if (![Qt.Key_Up, Qt.Key_Down, Qt.Key_Return, Qt.Key_Enter].includes(event.key)) return;
             event.accepted = true;
             if (event.isAutoRepeat) return;
             overlayVisibility.reveal();
             if (event.key === Qt.Key_Up) modeNavigation.enter();
-            else playerControls.enter();
+            else if (!root.enterHome(false)) playerControls.enter();
         }
         signal activity
         signal pointerExited
@@ -575,9 +585,14 @@ ViewerWindow {
             cursorShape: overlayVisibility.controlsVisible ? Qt.ArrowCursor : Qt.BlankCursor
         }
         Loader {
+            id: stoppedLoader
             anchors.fill: parent
             active: !root.closing && !player.media_active
             sourceComponent: StoppedPlayback {
+                onBoundaryReached: function(key) {
+                    if (key === Qt.Key_Up) modeNavigation.enter();
+                    else if (!recordingTimeline.enter()) playerControls.enter();
+                }
                 status: player.status
                 playbackError: player.playback_error
                 playbackMessage: player.playback_message
@@ -592,6 +607,10 @@ ViewerWindow {
                 programsJson: player.channel_program_data
                 visibilityJson: player.channel_visibility_data
                 now: player.channel_program_now
+                continueWatching: player.continue_recordings
+                favoritesReady: player.viewing_history_ready
+                onFavoriteRequested: function(serviceId) { player.toggle_favorite(serviceId); }
+                onResumeRequested: function(recordingKey) { player.resume_recording(recordingKey); }
                 onSelectRequested: function (index) { player.select(index); }
                 onRecordingsRequested: root.requestMode(ModeNavigation.Recording)
                 onPlayRequested: viewerActions.playbackToggle.trigger()
@@ -656,6 +675,11 @@ ViewerWindow {
                 }
                 channelLabel: player.recording ? (program && program.station || player.recording_name) : player.selected >= 0 && player.selected < player.channels.count ? root.selectedChannel.label : ""
                 logoUrl: !player.recording && player.selected >= 0 && player.selected < player.channels.count ? root.selectedChannel.logo : ""
+                progress: player.program_progress
+                readonly property bool liveChannel: !player.recording && player.selected >= 0 && player.selected < player.channels.count
+                favorite: liveChannel && root.selectedChannel.favorite === true
+                favoriteEnabled: liveChannel && player.viewing_history_ready
+                onFavoriteRequested: player.toggle_favorite(root.selectedChannel.serviceId)
             }
         }
         Label {
@@ -769,7 +793,7 @@ ViewerWindow {
                 PlayerControls {
                     id: playerControls
                     onBoundaryReached: function(key) {
-                        if (key === Qt.Key_Up && !recordingTimeline.enter()) modeNavigation.enter();
+                        if (key === Qt.Key_Up && !recordingTimeline.enter() && !root.enterHome(true)) modeNavigation.enter();
                     }
                     onSubtitlesRequested: { audioSettings.close(); closeSpeed(); mediaSubtitleSettings.open(); }
                     Layout.fillWidth: true
@@ -778,6 +802,16 @@ ViewerWindow {
                     videoWidth: surface.width
                     actions: viewerActions
                 }
+            }
+        }
+        ChannelNumberEntry {
+            id: channelNumber
+            objectName: "channelNumberEntry"
+            anchors { right: parent.right; top: parent.top; rightMargin: Theme.spaceXl; topMargin: 90 }
+            z: 8
+            onCommitted: function(key) {
+                // An empty band lets the backend choose from the station being watched.
+                if (player.select_remote_key(key, "")) overlayVisibility.reveal();
             }
         }
         ScreenshotNotice {
@@ -996,7 +1030,7 @@ ViewerWindow {
         guideEnabled: player.epg_enabled
         onModeRequested: function(mode) { root.requestMode(mode); }
         onBoundaryReached: function(key) {
-            if (key === Qt.Key_Down && !recordingTimeline.enter()) playerControls.enter();
+            if (key === Qt.Key_Down && !root.enterHome(false) && !recordingTimeline.enter()) playerControls.enter();
         }
     }
     WindowResizeFrame {

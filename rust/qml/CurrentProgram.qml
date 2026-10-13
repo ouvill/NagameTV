@@ -12,23 +12,38 @@ Column {
     property string channelLabel: ""
     property string logoUrl: ""
     readonly property var program: JSON.parse(programJson)
+    // 0..1 through the current live program; negative when unknown.
+    property real progress: -1
+    property bool favorite: false
+    // Only a live channel from the loaded history can be starred.
+    property bool favoriteEnabled: false
+    readonly property int remainingMinutes: !recording && program && program.duration > 0 && !program.endUnknown && progress >= 0
+        ? Math.ceil(program.duration * (1 - Math.min(1, progress)) / 60000) : 0
     signal detailsRequested
+    signal favoriteRequested
     spacing: Theme.spaceSm
     Row {
         spacing: Theme.spaceMd
         ChannelLogo {
-            width: 64
-            height: 36
+            width: 72
+            height: 40
             logoUrl: root.logoUrl
         }
         Label {
             anchors.verticalCenter: parent.verticalCenter
             text: root.channelLabel ? root.channelLabel.replace(/^\d+\s+/, "") : qsTranslate("Main", "Channels")
-            color: Theme.textSecondary
-            font.pixelSize: Theme.fontCaption
+            color: Theme.textPrimary
+            font.pixelSize: Theme.fontBody
             textFormat: Text.PlainText
             style: Text.Outline
             styleColor: Theme.textShadow
+        }
+        FavoriteToggle {
+            objectName: "currentFavorite"
+            anchors.verticalCenter: parent.verticalCenter
+            visible: root.favoriteEnabled
+            favorite: root.favorite
+            onFavoriteToggled: root.favoriteRequested()
         }
     }
     AbstractButton {
@@ -48,7 +63,7 @@ Column {
             text: currentButton.text
             textFormat: Text.PlainText
             color: Theme.textPrimary
-            font.pixelSize: Theme.fontTitle
+            font.pixelSize: Theme.fontDisplay
             font.bold: true
             wrapMode: Text.Wrap
             maximumLineCount: 2
@@ -57,11 +72,25 @@ Column {
             styleColor: Theme.textShadow
         }
     }
-    Label {
-        text: root.program && root.program.endUnknown ? qsTranslate("Viewer", "End time unknown") : root.program && root.program.startAt !== null && root.program.duration !== null ? Qt.formatDateTime(new Date(root.program.startAt), root.recording ? "yyyy/MM/dd hh:mm" : "hh:mm") + " – " + Qt.formatDateTime(new Date(root.program.startAt + root.program.duration), "hh:mm") : ""
-        color: Theme.textSecondary
-        font.pixelSize: Theme.fontCaption
-        style: Text.Outline
-        styleColor: Theme.textShadow
+    Row {
+        spacing: Theme.spaceMd
+        Label {
+            objectName: "currentProgramTime"
+            text: root.program && root.program.endUnknown ? qsTranslate("Viewer", "End time unknown") : root.program && root.program.startAt !== null && root.program.duration !== null ? Qt.formatDateTime(new Date(root.program.startAt), root.recording ? "yyyy/MM/dd hh:mm" : "hh:mm") + " – " + Qt.formatDateTime(new Date(root.program.startAt + root.program.duration), "hh:mm") : ""
+            color: Theme.textSecondary
+            font.pixelSize: Theme.fontBody
+            style: Text.Outline
+            styleColor: Theme.textShadow
+        }
+        Label {
+            objectName: "currentProgramRemaining"
+            visible: root.remainingMinutes > 0
+            text: qsTranslate("Viewer", "%1 min left").arg(root.remainingMinutes)
+            // Over bright video the accent loses its outline contrast.
+            color: Theme.textPrimary
+            font.pixelSize: Theme.fontBody
+            style: Text.Outline
+            styleColor: Theme.textShadow
+        }
     }
 }

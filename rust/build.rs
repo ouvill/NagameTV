@@ -109,6 +109,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "../assets/icons/ellipsis.svg",
         "../assets/icons/radio.svg",
         "../assets/icons/radio-off.svg",
+        "../assets/icons/star.svg",
+        "../assets/icons/star-filled.svg",
         "../assets/fonts/rounded-mplus-1m-arib.ttf",
         "../assets/fonts/LICENSE-Rounded-Mplus-1m-for-ARIB.txt",
         "../assets/web-bml/index.html",

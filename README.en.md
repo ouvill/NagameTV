@@ -154,6 +154,9 @@ On first launch, the “Connect to Mirakurun” screen appears. Enter the URL of
 ### 2. Selecting a channel
 
 Open the channel list using the channel button at the bottom of the screen or the `S` key. Filter the list using tabs such as terrestrial or BS, then click a card to tune in. While watching live TV, use `PgUp` / `PgDown` to switch to the previous or next channel.
+Number keys `1`–`9`, `0` (10) and `1` followed by `0`, `1` or `2` (10–12) tune to a remote-control button, and `L` returns to the channel watched before.
+
+While nothing is playing, the home screen lists recordings to continue, favorite channels and everything on air now. Choose the star on a channel card or beside the channel name over the video to add a favorite; on a home card the `F` key toggles it too. Recordings resume from where they stopped, and a recording watched to the end starts over as watched.
 
 ### 3. Opening the program guide
 
@@ -184,6 +187,8 @@ Click the camera button on the playback bar or press `Ctrl + S` to save the curr
 | `Space` | Play / pause | Available when the video has focus during recording playback, or during live TV when pausing is available. |
 | `←` / `→` | Skip backward / forward by 10 seconds | Available when the video has focus during recording or timeshift playback. Within controls, these keys move focus or adjust values. |
 | `PgUp` / `PgDown` | Previous / next channel | Available during live TV. |
+| `L` | Return to the channel watched before this one | Available when there is a channel to return to. |
+| `0`–`9` | Tune to a remote-control button | Available during live TV while the video has focus. |
 | `Ctrl + S` | Save a screenshot | Saves a PNG including subtitles and comment overlays. |
 | `Ctrl + O` | Open a recording (file / URL) | Also available on the initial connection screen. |
 | `F11` | Toggle fullscreen | You can also double-click the video area. |
