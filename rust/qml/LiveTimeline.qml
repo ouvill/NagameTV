@@ -12,7 +12,8 @@ ColumnLayout {
     property Item downNavigation: null
     signal adjustmentFinished
     property bool closing: false
-    readonly property QtObject projection: QtObject {
+    QtObject {
+        id: projection
         property var value: null
         readonly property string serialized: root.backend.live_timeline || "null"
         onSerializedChanged: {
