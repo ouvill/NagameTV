@@ -3,11 +3,14 @@ impl super::ffi::Player {
     pub(super) fn publish_catalog(mut self: std::pin::Pin<&mut Self>, server: &str) {
         use cxx_qt::CxxQtType;
         let snapshot = self.rust().catalog.snapshot();
+        let favorites = self.rust().viewing_history.favorites().to_vec();
         self.as_mut()
             .rust_mut()
             .channel_model
             .pin_mut()
-            .replace(snapshot, server);
+            .replace_with_favorites(snapshot, server, &favorites);
+        self.as_mut().publish_recent_channels(server);
+        self.viewing_history_changed();
     }
 
     pub(super) fn replace_catalog(
@@ -87,6 +90,44 @@ impl super::ffi::Player {
         };
         self.as_mut().rust_mut().request.request(server);
         self.as_mut().rust_mut().channel_refresh.requested(now);
+    }
+
+    pub fn select_remote_key(
+        mut self: std::pin::Pin<&mut Self>,
+        key: i32,
+        band: cxx_qt_lib::QString,
+    ) -> bool {
+        use crate::channels::Band;
+        use cxx_qt::CxxQtType;
+        let Ok(key) = u16::try_from(key) else {
+            return false;
+        };
+        if !(crate::channels::MIN_REMOTE_KEY..=crate::channels::MAX_REMOTE_KEY).contains(&key) {
+            return false;
+        }
+        let viewing = self.rust().stream_state.active_service();
+        let band = match band.to_string().as_str() {
+            "GR" => Band::Terrestrial,
+            "BS" => Band::Bs,
+            "CS" => Band::Cs,
+            "SKY" => Band::Sky,
+            "OTHER" => Band::Other,
+            "ALL" | "" => self
+                .rust()
+                .catalog
+                .channels()
+                .iter()
+                .find(|channel| Some(channel.id) == viewing)
+                .or_else(|| self.rust().catalog.selected())
+                .map_or(Band::Terrestrial, |channel| channel.band),
+            _ => return false,
+        };
+        let Some(index) = self.rust().catalog.remote_key(key, band, viewing) else {
+            return false;
+        };
+        self.as_mut()
+            .select(i32::try_from(index).expect("bounded channel catalog"));
+        true
     }
 
     pub fn step_channel(self: std::pin::Pin<&mut Self>, offset: i32) {

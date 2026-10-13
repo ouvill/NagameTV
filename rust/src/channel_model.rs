@@ -14,6 +14,9 @@ const LABEL: i32 = 257;
 const BAND: i32 = 258;
 const LOGO: i32 = 259;
 const SERVICE: i32 = 260;
+const FAVORITE: i32 = 261;
+const FAVORITE_ORDER: i32 = 262;
+const REMOTE_KEY: i32 = 263;
 
 #[cxx_qt::bridge]
 pub mod ffi {
@@ -107,6 +110,7 @@ pub mod ffi {
         #[qobject]
         #[qml_element]
         #[base = ChannelFilterProxy]
+        #[qproperty(bool, favorites_only)]
         #[qproperty(QString, band)]
         #[qproperty(QList_i32, visible_indices)]
         #[qproperty(Visibility, visibility)]
@@ -125,6 +129,9 @@ pub mod ffi {
         #[inherit]
         #[cxx_name = "refreshFilter"]
         fn invalidate_filter(self: Pin<&mut ChannelFilterModel>);
+        #[inherit]
+        #[cxx_name = "sortFavorites"]
+        fn sort_favorites(self: Pin<&mut ChannelFilterModel>, enabled: bool, role: i32);
         #[qsignal]
         fn changed(self: Pin<&mut ChannelFilterModel>);
         #[cxx_name = "notifyChanged"]
@@ -146,13 +153,26 @@ pub struct ChannelPresentation {
 
 #[cfg_attr(feature = "qml_tests", derive(serde::Deserialize))]
 struct Row {
+    #[cfg_attr(feature = "qml_tests", serde(alias = "channelIndex"))]
     index: i32,
     label: String,
     band: String,
     #[cfg_attr(feature = "qml_tests", serde(default))]
     logo: String,
     #[cfg_attr(feature = "qml_tests", serde(default))]
+    #[cfg_attr(feature = "qml_tests", serde(alias = "serviceId"))]
     service_id: String,
+    #[cfg_attr(feature = "qml_tests", serde(default, alias = "remoteKey"))]
+    remote_key: i32,
+    #[cfg_attr(feature = "qml_tests", serde(default))]
+    favorite: bool,
+    #[cfg_attr(feature = "qml_tests", serde(default = "not_favorite"))]
+    favorite_order: i32,
+}
+
+#[cfg(feature = "qml_tests")]
+fn not_favorite() -> i32 {
+    -1
 }
 
 fn band_name(band: Band) -> &'static str {
@@ -181,6 +201,9 @@ impl ffi::ChannelModel {
             (BAND, "band"),
             (LOGO, "logo"),
             (SERVICE, "serviceId"),
+            (FAVORITE, "favorite"),
+            (FAVORITE_ORDER, "favoriteOrder"),
+            (REMOTE_KEY, "remoteKey"),
         ] {
             roles.insert(role, QByteArray::from(name));
         }
@@ -201,6 +224,9 @@ impl ffi::ChannelModel {
         };
         let value = match role {
             INDEX => return QVariant::from(&channel.index),
+            REMOTE_KEY => return QVariant::from(&channel.remote_key),
+            FAVORITE => return QVariant::from(&channel.favorite),
+            FAVORITE_ORDER => return QVariant::from(&channel.favorite_order),
             LABEL => channel.label.clone(),
             BAND => channel.band.clone(),
             LOGO => channel.logo.clone(),
@@ -219,7 +245,16 @@ impl ffi::ChannelModel {
     pub fn row_for_channel(&self, index: i32) -> i32 {
         ffi::source_row_for_index(self, index, INDEX)
     }
+    #[cfg(feature = "native_tests")]
     pub(crate) fn replace(self: Pin<&mut Self>, channels: Arc<[Channel]>, server: &str) {
+        self.replace_with_favorites(channels, server, &[]);
+    }
+    pub(crate) fn replace_with_favorites(
+        self: Pin<&mut Self>,
+        channels: Arc<[Channel]>,
+        server: &str,
+        favorites: &[u64],
+    ) {
         let server = server.trim_end_matches('/');
         let rows = channels
             .iter()
@@ -234,9 +269,54 @@ impl ffi::ChannelModel {
                     String::new()
                 },
                 service_id: channel.id.to_string(),
+                remote_key: i32::from(channel.remote_key.unwrap_or_default()),
+                favorite: favorites.contains(&channel.id),
+                favorite_order: favorites
+                    .iter()
+                    .position(|id| *id == channel.id)
+                    .map_or(-1, |index| i32::try_from(index).expect("bounded favorites")),
             })
             .collect();
         self.replace_rows(rows);
+    }
+    pub(crate) fn replace_recent(
+        mut self: Pin<&mut Self>,
+        channels: Arc<[Channel]>,
+        server: &str,
+        favorites: &[u64],
+        recent: &[u64],
+    ) {
+        let mut rows = Vec::new();
+        for service in recent {
+            if let Some((index, channel)) = channels
+                .iter()
+                .enumerate()
+                .find(|(_, channel)| channel.id == *service)
+            {
+                rows.push(Row {
+                    index: i32::try_from(index).expect("bounded channel catalog"),
+                    label: channel.label.clone(),
+                    band: band_name(channel.band).into(),
+                    logo: if channel.has_logo_data {
+                        format!(
+                            "{}/api/services/{}/logo",
+                            server.trim_end_matches('/'),
+                            channel.id
+                        )
+                    } else {
+                        String::new()
+                    },
+                    service_id: channel.id.to_string(),
+                    remote_key: i32::from(channel.remote_key.unwrap_or_default()),
+                    favorite: favorites.contains(service),
+                    favorite_order: favorites
+                        .iter()
+                        .position(|id| id == service)
+                        .map_or(-1, |index| i32::try_from(index).expect("bounded favorites")),
+                });
+            }
+        }
+        self.as_mut().replace_rows(rows);
     }
     fn replace_rows(mut self: Pin<&mut Self>, rows: Vec<Row>) {
         self.as_mut().begin_reset_model();
@@ -248,12 +328,30 @@ impl ffi::ChannelModel {
     }
     #[cfg(feature = "qml_tests")]
     pub fn load_test(self: Pin<&mut Self>, json: QString) -> bool {
-        match serde_json::from_str(json.to_string().as_str()) {
-            Ok(rows) => {
+        match crate::json::from_slice::<Vec<Row>>(json.to_string().as_bytes()) {
+            Ok(mut rows) => {
+                let mut favorite_order = 0;
+                for row in &mut rows {
+                    if row.service_id.is_empty() {
+                        row.service_id = row.index.to_string();
+                    }
+                    if row.favorite {
+                        if row.favorite_order < 0 {
+                            row.favorite_order = favorite_order;
+                        }
+                        favorite_order += 1;
+                    }
+                }
                 self.replace_rows(rows);
                 true
             }
-            Err(_) => false,
+            Err(error) => {
+                tracing::error!(
+                    error = &error as &dyn std::error::Error,
+                    "Load channel model test fixture failed"
+                );
+                false
+            }
         }
     }
 }
@@ -261,6 +359,7 @@ impl ffi::ChannelModel {
 pub struct ChannelFilter {
     revision: u32,
     band: QString,
+    favorites_only: bool,
     visible_indices: QList<i32>,
     visibility: ffi::Visibility,
     opening_index: i32,
@@ -270,6 +369,7 @@ impl Default for ChannelFilter {
         Self {
             revision: 0,
             band: QString::from("ALL"),
+            favorites_only: false,
             visible_indices: QList::default(),
             visibility: ffi::Visibility::All,
             opening_index: -1,
@@ -297,10 +397,12 @@ impl ffi::ChannelFilterModel {
         }
         let band = self.band().to_string();
         let channel_index = ffi::source_data(self, row, INDEX).value::<i32>();
-        (band == "ALL"
-            || ffi::source_data(self, row, BAND)
-                .value::<QString>()
-                .is_some_and(|value| value.to_string() == band))
+        (!self.rust().favorites_only
+            || ffi::source_data(self, row, FAVORITE).value::<bool>() == Some(true))
+            && (band == "ALL"
+                || ffi::source_data(self, row, BAND)
+                    .value::<QString>()
+                    .is_some_and(|value| value.to_string() == band))
             && (match self.rust().visibility {
                 ffi::Visibility::All => true,
                 ffi::Visibility::Listed => {
@@ -328,6 +430,13 @@ impl cxx_qt::Initialize for ffi::ChannelFilterModel {
             .release();
         self.as_mut()
             .on_opening_index_changed(|model| model.invalidate_filter())
+            .release();
+        self.as_mut()
+            .on_favorites_only_changed(|mut model| {
+                let enabled = *model.favorites_only();
+                model.as_mut().sort_favorites(enabled, FAVORITE_ORDER);
+                model.invalidate_filter();
+            })
             .release();
         ffi::connect_changes(self);
     }

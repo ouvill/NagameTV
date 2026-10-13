@@ -45,6 +45,9 @@ mod transport;
 mod updates;
 #[cfg(feature = "native_tests")]
 mod updates_checks;
+mod viewing_history;
+#[cfg(feature = "native_tests")]
+mod viewing_history_checks;
 
 #[cxx_qt::bridge]
 pub mod ffi {
@@ -82,6 +85,8 @@ pub mod ffi {
         type GuideModel = crate::guide_model::ffi::GuideModel;
         include!("nagametv/src/recording_model.cxxqt.h");
         type RecordingModel = crate::recording_model::ffi::RecordingModel;
+        include!("nagametv/src/continue_watching_model.cxxqt.h");
+        type ContinueWatchingModel = crate::continue_watching_model::ffi::ContinueWatchingModel;
         include!("nagametv/src/subtitle_model.cxxqt.h");
         type SubtitleModel = crate::subtitle_model::ffi::SubtitleModel;
         include!("nagametv/src/video_file_model.cxxqt.h");
@@ -124,6 +129,11 @@ pub mod ffi {
         #[qproperty(QString, playback_error, READ = playback_error, NOTIFY)]
         #[qproperty(QString, playback_message, READ, NOTIFY)]
         #[qproperty(QString, log_error, READ = log_error, NOTIFY)]
+        #[qproperty(*mut ContinueWatchingModel, continue_recordings, READ = continue_recordings, CONSTANT)]
+        #[qproperty(*mut ChannelModel, recent_channels, READ = recent_channels, CONSTANT)]
+        #[qproperty(bool, previous_channel_available, READ = previous_channel_available, NOTIFY = viewing_history_changed)]
+        #[qproperty(bool, viewing_history_ready, READ = viewing_history_ready, NOTIFY = viewing_history_changed)]
+        #[qproperty(QString, viewing_history_error, READ = viewing_history_error, NOTIFY = viewing_history_changed)]
         #[qproperty(*mut ChannelModel, channels, READ = channels, CONSTANT)]
         #[qproperty(*mut RecordingModel, recordings, READ = recordings, CONSTANT)]
         #[qproperty(*mut VideoFileModel, recording_files, READ = recording_files, CONSTANT)]
@@ -296,6 +306,23 @@ pub mod ffi {
         #[qinvokable]
         fn play_epgstation_file(self: Pin<&mut Player>, id: QString, video: QString) -> bool;
         fn recording_files(self: &Player) -> *mut VideoFileModel;
+        fn continue_recordings(self: &Player) -> *mut ContinueWatchingModel;
+        #[qinvokable]
+        fn resume_recording(self: Pin<&mut Player>, recording_key: QString) -> bool;
+        fn recent_channels(self: &Player) -> *mut ChannelModel;
+        fn previous_channel_available(self: &Player) -> bool;
+        #[qinvokable]
+        fn previous_channel(self: Pin<&mut Player>) -> bool;
+        #[qinvokable]
+        fn select_remote_key(self: Pin<&mut Player>, key: i32, band: QString) -> bool;
+        fn viewing_history_ready(self: &Player) -> bool;
+        fn viewing_history_error(self: &Player) -> QString;
+        #[qsignal]
+        fn viewing_history_changed(self: Pin<&mut Player>);
+        #[qinvokable]
+        fn toggle_favorite(self: Pin<&mut Player>, service_id: QString) -> bool;
+        #[qinvokable]
+        fn move_favorite(self: Pin<&mut Player>, service_id: QString, position: i32) -> bool;
         fn selected(self: &Player) -> i32;
         fn build_info(self: &Player) -> QString;
         fn autoplay(self: &Player) -> bool;
@@ -610,6 +637,11 @@ pub struct PlayerRust {
     media_subtitle_image: cxx_qt_lib::QImage,
     media_subtitle_error: QString,
     error_log: Result<crate::error_log::ErrorLog, crate::error_log::Error>,
+    viewing_history: crate::viewing_history::History,
+    recording_history_session: Option<crate::viewing_history::recordings::Session>,
+    continue_watching_model:
+        cxx::UniquePtr<crate::continue_watching_model::ffi::ContinueWatchingModel>,
+    recent_channel_model: cxx::UniquePtr<crate::channel_model::ffi::ChannelModel>,
     channel_model: cxx::UniquePtr<crate::channel_model::ffi::ChannelModel>,
     recording_model: cxx::UniquePtr<crate::recording_model::ffi::RecordingModel>,
     video_file_model: cxx::UniquePtr<crate::video_file_model::ffi::VideoFileModel>,
@@ -952,6 +984,9 @@ impl Drop for PlayerRust {
         // The media owner enforces native shutdown before subtitle destruction,
         // including when QML construction failed before onClosing could run.
         self.screenshot_saves.finish();
+        if let Some(session) = &mut self.recording_history_session {
+            session.save(&mut self.viewing_history, std::time::Instant::now(), true);
+        }
         self.media.shutdown_before_drop();
         self.epg.configure(None);
     }

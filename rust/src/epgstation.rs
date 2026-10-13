@@ -7,6 +7,7 @@ mod client;
 mod provider_tests;
 #[cfg(test)]
 mod tests;
+pub mod thumbnails;
 pub use client::Login;
 pub(crate) use client::PlaybackMetadata;
 use client::{Access, Connection, Fetched};
@@ -94,6 +95,7 @@ pub struct Recording {
     pub availability: Availability,
     channel_id: Option<u64>,
     pub service: Option<crate::channels::BroadcastService>,
+    pub thumbnail_id: Option<u64>,
 }
 
 #[derive(Deserialize)]
@@ -115,6 +117,8 @@ struct WireRecording {
     is_recording: bool,
     #[serde(default)]
     video_files: Vec<WireVideo>,
+    #[serde(default)]
+    thumbnails: Vec<u64>,
 }
 #[derive(Deserialize)]
 struct WireVideo {
@@ -193,6 +197,7 @@ fn parse(bytes: &[u8]) -> Result<Page, Error> {
             };
             Ok(Recording {
                 id: record.id,
+                thumbnail_id: record.thumbnails.first().copied(),
                 name: record.name,
                 channel: record
                     .ts_channel_name
@@ -283,6 +288,7 @@ pub struct Library {
     session: Option<(Endpoint, Connection)>,
     error: Option<FetchError<Error>>,
     revision: u64,
+    thumbnails: thumbnails::Cache,
 }
 impl Library {
     pub fn loaded(&self) -> bool {
@@ -346,6 +352,7 @@ impl Library {
         };
         if !matches!(access, Access::Connected(_)) {
             self.session = None;
+            self.thumbnails.clear();
         }
         self.begin(
             network,
@@ -429,6 +436,9 @@ impl Library {
                     self.revision = self.revision.wrapping_add(1);
                     match result {
                         Ok(Fetched { page, connection }) => {
+                            if self.session.is_none() {
+                                self.thumbnails.clear();
+                            }
                             let verified = VerifiedEndpoint(query.endpoint.clone());
                             self.session = Some((query.endpoint.clone(), connection.clone()));
                             self.catalogue = Catalogue::Loaded {
@@ -503,12 +513,98 @@ impl Library {
             } else {
                 None
             };
-        crate::playback::recording::Request::epgstation(
+        let server = match &self.catalogue {
+            Catalogue::Loaded { query, .. } => query.endpoint.as_str().to_owned(),
+            Catalogue::Empty => return None,
+        };
+        let identity = crate::viewing_history::recordings::Identity {
+            source: crate::viewing_history::recordings::Source::Epgstation {
+                server,
+                recorded_id: id,
+                video_file_id: file.id,
+            },
+            thumbnail_id: recording.thumbnail_id,
+            title: recording.name.clone(),
+            channel: recording.channel.clone(),
+            broadcast: recording.service.map(|service| {
+                crate::viewing_history::recordings::BroadcastHint {
+                    service,
+                    start_ms: start,
+                }
+            }),
+        };
+        match crate::playback::recording::Request::epgstation(
             &self.video_url(id, file.id)?,
             broadcast,
             metadata,
-        )
-        .ok()
+        ) {
+            Ok(request) => Some(request.with_history(identity)),
+            Err(error) => {
+                tracing::error!(
+                    error = &error as &dyn std::error::Error,
+                    "Prepare EPGStation recording failed"
+                );
+                None
+            }
+        }
+    }
+    pub fn resume_request(
+        &self,
+        identity: crate::viewing_history::recordings::Identity,
+    ) -> Result<crate::playback::recording::Request, crate::playback::recording::Error> {
+        use crate::playback::recording::{Broadcast, Request};
+        use crate::viewing_history::recordings::Source;
+        let request = match &identity.source {
+            Source::Local { path } => Request::open(path.clone()),
+            Source::Http { url } => Request::from_url(url)?,
+            Source::Epgstation {
+                server,
+                video_file_id,
+                ..
+            } => {
+                let url = match &self.session {
+                    Some((endpoint, connection)) if endpoint.as_str() == server => {
+                        connection.video_url(*video_file_id)
+                    }
+                    _ => format!("{server}/api/videos/{video_file_id}"),
+                };
+                let broadcast = identity
+                    .broadcast
+                    .as_ref()
+                    .and_then(|hint| Broadcast::new(hint.service, hint.start_ms));
+                Request::epgstation(&url, broadcast, None)?
+            }
+        };
+        Ok(request.with_history(identity))
+    }
+    pub fn thumbnail(&self, server: &str, id: Option<u64>) -> &str {
+        id.map_or("", |id| {
+            self.thumbnails.image(&thumbnails::Key {
+                server: server.into(),
+                id,
+            })
+        })
+    }
+    pub fn poll_thumbnails(&mut self, network: &Network, continued: Vec<thumbnails::Key>) -> bool {
+        let wanted = self
+            .rows()
+            .iter()
+            .filter_map(|row| {
+                Some(thumbnails::Key {
+                    server: self.server()?.to_owned(),
+                    id: row.thumbnail_id?,
+                })
+            })
+            .chain(continued)
+            .collect::<Vec<_>>();
+        self.thumbnails.configure(wanted);
+        self.thumbnails.poll(network, self.session.as_ref())
+    }
+    pub fn server(&self) -> Option<&str> {
+        match &self.catalogue {
+            Catalogue::Loaded { query, .. } => Some(query.endpoint.as_str()),
+            Catalogue::Empty => None,
+        }
     }
     #[cfg(test)]
     pub fn playback_url(&self, id: u64) -> Option<String> {

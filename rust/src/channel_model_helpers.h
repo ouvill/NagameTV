@@ -8,6 +8,11 @@ class ChannelModel;
 class ChannelFilterModel;
 template<typename T = ChannelModel>
 inline std::unique_ptr<T> makeChannelModel() { return std::make_unique<T>(); }
+template<typename T>
+inline void notifyModelData(T &model) {
+    const int count = model.rowCount(QModelIndex{});
+    if (count > 0) emit model.dataChanged(model.index(0, 0), model.index(count - 1, 0));
+}
 // The model owns no domain state. These helpers adapt Qt's model API only.
 template<typename T>
 inline QVariant channelRow(const T &model, int row) {

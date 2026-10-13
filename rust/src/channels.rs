@@ -3,6 +3,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
 pub mod catalog;
+pub const MIN_REMOTE_KEY: u16 = 1;
+pub const MAX_REMOTE_KEY: u16 = 12;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -56,6 +58,7 @@ pub struct Channel {
     pub label: String,
     pub band: Band,
     pub has_logo_data: bool,
+    pub remote_key: Option<u16>,
     pub broadcast: Option<BroadcastService>,
     pub physical: Option<PhysicalChannel>,
     number: Option<u16>,
@@ -123,6 +126,9 @@ pub fn parse(bytes: &[u8]) -> Result<Vec<Channel>, Error> {
                         })
                     }),
                 has_logo_data: s.has_logo_data,
+                remote_key: s
+                    .remote_control_key_id
+                    .filter(|key| (MIN_REMOTE_KEY..=MAX_REMOTE_KEY).contains(key)),
                 broadcast: s
                     .network_id
                     .zip(s.service_id)

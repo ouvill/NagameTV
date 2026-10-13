@@ -27,6 +27,7 @@ pub enum Recording {
 #[derive(Clone, Debug)]
 pub struct TransportStream {
     source: Source,
+    history: Option<Arc<crate::viewing_history::recordings::Identity>>,
     name: String,
     service: u16,
     inspection: Inspection,
@@ -53,6 +54,7 @@ impl Eq for TransportStream {}
 #[derive(Clone, Debug)]
 pub struct MediaFile {
     source: Source,
+    history: Option<Arc<crate::viewing_history::recordings::Identity>>,
     name: String,
     size: u64,
     caps: gstreamer::Caps,
@@ -187,6 +189,7 @@ impl Recording {
                 }
                 return Ok(Self::Media(MediaFile {
                     source,
+                    history: None,
                     name,
                     size: file_size,
                     caps,
@@ -212,6 +215,7 @@ impl Recording {
             crate::transport::framing::Framing::detect(&prefix).ok_or(Error::MissingProgram)?;
         Ok(Self::Transport(TransportStream {
             source,
+            history: None,
             name,
             service,
             inspection: Inspection {
@@ -239,6 +243,31 @@ impl Recording {
             Self::Media(file) => &file.source,
         }
     }
+    pub(crate) fn history_identity(&self) -> crate::viewing_history::recordings::Identity {
+        use crate::viewing_history::recordings::{Identity, Source as HistorySource};
+        let history = match self {
+            Self::Transport(file) => &file.history,
+            Self::Media(file) => &file.history,
+        };
+        history.as_deref().cloned().unwrap_or_else(|| {
+            Identity::new(
+                match self.source().location() {
+                    Location::Local(path) => HistorySource::Local { path },
+                    Location::Http(url) => HistorySource::http(url),
+                },
+                self.name().to_owned(),
+            )
+        })
+    }
+    fn set_history_identity(
+        &mut self,
+        identity: Option<Arc<crate::viewing_history::recordings::Identity>>,
+    ) {
+        match self {
+            Self::Transport(file) => file.history = identity,
+            Self::Media(file) => file.history = identity,
+        }
+    }
     pub fn replay(&self) -> Request {
         let mut request = Request::replay(
             self.source().location(),
@@ -250,6 +279,7 @@ impl Recording {
         if let Self::Media(file) = self {
             request.external_subtitle = file.external_subtitle.clone();
         }
+        request.history = Some(Arc::new(self.history_identity()));
         request
     }
     #[cfg(feature = "native_tests")]

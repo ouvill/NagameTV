@@ -12,6 +12,7 @@ fn channels(ids: impl IntoIterator<Item = u64>) -> Vec<Channel> {
             name: format!("Station {id}"),
             label: format!("Station {id}"),
             band: crate::channels::Band::Other,
+            remote_key: None,
             has_logo_data: false,
             broadcast: None,
             physical: None,

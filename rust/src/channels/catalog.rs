@@ -52,6 +52,22 @@ impl Catalog {
         self.channels = channels.into();
     }
 
+    pub fn remote_key(&self, key: u16, band: super::Band, viewing: Option<u64>) -> Option<usize> {
+        self.channels
+            .iter()
+            .enumerate()
+            .filter(|(_, channel)| channel.band == band && channel.remote_key == Some(key))
+            .min_by_key(|(_, channel)| {
+                (
+                    Some(channel.id) != viewing,
+                    channel.service_id.is_none(),
+                    channel.service_id,
+                    channel.id,
+                )
+            })
+            .map(|(index, _)| index)
+    }
+
     /// Invalid indices cannot change the selected station.
     pub fn select(&mut self, index: usize) -> Option<&Channel> {
         let channel = self.channels.get(index)?;
@@ -74,6 +90,34 @@ mod tests {
         .unwrap()
     }
 
+    #[test]
+    fn remote_keys_prefer_the_viewed_station_then_lowest_service_id_within_band() {
+        use crate::channels::Band;
+        let mut catalog = Catalog::default();
+        let channels = crate::channels::parse(br#"[
+            {"id":30,"serviceId":103,"remoteControlKeyId":1,"name":"A","type":1,"channel":{"type":"GR"}},
+            {"id":20,"serviceId":101,"remoteControlKeyId":1,"name":"Z","type":1,"channel":{"type":"GR"}},
+            {"id":10,"serviceId":101,"remoteControlKeyId":1,"name":"Z","type":1,"channel":{"type":"GR"}},
+            {"id":40,"serviceId":100,"remoteControlKeyId":1,"name":"B","type":1,"channel":{"type":"BS"}},
+            {"id":50,"remoteControlKeyId":99,"name":"Missing","type":1,"channel":{"type":"GR"}}
+        ]"#).unwrap();
+        catalog.replace(channels, None);
+        let station = |key, band, viewing| {
+            catalog
+                .remote_key(key, band, viewing)
+                .map(|index| catalog.channels()[index].id)
+        };
+        assert_eq!(station(1, Band::Terrestrial, None), Some(10));
+        assert_eq!(station(1, Band::Terrestrial, Some(30)), Some(30));
+        assert_eq!(station(1, Band::Bs, Some(30)), Some(40));
+        assert_eq!(station(2, Band::Terrestrial, None), None);
+        assert_eq!(station(99, Band::Terrestrial, None), None);
+        assert_eq!(
+            catalog.selected().unwrap().id,
+            30,
+            "finding a remote key does not select it"
+        );
+    }
     #[test]
     fn identity_survives_reordering_absence_and_empty_refreshes() {
         let mut catalog = Catalog::default();
