@@ -16,6 +16,7 @@ import threading
 import time
 
 from scripts.testing.gui_session import require_inherited_session
+from scripts.build.support import lock_fds
 
 ROOT = Path(__file__).resolve().parents[2]
 PACKET_BYTES = 188
@@ -250,7 +251,8 @@ def main():
     # The public launcher detects and validates GPU, private display and audio.
     if "NAGAMETV_GUI_SESSION_DIR" not in os.environ:
         return subprocess.call([sys.executable, "-m", "scripts.testing.gui_session", "--",
-                                sys.executable, "-m", "scripts.dev.benchmark_playback_memory", *sys.argv[1:]])
+                                sys.executable, "-m", "scripts.dev.benchmark_playback_memory", *sys.argv[1:]],
+                               pass_fds=lock_fds())
     session = Path(os.environ["NAGAMETV_GUI_SESSION_DIR"])
     require_inherited_session(os.environ)
     if shutil.which("xdotool") is None:
