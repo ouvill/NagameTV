@@ -503,12 +503,74 @@ impl Library {
             } else {
                 None
             };
-        crate::playback::recording::Request::epgstation(
+        let server = match &self.catalogue {
+            Catalogue::Loaded { query, .. } => query.endpoint.as_str().to_owned(),
+            Catalogue::Empty => return None,
+        };
+        let identity = crate::viewing_history::recordings::Identity {
+            source: crate::viewing_history::recordings::Source::Epgstation {
+                server,
+                recorded_id: id,
+                video_file_id: file.id,
+            },
+            title: recording.name.clone(),
+            channel: recording.channel.clone(),
+            broadcast: recording.service.map(|service| {
+                crate::viewing_history::recordings::BroadcastHint {
+                    service,
+                    start_ms: start,
+                }
+            }),
+        };
+        match crate::playback::recording::Request::epgstation(
             &self.video_url(id, file.id)?,
             broadcast,
             metadata,
-        )
-        .ok()
+        ) {
+            Ok(request) => Some(request.with_history(identity)),
+            Err(error) => {
+                tracing::error!(
+                    error = &error as &dyn std::error::Error,
+                    "Prepare EPGStation recording failed"
+                );
+                None
+            }
+        }
+    }
+    pub fn resume_request(
+        &self,
+        identity: crate::viewing_history::recordings::Identity,
+    ) -> Result<crate::playback::recording::Request, crate::playback::recording::Error> {
+        use crate::playback::recording::{Broadcast, Request};
+        use crate::viewing_history::recordings::Source;
+        let request = match &identity.source {
+            Source::Local { path } => Request::open(path.clone()),
+            Source::Http { url } => Request::from_url(url)?,
+            Source::Epgstation {
+                server,
+                video_file_id,
+                ..
+            } => {
+                let url = match &self.session {
+                    Some((endpoint, connection)) if endpoint.as_str() == server => {
+                        connection.video_url(*video_file_id)
+                    }
+                    _ => format!("{server}/api/videos/{video_file_id}"),
+                };
+                let broadcast = identity
+                    .broadcast
+                    .as_ref()
+                    .and_then(|hint| Broadcast::new(hint.service, hint.start_ms));
+                Request::epgstation(&url, broadcast, None)?
+            }
+        };
+        Ok(request.with_history(identity))
+    }
+    pub fn server(&self) -> Option<&str> {
+        match &self.catalogue {
+            Catalogue::Loaded { query, .. } => Some(query.endpoint.as_str()),
+            Catalogue::Empty => None,
+        }
     }
     #[cfg(test)]
     pub fn playback_url(&self, id: u64) -> Option<String> {

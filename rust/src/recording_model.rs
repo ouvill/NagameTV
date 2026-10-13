@@ -13,6 +13,8 @@ const DESCRIPTION: i32 = 261;
 const PLAYABLE: i32 = 262;
 const REASON: i32 = 263;
 const FILE_COUNT: i32 = 264;
+const PROGRESS: i32 = 265;
+const WATCHED: i32 = 266;
 
 #[cxx_qt::bridge]
 pub mod ffi {
@@ -72,6 +74,7 @@ pub mod ffi {
 #[derive(Default)]
 pub struct Presentation {
     rows: Arc<[Recording]>,
+    progress: std::collections::HashMap<u64, crate::viewing_history::recordings::Position>,
 }
 impl ffi::RecordingModel {
     pub fn count(&self) -> i32 {
@@ -92,6 +95,8 @@ impl ffi::RecordingModel {
             (PLAYABLE, "playable"),
             (REASON, "unavailableReason"),
             (FILE_COUNT, "fileCount"),
+            (PROGRESS, "progress"),
+            (WATCHED, "watched"),
         ] {
             roles.insert(role, QByteArray::from(name));
         }
@@ -111,6 +116,24 @@ impl ffi::RecordingModel {
             return QVariant::default();
         };
         let text = match role {
+            PROGRESS => {
+                return QVariant::from(
+                    &self
+                        .rust()
+                        .progress
+                        .get(&row.id)
+                        .map_or(0.0, |position| position.progress()),
+                );
+            }
+            WATCHED => {
+                return QVariant::from(
+                    &self
+                        .rust()
+                        .progress
+                        .get(&row.id)
+                        .is_some_and(|position| position.watched()),
+                );
+            }
             ID => row.id.to_string(),
             NAME => row.name.clone(),
             CHANNEL => row.channel.clone(),
@@ -131,12 +154,17 @@ impl ffi::RecordingModel {
         };
         QVariant::from(&QString::from(text))
     }
-    pub(crate) fn replace(mut self: Pin<&mut Self>, rows: Arc<[Recording]>) {
-        if self.rust().rows == rows {
+    pub(crate) fn replace_with_progress(
+        mut self: Pin<&mut Self>,
+        rows: Arc<[Recording]>,
+        progress: std::collections::HashMap<u64, crate::viewing_history::recordings::Position>,
+    ) {
+        if self.rust().rows == rows && self.rust().progress == progress {
             return;
         }
         self.as_mut().begin_reset_model();
         self.as_mut().rust_mut().rows = rows;
+        self.as_mut().rust_mut().progress = progress;
         self.as_mut().end_reset_model();
         self.changed();
     }

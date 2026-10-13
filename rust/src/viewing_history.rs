@@ -1,6 +1,8 @@
 //! Viewing preferences owned independently of Qt and persisted off the UI thread.
 mod live;
+pub mod recordings;
 mod storage;
+use recordings::{Entry, Identity, Position, Source};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -11,10 +13,35 @@ const MAX_FAVORITES: usize = 4096;
 struct Document {
     favorites: Vec<u64>,
     recent: Vec<u64>,
+    recordings: Vec<Entry>,
+    next_key: u64,
 }
 impl Document {
     fn validate(&self) -> Result<(), storage::Error> {
-        if self.recent.len() > live::MAX_RECENT
+        if self.recordings.len() > recordings::MAX_RECORDINGS
+            || self.recordings.iter().any(|entry| {
+                !entry.valid()
+                    || entry
+                        .key
+                        .strip_prefix("recording:")
+                        .and_then(|key| key.parse::<u64>().ok())
+                        .is_none_or(|key| key == 0 || key > self.next_key)
+            })
+            || self
+                .recordings
+                .iter()
+                .map(|entry| &entry.identity.source)
+                .collect::<std::collections::HashSet<_>>()
+                .len()
+                != self.recordings.len()
+            || self
+                .recordings
+                .iter()
+                .map(|entry| &entry.key)
+                .collect::<std::collections::HashSet<_>>()
+                .len()
+                != self.recordings.len()
+            || self.recent.len() > live::MAX_RECENT
             || self
                 .recent
                 .iter()
@@ -148,6 +175,68 @@ impl History {
     pub fn previous(&self, current: u64, exists: impl Fn(u64) -> bool) -> Option<u64> {
         self.live.previous(current, self.recent(), exists)
     }
+    pub fn entry(&self, source: &Source) -> Option<&Entry> {
+        match &self.state {
+            State::Loading => None,
+            State::Ready(data) => data
+                .recordings
+                .iter()
+                .find(|entry| &entry.identity.source == source),
+        }
+    }
+    pub fn recordings(&self) -> &[Entry] {
+        match &self.state {
+            State::Loading => &[],
+            State::Ready(data) => &data.recordings,
+        }
+    }
+    pub fn continue_watching(&self) -> Vec<Entry> {
+        self.recordings()
+            .iter()
+            .filter(|entry| entry.position.resumable())
+            .take(recordings::MAX_CONTINUE)
+            .cloned()
+            .collect()
+    }
+    pub fn record(&mut self, identity: Identity, position: Position) -> bool {
+        let State::Ready(data) = &mut self.state else {
+            return false;
+        };
+        let previous = data
+            .recordings
+            .iter()
+            .position(|entry| entry.identity.source == identity.source);
+        if previous.is_some_and(|index| {
+            data.recordings[index].position == position
+                && data.recordings[index].identity == identity
+        }) {
+            return false;
+        }
+        let key = match previous {
+            Some(index) => data.recordings.remove(index).key,
+            None => {
+                let Some(next) = data.next_key.checked_add(1) else {
+                    tracing::error!(
+                        "Allocate viewing history identity failed: key space exhausted"
+                    );
+                    return false;
+                };
+                data.next_key = next;
+                format!("recording:{next}")
+            }
+        };
+        data.recordings.insert(
+            0,
+            Entry {
+                key,
+                identity,
+                position,
+            },
+        );
+        data.recordings.truncate(recordings::MAX_RECORDINGS);
+        self.save();
+        true
+    }
     fn save(&mut self) {
         if let (State::Ready(data), Some(worker)) = (&self.state, &mut self.storage) {
             worker.save(data.clone());
@@ -159,15 +248,25 @@ impl History {
         };
         let mut changed = false;
         while let Some(result) = worker.poll() {
-            changed = true;
             match result {
-                storage::Update::Loaded(Ok(data)) => self.state = State::Ready(data),
+                storage::Update::Loaded(Ok(data)) => {
+                    self.state = State::Ready(data);
+                    changed = true;
+                }
                 storage::Update::Loaded(Err(error)) => {
+                    changed = true;
                     self.state = State::Ready(Document::default());
                     self.error = error.to_string();
                 }
-                storage::Update::Saved(Ok(())) => self.error.clear(),
-                storage::Update::Saved(Err(error)) => self.error = error.to_string(),
+                storage::Update::Saved(Ok(())) => {
+                    changed |= !self.error.is_empty();
+                    self.error.clear();
+                }
+                storage::Update::Saved(Err(error)) => {
+                    let error = error.to_string();
+                    changed |= self.error != error;
+                    self.error = error;
+                }
             }
         }
         changed

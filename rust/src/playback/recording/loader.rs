@@ -19,6 +19,7 @@ pub enum Purpose {
 
 pub struct Request {
     location: Location,
+    pub(super) history: Option<crate::viewing_history::recordings::Identity>,
     purpose: Purpose,
     broadcast: Option<super::Broadcast>,
     metadata: Option<crate::epgstation::PlaybackMetadata>,
@@ -32,6 +33,7 @@ impl Request {
             broadcast: None,
             external_subtitle: None,
             metadata: None,
+            history: None,
         }
     }
     pub fn from_url(url: &str) -> Result<Self, Error> {
@@ -41,6 +43,7 @@ impl Request {
             broadcast: None,
             external_subtitle: None,
             metadata: None,
+            history: None,
         })
     }
     pub(crate) fn epgstation(
@@ -52,6 +55,13 @@ impl Request {
         request.broadcast = broadcast;
         request.metadata = metadata;
         Ok(request)
+    }
+    pub(crate) fn with_history(
+        mut self,
+        identity: crate::viewing_history::recordings::Identity,
+    ) -> Self {
+        self.history = Some(identity);
+        self
     }
     /// Resolve before acknowledging the drop: KDE retires its transfer when
     /// the drag ends. Only the received path can enter the asynchronous loader.
@@ -65,6 +75,7 @@ impl Request {
             broadcast,
             external_subtitle: None,
             metadata: None,
+            history: None,
         }
     }
 }
@@ -132,6 +143,7 @@ impl Loader {
         let purpose = request.purpose;
         match Job::spawn(move |cancelled| {
             let mut recording = Recording::inspect(&request.location, cancelled)?;
+            recording.set_history_identity(request.history);
             if let Recording::Media(file) = &mut recording {
                 file.broadcast = request.broadcast.map(|broadcast| {
                     match request
@@ -328,6 +340,28 @@ mod tests {
             assert!(Instant::now() < deadline);
             thread::sleep(Duration::from_millis(1));
         }
+    }
+    #[test]
+    fn epgstation_identity_survives_inspection_and_replay() {
+        use crate::viewing_history::recordings::{Identity, Source};
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("recording.ts");
+        fixture(&path);
+        let identity = Identity::new(
+            Source::Epgstation {
+                server: "http://example.test".into(),
+                recorded_id: 15,
+                video_file_id: 32,
+            },
+            "Title".into(),
+        );
+        let mut loader = Loader::default();
+        loader.begin(Request::open(path).with_history(identity.clone()));
+        let (_, file) = finish(&mut loader);
+        let file = file.unwrap();
+        assert_eq!(file.history_identity(), identity);
+        loader.begin(file.replay());
+        assert_eq!(finish(&mut loader).1.unwrap().history_identity(), identity);
     }
     #[test]
     fn replay_revalidates_and_reports_deleted_file_asynchronously() {

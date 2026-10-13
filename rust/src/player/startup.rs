@@ -138,6 +138,9 @@ impl Default for PlayerRust {
                     }
                 }
             },
+            recording_history_session: None,
+            continue_watching_model:
+                crate::continue_watching_model::ffi::make_continue_watching_model(),
             recent_channel_model: crate::channel_model::ffi::make_channel_model(),
             channel_model: crate::channel_model::ffi::make_channel_model(),
             recording_model: crate::recording_model::ffi::make_recording_model(),

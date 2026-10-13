@@ -46,6 +46,8 @@ mod updates;
 #[cfg(feature = "native_tests")]
 mod updates_checks;
 mod viewing_history;
+#[cfg(feature = "native_tests")]
+mod viewing_history_checks;
 
 #[cxx_qt::bridge]
 pub mod ffi {
@@ -83,6 +85,8 @@ pub mod ffi {
         type GuideModel = crate::guide_model::ffi::GuideModel;
         include!("nagametv/src/recording_model.cxxqt.h");
         type RecordingModel = crate::recording_model::ffi::RecordingModel;
+        include!("nagametv/src/continue_watching_model.cxxqt.h");
+        type ContinueWatchingModel = crate::continue_watching_model::ffi::ContinueWatchingModel;
         include!("nagametv/src/subtitle_model.cxxqt.h");
         type SubtitleModel = crate::subtitle_model::ffi::SubtitleModel;
         include!("nagametv/src/video_file_model.cxxqt.h");
@@ -125,6 +129,7 @@ pub mod ffi {
         #[qproperty(QString, playback_error, READ = playback_error, NOTIFY)]
         #[qproperty(QString, playback_message, READ, NOTIFY)]
         #[qproperty(QString, log_error, READ = log_error, NOTIFY)]
+        #[qproperty(*mut ContinueWatchingModel, continue_recordings, READ = continue_recordings, CONSTANT)]
         #[qproperty(*mut ChannelModel, recent_channels, READ = recent_channels, CONSTANT)]
         #[qproperty(bool, previous_channel_available, READ = previous_channel_available, NOTIFY = viewing_history_changed)]
         #[qproperty(bool, viewing_history_ready, READ = viewing_history_ready, NOTIFY = viewing_history_changed)]
@@ -301,6 +306,9 @@ pub mod ffi {
         #[qinvokable]
         fn play_epgstation_file(self: Pin<&mut Player>, id: QString, video: QString) -> bool;
         fn recording_files(self: &Player) -> *mut VideoFileModel;
+        fn continue_recordings(self: &Player) -> *mut ContinueWatchingModel;
+        #[qinvokable]
+        fn resume_recording(self: Pin<&mut Player>, recording_key: QString) -> bool;
         fn recent_channels(self: &Player) -> *mut ChannelModel;
         fn previous_channel_available(self: &Player) -> bool;
         #[qinvokable]
@@ -628,6 +636,9 @@ pub struct PlayerRust {
     media_subtitle_error: QString,
     error_log: Result<crate::error_log::ErrorLog, crate::error_log::Error>,
     viewing_history: crate::viewing_history::History,
+    recording_history_session: Option<crate::viewing_history::recordings::Session>,
+    continue_watching_model:
+        cxx::UniquePtr<crate::continue_watching_model::ffi::ContinueWatchingModel>,
     recent_channel_model: cxx::UniquePtr<crate::channel_model::ffi::ChannelModel>,
     channel_model: cxx::UniquePtr<crate::channel_model::ffi::ChannelModel>,
     recording_model: cxx::UniquePtr<crate::recording_model::ffi::RecordingModel>,
@@ -971,6 +982,9 @@ impl Drop for PlayerRust {
         // The media owner enforces native shutdown before subtitle destruction,
         // including when QML construction failed before onClosing could run.
         self.screenshot_saves.finish();
+        if let Some(session) = &mut self.recording_history_session {
+            session.save(&mut self.viewing_history, std::time::Instant::now(), true);
+        }
         self.media.shutdown_before_drop();
         self.epg.configure(None);
     }

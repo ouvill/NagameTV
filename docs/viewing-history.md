@@ -123,3 +123,10 @@ SQLiteは使用しないため、新たなSQLやsqlx検査情報は不要。
 `previous_channel_available`で有効状態を決め、`previous_channel()`を呼ぶ。
 既存の閉じる操作（Back / Alt+Left）とは別の操作とする。
 QML製品ファイルの接続は画面担当が実装する。
+
+## 部品テスト用API
+
+`qml_tests`構成では`ContinueWatchingModel.load_test(json: string): bool`を公開する。
+入力は上記role名をキーとするオブジェクトの配列で、実データと同じモデル通知を発行する。
+`ChannelModel.load_test`は既存の`index`に加えて`favorite`（省略時false）、
+`serviceId`（省略時indexの文字列）を受け付ける。これらは製品構成には含めない。

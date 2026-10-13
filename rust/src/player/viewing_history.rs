@@ -97,12 +97,134 @@ impl ffi::Player {
         true
     }
     pub(super) fn publish_viewing_history(mut self: Pin<&mut Self>) {
+        self.as_mut().publish_recording_history();
         let server = self.server().to_string();
         self.as_mut().publish_catalog(&server);
     }
     pub(super) fn poll_viewing_history(mut self: Pin<&mut Self>) {
         if self.as_mut().rust_mut().viewing_history.poll() {
             self.publish_viewing_history();
+        }
+    }
+}
+
+impl ffi::Player {
+    pub fn continue_recordings(
+        &self,
+    ) -> *mut crate::continue_watching_model::ffi::ContinueWatchingModel {
+        self.rust().continue_watching_model.as_ptr().cast_mut()
+    }
+    pub fn resume_recording(mut self: Pin<&mut Self>, recording_key: QString) -> bool {
+        let key = recording_key.to_string();
+        let identity = self
+            .rust()
+            .viewing_history
+            .continue_watching()
+            .into_iter()
+            .find(|entry| entry.key == key)
+            .map(|entry| entry.identity);
+        let Some(identity) = identity else {
+            return false;
+        };
+        match self.rust().recording_library.resume_request(identity) {
+            Ok(request) => {
+                self.as_mut().rust_mut().autoplay_pending = false;
+                self.as_mut()
+                    .set_file_error(super::error_text::Text::default());
+                self.begin_recording(request);
+                true
+            }
+            Err(error) => {
+                use super::error_text::{PresentError, Text};
+                tracing::error!(
+                    error = &error as &dyn std::error::Error,
+                    "Prepare recording resume failed"
+                );
+                self.set_file_error(Text::message(
+                    "Could not open the video file: %1",
+                    [error.present()],
+                ));
+                false
+            }
+        }
+    }
+    pub(super) fn publish_recording_history(mut self: Pin<&mut Self>) {
+        let continued = self.rust().viewing_history.continue_watching();
+        let rows = self.rust().recording_library.rows();
+        let server = self.rust().recording_library.server();
+        let mut progress = std::collections::HashMap::new();
+        for entry in self.rust().viewing_history.recordings() {
+            if let crate::viewing_history::recordings::Source::Epgstation {
+                server: entry_server,
+                recorded_id,
+                ..
+            } = &entry.identity.source
+                && server == Some(entry_server.as_str())
+            {
+                progress.entry(*recorded_id).or_insert(entry.position);
+            }
+        }
+        self.as_mut()
+            .rust_mut()
+            .recording_model
+            .pin_mut()
+            .replace_with_progress(rows, progress);
+        self.as_mut()
+            .rust_mut()
+            .continue_watching_model
+            .pin_mut()
+            .replace(continued);
+    }
+    pub(super) fn poll_recording_history(mut self: Pin<&mut Self>) {
+        if !self.media_active() || !self.recording() {
+            return;
+        }
+        if self.seekable() && !self.seeking() {
+            let duration = self.duration_ms();
+            let target = {
+                let this = self.as_mut().rust_mut();
+                let this = this.get_mut();
+                this.recording_history_session
+                    .as_mut()
+                    .and_then(|session| session.resume(&this.viewing_history, duration))
+            };
+            if let Some(target) = target {
+                if !self.as_mut().seek_to(target)
+                    && let Some(session) = &mut self.as_mut().rust_mut().recording_history_session
+                {
+                    session.seek_rejected();
+                }
+            }
+        }
+        let ended = self.ended();
+        self.save_recording_history(ended);
+    }
+    pub(super) fn save_recording_history(mut self: Pin<&mut Self>, force: bool) {
+        use crate::viewing_history::recordings::Position;
+        let sample = if self.media_active() && self.recording() {
+            let position = if self.ended() {
+                self.duration_ms()
+            } else {
+                self.position_ms()
+            };
+            Position::new(position, self.duration_ms())
+        } else {
+            None
+        };
+        let seeking = self.seeking();
+        let changed = {
+            let this = self.as_mut().rust_mut();
+            let this = this.get_mut();
+            match &mut this.recording_history_session {
+                Some(session) => {
+                    session.sample(sample, seeking);
+                    session.save(&mut this.viewing_history, std::time::Instant::now(), force)
+                }
+                None => false,
+            }
+        };
+        if changed {
+            self.publish_recording_history();
         }
     }
 }

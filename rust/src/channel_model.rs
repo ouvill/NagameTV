@@ -152,12 +152,14 @@ pub struct ChannelPresentation {
 
 #[cfg_attr(feature = "qml_tests", derive(serde::Deserialize))]
 struct Row {
+    #[cfg_attr(feature = "qml_tests", serde(alias = "channelIndex"))]
     index: i32,
     label: String,
     band: String,
     #[cfg_attr(feature = "qml_tests", serde(default))]
     logo: String,
     #[cfg_attr(feature = "qml_tests", serde(default))]
+    #[cfg_attr(feature = "qml_tests", serde(alias = "serviceId"))]
     service_id: String,
     #[cfg_attr(feature = "qml_tests", serde(default))]
     favorite: bool,
@@ -319,12 +321,30 @@ impl ffi::ChannelModel {
     }
     #[cfg(feature = "qml_tests")]
     pub fn load_test(self: Pin<&mut Self>, json: QString) -> bool {
-        match serde_json::from_str(json.to_string().as_str()) {
-            Ok(rows) => {
+        match crate::json::from_slice::<Vec<Row>>(json.to_string().as_bytes()) {
+            Ok(mut rows) => {
+                let mut favorite_order = 0;
+                for row in &mut rows {
+                    if row.service_id.is_empty() {
+                        row.service_id = row.index.to_string();
+                    }
+                    if row.favorite {
+                        if row.favorite_order < 0 {
+                            row.favorite_order = favorite_order;
+                        }
+                        favorite_order += 1;
+                    }
+                }
                 self.replace_rows(rows);
                 true
             }
-            Err(_) => false,
+            Err(error) => {
+                tracing::error!(
+                    error = &error as &dyn std::error::Error,
+                    "Load channel model test fixture failed"
+                );
+                false
+            }
         }
     }
 }

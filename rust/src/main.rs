@@ -4,6 +4,7 @@ mod channel_model;
 mod channels;
 mod cli;
 mod comment_model;
+mod continue_watching_model;
 mod danmaku;
 #[cfg(feature = "qml_tests")]
 mod danmaku_ui_tests;
@@ -39,9 +40,9 @@ mod subtitle_model;
 mod transport;
 mod updates;
 mod video_file_model;
-mod viewing_history;
 #[cfg(feature = "video_item_tests")]
 mod video_item_tests;
+mod viewing_history;
 
 fn main() -> std::process::ExitCode {
     // No platform, settings, diagnostics, Qt or GStreamer side effects before parsing.
