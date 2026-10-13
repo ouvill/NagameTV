@@ -14,6 +14,8 @@ const LABEL: i32 = 257;
 const BAND: i32 = 258;
 const LOGO: i32 = 259;
 const SERVICE: i32 = 260;
+const FAVORITE: i32 = 261;
+const FAVORITE_ORDER: i32 = 262;
 
 #[cxx_qt::bridge]
 pub mod ffi {
@@ -107,6 +109,7 @@ pub mod ffi {
         #[qobject]
         #[qml_element]
         #[base = ChannelFilterProxy]
+        #[qproperty(bool, favorites_only)]
         #[qproperty(QString, band)]
         #[qproperty(QList_i32, visible_indices)]
         #[qproperty(Visibility, visibility)]
@@ -125,6 +128,9 @@ pub mod ffi {
         #[inherit]
         #[cxx_name = "refreshFilter"]
         fn invalidate_filter(self: Pin<&mut ChannelFilterModel>);
+        #[inherit]
+        #[cxx_name = "sortFavorites"]
+        fn sort_favorites(self: Pin<&mut ChannelFilterModel>, enabled: bool, role: i32);
         #[qsignal]
         fn changed(self: Pin<&mut ChannelFilterModel>);
         #[cxx_name = "notifyChanged"]
@@ -153,7 +159,14 @@ struct Row {
     logo: String,
     #[cfg_attr(feature = "qml_tests", serde(default))]
     service_id: String,
+    #[cfg_attr(feature = "qml_tests", serde(default))]
+    favorite: bool,
+    #[cfg_attr(feature = "qml_tests", serde(default = "not_favorite"))]
+    favorite_order: i32,
 }
+
+#[cfg(feature = "qml_tests")]
+fn not_favorite() -> i32 { -1 }
 
 fn band_name(band: Band) -> &'static str {
     match band {
@@ -181,6 +194,8 @@ impl ffi::ChannelModel {
             (BAND, "band"),
             (LOGO, "logo"),
             (SERVICE, "serviceId"),
+            (FAVORITE, "favorite"),
+            (FAVORITE_ORDER, "favoriteOrder"),
         ] {
             roles.insert(role, QByteArray::from(name));
         }
@@ -201,6 +216,8 @@ impl ffi::ChannelModel {
         };
         let value = match role {
             INDEX => return QVariant::from(&channel.index),
+            FAVORITE => return QVariant::from(&channel.favorite),
+            FAVORITE_ORDER => return QVariant::from(&channel.favorite_order),
             LABEL => channel.label.clone(),
             BAND => channel.band.clone(),
             LOGO => channel.logo.clone(),
@@ -219,7 +236,11 @@ impl ffi::ChannelModel {
     pub fn row_for_channel(&self, index: i32) -> i32 {
         ffi::source_row_for_index(self, index, INDEX)
     }
+    #[cfg(feature = "native_tests")]
     pub(crate) fn replace(self: Pin<&mut Self>, channels: Arc<[Channel]>, server: &str) {
+        self.replace_with_favorites(channels, server, &[]);
+    }
+    pub(crate) fn replace_with_favorites(self: Pin<&mut Self>, channels: Arc<[Channel]>, server: &str, favorites: &[u64]) {
         let server = server.trim_end_matches('/');
         let rows = channels
             .iter()
@@ -234,6 +255,9 @@ impl ffi::ChannelModel {
                     String::new()
                 },
                 service_id: channel.id.to_string(),
+                favorite: favorites.contains(&channel.id),
+                favorite_order: favorites.iter().position(|id| *id == channel.id)
+                    .map_or(-1, |index| i32::try_from(index).expect("bounded favorites")),
             })
             .collect();
         self.replace_rows(rows);
@@ -261,6 +285,7 @@ impl ffi::ChannelModel {
 pub struct ChannelFilter {
     revision: u32,
     band: QString,
+    favorites_only: bool,
     visible_indices: QList<i32>,
     visibility: ffi::Visibility,
     opening_index: i32,
@@ -270,6 +295,7 @@ impl Default for ChannelFilter {
         Self {
             revision: 0,
             band: QString::from("ALL"),
+            favorites_only: false,
             visible_indices: QList::default(),
             visibility: ffi::Visibility::All,
             opening_index: -1,
@@ -297,7 +323,8 @@ impl ffi::ChannelFilterModel {
         }
         let band = self.band().to_string();
         let channel_index = ffi::source_data(self, row, INDEX).value::<i32>();
-        (band == "ALL"
+        (!self.rust().favorites_only || ffi::source_data(self, row, FAVORITE).value::<bool>() == Some(true))
+            && (band == "ALL"
             || ffi::source_data(self, row, BAND)
                 .value::<QString>()
                 .is_some_and(|value| value.to_string() == band))
@@ -329,6 +356,11 @@ impl cxx_qt::Initialize for ffi::ChannelFilterModel {
         self.as_mut()
             .on_opening_index_changed(|model| model.invalidate_filter())
             .release();
+        self.as_mut().on_favorites_only_changed(|mut model| {
+            let enabled = *model.favorites_only();
+            model.as_mut().sort_favorites(enabled, FAVORITE_ORDER);
+            model.invalidate_filter();
+        }).release();
         ffi::connect_changes(self);
     }
 }

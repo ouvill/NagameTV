@@ -88,6 +88,19 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         "10"
     );
     assert_eq!(catalog.selected_index(), Some(0));
+    filter.pin_mut().set_band(QString::from("ALL"));
+    filter.pin_mut().set_favorites_only(true);
+    assert_eq!(filter.count(), 0, "no favorites produces an empty model");
+    source.pin_mut().replace_with_favorites(catalog.snapshot(), "http://replacement", &[10, u64::MAX]);
+    assert_eq!(filter.count(), 2);
+    assert_eq!(field(filter.row(0), "serviceId").value::<QString>().unwrap().to_string(), "10");
+    assert_eq!(field(filter.row(0), "favorite").value::<bool>(), Some(true));
+    assert_eq!(field(filter.row(0), "favoriteOrder").value::<i32>(), Some(0));
+    filter.pin_mut().set_band(QString::from("BS"));
+    assert_eq!(filter.count(), 1);
+    assert_eq!(field(filter.row(0), "channelIndex").value::<i32>(), Some(0));
+    filter.pin_mut().set_favorites_only(false);
+    assert_eq!(filter.count(), 1);
     drop(source);
     assert_eq!(
         filter.count(),

@@ -122,6 +122,17 @@ impl Default for PlayerRust {
             lifecycle_status,
             playback_error: Text::default(),
             playback_message: QString::default(),
+            viewing_history: if plan.locked() {
+                crate::viewing_history::History::transient()
+            } else {
+                match settings::settings_path() {
+                    Ok(path) => crate::viewing_history::History::open(path.with_file_name("viewing-history.json")),
+                    Err(error) => {
+                        tracing::error!(error = &error as &dyn std::error::Error, "Locate viewing history failed");
+                        crate::viewing_history::History::transient()
+                    }
+                }
+            },
             channel_model: crate::channel_model::ffi::make_channel_model(),
             recording_model: crate::recording_model::ffi::make_recording_model(),
             video_file_model: crate::video_file_model::ffi::make_video_file_model(),

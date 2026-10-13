@@ -3,11 +3,12 @@ impl super::ffi::Player {
     pub(super) fn publish_catalog(mut self: std::pin::Pin<&mut Self>, server: &str) {
         use cxx_qt::CxxQtType;
         let snapshot = self.rust().catalog.snapshot();
+        let favorites = self.rust().viewing_history.favorites().to_vec();
         self.as_mut()
             .rust_mut()
             .channel_model
             .pin_mut()
-            .replace(snapshot, server);
+            .replace_with_favorites(snapshot, server, &favorites);
     }
 
     pub(super) fn replace_catalog(

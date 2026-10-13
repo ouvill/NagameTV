@@ -39,6 +39,7 @@ mod subtitle_model;
 mod transport;
 mod updates;
 mod video_file_model;
+mod viewing_history;
 #[cfg(feature = "video_item_tests")]
 mod video_item_tests;
 

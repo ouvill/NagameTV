@@ -43,6 +43,7 @@ mod subtitle_status;
 mod telemetry;
 mod transport;
 mod updates;
+mod viewing_history;
 #[cfg(feature = "native_tests")]
 mod updates_checks;
 
@@ -124,6 +125,8 @@ pub mod ffi {
         #[qproperty(QString, playback_error, READ = playback_error, NOTIFY)]
         #[qproperty(QString, playback_message, READ, NOTIFY)]
         #[qproperty(QString, log_error, READ = log_error, NOTIFY)]
+        #[qproperty(bool, viewing_history_ready, READ = viewing_history_ready, NOTIFY = viewing_history_changed)]
+        #[qproperty(QString, viewing_history_error, READ = viewing_history_error, NOTIFY = viewing_history_changed)]
         #[qproperty(*mut ChannelModel, channels, READ = channels, CONSTANT)]
         #[qproperty(*mut RecordingModel, recordings, READ = recordings, CONSTANT)]
         #[qproperty(*mut VideoFileModel, recording_files, READ = recording_files, CONSTANT)]
@@ -296,6 +299,14 @@ pub mod ffi {
         #[qinvokable]
         fn play_epgstation_file(self: Pin<&mut Player>, id: QString, video: QString) -> bool;
         fn recording_files(self: &Player) -> *mut VideoFileModel;
+        fn viewing_history_ready(self: &Player) -> bool;
+        fn viewing_history_error(self: &Player) -> QString;
+        #[qsignal]
+        fn viewing_history_changed(self: Pin<&mut Player>);
+        #[qinvokable]
+        fn toggle_favorite(self: Pin<&mut Player>, service_id: QString) -> bool;
+        #[qinvokable]
+        fn move_favorite(self: Pin<&mut Player>, service_id: QString, position: i32) -> bool;
         fn selected(self: &Player) -> i32;
         fn build_info(self: &Player) -> QString;
         fn autoplay(self: &Player) -> bool;
@@ -610,6 +621,7 @@ pub struct PlayerRust {
     media_subtitle_image: cxx_qt_lib::QImage,
     media_subtitle_error: QString,
     error_log: Result<crate::error_log::ErrorLog, crate::error_log::Error>,
+    viewing_history: crate::viewing_history::History,
     channel_model: cxx::UniquePtr<crate::channel_model::ffi::ChannelModel>,
     recording_model: cxx::UniquePtr<crate::recording_model::ffi::RecordingModel>,
     video_file_model: cxx::UniquePtr<crate::video_file_model::ffi::VideoFileModel>,
