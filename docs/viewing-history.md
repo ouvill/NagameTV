@@ -43,7 +43,11 @@ Playerが返すモデルのポインターは寿命中一定で、内容をモ�
 `Player.channels`と`Player.recent_channels`は同じroleを公開する。
 recent_channelsの`channelIndex`は元の局一覧での位置であり、履歴内の行番号ではない。
 既存の`count: int`、`revision: uint`、`changed()`、`row(int): QVariantMap`も利用できる。
-モデルの内容変更ではリセット通知と`changed()`を発行し、revisionを進める。
+お気に入りの登録・解除・並べ替えでは、変わった行に限定して
+`dataChanged([favorite, favoriteOrder])`を発行し、revisionを進めて`changed()`を通知する。
+局一覧が同じならモデルをリセットせず、一覧の選択・スクロール位置を保つ。
+`recent_channels`にも同じ方式でお気に入りを反映する。局の追加・削除・順序や局情報が
+変わった場合だけモデルをリセットする。内容が同じ再公開では通知しない。
 
 `ChannelFilterModel.favorites_only: bool`（読書可、既定false、
 `favorites_onlyChanged`通知）を追加する。trueでは既存の放送波・可視条件とANDで

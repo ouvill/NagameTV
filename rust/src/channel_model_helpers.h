@@ -9,6 +9,11 @@ class ChannelFilterModel;
 template<typename T = ChannelModel>
 inline std::unique_ptr<T> makeChannelModel() { return std::make_unique<T>(); }
 template<typename T>
+inline void notifyChannelFavorites(T &model, int row, int favorite, int order) {
+    const auto index = model.index(row, 0);
+    emit model.dataChanged(index, index, {favorite, order});
+}
+template<typename T>
 inline void notifyModelData(T &model) {
     const int count = model.rowCount(QModelIndex{});
     if (count > 0) emit model.dataChanged(model.index(0, 0), model.index(count - 1, 0));

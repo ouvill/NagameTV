@@ -36,6 +36,8 @@ pub mod ffi {
         include!("cxx-qt-lib/qhash.h");
         type QHash_i32_QByteArray = cxx_qt_lib::QHash<cxx_qt_lib::QHashPair_i32_QByteArray>;
         include!("channel_model_helpers.h");
+        #[cxx_name = "notifyChannelFavorites"]
+        fn notify_favorites(model: Pin<&mut ChannelModel>, row: i32, favorite: i32, order: i32);
         #[rust_name = "make_channel_model"]
         fn makeChannelModel() -> UniquePtr<ChannelModel>;
         #[cxx_name = "channelRow"]
@@ -56,6 +58,19 @@ pub mod ffi {
     #[cfg(feature = "native_tests")]
     unsafe extern "C++" {
         include!("channel_model_test.h");
+        type ChannelModelSignals;
+        #[cxx_name = "observeChannelModel"]
+        fn observe_model(model: Pin<&mut ChannelModel>) -> UniquePtr<ChannelModelSignals>;
+        fn resets(self: &ChannelModelSignals) -> i32;
+        fn updates(self: &ChannelModelSignals) -> i32;
+        fn updated_row(self: &ChannelModelSignals, event: i32) -> i32;
+        fn favorite_roles(
+            self: &ChannelModelSignals,
+            event: i32,
+            favorite: i32,
+            order: i32,
+        ) -> bool;
+        fn persistent_row(self: &ChannelModelSignals) -> i32;
         #[rust_name = "make_channel_filter_model"]
         fn makeChannelFilterModel() -> UniquePtr<ChannelFilterModel>;
         #[cxx_name = "setChannelTestSource"]
@@ -132,6 +147,9 @@ pub mod ffi {
         #[inherit]
         #[cxx_name = "sortFavorites"]
         fn sort_favorites(self: Pin<&mut ChannelFilterModel>, enabled: bool, role: i32);
+        #[inherit]
+        #[cxx_name = "setFilterRole"]
+        fn set_filter_role(self: Pin<&mut ChannelFilterModel>, role: i32);
         #[qsignal]
         fn changed(self: Pin<&mut ChannelFilterModel>);
         #[cxx_name = "notifyChanged"]
@@ -168,6 +186,17 @@ struct Row {
     favorite: bool,
     #[cfg_attr(feature = "qml_tests", serde(default = "not_favorite"))]
     favorite_order: i32,
+}
+
+impl Row {
+    fn same_channel(&self, other: &Self) -> bool {
+        self.index == other.index
+            && self.service_id == other.service_id
+            && self.label == other.label
+            && self.band == other.band
+            && self.logo == other.logo
+            && self.remote_key == other.remote_key
+    }
 }
 
 #[cfg(feature = "qml_tests")]
@@ -319,6 +348,37 @@ impl ffi::ChannelModel {
         self.as_mut().replace_rows(rows);
     }
     fn replace_rows(mut self: Pin<&mut Self>, rows: Vec<Row>) {
+        if self.rust().rows.len() == rows.len()
+            && self
+                .rust()
+                .rows
+                .iter()
+                .zip(&rows)
+                .all(|(old, new)| old.same_channel(new))
+        {
+            let changed: Vec<_> = self
+                .rust()
+                .rows
+                .iter()
+                .zip(&rows)
+                .enumerate()
+                .filter_map(|(index, (old, new))| {
+                    (old.favorite != new.favorite || old.favorite_order != new.favorite_order)
+                        .then_some(index)
+                })
+                .collect();
+            if changed.is_empty() {
+                return;
+            }
+            self.as_mut().rust_mut().rows = rows;
+            let revision = self.rust().revision.wrapping_add(1);
+            self.as_mut().rust_mut().revision = revision;
+            for row in changed {
+                ffi::notify_favorites(self.as_mut(), row as i32, FAVORITE, FAVORITE_ORDER);
+            }
+            self.changed();
+            return;
+        }
         self.as_mut().begin_reset_model();
         self.as_mut().rust_mut().rows = rows;
         let next_revision = self.rust().revision.wrapping_add(1);
@@ -419,6 +479,7 @@ impl ffi::ChannelFilterModel {
 }
 impl cxx_qt::Initialize for ffi::ChannelFilterModel {
     fn initialize(mut self: Pin<&mut Self>) {
+        self.as_mut().set_filter_role(FAVORITE);
         self.as_mut()
             .on_band_changed(|model| model.invalidate_filter())
             .release();

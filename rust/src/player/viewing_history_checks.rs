@@ -9,6 +9,7 @@ use std::{
 };
 
 pub(super) fn run() -> Result<(), Box<dyn std::error::Error>> {
+    favorite_commands_update_rows_without_reset()?;
     let mut player = ffi::new_player();
     let channels = crate::channels::parse(
         br#"[
@@ -139,6 +140,134 @@ pub(super) fn run() -> Result<(), Box<dyn std::error::Error>> {
     assert!(!player.recording_loading());
     println!(
         "Viewing history: favorite commands, recent indices, resume roles and fixture loaders passed"
+    );
+    Ok(())
+}
+
+fn favorite_commands_update_rows_without_reset() -> Result<(), Box<dyn std::error::Error>> {
+    use crate::channel_model::ffi as model;
+    use cxx_qt_lib::{QMap, QMapPair_QString_QVariant, QVariant};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    fn field(row: QVariant, name: &str) -> QVariant {
+        row.value::<QMap<QMapPair_QString_QVariant>>()
+            .unwrap()
+            .get(&QString::from(name))
+            .unwrap()
+            .clone()
+    }
+    let mut player = ffi::new_player();
+    player.pin_mut().rust_mut().catalog.replace(
+        crate::channels::parse(
+            br#"[{"id":10,"name":"One","type":1},{"id":20,"name":"Two","type":1}]"#,
+        )?,
+        Some(10),
+    );
+    let now = Instant::now();
+    player
+        .pin_mut()
+        .rust_mut()
+        .viewing_history
+        .observe_live(Some(20), now);
+    player
+        .pin_mut()
+        .rust_mut()
+        .viewing_history
+        .observe_live(Some(20), now + Duration::from_secs(10));
+    player.pin_mut().publish_viewing_history();
+    assert_eq!(
+        player.channels(),
+        player.rust().channel_model.as_ptr().cast_mut()
+    );
+    let mut filter = model::make_channel_filter_model();
+    model::set_test_source(
+        filter.pin_mut(),
+        player.pin_mut().rust_mut().channel_model.pin_mut(),
+    );
+    model::check_source_model(player.pin_mut().rust_mut().channel_model.pin_mut());
+    model::check_source_model(player.pin_mut().rust_mut().recent_channel_model.pin_mut());
+    model::check_filter_model(filter.pin_mut());
+    filter.pin_mut().set_favorites_only(true);
+    assert_eq!(filter.count(), 0);
+    let signals = model::observe_model(player.pin_mut().rust_mut().channel_model.pin_mut());
+    let recent_signals =
+        model::observe_model(player.pin_mut().rust_mut().recent_channel_model.pin_mut());
+    let before = *player.rust().channel_model.revision();
+    let changed = Arc::new(AtomicUsize::new(0));
+    let observed = changed.clone();
+    let _changed = player
+        .pin_mut()
+        .rust_mut()
+        .channel_model
+        .pin_mut()
+        .on_changed(move |model| {
+            let count = observed.fetch_add(1, Ordering::SeqCst) + 1;
+            assert_eq!(*model.revision(), before + count as u32);
+        });
+    assert!(player.pin_mut().toggle_favorite(QString::from("20")));
+    assert_eq!(
+        field(player.rust().channel_model.row(1), "favorite").value::<bool>(),
+        Some(true)
+    );
+    assert_eq!(
+        field(player.rust().recent_channel_model.row(0), "favorite").value::<bool>(),
+        Some(true)
+    );
+    assert_eq!(filter.count(), 1);
+    assert_eq!(filter.row_for_channel(1), 0);
+    assert!(player.pin_mut().toggle_favorite(QString::from("10")));
+    assert_eq!(filter.count(), 2);
+    assert_eq!(filter.row_for_channel(1), 0);
+    assert!(player.pin_mut().move_favorite(QString::from("10"), 0));
+    assert_eq!(filter.row_for_channel(0), 0);
+    assert_eq!(filter.row_for_channel(1), 1);
+    assert_eq!(
+        field(player.rust().channel_model.row(0), "favoriteOrder").value::<i32>(),
+        Some(0)
+    );
+    assert_eq!(
+        field(player.rust().recent_channel_model.row(0), "favoriteOrder").value::<i32>(),
+        Some(1)
+    );
+    assert!(player.pin_mut().toggle_favorite(QString::from("10")));
+    assert_eq!(
+        field(player.rust().channel_model.row(0), "favorite").value::<bool>(),
+        Some(false)
+    );
+    assert_eq!(filter.count(), 1);
+    assert_eq!(filter.row_for_channel(1), 0);
+    assert!(player.pin_mut().toggle_favorite(QString::from("20")));
+    assert_eq!(
+        field(player.rust().channel_model.row(1), "favorite").value::<bool>(),
+        Some(false)
+    );
+    assert_eq!(
+        field(player.rust().recent_channel_model.row(0), "favorite").value::<bool>(),
+        Some(false)
+    );
+    assert_eq!(filter.count(), 0);
+    assert_eq!(signals.resets(), 0);
+    assert_eq!(recent_signals.resets(), 0);
+    assert_eq!(signals.persistent_row(), 0);
+    assert_eq!(recent_signals.persistent_row(), 0);
+    assert_eq!(signals.updates(), 7);
+    for (event, row) in [1, 0, 0, 1, 0, 1, 1].into_iter().enumerate() {
+        assert_eq!(signals.updated_row(event as i32), row);
+        assert!(signals.favorite_roles(event as i32, 261, 262));
+    }
+    assert_eq!(recent_signals.updates(), 4);
+    for event in 0..recent_signals.updates() {
+        assert!(recent_signals.favorite_roles(event, 261, 262));
+    }
+    assert_eq!(changed.load(Ordering::SeqCst), 5);
+    player.pin_mut().publish_viewing_history();
+    assert_eq!(
+        changed.load(Ordering::SeqCst),
+        5,
+        "unchanged projections do not notify"
+    );
+    assert_eq!(player.selected(), 0);
+    println!(
+        "Favorite updates: Player rows, exact dataChanged roles, persistent indices and recent/filter projections passed without modelReset"
     );
     Ok(())
 }
