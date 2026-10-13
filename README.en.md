@@ -25,12 +25,15 @@ The detailed documentation linked below is currently available in Japanese.
 - **Mirakurun integration**: Connect to a Mirakurun server on your network to receive and play TV broadcasts.
 - **Channel selection**: Browse a channel carousel with station logos, and filter channels using terrestrial, BS, CS, and CATV tabs.
 - **Channel switching**: Use Page Up and Page Down to switch to the previous or next channel.
+- **Home and favorites**: While nothing is playing, see recordings to continue, favorite channels, and everything on air now. Add a favorite with the star on a channel card or beside the channel name over the video. [Stored data and behavior](docs/viewing-history.md)
+- **Remote numbers and last channel**: Tune to a remote-control button with the number keys, and return to the previous channel with `L`.
 
 ### Recordings, video files, and timeshift
 
 - **Local playback**: Drag and drop TS, MP4, or MKV files onto the window, or open them with the file picker. This works without a configured Mirakurun server. MP4 and MKV playback has been tested with H.264/HEVC video and AAC audio. [Supported formats and limitations](docs/recording-playback.md#mp4mkvの再生)
 - **HTTP recording playback**: Paste the URL of a recording from EPGStation or another server into “Open recording” to play it. The server must support HTTP Range requests. [Usage and supported features](docs/recording-playback.md#epgstationの録画url)
 - **EPGStation recording browser**: Search recordings on the server and choose an original TS recording or an encoded video to play. Supports the common APIs of upstream EPGStation v2 and username/password authentication in the stuayu fork. [Connection setup and supported features](docs/epgstation.md)
+- **Resume playback**: Recordings resume from where you stopped. The recording browser and the home screen show progress, watched recordings, and thumbnails.
 - **Playback controls**: Seek with the progress bar, skip backward or forward by 10 seconds, pause, and resume.
 - **Program information during playback**: Read metadata (EIT/SDT/TOT) embedded in TS streams to display the program title, description, and genre for the current playback position.
 - **Timeshift**: Choose “Only when paused,” “Always enabled,” or “Off.” In “Only when paused” mode, resume from where you paused; returning to live TV clears the buffered history. You can also rewind within the retained buffer and play at increased speed.
@@ -39,6 +42,7 @@ The detailed documentation linked below is currently available in Japanese.
 
 - **Weekly guide**: View schedules across multiple channels for seven days starting today.
 - **Program details**: Check program titles, descriptions, genres, and broadcast dates and times.
+- **Recording reservations (experimental)**: When enabled in Settings, add or cancel single-program reservations on EPGStation from the program guide. Off by default. [Supported scope](docs/recording-reservations.md)
 
 ### Live comments (NX-Jikkyo integration)
 
