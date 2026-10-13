@@ -130,3 +130,22 @@ QML製品ファイルの接続は画面担当が実装する。
 入力は上記role名をキーとするオブジェクトの配列で、実データと同じモデル通知を発行する。
 `ChannelModel.load_test`は既存の`index`に加えて`favorite`（省略時false）、
 `serviceId`（省略時indexの文字列）を受け付ける。これらは製品構成には含めない。
+
+## 録画サムネイルの公開API
+
+`RecordingModel`と`ContinueWatchingModel`に`thumbnail: string` roleを追加する。
+取得済みJPEGの`data:image/jpeg;base64,...`を返し、取得前・画像なし・失敗時・
+ローカル／HTTP動画では空文字列を返す。認証Cookieと再生トークンは公開しない。
+`ContinueWatchingModel.load_test`ではthumbnailを省略できる（空文字列）。
+
+EPGStation一覧の`thumbnails`の先頭IDを使い、`GET /api/thumbnails/{thumbnailId}`を
+一覧と同じCookieセッションで取得する。参照元は
+[固定コミットの録画型](https://github.com/stuayu/EPGStation/blob/26f56720722e61e66fc33fc0c4aacfd3d98913ba/api.d.ts)と
+[サムネイル取得API](https://github.com/stuayu/EPGStation/blob/26f56720722e61e66fc33fc0c4aacfd3d98913ba/src/model/service/api/thumbnails/%7BthumbnailId%7D.ts)。
+再開用履歴には画像IDだけを追加保存する。
+
+同時取得は1件、1画像512KiB、base64化後のキャッシュは8MiB、対象は最大64画像とする。
+一覧・再開モデルには現在のキャッシュ内容だけを投影する。404は画像なしとして扱い、
+その他の失敗はtracingへ記録する。ログへ画像URLや認証情報を含めない。
+ログインの更新時はキャッシュと未完了要求を無効化し、古い認証の結果を混在させない。
+QMLでは`Image.source: thumbnail`とし、表示サイズに合わせた`sourceSize`を設定する。

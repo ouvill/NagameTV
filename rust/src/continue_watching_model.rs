@@ -14,6 +14,7 @@ const REMAINING: i32 = 262;
 const KIND: i32 = 263;
 const RECORDED_ID: i32 = 264;
 const VIDEO_ID: i32 = 265;
+const THUMBNAIL: i32 = 266;
 
 #[cxx_qt::bridge]
 pub mod ffi {
@@ -85,6 +86,8 @@ pub struct ContinuePresentation {
 #[cfg_attr(feature = "qml_tests", derive(serde::Deserialize))]
 #[cfg_attr(feature = "qml_tests", serde(rename_all = "camelCase"))]
 struct Row {
+    #[cfg_attr(feature = "qml_tests", serde(default))]
+    thumbnail: String,
     recording_key: String,
     program_name: String,
     channel_name: String,
@@ -96,8 +99,8 @@ struct Row {
     recorded_id: String,
     video_file_id: String,
 }
-impl From<Entry> for Row {
-    fn from(entry: Entry) -> Self {
+impl From<(Entry, String)> for Row {
+    fn from((entry, thumbnail): (Entry, String)) -> Self {
         let (recorded_id, video_file_id) = match entry.identity.source {
             Source::Epgstation {
                 recorded_id,
@@ -107,6 +110,7 @@ impl From<Entry> for Row {
             Source::Local { .. } | Source::Http { .. } => (String::new(), String::new()),
         };
         Self {
+            thumbnail,
             recording_key: entry.key,
             program_name: entry.identity.title,
             channel_name: entry.identity.channel,
@@ -140,6 +144,7 @@ impl ffi::ContinueWatchingModel {
             (KIND, "sourceKind"),
             (RECORDED_ID, "recordedId"),
             (VIDEO_ID, "videoFileId"),
+            (THUMBNAIL, "thumbnail"),
         ] {
             roles.insert(role, QByteArray::from(name));
         }
@@ -159,6 +164,7 @@ impl ffi::ContinueWatchingModel {
             return QVariant::default();
         };
         let text = match role {
+            THUMBNAIL => &row.thumbnail,
             KEY => &row.recording_key,
             NAME => &row.program_name,
             CHANNEL => &row.channel_name,
@@ -173,7 +179,7 @@ impl ffi::ContinueWatchingModel {
         };
         QVariant::from(&QString::from(text.as_str()))
     }
-    pub(crate) fn replace(self: Pin<&mut Self>, entries: Vec<Entry>) {
+    pub(crate) fn replace(self: Pin<&mut Self>, entries: Vec<(Entry, String)>) {
         self.replace_rows(entries.into_iter().map(Row::from).collect());
     }
     #[cfg(feature = "qml_tests")]

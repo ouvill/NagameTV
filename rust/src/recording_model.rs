@@ -15,6 +15,7 @@ const REASON: i32 = 263;
 const FILE_COUNT: i32 = 264;
 const PROGRESS: i32 = 265;
 const WATCHED: i32 = 266;
+const THUMBNAIL: i32 = 267;
 
 #[cxx_qt::bridge]
 pub mod ffi {
@@ -74,6 +75,7 @@ pub mod ffi {
 #[derive(Default)]
 pub struct Presentation {
     rows: Arc<[Recording]>,
+    thumbnails: std::collections::HashMap<u64, String>,
     progress: std::collections::HashMap<u64, crate::viewing_history::recordings::Position>,
 }
 impl ffi::RecordingModel {
@@ -97,6 +99,7 @@ impl ffi::RecordingModel {
             (FILE_COUNT, "fileCount"),
             (PROGRESS, "progress"),
             (WATCHED, "watched"),
+            (THUMBNAIL, "thumbnail"),
         ] {
             roles.insert(role, QByteArray::from(name));
         }
@@ -134,6 +137,7 @@ impl ffi::RecordingModel {
                         .is_some_and(|position| position.watched()),
                 );
             }
+            THUMBNAIL => self.rust().thumbnails.get(&row.id).cloned().unwrap_or_default(),
             ID => row.id.to_string(),
             NAME => row.name.clone(),
             CHANNEL => row.channel.clone(),
@@ -158,13 +162,15 @@ impl ffi::RecordingModel {
         mut self: Pin<&mut Self>,
         rows: Arc<[Recording]>,
         progress: std::collections::HashMap<u64, crate::viewing_history::recordings::Position>,
+        thumbnails: std::collections::HashMap<u64, String>,
     ) {
-        if self.rust().rows == rows && self.rust().progress == progress {
+        if self.rust().rows == rows && self.rust().progress == progress && self.rust().thumbnails == thumbnails {
             return;
         }
         self.as_mut().begin_reset_model();
         self.as_mut().rust_mut().rows = rows;
         self.as_mut().rust_mut().progress = progress;
+        self.as_mut().rust_mut().thumbnails = thumbnails;
         self.as_mut().end_reset_model();
         self.changed();
     }

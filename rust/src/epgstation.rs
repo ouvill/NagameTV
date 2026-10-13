@@ -3,6 +3,7 @@ use crate::services::{FetchError, Job, Network, Progress, ServerUrl, Stopping};
 use serde::Deserialize;
 use std::sync::Arc;
 mod client;
+pub mod thumbnails;
 #[cfg(test)]
 mod provider_tests;
 #[cfg(test)]
@@ -94,6 +95,7 @@ pub struct Recording {
     pub availability: Availability,
     channel_id: Option<u64>,
     pub service: Option<crate::channels::BroadcastService>,
+    pub thumbnail_id: Option<u64>,
 }
 
 #[derive(Deserialize)]
@@ -115,6 +117,8 @@ struct WireRecording {
     is_recording: bool,
     #[serde(default)]
     video_files: Vec<WireVideo>,
+    #[serde(default)]
+    thumbnails: Vec<u64>,
 }
 #[derive(Deserialize)]
 struct WireVideo {
@@ -193,6 +197,7 @@ fn parse(bytes: &[u8]) -> Result<Page, Error> {
             };
             Ok(Recording {
                 id: record.id,
+                thumbnail_id: record.thumbnails.first().copied(),
                 name: record.name,
                 channel: record
                     .ts_channel_name
@@ -283,6 +288,7 @@ pub struct Library {
     session: Option<(Endpoint, Connection)>,
     error: Option<FetchError<Error>>,
     revision: u64,
+    thumbnails: thumbnails::Cache,
 }
 impl Library {
     pub fn loaded(&self) -> bool {
@@ -346,6 +352,7 @@ impl Library {
         };
         if !matches!(access, Access::Connected(_)) {
             self.session = None;
+            self.thumbnails.clear();
         }
         self.begin(
             network,
@@ -429,6 +436,7 @@ impl Library {
                     self.revision = self.revision.wrapping_add(1);
                     match result {
                         Ok(Fetched { page, connection }) => {
+                            if self.session.is_none() { self.thumbnails.clear(); }
                             let verified = VerifiedEndpoint(query.endpoint.clone());
                             self.session = Some((query.endpoint.clone(), connection.clone()));
                             self.catalogue = Catalogue::Loaded {
@@ -513,6 +521,7 @@ impl Library {
                 recorded_id: id,
                 video_file_id: file.id,
             },
+            thumbnail_id: recording.thumbnail_id,
             title: recording.name.clone(),
             channel: recording.channel.clone(),
             broadcast: recording.service.map(|service| {
@@ -565,6 +574,14 @@ impl Library {
             }
         };
         Ok(request.with_history(identity))
+    }
+    pub fn thumbnail(&self, server: &str, id: Option<u64>) -> &str {
+        id.map_or("", |id| self.thumbnails.image(&thumbnails::Key { server: server.into(), id }))
+    }
+    pub fn poll_thumbnails(&mut self, network: &Network, continued: Vec<thumbnails::Key>) -> bool {
+        let wanted = self.rows().iter().filter_map(|row| Some(thumbnails::Key { server: self.server()?.to_owned(), id: row.thumbnail_id? })).chain(continued).collect::<Vec<_>>();
+        self.thumbnails.configure(wanted);
+        self.thumbnails.poll(network, self.session.as_ref())
     }
     pub fn server(&self) -> Option<&str> {
         match &self.catalogue {

@@ -59,6 +59,8 @@ pub struct BroadcastHint {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Identity {
     pub source: Source,
+    #[serde(default)]
+    pub thumbnail_id: Option<u64>,
     pub title: String,
     pub channel: String,
     pub broadcast: Option<BroadcastHint>,
@@ -67,6 +69,7 @@ impl Identity {
     pub fn new(source: Source, title: String) -> Self {
         Self {
             source,
+            thumbnail_id: None,
             title,
             channel: String::new(),
             broadcast: None,
