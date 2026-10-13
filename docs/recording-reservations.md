@@ -41,6 +41,22 @@ recording → conflict → reserved → skippedの順に表示する。
 番組表のreset、EPGの再取得、本文コピー、汎用revisionの更新は行わない。
 番組詳細の状態はPlayer.reservations_changedを受けてreservation_stateと操作可否を読み直す。
 
+## 画面
+
+設定の「接続」で、EPGStation接続の下に「番組表から録画予約する（実験的）」のスイッチを置く。
+起動ポリシーが許さない場合は操作できない状態で表示する。
+
+番組表のセルは、`reservation` roleが空でなければ右上に[`ReservationBadge`](../rust/qml/ReservationBadge.qml)を重ねる。
+予約済み・録画中は赤系、競合・スキップは黄土色で、文字を出せない高さのセルには表示しない。
+色は淡いセルの上でも読めるよう[`GuidePalette`](../rust/qml/GuidePalette.qml)に置く。
+
+番組詳細は同じ印を番組名の下に示し、下部に「この番組を見る」と並べて「録画予約」「予約を取り消す」を出す。
+放送中の番組では視聴を主操作に、これから始まる番組では予約を主操作にする。
+`can_reserve_program`・`can_cancel_reservation`が偽の操作は表示せず、`reservation_busy`の間は
+両方を無効にして読み込み表示を出す。`reservation_error`は本文の末尾に表示する。
+`reservations_enabled`が偽のとき（フラグOFF・未接続）は、印・操作・エラーのいずれも表示しない。
+詳細は`reservations_changed`のたびに状態と操作可否を読み直す。
+
 ## 設定と所有関係
 
 設定名は`recording_reservations_enabled`。既存設定と同じ保存・復元処理を使う。
