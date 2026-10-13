@@ -1217,6 +1217,38 @@
       <extracomment>Keep this label unchanged in Japanese and English.</extracomment>
       <translation>NX</translation>
     </message>
+    <message>
+      <source>Connect to EPGStation and enable recording reservations first.</source>
+      <translation>EPGStationに接続し、録画予約を有効にしてください。</translation>
+    </message>
+    <message>
+      <source>A reservation operation is already running.</source>
+      <translation>録画予約を処理中です。</translation>
+    </message>
+    <message>
+      <source>Program information has changed or the program has ended. Refresh the guide and try again.</source>
+      <translation>番組情報が変更されたか、番組が終了しました。番組表を更新してから再試行してください。</translation>
+    </message>
+    <message>
+      <source>This program already has a reservation. Refresh the reservation list.</source>
+      <translation>この番組は予約済みです。予約一覧を更新してください。</translation>
+    </message>
+    <message>
+      <source>Only a single manual reservation that has not started can be cancelled.</source>
+      <translation>取消しできるのは、開始前で手動予約が1件だけの番組です。</translation>
+    </message>
+    <message>
+      <source>The reservation was changed, but its status could not be refreshed. Refresh the reservation list before trying again.</source>
+      <translation>予約は変更されましたが、状態を取得できませんでした。予約一覧を更新してから次の操作を行ってください。</translation>
+    </message>
+    <message>
+      <source>EPGStation returned an invalid or oversized reservation list.</source>
+      <translation>EPGStationの予約一覧が不正か、取得上限を超えています。</translation>
+    </message>
+    <message>
+      <source>Could not update recording reservations. Check the connection and refresh the reservation list.</source>
+      <translation>録画予約を更新できませんでした。接続を確認し、予約一覧を更新してください。</translation>
+    </message>
 </context>
   <context>
     <name>Viewer</name>

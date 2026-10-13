@@ -5,6 +5,11 @@
 class GuideModel;
 class GuideCandidates;
 class GuideFilterModel;
+template<typename T>
+inline void notifyGuideReservation(T &model, int row, int role) {
+    const auto index = model.index(row, 0);
+    emit model.dataChanged(index, index, {role});
+}
 template<typename T = GuideModel>
 inline std::unique_ptr<T> makeGuideModel() { return std::make_unique<T>(); }
 template<typename T = GuideCandidates>

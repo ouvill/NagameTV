@@ -61,7 +61,8 @@ MP4・MKVの入力に対応します。中身の映像・音声は利用環境�
 シーク・一時停止・倍速・停止後の再再生を共通の操作で扱います。
 [一般動画の再生と制約](recording-playback.md#mp4mkvの再生)も参照してください。
 
-録画中の追いかけ再生、SSO、リバースプロキシ独自の認証、録画予約・削除・視聴履歴の同期は
+録画予約は[既定OFFの実験機能](recording-reservations.md)として提供します。
+録画中の追いかけ再生、SSO、リバースプロキシ独自の認証、録画削除・視聴履歴の同期は
 未対応です。TSの字幕・実況には既存の[HTTP録画再生](recording-playback.md#epgstationの録画url)を
 使います。一般動画は[埋め込み・外部字幕と実況同期](recording-playback.md#一般動画の字幕)に対応します。
 CMカットの補正は行いません。
@@ -106,7 +107,7 @@ URL入力の取消し、検索欄とスクロール位置の保持も確認し�
 QML部品テストで確認します。
 
 ```sh
-CARGO_TARGET_DIR=build/cargo cargo test --manifest-path rust/Cargo.toml --release --locked epgstation
+python3 scripts/test.py app --filter 'test(epgstation::)'
 python3 scripts/test.py connection
 python3 scripts/test.py danmaku
 python3 scripts/test.py startup
@@ -139,6 +140,7 @@ CARGO_TARGET_DIR=build/cargo python3 -m scripts.testing.epgstation_integration
 
 - ログイン、Cookie、再生トークン、認証拒否、接続先の切り替え。
 - 52件の録画からの検索・ページ移動、放送局の対応付け、動画メタデータ取得。
+- 予約済み・競合・スキップ・録画中の一覧と番組詳細。予約追加・取消しの書込みは含みません。
 - TS・MP4・MKVの全体取得、単一バイト・末尾・不正範囲を含むRange要求と本文の一致。
 - MP4・MKVを製品のファイルローダーで検査する処理。デコード・画面再生は含まない。
 - ログイン本文の分割送信・途中切断後も、別の要求が完了すること。
@@ -146,7 +148,7 @@ CARGO_TARGET_DIR=build/cargo python3 -m scripts.testing.epgstation_integration
 
 番組名・時刻・解析済みメタデータはテスト用に登録した値です。録画・EPG更新・エンコード処理は
 起動せず、HTTPハンドラーや認証・DBモデルの差し替えは行いません。ここで検証するのは
-固定したstuayu版の保存済み録画APIです。本家版、他のコミット、MySQL、TLS・リバースプロキシ、
+固定したstuayu版の保存済み録画・予約参照APIです。本家版、他のコミット、MySQL、TLS・リバースプロキシ、
 利用中のサーバー設定の検証とは区別します。
 
 通常の`cargo test`ではDockerを使う4件を明示的に除外します。上のスクリプトとCIでは

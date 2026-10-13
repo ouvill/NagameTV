@@ -38,6 +38,14 @@ pub(super) struct Connection {
     media: MediaAccess,
 }
 impl Connection {
+    pub(super) fn api_request(
+        &self,
+        method: reqwest::Method,
+        path: &str,
+    ) -> reqwest::RequestBuilder {
+        self.client
+            .request(method, format!("{}/api/{path}", self.endpoint.as_str()))
+    }
     pub(super) fn metadata(&self, video: u64) -> PlaybackMetadata {
         PlaybackMetadata {
             connection: self.clone(),

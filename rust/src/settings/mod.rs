@@ -155,6 +155,7 @@ pub enum Change {
     SubtitleDisplay(bool),
     SubtitleForceOutline(bool),
     DataBroadcastEnabled(bool),
+    RecordingReservationsEnabled(bool),
     DataBroadcastPrefetch(bool),
     Comments(bool),
     CommentCacheLimit(CommentCacheLimit),
@@ -239,6 +240,9 @@ impl Session {
             Change::SubtitleDisplay(display) => preferences.show_subtitles = display,
             Change::SubtitleForceOutline(enabled) => preferences.subtitle_force_outline = enabled,
             Change::DataBroadcastEnabled(enabled) => preferences.data_broadcast_enabled = enabled,
+            Change::RecordingReservationsEnabled(enabled) => {
+                preferences.recording_reservations_enabled = enabled
+            }
             Change::DataBroadcastPrefetch(enabled) => preferences.data_broadcast_prefetch = enabled,
             Change::Comments(enabled) => preferences.comments_enabled = enabled,
             Change::CommentCacheLimit(limit) => preferences.comment_cache_limit_mib = limit,

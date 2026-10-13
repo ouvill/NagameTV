@@ -227,6 +227,7 @@ impl ffi::Player {
         self.as_mut().poll_channels();
         self.as_mut().poll_recording();
         self.as_mut().poll_recording_library();
+        self.as_mut().poll_recording_reservations();
         self.as_mut().poll_recording_thumbnails();
         self.as_mut().poll_updates();
         let result = self.as_mut().rust_mut().media.poll();

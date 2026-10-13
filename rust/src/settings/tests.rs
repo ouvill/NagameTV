@@ -701,3 +701,28 @@ fn subtitle_outline_migrates_disabled_and_survives_reopening()
     }
     Ok(())
 }
+
+#[test]
+fn recording_reservations_default_off_and_restore_explicit_changes()
+-> Result<(), Box<dyn std::error::Error>> {
+    let dir = tempfile::tempdir()?;
+    let path = dir.path().join("settings.toml");
+    fs::write(&path, "future_setting = 'keep'\n")?;
+    let mut session = open(path.clone())?;
+    assert!(!Preferences::default().recording_reservations_enabled);
+    assert!(!session.preferences().recording_reservations_enabled);
+    for enabled in [true, false] {
+        session.change(Change::RecordingReservationsEnabled(enabled));
+        assert_eq!(session.flush()?, SaveStatus::Saved);
+        let restored = open(path.clone())?;
+        assert_eq!(
+            restored.preferences().recording_reservations_enabled,
+            enabled
+        );
+        assert_eq!(
+            restored.preferences().extra["future_setting"].as_str(),
+            Some("keep")
+        );
+    }
+    Ok(())
+}

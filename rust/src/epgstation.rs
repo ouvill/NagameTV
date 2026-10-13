@@ -5,6 +5,7 @@ use std::sync::Arc;
 mod client;
 #[cfg(test)]
 mod provider_tests;
+pub mod reservations;
 #[cfg(test)]
 mod tests;
 pub mod thumbnails;
@@ -286,11 +287,25 @@ pub struct Library {
     operation: Operation,
     catalogue: Catalogue,
     session: Option<(Endpoint, Connection)>,
+    session_generation: u64,
     error: Option<FetchError<Error>>,
     revision: u64,
     thumbnails: thumbnails::Cache,
 }
 impl Library {
+    pub fn synchronize_reservations(
+        &self,
+        enabled: bool,
+        manager: &mut reservations::Manager,
+        now: std::time::Instant,
+    ) {
+        let session = self
+            .session
+            .as_ref()
+            .filter(|_| enabled)
+            .map(|(_, connection)| (self.session_generation, connection));
+        manager.configure(session, now);
+    }
     pub fn loaded(&self) -> bool {
         matches!(self.catalogue, Catalogue::Loaded { .. })
     }
@@ -352,6 +367,7 @@ impl Library {
         };
         if !matches!(access, Access::Connected(_)) {
             self.session = None;
+            self.session_generation = self.session_generation.wrapping_add(1);
             self.thumbnails.clear();
         }
         self.begin(

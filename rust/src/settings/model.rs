@@ -73,6 +73,7 @@ pub struct Preferences {
     pub show_subtitles: bool,
     pub subtitle_force_outline: bool,
     pub data_broadcast_enabled: bool,
+    pub recording_reservations_enabled: bool,
     pub data_broadcast_prefetch: bool,
     pub comments_enabled: bool,
     pub comment_cache_limit_mib: super::CommentCacheLimit,
@@ -110,6 +111,7 @@ impl Default for Preferences {
             show_subtitles: false,
             subtitle_force_outline: false,
             data_broadcast_enabled: false,
+            recording_reservations_enabled: false,
             data_broadcast_prefetch: false,
             // main receives history independently of the scrolling overlay.
             // Its settings have no comments_enabled field; preserve reception

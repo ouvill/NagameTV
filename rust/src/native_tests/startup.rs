@@ -504,6 +504,18 @@ fn window(
         WindowCheck::Startup => {
             assert!(evaluate(
                 &mut engine,
+                "player.recording_reservations_allowed && !player.recording_reservations_enabled && !player.reservations_enabled && !player.reservation_busy"
+            )?);
+            assert!(evaluate(
+                &mut engine,
+                "player.configure_recording_reservations(true); player.recording_reservations_enabled && !player.reservations_enabled && !player.reservation_busy"
+            )?);
+            assert!(evaluate(
+                &mut engine,
+                "player.configure_recording_reservations(false); !player.recording_reservations_enabled && !player.reservations_enabled && !player.reservation_busy"
+            )?);
+            assert!(evaluate(
+                &mut engine,
                 "root.minimumWidth === 640 && root.minimumHeight === 360"
             )?);
             match preferences.window_size {

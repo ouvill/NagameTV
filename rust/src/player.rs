@@ -26,6 +26,9 @@ mod program_info;
 mod recording_library;
 #[cfg(feature = "native_tests")]
 mod recording_library_checks;
+#[cfg(feature = "native_tests")]
+mod recording_reservation_checks;
+mod recording_reservations;
 mod recordings;
 mod remote;
 #[cfg(feature = "native_tests")]
@@ -221,6 +224,11 @@ pub mod ffi {
         #[qproperty(bool, data_broadcast_prefetch, READ = data_broadcast_prefetch, NOTIFY)]
         #[qproperty(bool, data_broadcast_enabled, READ = data_broadcast_enabled, NOTIFY)]
         #[qproperty(bool, data_broadcast_allowed, READ, CONSTANT)]
+        #[qproperty(bool, recording_reservations_enabled, READ = recording_reservations_enabled, NOTIFY)]
+        #[qproperty(bool, recording_reservations_allowed, READ, CONSTANT)]
+        #[qproperty(bool, reservations_enabled, READ = reservations_enabled, NOTIFY = reservations_changed)]
+        #[qproperty(bool, reservation_busy, READ = reservation_busy, NOTIFY = reservations_changed)]
+        #[qproperty(QString, reservation_error, READ = reservation_error, NOTIFY = reservations_changed)]
         #[qproperty(bool, data_broadcast_available, READ = data_broadcast_available, NOTIFY)]
         #[qproperty(QString, data_broadcast_endpoint, READ, NOTIFY)]
         #[qproperty(bool, subtitles_active, READ, NOTIFY)]
@@ -448,6 +456,26 @@ pub mod ffi {
         fn data_broadcast_activate(self: &Player) -> bool;
         fn data_broadcast_prefetch(self: &Player) -> bool;
         fn data_broadcast_enabled(self: &Player) -> bool;
+        fn recording_reservations_enabled(self: &Player) -> bool;
+        fn reservations_enabled(self: &Player) -> bool;
+        fn reservation_busy(self: &Player) -> bool;
+        fn reservation_error(self: &Player) -> QString;
+        #[qsignal]
+        fn reservations_changed(self: Pin<&mut Player>);
+        #[qinvokable]
+        fn configure_recording_reservations(self: Pin<&mut Player>, enabled: bool);
+        #[qinvokable]
+        fn refresh_reservations(self: Pin<&mut Player>) -> bool;
+        #[qinvokable]
+        fn reservation_state(self: &Player, program_key: QString) -> QString;
+        #[qinvokable]
+        fn can_reserve_program(self: &Player, program_key: QString) -> bool;
+        #[qinvokable]
+        fn can_cancel_reservation(self: &Player, program_key: QString) -> bool;
+        #[qinvokable]
+        fn reserve_program(self: Pin<&mut Player>, program_key: QString) -> bool;
+        #[qinvokable]
+        fn cancel_reservation(self: Pin<&mut Player>, program_key: QString) -> bool;
         #[qinvokable]
         fn configure_data_broadcast(self: Pin<&mut Player>, enabled: bool);
         #[qinvokable]
@@ -688,6 +716,8 @@ pub struct PlayerRust {
     subtitles_active: bool,
     data_broadcast_mode: data_broadcast::Mode,
     data_broadcast_allowed: bool,
+    recording_reservations_allowed: bool,
+    recording_reservations: crate::epgstation::reservations::Manager,
     data_broadcast_endpoint: QString,
     subtitle_display: bool,
     subtitle_data: QString,

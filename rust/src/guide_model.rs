@@ -24,10 +24,14 @@ const STATE: i32 = 263;
 const COUNT: i32 = 264;
 const START: i32 = 265;
 const DURATION: i32 = 266;
+const RESERVATION: i32 = 267;
 
 #[cxx_qt::bridge]
 pub mod ffi {
     unsafe extern "C++" {
+        include!("guide_model_helpers.h");
+        #[cxx_name = "notifyGuideReservation"]
+        fn notify_guide_reservation(model: Pin<&mut GuideModel>, row: i32, role: i32);
         include!("QtCore/QAbstractListModel");
         type QAbstractListModel;
         include!("channel_model_types.h");
@@ -182,6 +186,7 @@ pub mod ffi {
 }
 
 pub struct GuidePresentation {
+    reservations: std::sync::Arc<crate::epgstation::reservations::Snapshot>,
     #[cfg(feature = "qml_tests")]
     test_keys: std::collections::HashMap<String, String>,
     view: View,
@@ -191,6 +196,7 @@ pub struct GuidePresentation {
 impl Default for GuidePresentation {
     fn default() -> Self {
         Self {
+            reservations: Default::default(),
             #[cfg(feature = "qml_tests")]
             test_keys: Default::default(),
             view: View::default(),
@@ -249,6 +255,7 @@ impl ffi::GuideModel {
             (COUNT, "candidateCount"),
             (START, "startAt"),
             (DURATION, "duration"),
+            (RESERVATION, "reservation"),
         ])
     }
     pub fn data(&self, index: &QModelIndex, role: i32) -> QVariant {
@@ -267,6 +274,11 @@ impl ffi::GuideModel {
         };
         let program = view.program(cell);
         match role {
+            RESERVATION => text(
+                view.reservation_program(cell)
+                    .and_then(|program| self.rust().reservations.status(program))
+                    .map_or("", crate::epgstation::reservations::Status::as_str),
+            ),
             CHANNEL => QVariant::from(&(cell.channel as i32)),
             BEGIN => QVariant::from(&(cell.begin as f64)),
             END => QVariant::from(&(cell.end as f64)),
@@ -376,6 +388,30 @@ impl ffi::GuideModel {
         self.as_mut().end_reset_model();
         self.as_mut().select_candidates(QString::default());
         self.changed();
+    }
+    pub(crate) fn replace_reservations(
+        mut self: Pin<&mut Self>,
+        reservations: std::sync::Arc<crate::epgstation::reservations::Snapshot>,
+    ) {
+        if self.rust().reservations == reservations {
+            return;
+        }
+        let changed: Vec<_> = self
+            .rust()
+            .view
+            .cells()
+            .iter()
+            .enumerate()
+            .filter_map(|(row, cell)| {
+                let program = self.rust().view.reservation_program(cell)?;
+                (self.rust().reservations.status(program) != reservations.status(program))
+                    .then_some(row)
+            })
+            .collect();
+        self.as_mut().rust_mut().reservations = reservations;
+        for row in changed {
+            ffi::notify_guide_reservation(self.as_mut(), row as i32, RESERVATION);
+        }
     }
 }
 impl ffi::GuideCandidates {

@@ -215,6 +215,7 @@ impl ffi::Player {
         }
     }
     fn publish_recording_library(mut self: Pin<&mut Self>) {
+        self.as_mut().poll_recording_reservations();
         self.as_mut()
             .rust_mut()
             .video_file_model

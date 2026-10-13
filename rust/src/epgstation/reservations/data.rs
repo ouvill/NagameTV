@@ -1,0 +1,194 @@
+use super::Error;
+use serde::Deserialize;
+use std::collections::{HashMap, HashSet};
+
+pub(super) const MAX_ITEMS: usize = 10_000;
+const MAX_EXACT_ID: u64 = (1 << 53) - 1;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(super) struct Key {
+    pub id: u64,
+    pub channel: u64,
+    pub start: u64,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Program {
+    pub(super) key: Key,
+    pub(super) end: u64,
+}
+impl Program {
+    pub fn new(id: u64, channel: u64, start: u64, end: u64) -> Option<Self> {
+        (id <= MAX_EXACT_ID && channel <= MAX_EXACT_ID && start < end && end <= MAX_EXACT_ID)
+            .then_some(Self {
+                key: Key { id, channel, start },
+                end,
+            })
+    }
+    pub(super) fn ongoing(self, now: u64) -> bool {
+        self.end > now
+    }
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Status {
+    Skipped,
+    Reserved,
+    Conflict,
+    Recording,
+}
+impl Status {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Skipped => "skipped",
+            Self::Reserved => "reserved",
+            Self::Conflict => "conflict",
+            Self::Recording => "recording",
+        }
+    }
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Entry {
+    status: Status,
+    manual: Option<u64>,
+    count: usize,
+}
+#[derive(Default, Clone, Debug, PartialEq, Eq)]
+pub struct Snapshot {
+    entries: HashMap<Key, Entry>,
+}
+impl Snapshot {
+    pub fn status(&self, program: Program) -> Option<Status> {
+        self.entries.get(&program.key).map(|entry| entry.status)
+    }
+    pub(super) fn cancellation(&self, program: Program, now: u64) -> Option<u64> {
+        let entry = self.entries.get(&program.key)?;
+        (program.key.start > now && entry.count == 1 && entry.status != Status::Recording)
+            .then_some(entry.manual)
+            .flatten()
+    }
+    pub(super) fn from_rows(
+        reserves: Vec<Reserve>,
+        recording: Vec<Recording>,
+    ) -> Result<Self, Error> {
+        if reserves.len() + recording.len() > MAX_ITEMS {
+            return Err(Error::Limit);
+        }
+        let mut result = Self::default();
+        let mut ids = HashSet::new();
+        for row in reserves {
+            if row.id > MAX_EXACT_ID || !ids.insert(row.id) || row.end_at <= row.start_at {
+                return Err(Error::Invalid);
+            }
+            let Some(key) = row.key() else { continue }; // Time-specified reservations have no program identity.
+            let status = if row.is_conflict {
+                Status::Conflict
+            } else if row.is_skip || row.is_overlap {
+                Status::Skipped
+            } else {
+                Status::Reserved
+            };
+            let manual = (!row.is_time_specified && row.rule_id.is_none()).then_some(row.id);
+            result
+                .entries
+                .entry(key)
+                .and_modify(|entry| {
+                    entry.status = entry.status.max(status);
+                    entry.manual = None;
+                    entry.count += 1;
+                })
+                .or_insert(Entry {
+                    status,
+                    manual,
+                    count: 1,
+                });
+        }
+        ids.clear();
+        for row in recording {
+            if !ids.insert(row.id) || !row.is_recording {
+                return Err(Error::Invalid);
+            }
+            let Some(key) = row.key() else { continue }; // Recordings from time-specified reservations are not guide actions.
+            result
+                .entries
+                .entry(key)
+                .and_modify(|entry| {
+                    entry.status = Status::Recording;
+                    entry.manual = None;
+                })
+                .or_insert(Entry {
+                    status: Status::Recording,
+                    manual: None,
+                    count: 0,
+                });
+        }
+        Ok(result)
+    }
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct Reserve {
+    pub id: u64,
+    pub program_id: Option<u64>,
+    pub channel_id: u64,
+    pub start_at: u64,
+    pub end_at: u64,
+    pub rule_id: Option<u64>,
+    pub is_skip: bool,
+    pub is_conflict: bool,
+    pub is_overlap: bool,
+    pub is_time_specified: bool,
+}
+impl Reserve {
+    fn key(&self) -> Option<Key> {
+        Some(Key {
+            id: self.program_id?,
+            channel: self.channel_id,
+            start: self.start_at,
+        })
+    }
+    pub(super) fn cancellable(&self, program: Program, now: u64) -> bool {
+        self.key() == Some(program.key)
+            && self.start_at > now
+            && self.rule_id.is_none()
+            && !self.is_time_specified
+    }
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct Recording {
+    id: u64,
+    program_id: Option<u64>,
+    channel_id: u64,
+    start_at: u64,
+    is_recording: bool,
+}
+impl Recording {
+    fn key(&self) -> Option<Key> {
+        Some(Key {
+            id: self.program_id?,
+            channel: self.channel_id,
+            start: self.start_at,
+        })
+    }
+    pub(super) fn matches(&self, program: Program) -> bool {
+        self.key() == Some(program.key)
+    }
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct Schedule {
+    id: u64,
+    channel_id: u64,
+    start_at: u64,
+    end_at: u64,
+    #[serde(default)]
+    is_duration_undefined: bool,
+}
+impl Schedule {
+    pub(super) fn matches(&self, program: Program) -> bool {
+        !self.is_duration_undefined
+            && self.id == program.key.id
+            && self.channel_id == program.key.channel
+            && self.start_at == program.key.start
+            && self.end_at == program.end
+    }
+}

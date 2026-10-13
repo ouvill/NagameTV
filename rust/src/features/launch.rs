@@ -3,7 +3,7 @@ use std::str::FromStr;
 
 #[derive(Debug, PartialEq, Eq, thiserror::Error)]
 #[error(
-    "invalid or repeated feature: {0} (expected none / subtitles / epg / comments / data-broadcast)"
+    "invalid or repeated feature: {0} (expected none / subtitles / epg / comments / data-broadcast / recording-reservations)"
 )]
 pub struct FeatureError(String);
 
@@ -14,6 +14,7 @@ pub struct FeatureSet {
     epg: bool,
     comments: bool,
     data_broadcast: bool,
+    recording_reservations: bool,
 }
 
 impl FromStr for FeatureSet {
@@ -25,6 +26,7 @@ impl FromStr for FeatureSet {
             epg: false,
             comments: false,
             data_broadcast: false,
+            recording_reservations: false,
         };
         if value == "none" {
             return Ok(features);
@@ -35,6 +37,9 @@ impl FromStr for FeatureSet {
                 "epg" if !features.epg => features.epg = true,
                 "comments" if !features.comments => features.comments = true,
                 "data-broadcast" if !features.data_broadcast => features.data_broadcast = true,
+                "recording-reservations" if !features.recording_reservations => {
+                    features.recording_reservations = true
+                }
                 _ => return Err(FeatureError(name.to_owned())),
             }
         }
@@ -51,6 +56,12 @@ pub enum LaunchPlan {
 }
 
 impl LaunchPlan {
+    pub fn recording_reservations(self, preference: bool) -> bool {
+        match self {
+            Self::Preferences => preference,
+            Self::Restricted(features) => features.recording_reservations,
+        }
+    }
     pub fn locked(self) -> bool {
         match self {
             Self::Preferences => false,

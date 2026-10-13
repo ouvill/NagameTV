@@ -107,7 +107,92 @@ pub(super) fn resolve(
     ))
 }
 impl ProgramInfo {
+    pub fn reservation_program(
+        &self,
+        key: &str,
+        channels: &[Channel],
+    ) -> Result<crate::epgstation::reservations::Program, Error> {
+        if key.len() > 512 {
+            return Err(Error::Unavailable);
+        }
+        let identity: Identity = serde_json::from_str(key).map_err(|_| Error::Unavailable)?;
+        if identity.generation != self.generation {
+            return Err(Error::Unavailable);
+        }
+        let channel = channels
+            .iter()
+            .find(|channel| {
+                channel.id == identity.endpoint && channel.broadcast == Some(identity.service)
+            })
+            .ok_or(Error::Unavailable)?;
+        let segment = self
+            .snapshot
+            .segment(Some(identity.service), identity.start)
+            .ok_or(Error::Unavailable)?;
+        if segment.start != identity.start
+            || segment.end != identity.end
+            || target(&self.snapshot, segment) != identity.target
+        {
+            return Err(Error::Unavailable);
+        }
+        let Target::Program {
+            id,
+            start,
+            duration,
+        } = identity.target
+        else {
+            return Err(Error::Unavailable);
+        };
+        crate::epgstation::reservations::Program::new(
+            id,
+            channel.id,
+            start,
+            start.checked_add(duration).ok_or(Error::Unavailable)?,
+        )
+        .ok_or(Error::Unavailable)
+    }
     pub fn watch_channel(&self, key: &str, channels: &[Channel], now: u64) -> Result<usize, Error> {
         resolve(&self.snapshot, self.generation, key, channels, now).map(|(index, _)| index)
+    }
+}
+
+#[cfg(test)]
+mod reservation_tests {
+    use super::*;
+    use crate::features::program_info::{guide::DayWindow, model, view::View};
+    #[test]
+    fn reservations_revalidate_future_keys_and_reject_old_generations_or_ambiguous_programs() {
+        let channels: std::sync::Arc<[_]> = crate::channels::parse(
+            br#"[{"id":10,"networkId":1,"serviceId":1,"name":"TV","type":1}]"#,
+        )
+        .unwrap()
+        .into();
+        let snapshot = model::parse(br#"[{"id":100,"networkId":1,"serviceId":1,"startAt":1000,"duration":1000},{"id":200,"networkId":1,"serviceId":1,"startAt":3000,"duration":1}]"#).unwrap();
+        let view = View::new(
+            snapshot.clone(),
+            channels.clone(),
+            DayWindow::new(0., 5000.).unwrap(),
+            4,
+        )
+        .unwrap();
+        let mut info = ProgramInfo {
+            snapshot,
+            generation: 4,
+            ..Default::default()
+        };
+        assert!(
+            info.reservation_program(&view.cells()[0].key, &channels)
+                .is_ok()
+        );
+        assert!(
+            info.reservation_program(&view.cells()[1].key, &channels)
+                .is_err()
+        );
+        info.generation += 1;
+        assert!(
+            info.reservation_program(&view.cells()[0].key, &channels)
+                .is_err()
+        );
+        assert!(info.reservation_program("{}", &channels).is_err());
     }
 }

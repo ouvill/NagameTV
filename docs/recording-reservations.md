@@ -33,7 +33,7 @@ program_keyは`watch_program(key)`と同じ`watchKey`。QMLで番組IDへ分解�
 
 `Player.guide_model`へ`reservation: string` roleを追加する。
 値は`""`（未予約・未取得・対象外）、`reserved`、`conflict`、`skipped`、`recording`。
-重複予約はskippedに含め、同じ番組に複数状態がある場合は
+サーバーが重複（isOverlap）と判定した予約はskippedに含め、同じ番組に複数状態がある場合は
 recording → conflict → reserved → skippedの順に表示する。
 番組表の競合セル・終了時刻不明のセルは、単一番組を特定できないため空を返す。
 
@@ -85,3 +85,16 @@ ID・局ID・開始／終了時刻を照合する。番組が存在しない場�
 複数予約は状態表示のみとし、変更はEPGStationで行う。録画停止・ルール編集・
 スキップ解除・予約詳細設定は今回の操作に含めない。
 フラグの実験扱いを解除する条件と検証結果は[開発手順](development.md#トランクベース開発とフィーチャーフラグ)へ記録する。
+
+## 検証
+
+`python3 scripts/test.py app`でフラグ・設定復元・番組キー・予約所有者を検証し、
+`python3 scripts/test.py connection`でQtモデルと通知中の整合性を確認する。
+wiremockでは認証Cookie、ページ取得、追加・取消し、失敗後の重複送信防止、
+取消し後の古い結果の破棄を扱う。
+
+`python3 -m scripts.testing.epgstation_integration`の固定版Docker環境には
+4状態の予約・録画中データを登録する。認証あり／なしで製品クライアントの一覧取得と
+番組詳細の照合を検証する。番組・時刻は合成データで、チューナーや録画処理は起動しない。
+この環境はoperator IPCを起動しないため、予約追加・取消しの実サーバー結合は未検証。
+未検証経路を含むため、検査に成功してもフラグの既定値はOFFを維持する。
