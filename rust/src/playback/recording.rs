@@ -261,11 +261,11 @@ impl Recording {
     }
     fn set_history_identity(
         &mut self,
-        identity: Option<crate::viewing_history::recordings::Identity>,
+        identity: Option<Arc<crate::viewing_history::recordings::Identity>>,
     ) {
         match self {
-            Self::Transport(file) => file.history = identity.map(Arc::new),
-            Self::Media(file) => file.history = identity.map(Arc::new),
+            Self::Transport(file) => file.history = identity,
+            Self::Media(file) => file.history = identity,
         }
     }
     pub fn replay(&self) -> Request {
@@ -279,7 +279,7 @@ impl Recording {
         if let Self::Media(file) = self {
             request.external_subtitle = file.external_subtitle.clone();
         }
-        request.history = Some(self.history_identity());
+        request.history = Some(Arc::new(self.history_identity()));
         request
     }
     #[cfg(feature = "native_tests")]

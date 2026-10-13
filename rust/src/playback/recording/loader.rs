@@ -19,7 +19,7 @@ pub enum Purpose {
 
 pub struct Request {
     location: Location,
-    pub(super) history: Option<crate::viewing_history::recordings::Identity>,
+    pub(super) history: Option<Arc<crate::viewing_history::recordings::Identity>>,
     purpose: Purpose,
     broadcast: Option<super::Broadcast>,
     metadata: Option<crate::epgstation::PlaybackMetadata>,
@@ -60,7 +60,7 @@ impl Request {
         mut self,
         identity: crate::viewing_history::recordings::Identity,
     ) -> Self {
-        self.history = Some(identity);
+        self.history = Some(Arc::new(identity));
         self
     }
     /// Resolve before acknowledging the drop: KDE retires its transfer when
