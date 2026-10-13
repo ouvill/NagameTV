@@ -158,10 +158,12 @@ ViewerWindow {
     readonly property bool guideVisible: !closing && player.epg_enabled && showGuide
     onSummariesVisibleChanged: player.browser_open(summariesVisible)
     readonly property real panelWidth: Math.min(408, Math.max(320, viewport.width * 0.32))
-    readonly property var selectedChannel: {
-        player.channels.revision;
-        return player.channels.row(player.selected);
-    }
+    // row() is a plain call: count the model's change signal so a favorite set
+    // on an unchanged list re-reads the row as well.
+    property int channelRevision: 0
+    Connections { target: player.channels; function onChanged() { root.channelRevision++; } }
+    readonly property var selectedChannel: root.channelRevision >= 0 && player.channels.revision >= 0
+        ? player.channels.row(player.selected) : ({})
     Player {
         id: player
     }
