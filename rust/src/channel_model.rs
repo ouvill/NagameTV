@@ -16,6 +16,7 @@ const LOGO: i32 = 259;
 const SERVICE: i32 = 260;
 const FAVORITE: i32 = 261;
 const FAVORITE_ORDER: i32 = 262;
+const REMOTE_KEY: i32 = 263;
 
 #[cxx_qt::bridge]
 pub mod ffi {
@@ -161,6 +162,8 @@ struct Row {
     #[cfg_attr(feature = "qml_tests", serde(default))]
     #[cfg_attr(feature = "qml_tests", serde(alias = "serviceId"))]
     service_id: String,
+    #[cfg_attr(feature = "qml_tests", serde(default, alias = "remoteKey"))]
+    remote_key: i32,
     #[cfg_attr(feature = "qml_tests", serde(default))]
     favorite: bool,
     #[cfg_attr(feature = "qml_tests", serde(default = "not_favorite"))]
@@ -200,6 +203,7 @@ impl ffi::ChannelModel {
             (SERVICE, "serviceId"),
             (FAVORITE, "favorite"),
             (FAVORITE_ORDER, "favoriteOrder"),
+            (REMOTE_KEY, "remoteKey"),
         ] {
             roles.insert(role, QByteArray::from(name));
         }
@@ -220,6 +224,7 @@ impl ffi::ChannelModel {
         };
         let value = match role {
             INDEX => return QVariant::from(&channel.index),
+            REMOTE_KEY => return QVariant::from(&channel.remote_key),
             FAVORITE => return QVariant::from(&channel.favorite),
             FAVORITE_ORDER => return QVariant::from(&channel.favorite_order),
             LABEL => channel.label.clone(),
@@ -264,6 +269,7 @@ impl ffi::ChannelModel {
                     String::new()
                 },
                 service_id: channel.id.to_string(),
+                remote_key: i32::from(channel.remote_key.unwrap_or_default()),
                 favorite: favorites.contains(&channel.id),
                 favorite_order: favorites
                     .iter()
@@ -301,6 +307,7 @@ impl ffi::ChannelModel {
                         String::new()
                     },
                     service_id: channel.id.to_string(),
+                    remote_key: i32::from(channel.remote_key.unwrap_or_default()),
                     favorite: favorites.contains(service),
                     favorite_order: favorites
                         .iter()

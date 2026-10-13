@@ -313,6 +313,8 @@ pub mod ffi {
         fn previous_channel_available(self: &Player) -> bool;
         #[qinvokable]
         fn previous_channel(self: Pin<&mut Player>) -> bool;
+        #[qinvokable]
+        fn select_remote_key(self: Pin<&mut Player>, key: i32, band: QString) -> bool;
         fn viewing_history_ready(self: &Player) -> bool;
         fn viewing_history_error(self: &Player) -> QString;
         #[qsignal]

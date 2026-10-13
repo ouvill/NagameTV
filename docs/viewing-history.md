@@ -149,3 +149,20 @@ EPGStation一覧の`thumbnails`の先頭IDを使い、`GET /api/thumbnails/{thum
 その他の失敗はtracingへ記録する。ログへ画像URLや認証情報を含めない。
 ログインの更新時はキャッシュと未完了要求を無効化し、古い認証の結果を混在させない。
 QMLでは`Image.source: thumbnail`とし、表示サイズに合わせた`sourceSize`を設定する。
+
+## リモコン番号での選局
+
+`ChannelModel`（channelsとrecent_channels）に`remoteKey: int` roleを追加する。
+Mirakurunの`remoteControlKeyId`が1〜12ならその値、それ以外・未指定なら0。
+テスト用load_testでもremoteKeyを省略できる（0）。
+
+`Player.select_remote_key(key: int, band: string): bool`は該当局を通常の選局処理で開く。
+keyは1〜12。bandは`GR`、`BS`、`CS`、`SKY`、`OTHER`を受け付ける。
+`ALL`または空文字列なら現在のライブ局の放送波、なければ選択局の放送波、
+いずれもなければGRを使う。未対応の放送波・番号・該当局なしではfalseを返す。
+受付時trueで、接続後の失敗は既存の再生エラーへ通知する。
+
+同じ番号の候補に現在視聴中の局が含まれる場合はその局を維持する。
+それ以外はserviceIdの最小値、同値ならMirakurunのサービスIDの最小値で選ぶ。
+serviceId未指定は末尾とする。主サービスを優先し、一覧の応答順や局名の変更で
+選局先が変わらないようにする。番号は放送波をまたいで検索しない。
