@@ -93,6 +93,30 @@ Item {
                 waitForRendering(timeline);
                 mouseMove(host.contentItem, 5, 5);
             }
+            function test_position_updates_preserve_labels_ranges_and_boundaries() {
+                const names = ["programSegments", "retainedRanges", "programBoundaryMarkers", "programBoundaryClocks"];
+                const repeaters = names.map(name => findChild(timeline, name));
+                const delegates = repeaters.map(repeater => repeater.itemAt(0));
+                const data = sample();
+                const previousWidth = delegates[1].width;
+                data.revision++;
+                data.viewing.position += minuteMs;
+                data.live.position += minuteMs;
+                data.available[0].end += minuteMs;
+                publish(data);
+                waitForRendering(timeline);
+                for (let i = 0; i < repeaters.length; i++) compare(repeaters[i].itemAt(0), delegates[i]);
+                verify(delegates[1].width > previousWidth);
+                compare(findChild(timeline, "liveSeekSlider").value, data.viewing.position);
+                data.programs[0].title = "Updated program";
+                data.boundaries[0] += minuteMs;
+                publish(data);
+                verify(delegates[0].text.includes("Updated program"));
+                compare(delegates[2].modelData, data.boundaries[0]);
+                compare(delegates[3].modelData, data.axis.start);
+                publish(null);
+                for (const repeater of repeaters) compare(repeater.count, 0);
+            }
             function test_broadcast_progress_cursor_and_history_are_independent_and_centered() {
                 const slider = findChild(timeline, "liveSeekSlider");
                 const progress = findChild(timeline, "programProgressFill");
@@ -282,6 +306,15 @@ Item {
                 compare(clocks.itemAt(2).text, "21:05");
                 compare(findChild(timeline, "timelineEndLabel").text, "21:35");
                 compare(findChild(timeline, "livePositionLabel").text, "LIVE 21:20");
+                data.live.utc += minuteMs - 1;
+                publish(data);
+                compare(findChild(timeline, "livePositionLabel").text, "LIVE 21:20");
+                data.live.utc++;
+                publish(data);
+                compare(findChild(timeline, "livePositionLabel").text, "LIVE 21:21");
+                data.live.utc = null;
+                publish(data);
+                compare(findChild(timeline, "livePositionLabel").text, "LIVE");
             }
             function test_clock_labels_do_not_overlap_live_or_each_other_at_narrow_widths() {
                 const live = findChild(timeline, "livePositionLabel");
