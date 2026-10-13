@@ -1,4 +1,5 @@
 //! Product Main.qml and real output; the HTTP fixture only replaces the tuner.
+mod performance;
 use super::bridge::ffi;
 use super::startup::{TestResult, evaluate, wait_for};
 use cxx_qt_lib::{QGuiApplication, QQmlApplicationEngine, QString};
@@ -39,6 +40,13 @@ const OBSERVER: &str =
 const RECOVERY_OBSERVATION: Duration = Duration::from_secs(4);
 const RESIZE_HISTORY: Duration = Duration::from_secs(7);
 const LIVE_METADATA_READY: &str = "player.program_status === 'available' && JSON.parse(player.current_program_data) !== null && JSON.parse(player.live_timeline).viewing.utc !== null";
+
+pub(super) fn run_performance(
+    app: &QGuiApplication,
+    engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
+) -> TestResult {
+    performance::run(app, engine)
+}
 
 #[derive(Clone, Copy)]
 enum Traffic {

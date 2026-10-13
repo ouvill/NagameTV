@@ -469,6 +469,7 @@ enum WindowCheck {
     },
     Screenshots,
     VideoProcessing,
+    PlaybackPerformance,
     RecordingAudit(std::path::PathBuf),
     RecordingProbe(std::path::PathBuf),
 }
@@ -478,6 +479,7 @@ fn window(
     preferences: &settings::Preferences,
     check: WindowCheck,
 ) -> TestResult {
+    let load_started = Instant::now();
     let _preloaded = playback::preload()?;
     let mut engine = QQmlApplicationEngine::new();
     assert!(crate::qt::ffi::initialize_ui_language(
@@ -490,6 +492,15 @@ fn window(
     assert_eq!(ffi::root_count(&engine), 1);
     assert!(evaluate(&mut engine, "root.settings === null")?);
     match check {
+        WindowCheck::PlaybackPerformance => {
+            eprintln!(
+                "PLAYBACK_LOAD_MS {}",
+                load_started.elapsed().as_secs_f64() * 1000.0
+            );
+            let result = super::timeshift::run_performance(app, &mut engine);
+            evaluate(&mut engine, "player.stop(); root.close(); true")?;
+            return result;
+        }
         WindowCheck::Startup => {
             assert!(evaluate(
                 &mut engine,
@@ -2471,6 +2482,10 @@ pub fn run_data_broadcast_live(
 }
 pub fn run_video_processing() -> i32 {
     run_window_check(WindowCheck::VideoProcessing)
+}
+
+pub fn run_playback_performance() -> i32 {
+    run_window_check(WindowCheck::PlaybackPerformance)
 }
 
 pub fn run_screenshots() -> i32 {

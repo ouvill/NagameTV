@@ -48,6 +48,30 @@ class RunnerTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate_arguments("danmaku", ["--evaluation-legacy-comments", "extra"])
 
+    def test_memory_benchmark_gui_launch_keeps_the_inherited_build_lock(self):
+        # Replace only hardware setup. The child must actually reacquire the
+        # inherited lock without waiting for its own parent to release it.
+        fixture = self.directory / "fixture"
+        fixture.touch()
+        script = """
+import subprocess, sys
+from unittest.mock import patch
+from scripts.dev import benchmark_playback_memory as benchmark
+fixture = sys.argv[1]
+sys.argv = ['benchmark', fixture + '-output', '--binary', fixture, '--ts', fixture]
+def launch(command, **kwargs):
+    child = [sys.executable, '-c', 'from scripts.build.support import ensure_lock; ensure_lock(); print("lock inherited")']
+    return subprocess.run(child, timeout=5, check=True, **kwargs).returncode
+with patch.object(benchmark.subprocess, 'call', side_effect=launch):
+    raise SystemExit(benchmark.main())
+"""
+        env = dict(self.env)
+        env.pop("NAGAMETV_GUI_SESSION_DIR", None)
+        result = subprocess.run(["bash", str(LOCK), sys.executable, "-c", script, str(fixture)],
+                                env=env, cwd=ROOT, text=True, capture_output=True, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("lock inherited", result.stdout)
+
     def setUp(self):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)

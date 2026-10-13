@@ -87,6 +87,7 @@ bash scripts/build/with-build-lock.sh cargo clippy --manifest-path rust/Cargo.to
 | 診断ログの解析 | `python3 -m scripts.dev.analyze_memory --output DIRECTORY` | 機器不要。既存ログからHTMLを生成 |
 | 外部PIDのメモリー監視 | `bash scripts/dev/monitor-memory.sh PID [INTERVAL [CSV]]` | Linuxの `/proc` を読み、RSS・PSS・スレッド数・FD数をCSVへ記録。アプリ内診断のないプロセスにも使用可能 |
 | 再生・字幕のメモリー計測 | `python3 -m scripts.dev.benchmark_playback_memory --help` / `python3 -m scripts.dev.benchmark_subtitle_memory --help` | 実行時は専用GUI環境。[再生](../docs/playback-memory-architecture.md)・[字幕](../docs/subtitle-memory.md) |
+| 選局・poll処理の計測 | `python3 scripts/test.py startup --profile release -- playback-performance` | 専用GUI環境・実GPU・仮想音声出力。ローカル合成TSのみ。[測定範囲](../docs/playback-performance.md) |
 | UI部品の画像生成 | `python3 scripts/test.py ui-capture` | 専用GUI環境。`build/ui-review/` に出力 |
 | 公開用スクリーンショット | `bash scripts/dev/capture-publicity.sh` | 専用GUI環境。[準備](../docs/publicity.md) |
 | IME診断 | `bash scripts/dev/diagnose-ime.sh wayland` または `ibus` | 問題が起きるデスクトップで手動実行。[手順](../docs/platform-startup.md) |
