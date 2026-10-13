@@ -3,11 +3,11 @@ use crate::services::{FetchError, Job, Network, Progress, ServerUrl, Stopping};
 use serde::Deserialize;
 use std::sync::Arc;
 mod client;
-pub mod thumbnails;
 #[cfg(test)]
 mod provider_tests;
 #[cfg(test)]
 mod tests;
+pub mod thumbnails;
 pub use client::Login;
 pub(crate) use client::PlaybackMetadata;
 use client::{Access, Connection, Fetched};
@@ -436,7 +436,9 @@ impl Library {
                     self.revision = self.revision.wrapping_add(1);
                     match result {
                         Ok(Fetched { page, connection }) => {
-                            if self.session.is_none() { self.thumbnails.clear(); }
+                            if self.session.is_none() {
+                                self.thumbnails.clear();
+                            }
                             let verified = VerifiedEndpoint(query.endpoint.clone());
                             self.session = Some((query.endpoint.clone(), connection.clone()));
                             self.catalogue = Catalogue::Loaded {
@@ -576,10 +578,25 @@ impl Library {
         Ok(request.with_history(identity))
     }
     pub fn thumbnail(&self, server: &str, id: Option<u64>) -> &str {
-        id.map_or("", |id| self.thumbnails.image(&thumbnails::Key { server: server.into(), id }))
+        id.map_or("", |id| {
+            self.thumbnails.image(&thumbnails::Key {
+                server: server.into(),
+                id,
+            })
+        })
     }
     pub fn poll_thumbnails(&mut self, network: &Network, continued: Vec<thumbnails::Key>) -> bool {
-        let wanted = self.rows().iter().filter_map(|row| Some(thumbnails::Key { server: self.server()?.to_owned(), id: row.thumbnail_id? })).chain(continued).collect::<Vec<_>>();
+        let wanted = self
+            .rows()
+            .iter()
+            .filter_map(|row| {
+                Some(thumbnails::Key {
+                    server: self.server()?.to_owned(),
+                    id: row.thumbnail_id?,
+                })
+            })
+            .chain(continued)
+            .collect::<Vec<_>>();
         self.thumbnails.configure(wanted);
         self.thumbnails.poll(network, self.session.as_ref())
     }

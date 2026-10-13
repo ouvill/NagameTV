@@ -21,6 +21,9 @@ pub mod ffi {
     unsafe extern "C++" {
         include!("QtCore/QAbstractListModel");
         type QAbstractListModel;
+        include!("channel_model_helpers.h");
+        #[cxx_name = "notifyModelData"]
+        fn notify_continue_data(model: Pin<&mut ContinueWatchingModel>);
         include!("cxx-qt-lib/qmodelindex.h");
         type QModelIndex = cxx_qt_lib::QModelIndex;
         include!("cxx-qt-lib/qstring.h");
@@ -37,7 +40,7 @@ pub mod ffi {
     unsafe extern "C++" {
         include!("channel_model_test.h");
         #[cxx_name = "checkChannelModel"]
-        fn check_model(model: Pin<&mut ContinueWatchingModel>);
+        fn check_continue_model(model: Pin<&mut ContinueWatchingModel>);
     }
     unsafe extern "RustQt" {
         #[qobject]
@@ -200,6 +203,20 @@ impl ffi::ContinueWatchingModel {
     }
     fn replace_rows(mut self: Pin<&mut Self>, rows: Vec<Row>) {
         if self.rust().rows == rows {
+            return;
+        }
+        if self
+            .rust()
+            .rows
+            .iter()
+            .map(|row| &row.recording_key)
+            .eq(rows.iter().map(|row| &row.recording_key))
+        {
+            self.as_mut().rust_mut().rows = rows;
+            let revision = self.rust().revision.wrapping_add(1);
+            self.as_mut().rust_mut().revision = revision;
+            ffi::notify_continue_data(self.as_mut());
+            self.changed();
             return;
         }
         self.as_mut().begin_reset_model();

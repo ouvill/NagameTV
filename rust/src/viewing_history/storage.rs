@@ -20,6 +20,39 @@ pub(super) enum Error {
     #[error("Viewing history exceeds its limits or contains invalid entries")]
     Invalid,
 }
+impl Error {
+    pub(super) fn diagnostic(&self) -> String {
+        match self {
+            Self::Parse(error) => {
+                let (path, source) = match error {
+                    crate::json::Error::Decode { path, source } => (path.to_string(), source),
+                    crate::json::Error::Trailing(source) => ("root".into(), source),
+                };
+                // Serde's message can quote a stored HTTP password or token.
+                // Report its category and location without quoting input values.
+                format!(
+                    "Viewing history JSON is invalid at {path}: {:?}, line {}, column {}",
+                    source.classify(),
+                    source.line(),
+                    source.column()
+                )
+            }
+            Self::Io(_) | Self::Serialize(_) | Self::Invalid => self.to_string(),
+        }
+    }
+    fn report(&self, operation: &str) {
+        match self {
+            Self::Parse(_) => {
+                tracing::error!(operation, cause = %self.diagnostic(), "Viewing history operation failed")
+            }
+            Self::Io(_) | Self::Serialize(_) | Self::Invalid => tracing::error!(
+                operation,
+                error = self as &dyn std::error::Error,
+                "Viewing history operation failed"
+            ),
+        }
+    }
+}
 pub(super) enum Update {
     Loaded(Result<Document, Error>),
     Saved(Result<(), Error>),
@@ -51,10 +84,7 @@ impl Worker {
                 let loaded = load(&path);
                 let writable = loaded.is_ok();
                 if let Err(error) = &loaded {
-                    tracing::error!(
-                        error = error as &dyn std::error::Error,
-                        "Load viewing history failed; preserving existing file"
-                    );
+                    error.report("Load viewing history; preserve existing file on failure");
                 }
                 if sender.send(Update::Loaded(loaded)).is_err() {
                     // The owner was destroyed before initialization completed.
@@ -80,10 +110,7 @@ impl Worker {
                     if writable && let Some(data) = data {
                         let result = save(&path, &data);
                         if let Err(error) = &result {
-                            tracing::error!(
-                                error = error as &dyn std::error::Error,
-                                "Save viewing history failed"
-                            );
+                            error.report("Save viewing history");
                         }
                         if sender.send(Update::Saved(result)).is_err() {
                             // Shutdown may release the receiver after its final snapshot.
@@ -108,10 +135,8 @@ impl Worker {
         self.mailbox.wake.notify_one();
     }
     pub fn poll(&self) -> Option<Update> {
-        match self.updates.try_recv() {
-            Ok(update) => Some(update),
-            Err(mpsc::TryRecvError::Empty | mpsc::TryRecvError::Disconnected) => None,
-        }
+        // No snapshot is normal between saves. Worker panics are reported on join.
+        self.updates.try_recv().ok()
     }
 }
 impl Drop for Worker {
@@ -164,6 +189,45 @@ fn save(path: &Path, data: &Document) -> Result<(), Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn invalid_saved_values_do_not_leak_into_diagnostics() {
+        let error = crate::json::from_slice::<super::super::recordings::Source>(
+            br#"{"kind":"private-password"}"#,
+        )
+        .unwrap_err();
+        let message = Error::Parse(error).diagnostic();
+        assert!(message.contains("JSON is invalid"));
+        assert!(!message.contains("private-password"));
+    }
+    #[test]
+    fn recording_identity_and_position_survive_atomic_replacement() {
+        use super::super::recordings::{Entry, Identity, Position, Source};
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("history.json");
+        let identity = Identity::new(
+            Source::Epgstation {
+                server: "http://example.test".into(),
+                recorded_id: u64::MAX,
+                video_file_id: 42,
+            },
+            "Recording".into(),
+        );
+        let position = Position::new(120_000.0, 600_000.0).unwrap();
+        let data = Document {
+            next_key: 1,
+            recordings: vec![Entry {
+                key: "recording:1".into(),
+                identity: identity.clone(),
+                position,
+            }],
+            ..Default::default()
+        };
+        save(&path, &data).unwrap();
+        let restored = load(&path).unwrap();
+        assert_eq!(restored.recordings[0].identity, identity);
+        assert_eq!(restored.recordings[0].position, position);
+        assert_eq!(restored.next_key, 1);
+    }
     #[test]
     fn last_snapshot_survives_shutdown_and_corrupt_files_are_preserved() {
         let dir = tempfile::tempdir().unwrap();

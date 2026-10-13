@@ -231,20 +231,37 @@ pub(super) async fn thumbnail(
             .redirect(reqwest::redirect::Policy::none())
             .connect_timeout(Duration::from_secs(5))
             .timeout(Duration::from_secs(10))
-            .build().map_err(network)?,
+            .build()
+            .map_err(network)?,
     };
-    let mut response = client.get(format!("{}/api/thumbnails/{id}", endpoint.as_str())).send().await.map_err(network)?;
-    if response.status() == reqwest::StatusCode::NOT_FOUND { return Ok(None); }
+    let mut response = client
+        .get(format!("{}/api/thumbnails/{id}", endpoint.as_str()))
+        .send()
+        .await
+        .map_err(network)?;
+    if response.status() == reqwest::StatusCode::NOT_FOUND {
+        return Ok(None);
+    }
     response = response.error_for_status().map_err(network)?;
-    if !response.status().is_success() { return Err(FetchError::Parse(ThumbnailError::Format)); }
+    if !response.status().is_success() {
+        return Err(FetchError::Parse(ThumbnailError::Format));
+    }
     let mut bytes = Vec::new();
     while let Some(chunk) = response.chunk().await.map_err(network)? {
         if bytes.len() + chunk.len() > MAX_IMAGE_BYTES {
-            return Err(NetworkError::ResponseTooLarge { limit: MAX_IMAGE_BYTES }.into());
+            return Err(NetworkError::ResponseTooLarge {
+                limit: MAX_IMAGE_BYTES,
+            }
+            .into());
         }
         bytes.extend_from_slice(&chunk);
     }
     const JPEG_SIGNATURE: &[u8] = &[0xff, 0xd8, 0xff];
-    if !bytes.starts_with(JPEG_SIGNATURE) { return Err(FetchError::Parse(ThumbnailError::Format)); }
-    Ok(Some(format!("data:image/jpeg;base64,{}", gstreamer::glib::base64_encode(&bytes))))
+    if !bytes.starts_with(JPEG_SIGNATURE) {
+        return Err(FetchError::Parse(ThumbnailError::Format));
+    }
+    Ok(Some(format!(
+        "data:image/jpeg;base64,{}",
+        gstreamer::glib::base64_encode(&bytes)
+    )))
 }

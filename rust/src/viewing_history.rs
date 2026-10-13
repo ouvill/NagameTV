@@ -21,11 +21,10 @@ impl Document {
         if self.recordings.len() > recordings::MAX_RECORDINGS
             || self.recordings.iter().any(|entry| {
                 !entry.valid()
-                    || entry
-                        .key
-                        .strip_prefix("recording:")
-                        .and_then(|key| key.parse::<u64>().ok())
-                        .is_none_or(|key| key == 0 || key > self.next_key)
+                    || entry.key.strip_prefix("recording:").is_none_or(|key| {
+                        !key.parse::<u64>()
+                            .is_ok_and(|key| key > 0 && key <= self.next_key)
+                    })
             })
             || self
                 .recordings
@@ -96,7 +95,7 @@ impl History {
                     "Start viewing history worker failed"
                 );
                 Self {
-                    error: error.to_string(),
+                    error: error.diagnostic(),
                     ..Self::transient()
                 }
             }
@@ -256,14 +255,14 @@ impl History {
                 storage::Update::Loaded(Err(error)) => {
                     changed = true;
                     self.state = State::Ready(Document::default());
-                    self.error = error.to_string();
+                    self.error = error.diagnostic();
                 }
                 storage::Update::Saved(Ok(())) => {
                     changed |= !self.error.is_empty();
                     self.error.clear();
                 }
                 storage::Update::Saved(Err(error)) => {
-                    let error = error.to_string();
+                    let error = error.diagnostic();
                     changed |= self.error != error;
                     self.error = error;
                 }
@@ -276,6 +275,25 @@ impl History {
 #[cfg(test)]
 mod tests {
     use super::*;
+    proptest::proptest! {
+        #[test]
+        fn favorite_operation_sequences_preserve_membership_and_unique_order(operations in proptest::collection::vec((0_u64..20, proptest::option::of(0_usize..20)), 0..100)) {
+            let mut history = History::transient();
+            let mut expected = std::collections::HashSet::new();
+            for (service, position) in operations {
+                match position {
+                    None => {
+                        history.toggle_favorite(service);
+                        if !expected.insert(service) { expected.remove(&service); }
+                    }
+                    Some(position) => { history.move_favorite(service, position); }
+                }
+                let actual: std::collections::HashSet<_> = history.favorites().iter().copied().collect();
+                proptest::prop_assert_eq!(&actual, &expected);
+                proptest::prop_assert_eq!(actual.len(), history.favorites().len());
+            }
+        }
+    }
     #[test]
     fn recent_stations_are_unique_bounded_and_newest_first() {
         let mut history = History::transient();

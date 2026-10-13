@@ -196,9 +196,15 @@ impl Values {
         player.stream_state = stream_state;
         let service = match &player.stream_state {
             State::Playing(live, playback::timeline::Phase::Playing) => Some(live.service()),
-            State::Playing(_, _) | State::Stopped(_) | State::Connecting(_) | State::Recording(_, _) | State::StopFailed(_) => None,
+            State::Playing(_, _)
+            | State::Stopped(_)
+            | State::Connecting(_)
+            | State::Recording(_, _)
+            | State::StopFailed(_) => None,
         };
-        let history_changed = player.viewing_history.observe_live(service, std::time::Instant::now());
+        let history_changed = player
+            .viewing_history
+            .observe_live(service, std::time::Instant::now());
         player.timeline = timeline;
         player.speed = speed;
         player.timeshift_bytes_per_second = timeshift_bytes_per_second;
@@ -268,7 +274,9 @@ impl<'a> Prepared<'a> {
 }
 impl Committed<'_> {
     fn notify(mut self) {
-        if self.history_changed { self.player.as_mut().publish_viewing_history(); }
+        if self.history_changed {
+            self.player.as_mut().publish_viewing_history();
+        }
         self.before
             .notify_changes(&self.after, self.player.as_mut());
         if self.player.ended() && !self.before.ended {

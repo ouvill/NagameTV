@@ -1752,6 +1752,20 @@ fn check_recording(
         engine,
         "root.active && inputContext.accepts(InputContext.Playback)",
     )?;
+    // The stopped overview owns its card clicks. Exercise the video gesture
+    // during playback, when the video surface is the hit-test target.
+    for fullscreen in [true, false] {
+        ffi::doubleClickRoot(engine.pin_mut(), &cxx_qt_lib::QPoint::new(450, 200))?;
+        wait_for(
+            app,
+            engine,
+            if fullscreen {
+                "viewerActions.fullscreen"
+            } else {
+                "!viewerActions.fullscreen"
+            },
+        )?;
+    }
     ffi::clickRootKey(engine.pin_mut(), &QString::from("Space"))?;
     wait_for(
         app,
@@ -1890,6 +1904,19 @@ fn check_recording(
         engine,
         "!player.seeking && player.paused && Math.abs(player.position_ms - 15000) < 1500 && !player.transport_error.length",
     )?;
+    evaluate(engine, "player.stop(); true")?;
+    assert!(evaluate(engine, "player.continue_recordings.count > 0")?);
+    assert!(evaluate(
+        engine,
+        &format!("recordingInput.openUrl({quoted_url})")
+    )?);
+    wait_for(
+        app,
+        engine,
+        "player.playing && !player.seeking && player.position_ms > 12000 && player.position_ms < 19000",
+    )?;
+    assert!(evaluate(engine, "player.pause()")?);
+    wait_for(app, engine, "player.paused")?;
     evaluate(engine, "viewerActions.playbackToggle.trigger(); true")?;
     wait_for(app, engine, "player.playing && !player.paused")?;
     assert!(evaluate(engine, "player.seek_to(59000)")?);
@@ -1917,20 +1944,6 @@ fn check_shortcuts(
         "root.showChannels = false; root.requestActivate(); surface.forceActiveFocus(); true",
     )?;
     wait_for(app, engine, "root.active && inputContext.navigationEnabled")?;
-    // The video gesture shares fullscreen restoration with F11. Native input
-    // tests hit testing, not just a direct call to the QML signal handler.
-    for fullscreen in [true, false] {
-        ffi::doubleClickRoot(engine.pin_mut(), &cxx_qt_lib::QPoint::new(450, 200))?;
-        wait_for(
-            app,
-            engine,
-            if fullscreen {
-                "viewerActions.fullscreen"
-            } else {
-                "!viewerActions.fullscreen"
-            },
-        )?;
-    }
     ffi::clickRootKey(engine.pin_mut(), &QString::from("F11"))?;
     wait_for(app, engine, "viewerActions.fullscreen")?;
     for _ in 0..2 {

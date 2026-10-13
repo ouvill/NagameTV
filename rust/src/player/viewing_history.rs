@@ -149,19 +149,36 @@ impl ffi::Player {
         }
     }
     pub(super) fn publish_recording_history(mut self: Pin<&mut Self>) {
-        let continued = self.rust().viewing_history.continue_watching().into_iter().map(|entry| {
-            let thumbnail = match &entry.identity.source {
-                crate::viewing_history::recordings::Source::Epgstation { server, .. } => self.rust().recording_library.thumbnail(server, entry.identity.thumbnail_id).to_owned(),
-                crate::viewing_history::recordings::Source::Local { .. } | crate::viewing_history::recordings::Source::Http { .. } => String::new(),
-            };
-            (entry, thumbnail)
-        }).collect();
+        let continued = self
+            .rust()
+            .viewing_history
+            .continue_watching()
+            .into_iter()
+            .map(|entry| {
+                let thumbnail = match &entry.identity.source {
+                    crate::viewing_history::recordings::Source::Epgstation { server, .. } => self
+                        .rust()
+                        .recording_library
+                        .thumbnail(server, entry.identity.thumbnail_id)
+                        .to_owned(),
+                    crate::viewing_history::recordings::Source::Local { .. }
+                    | crate::viewing_history::recordings::Source::Http { .. } => String::new(),
+                };
+                (entry, thumbnail)
+            })
+            .collect();
         let rows = self.rust().recording_library.rows();
         let server = self.rust().recording_library.server();
-        let thumbnails = rows.iter().filter_map(|row| {
-            let thumbnail = self.rust().recording_library.thumbnail(server?, row.thumbnail_id);
-            (!thumbnail.is_empty()).then(|| (row.id, thumbnail.to_owned()))
-        }).collect();
+        let thumbnails = rows
+            .iter()
+            .filter_map(|row| {
+                let thumbnail = self
+                    .rust()
+                    .recording_library
+                    .thumbnail(server?, row.thumbnail_id);
+                (!thumbnail.is_empty()).then(|| (row.id, thumbnail.to_owned()))
+            })
+            .collect();
         let mut progress = std::collections::HashMap::new();
         for entry in self.rust().viewing_history.recordings() {
             if let crate::viewing_history::recordings::Source::Epgstation {
@@ -198,12 +215,11 @@ impl ffi::Player {
                     .as_mut()
                     .and_then(|session| session.resume(&this.viewing_history, duration))
             };
-            if let Some(target) = target {
-                if !self.as_mut().seek_to(target)
-                    && let Some(session) = &mut self.as_mut().rust_mut().recording_history_session
-                {
-                    session.seek_rejected();
-                }
+            if let Some(target) = target
+                && !self.as_mut().seek_to(target)
+                && let Some(session) = &mut self.as_mut().rust_mut().recording_history_session
+            {
+                session.seek_rejected();
             }
         }
         let ended = self.ended();
@@ -241,17 +257,33 @@ impl ffi::Player {
 
 impl ffi::Player {
     pub(super) fn poll_recording_thumbnails(mut self: Pin<&mut Self>) {
-        let wanted = self.rust().viewing_history.continue_watching().into_iter().filter_map(|entry| {
-            match entry.identity.source {
-                crate::viewing_history::recordings::Source::Epgstation { server, .. } => Some(crate::epgstation::thumbnails::Key { server, id: entry.identity.thumbnail_id? }),
-                crate::viewing_history::recordings::Source::Local { .. } | crate::viewing_history::recordings::Source::Http { .. } => None,
-            }
-        }).collect();
+        let wanted = self
+            .rust()
+            .viewing_history
+            .recordings()
+            .iter()
+            .filter(|entry| entry.position.resumable())
+            .take(crate::viewing_history::recordings::MAX_CONTINUE)
+            .filter_map(|entry| match &entry.identity.source {
+                crate::viewing_history::recordings::Source::Epgstation { server, .. } => {
+                    Some(crate::epgstation::thumbnails::Key {
+                        server: server.clone(),
+                        id: entry.identity.thumbnail_id?,
+                    })
+                }
+                crate::viewing_history::recordings::Source::Local { .. }
+                | crate::viewing_history::recordings::Source::Http { .. } => None,
+            })
+            .collect();
         let changed = {
             let this = self.as_mut().rust_mut();
             let this = this.get_mut();
-            this.network.as_ref().is_some_and(|network| this.recording_library.poll_thumbnails(network, wanted))
+            this.network
+                .as_ref()
+                .is_some_and(|network| this.recording_library.poll_thumbnails(network, wanted))
         };
-        if changed { self.publish_recording_history(); }
+        if changed {
+            self.publish_recording_history();
+        }
     }
 }

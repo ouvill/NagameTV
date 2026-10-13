@@ -22,6 +22,9 @@ pub mod ffi {
     unsafe extern "C++" {
         include!("QtCore/QAbstractListModel");
         type QAbstractListModel;
+        include!("channel_model_helpers.h");
+        #[cxx_name = "notifyModelData"]
+        fn notify_recording_data(model: Pin<&mut RecordingModel>);
         include!("cxx-qt-lib/qmodelindex.h");
         type QModelIndex = cxx_qt_lib::QModelIndex;
         include!("cxx-qt-lib/qvariant.h");
@@ -137,7 +140,12 @@ impl ffi::RecordingModel {
                         .is_some_and(|position| position.watched()),
                 );
             }
-            THUMBNAIL => self.rust().thumbnails.get(&row.id).cloned().unwrap_or_default(),
+            THUMBNAIL => self
+                .rust()
+                .thumbnails
+                .get(&row.id)
+                .cloned()
+                .unwrap_or_default(),
             ID => row.id.to_string(),
             NAME => row.name.clone(),
             CHANNEL => row.channel.clone(),
@@ -164,7 +172,17 @@ impl ffi::RecordingModel {
         progress: std::collections::HashMap<u64, crate::viewing_history::recordings::Position>,
         thumbnails: std::collections::HashMap<u64, String>,
     ) {
-        if self.rust().rows == rows && self.rust().progress == progress && self.rust().thumbnails == thumbnails {
+        if self.rust().rows == rows
+            && self.rust().progress == progress
+            && self.rust().thumbnails == thumbnails
+        {
+            return;
+        }
+        if self.rust().rows == rows {
+            self.as_mut().rust_mut().progress = progress;
+            self.as_mut().rust_mut().thumbnails = thumbnails;
+            ffi::notify_recording_data(self.as_mut());
+            self.changed();
             return;
         }
         self.as_mut().begin_reset_model();

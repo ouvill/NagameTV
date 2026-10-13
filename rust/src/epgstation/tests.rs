@@ -581,31 +581,72 @@ fn encoded_clock_uses_explicit_channel_ids_video_metadata_and_survives_replay() 
 #[test]
 fn authenticated_thumbnail_uses_cookie_and_exposes_only_image_data() -> TestResult {
     let fixture = Fixture::new()?;
-    fixture.mount(Mock::given(method("POST")).and(path("/api/auth/login"))
-        .respond_with(ResponseTemplate::new(200).insert_header("set-cookie", "epgstation_session=image-session; Path=/; HttpOnly").set_body_json(json!({"user":{"id":1}}))).expect(1));
-    fixture.mount(Mock::given(method("GET")).and(path("/api/auth/media-token"))
-        .and(header("cookie", "epgstation_session=image-session"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"token":"private-token"}))).expect(1));
+    fixture.mount(
+        Mock::given(method("POST"))
+            .and(path("/api/auth/login"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header(
+                        "set-cookie",
+                        "epgstation_session=image-session; Path=/; HttpOnly",
+                    )
+                    .set_body_json(json!({"user":{"id":1}})),
+            )
+            .expect(1),
+    );
+    fixture.mount(
+        Mock::given(method("GET"))
+            .and(path("/api/auth/media-token"))
+            .and(header("cookie", "epgstation_session=image-session"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(json!({"token":"private-token"})),
+            )
+            .expect(1),
+    );
     let mut row = record(7, 123);
     row["thumbnails"] = json!([99, 100]);
-    fixture.mount(Mock::given(method("GET")).and(path("/api/recorded"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"records":[row],"total":1}))).expect(1));
+    fixture.mount(
+        Mock::given(method("GET"))
+            .and(path("/api/recorded"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(json!({"records":[row],"total":1})),
+            )
+            .expect(1),
+    );
     let jpeg = vec![0xff, 0xd8, 0xff, 0xd9];
-    fixture.mount(Mock::given(method("GET")).and(path("/api/thumbnails/99"))
-        .and(header("cookie", "epgstation_session=image-session"))
-        .respond_with(ResponseTemplate::new(200).set_body_raw(jpeg.clone(), "image/jpeg")).expect(1));
+    fixture.mount(
+        Mock::given(method("GET"))
+            .and(path("/api/thumbnails/99"))
+            .and(header("cookie", "epgstation_session=image-session"))
+            .respond_with(ResponseTemplate::new(200).set_body_raw(jpeg.clone(), "image/jpeg"))
+            .expect(1),
+    );
     let mut library = Library::default();
-    library.open(&fixture.network, &fixture.server.uri(), "", Login::password("viewer".into(), "secret".into())?)?;
+    library.open(
+        &fixture.network,
+        &fixture.server.uri(),
+        "",
+        Login::password("viewer".into(), "secret".into())?,
+    )?;
     assert!(fixture.finish(&mut library).is_some());
     assert_eq!(library.rows()[0].thumbnail_id, Some(99));
     let deadline = Instant::now() + Duration::from_secs(5);
-    while library.thumbnail(&fixture.server.uri(), Some(99)).is_empty() {
+    while library
+        .thumbnail(&fixture.server.uri(), Some(99))
+        .is_empty()
+    {
         library.poll_thumbnails(&fixture.network, vec![]);
         assert!(Instant::now() < deadline);
         thread::sleep(Duration::from_millis(1));
     }
     let image = library.thumbnail(&fixture.server.uri(), Some(99));
-    assert_eq!(image, format!("data:image/jpeg;base64,{}", gstreamer::glib::base64_encode(&jpeg)));
+    assert_eq!(
+        image,
+        format!(
+            "data:image/jpeg;base64,{}",
+            gstreamer::glib::base64_encode(&jpeg)
+        )
+    );
     assert!(!image.contains("private-token"));
     assert!(!image.contains("image-session"));
     assert!(library.thumbnail("http://other.test", Some(99)).is_empty());
@@ -617,14 +658,51 @@ fn authenticated_thumbnail_uses_cookie_and_exposes_only_image_data() -> TestResu
 #[test]
 fn thumbnails_reject_redirects_invalid_images_and_oversized_bodies() -> TestResult {
     let fixture = Fixture::new()?;
-    fixture.mount(Mock::given(method("GET")).and(path("/api/thumbnails/1")).respond_with(ResponseTemplate::new(404)));
-    fixture.mount(Mock::given(method("GET")).and(path("/api/thumbnails/2")).respond_with(ResponseTemplate::new(200).set_body_string("not an image")));
-    fixture.mount(Mock::given(method("GET")).and(path("/api/thumbnails/3")).respond_with(ResponseTemplate::new(302).insert_header("location", "/private")));
-    fixture.mount(Mock::given(method("GET")).and(path("/private")).respond_with(ResponseTemplate::new(200)).expect(0));
-    fixture.mount(Mock::given(method("GET")).and(path("/api/thumbnails/4")).respond_with(ResponseTemplate::new(200).set_body_bytes(vec![0xff; thumbnails::MAX_IMAGE_BYTES + 1])));
+    fixture.mount(
+        Mock::given(method("GET"))
+            .and(path("/api/thumbnails/1"))
+            .respond_with(ResponseTemplate::new(404)),
+    );
+    fixture.mount(
+        Mock::given(method("GET"))
+            .and(path("/api/thumbnails/2"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("not an image")),
+    );
+    fixture.mount(
+        Mock::given(method("GET"))
+            .and(path("/api/thumbnails/3"))
+            .respond_with(ResponseTemplate::new(302).insert_header("location", "/private")),
+    );
+    fixture.mount(
+        Mock::given(method("GET"))
+            .and(path("/private"))
+            .respond_with(ResponseTemplate::new(200))
+            .expect(0),
+    );
+    fixture.mount(
+        Mock::given(method("GET"))
+            .and(path("/api/thumbnails/4"))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(vec![
+                0xff;
+                thumbnails::MAX_IMAGE_BYTES
+                    + 1
+            ])),
+    );
     let endpoint = Endpoint::parse(&fixture.server.uri())?;
-    assert_eq!(fixture.runtime.block_on(client::thumbnail(endpoint.clone(), None, 1))?, None);
-    for id in [2, 3, 4] { assert!(fixture.runtime.block_on(client::thumbnail(endpoint.clone(), None, id)).is_err()); }
+    assert_eq!(
+        fixture
+            .runtime
+            .block_on(client::thumbnail(endpoint.clone(), None, 1))?,
+        None
+    );
+    for id in [2, 3, 4] {
+        assert!(
+            fixture
+                .runtime
+                .block_on(client::thumbnail(endpoint.clone(), None, id))
+                .is_err()
+        );
+    }
     fixture.runtime.block_on(fixture.server.verify());
     Ok(())
 }

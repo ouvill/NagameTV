@@ -31,6 +31,14 @@ pub(super) fn run() -> Result<(), Box<dyn std::error::Error>> {
             .push(player.rust().viewing_history.favorites().to_vec());
         assert!(player.viewing_history_ready());
     });
+    assert!(!player.pin_mut().select_remote_key(0, QString::from("GR")));
+    assert!(!player.pin_mut().select_remote_key(13, QString::from("ALL")));
+    assert!(
+        !player
+            .pin_mut()
+            .select_remote_key(1, QString::from("invalid"))
+    );
+    assert!(!player.pin_mut().select_remote_key(1, QString::from("BS")));
     assert!(!player.pin_mut().toggle_favorite(QString::from("unknown")));
     assert!(!player.pin_mut().toggle_favorite(QString::from("999")));
     assert!(player.pin_mut().toggle_favorite(QString::from("20")));
@@ -60,7 +68,7 @@ pub(super) fn run() -> Result<(), Box<dyn std::error::Error>> {
         Identity::new(source, "番組".into()),
         Position::new(120_000.0, 600_000.0).unwrap(),
     );
-    crate::continue_watching_model::ffi::check_model(
+    crate::continue_watching_model::ffi::check_continue_model(
         player
             .pin_mut()
             .rust_mut()
@@ -107,6 +115,28 @@ pub(super) fn run() -> Result<(), Box<dyn std::error::Error>> {
     assert!(source.pin_mut().load_test(QString::from(r#"[{"index":7,"label":"TV","band":"GR","favorite":true,"serviceId":"9007199254740993"},{"index":8,"label":"Other","band":"BS"}]"#)));
     assert_eq!(source.count(), 2);
     assert_eq!(source.row_for_channel(7), 0);
+    let directory = tempfile::tempdir()?;
+    let local = directory.path().join("resume.ts");
+    std::fs::write(
+        &local,
+        include_bytes!("../../../tests/fixtures/recording-seek.ts"),
+    )?;
+    let source = Source::Local { path: local };
+    player.pin_mut().rust_mut().viewing_history.record(
+        Identity::new(source.clone(), "Local".into()),
+        Position::new(15_000.0, 60_000.0).unwrap(),
+    );
+    let key = player
+        .rust()
+        .viewing_history
+        .entry(&source)
+        .unwrap()
+        .key
+        .clone();
+    assert!(player.pin_mut().resume_recording(QString::from(key)));
+    assert!(player.recording_loading());
+    player.pin_mut().cancel_recording_open();
+    assert!(!player.recording_loading());
     println!(
         "Viewing history: favorite commands, recent indices, resume roles and fixture loaders passed"
     );

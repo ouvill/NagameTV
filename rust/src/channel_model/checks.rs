@@ -116,8 +116,17 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     assert_eq!(filter.count(), 1);
     let mut recent = ffi::make_channel_model();
     ffi::check_source_model(recent.pin_mut());
-    recent.pin_mut().replace_recent(catalog.snapshot(), "http://replacement", &[10], &[10, 999, u64::MAX]);
-    assert_eq!(recent.count(), 2, "removed stations are absent from the projection");
+    recent.pin_mut().replace_recent(
+        catalog.snapshot(),
+        "http://replacement",
+        &[10],
+        &[10, 999, u64::MAX],
+    );
+    assert_eq!(
+        recent.count(),
+        2,
+        "removed stations are absent from the projection"
+    );
     assert_eq!(field(recent.row(0), "channelIndex").value::<i32>(), Some(1));
     assert_eq!(field(recent.row(1), "channelIndex").value::<i32>(), Some(0));
     drop(source);

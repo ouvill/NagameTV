@@ -126,7 +126,9 @@ pub fn parse(bytes: &[u8]) -> Result<Vec<Channel>, Error> {
                         })
                     }),
                 has_logo_data: s.has_logo_data,
-                remote_key: s.remote_control_key_id.filter(|key| (MIN_REMOTE_KEY..=MAX_REMOTE_KEY).contains(key)),
+                remote_key: s
+                    .remote_control_key_id
+                    .filter(|key| (MIN_REMOTE_KEY..=MAX_REMOTE_KEY).contains(key)),
                 broadcast: s
                     .network_id
                     .zip(s.service_id)

@@ -119,7 +119,7 @@ SQLiteは使用しないため、新たなSQLやsqlx検査情報は不要。
 再開一覧の決定はrecordingKeyを`resume_recording`へ渡す。
 
 [ショートカットの仕組み](shortcut-actions-design.md)に従い、ViewerActionsに
-`previousChannelAction`を用意し、Navigationスコープの`L`から実行する。
+`lastChannel`を用意し、Navigationスコープの`L`から実行する。
 `previous_channel_available`で有効状態を決め、`previous_channel()`を呼ぶ。
 既存の閉じる操作（Back / Alt+Left）とは別の操作とする。
 QML製品ファイルの接続は画面担当が実装する。

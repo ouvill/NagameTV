@@ -102,13 +102,21 @@ mod tests {
             {"id":50,"remoteControlKeyId":99,"name":"Missing","type":1,"channel":{"type":"GR"}}
         ]"#).unwrap();
         catalog.replace(channels, None);
-        let station = |key, band, viewing| catalog.remote_key(key, band, viewing).map(|index| catalog.channels()[index].id);
+        let station = |key, band, viewing| {
+            catalog
+                .remote_key(key, band, viewing)
+                .map(|index| catalog.channels()[index].id)
+        };
         assert_eq!(station(1, Band::Terrestrial, None), Some(10));
         assert_eq!(station(1, Band::Terrestrial, Some(30)), Some(30));
         assert_eq!(station(1, Band::Bs, Some(30)), Some(40));
         assert_eq!(station(2, Band::Terrestrial, None), None);
         assert_eq!(station(99, Band::Terrestrial, None), None);
-        assert_eq!(catalog.selected().unwrap().id, 30, "finding a remote key does not select it");
+        assert_eq!(
+            catalog.selected().unwrap().id,
+            30,
+            "finding a remote key does not select it"
+        );
     }
     #[test]
     fn identity_survives_reordering_absence_and_empty_refreshes() {

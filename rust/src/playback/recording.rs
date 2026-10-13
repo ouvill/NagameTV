@@ -27,7 +27,7 @@ pub enum Recording {
 #[derive(Clone, Debug)]
 pub struct TransportStream {
     source: Source,
-    history: Option<crate::viewing_history::recordings::Identity>,
+    history: Option<Arc<crate::viewing_history::recordings::Identity>>,
     name: String,
     service: u16,
     inspection: Inspection,
@@ -54,7 +54,7 @@ impl Eq for TransportStream {}
 #[derive(Clone, Debug)]
 pub struct MediaFile {
     source: Source,
-    history: Option<crate::viewing_history::recordings::Identity>,
+    history: Option<Arc<crate::viewing_history::recordings::Identity>>,
     name: String,
     size: u64,
     caps: gstreamer::Caps,
@@ -249,7 +249,7 @@ impl Recording {
             Self::Transport(file) => &file.history,
             Self::Media(file) => &file.history,
         };
-        history.clone().unwrap_or_else(|| {
+        history.as_deref().cloned().unwrap_or_else(|| {
             Identity::new(
                 match self.source().location() {
                     Location::Local(path) => HistorySource::Local { path },
@@ -264,8 +264,8 @@ impl Recording {
         identity: Option<crate::viewing_history::recordings::Identity>,
     ) {
         match self {
-            Self::Transport(file) => file.history = identity,
-            Self::Media(file) => file.history = identity,
+            Self::Transport(file) => file.history = identity.map(Arc::new),
+            Self::Media(file) => file.history = identity.map(Arc::new),
         }
     }
     pub fn replay(&self) -> Request {
