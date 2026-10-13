@@ -210,7 +210,12 @@ impl Overlay {
         }
         Ok(value)
     }
-    #[cfg(test)]
+    pub fn is_empty_at(&self, width: f64, height: f64) -> bool {
+        self.width == width
+            && self.height == height
+            && self.media_caption.is_none()
+            && self.layers.iter().all(|layer| layer.commands.is_empty())
+    }
     pub fn empty(width: f64, height: f64) -> Self {
         Self {
             width,

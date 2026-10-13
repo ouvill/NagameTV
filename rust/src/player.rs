@@ -360,6 +360,8 @@ pub mod ffi {
         fn capture_screenshot(self: Pin<&mut Player>) -> bool;
         #[qinvokable]
         fn stage_screenshot(self: &Player, overlay: QString);
+        #[qinvokable]
+        fn stage_empty_screenshot(self: &Player, width: f64, height: f64);
         fn screenshot_format(self: &Player) -> QString;
         fn screenshot_options(self: &Player) -> QString;
         fn screenshot_busy(self: &Player) -> bool;
