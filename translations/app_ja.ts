@@ -1252,6 +1252,12 @@
 </context>
   <context>
     <name>Viewer</name>
+    <message><source>Recording now</source><translation>録画中</translation></message>
+    <message><source>Reservation conflict</source><translation>予約競合</translation></message>
+    <message><source>Reservation skipped</source><translation>予約スキップ</translation></message>
+    <message><source>Reserved</source><translation>予約済み</translation></message>
+    <message><source>Reserve recording</source><translation>録画予約</translation></message>
+    <message><source>Cancel reservation</source><translation>予約を取り消す</translation></message>
     <message><source>Remove from favorites</source><translation>お気に入りから外す</translation></message>
     <message><source>Add to favorites</source><translation>お気に入りに追加</translation></message>
     <message><source>%1 min left</source><translation>あと%1分</translation></message>
@@ -1861,6 +1867,8 @@
 </context>
   <context>
     <name>Settings</name>
+    <message><source>Reserve recordings from the program guide (experimental)</source><translation>番組表から録画予約する（実験的）</translation></message>
+    <message><source>Adds and cancels single-program reservations on the connected EPGStation.</source><translation>接続中のEPGStationへ、番組単位の予約を追加・取り消します。</translation></message>
     <message><source>Last channel</source><translation>前に見ていたチャンネル</translation></message>
     <message><source>Enable data broadcast (experimental)</source><translation>データ放送を有効にする（実験的）</translation></message>
     <message><source>Some broadcasts may not display or respond correctly.</source><translation>放送によっては表示や操作が正しく動作しないことがあります。</translation></message>

@@ -34,6 +34,16 @@ Popup {
     }
     readonly property bool live: watchAction !== GuideModel.Unavailable
     signal watchRequested(string key)
+    // Recording reservations; the owner reads these from the backend for `selection`.
+    property bool reservationsEnabled: false
+    property bool reservationBusy: false
+    property string reservation: ""
+    property bool canReserve: false
+    property bool canCancelReservation: false
+    // Backend translation source, like watchError.
+    property string reservationError: ""
+    signal reserveRequested(string key)
+    signal cancelReservationRequested(string key)
 
     // Keep coordinates, not a delegate reference: offscreen columns are destroyed.
     width: Math.max(0, Math.min(560, parent.width - 48))
@@ -148,6 +158,10 @@ Popup {
                         text: popup.channelLabel; textFormat: Text.PlainText
                         color: Theme.textSecondary; wrapMode: Text.Wrap
                     }
+                    ReservationBadge {
+                        objectName: "programReservation"
+                        reservation: popup.reservationsEnabled ? popup.reservation : ""
+                    }
                     ProgramFacts {
                         objectName: "programFacts"
                         width: parent.width
@@ -170,6 +184,14 @@ Popup {
                         visible: implicitHeight > 0
                     }
                     Label {
+                        objectName: "reservationGuideError"
+                        visible: popup.reservationsEnabled && popup.reservationError !== ""
+                        width: parent.width
+                        text: popup.reservationError ? qsTranslate("Backend", popup.reservationError) : ""; textFormat: Text.PlainText
+                        wrapMode: Text.Wrap; color: Theme.error
+                        onTextChanged: function(text) { if (text) revealError.restart() }
+                    }
+                    Label {
                         objectName: "watchGuideError"
                         visible: popup.watchError !== ""
                         width: parent.width
@@ -189,15 +211,60 @@ Popup {
                 }
             }
         }
-        ActionButton {
-            emphasis: ActionButton.Primary
-            id: watchButton
-            objectName: "watchGuideProgram"
-            visible: popup.live
-            Layout.preferredWidth: Math.max(168, implicitWidth)
-            Layout.preferredHeight: 44
-            text: popup.watchAction === GuideModel.WatchChannel ? qsTranslate("Viewer", "Watch this channel") : qsTranslate("Viewer", "Watch this program")
-            onClicked: popup.watchRequested(popup.selection.watchKey)
+        DirectionalFocus {
+            id: actions
+            objectName: "guideProgramActions"
+            Layout.fillWidth: true
+            implicitHeight: actionRow.implicitHeight
+            // From the conditions, not the buttons: a hidden row hides its buttons too.
+            visible: popup.live || (popup.reservationsEnabled && (popup.canReserve || popup.canCancelReservation))
+            navigationItems: [watchButton, reserveButton, cancelReservationButton]
+            RowLayout {
+                id: actionRow
+                anchors.fill: parent
+                spacing: Theme.spaceMd
+                ActionButton {
+                    emphasis: ActionButton.Primary
+                    id: watchButton
+                    objectName: "watchGuideProgram"
+                    visible: popup.live
+                    Layout.preferredWidth: Math.max(168, implicitWidth)
+                    Layout.preferredHeight: Theme.controlHeight
+                    text: popup.watchAction === GuideModel.WatchChannel ? qsTranslate("Viewer", "Watch this channel") : qsTranslate("Viewer", "Watch this program")
+                    onClicked: popup.watchRequested(popup.selection.watchKey)
+                }
+                ActionButton {
+                    id: reserveButton
+                    objectName: "reserveGuideProgram"
+                    // A program already on air is watched first; one still ahead is reserved first.
+                    emphasis: popup.live ? ActionButton.Secondary : ActionButton.Primary
+                    visible: popup.reservationsEnabled && popup.canReserve
+                    enabled: !popup.reservationBusy
+                    Layout.preferredHeight: Theme.controlHeight
+                    text: qsTranslate("Viewer", "Reserve recording")
+                    onClicked: popup.reserveRequested(popup.selection.watchKey)
+                }
+                ActionButton {
+                    id: cancelReservationButton
+                    objectName: "cancelGuideReservation"
+                    visible: popup.reservationsEnabled && popup.canCancelReservation
+                    enabled: !popup.reservationBusy
+                    Layout.preferredHeight: Theme.controlHeight
+                    text: qsTranslate("Viewer", "Cancel reservation")
+                    onClicked: popup.cancelReservationRequested(popup.selection.watchKey)
+                }
+                BusyIndicator {
+                    objectName: "reservationBusy"
+                    implicitWidth: Theme.compactControlHeight
+                    implicitHeight: Theme.compactControlHeight
+                    visible: popup.reservationsEnabled && popup.reservationBusy
+                    running: visible
+                    palette.dark: Theme.accent
+                    palette.text: Theme.accent
+                    Accessible.name: qsTranslate("Viewer", "Loading…")
+                }
+                Item { Layout.fillWidth: true }
+            }
         }
     }
 }

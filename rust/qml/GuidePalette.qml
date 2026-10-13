@@ -11,4 +11,9 @@ QtObject {
     readonly property color programSecondary: "#4e5651"
     readonly property color cellDivider: "#e4e7e4"
     readonly property color logoBackground: "#ffffff"
+    // Reservation marks sit on the pastel cells and on dark detail panels alike.
+    readonly property color reservedMark: "#c2334d"
+    readonly property color recordingMark: "#d11f2f"
+    readonly property color reservationProblemMark: "#8a5a00"
+    readonly property color markText: "#ffffff"
 }

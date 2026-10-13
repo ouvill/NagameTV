@@ -873,6 +873,7 @@ ViewerWindow {
                     selected: player.selected
                     viewingIndex: player.viewing_channel
                     guideModel: player.guide_model
+                    reservationBackend: player
                     status: ""
                     Connections {
                         target: player

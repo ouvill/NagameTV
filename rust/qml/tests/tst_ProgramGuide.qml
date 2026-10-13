@@ -496,6 +496,66 @@ TestCase {
         mouseClick(findChild(toolbar, "closeGuide"))
         compare(closeSpy.count, 1)
     }
+    Component {
+        id: reservationBackend
+        QtObject {
+            property bool reservations_enabled: true
+            property bool reservation_busy: false
+            property string reservation_error: ""
+            property string state: ""
+            property var calls: []
+            signal reservations_changed
+            function reservation_state(key) { return state; }
+            function can_reserve_program(key) { return state === ""; }
+            function can_cancel_reservation(key) { return state === "reserved"; }
+            function reserve_program(key) { calls = calls.concat([["reserve", key]]); return true; }
+            function cancel_reservation(key) { calls = calls.concat([["cancel", key]]); return true; }
+        }
+    }
+    function test_an_upcoming_program_can_be_reserved_and_the_reservation_cancelled() {
+        const backend = createTemporaryObject(reservationBackend, testCase)
+        guide.reservationBackend = backend
+        const key = '{"endpoint":7}'
+        guide.selectFixture({name:"Later",description:"",startAt:Date.now() + 3600000,duration:60000,watchKey:key})
+        const popup = findChild(guide, "scheduledDetailsLoader").item
+        tryCompare(popup, "opened", true)
+        const reserve = findChild(popup, "reserveGuideProgram")
+        const cancel = findChild(popup, "cancelGuideReservation")
+        const badge = findChild(popup, "programReservation")
+        verify(reserve.visible)
+        verify(!cancel.visible)
+        verify(!badge.visible)
+        verify(!findChild(popup, "watchGuideProgram").visible)
+        mouseClick(reserve)
+        compare(backend.calls, [["reserve", guide.keyFor(key)]])
+        // The request is in flight: nothing can be sent twice.
+        backend.reservation_busy = true
+        backend.reservations_changed()
+        verify(!reserve.enabled)
+        verify(findChild(popup, "reservationBusy").visible)
+        backend.state = "reserved"
+        backend.reservation_busy = false
+        backend.reservations_changed()
+        verify(!reserve.visible)
+        verify(cancel.visible)
+        verify(badge.visible)
+        mouseClick(cancel)
+        compare(backend.calls[1], ["cancel", guide.keyFor(key)])
+        backend.reservation_error = "Could not change the reservation"
+        backend.reservations_changed()
+        compare(findChild(popup, "reservationGuideError").text, backend.reservation_error)
+        backend.reservations_enabled = false
+        verify(!cancel.visible)
+        verify(!badge.visible)
+        verify(!findChild(popup, "reservationGuideError").visible)
+    }
+    function test_reservations_stay_hidden_without_a_reservation_owner() {
+        guide.selectFixture({name:"Later",description:"",startAt:Date.now() + 3600000,duration:60000,watchKey:'{"endpoint":7}'})
+        const popup = findChild(guide, "scheduledDetailsLoader").item
+        tryCompare(popup, "opened", true)
+        verify(!findChild(popup, "reserveGuideProgram").visible)
+        verify(!findChild(popup, "guideProgramActions").visible)
+    }
     function test_watch_key_is_unchanged_and_expired_program_cannot_request() {
         watchSpy.clear()
         const key = '{"endpoint":18446744073709551615}'
