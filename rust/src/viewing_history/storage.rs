@@ -1,6 +1,12 @@
 //! One worker owns the file; a coalescing mailbox bounds queued snapshots.
 use super::Document;
-use std::{fs, io::{self, Read, Write}, path::{Path, PathBuf}, sync::{Arc, Condvar, Mutex, mpsc}, thread};
+use std::{
+    fs,
+    io::{self, Read, Write},
+    path::{Path, PathBuf},
+    sync::{Arc, Condvar, Mutex, mpsc},
+    thread,
+};
 const MAX_BYTES: u64 = 4 * 1024 * 1024;
 
 #[derive(Debug, thiserror::Error)]
@@ -14,9 +20,18 @@ pub(super) enum Error {
     #[error("Viewing history exceeds its limits or contains invalid entries")]
     Invalid,
 }
-pub(super) enum Update { Loaded(Result<Document, Error>), Saved(Result<(), Error>) }
-enum Work { Active(Option<Document>), Closing(Option<Document>) }
-struct Mailbox { work: Mutex<Work>, wake: Condvar }
+pub(super) enum Update {
+    Loaded(Result<Document, Error>),
+    Saved(Result<(), Error>),
+}
+enum Work {
+    Active(Option<Document>),
+    Closing(Option<Document>),
+}
+struct Mailbox {
+    work: Mutex<Work>,
+    wake: Condvar,
+}
 pub(super) struct Worker {
     mailbox: Arc<Mailbox>,
     updates: mpsc::Receiver<Update>,
@@ -24,47 +39,72 @@ pub(super) struct Worker {
 }
 impl Worker {
     pub fn start(path: PathBuf) -> Result<Self, Error> {
-        let mailbox = Arc::new(Mailbox { work: Mutex::new(Work::Active(None)), wake: Condvar::new() });
+        let mailbox = Arc::new(Mailbox {
+            work: Mutex::new(Work::Active(None)),
+            wake: Condvar::new(),
+        });
         let (sender, updates) = mpsc::channel();
         let worker_mailbox = mailbox.clone();
-        let thread = thread::Builder::new().name("viewing-history".into()).spawn(move || {
-            let loaded = load(&path);
-            let writable = loaded.is_ok();
-            if let Err(error) = &loaded {
-                tracing::error!(error = error as &dyn std::error::Error, "Load viewing history failed; preserving existing file");
-            }
-            if sender.send(Update::Loaded(loaded)).is_err() {
-                // The owner was destroyed before initialization completed.
-                return;
-            }
-            loop {
-                let (data, closing) = {
-                    let mut work = worker_mailbox.work.lock().expect("history mailbox poisoned");
-                    while matches!(*work, Work::Active(None)) {
-                        work = worker_mailbox.wake.wait(work).expect("history mailbox poisoned");
+        let thread = thread::Builder::new()
+            .name("viewing-history".into())
+            .spawn(move || {
+                let loaded = load(&path);
+                let writable = loaded.is_ok();
+                if let Err(error) = &loaded {
+                    tracing::error!(
+                        error = error as &dyn std::error::Error,
+                        "Load viewing history failed; preserving existing file"
+                    );
+                }
+                if sender.send(Update::Loaded(loaded)).is_err() {
+                    // The owner was destroyed before initialization completed.
+                    return;
+                }
+                loop {
+                    let (data, closing) = {
+                        let mut work = worker_mailbox
+                            .work
+                            .lock()
+                            .expect("history mailbox poisoned");
+                        while matches!(*work, Work::Active(None)) {
+                            work = worker_mailbox
+                                .wake
+                                .wait(work)
+                                .expect("history mailbox poisoned");
+                        }
+                        match &mut *work {
+                            Work::Active(data) => (data.take(), false),
+                            Work::Closing(data) => (data.take(), true),
+                        }
+                    };
+                    if writable && let Some(data) = data {
+                        let result = save(&path, &data);
+                        if let Err(error) = &result {
+                            tracing::error!(
+                                error = error as &dyn std::error::Error,
+                                "Save viewing history failed"
+                            );
+                        }
+                        if sender.send(Update::Saved(result)).is_err() {
+                            // Shutdown may release the receiver after its final snapshot.
+                        }
                     }
-                    match &mut *work {
-                        Work::Active(data) => (data.take(), false),
-                        Work::Closing(data) => (data.take(), true),
-                    }
-                };
-                if writable && let Some(data) = data {
-                    let result = save(&path, &data);
-                    if let Err(error) = &result {
-                        tracing::error!(error = error as &dyn std::error::Error, "Save viewing history failed");
-                    }
-                    if sender.send(Update::Saved(result)).is_err() {
-                        // Shutdown may release the receiver after its final snapshot.
+                    if closing {
+                        break;
                     }
                 }
-                if closing { break; }
-            }
-        })?;
-        Ok(Self { mailbox, updates, thread: Some(thread) })
+            })?;
+        Ok(Self {
+            mailbox,
+            updates,
+            thread: Some(thread),
+        })
     }
     pub fn save(&self, data: Document) {
         let mut work = self.mailbox.work.lock().expect("history mailbox poisoned");
-        if let Work::Active(pending) = &mut *work { *pending = Some(data); }
+        if let Work::Active(pending) = &mut *work {
+            *pending = Some(data);
+        }
         self.mailbox.wake.notify_one();
     }
     pub fn poll(&self) -> Option<Update> {
@@ -78,12 +118,16 @@ impl Drop for Worker {
     fn drop(&mut self) {
         {
             let mut work = self.mailbox.work.lock().expect("history mailbox poisoned");
-            let pending = match &mut *work { Work::Active(pending) | Work::Closing(pending) => pending.take() };
+            let pending = match &mut *work {
+                Work::Active(pending) | Work::Closing(pending) => pending.take(),
+            };
             *work = Work::Closing(pending);
             self.mailbox.wake.notify_one();
         }
         // Destruction follows the UI event loop; preserve the last accepted save.
-        if let Some(thread) = self.thread.take() && thread.join().is_err() {
+        if let Some(thread) = self.thread.take()
+            && thread.join().is_err()
+        {
             tracing::error!("Viewing history worker panicked during shutdown");
         }
     }
@@ -96,7 +140,9 @@ fn load(path: &Path) -> Result<Document, Error> {
     };
     let mut bytes = Vec::new();
     file.take(MAX_BYTES + 1).read_to_end(&mut bytes)?;
-    if bytes.len() as u64 > MAX_BYTES { return Err(Error::Invalid); }
+    if bytes.len() as u64 > MAX_BYTES {
+        return Err(Error::Invalid);
+    }
     let data: Document = crate::json::from_slice(&bytes)?;
     data.validate()?;
     Ok(data)
@@ -104,7 +150,9 @@ fn load(path: &Path) -> Result<Document, Error> {
 fn save(path: &Path, data: &Document) -> Result<(), Error> {
     data.validate()?;
     let bytes = serde_json::to_vec(data)?;
-    if bytes.len() as u64 > MAX_BYTES { return Err(Error::Invalid); }
+    if bytes.len() as u64 > MAX_BYTES {
+        return Err(Error::Invalid);
+    }
     let parent = path.parent().ok_or(Error::Invalid)?;
     fs::create_dir_all(parent)?;
     let mut file = tempfile::NamedTempFile::new_in(parent)?;
@@ -121,14 +169,26 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("history.json");
         let worker = Worker::start(path.clone()).unwrap();
-        assert!(matches!(worker.updates.recv().unwrap(), Update::Loaded(Ok(_))));
-        worker.save(Document { favorites: vec![u64::MAX, 1] });
-        worker.save(Document { favorites: vec![1, u64::MAX] });
+        assert!(matches!(
+            worker.updates.recv().unwrap(),
+            Update::Loaded(Ok(_))
+        ));
+        worker.save(Document {
+            favorites: vec![u64::MAX, 1],
+            ..Default::default()
+        });
+        worker.save(Document {
+            favorites: vec![1, u64::MAX],
+            ..Default::default()
+        });
         drop(worker);
         assert_eq!(load(&path).unwrap().favorites, vec![1, u64::MAX]);
         fs::write(&path, b"broken").unwrap();
         let worker = Worker::start(path.clone()).unwrap();
-        assert!(matches!(worker.updates.recv().unwrap(), Update::Loaded(Err(_))));
+        assert!(matches!(
+            worker.updates.recv().unwrap(),
+            Update::Loaded(Err(_))
+        ));
         worker.save(Document::default());
         drop(worker);
         assert_eq!(fs::read(&path).unwrap(), b"broken");

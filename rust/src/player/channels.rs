@@ -9,6 +9,8 @@ impl super::ffi::Player {
             .channel_model
             .pin_mut()
             .replace_with_favorites(snapshot, server, &favorites);
+        self.as_mut().publish_recent_channels(server);
+        self.viewing_history_changed();
     }
 
     pub(super) fn replace_catalog(

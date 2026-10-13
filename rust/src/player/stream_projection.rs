@@ -23,6 +23,7 @@ macro_rules! snapshot {
 }
 
 snapshot! {
+    previous_channel: bool = |p| p.previous_channel_available() => [viewing_history_changed];
     data_broadcast_available: bool = |p| p.data_broadcast_available() => [data_broadcast_available_changed];
     data_broadcast_requested: bool = |p| p.data_broadcast_requested() => [data_broadcast_requested_changed];
     data_broadcast_activate: bool = |p| p.data_broadcast_activate() => [data_broadcast_activate_changed];
@@ -179,7 +180,7 @@ impl Values {
         next
     }
 
-    fn commit(self, player: &mut PlayerRust) {
+    fn commit(self, player: &mut PlayerRust) -> bool {
         let Self {
             stream_state,
             timeline,
@@ -193,6 +194,11 @@ impl Values {
             subtitle_cells,
         } = self;
         player.stream_state = stream_state;
+        let service = match &player.stream_state {
+            State::Playing(live, playback::timeline::Phase::Playing) => Some(live.service()),
+            State::Playing(_, _) | State::Stopped(_) | State::Connecting(_) | State::Recording(_, _) | State::StopFailed(_) => None,
+        };
+        let history_changed = player.viewing_history.observe_live(service, std::time::Instant::now());
         player.timeline = timeline;
         player.speed = speed;
         player.timeshift_bytes_per_second = timeshift_bytes_per_second;
@@ -221,6 +227,7 @@ impl Values {
             player.network.as_ref(),
             std::time::Instant::now(),
         );
+        history_changed
     }
 }
 
@@ -235,6 +242,7 @@ struct Committed<'a> {
     player: Pin<&'a mut ffi::Player>,
     before: Snapshot,
     after: Snapshot,
+    history_changed: bool,
 }
 impl<'a> Prepared<'a> {
     fn new(mut player: Pin<&'a mut ffi::Player>, change: impl FnOnce(State) -> State) -> Self {
@@ -247,18 +255,20 @@ impl<'a> Prepared<'a> {
         }
     }
     fn commit(mut self) -> Committed<'a> {
-        self.next.commit(&mut self.player.as_mut().rust_mut());
+        let history_changed = self.next.commit(&mut self.player.as_mut().rust_mut());
         super::data_broadcast::synchronize(&mut self.player.as_mut().rust_mut());
         let after = Snapshot::capture(&self.player);
         Committed {
             player: self.player,
             before: self.before,
             after,
+            history_changed,
         }
     }
 }
 impl Committed<'_> {
     fn notify(mut self) {
+        if self.history_changed { self.player.as_mut().publish_viewing_history(); }
         self.before
             .notify_changes(&self.after, self.player.as_mut());
         if self.player.ended() && !self.before.ended {

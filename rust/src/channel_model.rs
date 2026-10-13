@@ -166,7 +166,9 @@ struct Row {
 }
 
 #[cfg(feature = "qml_tests")]
-fn not_favorite() -> i32 { -1 }
+fn not_favorite() -> i32 {
+    -1
+}
 
 fn band_name(band: Band) -> &'static str {
     match band {
@@ -240,7 +242,12 @@ impl ffi::ChannelModel {
     pub(crate) fn replace(self: Pin<&mut Self>, channels: Arc<[Channel]>, server: &str) {
         self.replace_with_favorites(channels, server, &[]);
     }
-    pub(crate) fn replace_with_favorites(self: Pin<&mut Self>, channels: Arc<[Channel]>, server: &str, favorites: &[u64]) {
+    pub(crate) fn replace_with_favorites(
+        self: Pin<&mut Self>,
+        channels: Arc<[Channel]>,
+        server: &str,
+        favorites: &[u64],
+    ) {
         let server = server.trim_end_matches('/');
         let rows = channels
             .iter()
@@ -256,11 +263,51 @@ impl ffi::ChannelModel {
                 },
                 service_id: channel.id.to_string(),
                 favorite: favorites.contains(&channel.id),
-                favorite_order: favorites.iter().position(|id| *id == channel.id)
+                favorite_order: favorites
+                    .iter()
+                    .position(|id| *id == channel.id)
                     .map_or(-1, |index| i32::try_from(index).expect("bounded favorites")),
             })
             .collect();
         self.replace_rows(rows);
+    }
+    pub(crate) fn replace_recent(
+        mut self: Pin<&mut Self>,
+        channels: Arc<[Channel]>,
+        server: &str,
+        favorites: &[u64],
+        recent: &[u64],
+    ) {
+        let mut rows = Vec::new();
+        for service in recent {
+            if let Some((index, channel)) = channels
+                .iter()
+                .enumerate()
+                .find(|(_, channel)| channel.id == *service)
+            {
+                rows.push(Row {
+                    index: i32::try_from(index).expect("bounded channel catalog"),
+                    label: channel.label.clone(),
+                    band: band_name(channel.band).into(),
+                    logo: if channel.has_logo_data {
+                        format!(
+                            "{}/api/services/{}/logo",
+                            server.trim_end_matches('/'),
+                            channel.id
+                        )
+                    } else {
+                        String::new()
+                    },
+                    service_id: channel.id.to_string(),
+                    favorite: favorites.contains(service),
+                    favorite_order: favorites
+                        .iter()
+                        .position(|id| id == service)
+                        .map_or(-1, |index| i32::try_from(index).expect("bounded favorites")),
+                });
+            }
+        }
+        self.as_mut().replace_rows(rows);
     }
     fn replace_rows(mut self: Pin<&mut Self>, rows: Vec<Row>) {
         self.as_mut().begin_reset_model();
@@ -323,11 +370,12 @@ impl ffi::ChannelFilterModel {
         }
         let band = self.band().to_string();
         let channel_index = ffi::source_data(self, row, INDEX).value::<i32>();
-        (!self.rust().favorites_only || ffi::source_data(self, row, FAVORITE).value::<bool>() == Some(true))
+        (!self.rust().favorites_only
+            || ffi::source_data(self, row, FAVORITE).value::<bool>() == Some(true))
             && (band == "ALL"
-            || ffi::source_data(self, row, BAND)
-                .value::<QString>()
-                .is_some_and(|value| value.to_string() == band))
+                || ffi::source_data(self, row, BAND)
+                    .value::<QString>()
+                    .is_some_and(|value| value.to_string() == band))
             && (match self.rust().visibility {
                 ffi::Visibility::All => true,
                 ffi::Visibility::Listed => {
@@ -356,11 +404,13 @@ impl cxx_qt::Initialize for ffi::ChannelFilterModel {
         self.as_mut()
             .on_opening_index_changed(|model| model.invalidate_filter())
             .release();
-        self.as_mut().on_favorites_only_changed(|mut model| {
-            let enabled = *model.favorites_only();
-            model.as_mut().sort_favorites(enabled, FAVORITE_ORDER);
-            model.invalidate_filter();
-        }).release();
+        self.as_mut()
+            .on_favorites_only_changed(|mut model| {
+                let enabled = *model.favorites_only();
+                model.as_mut().sort_favorites(enabled, FAVORITE_ORDER);
+                model.invalidate_filter();
+            })
+            .release();
         ffi::connect_changes(self);
     }
 }

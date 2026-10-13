@@ -43,9 +43,9 @@ mod subtitle_status;
 mod telemetry;
 mod transport;
 mod updates;
-mod viewing_history;
 #[cfg(feature = "native_tests")]
 mod updates_checks;
+mod viewing_history;
 
 #[cxx_qt::bridge]
 pub mod ffi {
@@ -125,6 +125,8 @@ pub mod ffi {
         #[qproperty(QString, playback_error, READ = playback_error, NOTIFY)]
         #[qproperty(QString, playback_message, READ, NOTIFY)]
         #[qproperty(QString, log_error, READ = log_error, NOTIFY)]
+        #[qproperty(*mut ChannelModel, recent_channels, READ = recent_channels, CONSTANT)]
+        #[qproperty(bool, previous_channel_available, READ = previous_channel_available, NOTIFY = viewing_history_changed)]
         #[qproperty(bool, viewing_history_ready, READ = viewing_history_ready, NOTIFY = viewing_history_changed)]
         #[qproperty(QString, viewing_history_error, READ = viewing_history_error, NOTIFY = viewing_history_changed)]
         #[qproperty(*mut ChannelModel, channels, READ = channels, CONSTANT)]
@@ -299,6 +301,10 @@ pub mod ffi {
         #[qinvokable]
         fn play_epgstation_file(self: Pin<&mut Player>, id: QString, video: QString) -> bool;
         fn recording_files(self: &Player) -> *mut VideoFileModel;
+        fn recent_channels(self: &Player) -> *mut ChannelModel;
+        fn previous_channel_available(self: &Player) -> bool;
+        #[qinvokable]
+        fn previous_channel(self: Pin<&mut Player>) -> bool;
         fn viewing_history_ready(self: &Player) -> bool;
         fn viewing_history_error(self: &Player) -> QString;
         #[qsignal]
@@ -622,6 +628,7 @@ pub struct PlayerRust {
     media_subtitle_error: QString,
     error_log: Result<crate::error_log::ErrorLog, crate::error_log::Error>,
     viewing_history: crate::viewing_history::History,
+    recent_channel_model: cxx::UniquePtr<crate::channel_model::ffi::ChannelModel>,
     channel_model: cxx::UniquePtr<crate::channel_model::ffi::ChannelModel>,
     recording_model: cxx::UniquePtr<crate::recording_model::ffi::RecordingModel>,
     video_file_model: cxx::UniquePtr<crate::video_file_model::ffi::VideoFileModel>,
