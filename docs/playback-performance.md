@@ -21,7 +21,8 @@ CARGO_TARGET_DIR=build/cargo python3 scripts/test.py startup --profile release -
 | `request_ms` | QMLから選局・再生を要求し、同期呼び出しが戻るまで |
 | `playing_ms` | 要求からPlayerのPLAYING状態を観測するまで |
 | `first_video_ms` | 要求から映像sinkのrendered > 0を観測するまで（PLAYING通知とは独立に観測） |
-| `idle_poll_us` / `live_poll_us` | 未再生 / 再生中の`player.poll()`呼び出し。100回ずつ7組の平均所要時間（µs/回） |
+| `idle_poll_us` | 未再生の`player.poll()`呼び出し。100回ずつ7組の平均所要時間（µs/回） |
+| `live_controls_visible_poll_us` / `live_controls_hidden_poll_us` | 操作部を表示 / 非表示に固定した再生中のpoll。同じ100回×7組で、自動非表示による条件の混在を防ぐ |
 | `final_video_stats` | 最後の試行後の動画統計。途中の選局でカウンターがリセットされるため、全試行の累計ではない |
 
 状態は5 ms間隔で観測する。JSON取得・Qtイベント処理の時間も含むため、フレーム到着の

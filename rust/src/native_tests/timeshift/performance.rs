@@ -126,7 +126,20 @@ pub(super) fn run(
         frame.push(frame_ms.ok_or("missing first-frame observation")?);
         pump(app, SETTLE);
     }
-    let live_poll = poll_batches(app, engine)?;
+    evaluate(
+        engine,
+        "overlayVisibility.pinned = true; overlayVisibility.reveal(); true",
+    )?;
+    wait_for(app, engine, "playerControls.visible")?;
+    pump(app, SETTLE);
+    let visible_poll = poll_batches(app, engine)?;
+    evaluate(
+        engine,
+        "overlayVisibility.pinned = false; overlayVisibility.dismiss(); true",
+    )?;
+    wait_for(app, engine, "!playerControls.visible")?;
+    pump(app, SETTLE);
+    let hidden_poll = poll_batches(app, engine)?;
     let stats = json(engine, "JSON.parse(player.video_stats())")?;
     eprintln!(
         "PLAYBACK_PERF {}",
@@ -137,7 +150,8 @@ pub(super) fn run(
             "playing_ms": summary(&playing),
             "first_video_ms": summary(&frame),
             "idle_poll_us": idle_poll,
-            "live_poll_us": live_poll,
+            "live_controls_visible_poll_us": visible_poll,
+            "live_controls_hidden_poll_us": hidden_poll,
             "final_video_stats": stats,
         })
     );
