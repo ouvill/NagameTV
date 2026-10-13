@@ -394,7 +394,11 @@ ViewerWindow {
                 layers.push(danmaku.view.screenshotLayer(video));
             if (captions.active && captions.view && captions.visible && captions.view.visible)
                 layers.push(captions.view.screenshotLayer(video));
-            player.stage_screenshot(JSON.stringify({width: video.width, height: video.height, layers: layers}));
+            if (layers.every(layer => layer.commands.length === 0)
+                && !(player.subtitle_display && player.media_subtitle_available))
+                player.stage_empty_screenshot(video.width, video.height);
+            else
+                player.stage_screenshot(JSON.stringify({width: video.width, height: video.height, layers: layers}));
         }
     }
     Timer {

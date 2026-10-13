@@ -12,7 +12,22 @@ ColumnLayout {
     property Item downNavigation: null
     signal adjustmentFinished
     property bool closing: false
-    readonly property var snapshot: JSON.parse(backend.live_timeline || "null")
+    QtObject {
+        id: projection
+        property var value: null
+        readonly property string serialized: root.backend.live_timeline || "null"
+        onSerializedChanged: {
+            const next = JSON.parse(serialized);
+            if (value && next && value.session === next.session) {
+                // A new position must not invalidate unchanged model objects.
+                for (const key of ["axis", "programs", "boundaries"])
+                    if (JSON.stringify(value[key]) === JSON.stringify(next[key]))
+                        next[key] = value[key];
+            }
+            value = next;
+        }
+    }
+    readonly property var snapshot: projection.value
     readonly property var axis: slider.gesture ? slider.gesture.axis : snapshot ? snapshot.axis : null
     readonly property var viewing: snapshot ? snapshot.viewing : null
     readonly property var viewingProgram: viewing ? viewing.program : null
@@ -53,12 +68,12 @@ ColumnLayout {
         return utc !== null && utc !== undefined ? Qt.formatDateTime(new Date(utc), "hh:mm:ss") : timeLabel(media);
     }
     function boundaryLabel(time) {
-        if (!axis || !snapshot) return "--:--";
+        if (!axis) return "--:--";
         let utc = null;
         if (time === axis.start) utc = axis.startUtc;
         else if (time === axis.end) utc = axis.endUtc;
         else {
-            const preview = JSON.parse(backend.timeline_preview(snapshot.session, time) || "null");
+            const preview = snapshot ? JSON.parse(backend.timeline_preview(snapshot.session, time) || "null") : null;
             utc = preview ? preview.utc : null;
         }
         return utc !== null && utc !== undefined ? Qt.formatDateTime(new Date(utc), "hh:mm") : timeLabel(time);
@@ -134,9 +149,13 @@ ColumnLayout {
         implicitHeight: root.titleHeight + root.titleInset
         Repeater {
             objectName: "programSegments"
-            model: root.snapshot ? root.snapshot.programs : []
+            // Position notifications replace the JSON arrays. Reusing indexed
+            // delegates avoids rebuilding labels whose content has not changed.
+            model: root.snapshot ? root.snapshot.programs.length : 0
             delegate: Label {
-                required property var modelData
+                required property int index
+                readonly property var modelData: root.snapshot && index < root.snapshot.programs.length
+                    ? root.snapshot.programs[index] : ({id: "", title: "", start: 0, end: 0})
                 readonly property int role: root.programRole(modelData)
                 readonly property real spanWidth: Math.max(0, root.fraction(modelData.end) - root.fraction(modelData.start)) * track.width
                 objectName: "programSegmentLabel"
@@ -235,9 +254,11 @@ ColumnLayout {
             }
             Repeater {
                 objectName: "retainedRanges"
-                model: root.snapshot ? root.snapshot.available : []
+                model: root.snapshot ? root.snapshot.available.length : 0
                 delegate: Rectangle {
-                    required property var modelData
+                    required property int index
+                    readonly property var modelData: root.snapshot && index < root.snapshot.available.length
+                        ? root.snapshot.available[index] : ({start: 0, end: 0})
                     objectName: "retainedRangeFill"
                     anchors.verticalCenter: parent.verticalCenter; anchors.alignWhenCentered: false
                     x: track.startX(modelData.start, modelData.end)
@@ -257,9 +278,11 @@ ColumnLayout {
             }
             Repeater {
                 objectName: "programBoundaryMarkers"
-                model: root.snapshot ? root.snapshot.boundaries : []
+                model: root.snapshot ? root.snapshot.boundaries.length : 0
                 delegate: Rectangle {
-                    required property real modelData
+                    required property int index
+                    readonly property real modelData: root.snapshot && index < root.snapshot.boundaries.length
+                        ? root.snapshot.boundaries[index] : 0
                     objectName: "programBoundaryTick"
                     x: track.position(modelData) - width / 2
                     anchors.verticalCenter: parent.verticalCenter; anchors.alignWhenCentered: false
@@ -303,7 +326,7 @@ ColumnLayout {
             imageSource: root.backend.seek_preview_image || ""
             onRequested: milliseconds => root.backend.request_seek_preview(milliseconds)
             onDismissed: root.backend.clear_seek_preview()
-            text: root.previewLabel(slider.pressed ? slider.value : target)
+            text: visible ? root.previewLabel(slider.pressed ? slider.value : target) : ""
             x: Math.max(0, Math.min(slider.width - implicitWidth, seekHover.point.position.x - implicitWidth / 2))
             y: -implicitHeight - 6; padding: Theme.spaceSm
         }
@@ -316,10 +339,10 @@ ColumnLayout {
             ? [root.axis.start].concat(root.snapshot.boundaries.filter(time => time > root.axis.start && time < root.axis.end)) : []
         Repeater {
             objectName: "programBoundaryClocks"
-            model: clocks.boundaries
+            model: clocks.boundaries.length
             delegate: Label {
-                required property real modelData
                 required property int index
+                readonly property real modelData: index < clocks.boundaries.length ? clocks.boundaries[index] : 0
                 readonly property real nextPosition: root.axis ? track.position(index + 1 < clocks.boundaries.length
                     ? clocks.boundaries[index + 1] : root.axis.end) : 0
                 objectName: "programBoundaryClock"
@@ -338,8 +361,10 @@ ColumnLayout {
             id: liveLabel
             objectName: "livePositionLabel"
             visible: root.snapshot !== null
-            text: qsTranslate("Viewer", "LIVE") + (root.snapshot && root.snapshot.live.utc !== null
-                ? " " + Qt.formatDateTime(new Date(root.snapshot.live.utc), "hh:mm") : "")
+            readonly property var utcMinute: root.snapshot && root.snapshot.live.utc !== null
+                ? Math.floor(root.snapshot.live.utc / (root.millisecondsPerSecond * root.secondsPerMinute)) : null
+            text: qsTranslate("Viewer", "LIVE") + (utcMinute !== null
+                ? " " + Qt.formatDateTime(new Date(utcMinute * root.millisecondsPerSecond * root.secondsPerMinute), "hh:mm") : "")
             x: root.snapshot ? Math.max(0, Math.min(parent.width - width, track.x + track.position(root.snapshot.live.position) - width / 2)) : 0
             height: root.clockHeight
             verticalAlignment: Text.AlignVCenter

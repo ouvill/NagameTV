@@ -217,6 +217,17 @@ impl ffi::Player {
         !self.rust().screenshot_saves.is_empty()
     }
 
+    pub fn stage_empty_screenshot(&self, width: f64, height: f64) {
+        if let Some(playback) = self.rust().media.playback() {
+            if width.is_finite() && height.is_finite() && width >= 1.0 && height >= 1.0 {
+                playback.presentation().stage_empty(width, height);
+            } else {
+                playback.presentation().clear();
+                tracing::warn!("Invalid empty screenshot overlay dimensions");
+            }
+        }
+    }
+
     pub fn stage_screenshot(&self, overlay: QString) {
         if let Some(playback) = self.rust().media.playback() {
             match crate::screenshots::overlay::Overlay::parse(&overlay.to_string())
