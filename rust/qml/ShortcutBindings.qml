@@ -1,5 +1,6 @@
 pragma ComponentBehavior: Bound
 import QtQuick
+import QtQuick.Controls
 import MinimalViewer 1.0 as Native
 
 Item {
@@ -21,7 +22,7 @@ Item {
         target: root.inputContext.focusItem ? root.inputContext.focusItem.Keys : null
         function onPressed(event) {
             if (!root.inputContext.targetWindow.active) return;
-            const matches = root.entries.filter(binding => binding.enabled
+            const matches = [...root.entries, ...root.digits].filter(binding => binding.enabled
                 && keyMatcher.matches(binding.portableText, event.key, event.modifiers));
             if (matches.length === 0) return;
             event.accepted = true;
@@ -37,6 +38,25 @@ Item {
         inputContext: root.inputContext
         active: root.enabled
     }
+    // Station buttons 1–12 are typed as digits. They follow the same two
+    // delivery paths as the bindings below but are not individual settings rows.
+    property bool digitsAvailable: false
+    signal digitPressed(int digit)
+    component Digit: Binding {
+        id: digit
+        required property int value
+        sequence: String(value)
+        scope: InputContext.Navigation
+        available: root.digitsAvailable
+        operation: Action {
+            enabled: root.actions.enabled
+            onTriggered: root.digitPressed(digit.value)
+        }
+    }
+    readonly property list<ShortcutBinding> digits: [
+        Digit { value: 0 }, Digit { value: 1 }, Digit { value: 2 }, Digit { value: 3 }, Digit { value: 4 },
+        Digit { value: 5 }, Digit { value: 6 }, Digit { value: 7 }, Digit { value: 8 }, Digit { value: 9 }
+    ]
     // One declaration creates both the registered shortcut and its settings row.
     readonly property list<ShortcutBinding> entries: [
         Binding { id: fullscreen; objectName: "fullscreenShortcut"; sequence: "F11"; operation: root.actions.toggleFullscreen; scope: InputContext.Window },

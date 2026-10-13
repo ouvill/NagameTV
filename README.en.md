@@ -188,7 +188,7 @@ Click the camera button on the playback bar or press `Ctrl + S` to save the curr
 | `←` / `→` | Skip backward / forward by 10 seconds | Available when the video has focus during recording or timeshift playback. Within controls, these keys move focus or adjust values. |
 | `PgUp` / `PgDown` | Previous / next channel | Available during live TV. |
 | `L` | Return to the channel watched before this one | Available when there is a channel to return to. |
-| `0`–`9` | Tune to a remote-control button | Available during live TV while the video has focus. |
+| `0`–`9` | Tune to a remote-control button | Available during live TV, except while typing or operating a panel. |
 | `Ctrl + S` | Save a screenshot | Saves a PNG including subtitles and comment overlays. |
 | `Ctrl + O` | Open a recording (file / URL) | Also available on the initial connection screen. |
 | `F11` | Toggle fullscreen | You can also double-click the video area. |

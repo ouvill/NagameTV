@@ -349,6 +349,8 @@ ViewerWindow {
         id: shortcutBindings
         actions: viewerActions
         inputContext: inputContext
+        digitsAvailable: inputContext.viewing && !player.recording && player.channels.count > 0
+        onDigitPressed: function(digit) { channelNumber.press(digit); }
     }
     CommentSubmitPolicy {
         id: commentSubmitPolicy
@@ -441,11 +443,6 @@ ViewerWindow {
         Keys.onPressed: function(event) {
             if (!inputContext.videoFocused || !inputContext.viewing || inputContext.popupOpen
                     || (event.modifiers & ~Qt.KeypadModifier) !== Qt.NoModifier) return;
-            if (event.key >= Qt.Key_0 && event.key <= Qt.Key_9 && !player.recording && player.channels.count > 0) {
-                event.accepted = true;
-                if (!event.isAutoRepeat) channelNumber.press(event.key - Qt.Key_0);
-                return;
-            }
             if (![Qt.Key_Up, Qt.Key_Down, Qt.Key_Return, Qt.Key_Enter].includes(event.key)) return;
             event.accepted = true;
             if (event.isAutoRepeat) return;
