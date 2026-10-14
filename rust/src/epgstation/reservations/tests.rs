@@ -498,3 +498,504 @@ fn changing_verified_servers_clears_old_reservations_before_fetching_the_new_ses
     first.finish(&mut manager);
     assert!(manager.enabled() && manager.can_reserve(program(), NOW));
 }
+
+fn rule_reserve() -> Value {
+    let mut row = reserve(7, 100);
+    row["ruleId"] = 23.into();
+    row
+}
+fn snapshot_with(rows: Vec<Value>, recording: bool) -> Snapshot {
+    Snapshot::from_rows(
+        serde_json::from_value(json!(rows)).unwrap(),
+        if recording {
+            serde_json::from_value(json!([{
+                "id":7,"programId":100,"channelId":10,"startAt":10000,"isRecording":true
+            }]))
+            .unwrap()
+        } else {
+            vec![]
+        },
+    )
+    .unwrap()
+}
+impl Fixture {
+    fn list(&self, rows: Vec<Value>) {
+        self.mount(
+            Mock::given(method("GET"))
+                .and(path("/api/reserves"))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .set_body_json(json!({"total":rows.len(),"reserves":rows})),
+                ),
+        );
+    }
+    fn ready(&self, library: &Library) -> Manager {
+        let mut manager = Manager::default();
+        library.synchronize_reservations(true, &mut manager, Instant::now());
+        self.finish(&mut manager);
+        assert!(manager.error().is_none());
+        manager
+    }
+}
+
+#[test]
+fn rule_actions_require_one_future_reservation_with_the_matching_skip_state() {
+    for relay in [None, Some(false), Some(true)] {
+        let mut row = rule_reserve();
+        if let Some(relay) = relay {
+            row["isEventRelay"] = relay.into();
+        }
+        let snapshot = snapshot_with(vec![row.clone()], false);
+        assert_eq!(
+            snapshot.target(program(), NOW, Change::Exclude).is_some(),
+            relay != Some(true)
+        );
+        assert!(snapshot.cancellation(program(), NOW).is_none());
+        assert!(snapshot.target(program(), NOW, Change::Unexclude).is_none());
+        row["isSkip"] = true.into();
+        let snapshot = snapshot_with(vec![row], false);
+        assert!(snapshot.target(program(), NOW, Change::Exclude).is_none());
+        assert_eq!(
+            snapshot.target(program(), NOW, Change::Unexclude).is_some(),
+            relay != Some(true)
+        );
+    }
+    for change in [Change::Exclude, Change::Unexclude] {
+        let mut row = rule_reserve();
+        row["isSkip"] = (change == Change::Unexclude).into();
+        let snapshot = snapshot_with(vec![row.clone()], false);
+        assert!(snapshot.target(program(), 9_999, change).is_some());
+        assert!(snapshot.target(program(), 10_000, change).is_none());
+        assert!(snapshot.target(program(), 10_001, change).is_none());
+        let mut second = row.clone();
+        second["id"] = 8.into();
+        assert!(
+            snapshot_with(vec![row, second], false)
+                .target(program(), NOW, change)
+                .is_none()
+        );
+        assert!(
+            snapshot_with(vec![reserve(7, 100)], false)
+                .target(program(), NOW, change)
+                .is_none()
+        );
+    }
+    let mut overlap = rule_reserve();
+    overlap["isOverlap"] = true.into();
+    assert!(
+        snapshot_with(vec![overlap], false)
+            .target(program(), NOW, Change::Exclude)
+            .is_none()
+    );
+    assert!(
+        snapshot_with(vec![rule_reserve()], true)
+            .target(program(), NOW, Change::Exclude)
+            .is_none()
+    );
+}
+
+#[test]
+fn overlap_and_exclusion_remain_distinct_in_the_shared_status_order() {
+    let statuses = [
+        Status::Overlap,
+        Status::Skipped,
+        Status::Reserved,
+        Status::Conflict,
+        Status::Recording,
+    ];
+    assert_eq!(
+        statuses.map(Status::as_str),
+        ["overlap", "skipped", "reserved", "conflict", "recording"]
+    );
+    for (left, left_status) in statuses.into_iter().enumerate() {
+        for (right, right_status) in statuses.into_iter().enumerate() {
+            let rows = [left_status, right_status]
+                .into_iter()
+                .enumerate()
+                .map(|(index, status)| {
+                    let mut row = reserve(index as u64, 100);
+                    row["isOverlap"] = (status == Status::Overlap).into();
+                    row["isSkip"] = (status == Status::Skipped).into();
+                    row["isConflict"] = (status == Status::Conflict).into();
+                    row
+                })
+                .collect();
+            let snapshot = snapshot_with(
+                rows,
+                left_status == Status::Recording || right_status == Status::Recording,
+            );
+            assert_eq!(snapshot.status(program()), Some(statuses[left.max(right)]));
+        }
+    }
+}
+
+#[test]
+fn authenticated_rule_exclusion_and_restoration_use_distinct_delete_paths_and_refresh() {
+    let fixture = Fixture::new();
+    let library = fixture.connect(true);
+    let excluded = Arc::new(AtomicBool::new(false));
+    for endpoint in ["/api/reserves", "/api/reserves/7"] {
+        let excluded = excluded.clone();
+        fixture.mount(
+            Mock::given(method("GET"))
+                .and(path(endpoint))
+                .and(header("cookie", "reservation-session=private-cookie"))
+                .respond_with(move |_: &wiremock::Request| {
+                    let mut row = rule_reserve();
+                    row["isSkip"] = excluded.load(Ordering::SeqCst).into();
+                    ResponseTemplate::new(200).set_body_json(if endpoint == "/api/reserves" {
+                        json!({"reserves":[row],"total":1})
+                    } else {
+                        row
+                    })
+                }),
+        );
+    }
+    fixture.empty_recording();
+    for (endpoint, next) in [("/api/reserves/7", true), ("/api/reserves/7/skip", false)] {
+        let excluded = excluded.clone();
+        fixture.mount(
+            Mock::given(method("DELETE"))
+                .and(path(endpoint))
+                .and(header("cookie", "reservation-session=private-cookie"))
+                .respond_with(move |_: &wiremock::Request| {
+                    excluded.store(next, Ordering::SeqCst);
+                    ResponseTemplate::new(200)
+                })
+                .expect(1),
+        );
+    }
+    let mut manager = fixture.ready(&library);
+    for (change, status) in [
+        (Change::Exclude, Status::Skipped),
+        (Change::Unexclude, Status::Reserved),
+    ] {
+        assert!(!manager.can_cancel(program(), NOW));
+        assert!(manager.can_change(program(), NOW, change));
+        assert!(manager.change(&fixture.network, program(), NOW, change));
+        assert!(!manager.change(&fixture.network, program(), NOW, change));
+        fixture.finish(&mut manager);
+        assert!(manager.error().is_none());
+        assert_eq!(manager.snapshot().status(program()), Some(status));
+    }
+}
+
+#[test]
+fn ineligible_rule_actions_send_no_write_or_detail_request() {
+    let mut skip = rule_reserve();
+    skip["isSkip"] = true.into();
+    let mut overlap = rule_reserve();
+    overlap["isOverlap"] = true.into();
+    let mut relay = rule_reserve();
+    relay["isEventRelay"] = true.into();
+    let mut second = rule_reserve();
+    second["id"] = 8.into();
+    for (rows, now, recording, change) in [
+        (vec![reserve(7, 100)], NOW, false, Change::Exclude),
+        (vec![skip.clone()], NOW, false, Change::Exclude),
+        (vec![overlap], NOW, false, Change::Exclude),
+        (vec![relay], NOW, false, Change::Exclude),
+        (vec![rule_reserve()], 10_000, false, Change::Exclude),
+        (vec![rule_reserve()], NOW, true, Change::Exclude),
+        (vec![rule_reserve(), second], NOW, false, Change::Exclude),
+        (vec![rule_reserve()], NOW, false, Change::Unexclude),
+        (vec![skip], 10_000, false, Change::Unexclude),
+    ] {
+        let fixture = Fixture::new();
+        let library = fixture.connect(false);
+        fixture.list(rows);
+        fixture.mount(Mock::given(method("GET")).and(path("/api/recording"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(if recording {
+                json!({"records":[{"id":7,"programId":100,"channelId":10,"startAt":10000,"isRecording":true}],"total":1})
+            } else { json!({"records":[],"total":0}) })));
+        let mut manager = fixture.ready(&library);
+        assert!(!manager.can_change(program(), now, change));
+        assert!(!manager.change(&fixture.network, program(), now, change));
+        let requests = fixture
+            .runtime
+            .block_on(fixture.server.received_requests())
+            .unwrap();
+        assert!(
+            requests
+                .iter()
+                .all(|r| r.method != reqwest::Method::DELETE && r.url.path() != "/api/reserves/7")
+        );
+    }
+}
+
+#[test]
+fn a_rule_or_state_change_during_detail_revalidation_prevents_the_delete() {
+    for change in [Change::Exclude, Change::Unexclude] {
+        for (field, value) in [
+            ("id", json!(8)),
+            ("ruleId", json!(24)),
+            ("ruleId", Value::Null),
+            ("isEventRelay", json!(true)),
+            ("programId", json!(101)),
+            ("channelId", json!(11)),
+            ("startAt", json!(9999)),
+            ("isSkip", json!(change != Change::Unexclude)),
+        ] {
+            let fixture = Fixture::new();
+            let library = fixture.connect(false);
+            let mut row = rule_reserve();
+            row["isSkip"] = (change == Change::Unexclude).into();
+            fixture.list(vec![row.clone()]);
+            fixture.empty_recording();
+            row[field] = value;
+            fixture.mount(
+                Mock::given(method("GET"))
+                    .and(path("/api/reserves/7"))
+                    .respond_with(ResponseTemplate::new(200).set_body_json(row))
+                    .expect(1),
+            );
+            fixture.mount(
+                Mock::given(method("DELETE"))
+                    .respond_with(ResponseTemplate::new(500))
+                    .expect(0),
+            );
+            let mut manager = fixture.ready(&library);
+            assert!(manager.change(&fixture.network, program(), NOW, change));
+            fixture.finish(&mut manager);
+            assert!(matches!(
+                manager.error(),
+                Some(FetchError::Parse(
+                    Error::NotExcludable | Error::NotUnexcludable
+                ))
+            ));
+            assert!(!manager.can_change(program(), NOW, change));
+        }
+    }
+}
+
+#[test]
+fn newly_recording_or_overlapping_reservations_are_not_excluded() {
+    for recording in [false, true] {
+        let fixture = Fixture::new();
+        let library = fixture.connect(false);
+        fixture.list(vec![rule_reserve()]);
+        let writing = Arc::new(AtomicBool::new(false));
+        let recorded = writing.clone();
+        fixture.mount(Mock::given(method("GET")).and(path("/api/recording"))
+            .respond_with(move |_: &wiremock::Request| {
+                let records = if recording && recorded.load(Ordering::SeqCst) {
+                    vec![json!({"id":7,"programId":100,"channelId":10,"startAt":10000,"isRecording":true})]
+                } else { vec![] };
+                ResponseTemplate::new(200).set_body_json(json!({"total":records.len(),"records":records}))
+            }));
+        let mut detail = rule_reserve();
+        detail["isOverlap"] = (!recording).into();
+        fixture.mount(
+            Mock::given(method("GET"))
+                .and(path("/api/reserves/7"))
+                .respond_with(ResponseTemplate::new(200).set_body_json(detail)),
+        );
+        fixture.mount(
+            Mock::given(method("DELETE"))
+                .respond_with(ResponseTemplate::new(500))
+                .expect(0),
+        );
+        let mut manager = fixture.ready(&library);
+        writing.store(true, Ordering::SeqCst);
+        assert!(manager.change(&fixture.network, program(), NOW, Change::Exclude));
+        fixture.finish(&mut manager);
+        assert!(matches!(
+            manager.error(),
+            Some(FetchError::Parse(Error::NotExcludable))
+        ));
+    }
+}
+
+#[test]
+fn starting_during_revalidation_prevents_exclusion_and_restoration() {
+    for change in [Change::Exclude, Change::Unexclude] {
+        let fixture = Fixture::new();
+        let library = fixture.connect(false);
+        let mut row = rule_reserve();
+        row["isSkip"] = (change == Change::Unexclude).into();
+        fixture.list(vec![row.clone()]);
+        fixture.empty_recording();
+        fixture.mount(
+            Mock::given(method("GET"))
+                .and(path("/api/reserves/7"))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .set_delay(Duration::from_millis(20))
+                        .set_body_json(row),
+                ),
+        );
+        fixture.mount(
+            Mock::given(method("DELETE"))
+                .respond_with(ResponseTemplate::new(500))
+                .expect(0),
+        );
+        let mut manager = fixture.ready(&library);
+        assert!(manager.change(&fixture.network, program(), program().key.start - 1, change));
+        fixture.finish(&mut manager);
+        assert!(matches!(
+            manager.error(),
+            Some(FetchError::Parse(
+                Error::NotExcludable | Error::NotUnexcludable
+            ))
+        ));
+    }
+}
+
+#[test]
+fn rule_write_failures_and_post_write_refresh_failures_never_resend() {
+    for change in [Change::Exclude, Change::Unexclude] {
+        for write_status in [200, 500] {
+            let fixture = Fixture::new();
+            let library = fixture.connect(false);
+            let written = Arc::new(AtomicBool::new(false));
+            let listed = written.clone();
+            let mut row = rule_reserve();
+            row["isSkip"] = (change == Change::Unexclude).into();
+            let listing = row.clone();
+            fixture.mount(
+                Mock::given(method("GET"))
+                    .and(path("/api/reserves"))
+                    .respond_with(move |_: &wiremock::Request| {
+                        if listed.load(Ordering::SeqCst) {
+                            ResponseTemplate::new(500)
+                        } else {
+                            ResponseTemplate::new(200)
+                                .set_body_json(json!({"reserves":[listing],"total":1}))
+                        }
+                    }),
+            );
+            fixture.empty_recording();
+            fixture.mount(
+                Mock::given(method("GET"))
+                    .and(path("/api/reserves/7"))
+                    .respond_with(ResponseTemplate::new(200).set_body_json(row)),
+            );
+            fixture.mount(
+                Mock::given(method("DELETE"))
+                    .respond_with(move |_: &wiremock::Request| {
+                        written.store(true, Ordering::SeqCst);
+                        ResponseTemplate::new(write_status).set_body_string("private-password")
+                    })
+                    .expect(1),
+            );
+            let mut manager = fixture.ready(&library);
+            assert!(manager.change(&fixture.network, program(), NOW, change));
+            fixture.finish(&mut manager);
+            assert!(!manager.can_change(program(), NOW, change));
+            assert!(
+                !manager
+                    .error()
+                    .unwrap()
+                    .to_string()
+                    .contains("private-password")
+            );
+            if write_status == 200 {
+                assert!(matches!(
+                    manager.error(),
+                    Some(FetchError::Parse(Error::RefreshAfterWrite(_)))
+                ));
+            }
+            manager.poll(&fixture.network, Instant::now() + REFRESH_INTERVAL);
+            fixture.finish(&mut manager);
+            assert!(manager.error().is_some());
+        }
+    }
+}
+
+#[test]
+fn cancelled_or_disconnected_rule_writes_cannot_restore_old_state() {
+    for change in [Change::Exclude, Change::Unexclude] {
+        for disconnect in [false, true] {
+            let fixture = Fixture::new();
+            let mut library = fixture.connect(false);
+            let mut row = rule_reserve();
+            row["isSkip"] = (change == Change::Unexclude).into();
+            fixture.list(vec![row.clone()]);
+            fixture.empty_recording();
+            fixture.mount(
+                Mock::given(method("GET"))
+                    .and(path("/api/reserves/7"))
+                    .respond_with(ResponseTemplate::new(200).set_body_json(row)),
+            );
+            let received = Arc::new(AtomicBool::new(false));
+            let delivered = received.clone();
+            fixture.mount(
+                Mock::given(method("DELETE"))
+                    .respond_with(move |_: &wiremock::Request| {
+                        delivered.store(true, Ordering::SeqCst);
+                        ResponseTemplate::new(200).set_delay(Duration::from_secs(10))
+                    })
+                    .expect(1),
+            );
+            let mut manager = fixture.ready(&library);
+            assert!(manager.change(&fixture.network, program(), NOW, change));
+            let deadline = Instant::now() + Duration::from_secs(3);
+            while !received.load(Ordering::SeqCst) {
+                assert!(Instant::now() < deadline, "write did not reach server");
+                thread::sleep(Duration::from_millis(1));
+            }
+            if disconnect {
+                library = Library::default();
+            }
+            library.synchronize_reservations(disconnect, &mut manager, Instant::now());
+            assert!(!manager.enabled());
+            fixture.finish(&mut manager);
+            manager.poll(&fixture.network, Instant::now() + REFRESH_INTERVAL);
+            assert!(!manager.busy());
+            assert!(manager.snapshot().status(program()).is_none());
+            assert!(manager.error().is_none());
+        }
+    }
+}
+
+#[test]
+fn pinned_api_relay_deletion_and_noop_restoration_publish_the_real_refreshed_state() {
+    for change in [Change::Exclude, Change::Unexclude] {
+        let fixture = Fixture::new();
+        let library = fixture.connect(false);
+        let mut row = rule_reserve();
+        row["isSkip"] = (change == Change::Unexclude).into();
+        let written = Arc::new(AtomicBool::new(false));
+        let listed = written.clone();
+        let listing = row.clone();
+        fixture.mount(
+            Mock::given(method("GET"))
+                .and(path("/api/reserves"))
+                .respond_with(move |_: &wiremock::Request| {
+                    let rows = if change == Change::Exclude && listed.load(Ordering::SeqCst) {
+                        vec![]
+                    } else {
+                        vec![listing.clone()]
+                    };
+                    ResponseTemplate::new(200)
+                        .set_body_json(json!({"total":rows.len(),"reserves":rows}))
+                }),
+        );
+        fixture.empty_recording();
+        fixture.mount(
+            Mock::given(method("GET"))
+                .and(path("/api/reserves/7"))
+                .respond_with(ResponseTemplate::new(200).set_body_json(row)),
+        );
+        fixture.mount(
+            Mock::given(method("DELETE"))
+                .respond_with(move |_: &wiremock::Request| {
+                    written.store(true, Ordering::SeqCst);
+                    ResponseTemplate::new(200)
+                })
+                .expect(1),
+        );
+        let mut manager = fixture.ready(&library);
+        assert!(manager.change(&fixture.network, program(), NOW, change));
+        fixture.finish(&mut manager);
+        assert!(manager.error().is_none());
+        assert_eq!(
+            manager.snapshot().status(program()),
+            if change == Change::Exclude {
+                None
+            } else {
+                Some(Status::Skipped)
+            }
+        );
+    }
+}

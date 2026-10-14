@@ -1,4 +1,4 @@
-use super::Error;
+use super::{Change, Error};
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
 
@@ -50,7 +50,7 @@ impl Status {
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Entry {
     status: Status,
-    manual: Option<u64>,
+    reserve: Option<Reserve>,
     count: usize,
 }
 #[derive(Default, Clone, Debug, PartialEq, Eq)]
@@ -62,10 +62,19 @@ impl Snapshot {
         self.entries.get(&program.key).map(|entry| entry.status)
     }
     pub(super) fn cancellation(&self, program: Program, now: u64) -> Option<u64> {
+        self.target(program, now, Change::Cancel)
+            .map(|target| target.id)
+    }
+    pub(super) fn target(&self, program: Program, now: u64, change: Change) -> Option<Target> {
         let entry = self.entries.get(&program.key)?;
-        (program.key.start > now && entry.count == 1 && entry.status != Status::Recording)
-            .then_some(entry.manual)
-            .flatten()
+        if entry.count != 1 || (change != Change::Unexclude && entry.status == Status::Recording) {
+            return None;
+        }
+        let reserve = entry.reserve.as_ref()?;
+        reserve.permits(program, now, change).then_some(Target {
+            id: reserve.id,
+            rule_id: reserve.rule_id,
+        })
     }
     pub(super) fn from_rows(
         reserves: Vec<Reserve>,
@@ -90,18 +99,17 @@ impl Snapshot {
             } else {
                 Status::Reserved
             };
-            let manual = (!row.is_time_specified && row.rule_id.is_none()).then_some(row.id);
             result
                 .entries
                 .entry(key)
                 .and_modify(|entry| {
                     entry.status = entry.status.max(status);
-                    entry.manual = None;
+                    entry.reserve = None;
                     entry.count += 1;
                 })
                 .or_insert(Entry {
                     status,
-                    manual,
+                    reserve: Some(row),
                     count: 1,
                 });
         }
@@ -116,18 +124,17 @@ impl Snapshot {
                 .entry(key)
                 .and_modify(|entry| {
                     entry.status = Status::Recording;
-                    entry.manual = None;
                 })
                 .or_insert(Entry {
                     status: Status::Recording,
-                    manual: None,
+                    reserve: None,
                     count: 0,
                 });
         }
         Ok(result)
     }
 }
-#[derive(Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct Reserve {
     pub id: u64,
@@ -136,6 +143,7 @@ pub(super) struct Reserve {
     pub start_at: u64,
     pub end_at: u64,
     pub rule_id: Option<u64>,
+    pub is_event_relay: Option<bool>,
     pub is_skip: bool,
     pub is_conflict: bool,
     pub is_overlap: bool,
@@ -149,11 +157,38 @@ impl Reserve {
             start: self.start_at,
         })
     }
-    pub(super) fn cancellable(&self, program: Program, now: u64) -> bool {
-        self.key() == Some(program.key)
-            && self.start_at > now
-            && self.rule_id.is_none()
-            && !self.is_time_specified
+    fn permits(&self, program: Program, now: u64, change: Change) -> bool {
+        if self.key() != Some(program.key) || self.start_at <= now {
+            return false;
+        }
+        match change {
+            Change::Cancel => self.rule_id.is_none() && !self.is_time_specified,
+            Change::Exclude => self.is_rule() && !self.is_skip && !self.is_overlap,
+            Change::Unexclude => self.is_rule() && self.is_skip,
+        }
+    }
+    fn is_rule(&self) -> bool {
+        // The pinned API omits isEventRelay, just as its own guide uses ruleId.
+        // Explicit relay metadata must still prevent a destructive exclusion.
+        self.rule_id.is_some() && self.is_event_relay != Some(true)
+    }
+}
+#[derive(Clone, Copy)]
+pub(super) struct Target {
+    pub id: u64,
+    rule_id: Option<u64>,
+}
+impl Target {
+    pub(super) fn matches(
+        self,
+        reserve: &Reserve,
+        program: Program,
+        now: u64,
+        change: Change,
+    ) -> bool {
+        reserve.id == self.id
+            && reserve.rule_id == self.rule_id
+            && reserve.permits(program, now, change)
     }
 }
 #[derive(Deserialize)]

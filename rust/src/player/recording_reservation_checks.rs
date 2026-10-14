@@ -5,7 +5,7 @@ use cxx_qt_lib::{QModelIndex, QString};
 use serde_json::json;
 use std::{
     sync::{
-        Arc,
+        Arc, Mutex,
         atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     thread,
@@ -38,7 +38,9 @@ pub(super) fn run() -> TestResult {
     let reserved = Arc::new(AtomicBool::new(false));
     let delay_list = Arc::new(AtomicBool::new(false));
     let list_calls = Arc::new(AtomicUsize::new(0));
-    let row = json!({"id":7,"programId":100,"channelId":10,"startAt":start,"endAt":end,"isSkip":false,"isConflict":false,"isOverlap":false,"isTimeSpecified":false});
+    let row = Arc::new(Mutex::new(
+        json!({"id":7,"programId":100,"channelId":10,"startAt":start,"endAt":end,"isSkip":false,"isConflict":false,"isOverlap":false,"isTimeSpecified":false}),
+    ));
     let mount = |mock: Mock| runtime.block_on(mock.mount(&server));
     for endpoint in ["/api/recorded", "/api/recording"] {
         mount(Mock::given(method("GET")).and(path(endpoint)).respond_with(
@@ -69,7 +71,7 @@ pub(super) fn run() -> TestResult {
             .respond_with(move |_: &wiremock::Request| {
                 calls.fetch_add(1, Ordering::SeqCst);
                 let rows = if listing.load(Ordering::SeqCst) {
-                    vec![listed.clone()]
+                    vec![listed.lock().unwrap().clone()]
                 } else {
                     vec![]
                 };
@@ -92,17 +94,36 @@ pub(super) fn run() -> TestResult {
             })
             .expect(1),
     );
+    let detail = row.clone();
     mount(
         Mock::given(method("GET"))
             .and(path("/api/reserves/7"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(row)),
+            .respond_with(move |_: &wiremock::Request| {
+                ResponseTemplate::new(200).set_body_json(detail.lock().unwrap().clone())
+            }),
     );
     let removed = reserved.clone();
+    let excluded = row.clone();
     mount(
         Mock::given(method("DELETE"))
             .and(path("/api/reserves/7"))
             .respond_with(move |_: &wiremock::Request| {
-                removed.store(false, Ordering::SeqCst);
+                let mut row = excluded.lock().unwrap();
+                if row["ruleId"].is_u64() {
+                    row["isSkip"] = true.into();
+                } else {
+                    removed.store(false, Ordering::SeqCst);
+                }
+                ResponseTemplate::new(200)
+            })
+            .expect(2),
+    );
+    let restored = row.clone();
+    mount(
+        Mock::given(method("DELETE"))
+            .and(path("/api/reserves/7/skip"))
+            .respond_with(move |_: &wiremock::Request| {
+                restored.lock().unwrap()["isSkip"] = false.into();
                 ResponseTemplate::new(200)
             })
             .expect(1),
@@ -202,6 +223,47 @@ pub(super) fn run() -> TestResult {
     assert!(player.pin_mut().cancel_reservation(key.clone()));
     finish(&mut player);
     assert!(player.reservation_state(key.clone()).is_empty());
+    row.lock().unwrap()["ruleId"] = 23.into();
+    reserved.store(true, Ordering::SeqCst);
+    assert!(player.pin_mut().refresh_reservations());
+    finish(&mut player);
+    assert!(!player.can_cancel_reservation(key.clone()));
+    assert!(player.can_exclude_reservation(key.clone()));
+    assert!(!player.can_unexclude_reservation(key.clone()));
+    assert!(player.pin_mut().exclude_reservation(key.clone()));
+    finish(&mut player);
+    assert_eq!(player.reservation_state(key.clone()).to_string(), "skipped");
+    assert!(!player.can_exclude_reservation(key.clone()));
+    assert!(player.can_unexclude_reservation(key.clone()));
+    assert!(player.pin_mut().unexclude_reservation(key.clone()));
+    finish(&mut player);
+    assert_eq!(
+        player.reservation_state(key.clone()).to_string(),
+        "reserved"
+    );
+    row.lock().unwrap()["isOverlap"] = true.into();
+    assert!(player.pin_mut().refresh_reservations());
+    finish(&mut player);
+    assert_eq!(player.reservation_state(key.clone()).to_string(), "overlap");
+    assert!(!player.can_exclude_reservation(key.clone()));
+    assert!(!player.can_unexclude_reservation(key.clone()));
+    assert!(!player.pin_mut().exclude_reservation(key.clone()));
+    assert!(player.pin_mut().request_language(QString::from("en")));
+    assert_eq!(
+        player.reservation_error().to_string(),
+        "This reservation cannot be excluded. Refresh the reservation list and check its status in EPGStation."
+    );
+    assert!(player.pin_mut().request_language(QString::from("ja")));
+    assert_eq!(
+        player.reservation_error().to_string(),
+        "この予約を除外できません。予約一覧を更新し、EPGStationで状態を確認してください。"
+    );
+    assert!(!player.pin_mut().unexclude_reservation(key.clone()));
+    assert_eq!(
+        player.reservation_error().to_string(),
+        "この予約の除外を解除できません。予約一覧を更新し、EPGStationで状態を確認してください。"
+    );
+    assert!(player.pin_mut().request_language(QString::from("en")));
     assert_eq!(
         resets.load(Ordering::SeqCst),
         0,
@@ -257,7 +319,7 @@ pub(super) fn run() -> TestResult {
         "shutdown retains the saved preference"
     );
     println!(
-        "Recording reservations: default-off gate, guide roles, notification coherence, manual writes and shutdown cancellation passed"
+        "Recording reservations: default-off gate, guide roles, notification coherence, manual writes, rule exclusion/restoration, overlap and shutdown cancellation passed"
     );
     Ok(())
 }

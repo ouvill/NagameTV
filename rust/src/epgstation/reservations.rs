@@ -24,6 +24,10 @@ pub enum Error {
     AlreadyReserved,
     #[error("Only one future manual reservation can be cancelled")]
     NotCancellable,
+    #[error("The rule reservation cannot be excluded")]
+    NotExcludable,
+    #[error("The rule reservation exclusion cannot be removed")]
+    NotUnexcludable,
     #[error("Reservation response exceeds its limit")]
     Limit,
     #[error("Reservation response is inconsistent")]
@@ -62,11 +66,37 @@ impl std::fmt::Debug for JsonError {
         std::fmt::Display::fmt(self, formatter)
     }
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Change {
+    Cancel,
+    Exclude,
+    Unexclude,
+}
+impl Change {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Cancel => "cancel",
+            Self::Exclude => "exclude",
+            Self::Unexclude => "unexclude",
+        }
+    }
+    fn rejection(self) -> Error {
+        match self {
+            Self::Cancel => Error::NotCancellable,
+            Self::Exclude => Error::NotExcludable,
+            Self::Unexclude => Error::NotUnexcludable,
+        }
+    }
+}
 #[derive(Clone, Copy)]
 enum Operation {
     Refresh,
     Add(Program),
-    Cancel { program: Program, id: u64 },
+    Change {
+        program: Program,
+        target: data::Target,
+        change: Change,
+    },
 }
 #[derive(Default)]
 enum Mode {
@@ -82,7 +112,10 @@ enum Mode {
 enum Work {
     #[default]
     Idle,
-    Running(Job<Snapshot, Error>),
+    Running {
+        job: Job<Snapshot, Error>,
+        operation: Operation,
+    },
     Retiring(Stopping),
 }
 #[derive(Default)]
@@ -145,7 +178,7 @@ impl Manager {
             None => Mode::Disabled,
         };
         self.work = match std::mem::take(&mut self.work) {
-            Work::Running(job) => Work::Retiring(job.cancel()),
+            Work::Running { job, .. } => Work::Retiring(job.cancel()),
             work => work,
         };
         self.catalogue = Catalogue::Unknown;
@@ -169,8 +202,14 @@ impl Manager {
             && !self.busy()
             && matches!(&self.catalogue, Catalogue::Ready(snapshot) if snapshot.cancellation(program, now).is_some())
     }
-    pub fn reject(&mut self, error: Error) -> bool {
+    pub fn can_change(&self, program: Program, now: u64, change: Change) -> bool {
+        self.enabled()
+            && !self.busy()
+            && matches!(&self.catalogue, Catalogue::Ready(snapshot) if snapshot.target(program, now, change).is_some())
+    }
+    pub fn reject(&mut self, operation: &'static str, error: Error) -> bool {
         tracing::warn!(
+            operation,
             error = &error as &dyn std::error::Error,
             "Reservation operation rejected"
         );
@@ -189,20 +228,44 @@ impl Manager {
             } else {
                 Error::ProgramChanged
             };
-            return self.reject(error);
+            return self.reject("reserve", error);
         }
         self.begin(network, Operation::Add(program), now_ms);
         true
     }
     pub fn cancel(&mut self, network: &Network, program: Program, now_ms: u64) -> bool {
-        if !self.can_cancel(program, now_ms) {
-            return self.reject(Error::NotCancellable);
+        self.change(network, program, now_ms, Change::Cancel)
+    }
+    pub fn change(
+        &mut self,
+        network: &Network,
+        program: Program,
+        now_ms: u64,
+        change: Change,
+    ) -> bool {
+        if !self.can_change(program, now_ms, change) {
+            let error = if self.busy() {
+                Error::Busy
+            } else if !self.enabled() {
+                Error::Unavailable
+            } else {
+                change.rejection()
+            };
+            return self.reject(change.name(), error);
         }
-        let id = self
+        let target = self
             .snapshot()
-            .cancellation(program, now_ms)
-            .expect("validated cancellation");
-        self.begin(network, Operation::Cancel { program, id }, now_ms);
+            .target(program, now_ms, change)
+            .expect("validated target");
+        self.begin(
+            network,
+            Operation::Change {
+                program,
+                target,
+                change,
+            },
+            now_ms,
+        );
         true
     }
     pub fn refresh(&mut self, network: &Network) -> bool {
@@ -217,11 +280,14 @@ impl Manager {
             return;
         };
         let connection = connection.clone();
-        self.work = Work::Running(network.job(async move {
-            http::execute(connection, operation, now_ms)
-                .await
-                .map_err(FetchError::Parse)
-        }));
+        self.work = Work::Running {
+            job: network.job(async move {
+                http::execute(connection, operation, now_ms)
+                    .await
+                    .map_err(FetchError::Parse)
+            }),
+            operation,
+        };
         self.error = None;
         self.revision = self.revision.wrapping_add(1);
     }
@@ -235,8 +301,8 @@ impl Manager {
                     Work::Idle
                 }
             },
-            Work::Running(job) => match job.poll() {
-                Progress::Pending(job) => Work::Running(job),
+            Work::Running { job, operation } => match job.poll() {
+                Progress::Pending(job) => Work::Running { job, operation },
                 Progress::Complete(result) => {
                     self.revision = self.revision.wrapping_add(1);
                     self.next_refresh = now + REFRESH_INTERVAL;
@@ -246,7 +312,13 @@ impl Manager {
                             self.error = None;
                         }
                         Err(error) => {
-                            tracing::error!(
+                            let operation = match operation {
+                                Operation::Refresh => "refresh",
+                                Operation::Add(_) => "reserve",
+                                Operation::Change { change, .. } => change.name(),
+                            };
+                            tracing::warn!(
+                                operation,
                                 error = &error as &dyn std::error::Error,
                                 "EPGStation reservation operation failed"
                             );

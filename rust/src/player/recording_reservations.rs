@@ -1,6 +1,6 @@
 //! QObject commands delegate eligibility and request ordering to the Rust owner.
 use super::{ffi, status::tr};
-use crate::epgstation::reservations::{Error, Program};
+use crate::epgstation::reservations::{Change, Error, Program};
 use crate::services::FetchError;
 use cxx_qt::CxxQtType;
 use cxx_qt_lib::QString;
@@ -9,6 +9,19 @@ use std::{
     time::{Instant, SystemTime, UNIX_EPOCH},
 };
 
+#[derive(Clone, Copy)]
+enum Request {
+    Reserve,
+    Change(Change),
+}
+impl Request {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Reserve => "reserve",
+            Self::Change(change) => change.name(),
+        }
+    }
+}
 fn now_ms() -> Result<u64, Error> {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -46,6 +59,12 @@ impl ffi::Player {
             FetchError::Parse(Error::NotCancellable) => {
                 tr("Only a single manual reservation that has not started can be cancelled.")
             }
+            FetchError::Parse(Error::NotExcludable) => tr(
+                "This reservation cannot be excluded. Refresh the reservation list and check its status in EPGStation.",
+            ),
+            FetchError::Parse(Error::NotUnexcludable) => tr(
+                "The exclusion cannot be removed. Refresh the reservation list and check its status in EPGStation.",
+            ),
             FetchError::Parse(Error::RefreshAfterWrite(_)) => tr(
                 "The reservation was changed, but its status could not be refreshed. Refresh the reservation list before trying again.",
             ),
@@ -115,51 +134,53 @@ impl ffi::Player {
             _ => false,
         }
     }
-    // Keep writes disabled until the rule-reservation owner validates the target.
-    pub fn can_exclude_reservation(&self, _program_key: QString) -> bool {
-        false
+    pub fn can_exclude_reservation(&self, program_key: QString) -> bool {
+        self.can_change_reservation(program_key, Change::Exclude)
     }
-    pub fn can_unexclude_reservation(&self, _program_key: QString) -> bool {
-        false
+    pub fn can_unexclude_reservation(&self, program_key: QString) -> bool {
+        self.can_change_reservation(program_key, Change::Unexclude)
     }
-    pub fn exclude_reservation(mut self: Pin<&mut Self>, _program_key: QString) -> bool {
-        self.as_mut()
-            .rust_mut()
-            .recording_reservations
-            .reject(Error::Unavailable);
-        self.publish_reservations();
-        false
+    fn can_change_reservation(&self, key: QString, change: Change) -> bool {
+        match (self.reservation_program(&key), now_ms()) {
+            (Ok(program), Ok(now)) => self
+                .rust()
+                .recording_reservations
+                .can_change(program, now, change),
+            _ => false, // Unavailable selections and clocks expose no action.
+        }
     }
-    pub fn unexclude_reservation(mut self: Pin<&mut Self>, _program_key: QString) -> bool {
-        self.as_mut()
-            .rust_mut()
-            .recording_reservations
-            .reject(Error::Unavailable);
-        self.publish_reservations();
-        false
+    pub fn exclude_reservation(self: Pin<&mut Self>, program_key: QString) -> bool {
+        self.change_reservation(program_key, Request::Change(Change::Exclude))
+    }
+    pub fn unexclude_reservation(self: Pin<&mut Self>, program_key: QString) -> bool {
+        self.change_reservation(program_key, Request::Change(Change::Unexclude))
     }
     pub fn reserve_program(self: Pin<&mut Self>, program_key: QString) -> bool {
-        self.change_reservation(program_key, false)
+        self.change_reservation(program_key, Request::Reserve)
     }
     pub fn cancel_reservation(self: Pin<&mut Self>, program_key: QString) -> bool {
-        self.change_reservation(program_key, true)
+        self.change_reservation(program_key, Request::Change(Change::Cancel))
     }
-    fn change_reservation(mut self: Pin<&mut Self>, key: QString, cancel: bool) -> bool {
+    fn change_reservation(mut self: Pin<&mut Self>, key: QString, request: Request) -> bool {
         self.as_mut().poll_recording_reservations();
         let target = self
             .reservation_program(&key)
             .and_then(|program| Ok((program, now_ms()?)));
         let this = self.as_mut().rust_mut().get_mut();
         let accepted = match (target, this.network.as_ref()) {
-            (Ok((program, now)), Some(network)) => {
-                if cancel {
+            (Ok((program, now)), Some(network)) => match request {
+                Request::Reserve => this.recording_reservations.reserve(network, program, now),
+                Request::Change(Change::Cancel) => {
                     this.recording_reservations.cancel(network, program, now)
-                } else {
-                    this.recording_reservations.reserve(network, program, now)
                 }
-            }
-            (Err(error), _) => this.recording_reservations.reject(error),
-            (Ok(_), None) => this.recording_reservations.reject(Error::Unavailable),
+                Request::Change(change) => this
+                    .recording_reservations
+                    .change(network, program, now, change),
+            },
+            (Err(error), _) => this.recording_reservations.reject(request.name(), error),
+            (Ok(_), None) => this
+                .recording_reservations
+                .reject(request.name(), Error::Unavailable),
         };
         self.publish_reservations();
         accepted
@@ -169,7 +190,9 @@ impl ffi::Player {
         let this = self.as_mut().rust_mut().get_mut();
         let accepted = match this.network.as_ref() {
             Some(network) => this.recording_reservations.refresh(network),
-            None => this.recording_reservations.reject(Error::Unavailable),
+            None => this
+                .recording_reservations
+                .reject("refresh", Error::Unavailable),
         };
         self.publish_reservations();
         accepted

@@ -1,4 +1,4 @@
-use super::{Error, Operation, Snapshot, data};
+use super::{Change, Error, Operation, Snapshot, data};
 use crate::epgstation::{MAX_RESPONSE_BYTES, client::Connection};
 use reqwest::Method;
 use serde::Deserialize;
@@ -151,35 +151,44 @@ pub(super) async fn execute(
                 return Err(Error::Invalid);
             }
         }
-        Operation::Cancel { program, id } => {
-            let reserve: data::Reserve =
-                get(&connection, &format!("reserves/{id}?isHalfWidth=false")).await?;
-            if reserve.id != id || !reserve.cancellable(program, current()) {
-                return Err(Error::NotCancellable);
-            }
-            if pages(&connection, true)
-                .await?
-                .records
-                .iter()
-                .any(|row| row.matches(program))
-            {
-                return Err(Error::NotCancellable);
-            }
-            if !reserve.cancellable(program, current()) {
-                return Err(Error::NotCancellable);
-            }
-            body(
-                connection.api_request(Method::DELETE, &format!("reserves/{id}")),
-                200,
+        Operation::Change {
+            program,
+            target,
+            change,
+        } => {
+            let reserve: data::Reserve = get(
+                &connection,
+                &format!("reserves/{}?isHalfWidth=false", target.id),
             )
             .await?;
+            if !target.matches(&reserve, program, current(), change) {
+                return Err(change.rejection());
+            }
+            if change != Change::Unexclude
+                && pages(&connection, true)
+                    .await?
+                    .records
+                    .iter()
+                    .any(|row| row.matches(program))
+            {
+                return Err(change.rejection());
+            }
+            // Time can pass while checking recordings; never write after the start.
+            if !target.matches(&reserve, program, current(), change) {
+                return Err(change.rejection());
+            }
+            let path = match change {
+                Change::Cancel | Change::Exclude => format!("reserves/{}", target.id),
+                Change::Unexclude => format!("reserves/{}/skip", target.id),
+            };
+            body(connection.api_request(Method::DELETE, &path), 200).await?;
         }
     }
     snapshot(&connection)
         .await
         .map_err(|error| match operation {
             Operation::Refresh => error,
-            Operation::Add(_) | Operation::Cancel { .. } => {
+            Operation::Add(_) | Operation::Change { .. } => {
                 Error::RefreshAfterWrite(Box::new(error))
             }
         })

@@ -24,9 +24,9 @@ QMLは以下の契約で設定スイッチ、番組表の印、番組詳細の�
 | invokable | `can_cancel_reservation(program_key: string): bool` | 現在の状態で取消しできるか。実行時にも検証する |
 | invokable | `reserve_program(program_key: string): bool` | 手動予約の追加を受け付けたらtrue。非同期の完了・失敗はbusy/errorとreservations_changedで通知 |
 | invokable | `cancel_reservation(program_key: string): bool` | 手動予約の取消しを受け付けたらtrue。同上 |
-| invokable | `can_exclude_reservation(program_key: string): bool` | 開始前のルール予約が1件だけあり、中継予約・除外中・重複・録画中でない場合にtrue。実行直前にも検証する |
+| invokable | `can_exclude_reservation(program_key: string): bool` | 開始前のルール予約が1件だけあり、`isEventRelay=true`・除外中・重複・録画中でない場合にtrue。実行直前にも検証する |
 | invokable | `exclude_reservation(program_key: string): bool` | ルール予約の除外を受け付けたらtrue。完了・失敗はbusy/errorとreservations_changedで通知 |
-| invokable | `can_unexclude_reservation(program_key: string): bool` | 開始前のルール予約が1件だけあり、中継予約でなく除外中の場合にtrue。実行直前にも検証する |
+| invokable | `can_unexclude_reservation(program_key: string): bool` | 開始前のルール予約が1件だけあり、`isEventRelay=true`でなく除外中の場合にtrue。実行直前にも検証する |
 | invokable | `unexclude_reservation(program_key: string): bool` | ルール予約の除外解除を受け付けたらtrue。同上 |
 
 program_keyは`watch_program(key)`と同じ`watchKey`。QMLで番組IDへ分解しない。
@@ -94,6 +94,8 @@ ID・局ID・開始／終了時刻を照合する。番組が存在しない場�
 - `GET /api/recording?isHalfWidth=false&offset=…&limit=100`の録画中一覧をprogramId・局・開始時刻で照合する。
 - `POST /api/reserves`へ`{programId, allowEndLack:false}`を渡す。保存先・エンコードはサーバー既定値を使う。
 - `DELETE /api/reserves/{reserveId}`で手動予約を取り消す。直前に予約詳細と録画中一覧を再確認する。
+- 同じDELETEをルール予約へ送ると除外になる。詳細の予約ID・ruleId・番組ID・局・開始時刻と、除外/重複/中継の条件を再確認し、録画中一覧にも照合する。確認中に開始時刻へ達した場合は送信しない。
+- `DELETE /api/reserves/{reserveId}/skip`で除外を解除する。直前に同一ルール予約の詳細を取得し、除外中かつ開始前であることを再確認する。
 
 参照: [予約一覧・追加](https://github.com/stuayu/EPGStation/blob/26f56720722e61e66fc33fc0c4aacfd3d98913ba/src/model/service/api/reserves.ts)、
 [予約詳細・取消し](https://github.com/stuayu/EPGStation/blob/26f56720722e61e66fc33fc0c4aacfd3d98913ba/src/model/service/api/reserves/%7BreserveId%7D.ts)、
@@ -108,20 +110,26 @@ ID・局ID・開始／終了時刻を照合する。番組が存在しない場�
 録画停止・重複解除・ルール編集・予約詳細設定は今回の操作に含めない。
 
 固定版の`ReserveItem`は`ruleId`・`isSkip`・`isOverlap`を返すが、`isEventRelay`を返さない。
-応答生成処理も中継予約の`ruleId`を保持するため、ruleIdだけでは非中継を保証できない。
-除外・除外解除の対象は`isEventRelay=false`を確認できるAPIに限定し、値がない場合は
-操作を無効にする。固定版での状態表示と手動予約の取消しは従来どおり利用できる。
+[応答生成処理](https://github.com/stuayu/EPGStation/blob/26f56720722e61e66fc33fc0c4aacfd3d98913ba/src/model/api/reserve/ReserveApiModel.ts)も
+中継予約の`ruleId`を保持するため、ruleIdだけでは非中継を保証できない。
+利用者が選択した互換方針に従い、値が省略された場合は固定版のProgramDialogと同じく
+ruleIdの有無で判定する。**固定版では中継予約に「除外」を実行すると、除外中への変更ではなく
+予約そのものが削除される場合がある。** 応答に`isEventRelay=true`が明示された場合は
+除外・除外解除を拒否する。操作後は一覧を再取得し、番組表と詳細へ実際の状態を反映する。
+固定版の中継予約では除外解除が200のまま何も変更しない場合もあり、成功コードだけで
+表示を除外解除済みに変えない。
 フラグの実験扱いを解除する条件と検証結果は[開発手順](development.md#トランクベース開発とフィーチャーフラグ)へ記録する。
 
 ## 検証
 
 `python3 scripts/test.py app`でフラグ・設定復元・番組キー・予約所有者を検証し、
 `python3 scripts/test.py connection`でQtモデルと通知中の整合性を確認する。
-wiremockでは認証Cookie、ページ取得、追加・取消し、失敗後の重複送信防止、
-取消し後の古い結果の破棄を扱う。
+wiremockでは認証Cookie、ページ取得、追加・取消し・除外・除外解除、対象外への送信防止、
+送信前の状態変化、失敗後の重複送信防止、取消し・切断後の古い結果の破棄を扱う。
+固定版での中継予約の削除と、200を返しても変化しない除外解除も、再取得した状態で検証する。
 
 `python3 -m scripts.testing.epgstation_integration`の固定版Docker環境には
 4状態の予約・録画中データを登録する。認証あり／なしで製品クライアントの一覧取得と
 番組詳細の照合を検証する。番組・時刻は合成データで、チューナーや録画処理は起動しない。
-この環境はoperator IPCを起動しないため、予約追加・取消しの実サーバー結合は未検証。
+この環境はoperator IPCを起動しないため、予約追加・取消し・除外・除外解除の実サーバー結合は未検証。
 未検証経路を含むため、検査に成功してもフラグの既定値はOFFを維持する。
