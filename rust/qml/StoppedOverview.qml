@@ -14,6 +14,8 @@ Item {
     property ContinueWatchingModel continueWatching: null
     // Favorites need the persisted history; cards hide the star until it is loaded.
     property bool favoritesReady: false
+    // Favorites and positions were not read or saved; the cause is in the log.
+    property bool historyFailed: false
     property string visibilityJson: "[]"
     readonly property list<int> visibleIndices: JSON.parse(visibilityJson)
     property string programsJson: "[]"
@@ -215,6 +217,17 @@ Item {
                         Accessible.name: qsTranslate("Viewer", "Loading…")
                     }
                 }
+            }
+            Label {
+                objectName: "overviewHistoryWarning"
+                Layout.fillWidth: true
+                Layout.leftMargin: root.pageMargin
+                Layout.rightMargin: root.pageMargin
+                visible: root.historyFailed
+                text: qsTranslate("Viewer", "Favorites and playback positions could not be saved. They are kept only until the app closes.")
+                color: Theme.warning
+                font.pixelSize: Theme.fontBody
+                wrapMode: Text.Wrap
             }
             SectionTitle {
                 Layout.leftMargin: root.pageMargin

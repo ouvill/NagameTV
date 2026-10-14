@@ -1252,6 +1252,7 @@
 </context>
   <context>
     <name>Viewer</name>
+    <message><source>Favorites and playback positions could not be saved. They are kept only until the app closes.</source><translation>お気に入りと再生位置を保存できませんでした。アプリを閉じるまでの間だけ保持します。</translation></message>
     <message><source>Recording now</source><translation>録画中</translation></message>
     <message><source>Reservation conflict</source><translation>予約競合</translation></message>
     <message><source>Reservation skipped</source><translation>予約スキップ</translation></message>

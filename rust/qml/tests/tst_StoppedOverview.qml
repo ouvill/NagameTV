@@ -113,6 +113,12 @@ TestCase {
         keyClick(Qt.Key_Up);
         tryCompare(findChild(panel, "overviewRecordings"), "activeFocus", true);
     }
+    function test_a_history_failure_is_reported_on_the_page() {
+        const warning = findChild(panel, "overviewHistoryWarning");
+        verify(!warning.visible);
+        panel.historyFailed = true;
+        verify(warning.visible);
+    }
     function test_directional_keys_enter_and_leave_the_page_at_both_ends() {
         const grid = findChild(panel, "overviewChannels");
         verify(panel.enter(true));

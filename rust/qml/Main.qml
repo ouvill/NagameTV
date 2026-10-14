@@ -612,6 +612,7 @@ ViewerWindow {
                 now: player.channel_program_now
                 continueWatching: player.continue_recordings
                 favoritesReady: player.viewing_history_ready
+                historyFailed: player.viewing_history_error.length > 0
                 onFavoriteRequested: function(serviceId) { player.toggle_favorite(serviceId); }
                 onResumeRequested: function(recordingKey) { player.resume_recording(recordingKey); }
                 onSelectRequested: function (index) { player.select(index); }

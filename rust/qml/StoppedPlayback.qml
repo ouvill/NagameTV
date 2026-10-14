@@ -22,6 +22,7 @@ Rectangle {
     property real now: 0
     property ContinueWatchingModel continueWatching: null
     property bool favoritesReady: false
+    property bool historyFailed: false
     // A stream that is starting shows only its progress: listing other channels
     // during a channel change reads as if the choice had not been taken.
     property bool connecting: false
@@ -71,6 +72,7 @@ Rectangle {
             loading: root.loading
             continueWatching: root.continueWatching
             favoritesReady: root.favoritesReady
+            historyFailed: root.historyFailed
             onFavoriteRequested: function(serviceId) { root.favoriteRequested(serviceId); }
             onResumeRequested: function(recordingKey) { root.resumeRequested(recordingKey); }
             onBoundaryReached: function(key) { root.boundaryReached(key); }
