@@ -115,6 +115,29 @@ impl ffi::Player {
             _ => false,
         }
     }
+    // Keep writes disabled until the rule-reservation owner validates the target.
+    pub fn can_exclude_reservation(&self, _program_key: QString) -> bool {
+        false
+    }
+    pub fn can_unexclude_reservation(&self, _program_key: QString) -> bool {
+        false
+    }
+    pub fn exclude_reservation(mut self: Pin<&mut Self>, _program_key: QString) -> bool {
+        self.as_mut()
+            .rust_mut()
+            .recording_reservations
+            .reject(Error::Unavailable);
+        self.publish_reservations();
+        false
+    }
+    pub fn unexclude_reservation(mut self: Pin<&mut Self>, _program_key: QString) -> bool {
+        self.as_mut()
+            .rust_mut()
+            .recording_reservations
+            .reject(Error::Unavailable);
+        self.publish_reservations();
+        false
+    }
     pub fn reserve_program(self: Pin<&mut Self>, program_key: QString) -> bool {
         self.change_reservation(program_key, false)
     }

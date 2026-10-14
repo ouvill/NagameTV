@@ -479,6 +479,14 @@ pub mod ffi {
         #[qinvokable]
         fn cancel_reservation(self: Pin<&mut Player>, program_key: QString) -> bool;
         #[qinvokable]
+        fn can_exclude_reservation(self: &Player, program_key: QString) -> bool;
+        #[qinvokable]
+        fn exclude_reservation(self: Pin<&mut Player>, program_key: QString) -> bool;
+        #[qinvokable]
+        fn can_unexclude_reservation(self: &Player, program_key: QString) -> bool;
+        #[qinvokable]
+        fn unexclude_reservation(self: Pin<&mut Player>, program_key: QString) -> bool;
+        #[qinvokable]
         fn configure_data_broadcast(self: Pin<&mut Player>, enabled: bool);
         #[qinvokable]
         fn configure_data_broadcast_prefetch(self: Pin<&mut Player>, enabled: bool);

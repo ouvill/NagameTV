@@ -30,6 +30,7 @@ impl Program {
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Status {
+    Overlap,
     Skipped,
     Reserved,
     Conflict,
@@ -38,6 +39,7 @@ pub enum Status {
 impl Status {
     pub fn as_str(self) -> &'static str {
         match self {
+            Self::Overlap => "overlap",
             Self::Skipped => "skipped",
             Self::Reserved => "reserved",
             Self::Conflict => "conflict",
@@ -81,8 +83,10 @@ impl Snapshot {
             let Some(key) = row.key() else { continue }; // Time-specified reservations have no program identity.
             let status = if row.is_conflict {
                 Status::Conflict
-            } else if row.is_skip || row.is_overlap {
+            } else if row.is_skip {
                 Status::Skipped
+            } else if row.is_overlap {
+                Status::Overlap
             } else {
                 Status::Reserved
             };

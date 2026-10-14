@@ -1,6 +1,6 @@
 # 番組表からの録画予約（実験的）
 
-EPGStationへ番組単位の手動予約を追加・取消しする。機能は既定OFFとし、
+EPGStationへ番組単位の手動予約を追加・取消しし、ルール予約を除外・除外解除する。機能は既定OFFとし、
 Qtに依存しないRustの所有者がフラグ、接続世代、非同期操作と予約状態を管理する。
 QMLは以下の契約で設定スイッチ、番組表の印、番組詳細の操作を接続する。
 
@@ -15,7 +15,7 @@ QMLは以下の契約で設定スイッチ、番組表の印、番組詳細の�
 | invokable | `configure_recording_reservations(enabled: bool)` | フラグを変更・保存する。allowed=falseでの有効化は拒否 |
 | シグナル | `recording_reservations_enabled_changed()` | フラグのNOTIFY。操作の無効化を反映してから通知 |
 | 読取専用プロパティ | `reservations_enabled: bool` | フラグONかつEPGStationの現在の認証セッションが接続確認済み |
-| 読取専用プロパティ | `reservation_busy: bool` | 一覧取得・追加・取消し・その後の再取得が進行中。取消し待ちを含む |
+| 読取専用プロパティ | `reservation_busy: bool` | 一覧取得・追加・取消し・除外・除外解除・その後の再取得が進行中。取消し待ちを含む |
 | 読取専用プロパティ | `reservation_error: string` | 正常時は空。Backend文脈で翻訳済みの利用者向けエラー。URL・サーバー本文・資格情報を含めない |
 | シグナル | `reservations_changed()` | 上記3プロパティと番組ごとの操作可否・予約状態の変更。通知前にモデルへ反映 |
 | invokable | `refresh_reservations(): bool` | 一覧を再取得。未接続・フラグOFF・操作中はfalse |
@@ -24,6 +24,10 @@ QMLは以下の契約で設定スイッチ、番組表の印、番組詳細の�
 | invokable | `can_cancel_reservation(program_key: string): bool` | 現在の状態で取消しできるか。実行時にも検証する |
 | invokable | `reserve_program(program_key: string): bool` | 手動予約の追加を受け付けたらtrue。非同期の完了・失敗はbusy/errorとreservations_changedで通知 |
 | invokable | `cancel_reservation(program_key: string): bool` | 手動予約の取消しを受け付けたらtrue。同上 |
+| invokable | `can_exclude_reservation(program_key: string): bool` | 開始前のルール予約が1件だけあり、中継予約・除外中・重複・録画中でない場合にtrue。実行直前にも検証する |
+| invokable | `exclude_reservation(program_key: string): bool` | ルール予約の除外を受け付けたらtrue。完了・失敗はbusy/errorとreservations_changedで通知 |
+| invokable | `can_unexclude_reservation(program_key: string): bool` | 開始前のルール予約が1件だけあり、中継予約でなく除外中の場合にtrue。実行直前にも検証する |
+| invokable | `unexclude_reservation(program_key: string): bool` | ルール予約の除外解除を受け付けたらtrue。同上 |
 
 program_keyは`watch_program(key)`と同じ`watchKey`。QMLで番組IDへ分解しない。
 二重操作は受け付けず、成功応答後も一覧再取得が終わるまでbusyを維持する。
@@ -32,9 +36,9 @@ program_keyは`watch_program(key)`と同じ`watchKey`。QMLで番組IDへ分解�
 ### GuideModel
 
 `Player.guide_model`へ`reservation: string` roleを追加する。
-値は`""`（未予約・未取得・対象外）、`reserved`、`conflict`、`skipped`、`recording`。
-サーバーが重複（isOverlap）と判定した予約はskippedに含め、同じ番組に複数状態がある場合は
-recording → conflict → reserved → skippedの順に表示する。
+値は`""`（未予約・未取得・対象外）、`reserved`、`conflict`、`skipped`（isSkip、除外中）、
+`overlap`（isOverlap、重複）、`recording`。同じ番組に複数状態がある場合は
+recording → conflict → reserved → skipped → overlapの順に表示する。
 番組表の競合セル・終了時刻不明のセルは、単一番組を特定できないため空を返す。
 
 予約だけの変更では、変わった行のreservation roleに限定してdataChangedを通知する。
@@ -47,12 +51,14 @@ recording → conflict → reserved → skippedの順に表示する。
 起動ポリシーが許さない場合は操作できない状態で表示する。
 
 番組表のセルは、`reservation` roleが空でなければ右上に[`ReservationBadge`](../rust/qml/ReservationBadge.qml)を重ねる。
-予約済み・録画中は赤系、競合・スキップは黄土色で、文字を出せない高さのセルには表示しない。
+予約済み・録画中は赤系、競合・除外・重複は黄土色で、文字を出せない高さのセルには表示しない。
 色は淡いセルの上でも読めるよう[`GuidePalette`](../rust/qml/GuidePalette.qml)に置く。
 
 番組詳細は同じ印を番組名の下に示し、下部に「この番組を見る」と並べて「録画予約」「予約を取り消す」を出す。
+ルール予約は削除してもルールが作り直すため、EPGStationの番組ダイアログと同じ「除外」「除外解除」を出す。
+除外中の放送予定の番組では、録画に戻す「除外解除」を主操作にする。
 放送中の番組では視聴を主操作に、これから始まる番組では予約を主操作にする。
-`can_reserve_program`・`can_cancel_reservation`が偽の操作は表示せず、`reservation_busy`の間は
+`can_reserve_program`・`can_cancel_reservation`・`can_exclude_reservation`・`can_unexclude_reservation`が偽の操作は表示せず、`reservation_busy`の間は
 両方を無効にして読み込み表示を出す。`reservation_error`は本文の末尾に表示する。
 `reservations_enabled`が偽のとき（フラグOFF・未接続）は、印・操作・エラーのいずれも表示しない。
 詳細は`reservations_changed`のたびに状態と操作可否を読み直す。
@@ -97,9 +103,14 @@ ID・局ID・開始／終了時刻を照合する。番組が存在しない場�
 ## 今回の対応範囲
 
 既知の終了時刻が現在より後にある単一番組へ追加する。
-取消しは開始前で録画中でない手動予約1件に限定する。ルール予約・時刻指定予約・
-複数予約は状態表示のみとし、変更はEPGStationで行う。録画停止・ルール編集・
-スキップ解除・予約詳細設定は今回の操作に含めない。
+取消しは開始前で録画中でない手動予約1件に限定する。ルール予約は公開APIの条件を
+満たす1件に限り除外・除外解除できる。時刻指定予約・複数予約は状態表示のみとする。
+録画停止・重複解除・ルール編集・予約詳細設定は今回の操作に含めない。
+
+固定版の`ReserveItem`は`ruleId`・`isSkip`・`isOverlap`を返すが、`isEventRelay`を返さない。
+応答生成処理も中継予約の`ruleId`を保持するため、ruleIdだけでは非中継を保証できない。
+除外・除外解除の対象は`isEventRelay=false`を確認できるAPIに限定し、値がない場合は
+操作を無効にする。固定版での状態表示と手動予約の取消しは従来どおり利用できる。
 フラグの実験扱いを解除する条件と検証結果は[開発手順](development.md#トランクベース開発とフィーチャーフラグ)へ記録する。
 
 ## 検証
