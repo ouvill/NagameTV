@@ -103,6 +103,7 @@ Penpotに表現されていない途中の状態や連続操作時の動きは�
 | 用途 | 使用する部品と指定 |
 | --- | --- |
 | 文字の操作ボタン | [`ActionButton`](../rust/qml/ActionButton.qml)。`emphasis`で`Primary / Secondary / Quiet`を選ぶ。音声・速度の選択肢は`selected`を元データから導く。 |
+| 局・録画のカード | [`ChannelCard`](../rust/qml/ChannelCard.qml)と[`ContinueCard`](../rust/qml/ContinueCard.qml)。面は`CardSurface`、進み具合は[`ProgressLine`](../rust/qml/ProgressLine.qml)、お気に入りの星は[`FavoriteToggle`](../rust/qml/FavoriteToggle.qml)を使う。フォーカス中のカードは1.03倍まで拡大する。 |
 | 映像上の文字ボタン | `ActionButton`の`surface: ActionButton.VideoOverlay`。丸い形と半透明の反応を使う。 |
 | アイコンの操作ボタン | [`IconAction`](../rust/qml/IconAction.qml)。裸のアイコンは`flat: true`、選択状態は`active`、閉じる操作の赤い反応は`emphasis: IconAction.Destructive`。 |
 | 文字入力・選択・整数入力 | `SettingsField`、`SettingsChoice`、`ThemedSpinBox`。方向キーでの選択と編集を分ける文字入力には`NavigationField`を使う。枠と背景は`ControlSurface`を共有する。 |

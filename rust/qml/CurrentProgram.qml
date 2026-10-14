@@ -27,6 +27,8 @@ Column {
         ChannelLogo {
             width: 72
             height: 40
+            // A recording or file has no station logo to wait for.
+            visible: root.logoUrl.length > 0
             logoUrl: root.logoUrl
         }
         Label {

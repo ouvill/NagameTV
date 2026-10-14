@@ -96,6 +96,14 @@ def main():
     fixture.author(BASE / 'demo.ts', BASE / 'Big Buck Bunny.ts', now,
                    schedule.on_air_pair(server.schedule, now))
     url = f'http://127.0.0.1:{server.server_port}'
+    # A favorite and a recording stopped part-way, as the application saves them.
+    (config / 'viewing-history.json').write_text(json.dumps({
+        'favorites': [1, 4], 'recent': [], 'next_key': 1,
+        'recordings': [{
+            'key': 'recording:1',
+            'identity': {'source': {'kind': 'local', 'path': str(BASE / 'Big Buck Bunny.ts')}, 'thumbnail_id': None,
+                         'title': 'Big Buck Bunny', 'channel': NAMES[0], 'broadcast': None},
+            'position': {'position_ms': 42000.0, 'duration_ms': 119900.0}}]}, ensure_ascii=False))
     (config / 'settings.toml').write_text(f'language = "ja"\nserver = "{url}"\nservice_id = "1"\nautoplay = true\ntimeshift = "off"\ncomments_enabled = false\n')
     env = {key: value for key, value in os.environ.items() if not key.startswith('NAGAMETV_') or key in ('NAGAMETV_GUI_SESSION_DIR', 'NAGAMETV_AUDIO_SINK')}
     env.update(NAGAMETV_DIAGNOSTICS='0', NAGAMETV_REMOTE_ENABLED='0', TZ='Asia/Tokyo')
@@ -152,15 +160,23 @@ def main():
             shot('03-guide-details')
             key('Escape')
             key('Escape')
-            key('ctrl+o')
-            key('ctrl+l')
-            run('xdotool', 'type', '--clearmodifiers', '--delay', '1', BASE / 'Big Buck Bunny.ts')
-            key('Return')
-            time.sleep(4)
-            key('space')
-            key('Right')
-            time.sleep(2)
+            # Stop to reach the home page, then resume the unfinished recording.
             reveal()
+            run('xdotool', 'mousemove', '--window', window, WIDTH // 2, HEIGHT - 43)
+            run('xdotool', 'click', '1')
+            run('xdotool', 'mousemove', '--window', window, WIDTH - 100, HEIGHT // 2)
+            time.sleep(3)
+            shot('05-home')
+            # The click left focus on the play button. Walk up from the controls:
+            # on-air grid, band tabs, favorites, then the unfinished recording.
+            for _ in range(4):
+                key('Up')
+            key('Return')
+            time.sleep(6)
+            key('space')
+            time.sleep(0.5)
+            reveal()
+            time.sleep(1.2)
             shot('04-recording')
 
     finally:
@@ -172,7 +188,7 @@ def main():
     published.mkdir(parents=True, exist_ok=True)
     for source, target in [('01-live', 'live'), ('02-channels', 'channels'),
                            ('03-guide', 'guide'), ('03-guide-details', 'guide-details'),
-                           ('04-recording', 'recording')]:
+                           ('04-recording', 'recording'), ('05-home', 'home')]:
         shutil.copyfile(OUTPUT / f'{source}.png', published / f'{target}.png')
 if __name__ == '__main__':
     main()

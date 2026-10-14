@@ -24,7 +24,6 @@ QtObject {
     readonly property color error: "#ff9d94"
     readonly property color destructive: "#c8453c"
     readonly property color live: "#ff5964"
-    readonly property color favorite: "#ffd166"
     readonly property color progressTrack: "#33ffffff"
     // The stopped viewer's backdrop: a faint accent tint that fades into the canvas.
     readonly property color ambientGlow: "#0f2526"
