@@ -27,7 +27,7 @@ ItemDelegate {
         selected: card.highlighted
         hovered: card.hovered
         pressed: card.down
-        border.width: card.highlighted ? Theme.focusWidth : 1
+        focused: card.highlighted
     }
     contentItem: ColumnLayout {
         scale: card.feedbackScale

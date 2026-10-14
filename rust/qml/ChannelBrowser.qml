@@ -275,7 +275,8 @@ Pane {
                     required property bool favorite
                     required property int index
                     width: list.baseCardWidth
-                    height: 164
+                    // Room for the focus outline inside the clipped list.
+                    height: card.height + 2 * Theme.focusOutset
                     ItemDelegate {
                         id: card
                         property real feedbackScale: down ? Theme.cardPressScale : 1
@@ -289,9 +290,10 @@ Pane {
                         readonly property string logo: slot.logo
                         readonly property int index: slot.index
                         x: list.cardOffset(index)
+                        y: Theme.focusOutset
                         readonly property real expansion: list.expansion(index)
                         width: list.baseCardWidth + list.extraCardWidth * expansion
-                        height: 164
+                        height: 172
                         padding: Theme.spaceLg
                         highlighted: slot.ListView.isCurrentItem
                         onClicked: root.selectRequested(channelIndex)
@@ -300,6 +302,7 @@ Pane {
                             selected: card.highlighted
                             hovered: card.hovered
                             pressed: card.down
+                            focused: list.activeFocus && list.currentIndex === card.index
                         }
                         contentItem: Item {
                             scale: card.feedbackScale
@@ -339,6 +342,8 @@ Pane {
                                 }
                                 FavoriteToggle {
                                     objectName: "browserFavorite"
+                                    // Align the glyph, not the button, with the card padding.
+                                    Layout.rightMargin: -(implicitWidth - iconSize) / 2
                                     favorite: slot.favorite
                                     visible: root.favoritesReady && (slot.favorite || card.hovered || card.highlighted)
                                     onFavoriteToggled: root.favoriteRequested(slot.serviceId)
@@ -353,24 +358,15 @@ Pane {
                             ChannelProgram {
                                 anchors {
                                     top: channelHeading.bottom
-                                    topMargin: 9
+                                    topMargin: Theme.spaceSm
                                     left: parent.left
                                     right: parent.right
                                     bottom: parent.bottom
-                                    bottomMargin: -6
                                 }
                                 program: root.programs[card.channelIndex] || null
                                 now: root.now
                                 emphasized: card.highlighted
                             }
-                        }
-                        Rectangle {
-                            anchors.fill: parent
-                            color: "transparent"
-                            border.width: 2
-                            radius: Theme.panelRadius
-                            border.color: Theme.accent
-                            visible: list.activeFocus && list.currentIndex === card.index
                         }
                     }
                 }

@@ -5,7 +5,7 @@ import MinimalViewer
 Rectangle {
     id: root
     required property real progress
-    property color fillColor: Theme.accent
+    property color fillColor: Theme.progressFill
     // Flush against a picture's edge instead of floating as a capsule.
     property bool square: false
     implicitHeight: Theme.progressHeight

@@ -30,7 +30,7 @@ ItemDelegate {
         selected: card.highlighted || card.current
         hovered: card.hovered
         pressed: card.down
-        border.width: card.highlighted ? Theme.focusWidth : 1
+        focused: card.highlighted
     }
     contentItem: Item {
         scale: card.feedbackScale
@@ -54,6 +54,8 @@ ItemDelegate {
             }
             FavoriteToggle {
                 objectName: "cardFavorite"
+                // Align the glyph, not the button, with the card padding.
+                Layout.rightMargin: -(implicitWidth - iconSize) / 2
                 favorite: card.favorite
                 // Stay out of the way until the card is pointed at, focused or already a favorite.
                 visible: card.favoriteEnabled && (card.favorite || card.hovered || card.highlighted)

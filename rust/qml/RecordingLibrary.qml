@@ -222,6 +222,11 @@ Rectangle {
                 objectName: "epgstationRecordings"
                 anchors.fill: parent
                 clip: true
+                // Keep the focus outline of the edge rows inside the clip.
+                topMargin: Theme.focusOutset
+                bottomMargin: Theme.focusOutset
+                leftMargin: Theme.focusOutset
+                rightMargin: Theme.focusOutset
                 spacing: Theme.spaceMd
                 model: root.backend.recordings
                 keyNavigationEnabled: false
@@ -250,7 +255,7 @@ Rectangle {
                     required property bool watched
                     required property string thumbnail
                     readonly property bool started: !watched && progress > 0
-                    width: list.width
+                    width: list.width - 2 * Theme.focusOutset
                     height: content.implicitHeight + Theme.spaceMd * 2
                     function choose() {
                         if (!playButton.enabled) return;
@@ -264,6 +269,7 @@ Rectangle {
                     CardSurface {
                         anchors.fill: parent
                         selected: row.ListView.isCurrentItem && list.activeFocus
+                        focused: selected
                         hovered: rowPointer.containsMouse || playButton.hovered
                         pressed: rowPointer.pressed || playButton.down
                     }

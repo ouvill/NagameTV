@@ -18,6 +18,7 @@ QtObject {
     readonly property color accentPressed: "#44c8a1"
     readonly property color selection: "#385ee0b9"
     readonly property color border: "#2b313c"
+    readonly property color borderHover: "#4a5262"
     readonly property color divider: "#232933"
     readonly property color warning: "#ffb86b"
     readonly property color warningSurface: "#261f15"
@@ -25,6 +26,8 @@ QtObject {
     readonly property color destructive: "#c8453c"
     readonly property color live: "#ff5964"
     readonly property color progressTrack: "#33ffffff"
+    // Neutral, so a progress line never reads as the accent focus outline.
+    readonly property color progressFill: "#d9f4f6f8"
     // The stopped viewer's backdrop: a faint accent tint that fades into the canvas.
     readonly property color ambientGlow: "#0f2526"
     // Receiver color keys retain their broadcast identity in every UI language.
