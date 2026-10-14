@@ -83,6 +83,7 @@ pub(super) fn run(
     let mut request = Vec::new();
     let mut playing = Vec::new();
     let mut frame = Vec::new();
+    let mut presented = Vec::new();
     for trial in 0..REPETITIONS {
         let selected = (trial + 1) % 2;
         let started = Instant::now();
@@ -93,6 +94,7 @@ pub(super) fn run(
         request.push(started.elapsed().as_secs_f64() * 1000.0);
         let mut playing_ms = None;
         let mut frame_ms = None;
+        let mut presented_ms = None;
         loop {
             app.process_events();
             let state = json(
@@ -114,7 +116,13 @@ pub(super) fn run(
             {
                 frame_ms.get_or_insert_with(|| started.elapsed().as_secs_f64() * 1000.0);
             }
-            if playing_ms.is_some() && frame_ms.is_some() {
+            // GstBaseSink's rendered counter excludes preroll. The receive
+            // latency sample is committed only after Qt swaps the mapped video
+            // frame, and its tracker belongs to this newly selected stream.
+            if state["stats"]["receive_latency"]["status"] == "measuring" {
+                presented_ms.get_or_insert_with(|| started.elapsed().as_secs_f64() * 1000.0);
+            }
+            if playing_ms.is_some() && frame_ms.is_some() && presented_ms.is_some() {
                 break;
             }
             if started.elapsed() >= FIRST_FRAME_TIMEOUT {
@@ -124,6 +132,7 @@ pub(super) fn run(
         }
         playing.push(playing_ms.ok_or("first frame without PLAYING observation")?);
         frame.push(frame_ms.ok_or("missing first-frame observation")?);
+        presented.push(presented_ms.ok_or("missing Qt video presentation observation")?);
         pump(app, SETTLE);
     }
     evaluate(
@@ -149,6 +158,7 @@ pub(super) fn run(
             "request_ms": summary(&request),
             "playing_ms": summary(&playing),
             "first_video_ms": summary(&frame),
+            "first_presented_video_ms": summary(&presented),
             "idle_poll_us": idle_poll,
             "live_controls_visible_poll_us": visible_poll,
             "live_controls_hidden_poll_us": hidden_poll,

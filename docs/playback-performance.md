@@ -21,13 +21,23 @@ CARGO_TARGET_DIR=build/cargo python3 scripts/test.py startup --profile release -
 | `request_ms` | QMLから選局・再生を要求し、同期呼び出しが戻るまで |
 | `playing_ms` | 要求からPlayerのPLAYING状態を観測するまで |
 | `first_video_ms` | 要求から映像sinkのrendered > 0を観測するまで（PLAYING通知とは独立に観測） |
+| `first_presented_video_ms` | 要求から、新しいストリームの映像をQtが提示したことを受信遅延の最初のサンプルで観測するまで。prerollの提示も含む |
 | `idle_poll_us` | 未再生の`player.poll()`呼び出し。100回ずつ7組の平均所要時間（µs/回） |
 | `live_controls_visible_poll_us` / `live_controls_hidden_poll_us` | 操作部を表示 / 非表示に固定した再生中のpoll。同じ100回×7組で、自動非表示による条件の混在を防ぐ |
 | `final_video_stats` | 最後の試行後の動画統計。途中の選局でカウンターがリセットされるため、全試行の累計ではない |
 
 状態は5 ms間隔で観測する。JSON取得・Qtイベント処理の時間も含むため、フレーム到着の
-精密なタイムスタンプではない。映像sinkのrenderedはQtの画面提示や物理ディスプレイ上の
-表示を保証しない。音声の初回出力時刻はこのスイートでは測らない。
+精密なタイムスタンプではない。`first_video_ms`は過去の結果と比較するためのsink指標で、
+Qtの初回映像提示時刻ではない。[GstVideoSink](https://gstreamer.freedesktop.org/documentation/video/gstvideosink.html#GstVideoSink:show-preroll-frame)
+はpreroll中にも映像を提示できるが、[GstBaseSinkのrenderedカウンター](https://github.com/GStreamer/gstreamer/blob/1.28.2/subprojects/gstreamer/libs/gst/base/gstbasesink.c#L3982)
+は通常のrender後に加算され、prerollの提示では増えない。
+そのため、renderedを待つ時間を黒画面の継続時間として扱わない。
+
+`first_presented_video_ms`は既存のスクリーンショットと同じGstVideoMetaのマップ監視を通し、
+QtのframeSwapped後に確定した`receive_latency`サンプルを使う。受信PTSと照合できた
+フレームが対象で、照合できない先頭フレームがあると後続フレームの観測になる。選局時に
+前のストリームのサンプルを破棄するため、前の局の表示を数えない。UIによる遮蔽や物理ディスプレイ上の
+表示を保証するものではない。音声の初回出力時刻もこのスイートでは測らない。
 
 `PLAYBACK_LOAD_MS`は再生基盤のpreloadとQMLエンジン生成・Main.qmlロードの時間。
 Qtアプリケーション初期化後からの計測であり、プロセス開始からウィンドウ表示までの
