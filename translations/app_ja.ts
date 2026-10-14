@@ -1238,6 +1238,14 @@
       <translation>取消しできるのは、開始前で手動予約が1件だけの番組です。</translation>
     </message>
     <message>
+      <source>This reservation cannot be excluded. Refresh the reservation list and check its status in EPGStation.</source>
+      <translation>この予約を除外できません。予約一覧を更新し、EPGStationで状態を確認してください。</translation>
+    </message>
+    <message>
+      <source>The exclusion cannot be removed. Refresh the reservation list and check its status in EPGStation.</source>
+      <translation>この予約の除外を解除できません。予約一覧を更新し、EPGStationで状態を確認してください。</translation>
+    </message>
+    <message>
       <source>The reservation was changed, but its status could not be refreshed. Refresh the reservation list before trying again.</source>
       <translation>予約は変更されましたが、状態を取得できませんでした。予約一覧を更新してから次の操作を行ってください。</translation>
     </message>
