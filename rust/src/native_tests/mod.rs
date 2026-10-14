@@ -51,6 +51,7 @@ enum Suite {
         press_data_again: bool,
     },
     VideoProcessing,
+    PlaybackPerformance,
     ScreenshotPlayback,
     RecordingPidChange,
     RecordingAudit {
@@ -107,6 +108,7 @@ pub fn run(arguments: Vec<OsString>) -> i32 {
             press_data_again,
         } => startup::run_data_broadcast_live(server, service, output, press_data_again),
         Suite::VideoProcessing => startup::run_video_processing(),
+        Suite::PlaybackPerformance => startup::run_playback_performance(),
         Suite::ScreenshotPlayback => startup::run_screenshots(),
         Suite::RecordingPidChange => startup::run_pid_change(),
         Suite::RecordingAudit { path } => startup::run_recording_audit(path),

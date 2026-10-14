@@ -282,6 +282,7 @@ Item {
                             required property string description
                             required property int genre
                             required property double startAt
+                            required property string reservation
                             objectName: "guideCellLoader"
                             y: root.channelHeaderHeight + (begin - root.dayStart) / 60000 * root.pixelsPerMinute
                             x: root.dividerWidth
@@ -357,6 +358,13 @@ Item {
                                         lineHeightMode: Text.FixedHeight; lineHeight: descriptionLineHeight
                                         maximumLineCount: Math.max(1, Math.floor(height / descriptionLineHeight))
                                     }
+                                }
+                                ReservationBadge {
+                                    objectName: "guideCellReservation"
+                                    anchors { right: parent.right; top: parent.top; margins: root.textSpacing }
+                                    // A cell too short for text has no room for the mark either.
+                                    visible: slot.reservation.length > 0 && cell.layoutMode !== GuideTimeline.NoText
+                                    reservation: slot.reservation
                                 }
                                 MouseArea { anchors.fill: parent; onClicked: {
                                     root.cursorColumn = column.index

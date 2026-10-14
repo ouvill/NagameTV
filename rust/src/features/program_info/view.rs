@@ -24,6 +24,21 @@ pub struct View {
     keys: Vec<usize>,
 }
 impl View {
+    pub fn reservation_program(
+        &self,
+        cell: &Cell,
+    ) -> Option<crate::epgstation::reservations::Program> {
+        let program = self.program(cell)?;
+        let super::schedule::End::Known(end) = program.end() else {
+            return None;
+        };
+        crate::epgstation::reservations::Program::new(
+            program.id,
+            self.channels[cell.channel].id,
+            program.start_at,
+            end,
+        )
+    }
     pub fn snapshot(&self) -> &Snapshot {
         &self.snapshot
     }

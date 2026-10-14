@@ -60,6 +60,8 @@
 | **[STD-B24実装対応リスト](std-b24-implementation.md)** | データ放送の規格項目ごとの対応状況と、BMLビューワー手前までの残件 |
 | **[データ放送の受信と表示](data-broadcast-design.md)** | 受信セッション、再接続、状態の所有者、web-bml互換性処理 |
 | **[音声機能と出力制御](audio-output.md)** | 音量、ミュート、複数トラック・二重音声（主/副音声）、再生時計同期、バッファ余裕設定 |
+| **[お気に入り・視聴履歴と録画再開](viewing-history.md)** | お気に入り順、最近視聴、録画の進捗と自動再開、サムネイル、リモコン番号選局 |
+| **[番組表からの録画予約](recording-reservations.md)** | 既定OFFの実験機能。EPGStationの予約状態、手動予約の追加・取消し、QML公開API |
 | **[チャンネル選局とブラウザー](channel-browser.md)** | 放送波分類（地デジ/BS/CS/CATV）、ソート規則、局ロゴ、カルーセルUI |
 | **[番組表と予定番組 (EPG)](guide-calendar.md)** | 7日分カレンダー番組表、番組詳細情報、取得ストリーム |
 | **[EPGの重複調査と設計案](epg-architecture-review.md)** | Mirakurun 4.1.3の実応答・競合保持の再現と、予定・TS観測・競合を分ける提案 |

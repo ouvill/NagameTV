@@ -215,17 +215,13 @@ impl ffi::Player {
         }
     }
     fn publish_recording_library(mut self: Pin<&mut Self>) {
-        let rows = self.rust().recording_library.rows();
+        self.as_mut().poll_recording_reservations();
         self.as_mut()
             .rust_mut()
             .video_file_model
             .pin_mut()
             .replace(Default::default());
-        self.as_mut()
-            .rust_mut()
-            .recording_model
-            .pin_mut()
-            .replace(rows);
+        self.as_mut().publish_recording_history();
         self.epgstation_changed();
     }
 }

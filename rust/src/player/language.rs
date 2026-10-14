@@ -25,6 +25,7 @@ impl ffi::Player {
         self.as_mut().transport_error_changed();
         self.as_mut().speed_reason_changed();
         self.as_mut().epgstation_changed();
+        self.as_mut().reservations_changed();
         self.as_mut().refresh_metric_text();
         self.as_mut().playback_error_changed();
         self.as_mut().file_error_changed();

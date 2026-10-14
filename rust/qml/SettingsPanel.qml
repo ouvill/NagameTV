@@ -38,7 +38,7 @@ Popup {
     readonly property list<Item> pageFields: {
         switch (page) {
         case SettingsPanel.Connection:
-            return [...connectionForm.navigationItems, autoplay, ...liveBufferSettings.navigationItems, ...epgstationConnection.navigationItems];
+            return [...connectionForm.navigationItems, autoplay, ...liveBufferSettings.navigationItems, ...epgstationConnection.navigationItems, recordingReservations];
         case SettingsPanel.Display:
             return [languageBox, subtitleDisplay, subtitleOutline, dataBroadcastEnabled, dataBroadcastPrefetch, chooseScreenshotDirectory, openScreenshotDirectory,
                 resetScreenshotDirectory, ...screenshotOptions.navigationItems];
@@ -447,6 +447,16 @@ Popup {
                             }
                             onCancelRequested: root.backend.cancel_epgstation()
                             onRecordingsRequested: root.modeRequested(ModeNavigation.Recording)
+                        }
+                        SettingsToggle {
+                            id: recordingReservations
+                            objectName: "recordingReservationsSetting"
+                            Layout.fillWidth: true
+                            text: qsTranslate("Settings", "Reserve recordings from the program guide (experimental)")
+                            description: qsTranslate("Settings", "Adds and cancels single-program reservations on the connected EPGStation.")
+                            checked: root.backend.recording_reservations_enabled
+                            enabled: root.backend.recording_reservations_allowed
+                            onClicked: root.backend.configure_recording_reservations(checked)
                         }
                     }
                     Loader {

@@ -222,6 +222,11 @@ Rectangle {
                 objectName: "epgstationRecordings"
                 anchors.fill: parent
                 clip: true
+                // Keep the focus outline of the edge rows inside the clip.
+                topMargin: Theme.focusOutset
+                bottomMargin: Theme.focusOutset
+                leftMargin: Theme.focusOutset
+                rightMargin: Theme.focusOutset
                 spacing: Theme.spaceMd
                 model: root.backend.recordings
                 keyNavigationEnabled: false
@@ -246,8 +251,12 @@ Rectangle {
                     required property int fileCount
                     required property bool playable
                     required property string unavailableReason
-                    width: list.width
-                    height: content.implicitHeight + Theme.spaceLg * 2
+                    required property real progress
+                    required property bool watched
+                    required property string thumbnail
+                    readonly property bool started: !watched && progress > 0
+                    width: list.width - 2 * Theme.focusOutset
+                    height: content.implicitHeight + Theme.spaceMd * 2
                     function choose() {
                         if (!playButton.enabled) return;
                         list.currentIndex = index;
@@ -260,6 +269,7 @@ Rectangle {
                     CardSurface {
                         anchors.fill: parent
                         selected: row.ListView.isCurrentItem && list.activeFocus
+                        focused: selected
                         hovered: rowPointer.containsMouse || playButton.hovered
                         pressed: rowPointer.pressed || playButton.down
                     }
@@ -276,8 +286,14 @@ Rectangle {
                     }
                     RowLayout {
                         id: content
-                        anchors { left: parent.left; right: parent.right; top: parent.top; margins: Theme.spaceLg }
+                        anchors { left: parent.left; right: parent.right; top: parent.top; margins: Theme.spaceMd; rightMargin: Theme.spaceLg }
                         spacing: Theme.spaceLg
+                        RecordingThumbnail {
+                            objectName: "epgstationThumbnail"
+                            Layout.alignment: Qt.AlignTop
+                            source: row.thumbnail
+                            opacity: row.watched ? Theme.watchedOpacity : 1
+                        }
                         ColumnLayout {
                             Layout.fillWidth: true
                             spacing: Theme.spaceXs
@@ -313,11 +329,26 @@ Rectangle {
                                 textFormat: Text.PlainText
                                 elide: Text.ElideRight
                             }
+                            ProgressLine {
+                                objectName: "epgstationProgress"
+                                Layout.fillWidth: true
+                                Layout.maximumWidth: 320
+                                Layout.topMargin: Theme.spaceXs
+                                visible: row.started
+                                progress: row.progress
+                            }
+                        }
+                        Label {
+                            objectName: "epgstationWatched"
+                            visible: row.watched
+                            text: qsTranslate("RecordingLibrary", "Watched")
+                            color: Theme.textMuted
+                            font.pixelSize: Theme.fontCaption
                         }
                         ActionButton {
                             id: playButton
                             objectName: "epgstationPlay"
-                            text: qsTranslate("RecordingLibrary", "Play")
+                            text: row.started ? qsTranslate("RecordingLibrary", "Resume") : qsTranslate("RecordingLibrary", "Play")
                             enabled: row.playable && !root.backend.recording_loading
                             onClicked: row.choose()
                             Keys.onUpPressed: { list.currentIndex = row.index; list.forceActiveFocus(Qt.TabFocusReason); root.moveRecording(-1); }

@@ -34,6 +34,8 @@ async function main() {
     const Channel = require('./dist/db/entities/Channel').default;
     const Recorded = require('./dist/db/entities/Recorded').default;
     const VideoFile = require('./dist/db/entities/VideoFile').default;
+    const Reserve = require('./dist/db/entities/Reserve').default;
+    const Program = require('./dist/db/entities/Program').default;
     assert.equal(await connection.getRepository(Recorded).count(), 0, 'database must be fresh');
     await connection.getRepository(Channel).save({
         id: 400101, networkId: 4, serviceId: 101,
@@ -63,6 +65,33 @@ async function main() {
                 size: fs.statSync(path.join('recorded', filename)).size,
                 // Explicit fixture metadata avoids invoking ffprobe at startup.
                 duration: 12, startTime: 0, startAt, analyzedAt: 1700000000000,
+            });
+        }
+    }
+    // Reservation reads exercise real DB/API serialization without starting a
+    // tuner or the operator IPC that executes reservation writes.
+    for (let id = 1; id <= 4; id++) {
+        const programId = 40010100000 + id;
+        const startAt = 1700000000000 + id * 600000;
+        await connection.getRepository(Program).save({
+            id: programId, updateTime: 1700000000000, channelId: 400101,
+            eventId: id, serviceId: 101, networkId: 4, channel: 'BS15_0', channelType: 'BS',
+            startAt, endAt: startAt + 600000, duration: 600000,
+            startHour: 0, week: 1, isFree: true,
+            name: `Reservation ${id}`, halfWidthName: `Reservation ${id}`, shortName: `Reservation ${id}`,
+        });
+        await connection.getRepository(Reserve).save({
+            id, programId, updateTime: 1700000000000, channelId: 400101,
+            channel: 'BS15_0', channelType: 'BS', startAt, endAt: startAt + 600000,
+            name: `Reservation ${id}`, halfWidthName: `Reservation ${id}`,
+            isConflict: id === 2, isSkip: id === 3,
+        });
+        if (id === 4) {
+            await connection.getRepository(Recorded).save({
+                id: 900, programId, channelId: 400101, channelName: 'Test TV', halfWidthChannelName: 'Test TV',
+                name: 'Recording in progress', halfWidthName: 'Recording in progress',
+                startAt, endAt: startAt + 600000, duration: 600000,
+                isRecording: true, isProtected: false,
             });
         }
     }

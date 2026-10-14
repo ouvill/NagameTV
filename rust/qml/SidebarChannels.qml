@@ -104,6 +104,11 @@ Item {
         }
         spacing: Theme.spaceMd
         clip: true
+        // Keep the focus outline of the edge cards inside the clip.
+        topMargin: Theme.focusOutset
+        bottomMargin: Theme.focusOutset
+        leftMargin: Theme.focusOutset
+        rightMargin: Theme.focusOutset
         cacheBuffer: 0
         model: channelFilter
         onModelChanged: Qt.callLater(root.resetCursor)
@@ -136,7 +141,7 @@ Item {
             required property int index
             readonly property var program: root.programs[channelIndex] || null
             readonly property real progress: program && program.duration > 0 ? Math.max(0, Math.min(1, (root.now - program.startAt) / program.duration)) : 0
-            width: ListView.view.width
+            width: ListView.view.width - 2 * Theme.focusOutset
             height: 150
             padding: Theme.spaceLg
             highlighted: channelIndex === root.selected
@@ -146,14 +151,7 @@ Item {
                 selected: card.highlighted
                 hovered: card.hovered
                 pressed: card.down
-            }
-            Rectangle {
-                anchors.fill: parent
-                color: "transparent"
-                border.width: 2
-                radius: Theme.panelRadius
-                border.color: Theme.accent
-                visible: list.activeFocus && list.currentIndex === card.index
+                focused: list.activeFocus && list.currentIndex === card.index
             }
             contentItem: Item {
                 scale: card.feedbackScale

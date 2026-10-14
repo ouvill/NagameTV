@@ -14,7 +14,7 @@ struct Arguments {
         group = "mode",
         long,
         require_equals = true,
-        value_name = "none|subtitles,epg,comments,data-broadcast"
+        value_name = "none|subtitles,epg,comments,data-broadcast,recording-reservations"
     )]
     features: Option<FeatureSet>,
     // The test runner owns these arguments, including Qt Quick Test switches.
@@ -88,6 +88,8 @@ mod tests {
         assert!(normal.comments(true));
         assert!(!normal.data_broadcast(false));
         assert!(normal.data_broadcast(true));
+        assert!(!normal.recording_reservations(false));
+        assert!(normal.recording_reservations(true));
         for (value, expected) in [
             ("none", [false, false, false, false]),
             ("subtitles,epg", [true, true, false, false]),
@@ -99,6 +101,7 @@ mod tests {
                 panic!("launch");
             };
             assert!(plan.locked());
+            assert!(!plan.recording_reservations(true));
             assert_eq!(
                 [
                     plan.subtitles(),
@@ -113,6 +116,16 @@ mod tests {
         }
     }
 
+    #[test]
+    fn reservation_experiments_require_an_explicit_allowlist_entry() {
+        let Command::Launch(plan) = parse(&["--features=epg,recording-reservations"]).unwrap()
+        else {
+            panic!("launch")
+        };
+        assert!(plan.locked() && plan.epg() && plan.recording_reservations(false));
+        assert!(!plan.data_broadcast(true));
+        assert!(parse(&["--features=recording-reservations,recording-reservations"]).is_err());
+    }
     #[test]
     fn invalid_arguments_fail_before_startup() {
         for args in [

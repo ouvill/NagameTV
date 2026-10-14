@@ -11,7 +11,8 @@ ChannelModel {
             index: row.index === undefined ? index : row.index,
             label: row.label || "Channel " + index,
             band: row.band || "GR",
-            logo: row.logo || ""
+            logo: row.logo || "",
+            favorite: row.favorite === true
         }));
         if (!load_test(JSON.stringify(values))) throw new Error("Invalid channel fixture");
     }

@@ -83,6 +83,26 @@ TestCase {
         keyClick(Qt.Key_Space);
         compare(closed.count, 2);
     }
+    SignalSpy { id: favorite; signalName: "favoriteRequested" }
+    function test_favorites_are_toggled_from_the_cursor_and_the_star_without_tuning() {
+        favorite.target = browser;
+        favorite.clear();
+        const list = findChild(browser, "browserList");
+        list.forceActiveFocus();
+        // Until the history is loaded there is nothing to toggle.
+        keyClick(Qt.Key_F);
+        compare(favorite.count, 0);
+        browser.favoritesReady = true;
+        keyClick(Qt.Key_F);
+        compare(favorite.count, 1);
+        compare(favorite.signalArguments[0][0], "2");
+        tryVerify(() => list.currentItem !== null);
+        const star = findChild(list.currentItem, "browserFavorite");
+        verify(star.visible);
+        mouseClick(star);
+        compare(favorite.count, 2);
+        compare(selection.count, 0);
+    }
     function test_filter_and_keyboard_preserve_backend_indices() {
         const list = findChild(browser, "browserList");
         compare(browser.band, "BS");

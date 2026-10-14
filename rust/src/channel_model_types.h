@@ -11,6 +11,10 @@ class ChannelFilterProxy : public QSortFilterProxyModel {
     QML_ANONYMOUS
 public:
     using QSortFilterProxyModel::QSortFilterProxyModel;
+    void sortFavorites(bool enabled, int role) {
+        setSortRole(role);
+        sort(enabled ? 0 : -1);
+    }
     void refreshFilter() {
 #if QT_VERSION >= QT_VERSION_CHECK(6, 10, 0)
         beginFilterChange();

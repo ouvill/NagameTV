@@ -1217,9 +1217,64 @@
       <extracomment>Keep this label unchanged in Japanese and English.</extracomment>
       <translation>NX</translation>
     </message>
+    <message>
+      <source>Connect to EPGStation and enable recording reservations first.</source>
+      <translation>EPGStationに接続し、録画予約を有効にしてください。</translation>
+    </message>
+    <message>
+      <source>A reservation operation is already running.</source>
+      <translation>録画予約を処理中です。</translation>
+    </message>
+    <message>
+      <source>Program information has changed or the program has ended. Refresh the guide and try again.</source>
+      <translation>番組情報が変更されたか、番組が終了しました。番組表を更新してから再試行してください。</translation>
+    </message>
+    <message>
+      <source>This program already has a reservation. Refresh the reservation list.</source>
+      <translation>この番組は予約済みです。予約一覧を更新してください。</translation>
+    </message>
+    <message>
+      <source>Only a single manual reservation that has not started can be cancelled.</source>
+      <translation>取消しできるのは、開始前で手動予約が1件だけの番組です。</translation>
+    </message>
+    <message>
+      <source>This reservation cannot be excluded. Refresh the reservation list and check its status in EPGStation.</source>
+      <translation>この予約を除外できません。予約一覧を更新し、EPGStationで状態を確認してください。</translation>
+    </message>
+    <message>
+      <source>The exclusion cannot be removed. Refresh the reservation list and check its status in EPGStation.</source>
+      <translation>この予約の除外を解除できません。予約一覧を更新し、EPGStationで状態を確認してください。</translation>
+    </message>
+    <message>
+      <source>The reservation was changed, but its status could not be refreshed. Refresh the reservation list before trying again.</source>
+      <translation>予約は変更されましたが、状態を取得できませんでした。予約一覧を更新してから次の操作を行ってください。</translation>
+    </message>
+    <message>
+      <source>EPGStation returned an invalid or oversized reservation list.</source>
+      <translation>EPGStationの予約一覧が不正か、取得上限を超えています。</translation>
+    </message>
+    <message>
+      <source>Could not update recording reservations. Check the connection and refresh the reservation list.</source>
+      <translation>録画予約を更新できませんでした。接続を確認し、予約一覧を更新してください。</translation>
+    </message>
 </context>
   <context>
     <name>Viewer</name>
+    <message><source>Favorites and playback positions could not be saved. They are kept only until the app closes.</source><translation>お気に入りと再生位置を保存できませんでした。アプリを閉じるまでの間だけ保持します。</translation></message>
+    <message><source>Recording now</source><translation>録画中</translation></message>
+    <message><source>Reservation conflict</source><translation>予約競合</translation></message>
+    <message><source>Excluded</source><translation>除外</translation></message>
+    <message><source>Duplicate reservation</source><translation>重複</translation></message>
+    <message><source>Reserved</source><translation>予約済み</translation></message>
+    <message><source>Reserve recording</source><translation>録画予約</translation></message>
+    <message><source>Cancel reservation</source><translation>予約を取り消す</translation></message>
+    <message><source>Exclude</source><translation>除外</translation></message>
+    <message><source>Remove exclusion</source><translation>除外解除</translation></message>
+    <message><source>Remove from favorites</source><translation>お気に入りから外す</translation></message>
+    <message><source>Add to favorites</source><translation>お気に入りに追加</translation></message>
+    <message><source>%1 min left</source><translation>あと%1分</translation></message>
+    <message><source>Continue watching</source><translation>続きから見る</translation></message>
+    <message><source>Favorites</source><translation>お気に入り</translation></message>
     <message><source>Remote</source><translation>リモコン</translation></message>
     <message><source>Data broadcast remote</source><translation>データ放送リモコン</translation></message>
     <message><source>Up</source><translation>上</translation></message>
@@ -1824,6 +1879,9 @@
 </context>
   <context>
     <name>Settings</name>
+    <message><source>Reserve recordings from the program guide (experimental)</source><translation>番組表から録画予約する（実験的）</translation></message>
+    <message><source>Adds and cancels single-program reservations on the connected EPGStation.</source><translation>接続中のEPGStationへ、番組単位の予約を追加・取り消します。</translation></message>
+    <message><source>Last channel</source><translation>前に見ていたチャンネル</translation></message>
     <message><source>Enable data broadcast (experimental)</source><translation>データ放送を有効にする（実験的）</translation></message>
     <message><source>Some broadcasts may not display or respond correctly.</source><translation>放送によっては表示や操作が正しく動作しないことがあります。</translation></message>
     <message><source>Prefetch data broadcast</source><translation>データ放送を先読み</translation></message>
@@ -2510,6 +2568,8 @@
 </context>
   <context>
     <name>RecordingLibrary</name>
+    <message><source>Watched</source><translation>視聴済み</translation></message>
+    <message><source>Resume</source><translation>続きから</translation></message>
     <message><source>Choose a video file</source><translation>再生するファイルを選択</translation></message>
     <message><source>Original TS</source><translation>元TS</translation></message>
     <message><source>Encoded video</source><translation>エンコード済み動画</translation></message>

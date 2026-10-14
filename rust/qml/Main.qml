@@ -158,10 +158,12 @@ ViewerWindow {
     readonly property bool guideVisible: !closing && player.epg_enabled && showGuide
     onSummariesVisibleChanged: player.browser_open(summariesVisible)
     readonly property real panelWidth: Math.min(408, Math.max(320, viewport.width * 0.32))
-    readonly property var selectedChannel: {
-        player.channels.revision;
-        return player.channels.row(player.selected);
-    }
+    // row() is a plain call: count the model's change signal so a favorite set
+    // on an unchanged list re-reads the row as well.
+    property int channelRevision: 0
+    Connections { target: player.channels; function onChanged() { root.channelRevision++; } }
+    readonly property var selectedChannel: root.channelRevision >= 0 && player.channels.revision >= 0
+        ? player.channels.row(player.selected) : ({})
     Player {
         id: player
     }
@@ -197,6 +199,11 @@ ViewerWindow {
             root.openSettings(SettingsPanel.Connection);
             root.settings.focusEpgstationConnection();
         }
+    }
+    // The home page sits between the mode buttons and the playback controls.
+    function enterHome(fromBelow: bool): bool {
+        const stopped = stoppedLoader.item as StoppedPlayback;
+        return stopped !== null && stopped.enter(fromBelow);
     }
     function openConnectionSettings() {
         if (root.setupRequired) setup.open();
@@ -344,6 +351,8 @@ ViewerWindow {
         id: shortcutBindings
         actions: viewerActions
         inputContext: inputContext
+        digitsAvailable: inputContext.viewing && !player.recording && player.channels.count > 0
+        onDigitPressed: function(digit) { channelNumber.press(digit); }
     }
     CommentSubmitPolicy {
         id: commentSubmitPolicy
@@ -385,7 +394,11 @@ ViewerWindow {
                 layers.push(danmaku.view.screenshotLayer(video));
             if (captions.active && captions.view && captions.visible && captions.view.visible)
                 layers.push(captions.view.screenshotLayer(video));
-            player.stage_screenshot(JSON.stringify({width: video.width, height: video.height, layers: layers}));
+            if (layers.every(layer => layer.commands.length === 0)
+                && !(player.subtitle_display && player.media_subtitle_available))
+                player.stage_empty_screenshot(video.width, video.height);
+            else
+                player.stage_screenshot(JSON.stringify({width: video.width, height: video.height, layers: layers}));
         }
     }
     Timer {
@@ -441,7 +454,7 @@ ViewerWindow {
             if (event.isAutoRepeat) return;
             overlayVisibility.reveal();
             if (event.key === Qt.Key_Up) modeNavigation.enter();
-            else playerControls.enter();
+            else if (!root.enterHome(false)) playerControls.enter();
         }
         signal activity
         signal pointerExited
@@ -575,9 +588,14 @@ ViewerWindow {
             cursorShape: overlayVisibility.controlsVisible ? Qt.ArrowCursor : Qt.BlankCursor
         }
         Loader {
+            id: stoppedLoader
             anchors.fill: parent
             active: !root.closing && !player.media_active
             sourceComponent: StoppedPlayback {
+                onBoundaryReached: function(key) {
+                    if (key === Qt.Key_Up) modeNavigation.enter();
+                    else if (!recordingTimeline.enter()) playerControls.enter();
+                }
                 status: player.status
                 playbackError: player.playback_error
                 playbackMessage: player.playback_message
@@ -592,6 +610,11 @@ ViewerWindow {
                 programsJson: player.channel_program_data
                 visibilityJson: player.channel_visibility_data
                 now: player.channel_program_now
+                continueWatching: player.continue_recordings
+                favoritesReady: player.viewing_history_ready
+                historyFailed: player.viewing_history_error.length > 0
+                onFavoriteRequested: function(serviceId) { player.toggle_favorite(serviceId); }
+                onResumeRequested: function(recordingKey) { player.resume_recording(recordingKey); }
                 onSelectRequested: function (index) { player.select(index); }
                 onRecordingsRequested: root.requestMode(ModeNavigation.Recording)
                 onPlayRequested: viewerActions.playbackToggle.trigger()
@@ -656,6 +679,11 @@ ViewerWindow {
                 }
                 channelLabel: player.recording ? (program && program.station || player.recording_name) : player.selected >= 0 && player.selected < player.channels.count ? root.selectedChannel.label : ""
                 logoUrl: !player.recording && player.selected >= 0 && player.selected < player.channels.count ? root.selectedChannel.logo : ""
+                progress: player.program_progress
+                readonly property bool liveChannel: !player.recording && player.selected >= 0 && player.selected < player.channels.count
+                favorite: liveChannel && root.selectedChannel.favorite === true
+                favoriteEnabled: liveChannel && player.viewing_history_ready
+                onFavoriteRequested: player.toggle_favorite(root.selectedChannel.serviceId)
             }
         }
         Label {
@@ -769,7 +797,7 @@ ViewerWindow {
                 PlayerControls {
                     id: playerControls
                     onBoundaryReached: function(key) {
-                        if (key === Qt.Key_Up && !recordingTimeline.enter()) modeNavigation.enter();
+                        if (key === Qt.Key_Up && !recordingTimeline.enter() && !root.enterHome(true)) modeNavigation.enter();
                     }
                     onSubtitlesRequested: { audioSettings.close(); closeSpeed(); mediaSubtitleSettings.open(); }
                     Layout.fillWidth: true
@@ -778,6 +806,16 @@ ViewerWindow {
                     videoWidth: surface.width
                     actions: viewerActions
                 }
+            }
+        }
+        ChannelNumberEntry {
+            id: channelNumber
+            objectName: "channelNumberEntry"
+            anchors { right: parent.right; top: parent.top; rightMargin: Theme.spaceXl; topMargin: 90 }
+            z: 8
+            onCommitted: function(key) {
+                // An empty band lets the backend choose from the station being watched.
+                if (player.select_remote_key(key, "")) overlayVisibility.reveal();
             }
         }
         ScreenshotNotice {
@@ -839,6 +877,7 @@ ViewerWindow {
                     selected: player.selected
                     viewingIndex: player.viewing_channel
                     guideModel: player.guide_model
+                    reservationBackend: player
                     status: ""
                     Connections {
                         target: player
@@ -890,6 +929,8 @@ ViewerWindow {
                 now: player.channel_program_now
                 selected: player.selected
                 viewingIndex: player.viewing_channel
+                favoritesReady: player.viewing_history_ready
+                onFavoriteRequested: function(serviceId) { player.toggle_favorite(serviceId); }
                 onSelectRequested: function (index) {
                     player.select(index);
                     focusHistory.channels = surface;
@@ -996,7 +1037,7 @@ ViewerWindow {
         guideEnabled: player.epg_enabled
         onModeRequested: function(mode) { root.requestMode(mode); }
         onBoundaryReached: function(key) {
-            if (key === Qt.Key_Down && !recordingTimeline.enter()) playerControls.enter();
+            if (key === Qt.Key_Down && !root.enterHome(false) && !recordingTimeline.enter()) playerControls.enter();
         }
     }
     WindowResizeFrame {

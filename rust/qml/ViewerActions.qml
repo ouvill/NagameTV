@@ -118,6 +118,12 @@ Item {
         text: qsTranslate("Settings", "Next channel")
         onTriggered: { root.backend.step_channel(1); root.activity(); }
     }
+    // Returns to the station watched before this one, as a remote's "last" key does.
+    readonly property Action lastChannel: Operation {
+        text: qsTranslate("Settings", "Last channel")
+        enabled: root.enabled && root.backend.previous_channel_available
+        onTriggered: { root.backend.previous_channel(); root.activity(); }
+    }
     readonly property Action captureScreenshot: Operation {
         text: qsTranslate("Main", "Save screenshot")
         enabled: root.enabled && root.canCapture

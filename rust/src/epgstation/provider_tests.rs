@@ -79,6 +79,7 @@ fn catalogue_pagination_metadata_and_file_bytes() -> TestResult {
         let mut library = Library::default();
         library.open(&network, &endpoint, "", auth.login())?;
         finish(&mut library, &network)?;
+        check_reservation_reads(&library, &network, &runtime)?;
         assert_eq!(library.rows().len(), PAGE_SIZE as usize);
         assert_eq!(library.rows()[0].id, 1);
         assert!(library.has_next());
@@ -463,4 +464,59 @@ fn startup_fixture_matches_real_provider_responses() -> TestResult {
         }
         Ok::<_, Box<dyn std::error::Error>>(())
     })
+}
+
+fn check_reservation_reads(
+    library: &Library,
+    network: &Network,
+    runtime: &tokio::runtime::Runtime,
+) -> TestResult {
+    use super::reservations::{Manager, Program, Status};
+    let mut manager = Manager::default();
+    library.synchronize_reservations(true, &mut manager, Instant::now());
+    let deadline = Instant::now() + DEADLINE;
+    manager.poll(network, Instant::now());
+    while manager.busy() {
+        assert!(
+            Instant::now() < deadline,
+            "real provider reservation list timed out"
+        );
+        manager.poll(network, Instant::now());
+        thread::sleep(POLL_INTERVAL);
+    }
+    assert!(
+        manager.error().is_none(),
+        "real provider reservations failed"
+    );
+    for (id, status) in [
+        (1, Status::Reserved),
+        (2, Status::Conflict),
+        (3, Status::Skipped),
+        (4, Status::Recording),
+    ] {
+        let start = 1_700_000_000_000 + id * 600_000;
+        let program = Program::new(40_010_100_000 + id, 400101, start, start + 600000).unwrap();
+        assert_eq!(manager.snapshot().status(program), Some(status));
+        let connection = &library.session.as_ref().ok_or("verified session")?.1;
+        let detail = runtime.block_on(async {
+            let response = send(connection.api_request(
+                reqwest::Method::GET,
+                &format!("schedules/detail/{}?isHalfWidth=false", 40_010_100_000 + id),
+            ))
+            .await?;
+            assert_eq!(response.status(), reqwest::StatusCode::OK);
+            let bytes = response
+                .bytes()
+                .await
+                .map_err(reqwest::Error::without_url)?;
+            Ok::<_, Box<dyn std::error::Error>>(serde_json::from_slice::<serde_json::Value>(
+                &bytes,
+            )?)
+        })?;
+        assert_eq!(detail["id"], 40_010_100_000 + id);
+        assert_eq!(detail["channelId"], 400101);
+        assert_eq!(detail["startAt"], start);
+        assert_eq!(detail["endAt"], start + 600000);
+    }
+    Ok(())
 }

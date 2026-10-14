@@ -34,6 +34,9 @@ Pane {
     Connections { target: root.channels; function onChanged() { root.restoreSelection(); } }
     signal selectRequested(int index)
     signal closeRequested
+    // Favorites can be set here once the viewing history is loaded.
+    property bool favoritesReady: false
+    signal favoriteRequested(string serviceId)
     function focusBrowser() {
         list.forceActiveFocus(Qt.TabFocusReason);
     }
@@ -251,6 +254,12 @@ Pane {
                 Keys.onDownPressed: function(event) { event.accepted = true; }
                 Keys.onReturnPressed: function(event) { if (!event.isAutoRepeat) root.selectCurrent(); }
                 Keys.onEnterPressed: function(event) { if (!event.isAutoRepeat) root.selectCurrent(); }
+                Keys.onPressed: function(event) {
+                    if (event.key !== Qt.Key_F || event.modifiers !== Qt.NoModifier || event.isAutoRepeat) return;
+                    const row = channelFilter.row(list.currentIndex);
+                    if (root.favoritesReady && row.serviceId !== undefined) root.favoriteRequested(row.serviceId);
+                    event.accepted = true;
+                }
                 ScrollBar.horizontal: ScrollBar {
                     onPressedChanged: {
                         if (pressed) list.beginScroll();
@@ -262,9 +271,12 @@ Pane {
                     required property int channelIndex
                     required property string label
                     required property string logo
+                    required property string serviceId
+                    required property bool favorite
                     required property int index
                     width: list.baseCardWidth
-                    height: 164
+                    // Room for the focus outline inside the clipped list.
+                    height: card.height + 2 * Theme.focusOutset
                     ItemDelegate {
                         id: card
                         property real feedbackScale: down ? Theme.cardPressScale : 1
@@ -278,9 +290,10 @@ Pane {
                         readonly property string logo: slot.logo
                         readonly property int index: slot.index
                         x: list.cardOffset(index)
+                        y: Theme.focusOutset
                         readonly property real expansion: list.expansion(index)
                         width: list.baseCardWidth + list.extraCardWidth * expansion
-                        height: 164
+                        height: 172
                         padding: Theme.spaceLg
                         highlighted: slot.ListView.isCurrentItem
                         onClicked: root.selectRequested(channelIndex)
@@ -289,6 +302,7 @@ Pane {
                             selected: card.highlighted
                             hovered: card.hovered
                             pressed: card.down
+                            focused: list.activeFocus && list.currentIndex === card.index
                         }
                         contentItem: Item {
                             scale: card.feedbackScale
@@ -326,6 +340,14 @@ Pane {
                                         anchors.verticalCenter: parent.verticalCenter
                                     }
                                 }
+                                FavoriteToggle {
+                                    objectName: "browserFavorite"
+                                    // Align the glyph, not the button, with the card padding.
+                                    Layout.rightMargin: -(implicitWidth - iconSize) / 2
+                                    favorite: slot.favorite
+                                    visible: root.favoritesReady && (slot.favorite || card.hovered || card.highlighted)
+                                    onFavoriteToggled: root.favoriteRequested(slot.serviceId)
+                                }
                                 Label {
                                     readonly property string force: root.activity[card.channelIndex] ?? ""
                                     text: force.length ? qsTranslate("Main", "Activity ") + force : ""
@@ -336,24 +358,15 @@ Pane {
                             ChannelProgram {
                                 anchors {
                                     top: channelHeading.bottom
-                                    topMargin: 9
+                                    topMargin: Theme.spaceSm
                                     left: parent.left
                                     right: parent.right
                                     bottom: parent.bottom
-                                    bottomMargin: -6
                                 }
                                 program: root.programs[card.channelIndex] || null
                                 now: root.now
                                 emphasized: card.highlighted
                             }
-                        }
-                        Rectangle {
-                            anchors.fill: parent
-                            color: "transparent"
-                            border.width: 2
-                            radius: Theme.panelRadius
-                            border.color: Theme.accent
-                            visible: list.activeFocus && list.currentIndex === card.index
                         }
                     }
                 }

@@ -7,6 +7,8 @@ ColumnLayout {
     id: root
     required property var program
     property bool emphasized: false
+    // Cards with room for it also say how long the program still runs.
+    property bool showRemaining: false
     spacing: 5
     required property real now
     readonly property real progress: program && program.duration > 0 ? Math.max(0, Math.min(1, (now - program.startAt) / program.duration)) : 0
@@ -22,11 +24,25 @@ ColumnLayout {
         maximumLineCount: 2
         elide: Text.ElideRight
     }
-    Label {
+    RowLayout {
         Layout.fillWidth: true
-        text: root.program && root.program.scheduleState === "unknownEnd" ? qsTranslate("Viewer", "End time unknown") : root.program && !root.program.scheduleState ? Qt.formatDateTime(new Date(root.program.startAt), "hh:mm") + " – " + Qt.formatDateTime(new Date(root.program.startAt + root.program.duration), "hh:mm") : ""
-        color: Theme.textSecondary
-        font.pixelSize: Theme.fontCaption
+        spacing: Theme.spaceSm
+        Label {
+            Layout.fillWidth: true
+            text: root.program && root.program.scheduleState === "unknownEnd" ? qsTranslate("Viewer", "End time unknown") : root.program && !root.program.scheduleState ? Qt.formatDateTime(new Date(root.program.startAt), "hh:mm") + " – " + Qt.formatDateTime(new Date(root.program.startAt + root.program.duration), "hh:mm") : ""
+            color: Theme.textSecondary
+            font.pixelSize: Theme.fontCaption
+            elide: Text.ElideRight
+        }
+        Label {
+            objectName: "cardRemaining"
+            readonly property int minutes: root.program && !root.program.scheduleState && root.program.duration > 0
+                ? Math.ceil((root.program.startAt + root.program.duration - root.now) / 60000) : 0
+            visible: root.showRemaining && minutes > 0
+            text: qsTranslate("Viewer", "%1 min left").arg(minutes)
+            color: Theme.accent
+            font.pixelSize: Theme.fontCaption
+        }
     }
     Label {
         objectName: "cardNextProgram"
@@ -44,23 +60,8 @@ ColumnLayout {
     Item {
         Layout.fillHeight: true
     }
-    ProgressBar {
+    ProgressLine {
         Layout.fillWidth: true
-        Layout.preferredHeight: 3
-        background: Rectangle {
-            color: Theme.overlayBorder
-            radius: Theme.indicatorRadius
-        }
-        contentItem: Item {
-            Rectangle {
-                width: parent.width * root.progress
-                height: parent.height
-                radius: Theme.indicatorRadius
-                color: Theme.accent
-            }
-        }
-        from: 0
-        to: 1
-        value: root.progress
+        progress: root.progress
     }
 }

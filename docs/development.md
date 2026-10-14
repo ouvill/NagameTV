@@ -29,6 +29,7 @@ OFFでは専用ワーカー・通信・ブラウザーを起動せず、自動�
 | フラグ | 既定値・有効化方法 | 担当箇所 | 実験扱いを解除する条件 |
 | --- | --- | --- | --- |
 | `data_broadcast_enabled` | OFF。「設定 → 表示 → データ放送を有効にする（実験的）」 | `player::data_broadcast`、`playback::session::broadcast` | 対象局と操作の検証結果を[対応表](std-b24-implementation.md)へ記録し、起動・選局・シーク・終了・入力復帰の回帰試験と、継続視聴時のメモリー・処理負荷の確認を完了する |
+| `recording_reservations_enabled` | OFF。「設定 → 接続 → 番組表から録画予約する（実験的）」、検証時は`--features=epg,recording-reservations` | `epgstation::reservations`、`player::recording_reservations` | [予約仕様](recording-reservations.md)に実サーバーでの追加・取消し・競合・録画開始との競合、OFF/ON・認証変更・再起動・番組表更新コストの検証結果を記録する |
 
 データ放送はQt WebEngineのビルド・配布依存を維持します。
 `--features=data-broadcast`は、保存設定を使わずこの機能だけを有効にする検証用の起動方法です。

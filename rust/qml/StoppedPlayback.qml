@@ -20,6 +20,9 @@ Rectangle {
     property string programsJson: "[]"
     property string visibilityJson: "[]"
     property real now: 0
+    property ContinueWatchingModel continueWatching: null
+    property bool favoritesReady: false
+    property bool historyFailed: false
     // A stream that is starting shows only its progress: listing other channels
     // during a channel change reads as if the choice had not been taken.
     property bool connecting: false
@@ -28,6 +31,17 @@ Rectangle {
         && !playbackError.length
     signal selectRequested(int index)
     signal recordingsRequested
+    signal favoriteRequested(string serviceId)
+    signal resumeRequested(string recordingKey)
+    signal boundaryReached(int key)
+    // Directional entry into the overview; false while the centered prompt is shown.
+    function enter(fromBelow: bool): bool {
+        const overview = overviewLoader.item as StoppedOverview;
+        if (!overview) return false;
+        if (fromBelow) overview.enterBottom();
+        else overview.enterTop();
+        return true;
+    }
     onPlaybackErrorChanged: if (!playbackError.length)
         showDetails = false
     signal playRequested
@@ -35,8 +49,17 @@ Rectangle {
     signal settingsRequested
     signal reconnectRequested
     signal openFileRequested
-    color: Theme.surface
+    color: Theme.canvas
+    // A quiet backdrop instead of a flat fill; it never animates.
+    Rectangle {
+        anchors.fill: parent
+        gradient: Gradient {
+            GradientStop { position: 0; color: Theme.ambientGlow }
+            GradientStop { position: 0.6; color: Theme.canvas }
+        }
+    }
     Loader {
+        id: overviewLoader
         objectName: "stoppedOverviewLoader"
         anchors.fill: parent
         active: root.overviewVisible
@@ -47,6 +70,12 @@ Rectangle {
             visibilityJson: root.visibilityJson
             now: root.now
             loading: root.loading
+            continueWatching: root.continueWatching
+            favoritesReady: root.favoritesReady
+            historyFailed: root.historyFailed
+            onFavoriteRequested: function(serviceId) { root.favoriteRequested(serviceId); }
+            onResumeRequested: function(recordingKey) { root.resumeRequested(recordingKey); }
+            onBoundaryReached: function(key) { root.boundaryReached(key); }
             onPlayRequested: root.playRequested()
             onSelectRequested: function(index) { root.selectRequested(index); }
             onRecordingsRequested: root.recordingsRequested()

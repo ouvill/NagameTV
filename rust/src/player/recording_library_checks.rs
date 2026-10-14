@@ -173,6 +173,63 @@ pub(super) fn run() -> Result<(), Box<dyn std::error::Error>> {
             .pin_mut()
             .play_epgstation_file(QString::from(u64::MAX.to_string()), QString::from("999"))
     );
+    use crate::viewing_history::recordings::{Identity, Position, Source};
+    let identity = Identity::new(
+        Source::Epgstation {
+            server: server.uri(),
+            recorded_id: u64::MAX,
+            video_file_id: 123,
+        },
+        "録画一覧".into(),
+    );
+    player.pin_mut().rust_mut().viewing_history.record(
+        identity.clone(),
+        Position::new(300_000.0, 600_000.0).unwrap(),
+    );
+    player.pin_mut().publish_recording_history();
+    let progress_role = *player
+        .rust()
+        .recording_model
+        .role_names()
+        .iter()
+        .find(|(_, role)| role.to_string() == "progress")
+        .unwrap()
+        .0;
+    let watched_role = *player
+        .rust()
+        .recording_model
+        .role_names()
+        .iter()
+        .find(|(_, role)| role.to_string() == "watched")
+        .unwrap()
+        .0;
+    let index = player
+        .rust()
+        .recording_model
+        .model_index(0, 0, &QModelIndex::default());
+    assert_eq!(
+        player
+            .rust()
+            .recording_model
+            .data(&index, progress_role)
+            .value::<f64>(),
+        Some(0.5)
+    );
+    player
+        .pin_mut()
+        .rust_mut()
+        .viewing_history
+        .record(identity, Position::new(599_000.0, 600_000.0).unwrap());
+    player.pin_mut().publish_recording_history();
+    assert_eq!(
+        player
+            .rust()
+            .recording_model
+            .data(&index, watched_role)
+            .value::<bool>(),
+        Some(true)
+    );
+    assert_eq!(player.rust().continue_watching_model.count(), 0);
     let saved = crate::settings::Loaded::open(settings_path.clone())?;
     assert_eq!(saved.preferences().epgstation_server, server.uri());
     assert!(

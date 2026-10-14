@@ -180,6 +180,18 @@ impl Presentation {
     pub fn observer(&self) -> Box<Observer> {
         Box::new(Observer(self.clone()))
     }
+    pub fn stage_empty(&self, width: f64, height: f64) {
+        let mut state = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        // Keep this check with the staged frame: stream/flush events clear it
+        // on other threads, even when QML's dimensions and layers stay equal.
+        if !state
+            .staged
+            .as_ref()
+            .is_some_and(|overlay| overlay.is_empty_at(width, height))
+        {
+            state.staged = Some(Arc::new(Overlay::empty(width, height)));
+        }
+    }
     pub fn stage(&self, overlay: Overlay) {
         self.0.lock().unwrap_or_else(|e| e.into_inner()).staged = Some(Arc::new(overlay));
     }
@@ -544,6 +556,34 @@ mod tests {
             latency::Snapshot::Unavailable
         ));
     }
+    #[test]
+    fn empty_overlay_remains_capturable_after_stream_clear_and_resize() {
+        let tracker = Presentation::default();
+        let observer = tracker.observer();
+        tracker.stage_empty(160.0, 90.0);
+        let (frame, info) = buffer(&tracker, 100);
+        sync(&observer, &frame, &info);
+        observer.presented();
+        assert!(tracker.capture().unwrap().overlay.is_empty_at(160.0, 90.0));
+        tracker.clear();
+        assert!(tracker.capture().is_err());
+        tracker.stage_empty(160.0, 90.0);
+        let (frame, info) = buffer(&tracker, 200);
+        sync(&observer, &frame, &info);
+        observer.presented();
+        assert!(tracker.capture().unwrap().overlay.is_empty_at(160.0, 90.0));
+        tracker.stage_empty(1920.0, 1080.0);
+        sync(&observer, &frame, &info);
+        observer.presented();
+        assert!(
+            tracker
+                .capture()
+                .unwrap()
+                .overlay
+                .is_empty_at(1920.0, 1080.0)
+        );
+    }
+
     #[test]
     fn copied_or_reused_video_metadata_keeps_one_mapping_callback() {
         let tracker = Presentation::default();

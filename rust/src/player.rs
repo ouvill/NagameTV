@@ -26,6 +26,9 @@ mod program_info;
 mod recording_library;
 #[cfg(feature = "native_tests")]
 mod recording_library_checks;
+#[cfg(feature = "native_tests")]
+mod recording_reservation_checks;
+mod recording_reservations;
 mod recordings;
 mod remote;
 #[cfg(feature = "native_tests")]
@@ -45,6 +48,9 @@ mod transport;
 mod updates;
 #[cfg(feature = "native_tests")]
 mod updates_checks;
+mod viewing_history;
+#[cfg(feature = "native_tests")]
+mod viewing_history_checks;
 
 #[cxx_qt::bridge]
 pub mod ffi {
@@ -82,6 +88,8 @@ pub mod ffi {
         type GuideModel = crate::guide_model::ffi::GuideModel;
         include!("nagametv/src/recording_model.cxxqt.h");
         type RecordingModel = crate::recording_model::ffi::RecordingModel;
+        include!("nagametv/src/continue_watching_model.cxxqt.h");
+        type ContinueWatchingModel = crate::continue_watching_model::ffi::ContinueWatchingModel;
         include!("nagametv/src/subtitle_model.cxxqt.h");
         type SubtitleModel = crate::subtitle_model::ffi::SubtitleModel;
         include!("nagametv/src/video_file_model.cxxqt.h");
@@ -124,6 +132,11 @@ pub mod ffi {
         #[qproperty(QString, playback_error, READ = playback_error, NOTIFY)]
         #[qproperty(QString, playback_message, READ, NOTIFY)]
         #[qproperty(QString, log_error, READ = log_error, NOTIFY)]
+        #[qproperty(*mut ContinueWatchingModel, continue_recordings, READ = continue_recordings, CONSTANT)]
+        #[qproperty(*mut ChannelModel, recent_channels, READ = recent_channels, CONSTANT)]
+        #[qproperty(bool, previous_channel_available, READ = previous_channel_available, NOTIFY = viewing_history_changed)]
+        #[qproperty(bool, viewing_history_ready, READ = viewing_history_ready, NOTIFY = viewing_history_changed)]
+        #[qproperty(QString, viewing_history_error, READ = viewing_history_error, NOTIFY = viewing_history_changed)]
         #[qproperty(*mut ChannelModel, channels, READ = channels, CONSTANT)]
         #[qproperty(*mut RecordingModel, recordings, READ = recordings, CONSTANT)]
         #[qproperty(*mut VideoFileModel, recording_files, READ = recording_files, CONSTANT)]
@@ -211,6 +224,11 @@ pub mod ffi {
         #[qproperty(bool, data_broadcast_prefetch, READ = data_broadcast_prefetch, NOTIFY)]
         #[qproperty(bool, data_broadcast_enabled, READ = data_broadcast_enabled, NOTIFY)]
         #[qproperty(bool, data_broadcast_allowed, READ, CONSTANT)]
+        #[qproperty(bool, recording_reservations_enabled, READ = recording_reservations_enabled, NOTIFY)]
+        #[qproperty(bool, recording_reservations_allowed, READ, CONSTANT)]
+        #[qproperty(bool, reservations_enabled, READ = reservations_enabled, NOTIFY = reservations_changed)]
+        #[qproperty(bool, reservation_busy, READ = reservation_busy, NOTIFY = reservations_changed)]
+        #[qproperty(QString, reservation_error, READ = reservation_error, NOTIFY = reservations_changed)]
         #[qproperty(bool, data_broadcast_available, READ = data_broadcast_available, NOTIFY)]
         #[qproperty(QString, data_broadcast_endpoint, READ, NOTIFY)]
         #[qproperty(bool, subtitles_active, READ, NOTIFY)]
@@ -296,6 +314,23 @@ pub mod ffi {
         #[qinvokable]
         fn play_epgstation_file(self: Pin<&mut Player>, id: QString, video: QString) -> bool;
         fn recording_files(self: &Player) -> *mut VideoFileModel;
+        fn continue_recordings(self: &Player) -> *mut ContinueWatchingModel;
+        #[qinvokable]
+        fn resume_recording(self: Pin<&mut Player>, recording_key: QString) -> bool;
+        fn recent_channels(self: &Player) -> *mut ChannelModel;
+        fn previous_channel_available(self: &Player) -> bool;
+        #[qinvokable]
+        fn previous_channel(self: Pin<&mut Player>) -> bool;
+        #[qinvokable]
+        fn select_remote_key(self: Pin<&mut Player>, key: i32, band: QString) -> bool;
+        fn viewing_history_ready(self: &Player) -> bool;
+        fn viewing_history_error(self: &Player) -> QString;
+        #[qsignal]
+        fn viewing_history_changed(self: Pin<&mut Player>);
+        #[qinvokable]
+        fn toggle_favorite(self: Pin<&mut Player>, service_id: QString) -> bool;
+        #[qinvokable]
+        fn move_favorite(self: Pin<&mut Player>, service_id: QString, position: i32) -> bool;
         fn selected(self: &Player) -> i32;
         fn build_info(self: &Player) -> QString;
         fn autoplay(self: &Player) -> bool;
@@ -333,6 +368,8 @@ pub mod ffi {
         fn capture_screenshot(self: Pin<&mut Player>) -> bool;
         #[qinvokable]
         fn stage_screenshot(self: &Player, overlay: QString);
+        #[qinvokable]
+        fn stage_empty_screenshot(self: &Player, width: f64, height: f64);
         fn screenshot_format(self: &Player) -> QString;
         fn screenshot_options(self: &Player) -> QString;
         fn screenshot_busy(self: &Player) -> bool;
@@ -421,6 +458,34 @@ pub mod ffi {
         fn data_broadcast_activate(self: &Player) -> bool;
         fn data_broadcast_prefetch(self: &Player) -> bool;
         fn data_broadcast_enabled(self: &Player) -> bool;
+        fn recording_reservations_enabled(self: &Player) -> bool;
+        fn reservations_enabled(self: &Player) -> bool;
+        fn reservation_busy(self: &Player) -> bool;
+        fn reservation_error(self: &Player) -> QString;
+        #[qsignal]
+        fn reservations_changed(self: Pin<&mut Player>);
+        #[qinvokable]
+        fn configure_recording_reservations(self: Pin<&mut Player>, enabled: bool);
+        #[qinvokable]
+        fn refresh_reservations(self: Pin<&mut Player>) -> bool;
+        #[qinvokable]
+        fn reservation_state(self: &Player, program_key: QString) -> QString;
+        #[qinvokable]
+        fn can_reserve_program(self: &Player, program_key: QString) -> bool;
+        #[qinvokable]
+        fn can_cancel_reservation(self: &Player, program_key: QString) -> bool;
+        #[qinvokable]
+        fn reserve_program(self: Pin<&mut Player>, program_key: QString) -> bool;
+        #[qinvokable]
+        fn cancel_reservation(self: Pin<&mut Player>, program_key: QString) -> bool;
+        #[qinvokable]
+        fn can_exclude_reservation(self: &Player, program_key: QString) -> bool;
+        #[qinvokable]
+        fn exclude_reservation(self: Pin<&mut Player>, program_key: QString) -> bool;
+        #[qinvokable]
+        fn can_unexclude_reservation(self: &Player, program_key: QString) -> bool;
+        #[qinvokable]
+        fn unexclude_reservation(self: Pin<&mut Player>, program_key: QString) -> bool;
         #[qinvokable]
         fn configure_data_broadcast(self: Pin<&mut Player>, enabled: bool);
         #[qinvokable]
@@ -610,6 +675,11 @@ pub struct PlayerRust {
     media_subtitle_image: cxx_qt_lib::QImage,
     media_subtitle_error: QString,
     error_log: Result<crate::error_log::ErrorLog, crate::error_log::Error>,
+    viewing_history: crate::viewing_history::History,
+    recording_history_session: Option<crate::viewing_history::recordings::Session>,
+    continue_watching_model:
+        cxx::UniquePtr<crate::continue_watching_model::ffi::ContinueWatchingModel>,
+    recent_channel_model: cxx::UniquePtr<crate::channel_model::ffi::ChannelModel>,
     channel_model: cxx::UniquePtr<crate::channel_model::ffi::ChannelModel>,
     recording_model: cxx::UniquePtr<crate::recording_model::ffi::RecordingModel>,
     video_file_model: cxx::UniquePtr<crate::video_file_model::ffi::VideoFileModel>,
@@ -656,6 +726,8 @@ pub struct PlayerRust {
     subtitles_active: bool,
     data_broadcast_mode: data_broadcast::Mode,
     data_broadcast_allowed: bool,
+    recording_reservations_allowed: bool,
+    recording_reservations: crate::epgstation::reservations::Manager,
     data_broadcast_endpoint: QString,
     subtitle_display: bool,
     subtitle_data: QString,
@@ -952,6 +1024,9 @@ impl Drop for PlayerRust {
         // The media owner enforces native shutdown before subtitle destruction,
         // including when QML construction failed before onClosing could run.
         self.screenshot_saves.finish();
+        if let Some(session) = &mut self.recording_history_session {
+            session.save(&mut self.viewing_history, std::time::Instant::now(), true);
+        }
         self.media.shutdown_before_drop();
         self.epg.configure(None);
     }

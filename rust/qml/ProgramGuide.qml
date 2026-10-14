@@ -34,6 +34,8 @@ Rectangle {
     signal modeRequested(int mode)
     signal watchRequested(string key)
     property string watchError: ""
+    // Owner of recording reservations; absent where the guide is shown without them.
+    property var reservationBackend: null
     signal closeRequested()
     signal dayRequested(double start, double end)
     property int dayOffset: 0
@@ -150,6 +152,27 @@ Rectangle {
             watchError: root.watchError
             onWatchRequested: function(key) { root.watchRequested(key) }
             onClosed: root.selectedProgram = null
+            id: details
+            // The backend answers per program; ask again whenever it reports a change.
+            property int reservationRevision: 0
+            Connections {
+                target: root.reservationBackend
+                function onReservations_changed() { details.reservationRevision++; }
+            }
+            readonly property string reservationKey: reservationRevision >= 0 && reservationsEnabled && root.selectedProgram
+                ? root.selectedProgram.watchKey : ""
+            reservationsEnabled: root.reservationBackend !== null && root.reservationBackend.reservations_enabled
+            reservationBusy: reservationsEnabled && root.reservationBackend.reservation_busy
+            reservationError: reservationsEnabled ? root.reservationBackend.reservation_error : ""
+            reservation: reservationKey.length ? root.reservationBackend.reservation_state(reservationKey) : ""
+            canReserve: reservationKey.length > 0 && root.reservationBackend.can_reserve_program(reservationKey)
+            canCancelReservation: reservationKey.length > 0 && root.reservationBackend.can_cancel_reservation(reservationKey)
+            onReserveRequested: function(key) { root.reservationBackend.reserve_program(key); }
+            onCancelReservationRequested: function(key) { root.reservationBackend.cancel_reservation(key); }
+            canExcludeReservation: reservationKey.length > 0 && root.reservationBackend.can_exclude_reservation(reservationKey)
+            canUnexcludeReservation: reservationKey.length > 0 && root.reservationBackend.can_unexclude_reservation(reservationKey)
+            onExcludeReservationRequested: function(key) { root.reservationBackend.exclude_reservation(key); }
+            onUnexcludeReservationRequested: function(key) { root.reservationBackend.unexclude_reservation(key); }
         }
     }
 }

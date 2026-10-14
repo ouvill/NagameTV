@@ -469,6 +469,7 @@ enum WindowCheck {
     },
     Screenshots,
     VideoProcessing,
+    PlaybackPerformance,
     RecordingAudit(std::path::PathBuf),
     RecordingProbe(std::path::PathBuf),
 }
@@ -478,6 +479,7 @@ fn window(
     preferences: &settings::Preferences,
     check: WindowCheck,
 ) -> TestResult {
+    let load_started = Instant::now();
     let _preloaded = playback::preload()?;
     let mut engine = QQmlApplicationEngine::new();
     assert!(crate::qt::ffi::initialize_ui_language(
@@ -490,7 +492,28 @@ fn window(
     assert_eq!(ffi::root_count(&engine), 1);
     assert!(evaluate(&mut engine, "root.settings === null")?);
     match check {
+        WindowCheck::PlaybackPerformance => {
+            eprintln!(
+                "PLAYBACK_LOAD_MS {}",
+                load_started.elapsed().as_secs_f64() * 1000.0
+            );
+            let result = super::timeshift::run_performance(app, &mut engine);
+            evaluate(&mut engine, "player.stop(); root.close(); true")?;
+            return result;
+        }
         WindowCheck::Startup => {
+            assert!(evaluate(
+                &mut engine,
+                "player.recording_reservations_allowed && !player.recording_reservations_enabled && !player.reservations_enabled && !player.reservation_busy"
+            )?);
+            assert!(evaluate(
+                &mut engine,
+                "player.configure_recording_reservations(true); player.recording_reservations_enabled && !player.reservations_enabled && !player.reservation_busy"
+            )?);
+            assert!(evaluate(
+                &mut engine,
+                "player.configure_recording_reservations(false); !player.recording_reservations_enabled && !player.reservations_enabled && !player.reservation_busy"
+            )?);
             assert!(evaluate(
                 &mut engine,
                 "root.minimumWidth === 640 && root.minimumHeight === 360"
@@ -1752,6 +1775,20 @@ fn check_recording(
         engine,
         "root.active && inputContext.accepts(InputContext.Playback)",
     )?;
+    // The stopped overview owns its card clicks. Exercise the video gesture
+    // during playback, when the video surface is the hit-test target.
+    for fullscreen in [true, false] {
+        ffi::doubleClickRoot(engine.pin_mut(), &cxx_qt_lib::QPoint::new(450, 200))?;
+        wait_for(
+            app,
+            engine,
+            if fullscreen {
+                "viewerActions.fullscreen"
+            } else {
+                "!viewerActions.fullscreen"
+            },
+        )?;
+    }
     ffi::clickRootKey(engine.pin_mut(), &QString::from("Space"))?;
     wait_for(
         app,
@@ -1890,6 +1927,19 @@ fn check_recording(
         engine,
         "!player.seeking && player.paused && Math.abs(player.position_ms - 15000) < 1500 && !player.transport_error.length",
     )?;
+    evaluate(engine, "player.stop(); true")?;
+    assert!(evaluate(engine, "player.continue_recordings.count > 0")?);
+    assert!(evaluate(
+        engine,
+        &format!("recordingInput.openUrl({quoted_url})")
+    )?);
+    wait_for(
+        app,
+        engine,
+        "player.playing && !player.seeking && player.position_ms > 12000 && player.position_ms < 19000",
+    )?;
+    assert!(evaluate(engine, "player.pause()")?);
+    wait_for(app, engine, "player.paused")?;
     evaluate(engine, "viewerActions.playbackToggle.trigger(); true")?;
     wait_for(app, engine, "player.playing && !player.paused")?;
     assert!(evaluate(engine, "player.seek_to(59000)")?);
@@ -1917,20 +1967,6 @@ fn check_shortcuts(
         "root.showChannels = false; root.requestActivate(); surface.forceActiveFocus(); true",
     )?;
     wait_for(app, engine, "root.active && inputContext.navigationEnabled")?;
-    // The video gesture shares fullscreen restoration with F11. Native input
-    // tests hit testing, not just a direct call to the QML signal handler.
-    for fullscreen in [true, false] {
-        ffi::doubleClickRoot(engine.pin_mut(), &cxx_qt_lib::QPoint::new(450, 200))?;
-        wait_for(
-            app,
-            engine,
-            if fullscreen {
-                "viewerActions.fullscreen"
-            } else {
-                "!viewerActions.fullscreen"
-            },
-        )?;
-    }
     ffi::clickRootKey(engine.pin_mut(), &QString::from("F11"))?;
     wait_for(app, engine, "viewerActions.fullscreen")?;
     for _ in 0..2 {
@@ -2117,7 +2153,12 @@ fn check_sidebar_navigation(
         engine,
         "root.showStats = false; surface.forceActiveFocus(); true",
     )?;
-    ffi::clickRootKey(engine.pin_mut(), &QString::from("Down"))?;
+    if evaluate(engine, "root.stoppedOverview")? {
+        // Down enters the home page first; this sequence starts at the controls.
+        evaluate(engine, "playerControls.enter(); true")?;
+    } else {
+        ffi::clickRootKey(engine.pin_mut(), &QString::from("Down"))?;
+    }
     wait_for(app, engine, "playerControls.navigating")?;
     let focused = |name: &str| {
         format!("root.activeFocusItem && root.activeFocusItem.objectName === '{name}'")
@@ -2181,6 +2222,22 @@ fn check_directional_navigation(
     )?;
     wait_for(app, engine, "!sidebar.active && inputContext.videoFocused")?;
     ffi::clickRootKey(engine.pin_mut(), &QString::from("Return"))?;
+    // While nothing plays, the home page lies between the video and the
+    // playback controls: confirm enters it and Down walks through its rows.
+    let focused = |name: &str| {
+        format!("root.activeFocusItem && root.activeFocusItem.objectName === '{name}'")
+    };
+    let home = evaluate(engine, "root.stoppedOverview")?;
+    if home {
+        wait_for(app, engine, &focused("overviewWatch"))?;
+        capture_navigation(app, engine, "dpad-home.png")?;
+        for _ in 0..20 {
+            if evaluate(engine, "playerControls.navigating")? {
+                break;
+            }
+            ffi::clickRootKey(engine.pin_mut(), &QString::from("Down"))?;
+        }
+    }
     wait_for(
         app,
         engine,
@@ -2217,14 +2274,31 @@ fn check_directional_navigation(
         )?;
     }
     ffi::clickRootKey(engine.pin_mut(), &QString::from("Up"))?;
+    if home {
+        // Up from the controls returns to the last row of the home page.
+        wait_for(app, engine, &focused("overviewChannelCell"))?;
+        ffi::clickRootKey(engine.pin_mut(), &QString::from("Down"))?;
+        wait_for(app, engine, "playerControls.navigating")?;
+        evaluate(engine, "surface.forceActiveFocus(); true")?;
+        wait_for(app, engine, "inputContext.videoFocused")?;
+        ffi::clickRootKey(engine.pin_mut(), &QString::from("Up"))?;
+    }
     wait_for(app, engine, "modeNavigation.navigating")?;
     capture_navigation(app, engine, "dpad-navigation.png")?;
     ffi::clickRootKey(engine.pin_mut(), &QString::from("Down"))?;
+    if home {
+        wait_for(app, engine, &focused("overviewWatch"))?;
+        evaluate(engine, "playerControls.enter(); true")?;
+    }
     wait_for(app, engine, "playerControls.navigating")?;
     ffi::clickRootKey(engine.pin_mut(), &QString::from("Escape"))?;
     wait_for(app, engine, "inputContext.videoFocused")?;
     if evaluate(engine, "player.channels.count > 0")? {
-        ffi::clickRootKey(engine.pin_mut(), &QString::from("Down"))?;
+        if home {
+            evaluate(engine, "playerControls.enter(); true")?;
+        } else {
+            ffi::clickRootKey(engine.pin_mut(), &QString::from("Down"))?;
+        }
         wait_for(app, engine, "playerControls.navigating")?;
         ffi::clickRootKey(engine.pin_mut(), &QString::from("Return"))?;
         wait_for(
@@ -2420,6 +2494,10 @@ pub fn run_data_broadcast_live(
 }
 pub fn run_video_processing() -> i32 {
     run_window_check(WindowCheck::VideoProcessing)
+}
+
+pub fn run_playback_performance() -> i32 {
+    run_window_check(WindowCheck::PlaybackPerformance)
 }
 
 pub fn run_screenshots() -> i32 {

@@ -60,7 +60,13 @@ Item {
                         libraryVisible: actions.libraryVisible
                         channelsVisible: actions.channelsVisible
                     }
-                    Viewer.ShortcutBindings { id: bindings; actions: actions; inputContext: inputContext }
+                    property var digits: []
+                    Viewer.ShortcutBindings {
+                        id: bindings
+                        actions: actions
+                        inputContext: inputContext
+                        onDigitPressed: function(digit) { parent.digits = parent.digits.concat([digit]); }
+                    }
                     Drawer { id: drawer; width: 200; height: 300; focus: true }
                     TextField {
                         id: editor
@@ -207,6 +213,18 @@ Item {
                 compare(view.channelRequests, 0);
                 compare(view.commentRequests, 0);
                 verify(!view.guideRequests);
+            }
+            function test_digits_reach_the_station_buttons_only_while_tuning_is_possible() {
+                keyClick(Qt.Key_5);
+                compare(view.digits, []);
+                view.bindings.digitsAvailable = true;
+                keyClick(Qt.Key_5);
+                ime.forward_key(Qt.Key_1, Qt.NoModifier, "1", false);
+                compare(view.digits, [5, 1]);
+                view.editor.forceActiveFocus();
+                keyClick(Qt.Key_7);
+                compare(view.digits, [5, 1]);
+                compare(view.editor.text, "7");
             }
             function test_escape_belongs_to_popup_before_window_data() { return dismissInputs(); }
             function test_escape_belongs_to_popup_before_window(data) {

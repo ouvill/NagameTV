@@ -35,11 +35,13 @@ impl ffi::Player {
     }
     /// READY joins streaming callbacks before dropping their subscriptions/state.
     pub(super) fn end_stream(mut self: Pin<&mut Self>) -> Result<(), playback::Error> {
+        self.as_mut().save_recording_history(true);
         let result = self.as_mut().rust_mut().media.stop().map(|_| ());
         if let Err(error) = result {
             self.as_mut().change_stream_state(State::stop_failed);
             return Err(error);
         }
+        self.as_mut().rust_mut().recording_history_session = None;
         self.as_mut().change_stream_state(State::stopped);
         self.as_mut().set_subtitles_active(false);
         self.as_mut().rust_mut().subtitle_cells = 0;
@@ -106,6 +108,11 @@ impl ffi::Player {
         let subtitles_enabled = self.rust().subtitles_enabled;
         // Keep stop failure distinct: the previous generation is still owned.
         // A successful stop grants an exclusive capability for the next start.
+        self.as_mut().save_recording_history(true);
+        let identity = match &attempt {
+            Attempt::File(file) => Some(file.history_identity()),
+            Attempt::Live(_) => None,
+        };
         let result = {
             let mut this = self.as_mut().rust_mut();
             this.media.stop().map(|stopped| match &attempt {
@@ -128,6 +135,16 @@ impl ffi::Player {
                 self.playback_failed(error);
                 return false;
             }
+        };
+        self.as_mut().rust_mut().recording_history_session = if result.is_ok() {
+            identity.map(|identity| {
+                crate::viewing_history::recordings::Session::new(
+                    identity,
+                    std::time::Instant::now(),
+                )
+            })
+        } else {
+            None
         };
         let service = attempt.service();
         let name = attempt.name().to_owned();
@@ -188,6 +205,7 @@ impl ffi::Player {
         }
     }
     pub fn poll(mut self: Pin<&mut Self>) {
+        self.as_mut().poll_viewing_history();
         self.as_mut().poll_remote_commands();
         self.as_mut().poll_player();
         self.as_mut().poll_seek_preview();
@@ -209,6 +227,8 @@ impl ffi::Player {
         self.as_mut().poll_channels();
         self.as_mut().poll_recording();
         self.as_mut().poll_recording_library();
+        self.as_mut().poll_recording_reservations();
+        self.as_mut().poll_recording_thumbnails();
         self.as_mut().poll_updates();
         let result = self.as_mut().rust_mut().media.poll();
         let notice = self.as_mut().rust_mut().media.take_notice();
@@ -281,6 +301,7 @@ impl ffi::Player {
         }
         // Commentary uses the output-confirmed position and phase from this
         // tick, so a completed seek publishes its restored window before draw.
+        self.as_mut().poll_recording_history();
         self.as_mut().poll_features();
     }
     pub fn shutdown(mut self: Pin<&mut Self>) -> bool {
@@ -291,12 +312,14 @@ impl ffi::Player {
         // Retained native screenshot buffers may still need the GL context for
         // readback. Complete accepted work before stopping that context.
         self.as_mut().rust_mut().screenshot_saves.finish();
+        self.as_mut().save_recording_history(true);
         let result = self.as_mut().rust_mut().media.shutdown();
         if let Err(error) = result {
             // playback_failed records the cause; keep the window alive for a retry.
             self.playback_failed(error);
             return false;
         }
+        self.as_mut().shutdown_recording_reservations();
         #[cfg(target_os = "linux")]
         {
             self.as_mut().rust_mut().desktop_media =
