@@ -36,6 +36,8 @@ pub(super) fn run() -> TestResult {
         u64::try_from(SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis())? + 3_600_000;
     let end = start + 600_000;
     let reserved = Arc::new(AtomicBool::new(false));
+    let delay_list = Arc::new(AtomicBool::new(false));
+    let list_calls = Arc::new(AtomicUsize::new(0));
     let row = json!({"id":7,"programId":100,"channelId":10,"startAt":start,"endAt":end,"isSkip":false,"isConflict":false,"isOverlap":false,"isTimeSpecified":false});
     let mount = |mock: Mock| runtime.block_on(mock.mount(&server));
     for endpoint in ["/api/recorded", "/api/recording"] {
@@ -59,10 +61,13 @@ pub(super) fn run() -> TestResult {
     );
     let listing = reserved.clone();
     let listed = row.clone();
+    let delay = delay_list.clone();
+    let calls = list_calls.clone();
     mount(
         Mock::given(method("GET"))
             .and(path("/api/reserves"))
             .respond_with(move |_: &wiremock::Request| {
+                calls.fetch_add(1, Ordering::SeqCst);
                 let rows = if listing.load(Ordering::SeqCst) {
                     vec![listed.clone()]
                 } else {
@@ -70,6 +75,11 @@ pub(super) fn run() -> TestResult {
                 };
                 ResponseTemplate::new(200)
                     .set_body_json(json!({"total":rows.len(),"reserves":rows}))
+                    .set_delay(if delay.load(Ordering::SeqCst) {
+                        Duration::from_secs(5)
+                    } else {
+                        Duration::ZERO
+                    })
             }),
     );
     let added = reserved.clone();
@@ -212,8 +222,42 @@ pub(super) fn run() -> TestResult {
         "EPGStationに接続し、録画予約を有効にしてください。"
     );
     assert!(player.pin_mut().request_language(QString::from("en")));
+    drop(_notification);
+    drop(_guard);
+    player.pin_mut().configure_recording_reservations(true);
+    finish(&mut player);
+    delay_list.store(true, Ordering::SeqCst);
+    let before_shutdown = list_calls.load(Ordering::SeqCst);
+    assert!(player.pin_mut().refresh_reservations());
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while list_calls.load(Ordering::SeqCst) == before_shutdown {
+        assert!(Instant::now() < deadline, "delayed refresh did not start");
+        thread::sleep(Duration::from_millis(1));
+    }
+    assert!(player.reservation_busy());
+    assert!(player.pin_mut().shutdown());
+    finish(&mut player);
+    assert!(!player.reservations_enabled());
+    assert!(!player.reservation_busy());
+    player.pin_mut().configure_recording_reservations(false);
+    player.pin_mut().configure_recording_reservations(true);
+    assert!(!player.pin_mut().refresh_reservations());
+    {
+        let state = player.pin_mut().rust_mut().get_mut();
+        state.recording_reservations.poll(
+            state.network.as_ref().unwrap(),
+            Instant::now() + Duration::from_secs(60),
+        );
+    }
+    assert!(!player.reservations_enabled());
+    assert!(!player.reservation_busy());
+    assert_eq!(list_calls.load(Ordering::SeqCst), before_shutdown + 1);
+    assert!(
+        player.recording_reservations_enabled(),
+        "shutdown retains the saved preference"
+    );
     println!(
-        "Recording reservations: default-off gate, guide roles, notification coherence and manual writes passed"
+        "Recording reservations: default-off gate, guide roles, notification coherence, manual writes and shutdown cancellation passed"
     );
     Ok(())
 }

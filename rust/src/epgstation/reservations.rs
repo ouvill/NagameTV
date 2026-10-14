@@ -28,14 +28,39 @@ pub enum Error {
     Limit,
     #[error("Reservation response is inconsistent")]
     Invalid,
-    #[error("Invalid reservation JSON at line {line}, column {column}")]
-    Json { line: usize, column: usize },
+    #[error("{0}")]
+    Json(#[source] JsonError),
     #[error("Unexpected reservation HTTP status {0}")]
     Status(u16),
     #[error("Reservation HTTP request failed: {0}")]
     Http(#[source] reqwest::Error),
     #[error("Reservation write completed, but the list could not be refreshed: {0}")]
     RefreshAfterWrite(#[source] Box<Error>),
+}
+
+// Retain the original cause without exposing its Display through source():
+// serde may quote a password or token from an invalid response field.
+#[derive(thiserror::Error)]
+pub struct JsonError(crate::json::Error);
+impl std::fmt::Display for JsonError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let (path, source) = match &self.0 {
+            crate::json::Error::Decode { path, source } => (path.to_string(), source),
+            crate::json::Error::Trailing(source) => ("root".into(), source),
+        };
+        write!(
+            formatter,
+            "Invalid reservation JSON at {path}: {:?}, line {}, column {}",
+            source.classify(),
+            source.line(),
+            source.column()
+        )
+    }
+}
+impl std::fmt::Debug for JsonError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(self, formatter)
+    }
 }
 #[derive(Clone, Copy)]
 enum Operation {
@@ -47,6 +72,7 @@ enum Operation {
 enum Mode {
     #[default]
     Disabled,
+    Closed,
     Connected {
         generation: u64,
         connection: Connection,
@@ -105,7 +131,8 @@ impl Manager {
         }
     }
     pub(super) fn configure(&mut self, session: Option<(u64, &Connection)>, now: Instant) {
-        if matches!((&self.mode, session), (Mode::Disabled, None))
+        if matches!(self.mode, Mode::Closed)
+            || matches!((&self.mode, session), (Mode::Disabled, None))
             || matches!((&self.mode, session), (Mode::Connected { generation, .. }, Some((next, _))) if *generation == next)
         {
             return;
@@ -125,6 +152,11 @@ impl Manager {
         self.error = None;
         self.next_refresh = now;
         self.revision = self.revision.wrapping_add(1);
+    }
+    pub fn shutdown(&mut self, now: Instant) {
+        self.configure(None, now);
+        // Qt may poll or finish closing signals before destroying Player.
+        self.mode = Mode::Closed;
     }
     pub fn can_reserve(&self, program: Program, now: u64) -> bool {
         self.enabled()

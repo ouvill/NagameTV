@@ -28,10 +28,7 @@ async fn body(request: reqwest::RequestBuilder, expected: u16) -> Result<Vec<u8>
 }
 fn decode<T: DeserializeOwned>(bytes: &[u8]) -> Result<T, Error> {
     // Provider error text and malformed field values can contain credentials.
-    serde_json::from_slice(bytes).map_err(|error| Error::Json {
-        line: error.line(),
-        column: error.column(),
-    })
+    crate::json::from_slice(bytes).map_err(|error| Error::Json(super::JsonError(error)))
 }
 async fn get<T: DeserializeOwned>(connection: &Connection, path: &str) -> Result<T, Error> {
     decode(&body(connection.api_request(Method::GET, path), 200).await?)
@@ -186,4 +183,32 @@ pub(super) async fn execute(
                 Error::RefreshAfterWrite(Box::new(error))
             }
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn json_diagnostics_keep_the_field_and_cause_without_exposing_response_values() {
+        let error = decode::<ReservesPage>(br#"{"reserves":[],"total":"private-token"}"#)
+            .err()
+            .expect("invalid count");
+        assert!(error.to_string().contains("total"));
+        assert!(!format!("{error:?}").contains("private-token"));
+        let mut cause: Option<&dyn std::error::Error> = Some(&error);
+        while let Some(error) = cause {
+            assert!(!error.to_string().contains("private-token"));
+            cause = error.source();
+        }
+        let Error::Json(error) = error else {
+            panic!("expected JSON error");
+        };
+        let crate::json::Error::Decode { path, source } = &error.0 else {
+            panic!("original field cause was lost");
+        };
+        assert_eq!(path.to_string(), "total");
+        assert!(source.is_data());
+        assert!(matches!(decode::<Vec<u64>>(b"[] {}"), Err(Error::Json(_))));
+    }
 }

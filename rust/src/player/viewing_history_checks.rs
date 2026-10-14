@@ -10,6 +10,7 @@ use std::{
 
 pub(super) fn run() -> Result<(), Box<dyn std::error::Error>> {
     favorite_commands_update_rows_without_reset()?;
+    shutdown_preserves_the_final_recording_position()?;
     let mut player = ffi::new_player();
     let channels = crate::channels::parse(
         br#"[
@@ -268,6 +269,73 @@ fn favorite_commands_update_rows_without_reset() -> Result<(), Box<dyn std::erro
     assert_eq!(player.selected(), 0);
     println!(
         "Favorite updates: Player rows, exact dataChanged roles, persistent indices and recent/filter projections passed without modelReset"
+    );
+    Ok(())
+}
+
+fn shutdown_preserves_the_final_recording_position() -> Result<(), Box<dyn std::error::Error>> {
+    use super::stream_state::{Attempt, State};
+    use crate::playback::{recording::Recording, timeline::Snapshot};
+    use crate::viewing_history::{History, recordings::Session};
+
+    fn await_load(history: &mut History) {
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while !history.ready() {
+            history.poll();
+            assert!(Instant::now() < deadline, "history load did not finish");
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert!(history.error().is_empty());
+    }
+
+    let directory = tempfile::tempdir()?;
+    let path = directory.path().join("viewing-history.json");
+    let mut player = ffi::new_player();
+    player.pin_mut().rust_mut().viewing_history = History::open(path.clone());
+    await_load(&mut player.pin_mut().rust_mut().viewing_history);
+    let file = Recording::open(std::path::Path::new(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../tests/fixtures/subtitle-clock.ts"
+    )))?;
+    let identity = file.history_identity();
+    let source = identity.source.clone();
+    let mut session = Session::new(identity, Instant::now());
+    assert_eq!(
+        session.resume(&player.rust().viewing_history, 600_000.0),
+        None
+    );
+    player
+        .pin_mut()
+        .update_stream_state(State::Connecting(Attempt::File(file)).started());
+    {
+        let state = player.pin_mut().rust_mut().get_mut();
+        state.recording_history_session = Some(session);
+        state.timeline = Snapshot {
+            position: Some(gstreamer::ClockTime::from_mseconds(123_000)),
+            duration: Some(gstreamer::ClockTime::from_mseconds(600_000)),
+            ..Default::default()
+        };
+    }
+    assert!(player.rust().viewing_history.entry(&source).is_none());
+    assert!(player.pin_mut().shutdown());
+    assert_eq!(
+        player
+            .rust()
+            .viewing_history
+            .entry(&source)
+            .unwrap()
+            .position
+            .position_ms(),
+        123_000.0
+    );
+    drop(player);
+    let mut restored = History::open(path);
+    await_load(&mut restored);
+    let saved = restored.entry(&source).unwrap();
+    assert_eq!(saved.position.position_ms(), 123_000.0);
+    assert_eq!(saved.position.duration_ms(), 600_000.0);
+    println!(
+        "Viewing history shutdown: final position survives Player destruction and file reopen"
     );
     Ok(())
 }

@@ -11,7 +11,7 @@ pub const SAVE_INTERVAL: Duration = Duration::from_secs(15);
 const WATCHED_FRACTION: f64 = 0.95;
 const WATCHED_REMAINING_MS: f64 = 30_000.0;
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum Source {
     Local {
@@ -25,6 +25,25 @@ pub enum Source {
         recorded_id: u64,
         video_file_id: u64,
     },
+}
+impl std::fmt::Debug for Source {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Recording's Debug already redacts verified HTTP inputs; its retained
+        // history identity must not reintroduce passwords or signed URLs.
+        match self {
+            Self::Local { .. } => formatter.debug_struct("Local").finish_non_exhaustive(),
+            Self::Http { .. } => formatter.debug_struct("Http").finish_non_exhaustive(),
+            Self::Epgstation {
+                recorded_id,
+                video_file_id,
+                ..
+            } => formatter
+                .debug_struct("Epgstation")
+                .field("recorded_id", recorded_id)
+                .field("video_file_id", video_file_id)
+                .finish_non_exhaustive(),
+        }
+    }
 }
 impl Source {
     pub fn http(mut url: url::Url) -> Self {
@@ -274,5 +293,43 @@ mod tests {
             source,
             Source::http(url::Url::parse("https://example.test/a?q=2").unwrap())
         );
+    }
+
+    #[test]
+    fn history_debug_redacts_source_locations_without_changing_persisted_identity() {
+        for (source, location) in [
+            (
+                Source::Local {
+                    path: "/private-recording.ts".into(),
+                },
+                "/private-recording.ts",
+            ),
+            (
+                Source::http(
+                    url::Url::parse(
+                        "https://user:private-password@example.test/video?token=private-token",
+                    )
+                    .unwrap(),
+                ),
+                "https://user:private-password@example.test/video?token=private-token",
+            ),
+            (
+                Source::Epgstation {
+                    server: "https://private-server.test".into(),
+                    recorded_id: 7,
+                    video_file_id: 9,
+                },
+                "https://private-server.test",
+            ),
+        ] {
+            let identity = Identity::new(source, "Recording".into());
+            let diagnostic = format!("{identity:?}");
+            assert!(!diagnostic.contains(location));
+            assert!(!diagnostic.contains("private-password"));
+            assert!(!diagnostic.contains("private-token"));
+            let saved = serde_json::to_string(&identity).unwrap();
+            assert!(saved.contains(location));
+            assert_eq!(serde_json::from_str::<Identity>(&saved).unwrap(), identity);
+        }
     }
 }

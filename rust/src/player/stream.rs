@@ -319,6 +319,7 @@ impl ffi::Player {
             self.playback_failed(error);
             return false;
         }
+        self.as_mut().shutdown_recording_reservations();
         #[cfg(target_os = "linux")]
         {
             self.as_mut().rust_mut().desktop_media =

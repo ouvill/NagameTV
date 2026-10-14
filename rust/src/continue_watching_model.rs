@@ -160,6 +160,7 @@ impl ffi::ContinueWatchingModel {
         {
             return QVariant::default();
         }
+        // Qt can probe a negative or out-of-range index; an absent row is normal.
         let Some(row) = usize::try_from(index.row())
             .ok()
             .and_then(|i| self.rust().rows.get(i))

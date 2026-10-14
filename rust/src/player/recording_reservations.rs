@@ -56,7 +56,7 @@ impl ffi::Player {
             {
                 tr("Authentication failed. Check your username and password, then sign in again.")
             }
-            FetchError::Parse(Error::Invalid | Error::Json { .. } | Error::Limit) => {
+            FetchError::Parse(Error::Invalid | Error::Json(_) | Error::Limit) => {
                 tr("EPGStation returned an invalid or oversized reservation list.")
             }
             FetchError::Parse(Error::Status(_) | Error::Http(_)) | FetchError::Network(_) => tr(
@@ -169,6 +169,13 @@ impl ffi::Player {
         if before != state.recording_reservations.revision() {
             self.publish_reservations();
         }
+    }
+    pub(super) fn shutdown_recording_reservations(mut self: Pin<&mut Self>) {
+        self.as_mut()
+            .rust_mut()
+            .recording_reservations
+            .shutdown(Instant::now());
+        self.publish_reservations();
     }
     fn publish_reservations(mut self: Pin<&mut Self>) {
         let snapshot = self.rust().recording_reservations.snapshot();
