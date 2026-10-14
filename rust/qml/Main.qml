@@ -928,6 +928,8 @@ ViewerWindow {
                 now: player.channel_program_now
                 selected: player.selected
                 viewingIndex: player.viewing_channel
+                favoritesReady: player.viewing_history_ready
+                onFavoriteRequested: function(serviceId) { player.toggle_favorite(serviceId); }
                 onSelectRequested: function (index) {
                     player.select(index);
                     focusHistory.channels = surface;

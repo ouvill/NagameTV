@@ -79,7 +79,8 @@ Column {
         Label {
             objectName: "currentProgramTime"
             text: root.program && root.program.endUnknown ? qsTranslate("Viewer", "End time unknown") : root.program && root.program.startAt !== null && root.program.duration !== null ? Qt.formatDateTime(new Date(root.program.startAt), root.recording ? "yyyy/MM/dd hh:mm" : "hh:mm") + " – " + Qt.formatDateTime(new Date(root.program.startAt + root.program.duration), "hh:mm") : ""
-            color: Theme.textSecondary
+            // Secondary grey disappears into bright video even with its outline.
+            color: Theme.textPrimary
             font.pixelSize: Theme.fontBody
             style: Text.Outline
             styleColor: Theme.textShadow

@@ -34,6 +34,9 @@ Pane {
     Connections { target: root.channels; function onChanged() { root.restoreSelection(); } }
     signal selectRequested(int index)
     signal closeRequested
+    // Favorites can be set here once the viewing history is loaded.
+    property bool favoritesReady: false
+    signal favoriteRequested(string serviceId)
     function focusBrowser() {
         list.forceActiveFocus(Qt.TabFocusReason);
     }
@@ -251,6 +254,12 @@ Pane {
                 Keys.onDownPressed: function(event) { event.accepted = true; }
                 Keys.onReturnPressed: function(event) { if (!event.isAutoRepeat) root.selectCurrent(); }
                 Keys.onEnterPressed: function(event) { if (!event.isAutoRepeat) root.selectCurrent(); }
+                Keys.onPressed: function(event) {
+                    if (event.key !== Qt.Key_F || event.modifiers !== Qt.NoModifier || event.isAutoRepeat) return;
+                    const row = channelFilter.row(list.currentIndex);
+                    if (root.favoritesReady && row.serviceId !== undefined) root.favoriteRequested(row.serviceId);
+                    event.accepted = true;
+                }
                 ScrollBar.horizontal: ScrollBar {
                     onPressedChanged: {
                         if (pressed) list.beginScroll();
@@ -262,6 +271,8 @@ Pane {
                     required property int channelIndex
                     required property string label
                     required property string logo
+                    required property string serviceId
+                    required property bool favorite
                     required property int index
                     width: list.baseCardWidth
                     height: 164
@@ -325,6 +336,12 @@ Pane {
                                         x: channelName.width + parent.indicatorGap
                                         anchors.verticalCenter: parent.verticalCenter
                                     }
+                                }
+                                FavoriteToggle {
+                                    objectName: "browserFavorite"
+                                    favorite: slot.favorite
+                                    visible: root.favoritesReady && (slot.favorite || card.hovered || card.highlighted)
+                                    onFavoriteToggled: root.favoriteRequested(slot.serviceId)
                                 }
                                 Label {
                                     readonly property string force: root.activity[card.channelIndex] ?? ""
