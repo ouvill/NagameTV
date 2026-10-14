@@ -1255,10 +1255,13 @@
     <message><source>Favorites and playback positions could not be saved. They are kept only until the app closes.</source><translation>お気に入りと再生位置を保存できませんでした。アプリを閉じるまでの間だけ保持します。</translation></message>
     <message><source>Recording now</source><translation>録画中</translation></message>
     <message><source>Reservation conflict</source><translation>予約競合</translation></message>
-    <message><source>Reservation skipped</source><translation>予約スキップ</translation></message>
+    <message><source>Excluded</source><translation>除外</translation></message>
+    <message><source>Duplicate reservation</source><translation>重複</translation></message>
     <message><source>Reserved</source><translation>予約済み</translation></message>
     <message><source>Reserve recording</source><translation>録画予約</translation></message>
     <message><source>Cancel reservation</source><translation>予約を取り消す</translation></message>
+    <message><source>Exclude</source><translation>除外</translation></message>
+    <message><source>Remove exclusion</source><translation>除外解除</translation></message>
     <message><source>Remove from favorites</source><translation>お気に入りから外す</translation></message>
     <message><source>Add to favorites</source><translation>お気に入りに追加</translation></message>
     <message><source>%1 min left</source><translation>あと%1分</translation></message>

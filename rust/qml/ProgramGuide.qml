@@ -169,6 +169,10 @@ Rectangle {
             canCancelReservation: reservationKey.length > 0 && root.reservationBackend.can_cancel_reservation(reservationKey)
             onReserveRequested: function(key) { root.reservationBackend.reserve_program(key); }
             onCancelReservationRequested: function(key) { root.reservationBackend.cancel_reservation(key); }
+            canExcludeReservation: reservationKey.length > 0 && root.reservationBackend.can_exclude_reservation(reservationKey)
+            canUnexcludeReservation: reservationKey.length > 0 && root.reservationBackend.can_unexclude_reservation(reservationKey)
+            onExcludeReservationRequested: function(key) { root.reservationBackend.exclude_reservation(key); }
+            onUnexcludeReservationRequested: function(key) { root.reservationBackend.unexclude_reservation(key); }
         }
     }
 }

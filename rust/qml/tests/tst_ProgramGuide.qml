@@ -503,13 +503,18 @@ TestCase {
             property bool reservation_busy: false
             property string reservation_error: ""
             property string state: ""
+            property bool rule: false
             property var calls: []
             signal reservations_changed
             function reservation_state(key) { return state; }
             function can_reserve_program(key) { return state === ""; }
-            function can_cancel_reservation(key) { return state === "reserved"; }
+            function can_cancel_reservation(key) { return !rule && state === "reserved"; }
+            function can_exclude_reservation(key) { return rule && state === "reserved"; }
+            function can_unexclude_reservation(key) { return rule && state === "skipped"; }
             function reserve_program(key) { calls = calls.concat([["reserve", key]]); return true; }
             function cancel_reservation(key) { calls = calls.concat([["cancel", key]]); return true; }
+            function exclude_reservation(key) { calls = calls.concat([["exclude", key]]); return true; }
+            function unexclude_reservation(key) { calls = calls.concat([["unexclude", key]]); return true; }
         }
     }
     function test_an_upcoming_program_can_be_reserved_and_the_reservation_cancelled() {
@@ -548,6 +553,44 @@ TestCase {
         verify(!cancel.visible)
         verify(!badge.visible)
         verify(!findChild(popup, "reservationGuideError").visible)
+    }
+    function test_a_rule_reservation_is_excluded_and_included_again() {
+        const backend = createTemporaryObject(reservationBackend, testCase)
+        backend.rule = true
+        backend.state = "reserved"
+        guide.reservationBackend = backend
+        const key = '{"endpoint":8}'
+        guide.selectFixture({name:"Weekly",description:"",startAt:Date.now() + 3600000,duration:60000,watchKey:key})
+        const popup = findChild(guide, "scheduledDetailsLoader").item
+        tryCompare(popup, "opened", true)
+        const exclude = findChild(popup, "excludeGuideReservation")
+        const unexclude = findChild(popup, "unexcludeGuideReservation")
+        const badge = findChild(popup, "programReservation")
+        // A rule would add a removed airing back, so it can only be excluded.
+        verify(!findChild(popup, "cancelGuideReservation").visible)
+        verify(!findChild(popup, "reserveGuideProgram").visible)
+        verify(exclude.visible)
+        verify(!unexclude.visible)
+        mouseClick(exclude)
+        compare(backend.calls, [["exclude", guide.keyFor(key)]])
+        backend.reservation_busy = true
+        backend.reservations_changed()
+        verify(!exclude.enabled)
+        backend.state = "skipped"
+        backend.reservation_busy = false
+        backend.reservations_changed()
+        verify(!exclude.visible)
+        verify(unexclude.visible)
+        verify(findChild(popup, "guideProgramActions").visible)
+        verify(badge.visible)
+        mouseClick(unexclude)
+        compare(backend.calls[1], ["unexclude", guide.keyFor(key)])
+        backend.state = "overlap"
+        backend.reservations_changed()
+        verify(badge.visible)
+        verify(!exclude.visible)
+        verify(!unexclude.visible)
+        verify(!findChild(popup, "guideProgramActions").visible)
     }
     function test_reservations_stay_hidden_without_a_reservation_owner() {
         guide.selectFixture({name:"Later",description:"",startAt:Date.now() + 3600000,duration:60000,watchKey:'{"endpoint":7}'})

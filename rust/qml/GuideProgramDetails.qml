@@ -40,10 +40,15 @@ Popup {
     property string reservation: ""
     property bool canReserve: false
     property bool canCancelReservation: false
+    // Rule reservations are excluded for one airing instead of being removed.
+    property bool canExcludeReservation: false
+    property bool canUnexcludeReservation: false
     // Backend translation source, like watchError.
     property string reservationError: ""
     signal reserveRequested(string key)
     signal cancelReservationRequested(string key)
+    signal excludeReservationRequested(string key)
+    signal unexcludeReservationRequested(string key)
 
     // Keep coordinates, not a delegate reference: offscreen columns are destroyed.
     width: Math.max(0, Math.min(560, parent.width - 48))
@@ -217,8 +222,9 @@ Popup {
             Layout.fillWidth: true
             implicitHeight: actionRow.implicitHeight
             // From the conditions, not the buttons: a hidden row hides its buttons too.
-            visible: popup.live || (popup.reservationsEnabled && (popup.canReserve || popup.canCancelReservation))
-            navigationItems: [watchButton, reserveButton, cancelReservationButton]
+            visible: popup.live || (popup.reservationsEnabled && (popup.canReserve || popup.canCancelReservation
+                || popup.canExcludeReservation || popup.canUnexcludeReservation))
+            navigationItems: [watchButton, reserveButton, cancelReservationButton, excludeReservationButton, unexcludeReservationButton]
             RowLayout {
                 id: actionRow
                 anchors.fill: parent
@@ -252,6 +258,26 @@ Popup {
                     Layout.preferredHeight: Theme.controlHeight
                     text: qsTranslate("Viewer", "Cancel reservation")
                     onClicked: popup.cancelReservationRequested(popup.selection.watchKey)
+                }
+                ActionButton {
+                    id: excludeReservationButton
+                    objectName: "excludeGuideReservation"
+                    visible: popup.reservationsEnabled && popup.canExcludeReservation
+                    enabled: !popup.reservationBusy
+                    Layout.preferredHeight: Theme.controlHeight
+                    text: qsTranslate("Viewer", "Exclude")
+                    onClicked: popup.excludeReservationRequested(popup.selection.watchKey)
+                }
+                ActionButton {
+                    id: unexcludeReservationButton
+                    objectName: "unexcludeGuideReservation"
+                    // Recording again is what the viewer came for when the airing is excluded.
+                    emphasis: popup.live ? ActionButton.Secondary : ActionButton.Primary
+                    visible: popup.reservationsEnabled && popup.canUnexcludeReservation
+                    enabled: !popup.reservationBusy
+                    Layout.preferredHeight: Theme.controlHeight
+                    text: qsTranslate("Viewer", "Remove exclusion")
+                    onClicked: popup.unexcludeReservationRequested(popup.selection.watchKey)
                 }
                 BusyIndicator {
                     objectName: "reservationBusy"
