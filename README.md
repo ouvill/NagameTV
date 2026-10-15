@@ -6,7 +6,7 @@
 
 7日分のEPG番組表表示、ARIB規格に準拠した字幕描画、およびNX-Jikkyoと連携した実況コメントの弾幕表示・投稿機能を備えています。
 
-**[最新の開発ビルドをダウンロード（Linux x86_64）](https://github.com/ouvill/NagameTV/releases/tag/latest-build)** · [インストール手順](#インストール)
+**[最新版をダウンロード（Linux x86_64）](https://github.com/ouvill/NagameTV/releases/latest)** · [インストール手順](#インストール)
 
 ![ながめTVの視聴画面。番組情報と再生操作を映像に重ねて表示](docs/media/live.png)
 
@@ -77,12 +77,10 @@
 ## インストール
 
 ビルド済みパッケージは[GitHub Releases](https://github.com/ouvill/NagameTV/releases)からダウンロードできます。
-[最新の開発ビルド（プレリリース）](https://github.com/ouvill/NagameTV/releases/tag/latest-build)は、`main`のCI成功後に更新されます。
-正式リリース前の変更を含み、同じバージョン・ファイル名でも内容が更新されます。
-
-リリース説明内のダウンロードリンク、またはページ下部の **Assets** から、環境に合うファイルを1つ取得してください。
+[最新の正式リリース](https://github.com/ouvill/NagameTV/releases/latest)を開き、ページ下部の **Assets** から、環境に合うファイルを1つ取得してください。
+正式リリース前の先行版は、`v0.5.0-rc.1`のような版番号のPre-releaseとして公開します。
 Assetsの一覧が折りたたまれている場合は、見出しをクリックして開きます。
-`Source code (zip)`・`Source code (tar.gz)`はソースコードです。アプリを導入する場合は以下のパッケージを選びます。
+`Source code (zip)`・`Source code (tar.gz)`はソースコード、`.zsync`はAppImageの更新ツールが使うファイルです。アプリを導入する場合は以下のパッケージを選びます。
 
 | 利用環境・形式 | ダウンロードするファイル（Linux x86_64 / amd64） |
 | --- | --- |
@@ -127,6 +125,8 @@ flatpak run io.github.ouvill.nagametv
 chmod +x ./nagametv-0.1.0-x86_64.AppImage
 ./nagametv-0.1.0-x86_64.AppImage
 ```
+
+[Gear Lever](https://flathub.org/apps/it.mijorus.gearlever) などの更新ツールを使うと、アプリ一覧への登録と差分更新ができます。詳しくは [AppImageの更新](docs/appimage.md#更新ツールで更新する) を参照してください。
 
 ビルド方法やglibcの互換要件は [AppImageの手順](docs/appimage.md) を参照してください。ソースコードから直接ビルドする場合は [開発・ビルド・診断ガイド](docs/development.md) を参照してください。
 

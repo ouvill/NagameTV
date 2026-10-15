@@ -6,7 +6,7 @@ NagameTV is a TV viewer and recording player for Linux desktops, designed for Ja
 
 Features include a seven-day electronic program guide (EPG), ARIB-compliant subtitles, and live comment overlays and posting through NX-Jikkyo.
 
-**[Download the latest development build (Linux x86_64)](https://github.com/ouvill/NagameTV/releases/tag/latest-build)** · [Installation](#installation)
+**[Download the latest release (Linux x86_64)](https://github.com/ouvill/NagameTV/releases/latest)** · [Installation](#installation)
 
 ![NagameTV showing program information and playback controls over the video](docs/media/live.png)
 
@@ -83,12 +83,10 @@ The following environment is required to run the application:
 ## Installation
 
 Prebuilt packages are available from [GitHub Releases](https://github.com/ouvill/NagameTV/releases).
-The [latest development build (pre-release)](https://github.com/ouvill/NagameTV/releases/tag/latest-build) is updated after successful CI runs on `main`.
-It includes changes ahead of formal releases, and its contents may change even when the version and filename stay the same.
-
-Use the download links in the release description or the **Assets** section at the bottom of the release to download one package for your environment.
+Open the [latest release](https://github.com/ouvill/NagameTV/releases/latest) and download one package for your environment from the **Assets** section at the bottom of the page.
+Preview builds ahead of a release are published as pre-releases with versions such as `v0.5.0-rc.1`.
 If the asset list is collapsed, click its heading to expand it.
-`Source code (zip)` and `Source code (tar.gz)` are source archives. To install the app, choose one of the packages below.
+`Source code (zip)` and `Source code (tar.gz)` are source archives, and the `.zsync` file is used by AppImage update tools. To install the app, choose one of the packages below.
 
 | Environment / format | File to download (Linux x86_64 / amd64) |
 | --- | --- |
@@ -133,6 +131,8 @@ Use AppImage to run the app directly from a single file without installing a pac
 chmod +x ./nagametv-0.1.0-x86_64.AppImage
 ./nagametv-0.1.0-x86_64.AppImage
 ```
+
+Update tools such as [Gear Lever](https://flathub.org/apps/it.mijorus.gearlever) can add the AppImage to your application menu and apply incremental updates. See [AppImage updates](docs/appimage.md#更新ツールで更新する) for details.
 
 See the [AppImage guide](docs/appimage.md) for build instructions and glibc compatibility requirements. To build directly from source, see the [development, build, and diagnostics guide](docs/development.md).
 

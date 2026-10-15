@@ -33,9 +33,14 @@ def deb_filename(version: str, ubuntu: UbuntuRelease) -> str:
     return f"nagametv_{debian_version(version, ubuntu)}_amd64.deb"
 
 
+def appimage_filename(version: str) -> str:
+    validate_version(version)
+    return f"nagametv-{version}-x86_64.AppImage"
+
+
 def release_assets(version: str) -> list[str]:
     validate_version(version)
-    return [f"nagametv-{version}-x86_64.{extension}" for extension in ("AppImage", "flatpak")] + [
+    return [appimage_filename(version), f"nagametv-{version}-x86_64.flatpak"] + [
         deb_filename(version, ubuntu) for ubuntu in UbuntuRelease
     ]
 
@@ -43,9 +48,10 @@ def release_assets(version: str) -> list[str]:
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("version")
+    parser.add_argument("--appimage", action="store_true", help="print only the AppImage filename")
     args = parser.parse_args()
     try:
-        print("\n".join(release_assets(args.version)))
+        print(appimage_filename(args.version) if args.appimage else "\n".join(release_assets(args.version)))
     except ValueError as error:
         parser.exit(1, f"Package metadata: {error}\n")
 
