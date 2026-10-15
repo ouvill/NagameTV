@@ -22,14 +22,13 @@ GitHub Actionsでは両方を生成し、AppImageやFlatpakとともに
 
 ```sh
 # Ubuntu 24.04
-sha256sum --check nagametv_0.1.0-1ubuntu24.04_amd64.deb.sha256
 sudo apt install ./nagametv_0.1.0-1ubuntu24.04_amd64.deb
 
 # Ubuntu 26.04
-sha256sum --check nagametv_0.1.0-1ubuntu26.04_amd64.deb.sha256
 sudo apt install ./nagametv_0.1.0-1ubuntu26.04_amd64.deb
 ```
 
+SHA-256は`sha256sum`の結果をリリースページの各ファイルに表示される値と比べて確認する。
 必要な依存パッケージもaptが導入する。Ubuntuの`universe`を有効にしておく。
 インストール後はアプリ一覧、または`nagametv`コマンドで起動する。
 更新時も新しいdebを`apt install ./ファイル名.deb`で導入する。
