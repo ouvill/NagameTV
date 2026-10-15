@@ -12,7 +12,7 @@ permissions:
   contents: read
 
 concurrency:
-  # Let main builds finish independently; serialize their publication below.
+  # Let every main build finish; version tags reuse its verified artifacts.
   group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && github.run_id || github.ref }}
   cancel-in-progress: ${{ github.event_name != 'push' }}
 
@@ -179,6 +179,7 @@ jobs:
             --env CARGO_HOME=/project/build/ci/cargo-home \
             --env APPIMAGE_BUILD_DIR=/project/build/ci \
             --env APPIMAGE_BUILD_JOBS="$(nproc)" \
+            --env APPIMAGE_UPDATE_REPOSITORY="$GITHUB_REPOSITORY" \
             nagametv-ci:local bash scripts/packaging/build-appimage.sh --native
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -186,6 +187,7 @@ jobs:
           path: |
             build/appimage/nagametv-${{ needs.metadata.outputs.version }}-x86_64.AppImage
             build/appimage/nagametv-${{ needs.metadata.outputs.version }}-x86_64.AppImage.sha256
+            build/appimage/nagametv-${{ needs.metadata.outputs.version }}-x86_64.AppImage.zsync
           if-no-files-found: error
           compression-level: 0
           retention-days: 14
@@ -396,8 +398,7 @@ jobs:
   release:
     name: GitHub Release
     if: >-
-      always() && !cancelled() && github.event_name == 'push' &&
-      (github.ref == 'refs/heads/main' || github.ref_type == 'tag') &&
+      always() && !cancelled() && github.event_name == 'push' && github.ref_type == 'tag' &&
       needs.metadata.result == 'success' &&
       (needs.metadata.outputs.source_run_id != '' ||
        (needs.appimage.result == 'success' && needs.flatpak.result == 'success' && needs.deb.result == 'success'))
@@ -410,8 +411,6 @@ jobs:
     concurrency:
       group: release-${{ github.workflow }}-${{ github.ref }}
       cancel-in-progress: false
-      # Older builds must not evict a newer build already waiting to publish.
-      queue: max
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -439,12 +438,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          REF_TYPE: ${{ github.ref_type }}
           RELEASE_TAG: ${{ github.ref_name }}
-          VERSION: ${{ needs.metadata.outputs.version }}
-        run: |
-          if [[ "$REF_TYPE" == tag ]]; then
-            bash scripts/packaging/create-release.sh "$RELEASE_TAG" build/release
-          else
-            bash scripts/packaging/create-release.sh "v$VERSION" build/release --latest-build
-          fi
+        run: bash scripts/packaging/create-release.sh "$RELEASE_TAG" build/release

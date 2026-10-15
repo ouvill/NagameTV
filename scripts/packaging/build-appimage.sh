@@ -15,6 +15,8 @@ usage() {
   echo "Default: build in the Ubuntu 24.04 Docker environment (no hardware access)."
   echo "--native: use an existing compatible environment; requires glibc <= $max_glibc."
   echo "Environment: APPIMAGE_BUILD_JOBS (default: 8)"
+  echo "             APPIMAGE_UPDATE_REPOSITORY=OWNER/REPO embeds update information for that"
+  echo "             repository's latest GitHub release and writes the .zsync file (default: none)"
   echo "Native only: APPIMAGE_BUILD_DIR (default: build), QMAKE (default: qmake6)"
 }
 build_mode=container
@@ -31,6 +33,10 @@ fail() { echo "AppImage: $*" >&2; exit 1; }
 [[ $(uname -s) == Linux && $(uname -m) == x86_64 ]] || fail "Only native Linux x86_64 builds are supported."
 build_jobs=${APPIMAGE_BUILD_JOBS:-8}
 [[ $build_jobs =~ ^[1-9][0-9]*$ ]] || fail "APPIMAGE_BUILD_JOBS must be a positive integer."
+update_repository=${APPIMAGE_UPDATE_REPOSITORY:-}
+# Update information fields are '|'-separated; GitHub names cannot contain it.
+[[ -z $update_repository || $update_repository =~ ^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$ ]] \
+  || fail "APPIMAGE_UPDATE_REPOSITORY must be OWNER/REPO."
 if [[ $build_mode == container ]]; then
   command -v docker >/dev/null || fail "Docker is required for the Ubuntu 24.04 build (see docs/appimage.md)."
   docker info >/dev/null || fail "Docker daemon is unavailable."
@@ -44,7 +50,7 @@ if [[ $build_mode == container ]]; then
     --mount "type=bind,src=$project_dir,dst=/project" \
     --env APPIMAGE_BUILD_DIR=/project/build/appimage/ubuntu24/native \
     --env CARGO_HOME=/project/build/appimage/ubuntu24/cargo-home \
-    --env APPIMAGE_BUILD_JOBS="$build_jobs" \
+    --env APPIMAGE_BUILD_JOBS="$build_jobs" --env APPIMAGE_UPDATE_REPOSITORY="$update_repository" \
     --env NAGAMETV_BUILD_SOURCE="$build_source" --env SOURCE_DATE_EPOCH \
     "$image_name" bash scripts/packaging/build-appimage.sh --native
 fi
@@ -167,11 +173,24 @@ export ARCH=x86_64
 export LDAI_VERSION="$app_version"
 export LDAI_RUNTIME_FILE="$tools_dir/runtime-x86_64"
 export LDAI_OUTPUT="$stage_dir/$bundle_name"
-"$tools_dir/linuxdeploy-x86_64.AppImage" --appdir "$app_dir" --output appimage
+if [[ -n $update_repository ]]; then
+  # Why not a per-build channel: version tags reuse main's image unchanged, so
+  # it must already follow the latest stable release.
+  export LDAI_UPDATE_INFORMATION="gh-releases-zsync|${update_repository/\//|}|latest|nagametv-*-x86_64.AppImage.zsync"
+fi
+# appimagetool writes the delta-update .zsync to the working directory.
+(cd -- "$stage_dir" && "$tools_dir/linuxdeploy-x86_64.AppImage" --appdir "$app_dir" --output appimage)
 
 # The output pass can collect additional dependencies. Validate its final
 # AppDir before publishing the image or replacing the previous successful one.
 PYTHONPATH="$project_dir" python3 -m scripts.packaging.check_appimage_glibc "$app_dir" --max-glibc "$max_glibc"
+if [[ -n $update_repository ]]; then
+  [[ -s $stage_dir/$bundle_name.zsync ]] || fail "AppImage update file was not generated: $bundle_name.zsync"
+  mv -- "$stage_dir/$bundle_name.zsync" "$output_dir/$bundle_name.zsync"
+else
+  # A zsync left by an earlier build would describe a different image.
+  rm -f -- "$output_dir/$bundle_name.zsync"
+fi
 mv -- "$stage_dir/$bundle_name" "$output_dir/$bundle_name"
 (cd "$output_dir" && sha256sum "$bundle_name" > "$bundle_name.sha256")
 echo "Package: $output_dir/$bundle_name"

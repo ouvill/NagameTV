@@ -90,7 +90,9 @@ ARIB字幕フォントはアプリ本体に組み込まれている。
 ./squashfs-root/AppRun
 ```
 
-アプリ一覧への登録や自動更新は行わない。
+AppImage自体はアプリ一覧への登録や自動更新を行わない。
+GitHub Releasesで配布するAppImageには更新情報が埋め込まれているため、
+[更新ツール](#更新ツールで更新する)を使うと登録と差分更新ができる。
 設定はネイティブ版と同じ`~/.config/nagametv/settings.toml`を使う
 （`XDG_CONFIG_HOME`で変更可能）。Flatpak版の設定とは別。
 
@@ -118,6 +120,24 @@ Linuxでは、実行ファイルを削除しても動作中のプロセスが終
 アプリ一覧への登録やログイン時の自動起動を自分で設定した場合は、その登録も解除する。
 
 設定・キャッシュも削除する場合は[ネイティブ版の保存データの削除](development.md#ネイティブ版の保存データの削除)を参照。
+
+### 更新ツールで更新する
+
+GitHub Releasesで配布するAppImageには、GitHubでLatestに設定された最新の正式リリースを
+更新先とする更新情報が埋め込まれている。この情報を読む更新ツールを使うと、
+新しい版の確認と差分ダウンロードによる置き換えができる。
+
+- [Gear Lever](https://flathub.org/apps/it.mijorus.gearlever)：AppImageをアプリ一覧へ登録し、更新を確認・適用するGUIアプリ。
+- [AppImageUpdate](https://github.com/AppImageCommunity/AppImageUpdate)：AppImage公式の更新ツール。
+  `appimageupdatetool ./nagametv-0.1.0-x86_64.AppImage`のように実行する。
+
+更新情報は`./nagametv-0.1.0-x86_64.AppImage --appimage-updateinformation`で確認できる。
+`v0.2.0-rc.1`のような確認用リリースも正式リリースを更新先とするため、
+より古い正式リリースが更新候補として表示されることがある。
+
+自分でビルドする場合、更新情報は既定では埋め込まない。
+`APPIMAGE_UPDATE_REPOSITORY=OWNER/REPO`を指定すると、そのリポジトリーの最新リリースを
+更新先として埋め込み、AppImageと同じ場所に`.zsync`を作る。CIは実行中のリポジトリーを指定する。
 
 ## 同梱内容と互換性
 
