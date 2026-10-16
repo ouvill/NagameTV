@@ -23,7 +23,8 @@ while IFS= read -r bundle; do
     echo "Release checksum mismatch: $bundle" >&2
     exit 1
   }
-  assets+=("$bundle" "$bundle.sha256")
+  # GitHub shows each asset's SHA-256 digest, so the checksum files stay in CI.
+  assets+=("$bundle")
 done <<< "$bundles"
 appimage=$(PYTHONPATH="$project_dir" python3 -m scripts.packaging.metadata "$version" --appimage)
 # The zsync header records the SHA-1 of the image it describes; a stale file

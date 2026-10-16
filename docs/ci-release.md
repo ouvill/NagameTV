@@ -12,6 +12,8 @@ aptが取得し直す。キャッシュは`build/deb/apt-cache/ubuntu24.04/archi
 バージョンタグでは、同じコミットの成功済み`main`実行に4種類の配布artifactが残っていれば
 それを再利用してリリース下書きを作る。該当する実行やartifactがない場合は通常どおり
 タグでビルドと検証を実行する。どちらもリリース作成前にチェックサムを確認する。
+`.sha256`はジョブ間の受け渡し確認に使い、リリースには添付しない。
+GitHubが各添付ファイルのSHA-256を計算してリリースページに表示するためである。
 配布ファイルとそれぞれのSHA-256の計8ファイル、AppImageの差分更新用`.zsync`を
 Actions artifactとして14日間保存する。
 全ジョブ成功後、`v*`タグのpushではGitHub Releaseの下書きを作成する。
@@ -169,7 +171,7 @@ AppImageが一致しない場合、GitHubへ書き込まずに停止する。
 
 5. タグのコミットでCIを実行し、同じコミットの`main`で検証済みの配布artifactがあれば再利用する。
    なければタグ上でビルドと検証を行う。必要な成果物が揃ったらGitHub Releaseの下書きを作成する。
-   AppImage・Flatpak・24.04用deb・26.04用debとSHA-256の計8ファイル、AppImageの`.zsync`を添付し、
+   AppImage・Flatpak・24.04用deb・26.04用debの4ファイルとAppImageの`.zsync`を添付し、
    変更履歴を自動生成する。
    `v0.2.0-rc.1`のようなタグはprereleaseとして扱う。
 6. 下書きから配布ファイルを取得して専用環境・対象OSでGUIと再生を確認し、

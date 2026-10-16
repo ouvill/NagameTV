@@ -138,7 +138,7 @@ if sys.argv[1] == 'api':
         self.assertNotIn("--prerelease", create)
         for name in release_assets(VERSION):
             self.assertIn(name, create)
-            self.assertIn(f"{name}.sha256", create)
+            self.assertNotIn(f"{name}.sha256", create)
         self.assertIn(f"{appimage_filename(VERSION)}.zsync", create)
 
     def test_prerelease_draft(self):

@@ -96,7 +96,6 @@ If the asset list is collapsed, click its heading to expand it.
 | Run a single file on Linux with glibc 2.39 or later | `nagametv-…-x86_64.AppImage` |
 
 Run the following commands in the directory where you downloaded the package. Replace the example filenames with the ones you downloaded.
-To verify the SHA-256 checksum, save the matching `.sha256` file in the same directory and run `sha256sum --check filename.sha256`.
 
 ### 1. Ubuntu deb package (Ubuntu 24.04 / 26.04)
 
