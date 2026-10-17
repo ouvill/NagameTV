@@ -1,6 +1,6 @@
 # Linux x86_64 distribution baseline. Never collect libraries from the newer
 # Workshop OS: Ubuntu 24.04 supplies glibc 2.39 and GStreamer 1.24.
-FROM ubuntu:24.04@sha256:b3cc40b72b93588182b5410f723c7aaf142363311c2aa993d8a453ddcbb3ae15 AS appimage
+FROM ubuntu:25.10@sha256:7cc5e35f6567ee8c66d2abb4aab0fd866669e6207c237c3a8f0947a5c7f17092 AS appimage
 
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     build-essential ca-certificates ccache cmake curl desktop-file-utils git \
