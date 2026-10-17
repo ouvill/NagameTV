@@ -151,7 +151,7 @@ jobs:
             nagametv-ci:local python3 -m scripts.build.fresh_local_crates bash scripts/testing/ci.sh
       - name: Preserve test logs and execution summaries
         if: ${{ always() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: test-results
           path: |
@@ -166,7 +166,7 @@ jobs:
         run: CARGO_BUILD_JOBS=$(nproc) python3 -m scripts.testing.epgstation_integration --client-image nagametv-ci:local
       - name: Preserve EPGStation contract diagnostics
         if: ${{ always() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: epgstation-contract
           path: build/epgstation-contract/
@@ -181,7 +181,7 @@ jobs:
             --env APPIMAGE_BUILD_JOBS="$(nproc)" \
             --env APPIMAGE_UPDATE_REPOSITORY="$GITHUB_REPOSITORY" \
             nagametv-ci:local bash scripts/packaging/build-appimage.sh --native
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: appimage-x86_64
           path: |
@@ -209,7 +209,7 @@ jobs:
           restore-keys: apt-ubuntu24-v2-
       - name: Install and remove deb in a clean Ubuntu 24.04 container
         run: bash scripts/packaging/test-deb.sh 24.04
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: deb-ubuntu24.04-amd64
           path: |
@@ -317,7 +317,7 @@ jobs:
               bash scripts/packaging/build-deb.sh 26.04 --native
       - name: Install and remove deb in a clean Ubuntu 26.04 container
         run: bash scripts/packaging/test-deb.sh 26.04
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: deb-ubuntu26.04-amd64
           path: |
@@ -378,7 +378,7 @@ jobs:
             flatpak-x86_64-
       - name: Build Flatpak bundle
         run: FLATPAK_BUILD_JOBS=$(nproc) dbus-run-session -- bash scripts/packaging/build-flatpak.sh
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: flatpak-x86_64
           path: |
@@ -415,19 +415,19 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: appimage-x86_64
           path: build/release
           run-id: ${{ needs.metadata.outputs.source_run_id || github.run_id }}
           github-token: ${{ github.token }}
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: flatpak-x86_64
           path: build/release
           run-id: ${{ needs.metadata.outputs.source_run_id || github.run_id }}
           github-token: ${{ github.token }}
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: deb-ubuntu*-amd64
           merge-multiple: true
