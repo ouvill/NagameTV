@@ -257,7 +257,15 @@ Qt engine破棄時に残ったタスクはabortし、所有元のNetwork runtime
 ```sh
 bash scripts/dev/generate-remote-docs.sh
 python3 scripts/test.py viewer-remote
+python3 scripts/test.py remote-web
 ```
+
+`remote-web` はNode.js 18以降とnpmを使い、表示・GPU・音声を使用しない。
+依存がなければ `rust/crates/viewer-remote/web/` で `npm ci` を実行してから再検査する。
+型検査、Web単体試験、一時ディレクトリーへの再ビルドを行い、コミット対象の `dist/` と
+全ファイルのパス・内容がバイト単位で一致することを確認する。不一致の場合は同じWebディレクトリーで
+`npm run build` を実行し、`dist/` を更新してコミットする。検査中に依存を取得したり、
+既存の `dist/` を書き換えたりはしない。このスイートは `cpu` / `all` にも含む。
 
 通信試験はloopbackだけを使用し、表示・GPU・音声は使用しない。
 変更後は本体のRust試験と `python3 scripts/test.py connection`、機器検証付きの
