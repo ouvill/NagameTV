@@ -747,3 +747,150 @@ async fn transport_program_changes_and_subscription_lifetime_are_published() {
     .unwrap();
     session.stop().wait().await.unwrap();
 }
+
+#[tokio::test]
+async fn host_policy_covers_static_grpc_web_and_http2_without_cors() -> Result {
+    let mut session = session();
+    let http = reqwest::Client::builder().http1_only().build()?;
+    let base = format!("http://{}", session.address());
+    for host in ["127.0.0.1", "localhost:50051", "[::1]:50051"] {
+        assert_eq!(
+            http.get(&base).header("host", host).send().await?.status(),
+            404
+        );
+        let rpc = http
+            .post(format!("{base}/viewer.v1.PlayerService/GetState"))
+            .header("host", host)
+            .header("content-type", "application/grpc-web+proto")
+            .body(frame(&proto::GetStateRequest {}))
+            .send()
+            .await?;
+        assert_eq!(rpc.status(), 200);
+        assert!(!rpc.headers().contains_key("access-control-allow-origin"));
+    }
+    for host in [
+        "evil.example",
+        "127.0.0.1.evil.example",
+        "localhost:bad",
+        "localhost:65536",
+    ] {
+        assert_eq!(
+            http.get(&base).header("host", host).send().await?.status(),
+            403
+        );
+        assert_eq!(
+            http.post(format!("{base}/viewer.v1.PlayerService/Stop"))
+                .header("host", host)
+                .header("content-type", "application/grpc-web+proto")
+                .body(frame(&proto::StopRequest {}))
+                .send()
+                .await?
+                .status(),
+            403
+        );
+    }
+    let transport = tonic::transport::Endpoint::from_shared(base.clone())?
+        .origin("http://evil.example".parse()?)
+        .connect()
+        .await?;
+    let mut forbidden = PlayerServiceClient::new(transport);
+    assert_eq!(
+        forbidden
+            .stop(proto::StopRequest {})
+            .await
+            .unwrap_err()
+            .code(),
+        Code::PermissionDenied
+    );
+    assert!(session.next_request().is_none());
+    // HTTP/1.0 permits an absent Host at the protocol layer; our policy rejects it.
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let mut socket = tokio::net::TcpStream::connect(session.address()).await?;
+    socket.write_all(b"GET / HTTP/1.0\r\n\r\n").await?;
+    let mut reply = Vec::new();
+    tokio::time::timeout(Duration::from_secs(1), socket.read_to_end(&mut reply)).await??;
+    assert!(String::from_utf8(reply)?.starts_with("HTTP/1.0 403"));
+    session.stop().wait().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn enabled_web_serves_embedded_assets_and_keeps_rpc_available() -> Result {
+    let session = Bound::bind(config().with_web_enabled(true))?.start(
+        &Handle::current(),
+        initial(),
+        Vec::new(),
+    )?;
+    let base = format!("http://{}", session.address());
+    let http = reqwest::Client::builder().http1_only().build()?;
+    let index = http.get(&base).send().await?;
+    assert_eq!(index.status(), 200);
+    assert_eq!(index.headers()["content-type"], "text/html; charset=utf-8");
+    assert_eq!(index.headers()["cache-control"], "no-cache");
+    assert!(!index.headers().contains_key("access-control-allow-origin"));
+    let html = index.text().await?;
+    assert!(html.contains("<html"));
+    // Check the actual committed bundle, so renamed hashes stay covered.
+    let assets: Vec<_> = html
+        .split('"')
+        .filter(|value| value.starts_with("/assets/") || value.starts_with("assets/"))
+        .collect();
+    assert!(!assets.is_empty());
+    for asset in assets {
+        let response = http
+            .get(format!("{base}/{}", asset.trim_start_matches('/')))
+            .send()
+            .await?;
+        assert_eq!(response.status(), 200, "{asset}");
+        assert_eq!(
+            response.headers()["cache-control"],
+            "public, max-age=31536000, immutable"
+        );
+        assert_eq!(response.headers()["x-content-type-options"], "nosniff");
+        if asset.ends_with(".js") {
+            assert_eq!(
+                response.headers()["content-type"],
+                "text/javascript; charset=utf-8"
+            );
+        }
+        if asset.ends_with(".css") {
+            assert_eq!(
+                response.headers()["content-type"],
+                "text/css; charset=utf-8"
+            );
+        }
+        assert!(!response.bytes().await?.is_empty());
+    }
+    for path in [
+        "/assets/missing.js",
+        "/assets/%2e%2e/Cargo.toml",
+        "/Cargo.toml",
+        "/src/main.ts",
+    ] {
+        assert_eq!(
+            http.get(format!("{base}{path}")).send().await?.status(),
+            404
+        );
+    }
+    let head = http.head(&base).send().await?;
+    assert_eq!(head.status(), 200);
+    assert!(head.bytes().await?.is_empty());
+    let mut rpc = client(&session).await;
+    assert!(
+        rpc.get_state(proto::GetStateRequest {})
+            .await?
+            .into_inner()
+            .state
+            .is_some()
+    );
+    assert_eq!(
+        http.get(&base)
+            .header("host", "evil.example")
+            .send()
+            .await?
+            .status(),
+        403
+    );
+    session.stop().wait().await?;
+    Ok(())
+}

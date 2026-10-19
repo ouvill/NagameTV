@@ -1,5 +1,6 @@
 //! Per-process remote listener, with explicit reconfiguration and shutdown ownership.
 mod addresses;
+pub(crate) mod qr;
 pub(crate) mod settings;
 use settings::{Preferences, Settings};
 use viewer_remote::{Bound, Session, Stopping, model};
@@ -43,11 +44,12 @@ pub struct Control {
     phase: Phase,
     save_error: Option<settings::Error>,
     observed_watchers: usize,
+    web_allowed: bool,
 }
 
 impl Control {
-    pub fn load(transient: bool) -> Self {
-        let loaded = if transient {
+    pub fn load(plan: crate::features::LaunchPlan) -> Self {
+        let loaded = if plan.locked() {
             Ok(Preferences::transient(Settings::default()))
         } else {
             crate::settings::settings_path()
@@ -63,7 +65,20 @@ impl Control {
                 .map_err(Error::from)
         });
         match loaded {
-            Ok(preferences) => Self::new(preferences),
+            Ok(preferences) => {
+                let preferences = if plan.locked() {
+                    Preferences::transient(
+                        preferences
+                            .current()
+                            .with_web_enabled(plan.remote_web(false)),
+                    )
+                } else {
+                    preferences
+                };
+                let mut control = Self::new(preferences);
+                control.web_allowed = !plan.locked() || plan.remote_web(false);
+                control
+            }
             Err(error) => {
                 tracing::error!("Remote configuration failed: {error}");
                 Self {
@@ -71,6 +86,7 @@ impl Control {
                     phase: Phase::Failed(error),
                     save_error: None,
                     observed_watchers: 0,
+                    web_allowed: !plan.locked() || plan.remote_web(false),
                 }
             }
         }
@@ -86,6 +102,7 @@ impl Control {
             phase,
             save_error: None,
             observed_watchers: 0,
+            web_allowed: true,
         }
     }
     pub fn settings(&self) -> Settings {
@@ -129,7 +146,31 @@ impl Control {
             .map(|session| addresses::for_listener(session.address()).join("\n"))
             .unwrap_or_default()
     }
+    pub fn web_allowed(&self) -> bool {
+        self.web_allowed
+    }
+    pub fn configure_web(&mut self, enabled: bool) -> bool {
+        if enabled && !self.web_allowed {
+            return false;
+        }
+        self.configure(self.settings().with_web_enabled(enabled));
+        true
+    }
+    pub fn web_urls(&self) -> Vec<String> {
+        if !self.settings().web_enabled() {
+            return Vec::new();
+        }
+        self.session()
+            .map(|session| {
+                addresses::for_listener(session.address())
+                    .into_iter()
+                    .map(|endpoint| format!("http://{endpoint}/"))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
     pub fn configure(&mut self, settings: Settings) {
+        let settings = settings.with_web_enabled(settings.web_enabled() && self.web_allowed);
         let unchanged = settings == self.settings();
         self.save_error = self
             .preferences
@@ -220,9 +261,10 @@ impl Control {
         }
         let result = (|| {
             let network = network.ok_or(Error::NetworkUnavailable)?;
-            let bound = Bound::bind(viewer_remote::config::Config::new(
-                self.settings().endpoint(),
-            ))
+            let bound = Bound::bind(
+                viewer_remote::config::Config::new(self.settings().endpoint())
+                    .with_web_enabled(self.settings().web_enabled()),
+            )
             .map_err(|error| {
                 if error.kind() == std::io::ErrorKind::AddrInUse {
                     Error::AddressInUse {

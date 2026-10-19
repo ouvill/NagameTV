@@ -228,7 +228,7 @@ impl Default for PlayerRust {
             channel_refresh: Default::default(),
             network: network.ok(),
             updates,
-            remote: crate::remote::Control::load(plan.locked()),
+            remote: crate::remote::Control::load(plan),
             media,
         };
         player.start_remote_if_requested();
