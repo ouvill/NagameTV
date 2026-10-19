@@ -85,6 +85,21 @@ Item {
                     return true;
                 }
                 function refresh_remote_addresses() {}
+                property bool remote_web_enabled: false
+                property bool remote_web_allowed: true
+                property string remote_web_urls: "[]"
+                property int remote_watchers: 0
+                function set_remote_web_enabled(enabled) {
+                    if (enabled && !remote_web_allowed) return false;
+                    remote_web_enabled = enabled;
+                    remote_web_urls = enabled && remote_status === "listening"
+                        ? JSON.stringify(["http://192.168.1.10:50051/"]) : "[]";
+                    return true;
+                }
+                function remote_qr_data_uri(url) {
+                    return "data:image/svg+xml;base64," + Qt.btoa(
+                        "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1 1'><rect width='1' height='1'/></svg>");
+                }
                 property string screenshot_directory: "/pictures/nagametv"
                 property string screenshot_error: ""
                 property string screenshot_format: "png"
@@ -241,6 +256,10 @@ Item {
                 backend.remote_save_error = "";
                 backend.remote_endpoints = "";
                 backend.remote_session_only = false;
+                backend.remote_web_enabled = false;
+                backend.remote_web_allowed = true;
+                backend.remote_web_urls = "[]";
+                backend.remote_watchers = 0;
                 backend.acceptRemote = true;
                 remoteRequests.clear();
                 backend.screenshot_directory = "/pictures/nagametv";
@@ -437,6 +456,7 @@ Item {
             }
             function test_remote_enter_applies_only_after_editing() {
                 keyboardPage(SettingsPanel.Remote);
+                keyClick(Qt.Key_Down); expectFocus("remoteWebEnabled");
                 keyClick(Qt.Key_Down); expectFocus("remoteAddress");
                 keyClick(Qt.Key_Down);
                 const port = expectFocus("remotePort");
@@ -573,6 +593,7 @@ Item {
                 keyClick(Qt.Key_Back); expectFocus("settingsCategory6");
                 keyboardPage(SettingsPanel.Remote);
                 expectFocus("remoteEnabled");
+                keyClick(Qt.Key_Down); expectFocus("remoteWebEnabled");
                 keyClick(Qt.Key_Down); expectFocus("remoteAddress");
                 keyClick(Qt.Key_Down); expectFocus("remotePort");
                 keyClick(Qt.Key_Down); expectFocus("applyRemote");
@@ -678,6 +699,31 @@ Item {
                 mouseClick(toggle);
                 compare(backend.remote_enabled, false);
                 compare(backend.remote_port, 50051);
+            }
+            function test_remote_web_toggle_shows_qr_codes_and_connected_remotes() {
+                selectPage(SettingsPanel.Remote);
+                backend.remote_enabled = true;
+                backend.remote_status = "listening";
+                const web = findChild(panel.contentItem, "remoteWebEnabled");
+                const codes = findChild(panel.contentItem, "remoteWebCodes");
+                verify(web.visible);
+                verify(!codes.visible);
+                web.forceActiveFocus();
+                keyClick(Qt.Key_Space);
+                compare(backend.remote_web_enabled, true);
+                compare(web.checked, true);
+                tryCompare(codes, "visible", true);
+                compare(findChild(panel.contentItem, "remoteWatchers").text, "No remotes connected.");
+                backend.remote_watchers = 2;
+                compare(findChild(panel.contentItem, "remoteWatchers").text, "2 remotes connected.");
+                keyClick(Qt.Key_Space);
+                compare(backend.remote_web_enabled, false);
+                verify(!codes.visible);
+            }
+            function test_remote_web_toggle_is_hidden_when_launch_features_forbid_it() {
+                backend.remote_web_allowed = false;
+                selectPage(SettingsPanel.Remote);
+                verify(!findChild(panel.contentItem, "remoteWebEnabled").visible);
             }
             function test_remote_invalid_edits_do_not_enable_and_reopening_discards_draft() {
                 selectPage(SettingsPanel.Remote);

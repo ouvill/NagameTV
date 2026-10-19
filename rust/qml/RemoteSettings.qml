@@ -7,7 +7,13 @@ import QtQuick.Layouts
 ColumnLayout {
     id: root
     required property var backend
-    readonly property list<Item> navigationItems: [enabledToggle, addressField, portField, applyButton]
+    readonly property list<Item> navigationItems: webToggle.visible
+        ? [enabledToggle, webToggle, addressField, portField, applyButton]
+        : [enabledToggle, addressField, portField, applyButton]
+    readonly property var webUrls: {
+        const urls = JSON.parse(backend.remote_web_urls || "[]");
+        return Array.isArray(urls) ? urls : [];
+    }
     property bool invalidInput: false
     spacing: Theme.spaceLg
     function reset() {
@@ -48,6 +54,64 @@ ColumnLayout {
         description: qsTranslate("Remote", "Allow devices on your home network to control this viewer without authentication.")
         checked: root.backend.remote_enabled
         onClicked: root.apply(checked, !checked)
+    }
+    SettingsToggle {
+        id: webToggle
+        objectName: "remoteWebEnabled"
+        Layout.fillWidth: true
+        visible: root.backend.remote_web_allowed
+        text: qsTranslate("Remote", "Phone remote in the browser (experimental)")
+        description: qsTranslate("Remote", "Scan the QR code with a phone on the same network to open a remote control page.")
+        checked: root.backend.remote_web_enabled
+        onClicked: {
+            root.backend.set_remote_web_enabled(checked);
+            checked = Qt.binding(function() { return root.backend.remote_web_enabled; });
+        }
+    }
+    Flow {
+        objectName: "remoteWebCodes"
+        Layout.fillWidth: true
+        visible: root.backend.remote_web_enabled && root.webUrls.length > 0
+        spacing: Theme.spaceLg
+        Repeater {
+            model: root.webUrls
+            delegate: ColumnLayout {
+                id: code
+                required property string modelData
+                spacing: Theme.spaceSm
+                Rectangle {
+                    // A light quiet zone keeps the code readable on the dark panel.
+                    Layout.preferredWidth: 184
+                    Layout.preferredHeight: 184
+                    color: "white"
+                    radius: Theme.controlRadius
+                    Image {
+                        anchors.fill: parent
+                        anchors.margins: 12
+                        source: root.backend.remote_qr_data_uri(code.modelData)
+                        sourceSize: Qt.size(160, 160)
+                        smooth: false
+                        fillMode: Image.PreserveAspectFit
+                        Accessible.name: qsTranslate("Remote", "QR code for %1").arg(code.modelData)
+                    }
+                }
+                Label {
+                    Layout.maximumWidth: 184
+                    text: code.modelData
+                    textFormat: Text.PlainText
+                    color: Theme.textSecondary
+                    font.pixelSize: Theme.fontControl
+                    elide: Text.ElideMiddle
+                }
+            }
+        }
+    }
+    Detail {
+        objectName: "remoteWatchers"
+        visible: root.backend.remote_status === "listening"
+        text: root.backend.remote_watchers === 0 ? qsTranslate("Remote", "No remotes connected.")
+            : root.backend.remote_watchers === 1 ? qsTranslate("Remote", "1 remote connected.")
+            : qsTranslate("Remote", "%1 remotes connected.").arg(root.backend.remote_watchers)
     }
     Detail {
         objectName: "remoteSessionOnly"
