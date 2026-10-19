@@ -16,6 +16,7 @@ fn initial() -> State {
         playback_error: String::new(),
         settings_error: String::new(),
         current_program: None,
+        transport: Default::default(),
     }
 }
 
@@ -34,6 +35,8 @@ fn session() -> Session {
                 name: "Test TV".into(),
                 label: "01".into(),
                 band: Band::Terrestrial,
+                current_program: None,
+                remote_key: Some(1),
             }],
         )
         .unwrap()
@@ -310,7 +313,12 @@ async fn queue_and_subscriber_limits_recover_after_cancellation() {
         state: projection::state(&initial(), 1),
         channels: vec![],
     }));
-    let rpc = Arc::new(rpc::Rpc::new(sender, snapshots, CancellationToken::new()));
+    let rpc = Arc::new(rpc::Rpc::new(
+        sender,
+        snapshots,
+        CancellationToken::new(),
+        Arc::new(tokio::sync::Semaphore::new(MAX_WATCHERS)),
+    ));
     let first = rpc.clone();
     let first = tokio::spawn(async move { first.stop(Request::new(proto::StopRequest {})).await });
     tokio::time::timeout(Duration::from_secs(1), async {
@@ -550,4 +558,192 @@ fn live_and_recording_transport_variants_roundtrip_without_exposing_a_path() {
         assert_eq!(decoded.playback, Some(expected));
         assert_eq!(decoded.selected_channel_id, Some(42));
     }
+}
+
+#[tokio::test]
+async fn new_commands_validate_before_queueing_and_acknowledge_execution() {
+    let mut session = session();
+    let mut client = client(&session).await;
+    macro_rules! invalid {
+        ($method:ident, $request:expr) => {
+            assert_eq!(
+                client.$method($request).await.unwrap_err().code(),
+                Code::InvalidArgument
+            );
+            assert!(session.next_request().is_none());
+        };
+    }
+    invalid!(set_paused, proto::SetPausedRequest { paused: None });
+    for delta_ms in [None, Some(i64::MIN), Some(i64::MAX)] {
+        invalid!(seek_relative, proto::SeekRelativeRequest { delta_ms });
+    }
+    for position_ms in [None, Some(u64::MAX)] {
+        invalid!(seek_to, proto::SeekToRequest { position_ms });
+    }
+    for tenths in [None, Some(4), Some(21)] {
+        invalid!(set_playback_rate, proto::SetPlaybackRateRequest { tenths });
+    }
+    for offset in [None, Some(0), Some(2)] {
+        invalid!(step_channel, proto::StepChannelRequest { offset });
+    }
+    for number in [None, Some(0), Some(13)] {
+        invalid!(
+            select_remote_key,
+            proto::SelectRemoteKeyRequest { number, band: 0 }
+        );
+    }
+    invalid!(
+        select_remote_key,
+        proto::SelectRemoteKeyRequest {
+            number: Some(1),
+            band: 99
+        }
+    );
+    for key in [0, -1, 10] {
+        invalid!(send_key, proto::SendKeyRequest { key });
+    }
+    macro_rules! accepted {
+        ($method:ident, $request:expr, $command:expr) => {{
+            let mut requester = client.clone();
+            let call = tokio::spawn(async move { requester.$method($request).await });
+            let pending = next(&mut session).await.claim().unwrap();
+            assert_eq!(pending.command(), $command);
+            assert!(!call.is_finished());
+            pending.complete(Ok(()));
+            call.await.unwrap().unwrap();
+        }};
+    }
+    accepted!(
+        set_paused,
+        proto::SetPausedRequest {
+            paused: Some(false)
+        },
+        Command::SetPaused(false)
+    );
+    accepted!(
+        seek_relative,
+        proto::SeekRelativeRequest {
+            delta_ms: Some(-10_000)
+        },
+        Command::SeekRelative(model::SeekDelta::new(-10_000).unwrap())
+    );
+    accepted!(
+        seek_to,
+        proto::SeekToRequest {
+            position_ms: Some(0)
+        },
+        Command::SeekTo(model::SeekPosition::new(0).unwrap())
+    );
+    accepted!(
+        return_to_live,
+        proto::ReturnToLiveRequest {},
+        Command::ReturnToLive
+    );
+    accepted!(
+        set_playback_rate,
+        proto::SetPlaybackRateRequest { tenths: Some(15) },
+        Command::SetPlaybackRate(model::PlaybackRate::new(15).unwrap())
+    );
+    accepted!(
+        step_channel,
+        proto::StepChannelRequest { offset: Some(-1) },
+        Command::StepChannel(model::Step::Previous)
+    );
+    accepted!(
+        previous_channel,
+        proto::PreviousChannelRequest {},
+        Command::PreviousChannel
+    );
+    accepted!(
+        select_remote_key,
+        proto::SelectRemoteKeyRequest {
+            number: Some(12),
+            band: proto::BroadcastBand::Bs as i32
+        },
+        Command::SelectRemoteKey(model::RemoteNumber::new(12).unwrap(), Some(Band::Bs))
+    );
+    for key in 1..=9 {
+        accepted!(
+            send_key,
+            proto::SendKeyRequest { key },
+            Command::SendKey(model::RemoteKey::new(key).unwrap())
+        );
+    }
+    session.stop().wait().await.unwrap();
+}
+
+#[tokio::test]
+async fn transport_program_changes_and_subscription_lifetime_are_published() {
+    let mut session = session();
+    let mut client = client(&session).await;
+    let mut stream = client
+        .watch_state(proto::WatchStateRequest {})
+        .await
+        .unwrap()
+        .into_inner();
+    let first = stream.message().await.unwrap().unwrap().state.unwrap();
+    assert_eq!(session.watchers(), 1);
+    assert_eq!(first.position_ms, None);
+    assert_eq!(first.playback_rate_tenths, 10);
+    assert!(!first.can_seek);
+    let mut state = initial();
+    state.transport = model::Transport {
+        position_ms: Some(12_000),
+        duration_ms: Some(60_000),
+        seek_range: Some((2_000, 60_000)),
+        can_seek: true,
+        can_pause: true,
+        playback_rate_tenths: 15,
+        ..Default::default()
+    };
+    let mut channels = session.channels().to_vec();
+    channels[0].current_program = Some(model::Program {
+        id: 7,
+        name: "Now".into(),
+        description: String::new(),
+        start_at_ms: 1000,
+        duration_ms: 60_000,
+    });
+    session.publish(state.clone(), Some(channels.clone()));
+    let second = stream.message().await.unwrap().unwrap().state.unwrap();
+    assert!(second.revision > first.revision);
+    assert_eq!(second.position_ms, Some(12_000));
+    assert_eq!(second.seek_start_ms, Some(2_000));
+    assert!(second.can_pause && second.can_seek);
+    assert_eq!(second.playback_rate_tenths, 15);
+    assert_eq!(
+        client
+            .list_channels(proto::ListChannelsRequest {})
+            .await
+            .unwrap()
+            .into_inner()
+            .channels[0]
+            .current_program
+            .as_ref()
+            .unwrap()
+            .name,
+        "Now"
+    );
+    channels[0].current_program = None;
+    session.publish(state, Some(channels));
+    assert!(
+        stream
+            .message()
+            .await
+            .unwrap()
+            .unwrap()
+            .state
+            .unwrap()
+            .revision
+            > second.revision
+    );
+    drop(stream);
+    tokio::time::timeout(Duration::from_secs(1), async {
+        while session.watchers() != 0 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    session.stop().wait().await.unwrap();
 }

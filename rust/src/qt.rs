@@ -76,6 +76,11 @@ pub mod ffi {
         include!("pointer_activity.h");
         #[cxx_name = "installPointerActivity"]
         unsafe fn install_pointer_activity(item: *mut QQuickItem);
+        include!("remote_key.h");
+        #[cxx_name = "supportsNavigationKey"]
+        fn supports_navigation_key(key: i32) -> bool;
+        #[cxx_name = "postNavigationKey"]
+        unsafe fn post_navigation_key(item: *mut QQuickItem, key: i32) -> bool;
         include!("back_button.h");
         #[cxx_name = "installBackButton"]
         unsafe fn install_back_button(item: *mut QQuickItem, popup_open: bool);

@@ -47,18 +47,26 @@ pub(crate) fn state(state: &model::State, revision: u64) -> proto::PlayerState {
         } as i32,
         playback_error: state.playback_error.clone(),
         settings_error: state.settings_error.clone(),
-        current_program: state.current_program.as_ref().map(|p| proto::Program {
-            id: p.id,
-            name: p.name.clone(),
-            description: p.description.clone(),
-            start_at_ms: p.start_at_ms,
-            duration_ms: p.duration_ms,
-        }),
+        current_program: state.current_program.as_ref().map(program),
+        position_ms: state.transport.position_ms,
+        duration_ms: state.transport.duration_ms,
+        seek_start_ms: state.transport.seek_range.map(|range| range.0),
+        seek_end_ms: state.transport.seek_range.map(|range| range.1),
+        playback_rate_tenths: state.transport.playback_rate_tenths,
+        can_pause: state.transport.can_pause,
+        can_seek: state.transport.can_seek,
+        can_return_to_live: state.transport.can_return_to_live,
+        can_set_rate: state.transport.can_set_rate,
+        at_live_edge: state.transport.at_live_edge,
+        can_step_channel: state.transport.can_step_channel,
+        can_previous_channel: state.transport.can_previous_channel,
     }
 }
 
 pub(crate) fn channel(channel: &model::Channel) -> proto::Channel {
     proto::Channel {
+        current_program: channel.current_program.as_ref().map(program),
+        remote_key: channel.remote_key,
         id: channel.id,
         name: channel.name.clone(),
         label: channel.label.clone(),
@@ -69,5 +77,37 @@ pub(crate) fn channel(channel: &model::Channel) -> proto::Channel {
             model::Band::Sky => proto::BroadcastBand::Sky,
             model::Band::Other => proto::BroadcastBand::Other,
         } as i32,
+    }
+}
+
+fn program(p: &model::Program) -> proto::Program {
+    proto::Program {
+        id: p.id,
+        name: p.name.clone(),
+        description: p.description.clone(),
+        start_at_ms: p.start_at_ms,
+        duration_ms: p.duration_ms,
+    }
+}
+
+pub fn command_kind(command: model::Command) -> proto::RemoteCommandKind {
+    use model::Command;
+    use proto::RemoteCommandKind as Kind;
+    match command {
+        Command::SelectChannel(_) => Kind::SelectChannel,
+        Command::Play => Kind::Play,
+        Command::Stop => Kind::Stop,
+        Command::SetVolume(_) => Kind::SetVolume,
+        Command::SetMuted(_) => Kind::SetMuted,
+        Command::SetSubtitles(_) => Kind::SetSubtitles,
+        Command::SetPaused(_) => Kind::SetPaused,
+        Command::SeekRelative(_) => Kind::SeekRelative,
+        Command::SeekTo(_) => Kind::SeekTo,
+        Command::ReturnToLive => Kind::ReturnToLive,
+        Command::SetPlaybackRate(_) => Kind::SetPlaybackRate,
+        Command::StepChannel(_) => Kind::StepChannel,
+        Command::PreviousChannel => Kind::PreviousChannel,
+        Command::SelectRemoteKey(_, _) => Kind::SelectRemoteKey,
+        Command::SendKey(_) => Kind::SendKey,
     }
 }

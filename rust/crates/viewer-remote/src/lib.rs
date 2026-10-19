@@ -2,6 +2,7 @@
 pub mod config;
 pub mod model;
 mod projection;
+pub use projection::command_kind;
 mod rpc;
 
 pub mod proto {
@@ -22,6 +23,7 @@ use tokio::{
 };
 use tokio_util::sync::CancellationToken;
 
+const MAX_WATCHERS: usize = 16;
 const QUEUE_CAPACITY: usize = 32;
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(2);
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(3);
@@ -107,7 +109,8 @@ impl Bound {
             channels: channels.iter().map(projection::channel).collect(),
         }));
         let stop = CancellationToken::new();
-        let rpc = rpc::Rpc::new(commands, snapshots, stop.clone());
+        let subscribers = Arc::new(tokio::sync::Semaphore::new(MAX_WATCHERS));
+        let rpc = rpc::Rpc::new(commands, snapshots, stop.clone(), subscribers.clone());
         let service = proto::player_service_server::PlayerServiceServer::new(rpc)
             .max_decoding_message_size(4096)
             .max_encoding_message_size(4 * 1024 * 1024);
@@ -136,6 +139,7 @@ impl Bound {
         });
         Ok(Session {
             address,
+            subscribers,
             requests,
             published,
             state,
@@ -169,6 +173,7 @@ impl Drop for Task {
 
 /// The application thread owns command consumption and snapshot publication.
 pub struct Session {
+    subscribers: Arc<tokio::sync::Semaphore>,
     address: SocketAddr,
     requests: mpsc::Receiver<Pending>,
     published: watch::Sender<Arc<Published>>,
@@ -178,6 +183,9 @@ pub struct Session {
 }
 
 impl Session {
+    pub fn watchers(&self) -> usize {
+        MAX_WATCHERS - self.subscribers.available_permits()
+    }
     pub fn address(&self) -> SocketAddr {
         self.address
     }

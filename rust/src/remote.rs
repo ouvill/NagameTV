@@ -42,6 +42,7 @@ pub struct Control {
     preferences: Preferences,
     phase: Phase,
     save_error: Option<settings::Error>,
+    observed_watchers: usize,
 }
 
 impl Control {
@@ -69,6 +70,7 @@ impl Control {
                     preferences: Preferences::transient(Settings::default()),
                     phase: Phase::Failed(error),
                     save_error: None,
+                    observed_watchers: 0,
                 }
             }
         }
@@ -83,6 +85,7 @@ impl Control {
             preferences,
             phase,
             save_error: None,
+            observed_watchers: 0,
         }
     }
     pub fn settings(&self) -> Settings {
@@ -198,7 +201,10 @@ impl Control {
                 phase
             }
         };
-        self.status() != before
+        let watchers = self.session().map_or(0, Session::watchers);
+        let changed = watchers != self.observed_watchers;
+        self.observed_watchers = watchers;
+        self.status() != before || changed
     }
     pub fn needs_start(&self) -> bool {
         matches!(self.phase, Phase::Ready)

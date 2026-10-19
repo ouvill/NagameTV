@@ -113,6 +113,7 @@ pub mod ffi {
         #[qproperty(QString, language, READ, NOTIFY)]
         #[qproperty(QString, ui_language, READ, NOTIFY)]
         #[qproperty(bool, autoplay, READ = autoplay, NOTIFY)]
+        #[qproperty(i32, remote_watchers, READ = remote_watchers, NOTIFY)]
         #[qproperty(bool, remote_enabled, READ = remote_enabled, NOTIFY)]
         #[qproperty(QString, remote_address, READ = remote_address, NOTIFY)]
         #[qproperty(i32, remote_port, READ = remote_port, NOTIFY)]
@@ -334,6 +335,11 @@ pub mod ffi {
         fn selected(self: &Player) -> i32;
         fn build_info(self: &Player) -> QString;
         fn autoplay(self: &Player) -> bool;
+        #[qsignal]
+        fn remote_key_requested(self: Pin<&mut Player>, key: i32);
+        #[qsignal]
+        fn remote_command_executed(self: Pin<&mut Player>, kind: i32);
+        fn remote_watchers(self: &Player) -> i32;
         fn remote_enabled(self: &Player) -> bool;
         fn remote_address(self: &Player) -> QString;
         fn remote_port(self: &Player) -> i32;

@@ -33,6 +33,12 @@ SET_PLAYBACK_RATE=11、STEP_CHANNEL=12、PREVIOUS_CHANNEL=13、SELECT_REMOTE_KEY
 0は未指定で、Rustは通知しない。失敗・取消し・期限切れの操作も通知しない。
 `SendKey` の成功はQMLへのシグナル通知を意味し、画面の遷移やキー処理の完了は保証しない。
 
+`ShortcutKey.post_key(item: QQuickItem*, key: int) -> bool` はQtの
+Up/Down/Left/Right/Return/Backを受け付け、itemのwindowへpress/releaseを投稿する。
+protoのRemoteKeyはQMLでQt.Key_*に変換する。修飾キーとautoRepeatは付けず、
+ウィンドウをアクティブにする要求も行わない。未対応キーとwindow不在はfalse。
+trueはイベント投稿の成功であり、フォーカス先の処理完了を意味しない。
+
 ## RPCと状態
 
 `SetPaused(paused)`、`SeekRelative(delta_ms)`、`SeekTo(position_ms)`、`ReturnToLive()`、
