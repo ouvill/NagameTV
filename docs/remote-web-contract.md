@@ -39,6 +39,10 @@ Up/Down/Left/Right/Return/Backを受け付け、itemのwindowへpress/releaseを
 protoのRemoteKeyはQMLでQt.Key_*に変換する。修飾キーとautoRepeatは付けず、
 ウィンドウをアクティブにする要求も行わない。未対応キーとwindow不在はfalse。
 trueはイベント投稿の成功であり、フォーカス先の処理完了を意味しない。
+専用Xwayland上のQt 6で確認したところ、非アクティブwindowには投稿できても
+Keysへのpress/releaseは届かなかった。アクティブなwindowでは通常のフォーカス処理と
+ViewerBackButtonによるBack変換を確認した。フォーカスを奪う処理は追加していない。
+この挙動は `python3 scripts/test.py remote-keys` で検証する。
 
 ## RPCと状態
 

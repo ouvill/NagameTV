@@ -15,6 +15,7 @@ TestCase {
     Component {
         id: targetWindow
         Window {
+            id: windowRoot
             width: 320
             height: 200
             visible: true
@@ -26,19 +27,19 @@ TestCase {
                 anchors.fill: parent
                 focus: true
                 Keys.onPressed: event => {
-                    parent.presses = parent.presses.concat([event.key]);
+                    windowRoot.presses = windowRoot.presses.concat([event.key]);
                     tests.compare(event.modifiers, Qt.NoModifier);
                     tests.verify(!event.isAutoRepeat);
                     event.accepted = true;
                 }
                 Keys.onReleased: event => {
-                    parent.releases = parent.releases.concat([event.key]);
+                    windowRoot.releases = windowRoot.releases.concat([event.key]);
                     event.accepted = true;
                 }
             }
         }
     }
-    function window() {
+    function makeWindow() {
         const result = createTemporaryObject(targetWindow, null);
         verify(result !== null);
         result.requestActivate();
@@ -48,7 +49,7 @@ TestCase {
         return result;
     }
     function test_supported_keys_use_focus_and_back_filter() {
-        const target = window();
+        const target = makeWindow();
         const expected = [Qt.Key_Up, Qt.Key_Down, Qt.Key_Left, Qt.Key_Right, Qt.Key_Return];
         for (const key of expected) verify(keys.post_key(target.target, key));
         tryVerify(() => target.presses.length === expected.length);
@@ -62,7 +63,7 @@ TestCase {
         compare(target.releases[expected.length], Qt.Key_Escape);
     }
     function test_rejects_unsupported_and_missing_window() {
-        const target = window();
+        const target = makeWindow();
         verify(!keys.post_key(target.target, Qt.Key_A));
         verify(!keys.post_key(null, Qt.Key_Up));
         const item = createTemporaryObject(detachedItem, null);
@@ -71,8 +72,8 @@ TestCase {
         compare(target.presses.length, 0);
     }
     function test_inactive_window_does_not_steal_activation() {
-        const target = window();
-        const foreground = window();
+        const target = makeWindow();
+        const foreground = makeWindow();
         tryCompare(target, "active", false);
         verify(keys.post_key(target.target, Qt.Key_Up));
         verify(keys.post_key(target.target, Qt.Key_Return));

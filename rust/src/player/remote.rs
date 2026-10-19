@@ -136,7 +136,7 @@ impl PlayerRust {
                 playback_rate_tenths: self.speed.applied.tenths(),
                 can_pause,
                 can_seek,
-                can_return_to_live: can_pause && timeshift,
+                can_return_to_live: can_pause && timeshift && self.timeline.range.is_some(),
                 can_set_rate: can_pause
                     && self.speed.availability == crate::playback::speed::Availability::Variable,
                 at_live_edge: match self.stream_state {
@@ -287,13 +287,9 @@ impl ffi::Player {
             if result.is_ok() {
                 self.as_mut()
                     .remote_command_executed(viewer_remote::command_kind(command) as i32);
-            } else if let Err(error) = &result {
-                tracing::warn!(
-                    ?command,
-                    error = error as &dyn std::error::Error,
-                    "Remote command failed"
-                );
             }
+            // Native operation handlers already log their failures; logging again
+            // here would duplicate them when forwarding the status to the caller.
             // Publish before replying so a following GetState includes this operation.
             self.as_mut().publish_remote();
             request.complete(result);

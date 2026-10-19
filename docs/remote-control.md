@@ -226,6 +226,21 @@ APIを含む比較元コミットができたら、
 `buf breaking --against '.git#ref=比較元コミット'` でスキーマ互換性を検査する。
 意味上の互換性はprotoコメントと操作テストで維持する。
 
+### Webリモコン拡張の検証（2026-10-19）
+
+- viewer-remoteの通信・状態試験16件成功。新RPCの入力検証と実行応答、Host/authorityの
+  許可・拒否、Web OFFの404、ONのHTML・assets・MIME・キャッシュ、購読数を確認した。
+- 本体Rust試験531件成功（既定の12件skip）。connectionでは実Playerでキーと成功通知、
+  新操作の未準備時の拒否、WebのOFF/ON切り替え、保存復元、QR SVGを確認した。
+- desktop-media、startup、CLI試験成功。専用GUI環境の資源検証後に実行し、
+  Main.qmlの起動・設定・録画・ライブ操作を確認した。通信試験の接続先はloopbackのみ。
+- remote-keysのGUI試験5件成功。アクティブ時のフォーカス配送とBack変換を確認した。
+  非アクティブ時は投稿できてもKeysへ届かなかった。フォーカスは奪わない。
+  [キー配送の契約](remote-web-contract.md)を参照。
+- 通常構成・Qtテスト構成・viewer-remoteのClippyと書式検査が成功。
+- Buf format/lint、生成、基準 `8d3d1ba` へのbreaking検査とFlatpak依存一覧の整合検査成功。
+  実スマホでのQR読み取り、家庭内LANの到達性、Flatpakパッケージの再生成は未確認。
+
 ### 検証記録（2026-09-15）
 
 - 通信crateの8試験成功。認証情報なしのgRPCとHTTP/1.1のバイナリーgRPC-Web、入力検証、

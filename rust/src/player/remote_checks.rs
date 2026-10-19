@@ -337,8 +337,10 @@ fn check_web_settings_and_qr() -> Result<(), Box<dyn std::error::Error>> {
             .pin_mut()
             .configure_remote(true, "127.0.0.1".into(), address.port().into())
     );
+    assert_eq!(remote_http_status(address)?, 404);
     assert!(player.pin_mut().set_remote_web_enabled(true));
     wait_for(&mut player, "listening");
+    assert_eq!(remote_http_status(address)?, 200);
     let expected = format!("http://{address}/");
     let urls: Vec<String> = serde_json::from_str(&player.remote_web_urls().to_string())?;
     assert_eq!(urls, vec![expected.clone()]);
@@ -358,6 +360,12 @@ fn check_web_settings_and_qr() -> Result<(), Box<dyn std::error::Error>> {
             .is_empty()
     );
     assert!(Preferences::open(path.clone())?.current().web_enabled());
+    assert!(player.pin_mut().set_remote_web_enabled(false));
+    wait_for(&mut player, "listening");
+    assert_eq!(remote_http_status(address)?, 404);
+    assert!(player.pin_mut().set_remote_web_enabled(true));
+    wait_for(&mut player, "listening");
+    assert_eq!(remote_http_status(address)?, 200);
     assert!(
         player
             .pin_mut()
@@ -374,4 +382,21 @@ fn check_web_settings_and_qr() -> Result<(), Box<dyn std::error::Error>> {
     assert!(!Preferences::open(path)?.current().web_enabled());
     assert!(player.pin_mut().shutdown());
     Ok(())
+}
+
+fn remote_http_status(address: std::net::SocketAddr) -> Result<u16, Box<dyn std::error::Error>> {
+    use std::io::{BufRead, Write};
+    let mut stream = std::net::TcpStream::connect(address)?;
+    stream.set_read_timeout(Some(Duration::from_secs(2)))?;
+    write!(
+        stream,
+        "GET / HTTP/1.1\r\nHost: {address}\r\nConnection: close\r\n\r\n"
+    )?;
+    let mut status = String::new();
+    std::io::BufReader::new(stream).read_line(&mut status)?;
+    Ok(status
+        .split_whitespace()
+        .nth(1)
+        .ok_or("missing HTTP status")?
+        .parse()?)
 }
