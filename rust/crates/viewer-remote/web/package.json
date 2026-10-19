@@ -4,7 +4,8 @@
   "type": "module",
   "scripts": {
     "generate": "buf generate ../proto --template buf.gen.yaml",
-    "check": "tsc --noEmit",
+    "check": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
+    "test": "node test.mjs",
     "build": "node build.mjs"
   },
   "dependencies": {
@@ -16,6 +17,7 @@
     "@bufbuild/buf": "1.73.0",
     "@bufbuild/protoc-gen-es": "2.16.0",
     "esbuild": "0.28.2",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "@types/node": "22.18.1"
   }
 }

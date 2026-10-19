@@ -100,4 +100,3 @@ const en: Strings = {
 
 export const locale = navigator.language.toLowerCase().startsWith("ja") ? "ja" : "en";
 export const t: Strings = locale === "ja" ? ja : en;
-document.documentElement.lang = locale;

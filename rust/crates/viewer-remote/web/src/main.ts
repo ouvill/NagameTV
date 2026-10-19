@@ -1,20 +1,35 @@
 import "./style.css";
 import { client, refreshChannels, run, watch } from "./api";
 import { el, icon, tap } from "./dom";
-import { t } from "./i18n";
+import { locale, t } from "./i18n";
 import {
-  BroadcastBand,
-  RemoteKey,
-  SubtitleDisplay,
-  type Channel,
-  type PlayerState,
-} from "./gen/viewer/v1/player_pb";
+  activeChannelId,
+  bands,
+  clock,
+  controls,
+  isRunning,
+  primaryAction,
+  programLine,
+  progress,
+  remoteKeyChannel,
+  seekBar,
+  steppedRate,
+  view,
+  wallClock,
+  type Primary,
+  type Status,
+} from "./model";
+import { BroadcastBand, RemoteKey, type Channel, type PlayerState } from "./gen/viewer/v1/player_pb";
+
+document.documentElement.lang = locale;
 
 let state: PlayerState | undefined;
 let channels: Channel[] = [];
 let stateReceivedAt = 0;
 let numberBand = BroadcastBand.UNSPECIFIED;
 let channelFilter: BroadcastBand | "all" = "all";
+
+const elapsed = () => Date.now() - stateReceivedAt;
 
 // ---- feedback ------------------------------------------------------------
 
@@ -46,86 +61,26 @@ function button(
   );
 }
 
-// ---- playback model ------------------------------------------------------
+// ---- labels --------------------------------------------------------------
 
-type View = { status: string; badge: "live" | "muted" | "warn" | "none"; channelId?: bigint; file?: string };
+const STATUS_TEXT: Record<Status, string> = {
+  stopped: t.stopped,
+  connecting: t.streamConnecting,
+  live: t.live,
+  timeshift: t.timeshift,
+  paused: t.paused,
+  seeking: t.seeking,
+  ended: t.ended,
+  stopFailed: t.stopFailed,
+  recording: t.recording,
+};
 
-function view(s: PlayerState): View {
-  const p = s.playback;
-  switch (p.case) {
-    case "connecting":
-      return { status: t.streamConnecting, badge: "muted", channelId: p.value.channelId };
-    case "playing":
-      return {
-        status: s.atLiveEdge ? t.live : t.timeshift,
-        badge: s.atLiveEdge ? "live" : "muted",
-        channelId: p.value.channelId,
-      };
-    case "paused":
-      return { status: t.paused, badge: "muted", channelId: p.value.channelId };
-    case "seeking":
-    case "seekingPaused":
-      return { status: t.seeking, badge: "muted", channelId: p.value.channelId };
-    case "ended":
-      return { status: t.ended, badge: "muted", channelId: p.value.channelId };
-    case "stopFailed":
-      return { status: t.stopFailed, badge: "warn", channelId: p.value.channelId };
-    case "fileConnecting":
-      return { status: t.streamConnecting, badge: "muted", file: p.value.name };
-    case "filePlaying":
-      return { status: t.recording, badge: "muted", file: p.value.name };
-    case "filePaused":
-      return { status: t.paused, badge: "muted", file: p.value.name };
-    case "fileSeeking":
-    case "fileSeekingPaused":
-      return { status: t.seeking, badge: "muted", file: p.value.name };
-    case "fileEnded":
-      return { status: t.ended, badge: "muted", file: p.value.name };
-    case "fileStopFailed":
-      return { status: t.stopFailed, badge: "warn", file: p.value.name };
-    default:
-      return { status: t.stopped, badge: "none" };
-  }
-}
-
-function isPaused(s: PlayerState): boolean {
-  const c = s.playback.case;
-  return c === "paused" || c === "seekingPaused" || c === "filePaused" || c === "fileSeekingPaused";
-}
-
-function isRunning(s: PlayerState): boolean {
-  const c = s.playback.case;
-  return c === "playing" || c === "seeking" || c === "filePlaying" || c === "fileSeeking";
-}
-
-function isIdle(s: PlayerState): boolean {
-  const c = s.playback.case;
-  return c === undefined || c === "stopped" || c === "ended" || c === "fileEnded"
-    || c === "stopFailed" || c === "fileStopFailed";
-}
-
-/// Advances the last published position locally between state updates.
-function currentPosition(s: PlayerState): number | undefined {
-  if (s.positionMs === undefined) return undefined;
-  const base = Number(s.positionMs);
-  if (!isRunning(s)) return base;
-  const elapsed = (Date.now() - stateReceivedAt) * (s.playbackRateTenths / 10);
-  const end = s.seekEndMs ?? s.durationMs;
-  return end === undefined ? base + elapsed : Math.min(base + elapsed, Number(end));
-}
-
-function clock(ms: number): string {
-  const total = Math.max(0, Math.floor(ms / 1000));
-  const h = Math.floor(total / 3600);
-  const m = Math.floor((total % 3600) / 60);
-  const sec = String(total % 60).padStart(2, "0");
-  return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${sec}` : `${m}:${sec}`;
-}
-
-function wallClock(ms: number): string {
-  const d = new Date(ms);
-  return `${d.getHours()}:${String(d.getMinutes()).padStart(2, "0")}`;
-}
+const PRIMARY: Record<Primary, { icon: string; label: string }> = {
+  play: { icon: "play", label: t.play },
+  resume: { icon: "play", label: t.play },
+  pause: { icon: "pause", label: t.pause },
+  stop: { icon: "stop", label: t.stop },
+};
 
 function bandName(band: BroadcastBand): string {
   switch (band) {
@@ -140,7 +95,7 @@ function channelById(id: bigint | undefined): Channel | undefined {
   return id === undefined ? undefined : channels.find((channel) => channel.id === id);
 }
 
-// ---- layout --------------------------------------------------------------
+// ---- now playing ---------------------------------------------------------
 
 const connection = el("div", { class: "connection", role: "status" }, t.connecting);
 
@@ -148,7 +103,8 @@ const nowBadge = el("span", { class: "badge" });
 const nowChannel = el("span", { class: "now-channel" });
 const nowTitle = el("h1", { class: "now-title" });
 const nowMeta = el("p", { class: "now-meta" });
-const nowProgress = el("div", { class: "progress" }, el("div", { class: "progress-fill" }));
+const nowFill = el("div", { class: "progress-fill" });
+const nowProgress = el("div", { class: "progress" }, nowFill);
 const nowError = el("p", { class: "now-error" });
 const nowCard = el(
   "section",
@@ -159,6 +115,8 @@ const nowCard = el(
   nowProgress,
   nowError,
 );
+
+// ---- transport -----------------------------------------------------------
 
 const seekInput = el("input", {
   type: "range", class: "slider", min: "0", max: "1", step: "1000", "aria-label": t.seek,
@@ -173,22 +131,20 @@ seekInput.addEventListener("input", () => {
   seekStart.textContent = clock(Number(seekInput.value) - Number(seekInput.min));
 });
 seekInput.addEventListener("change", () => {
-  const position = BigInt(Math.round(Number(seekInput.value)));
+  const positionMs = BigInt(Math.round(Number(seekInput.value)));
   seeking = false;
-  command(() => client.seekTo({ positionMs: position }));
+  command(() => client.seekTo({ positionMs }));
 });
 
 const stopButton = button(t.stop, "stop", () => command(() => client.stop({})), { class: "ghost" });
 const back10 = button(t.back10, "back10", () => command(() => client.seekRelative({ deltaMs: -10_000n })));
 const playButton = button(t.play, "play", () => {
   if (!state) return;
-  if (state.canPause && !isIdle(state)) {
-    const paused = !isPaused(state);
-    command(() => client.setPaused({ paused }));
-  } else if (isIdle(state)) {
-    command(() => client.play({}));
-  } else {
-    command(() => client.stop({}));
+  switch (primaryAction(state)) {
+    case "play": return command(() => client.play({}));
+    case "pause": return command(() => client.setPaused({ paused: true }));
+    case "resume": return command(() => client.setPaused({ paused: false }));
+    case "stop": return command(() => client.stop({}));
   }
 }, { class: "primary large" });
 const forward10 = button(t.forward10, "forward10", () => command(() => client.seekRelative({ deltaMs: 10_000n })));
@@ -198,13 +154,12 @@ const liveButton = button(t.toLive, "live", () => command(() => client.returnToL
 const transport = el("div", { class: "transport" }, stopButton, back10, playButton, forward10, liveButton);
 
 const rateValue = el("span", { class: "rate-value" });
+function changeRate(step: number): void {
+  const tenths = state && steppedRate(state.playbackRateTenths, step);
+  if (tenths !== undefined) command(() => client.setPlaybackRate({ tenths }));
+}
 const rateDown = button(`${t.speed} −`, "left", () => changeRate(-1), { class: "small" });
 const rateUp = button(`${t.speed} +`, "right", () => changeRate(1), { class: "small" });
-function changeRate(step: number): void {
-  if (!state) return;
-  const tenths = Math.min(20, Math.max(5, state.playbackRateTenths + step));
-  if (tenths !== state.playbackRateTenths) command(() => client.setPlaybackRate({ tenths }));
-}
 const rateRow = el("div", { class: "rate" }, el("span", { class: "label" }, t.speed), rateDown, rateValue, rateUp);
 
 const muteButton = button(t.mute, "volume", () => {
@@ -242,7 +197,7 @@ volumeInput.addEventListener("change", () => {
 });
 const subtitlesButton = button(t.subtitles, "subtitles", () => {
   if (state) {
-    const visible = state.subtitles !== SubtitleDisplay.VISIBLE;
+    const visible = !controls(state).subtitlesOn;
     command(() => client.setSubtitles({ visible }));
   }
 }, { class: "small toggle" });
@@ -250,7 +205,7 @@ const audioRow = el("div", { class: "audio" }, muteButton, volumeInput, volumeVa
 
 const controlsCard = el("section", { class: "card controls" }, seekRow, transport, rateRow, audioRow);
 
-// Remote tab
+// ---- remote tab ----------------------------------------------------------
 
 function key(k: RemoteKey): () => void {
   return () => command(() => client.sendKey({ key: k }));
@@ -312,22 +267,19 @@ for (let n = 1; n <= 12; n++) {
   numberPad.append(b);
 }
 
-function selectedBand(): BroadcastBand {
-  const s = state;
-  const id = s?.selectedChannelId ?? (s ? view(s).channelId : undefined);
-  return channelById(id)?.band ?? BroadcastBand.TERRESTRIAL;
-}
-
+/// The chosen band, or the watched station's band until one is chosen.
 function effectiveBand(): BroadcastBand {
-  return numberBand === BroadcastBand.UNSPECIFIED ? selectedBand() : numberBand;
+  if (numberBand !== BroadcastBand.UNSPECIFIED) return numberBand;
+  return channelById(state && activeChannelId(state))?.band ?? BroadcastBand.TERRESTRIAL;
 }
 
 function renderNumberPad(): void {
   const band = effectiveBand();
   for (const [b, node] of bandButtons) node.setAttribute("aria-pressed", String(b === band));
   numberButtons.forEach((node, index) => {
-    const channel = channels.find((c) => c.band === band && c.remoteKey === index + 1);
+    const channel = remoteKeyChannel(channels, band, index + 1);
     node.title = channel?.name ?? "";
+    // Before the catalog arrives, let the viewer decide instead of disabling every key.
     node.disabled = channels.length > 0 && !channel;
   });
 }
@@ -339,7 +291,7 @@ const remotePanel = el(
   el("div", { class: "card" }, channelRow, bandRow, numberPad),
 );
 
-// Channels tab
+// ---- channels tab --------------------------------------------------------
 
 const filterRow = el("div", { class: "segmented filters", role: "group" });
 const channelList = el("ul", { class: "channel-list" });
@@ -350,11 +302,48 @@ const channelsPanel = el(
   channelList,
 );
 
+function channelItem(channel: Channel, active: bigint | undefined, now: number): HTMLLIElement {
+  const program = channel.currentProgram;
+  const start = program ? Number(program.startAtMs) : 0;
+  const end = program ? start + Number(program.durationMs) : 0;
+  return el(
+    "li",
+    {},
+    el(
+      "button",
+      {
+        type: "button",
+        class: "channel",
+        "aria-current": channel.id === active ? "true" : undefined,
+        onClick: () => command(() => client.selectChannel({ channelId: channel.id })),
+      },
+      el("span", { class: "channel-key" }, channel.remoteKey ? String(channel.remoteKey) : "–"),
+      el(
+        "span",
+        { class: "channel-body" },
+        el("span", { class: "channel-name" }, channel.name),
+        el("span", { class: "channel-program" }, program?.name || t.noProgram),
+        program
+          ? el(
+              "span",
+              { class: "progress thin" },
+              el("span", {
+                class: "progress-fill",
+                style: `width:${(progress(start, end, now) * 100).toFixed(1)}%`,
+              }),
+            )
+          : null,
+      ),
+      program ? el("span", { class: "channel-time" }, `${wallClock(start)}–${wallClock(end)}`) : null,
+    ),
+  );
+}
+
 function renderChannels(): void {
-  const bands = [...new Set(channels.map((c) => c.band))].sort((a, b) => a - b);
-  if (channelFilter !== "all" && !bands.includes(channelFilter)) channelFilter = "all";
+  const present = bands(channels);
+  if (channelFilter !== "all" && !present.includes(channelFilter)) channelFilter = "all";
   filterRow.replaceChildren(
-    ...(["all", ...bands] as const).map((band) =>
+    ...(["all", ...present] as const).map((band) =>
       el("button", {
         type: "button",
         class: "segment",
@@ -366,52 +355,17 @@ function renderChannels(): void {
       }, band === "all" ? t.all : bandName(band)),
     ),
   );
-  const active = state ? view(state).channelId ?? state.selectedChannelId : undefined;
   const visible = channels.filter((c) => channelFilter === "all" || c.band === channelFilter);
   if (visible.length === 0) {
     channelList.replaceChildren(el("li", { class: "empty" }, t.noChannels));
     return;
   }
+  const active = state && activeChannelId(state);
   const now = Date.now();
-  channelList.replaceChildren(
-    ...visible.map((channel) => {
-      const program = channel.currentProgram;
-      const start = program ? Number(program.startAtMs) : 0;
-      const end = program ? start + Number(program.durationMs) : 0;
-      const progress = program && end > start ? Math.min(1, Math.max(0, (now - start) / (end - start))) : 0;
-      return el(
-        "li",
-        {},
-        el(
-          "button",
-          {
-            type: "button",
-            class: "channel",
-            "aria-current": channel.id === active ? "true" : undefined,
-            onClick: () => command(() => client.selectChannel({ channelId: channel.id })),
-          },
-          el("span", { class: "channel-key" }, channel.remoteKey ? String(channel.remoteKey) : "–"),
-          el(
-            "span",
-            { class: "channel-body" },
-            el("span", { class: "channel-name" }, channel.name),
-            el("span", { class: "channel-program" }, program?.name || t.noProgram),
-            program
-              ? el(
-                  "span",
-                  { class: "progress thin" },
-                  el("span", { class: "progress-fill", style: `width:${(progress * 100).toFixed(1)}%` }),
-                )
-              : null,
-          ),
-          program ? el("span", { class: "channel-time" }, `${wallClock(start)}–${wallClock(end)}`) : null,
-        ),
-      );
-    }),
-  );
+  channelList.replaceChildren(...visible.map((channel) => channelItem(channel, active, now)));
 }
 
-// Tabs
+// ---- tabs ----------------------------------------------------------------
 
 const tabs = [
   { id: "remote", label: t.tabRemote, panel: remotePanel },
@@ -451,24 +405,17 @@ function setIcon(target: HTMLButtonElement, name: string, label: string): void {
 
 function renderNow(s: PlayerState): void {
   const v = view(s);
-  const channel = channelById(v.channelId ?? s.selectedChannelId);
-  nowBadge.textContent = v.status;
+  const channel = channelById(activeChannelId(s));
+  nowBadge.textContent = STATUS_TEXT[v.status];
   nowBadge.dataset.kind = v.badge;
   nowChannel.textContent = v.file ? t.recording : channel ? `${bandName(channel.band)} · ${channel.name}` : "";
-  const program = s.currentProgram;
-  nowTitle.textContent = v.file ?? program?.name ?? channel?.name ?? t.stopped;
-  const fill = nowProgress.firstElementChild as HTMLElement;
-  if (program && !v.file) {
-    const start = Number(program.startAtMs);
-    const end = start + Number(program.durationMs);
-    nowMeta.textContent = `${wallClock(start)}–${wallClock(end)}`;
-    const ratio = end > start ? (Date.now() - start) / (end - start) : 0;
-    fill.style.width = `${(Math.min(1, Math.max(0, ratio)) * 100).toFixed(1)}%`;
-    nowProgress.hidden = false;
-  } else {
-    // Timeshifted sessions omit the program by design, so do not call it missing.
-    nowMeta.textContent = !program && !v.file && channel && !s.canSeek ? t.noProgram : "";
-    nowProgress.hidden = true;
+  nowTitle.textContent = v.file ?? s.currentProgram?.name ?? channel?.name ?? t.stopped;
+  const line = programLine(s, channel !== undefined);
+  nowMeta.textContent = line.kind === "times" ? `${wallClock(line.startMs)}–${wallClock(line.endMs)}`
+    : line.kind === "missing" ? t.noProgram : "";
+  nowProgress.hidden = line.kind !== "times";
+  if (line.kind === "times") {
+    nowFill.style.width = `${(progress(line.startMs, line.endMs, Date.now()) * 100).toFixed(1)}%`;
   }
   const error = s.playbackError || s.settingsError;
   nowError.textContent = error;
@@ -476,42 +423,28 @@ function renderNow(s: PlayerState): void {
 }
 
 function renderSeek(s: PlayerState): void {
-  const available = s.canSeek && s.seekStartMs !== undefined && s.seekEndMs !== undefined;
-  seekRow.hidden = !available;
-  if (!available || seeking) return;
-  const start = Number(s.seekStartMs);
-  const end = Number(s.seekEndMs);
-  const position = currentPosition(s) ?? start;
-  seekInput.min = String(start);
-  seekInput.max = String(Math.max(end, start + 1));
-  seekInput.value = String(position);
-  const live = s.playback.case === "playing" || s.playback.case === "paused"
-    || s.playback.case === "seeking" || s.playback.case === "seekingPaused";
-  if (live) {
-    // Live timelines have no meaningful origin; show how far behind the edge we are.
-    seekStart.textContent = s.atLiveEdge ? t.live : `−${clock(end - position)}`;
-    seekEnd.textContent = clock(end - start);
-  } else {
-    seekStart.textContent = clock(position - start);
-    seekEnd.textContent = clock((s.durationMs !== undefined ? Number(s.durationMs) : end) - start);
-  }
+  const bar = seekBar(s, elapsed());
+  seekRow.hidden = bar === undefined;
+  if (!bar || seeking) return;
+  seekInput.min = String(bar.min);
+  seekInput.max = String(bar.max);
+  seekInput.value = String(bar.value);
+  seekStart.textContent = bar.start.kind === "live" ? t.live
+    : bar.start.kind === "behind" ? `−${clock(bar.start.ms)}` : clock(bar.start.ms);
+  seekEnd.textContent = clock(bar.totalMs);
 }
 
 function renderControls(s: PlayerState): void {
-  const idle = isIdle(s);
-  const paused = isPaused(s);
-  if (idle) setIcon(playButton, "play", t.play);
-  else if (s.canPause) setIcon(playButton, paused ? "play" : "pause", paused ? t.play : t.pause);
-  else setIcon(playButton, "stop", t.stop);
-  playButton.disabled = idle && s.selectedChannelId === undefined && view(s).file === undefined;
-  // Without pause the main button already stops, so a second stop would be redundant.
-  stopButton.hidden = idle || !s.canPause;
-  back10.hidden = forward10.hidden = !s.canSeek;
-  liveButton.hidden = !s.canReturnToLive;
-  rateRow.hidden = !s.canSetRate;
+  const c = controls(s);
+  setIcon(playButton, PRIMARY[c.primary].icon, PRIMARY[c.primary].label);
+  playButton.disabled = c.primaryDisabled;
+  stopButton.hidden = c.stopHidden;
+  back10.hidden = forward10.hidden = c.skipHidden;
+  liveButton.hidden = c.liveHidden;
+  rateRow.hidden = c.rateHidden;
   rateValue.textContent = `${(s.playbackRateTenths / 10).toFixed(1)}×`;
-  rateDown.disabled = s.playbackRateTenths <= 5;
-  rateUp.disabled = s.playbackRateTenths >= 20;
+  rateDown.disabled = c.rateDownDisabled;
+  rateUp.disabled = c.rateUpDisabled;
   setIcon(muteButton, s.muted ? "muted" : "volume", s.muted ? t.unmute : t.mute);
   muteButton.setAttribute("aria-pressed", String(s.muted));
   if (!volumeDragging) {
@@ -520,10 +453,10 @@ function renderControls(s: PlayerState): void {
     volumeValue.textContent = String(percent);
   }
   volumeInput.classList.toggle("dimmed", s.muted);
-  subtitlesButton.disabled = s.subtitles === SubtitleDisplay.DISABLED || s.subtitles === SubtitleDisplay.UNSPECIFIED;
-  subtitlesButton.setAttribute("aria-pressed", String(s.subtitles === SubtitleDisplay.VISIBLE));
-  channelUp.disabled = channelDown.disabled = !s.canStepChannel;
-  lastChannel.disabled = !s.canPreviousChannel;
+  subtitlesButton.disabled = c.subtitlesDisabled;
+  subtitlesButton.setAttribute("aria-pressed", String(c.subtitlesOn));
+  channelUp.disabled = channelDown.disabled = c.stepDisabled;
+  lastChannel.disabled = c.lastDisabled;
 }
 
 function render(): void {
@@ -544,11 +477,10 @@ setInterval(() => {
 
 void watch({
   state(next) {
-    const before = state ? view(state).channelId ?? state.selectedChannelId : undefined;
+    const before = state && activeChannelId(state);
     state = next;
-    if ((view(next).channelId ?? next.selectedChannelId) !== before) renderChannels();
     stateReceivedAt = Date.now();
-    document.body.classList.remove("offline");
+    if (activeChannelId(next) !== before) renderChannels();
     render();
   },
   channels(next) {

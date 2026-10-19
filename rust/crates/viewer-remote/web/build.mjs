@@ -1,10 +1,13 @@
 // Bundles the remote page into dist/, which is committed and embedded by Rust.
+// `--out DIR` writes elsewhere so a check can compare the result with dist/.
 import * as esbuild from "esbuild";
 import { readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { parseArgs } from "node:util";
 
 const root = path.dirname(new URL(import.meta.url).pathname);
-const dist = path.join(root, "dist");
+const { values } = parseArgs({ options: { out: { type: "string" } } });
+const dist = path.resolve(values.out ?? path.join(root, "dist"));
 await rm(dist, { recursive: true, force: true });
 
 const result = await esbuild.build({
@@ -14,7 +17,7 @@ const result = await esbuild.build({
   minify: true,
   format: "esm",
   target: ["es2022", "safari16"],
-  outdir: "dist/assets",
+  outdir: path.join(dist, "assets"),
   entryNames: "app-[hash]",
   legalComments: "none",
   metafile: true,
@@ -28,4 +31,4 @@ const html = (await readFile(path.join(root, "index.html"), "utf8"))
   .replace("%SCRIPT%", `assets/${script}`)
   .replace("%STYLE%", `assets/${style}`);
 await writeFile(path.join(dist, "index.html"), html);
-console.log(`dist/index.html, ${outputs.map((file) => `dist/assets/${file}`).join(", ")}`);
+console.log(`${dist}: index.html, ${outputs.map((file) => `assets/${file}`).join(", ")}`);
