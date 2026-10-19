@@ -189,6 +189,7 @@ Webの実行中の切り替えでは旧Sessionと購読を終了してから受�
 
 ソースは [`rust/crates/viewer-remote/web/`](../rust/crates/viewer-remote/web/)。
 TypeScriptとprotobuf-esの生成コードをesbuildでまとめ、`dist/` をコミットする。
+表示の判定は `src/model.ts` の純粋な関数に置き、`main.ts` はDOMへの反映だけを持つ。
 アプリのビルドはこの `dist/` を埋め込むので、Nodeは画面を変更するときだけ必要。
 proto変更後も生成し直す。
 
@@ -196,7 +197,8 @@ proto変更後も生成し直す。
 cd rust/crates/viewer-remote/web
 npm ci
 npm run generate   # protoからsrc/gen/を生成
-npm run check      # 型検査
+npm run check      # 型検査（画面と試験）
+npm test           # 表示判定（src/model.ts）の単体試験
 npm run build      # dist/を再生成
 ```
 
