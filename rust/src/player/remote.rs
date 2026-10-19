@@ -554,3 +554,60 @@ fn same_program(
         _ => false,
     }
 }
+
+mod enum_contract {
+    use super::ffi;
+    use viewer_remote::proto;
+
+    macro_rules! wire_contract {
+        ($test:ident, $kind:ident { $($wire:ident => $qml:ident),+ $(,)? }) => {
+            // QML-only constants otherwise look unused to Rust. Check their wire
+            // values in every build instead of suppressing dead-code diagnostics.
+            const _: () = {
+                $(assert!(ffi::$kind::$qml.repr == proto::$kind::$wire as i32,
+                          stringify!($qml));)+
+            };
+
+            #[test]
+            fn $test() {
+                let qml_value = |wire: proto::$kind| match wire {
+                    $(proto::$kind::$wire => ffi::$kind::$qml.repr),+
+                };
+                $(assert_eq!(qml_value(proto::$kind::$wire), proto::$kind::$wire as i32,
+                             stringify!($qml));)+
+            }
+        };
+    }
+
+    wire_contract!(qml_remote_keys_match_every_proto_value, RemoteKey {
+        Unspecified => RemoteKeyUnspecified,
+        Up => RemoteKeyUp,
+        Down => RemoteKeyDown,
+        Left => RemoteKeyLeft,
+        Right => RemoteKeyRight,
+        Ok => RemoteKeyOk,
+        Back => RemoteKeyBack,
+        Guide => RemoteKeyGuide,
+        Channels => RemoteKeyChannels,
+        Fullscreen => RemoteKeyFullscreen,
+    });
+
+    wire_contract!(qml_remote_commands_match_every_proto_value, RemoteCommandKind {
+        Unspecified => RemoteCommandUnspecified,
+        SelectChannel => RemoteCommandSelectChannel,
+        Play => RemoteCommandPlay,
+        Stop => RemoteCommandStop,
+        SetVolume => RemoteCommandSetVolume,
+        SetMuted => RemoteCommandSetMuted,
+        SetSubtitles => RemoteCommandSetSubtitles,
+        SetPaused => RemoteCommandSetPaused,
+        SeekRelative => RemoteCommandSeekRelative,
+        SeekTo => RemoteCommandSeekTo,
+        ReturnToLive => RemoteCommandReturnToLive,
+        SetPlaybackRate => RemoteCommandSetPlaybackRate,
+        StepChannel => RemoteCommandStepChannel,
+        PreviousChannel => RemoteCommandPreviousChannel,
+        SelectRemoteKey => RemoteCommandSelectRemoteKey,
+        SendKey => RemoteCommandSendKey,
+    });
+}

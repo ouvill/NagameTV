@@ -8,6 +8,22 @@ TestCase {
     name: "RemoteKeys"
     when: windowShown
     ShortcutKey { id: keys }
+    function test_player_exposes_remote_enum_names() {
+        compare([
+            Player.RemoteKeyUnspecified, Player.RemoteKeyUp, Player.RemoteKeyDown,
+            Player.RemoteKeyLeft, Player.RemoteKeyRight, Player.RemoteKeyOk,
+            Player.RemoteKeyBack, Player.RemoteKeyGuide, Player.RemoteKeyChannels,
+            Player.RemoteKeyFullscreen
+        ], [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+        compare([
+            Player.RemoteCommandUnspecified, Player.RemoteCommandSelectChannel,
+            Player.RemoteCommandPlay, Player.RemoteCommandStop, Player.RemoteCommandSetVolume,
+            Player.RemoteCommandSetMuted, Player.RemoteCommandSetSubtitles, Player.RemoteCommandSetPaused,
+            Player.RemoteCommandSeekRelative, Player.RemoteCommandSeekTo, Player.RemoteCommandReturnToLive,
+            Player.RemoteCommandSetPlaybackRate, Player.RemoteCommandStepChannel,
+            Player.RemoteCommandPreviousChannel, Player.RemoteCommandSelectRemoteKey, Player.RemoteCommandSendKey
+        ], [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
+    }
     Component {
         id: detachedItem
         Item {}
