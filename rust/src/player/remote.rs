@@ -151,6 +151,43 @@ impl PlayerRust {
 }
 
 impl ffi::Player {
+    pub fn remote_web_enabled(&self) -> bool {
+        self.rust().remote.settings().web_enabled()
+    }
+    pub fn remote_web_allowed(&self) -> bool {
+        self.rust().remote.web_allowed()
+    }
+    pub fn remote_web_urls(&self) -> QString {
+        QString::from(
+            serde_json::to_string(&self.rust().remote.web_urls())
+                .expect("URL string list serializes"),
+        )
+    }
+    pub fn set_remote_web_enabled(mut self: Pin<&mut Self>, enabled: bool) -> bool {
+        if !self.as_mut().rust_mut().remote.configure_web(enabled) {
+            return false;
+        }
+        self.as_mut().rust_mut().start_remote_if_requested();
+        self.notify_remote();
+        true
+    }
+    pub fn remote_qr_data_uri(&self, url: QString) -> QString {
+        let url = url.to_string();
+        if !self.rust().remote.web_urls().contains(&url) {
+            tracing::warn!("Remote QR generation rejected: URL is not a current web endpoint");
+            return QString::default();
+        }
+        match crate::remote::qr::data_uri(&url) {
+            Ok(uri) => QString::from(uri),
+            Err(error) => {
+                tracing::error!(
+                    error = &error as &dyn std::error::Error,
+                    "Remote QR generation failed"
+                );
+                QString::default()
+            }
+        }
+    }
     pub fn remote_watchers(&self) -> i32 {
         self.rust()
             .remote
@@ -192,6 +229,8 @@ impl ffi::Player {
 
     fn notify_remote(mut self: Pin<&mut Self>) {
         // Every getter already reflects the complete update before any signal fires.
+        self.as_mut().remote_web_enabled_changed();
+        self.as_mut().remote_web_urls_changed();
         self.as_mut().remote_watchers_changed();
         self.as_mut().remote_enabled_changed();
         self.as_mut().remote_address_changed();
@@ -202,7 +241,8 @@ impl ffi::Player {
         self.as_mut().remote_endpoints_changed();
         self.as_mut().remote_session_only_changed();
     }
-    pub fn refresh_remote_addresses(self: Pin<&mut Self>) {
+    pub fn refresh_remote_addresses(mut self: Pin<&mut Self>) {
+        self.as_mut().remote_web_urls_changed();
         self.remote_endpoints_changed();
     }
     pub fn configure_remote(
@@ -216,6 +256,7 @@ impl ffi::Player {
         else {
             return false;
         };
+        let settings = settings.with_web_enabled(self.remote_web_enabled());
         self.as_mut().rust_mut().remote.configure(settings);
         self.as_mut().rust_mut().start_remote_if_requested();
         self.notify_remote();
@@ -263,8 +304,28 @@ impl ffi::Player {
         let Some(session) = self.rust().remote.session() else {
             return;
         };
-        let candidate = self.rust().remote_channels();
-        let channels = (session.channels() != candidate).then_some(candidate);
+        let now = epoch_ms();
+        let catalog = self.rust().catalog.channels();
+        let channels_changed = session.channels().len() != catalog.len()
+            || session
+                .channels()
+                .iter()
+                .zip(catalog)
+                .any(|(published, channel)| {
+                    let program =
+                        now.and_then(|now| self.rust().epg.current(channel.broadcast, now));
+                    published.id != channel.id
+                        || published.name != channel.name
+                        || published.label != channel.label
+                        || published.band != crate::remote::band(channel.band)
+                        || published.remote_key
+                            != channel
+                                .remote_key
+                                .map(u32::from)
+                                .filter(|key| (1..=12).contains(key))
+                        || !same_program(published.current_program.as_ref(), program)
+                });
+        let channels = channels_changed.then(|| self.rust().remote_channels());
         let state = self.rust().remote_state();
         if let Some(session) = self.as_mut().rust_mut().remote.session_mut() {
             session.publish(state, channels);
@@ -478,5 +539,22 @@ fn remote_program(program: &crate::features::program_info::model::Program) -> mo
         description: program.description.clone().unwrap_or_default(),
         start_at_ms: program.start_at,
         duration_ms: program.duration,
+    }
+}
+
+fn same_program(
+    published: Option<&model::Program>,
+    current: Option<&crate::features::program_info::model::Program>,
+) -> bool {
+    match (published, current) {
+        (None, None) => true,
+        (Some(a), Some(b)) => {
+            a.id == b.id
+                && a.name == b.name.as_deref().unwrap_or_default()
+                && a.description == b.description.as_deref().unwrap_or_default()
+                && a.start_at_ms == b.start_at
+                && a.duration_ms == b.duration
+        }
+        _ => false,
     }
 }

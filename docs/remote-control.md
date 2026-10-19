@@ -1,7 +1,8 @@
 # 遠隔操作API
 
 起動中のViewerを操作する `viewer.v1.PlayerService`。
-tonicでgRPC、tonic-webでgRPC-Webを同じポートへ公開する。Web UIは含めない。
+tonicでgRPC、tonic-webでgRPC-Webを同じポートへ公開する。
+実験的なWebリモコンを有効にすると、同じポートの `/` からブラウザーで操作できる。
 家庭内LANの端末を信頼するリモコンとして、待受アドレスに接続できる端末からの
 全RPCを認証なしで受け付ける。トークンの用意やペアリングは不要。
 定義は[`player.proto`](../rust/crates/viewer-remote/proto/viewer/v1/player.proto)、
@@ -47,6 +48,7 @@ API自身は接続元が家庭内LANかを判定しない。通信は平文HTTP�
 enabled = false
 address = "0.0.0.0"
 port = 50051
+remote_web_enabled = false
 ```
 
 起動時には環境変数で上書きできる。
@@ -97,7 +99,7 @@ grpcurl -plaintext \
 音量変更は `-d '{"fraction":0.3}'` と `viewer.v1.PlayerService/SetVolume` を指定する。
 64bit IDのProtobuf JSON表現は文字列。値は局一覧から取得し、表示順のindexは使わない。
 
-将来のConnectクライアントでは `@connectrpc/connect-web` の
+WebリモコンなどのConnectクライアントでは `@connectrpc/connect-web` の
 `createGrpcWebTransport({ baseUrl, useBinaryFormat: true })` を使う。
 `createConnectTransport` のConnectプロトコルは扱わない。
 UnaryとServer streamingを提供する。
@@ -120,7 +122,7 @@ UnaryとServer streamingを提供する。
 録画中の状態は`file_connecting`／`file_playing`／`file_paused`／`file_seeking`／
 `file_seeking_paused`／`file_ended`／`file_stop_failed`で、表示用のファイル名を持つ。
 追加したoneofフィールド16〜19を知らないクライアントは未知状態として扱う。
-シーク・一時停止の新規RPCはまだ追加していない。
+シーク・一時停止は下記の追加RPCで操作する。
 フルパスは含まない。録画中の`current_program`は不在となる。ファイルを開く操作はデスクトップUIから行い、
 APIのPlayは既に選択した録画を再生する。SelectChannelを呼ぶとライブ視聴へ切り替わる。
 
@@ -133,7 +135,7 @@ API操作以外の変化は通常50msのPlayer pollで公開する。UI停止時
 
 | gRPC status | 意味 |
 | --- | --- |
-| INVALID_ARGUMENT | 必須値の欠落・不正な音量 |
+| INVALID_ARGUMENT | 必須値の欠落・数値の範囲外・未知enum |
 | NOT_FOUND | 選局対象が現行カタログにない |
 | FAILED_PRECONDITION | 再生出力・接続・選択局が未準備、字幕機能が無効 |
 | RESOURCE_EXHAUSTED | 操作キューまたは購読数の上限 |
@@ -145,6 +147,52 @@ API操作以外の変化は通常50msのPlayer pollで公開する。UI停止時
 未実行の要求は実行直前に切断・2秒の期限を検査して破棄する。
 実行開始後の取消しで操作を巻き戻さない。
 設定の保存時期は既存UIと同じ。RPC成功は保存成功を意味せず、失敗は `settings_error` に現れる。
+
+## Webリモコンと追加操作
+
+設定画面でリモート受付と「Webリモコン（実験的）」を有効にし、表示されたQRを
+スマホで読む。Webは既定OFFで、OFFのときは静的ファイルを404で返す。
+既存gRPC・gRPC-WebのRPCはWebフラグに依存しない。
+接続先URL・購読数・QR生成・操作通知のQML APIは[バックエンド契約](remote-web-contract.md)を参照。
+
+`--features=epg,subtitles,remote-web` はWebを有効にした検証用の制限起動。
+リモート受付自体は設定または `NAGAMETV_REMOTE_ENABLED=1` で有効にする。
+`remote-web` を含まない制限起動では設定画面からもWebをONにできない。
+通常起動では `remote-control.toml` の値を復元する。旧ファイルで項目がなければOFF。
+環境変数による上書きまたは制限起動ではWebの変更も保存しない。
+Webの実行中の切り替えでは旧Sessionと購読を終了してから受付を再開する。
+
+| RPC | 動作 |
+| --- | --- |
+| `SetPaused` | 一時停止／再開を明示。録画と保持可能なライブに対応 |
+| `SeekRelative` / `SeekTo` | 相対／絶対ミリ秒でシーク。現在の有効範囲へ丸める |
+| `ReturnToLive` | ライブ最新位置・等速に戻る |
+| `SetPlaybackRate` | `tenths=5..20`、0.1倍刻み。10が等速 |
+| `StepChannel` | offset=-1/+1。デスクトップと同じ並びとサブチャンネル判定 |
+| `PreviousChannel` | 視聴履歴の直前の局へ戻る |
+| `SelectRemoteKey` | リモコン番号1〜12。未指定のbandは視聴／選択中の放送種別を使う |
+| `SendKey` | D-pad・決定・戻る・番組表・局一覧・全画面をQMLへ通知 |
+
+`SendKey` 成功はQtスレッドからQMLへシグナルを通知した意味で、画面操作の完了は保証しない。
+PlayerStateの `can_pause` / `can_seek` / `can_return_to_live` / `can_set_rate` などで
+操作の可否を判断する。実行直前にもRustが前提を検査する。
+位置・長さ・シーク範囲は不明ならoptionalの不在。ライブの時間値はセッションの保持軸で、
+Unix時刻ではない。`at_live_edge` は最新位置で再生中だけtrue。
+ListChannelsは各局の現在番組（不明・競合時は不在）とリモコン番号を持つ。
+番組の変更でもrevisionを増やすため、クライアントは局一覧を再取得できる。
+
+全要求のHostとHTTP/2のauthorityを共通の層で検査する。許可するのはIPv4リテラル、
+角括弧付きIPv6リテラルと `localhost`（大文字小文字を区別しない）だけで、数値ポートを付けられる。
+両方がある要求は双方を検査する。両方がない要求・複数Host・不正値・DNS名はHTTP 403で拒否し、
+標準エラーへtracingで記録する。これはDNS rebinding対策で、LAN内クライアントの認証ではない。
+grpcurlでIPまたはlocalhostへ接続するとauthorityが送られるため、従来の呼び出しを使える。
+
+Webのdistはビルド時にバイナリーへ埋め込む。アプリのビルドにNodeは不要。
+`GET /`・`GET /index.html` と `/assets/*` の既知のファイルだけを公開し、HEADにも対応する。
+indexと通常名のファイルは `no-cache`、ハッシュ付きassetsは1年のimmutableキャッシュ。
+Content-Typeとnosniffを指定し、CORSは付けない。QRはRustのqrcodeでSVG data URIを生成する。
+通信試験は `python3 scripts/test.py viewer-remote`、キー転送のGUI試験は
+`python3 scripts/test.py remote-keys` で実行する。
 
 ## 所有と上限
 
@@ -168,7 +216,7 @@ Qt engine破棄時に残ったタスクはabortし、所有元のNetwork runtime
 
 ```sh
 bash scripts/dev/generate-remote-docs.sh
-CARGO_TARGET_DIR=build/cargo cargo test --manifest-path rust/crates/viewer-remote/Cargo.toml --locked
+python3 scripts/test.py viewer-remote
 ```
 
 通信試験はloopbackだけを使用し、表示・GPU・音声は使用しない。

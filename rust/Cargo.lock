@@ -2114,6 +2114,7 @@ name = "nagametv"
 version = "0.5.0"
 dependencies = [
  "arib-b24",
+ "base64",
  "bitfield",
  "clap",
  "cxx",
@@ -2133,6 +2134,7 @@ dependencies = [
  "memmap2",
  "pkg-config",
  "proptest",
+ "qrcode",
  "reqwest",
  "semver",
  "serde",
@@ -2572,6 +2574,12 @@ checksum = "ab1ad36992cead65f02aa399a373a42730922f1525d988172634fdefdecb8a60"
 dependencies = [
  "pulldown-cmark",
 ]
+
+[[package]]
+name = "qrcode"
+version = "0.14.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d68782463e408eb1e668cf6152704bd856c78c5b6417adaee3203d8f4c1fc9ec"
 
 [[package]]
 name = "qt-build-utils"
@@ -4132,6 +4140,9 @@ name = "viewer-remote"
 version = "0.1.0"
 dependencies = [
  "async-stream",
+ "bytes",
+ "http",
+ "http-body-util",
  "prost",
  "protoc-bin-vendored",
  "thiserror 2.0.20",
@@ -4142,6 +4153,8 @@ dependencies = [
  "tonic-prost",
  "tonic-prost-build",
  "tonic-web",
+ "tower",
+ "tracing",
 ]
 
 [[package]]

@@ -8,7 +8,8 @@ M1で確定した追加契約。既存のRPCとフィールド番号は維持す
 ## PlayerのQML公開API
 
 既存の `configure_remote(enabled, address, port)` と `refresh_remote_addresses()` は維持する。
-以下のプロパティは読み取り専用で、変更時には同名の `_changed` シグナルを通知する。
+以下のプロパティは読み取り専用。起動後不変の `remote_web_allowed` はCONSTANTで、
+その他は変更時に同名の `_changed` シグナルを通知する。
 
 | 名前 | Qt型 | 意味 |
 | --- | --- | --- |

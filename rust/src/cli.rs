@@ -14,7 +14,7 @@ struct Arguments {
         group = "mode",
         long,
         require_equals = true,
-        value_name = "none|subtitles,epg,comments,data-broadcast,recording-reservations"
+        value_name = "none|subtitles,epg,comments,data-broadcast,recording-reservations,remote-web"
     )]
     features: Option<FeatureSet>,
     // The test runner owns these arguments, including Qt Quick Test switches.
@@ -75,6 +75,23 @@ mod tests {
 
     fn parse(args: &[&str]) -> Result<Command, clap::Error> {
         Command::parse_from(std::iter::once("nagametv").chain(args.iter().copied()))
+    }
+
+    #[test]
+    fn remote_web_is_an_explicit_runtime_feature() {
+        let Command::Launch(plan) = parse(&["--features=epg,remote-web"]).unwrap() else {
+            panic!("launch expected")
+        };
+        assert!(plan.remote_web(false));
+        assert!(plan.epg());
+        assert!(plan.locked());
+        let Command::Launch(plan) = parse(&["--features=none"]).unwrap() else {
+            panic!("launch expected")
+        };
+        assert!(!plan.remote_web(true));
+        assert!(parse(&["--features=remote-web,remote-web"]).is_err());
+        assert!(!LaunchPlan::Preferences.remote_web(false));
+        assert!(LaunchPlan::Preferences.remote_web(true));
     }
 
     #[test]

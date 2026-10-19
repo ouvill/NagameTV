@@ -1331,6 +1331,9 @@ name = "viewer-remote"
 version = "0.1.0"
 dependencies = [
  "async-stream",
+ "bytes",
+ "http",
+ "http-body-util",
  "prost",
  "protoc-bin-vendored",
  "reqwest",
@@ -1342,6 +1345,8 @@ dependencies = [
  "tonic-prost",
  "tonic-prost-build",
  "tonic-web",
+ "tower",
+ "tracing",
 ]
 
 [[package]]

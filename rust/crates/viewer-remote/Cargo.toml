@@ -4,6 +4,11 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+http = "1"
+http-body-util = "0.1"
+bytes = "1"
+tower = "0.5"
+tracing = "0.1"
 prost = "0.14"
 tonic = "0.14"
 tonic-prost = "0.14"
