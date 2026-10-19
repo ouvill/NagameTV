@@ -2518,6 +2518,78 @@
         <source>Connection addresses</source>
         <translation>接続先</translation>
     </message>
+    <message>
+        <source>Phone remote in the browser (experimental)</source>
+        <translation>スマホのブラウザーで操作する（実験的）</translation>
+    </message>
+    <message>
+        <source>Scan the QR code with a phone on the same network to open a remote control page.</source>
+        <translation>同じネットワークのスマホでQRコードを読み取ると、リモコン画面が開きます。</translation>
+    </message>
+    <message>
+        <source>QR code for %1</source>
+        <translation>%1 のQRコード</translation>
+    </message>
+    <message>
+        <source>No remotes connected.</source>
+        <translation>接続中のリモコンはありません。</translation>
+    </message>
+    <message>
+        <source>1 remote connected.</source>
+        <translation>1台のリモコンが接続中です。</translation>
+    </message>
+    <message>
+        <source>%1 remotes connected.</source>
+        <translation>%1台のリモコンが接続中です。</translation>
+    </message>
+    <message>
+        <source>Channel changed</source>
+        <translation>選局しました</translation>
+    </message>
+    <message>
+        <source>Play</source>
+        <translation>再生</translation>
+    </message>
+    <message>
+        <source>Stopped</source>
+        <translation>停止しました</translation>
+    </message>
+    <message>
+        <source>Volume %1%</source>
+        <translation>音量 %1%</translation>
+    </message>
+    <message>
+        <source>Muted</source>
+        <translation>ミュート</translation>
+    </message>
+    <message>
+        <source>Unmuted</source>
+        <translation>ミュート解除</translation>
+    </message>
+    <message>
+        <source>Subtitles on</source>
+        <translation>字幕 表示</translation>
+    </message>
+    <message>
+        <source>Subtitles off</source>
+        <translation>字幕 非表示</translation>
+    </message>
+    <message>
+        <source>Paused</source>
+        <translation>一時停止</translation>
+    </message>
+    <message>
+        <source>Resumed</source>
+        <translation>再開</translation>
+    </message>
+    <message>
+        <source>Returned to live</source>
+        <translation>ライブに戻りました</translation>
+    </message>
+    <message>
+        <source>Speed %1×</source>
+        <translation>速度 %1×</translation>
+    </message>
 </context>
 <context>
     <name>Recording</name>

@@ -466,7 +466,8 @@ function renderNow(s: PlayerState): void {
     fill.style.width = `${(Math.min(1, Math.max(0, ratio)) * 100).toFixed(1)}%`;
     nowProgress.hidden = false;
   } else {
-    nowMeta.textContent = !program && !v.file && channel ? t.noProgram : "";
+    // Timeshifted sessions omit the program by design, so do not call it missing.
+    nowMeta.textContent = !program && !v.file && channel && !s.canSeek ? t.noProgram : "";
     nowProgress.hidden = true;
   }
   const error = s.playbackError || s.settingsError;
@@ -503,8 +504,9 @@ function renderControls(s: PlayerState): void {
   else if (s.canPause) setIcon(playButton, paused ? "play" : "pause", paused ? t.play : t.pause);
   else setIcon(playButton, "stop", t.stop);
   playButton.disabled = idle && s.selectedChannelId === undefined && view(s).file === undefined;
-  stopButton.disabled = idle;
-  back10.disabled = forward10.disabled = !s.canSeek;
+  // Without pause the main button already stops, so a second stop would be redundant.
+  stopButton.hidden = idle || !s.canPause;
+  back10.hidden = forward10.hidden = !s.canSeek;
   liveButton.hidden = !s.canReturnToLive;
   rateRow.hidden = !s.canSetRate;
   rateValue.textContent = `${(s.playbackRateTenths / 10).toFixed(1)}×`;
