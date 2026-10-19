@@ -1,0 +1,21 @@
+{
+  "name": "nagametv-remote-web",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "generate": "buf generate ../proto --template buf.gen.yaml",
+    "check": "tsc --noEmit",
+    "build": "node build.mjs"
+  },
+  "dependencies": {
+    "@bufbuild/protobuf": "2.16.0",
+    "@connectrpc/connect": "2.2.0",
+    "@connectrpc/connect-web": "2.2.0"
+  },
+  "devDependencies": {
+    "@bufbuild/buf": "1.73.0",
+    "@bufbuild/protoc-gen-es": "2.16.0",
+    "esbuild": "0.28.2",
+    "typescript": "5.9.3"
+  }
+}
