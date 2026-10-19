@@ -302,6 +302,13 @@ const channelsPanel = el(
   channelList,
 );
 
+// CSP forbids style attributes, so widths go through the CSSOM instead.
+function barFill(ratio: number): HTMLSpanElement {
+  const fill = el("span", { class: "progress-fill" });
+  fill.style.width = `${(ratio * 100).toFixed(1)}%`;
+  return fill;
+}
+
 function channelItem(channel: Channel, active: bigint | undefined, now: number): HTMLLIElement {
   const program = channel.currentProgram;
   const start = program ? Number(program.startAtMs) : 0;
@@ -327,10 +334,7 @@ function channelItem(channel: Channel, active: bigint | undefined, now: number):
           ? el(
               "span",
               { class: "progress thin" },
-              el("span", {
-                class: "progress-fill",
-                style: `width:${(progress(start, end, now) * 100).toFixed(1)}%`,
-              }),
+              barFill(progress(start, end, now)),
             )
           : null,
       ),

@@ -27,19 +27,19 @@ TestCase {
     function init() { failOnWarning(/.*/); }
     function test_commands_show_translated_feedback_then_hide() {
         compare(notice.visible, false);
-        notice.show(4);
+        notice.show(Player.RemoteCommandSetVolume);
         compare(notice.visible, true);
         compare(findChild(notice, "remoteNoticeText").text, "Volume 30%");
-        notice.show(11);
+        notice.show(Player.RemoteCommandSetPlaybackRate);
         compare(notice.message, "Speed 1.5×");
-        notice.show(1);
+        notice.show(Player.RemoteCommandSelectChannel);
         compare(notice.message, "Channel changed");
         tryCompare(notice, "visible", false, 1000);
     }
     function test_key_forwarding_and_unknown_kinds_stay_silent() {
-        notice.show(15);
+        notice.show(Player.RemoteCommandSendKey);
         compare(notice.visible, false);
-        notice.show(0);
+        notice.show(Player.RemoteCommandUnspecified);
         compare(notice.visible, false);
     }
 }

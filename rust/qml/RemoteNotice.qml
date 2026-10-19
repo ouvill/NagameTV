@@ -12,18 +12,27 @@ Control {
     property string message: ""
     property url iconDirectory: "qrc:/qt/qml/MinimalViewer/assets/icons/"
 
-    // Values from viewer.v1.RemoteCommandKind; 15 (SEND_KEY) is shown by the UI it drives.
+    // Key forwarding and seeks are shown by the UI they drive, so they have no message.
     function messageFor(kind: int): string {
         switch (kind) {
-        case 1: case 12: case 13: case 14: return qsTranslate("Remote", "Channel changed");
-        case 2: return qsTranslate("Remote", "Play");
-        case 3: return qsTranslate("Remote", "Stopped");
-        case 4: return qsTranslate("Remote", "Volume %1%").arg(Math.round(backend.volume_level * 100));
-        case 5: return backend.audio_muted ? qsTranslate("Remote", "Muted") : qsTranslate("Remote", "Unmuted");
-        case 6: return backend.subtitle_display ? qsTranslate("Remote", "Subtitles on") : qsTranslate("Remote", "Subtitles off");
-        case 7: return backend.paused ? qsTranslate("Remote", "Paused") : qsTranslate("Remote", "Resumed");
-        case 10: return qsTranslate("Remote", "Returned to live");
-        case 11: return qsTranslate("Remote", "Speed %1×").arg((backend.playback_rate / 10).toFixed(1));
+        case Player.RemoteCommandSelectChannel:
+        case Player.RemoteCommandStepChannel:
+        case Player.RemoteCommandPreviousChannel:
+        case Player.RemoteCommandSelectRemoteKey:
+            return qsTranslate("Remote", "Channel changed");
+        case Player.RemoteCommandPlay: return qsTranslate("Remote", "Play");
+        case Player.RemoteCommandStop: return qsTranslate("Remote", "Stopped");
+        case Player.RemoteCommandSetVolume:
+            return qsTranslate("Remote", "Volume %1%").arg(Math.round(backend.volume_level * 100));
+        case Player.RemoteCommandSetMuted:
+            return backend.audio_muted ? qsTranslate("Remote", "Muted") : qsTranslate("Remote", "Unmuted");
+        case Player.RemoteCommandSetSubtitles:
+            return backend.subtitle_display ? qsTranslate("Remote", "Subtitles on") : qsTranslate("Remote", "Subtitles off");
+        case Player.RemoteCommandSetPaused:
+            return backend.paused ? qsTranslate("Remote", "Paused") : qsTranslate("Remote", "Resumed");
+        case Player.RemoteCommandReturnToLive: return qsTranslate("Remote", "Returned to live");
+        case Player.RemoteCommandSetPlaybackRate:
+            return qsTranslate("Remote", "Speed %1×").arg((backend.playback_rate / 10).toFixed(1));
         }
         return "";
     }
