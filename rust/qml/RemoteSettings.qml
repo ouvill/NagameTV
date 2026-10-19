@@ -83,7 +83,7 @@ ColumnLayout {
                     // A light quiet zone keeps the code readable on the dark panel.
                     Layout.preferredWidth: 184
                     Layout.preferredHeight: 184
-                    color: "white"
+                    color: Theme.codeBackground
                     radius: Theme.controlRadius
                     Image {
                         anchors.fill: parent
@@ -96,12 +96,13 @@ ColumnLayout {
                     }
                 }
                 Label {
-                    Layout.maximumWidth: 184
+                    // The address is what people type when a camera is unavailable, so never elide it.
+                    Layout.maximumWidth: 260
                     text: code.modelData
                     textFormat: Text.PlainText
                     color: Theme.textSecondary
                     font.pixelSize: Theme.fontControl
-                    elide: Text.ElideMiddle
+                    wrapMode: Text.WrapAnywhere
                 }
             }
         }
