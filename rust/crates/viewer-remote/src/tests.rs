@@ -816,6 +816,7 @@ async fn host_policy_covers_static_grpc_web_and_http2_without_cors() -> Result {
 
 #[tokio::test]
 async fn enabled_web_serves_embedded_assets_and_keeps_rpc_available() -> Result {
+    const EXPECTED_CSP: &str = "default-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
     let session = Bound::bind(config().with_web_enabled(true))?.start(
         &Handle::current(),
         initial(),
@@ -827,6 +828,7 @@ async fn enabled_web_serves_embedded_assets_and_keeps_rpc_available() -> Result 
     assert_eq!(index.status(), 200);
     assert_eq!(index.headers()["content-type"], "text/html; charset=utf-8");
     assert_eq!(index.headers()["cache-control"], "no-cache");
+    assert_eq!(index.headers()["content-security-policy"], EXPECTED_CSP);
     assert!(!index.headers().contains_key("access-control-allow-origin"));
     let html = index.text().await?;
     assert!(html.contains("<html"));
@@ -847,6 +849,7 @@ async fn enabled_web_serves_embedded_assets_and_keeps_rpc_available() -> Result 
             "public, max-age=31536000, immutable"
         );
         assert_eq!(response.headers()["x-content-type-options"], "nosniff");
+        assert_eq!(response.headers()["content-security-policy"], EXPECTED_CSP);
         if asset.ends_with(".js") {
             assert_eq!(
                 response.headers()["content-type"],
@@ -874,6 +877,7 @@ async fn enabled_web_serves_embedded_assets_and_keeps_rpc_available() -> Result 
     }
     let head = http.head(&base).send().await?;
     assert_eq!(head.status(), 200);
+    assert_eq!(head.headers()["content-security-policy"], EXPECTED_CSP);
     assert!(head.bytes().await?.is_empty());
     let mut rpc = client(&session).await;
     assert!(

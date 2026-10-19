@@ -72,6 +72,42 @@ pub mod ffi {
         Stop,
     }
 
+    // cxx-qt 0.10 assigns values by order; explicit discriminants are unsupported.
+    // Keep the proto order, including zero. remote::enum_contract checks every value.
+    #[qenum(Player)]
+    enum RemoteKey {
+        RemoteKeyUnspecified,
+        RemoteKeyUp,
+        RemoteKeyDown,
+        RemoteKeyLeft,
+        RemoteKeyRight,
+        RemoteKeyOk,
+        RemoteKeyBack,
+        RemoteKeyGuide,
+        RemoteKeyChannels,
+        RemoteKeyFullscreen,
+    }
+
+    #[qenum(Player)]
+    enum RemoteCommandKind {
+        RemoteCommandUnspecified,
+        RemoteCommandSelectChannel,
+        RemoteCommandPlay,
+        RemoteCommandStop,
+        RemoteCommandSetVolume,
+        RemoteCommandSetMuted,
+        RemoteCommandSetSubtitles,
+        RemoteCommandSetPaused,
+        RemoteCommandSeekRelative,
+        RemoteCommandSeekTo,
+        RemoteCommandReturnToLive,
+        RemoteCommandSetPlaybackRate,
+        RemoteCommandStepChannel,
+        RemoteCommandPreviousChannel,
+        RemoteCommandSelectRemoteKey,
+        RemoteCommandSendKey,
+    }
+
     #[cfg(feature = "native_tests")]
     unsafe extern "C++" {
         include!("cxx-qt-lib/common.h");

@@ -32,6 +32,13 @@ M1で確定した追加契約。既存のRPCとフィールド番号は維持す
 SET_SUBTITLES=6、SET_PAUSED=7、SEEK_RELATIVE=8、SEEK_TO=9、RETURN_TO_LIVE=10、
 SET_PLAYBACK_RATE=11、STEP_CHANNEL=12、PREVIOUS_CHANNEL=13、SELECT_REMOTE_KEY=14、SEND_KEY=15。
 0は未指定で、Rustは通知しない。失敗・取消し・期限切れの操作も通知しない。
+QMLではPlayerの `RemoteKey` / `RemoteCommandKind` enumを使う。
+キーの定数名は `Player.RemoteKeyUp`、`Player.RemoteKeyOk`、`Player.RemoteKeyFullscreen` など、
+操作は `Player.RemoteCommandSelectChannel`、`Player.RemoteCommandSetPaused`、
+`Player.RemoteCommandSendKey` など。protoの共通接頭辞を除いた部分をPascalCaseにし、
+それぞれ `RemoteKey` / `RemoteCommand` を前置する。
+未指定は `RemoteKeyUnspecified` / `RemoteCommandUnspecified`。
+シグナルの引数型はintのままで、全enum値とprotoの一致をRust試験で検査する。
 `SendKey` の成功はQMLへのシグナル通知を意味し、画面の遷移やキー処理の完了は保証しない。
 
 `ShortcutKey.post_key(item: QQuickItem*, key: int) -> bool` はQtの
@@ -75,3 +82,9 @@ grpcurlの通常のIP/localhost接続はauthorityを送るため利用できる�
 
 WebがOFFなら `/` と `/assets/*` は404。ONならバイナリーへ埋め込んだdistを返す。
 index.htmlはno-cache、ハッシュ付きassetは長期キャッシュ。CORSは追加しない。
+全assetのGET/HEAD応答には次のCSPを付ける。同一オリジンのスクリプト・CSS・gRPC-Web通信と
+data URIの画像を許可し、外部オリジン・フレームへの埋め込み・base指定・フォーム送信を禁止する。
+
+```text
+Content-Security-Policy: default-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'
+```
