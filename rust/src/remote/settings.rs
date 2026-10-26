@@ -46,6 +46,7 @@ pub enum Error {
 #[serde(try_from = "Stored", into = "Stored")]
 pub struct Settings {
     enabled: bool,
+    remote_web_enabled: bool,
     endpoint: SocketAddr,
 }
 
@@ -53,6 +54,7 @@ pub struct Settings {
 #[serde(default)]
 struct Stored {
     enabled: bool,
+    remote_web_enabled: bool,
     address: IpAddr,
     port: u16,
 }
@@ -61,6 +63,7 @@ impl Default for Stored {
     fn default() -> Self {
         Self {
             enabled: false,
+            remote_web_enabled: false,
             address: IpAddr::V4(Ipv4Addr::UNSPECIFIED),
             port: DEFAULT_PORT,
         }
@@ -79,6 +82,7 @@ impl TryFrom<Stored> for Settings {
         }
         Ok(Self {
             enabled: value.enabled,
+            remote_web_enabled: value.remote_web_enabled,
             endpoint: SocketAddr::new(value.address, value.port),
         })
     }
@@ -87,6 +91,7 @@ impl From<Settings> for Stored {
     fn from(value: Settings) -> Self {
         Self {
             enabled: value.enabled,
+            remote_web_enabled: value.remote_web_enabled,
             address: value.endpoint.ip(),
             port: value.endpoint.port(),
         }
@@ -96,10 +101,18 @@ impl Settings {
     pub fn parse(enabled: bool, address: &str, port: i32) -> Result<Self, Error> {
         Stored {
             enabled,
+            remote_web_enabled: false,
             address: address.trim().parse().map_err(|_| Error::Address)?,
             port: port.try_into().map_err(|_| Error::Port)?,
         }
         .try_into()
+    }
+    pub fn web_enabled(self) -> bool {
+        self.remote_web_enabled
+    }
+    pub fn with_web_enabled(mut self, enabled: bool) -> Self {
+        self.remote_web_enabled = enabled;
+        self
     }
     pub fn enabled(self) -> bool {
         self.enabled
@@ -258,6 +271,39 @@ impl Preferences {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn web_preference_defaults_off_roundtrips_and_respects_transient_overrides() {
+        let legacy: Settings = toml::from_str(
+            r#"enabled = true
+address = "127.0.0.1"
+port = 50051
+"#,
+        )
+        .unwrap();
+        assert!(!legacy.web_enabled());
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("remote-control.toml");
+        let mut preferences = Preferences::open(path.clone()).unwrap();
+        let enabled = legacy.with_web_enabled(true);
+        preferences.configure(enabled).unwrap();
+        assert_eq!(Preferences::open(path.clone()).unwrap().current(), enabled);
+        let mut transient = Preferences::open(path.clone())
+            .unwrap()
+            .with_overrides(Overrides::parse(Some("1"), None, None).unwrap());
+        transient
+            .configure(enabled.with_web_enabled(false))
+            .unwrap();
+        assert!(
+            Preferences::open(path.clone())
+                .unwrap()
+                .current()
+                .web_enabled()
+        );
+        preferences
+            .configure(enabled.with_web_enabled(false))
+            .unwrap();
+        assert!(!Preferences::open(path).unwrap().current().web_enabled());
+    }
     #[test]
     fn defaults_overrides_and_validation() {
         let defaults = Settings::default();

@@ -36,6 +36,8 @@ QtObject {
     readonly property color remoteGreen: "#75c68b"
     readonly property color remoteYellow: "#e5cc64"
 
+    // Scanners need dark modules on a light quiet zone, regardless of the dark theme.
+    readonly property color codeBackground: "#ffffff"
     // Translucent surfaces retain contrast over video, independent of its colors.
     readonly property color overlaySurface: "#e60c0f14"
     readonly property color popupSurface: "#f5101319"

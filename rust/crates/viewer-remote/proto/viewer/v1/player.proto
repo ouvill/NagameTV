@@ -31,6 +31,25 @@ service PlayerService {
   rpc SetMuted(SetMutedRequest) returns (SetMutedResponse);
   // Controls subtitle display. A disabled subtitle feature returns FAILED_PRECONDITION.
   rpc SetSubtitles(SetSubtitlesRequest) returns (SetSubtitlesResponse);
+  // Explicit pause/resume. Requires can_pause; safe to repeat.
+  rpc SetPaused(SetPausedRequest) returns (SetPausedResponse);
+  // Relative to the current position; clamps to the current seekable range.
+  rpc SeekRelative(SeekRelativeRequest) returns (SeekRelativeResponse);
+  // Uses the same millisecond timeline as PlayerState; clamps to its seekable range.
+  rpc SeekTo(SeekToRequest) returns (SeekToResponse);
+  // Returns retained live playback to the live edge and normal speed.
+  rpc ReturnToLive(ReturnToLiveRequest) returns (ReturnToLiveResponse);
+  // Changes speed in tenths, matching the desktop controls. Requires can_set_rate.
+  rpc SetPlaybackRate(SetPlaybackRateRequest) returns (SetPlaybackRateResponse);
+  // Uses the desktop channel order and program-aware subchannel skipping.
+  rpc StepChannel(StepChannelRequest) returns (StepChannelResponse);
+  // Selects the last viewed channel using desktop viewing history.
+  rpc PreviousChannel(PreviousChannelRequest) returns (PreviousChannelResponse);
+  // Selects a remote-control number, using the viewed/selected band when unspecified.
+  rpc SelectRemoteKey(SelectRemoteKeyRequest) returns (SelectRemoteKeyResponse);
+  // Success means the validated key was emitted to QML on the Qt thread, not
+  // that QML completed an action. Unknown and unspecified keys are rejected.
+  rpc SendKey(SendKeyRequest) returns (SendKeyResponse);
 }
 
 message ListChannelsRequest {}
@@ -73,6 +92,78 @@ message SetSubtitlesRequest {
 }
 message SetSubtitlesResponse {}
 
+message SetPausedRequest {
+  // Required, including false.
+  optional bool paused = 1;
+}
+message SetPausedResponse {}
+message SeekRelativeRequest {
+  // Required. Inclusive range -9007199254740991 to 9007199254740991.
+  optional sint64 delta_ms = 1;
+}
+message SeekRelativeResponse {}
+message SeekToRequest {
+  // Required. Inclusive range 0 to 9007199254740991.
+  optional uint64 position_ms = 1;
+}
+message SeekToResponse {}
+message ReturnToLiveRequest {}
+message ReturnToLiveResponse {}
+message SetPlaybackRateRequest {
+  // Required. 5 through 20 inclusive: 0.5x through 2.0x, in steps of 0.1x.
+  optional int32 tenths = 1;
+}
+message SetPlaybackRateResponse {}
+message StepChannelRequest {
+  // Required. Exactly -1 (previous) or +1 (next).
+  optional int32 offset = 1;
+}
+message StepChannelResponse {}
+message PreviousChannelRequest {}
+message PreviousChannelResponse {}
+message SelectRemoteKeyRequest {
+  // Required, 1 through 12 inclusive. Missing catalog match returns NOT_FOUND.
+  optional uint32 number = 1;
+  // UNSPECIFIED uses the viewed/selected band, or terrestrial with no selection.
+  BroadcastBand band = 2;
+}
+message SelectRemoteKeyResponse {}
+message SendKeyRequest {
+  RemoteKey key = 1;
+}
+message SendKeyResponse {}
+enum RemoteKey {
+  REMOTE_KEY_UNSPECIFIED = 0;
+  REMOTE_KEY_UP = 1;
+  REMOTE_KEY_DOWN = 2;
+  REMOTE_KEY_LEFT = 3;
+  REMOTE_KEY_RIGHT = 4;
+  REMOTE_KEY_OK = 5;
+  REMOTE_KEY_BACK = 6;
+  REMOTE_KEY_GUIDE = 7;
+  REMOTE_KEY_CHANNELS = 8;
+  REMOTE_KEY_FULLSCREEN = 9;
+}
+// Values emitted by Player.remote_command_executed(kind) after successful execution.
+enum RemoteCommandKind {
+  REMOTE_COMMAND_KIND_UNSPECIFIED = 0;
+  REMOTE_COMMAND_KIND_SELECT_CHANNEL = 1;
+  REMOTE_COMMAND_KIND_PLAY = 2;
+  REMOTE_COMMAND_KIND_STOP = 3;
+  REMOTE_COMMAND_KIND_SET_VOLUME = 4;
+  REMOTE_COMMAND_KIND_SET_MUTED = 5;
+  REMOTE_COMMAND_KIND_SET_SUBTITLES = 6;
+  REMOTE_COMMAND_KIND_SET_PAUSED = 7;
+  REMOTE_COMMAND_KIND_SEEK_RELATIVE = 8;
+  REMOTE_COMMAND_KIND_SEEK_TO = 9;
+  REMOTE_COMMAND_KIND_RETURN_TO_LIVE = 10;
+  REMOTE_COMMAND_KIND_SET_PLAYBACK_RATE = 11;
+  REMOTE_COMMAND_KIND_STEP_CHANNEL = 12;
+  REMOTE_COMMAND_KIND_PREVIOUS_CHANNEL = 13;
+  REMOTE_COMMAND_KIND_SELECT_REMOTE_KEY = 14;
+  REMOTE_COMMAND_KIND_SEND_KEY = 15;
+}
+
 // A consistent projection of the player's authoritative state.
 message PlayerState {
   // Increases on published state changes; resets when the API restarts.
@@ -107,6 +198,23 @@ message PlayerState {
   Program current_program = 11;
   // Last settings write error; a successful control RPC does not guarantee persistence.
   string settings_error = 12;
+  // Absent until known. Live values use the retained session timeline, not Unix time.
+  optional uint64 position_ms = 24;
+  // Recording duration, or the end of the live session timeline; absent if unknown.
+  optional uint64 duration_ms = 25;
+  // Both present together when seeking is available; endpoints are inclusive.
+  optional uint64 seek_start_ms = 26;
+  optional uint64 seek_end_ms = 27;
+  // Applied speed; 10 means normal speed, even while inactive.
+  int32 playback_rate_tenths = 28;
+  bool can_pause = 29;
+  bool can_seek = 30;
+  bool can_return_to_live = 31;
+  bool can_set_rate = 32;
+  // True only while actively playing at the live edge (not paused near the edge).
+  bool at_live_edge = 33;
+  bool can_step_channel = 34;
+  bool can_previous_channel = 35;
 }
 message StoppedPlayback {}
 message FilePlayback {
@@ -128,6 +236,10 @@ message Channel {
   string name = 2;
   string label = 3;
   BroadcastBand band = 4;
+  // Current wall-clock EPG program; absent if unavailable or ambiguous.
+  Program current_program = 5;
+  // Desktop remote-control number, absent when unassigned/outside 1 through 12.
+  optional uint32 remote_key = 6;
 }
 enum BroadcastBand {
   BROADCAST_BAND_UNSPECIFIED = 0;

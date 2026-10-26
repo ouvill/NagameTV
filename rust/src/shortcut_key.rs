@@ -19,6 +19,9 @@ mod ffi {
         fn matches(self: &ShortcutKey, sequence: &QString, key: i32, modifiers: i32) -> bool;
 
         #[qinvokable]
+        unsafe fn post_key(self: &ShortcutKey, item: *mut QQuickItem, key: i32) -> bool;
+
+        #[qinvokable]
         unsafe fn bind_back_button(self: &ShortcutKey, item: *mut QQuickItem, popup_open: bool);
     }
 }
@@ -32,6 +35,22 @@ impl ffi::ShortcutKey {
     pub unsafe fn bind_back_button(&self, item: *mut crate::qt::ffi::QQuickItem, popup_open: bool) {
         // SAFETY: The caller supplies the item lifetime and thread guarantees.
         unsafe { crate::qt::ffi::install_back_button(item, popup_open) };
+    }
+
+    /// # Safety
+    /// QML supplies a live item on the GUI thread, or null.
+    pub unsafe fn post_key(&self, item: *mut crate::qt::ffi::QQuickItem, key: i32) -> bool {
+        if !crate::qt::ffi::supports_navigation_key(key) {
+            tracing::warn!(key, "Remote key posting rejected: unsupported Qt key");
+            return false;
+        }
+        // SAFETY: The caller provides the GUI thread and live-item guarantees;
+        // Qt takes ownership of the posted events, not the item pointer.
+        if !unsafe { crate::qt::ffi::post_navigation_key(item, key) } {
+            tracing::warn!(key, "Remote key posting failed: item has no window");
+            return false;
+        }
+        true
     }
 
     pub fn matches(&self, sequence: &cxx_qt_lib::QString, key: i32, modifiers: i32) -> bool {

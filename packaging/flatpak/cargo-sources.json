@@ -3304,6 +3304,19 @@
   {
     "type": "archive",
     "archive-type": "tar-gzip",
+    "url": "https://static.crates.io/crates/qrcode/qrcode-0.14.1.crate",
+    "sha256": "d68782463e408eb1e668cf6152704bd856c78c5b6417adaee3203d8f4c1fc9ec",
+    "dest": "cargo/vendor/qrcode-0.14.1"
+  },
+  {
+    "type": "inline",
+    "contents": "{\"package\": \"d68782463e408eb1e668cf6152704bd856c78c5b6417adaee3203d8f4c1fc9ec\", \"files\": {}}",
+    "dest": "cargo/vendor/qrcode-0.14.1",
+    "dest-filename": ".cargo-checksum.json"
+  },
+  {
+    "type": "archive",
+    "archive-type": "tar-gzip",
     "url": "https://static.crates.io/crates/quinn/quinn-0.11.11.crate",
     "sha256": "0c1a41e437b6bbd489372cd4971de128e85c855f56c57f283d20ff016cf7c0a8",
     "dest": "cargo/vendor/quinn-0.11.11"

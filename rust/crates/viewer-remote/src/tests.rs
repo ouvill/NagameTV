@@ -16,6 +16,7 @@ fn initial() -> State {
         playback_error: String::new(),
         settings_error: String::new(),
         current_program: None,
+        transport: Default::default(),
     }
 }
 
@@ -34,6 +35,8 @@ fn session() -> Session {
                 name: "Test TV".into(),
                 label: "01".into(),
                 band: Band::Terrestrial,
+                current_program: None,
+                remote_key: Some(1),
             }],
         )
         .unwrap()
@@ -310,7 +313,12 @@ async fn queue_and_subscriber_limits_recover_after_cancellation() {
         state: projection::state(&initial(), 1),
         channels: vec![],
     }));
-    let rpc = Arc::new(rpc::Rpc::new(sender, snapshots, CancellationToken::new()));
+    let rpc = Arc::new(rpc::Rpc::new(
+        sender,
+        snapshots,
+        CancellationToken::new(),
+        Arc::new(tokio::sync::Semaphore::new(MAX_WATCHERS)),
+    ));
     let first = rpc.clone();
     let first = tokio::spawn(async move { first.stop(Request::new(proto::StopRequest {})).await });
     tokio::time::timeout(Duration::from_secs(1), async {
@@ -550,4 +558,343 @@ fn live_and_recording_transport_variants_roundtrip_without_exposing_a_path() {
         assert_eq!(decoded.playback, Some(expected));
         assert_eq!(decoded.selected_channel_id, Some(42));
     }
+}
+
+#[tokio::test]
+async fn new_commands_validate_before_queueing_and_acknowledge_execution() {
+    let mut session = session();
+    let mut client = client(&session).await;
+    macro_rules! invalid {
+        ($method:ident, $request:expr) => {
+            assert_eq!(
+                client.$method($request).await.unwrap_err().code(),
+                Code::InvalidArgument
+            );
+            assert!(session.next_request().is_none());
+        };
+    }
+    invalid!(set_paused, proto::SetPausedRequest { paused: None });
+    for delta_ms in [None, Some(i64::MIN), Some(i64::MAX)] {
+        invalid!(seek_relative, proto::SeekRelativeRequest { delta_ms });
+    }
+    for position_ms in [None, Some(u64::MAX)] {
+        invalid!(seek_to, proto::SeekToRequest { position_ms });
+    }
+    for tenths in [None, Some(4), Some(21)] {
+        invalid!(set_playback_rate, proto::SetPlaybackRateRequest { tenths });
+    }
+    for offset in [None, Some(0), Some(2)] {
+        invalid!(step_channel, proto::StepChannelRequest { offset });
+    }
+    for number in [None, Some(0), Some(13)] {
+        invalid!(
+            select_remote_key,
+            proto::SelectRemoteKeyRequest { number, band: 0 }
+        );
+    }
+    invalid!(
+        select_remote_key,
+        proto::SelectRemoteKeyRequest {
+            number: Some(1),
+            band: 99
+        }
+    );
+    for key in [0, -1, 10] {
+        invalid!(send_key, proto::SendKeyRequest { key });
+    }
+    macro_rules! accepted {
+        ($method:ident, $request:expr, $command:expr) => {{
+            let mut requester = client.clone();
+            let call = tokio::spawn(async move { requester.$method($request).await });
+            let pending = next(&mut session).await.claim().unwrap();
+            assert_eq!(pending.command(), $command);
+            assert!(!call.is_finished());
+            pending.complete(Ok(()));
+            call.await.unwrap().unwrap();
+        }};
+    }
+    accepted!(
+        set_paused,
+        proto::SetPausedRequest {
+            paused: Some(false)
+        },
+        Command::SetPaused(false)
+    );
+    accepted!(
+        seek_relative,
+        proto::SeekRelativeRequest {
+            delta_ms: Some(-10_000)
+        },
+        Command::SeekRelative(model::SeekDelta::new(-10_000).unwrap())
+    );
+    accepted!(
+        seek_to,
+        proto::SeekToRequest {
+            position_ms: Some(0)
+        },
+        Command::SeekTo(model::SeekPosition::new(0).unwrap())
+    );
+    accepted!(
+        return_to_live,
+        proto::ReturnToLiveRequest {},
+        Command::ReturnToLive
+    );
+    accepted!(
+        set_playback_rate,
+        proto::SetPlaybackRateRequest { tenths: Some(15) },
+        Command::SetPlaybackRate(model::PlaybackRate::new(15).unwrap())
+    );
+    accepted!(
+        step_channel,
+        proto::StepChannelRequest { offset: Some(-1) },
+        Command::StepChannel(model::Step::Previous)
+    );
+    accepted!(
+        previous_channel,
+        proto::PreviousChannelRequest {},
+        Command::PreviousChannel
+    );
+    accepted!(
+        select_remote_key,
+        proto::SelectRemoteKeyRequest {
+            number: Some(12),
+            band: proto::BroadcastBand::Bs as i32
+        },
+        Command::SelectRemoteKey(model::RemoteNumber::new(12).unwrap(), Some(Band::Bs))
+    );
+    for key in 1..=9 {
+        accepted!(
+            send_key,
+            proto::SendKeyRequest { key },
+            Command::SendKey(model::RemoteKey::new(key).unwrap())
+        );
+    }
+    session.stop().wait().await.unwrap();
+}
+
+#[tokio::test]
+async fn transport_program_changes_and_subscription_lifetime_are_published() {
+    let mut session = session();
+    let mut client = client(&session).await;
+    let mut stream = client
+        .watch_state(proto::WatchStateRequest {})
+        .await
+        .unwrap()
+        .into_inner();
+    let first = stream.message().await.unwrap().unwrap().state.unwrap();
+    assert_eq!(session.watchers(), 1);
+    assert_eq!(first.position_ms, None);
+    assert_eq!(first.playback_rate_tenths, 10);
+    assert!(!first.can_seek);
+    let mut state = initial();
+    state.transport = model::Transport {
+        position_ms: Some(12_000),
+        duration_ms: Some(60_000),
+        seek_range: Some((2_000, 60_000)),
+        can_seek: true,
+        can_pause: true,
+        playback_rate_tenths: 15,
+        ..Default::default()
+    };
+    let mut channels = session.channels().to_vec();
+    channels[0].current_program = Some(model::Program {
+        id: 7,
+        name: "Now".into(),
+        description: String::new(),
+        start_at_ms: 1000,
+        duration_ms: 60_000,
+    });
+    session.publish(state.clone(), Some(channels.clone()));
+    let second = stream.message().await.unwrap().unwrap().state.unwrap();
+    assert!(second.revision > first.revision);
+    assert_eq!(second.position_ms, Some(12_000));
+    assert_eq!(second.seek_start_ms, Some(2_000));
+    assert!(second.can_pause && second.can_seek);
+    assert_eq!(second.playback_rate_tenths, 15);
+    assert_eq!(
+        client
+            .list_channels(proto::ListChannelsRequest {})
+            .await
+            .unwrap()
+            .into_inner()
+            .channels[0]
+            .current_program
+            .as_ref()
+            .unwrap()
+            .name,
+        "Now"
+    );
+    channels[0].current_program = None;
+    session.publish(state, Some(channels));
+    assert!(
+        stream
+            .message()
+            .await
+            .unwrap()
+            .unwrap()
+            .state
+            .unwrap()
+            .revision
+            > second.revision
+    );
+    drop(stream);
+    tokio::time::timeout(Duration::from_secs(1), async {
+        while session.watchers() != 0 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    session.stop().wait().await.unwrap();
+}
+
+#[tokio::test]
+async fn host_policy_covers_static_grpc_web_and_http2_without_cors() -> Result {
+    let mut session = session();
+    let http = reqwest::Client::builder().http1_only().build()?;
+    let base = format!("http://{}", session.address());
+    for host in ["127.0.0.1", "localhost:50051", "[::1]:50051"] {
+        assert_eq!(
+            http.get(&base).header("host", host).send().await?.status(),
+            404
+        );
+        let rpc = http
+            .post(format!("{base}/viewer.v1.PlayerService/GetState"))
+            .header("host", host)
+            .header("content-type", "application/grpc-web+proto")
+            .body(frame(&proto::GetStateRequest {}))
+            .send()
+            .await?;
+        assert_eq!(rpc.status(), 200);
+        assert!(!rpc.headers().contains_key("access-control-allow-origin"));
+    }
+    for host in [
+        "evil.example",
+        "127.0.0.1.evil.example",
+        "localhost:bad",
+        "localhost:65536",
+    ] {
+        assert_eq!(
+            http.get(&base).header("host", host).send().await?.status(),
+            403
+        );
+        assert_eq!(
+            http.post(format!("{base}/viewer.v1.PlayerService/Stop"))
+                .header("host", host)
+                .header("content-type", "application/grpc-web+proto")
+                .body(frame(&proto::StopRequest {}))
+                .send()
+                .await?
+                .status(),
+            403
+        );
+    }
+    let transport = tonic::transport::Endpoint::from_shared(base.clone())?
+        .origin("http://evil.example".parse()?)
+        .connect()
+        .await?;
+    let mut forbidden = PlayerServiceClient::new(transport);
+    assert_eq!(
+        forbidden
+            .stop(proto::StopRequest {})
+            .await
+            .unwrap_err()
+            .code(),
+        Code::PermissionDenied
+    );
+    assert!(session.next_request().is_none());
+    // HTTP/1.0 permits an absent Host at the protocol layer; our policy rejects it.
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let mut socket = tokio::net::TcpStream::connect(session.address()).await?;
+    socket.write_all(b"GET / HTTP/1.0\r\n\r\n").await?;
+    let mut reply = Vec::new();
+    tokio::time::timeout(Duration::from_secs(1), socket.read_to_end(&mut reply)).await??;
+    assert!(String::from_utf8(reply)?.starts_with("HTTP/1.0 403"));
+    session.stop().wait().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn enabled_web_serves_embedded_assets_and_keeps_rpc_available() -> Result {
+    const EXPECTED_CSP: &str = "default-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
+    let session = Bound::bind(config().with_web_enabled(true))?.start(
+        &Handle::current(),
+        initial(),
+        Vec::new(),
+    )?;
+    let base = format!("http://{}", session.address());
+    let http = reqwest::Client::builder().http1_only().build()?;
+    let index = http.get(&base).send().await?;
+    assert_eq!(index.status(), 200);
+    assert_eq!(index.headers()["content-type"], "text/html; charset=utf-8");
+    assert_eq!(index.headers()["cache-control"], "no-cache");
+    assert_eq!(index.headers()["content-security-policy"], EXPECTED_CSP);
+    assert!(!index.headers().contains_key("access-control-allow-origin"));
+    let html = index.text().await?;
+    assert!(html.contains("<html"));
+    // Check the actual committed bundle, so renamed hashes stay covered.
+    let assets: Vec<_> = html
+        .split('"')
+        .filter(|value| value.starts_with("/assets/") || value.starts_with("assets/"))
+        .collect();
+    assert!(!assets.is_empty());
+    for asset in assets {
+        let response = http
+            .get(format!("{base}/{}", asset.trim_start_matches('/')))
+            .send()
+            .await?;
+        assert_eq!(response.status(), 200, "{asset}");
+        assert_eq!(
+            response.headers()["cache-control"],
+            "public, max-age=31536000, immutable"
+        );
+        assert_eq!(response.headers()["x-content-type-options"], "nosniff");
+        assert_eq!(response.headers()["content-security-policy"], EXPECTED_CSP);
+        if asset.ends_with(".js") {
+            assert_eq!(
+                response.headers()["content-type"],
+                "text/javascript; charset=utf-8"
+            );
+        }
+        if asset.ends_with(".css") {
+            assert_eq!(
+                response.headers()["content-type"],
+                "text/css; charset=utf-8"
+            );
+        }
+        assert!(!response.bytes().await?.is_empty());
+    }
+    for path in [
+        "/assets/missing.js",
+        "/assets/%2e%2e/Cargo.toml",
+        "/Cargo.toml",
+        "/src/main.ts",
+    ] {
+        assert_eq!(
+            http.get(format!("{base}{path}")).send().await?.status(),
+            404
+        );
+    }
+    let head = http.head(&base).send().await?;
+    assert_eq!(head.status(), 200);
+    assert_eq!(head.headers()["content-security-policy"], EXPECTED_CSP);
+    assert!(head.bytes().await?.is_empty());
+    let mut rpc = client(&session).await;
+    assert!(
+        rpc.get_state(proto::GetStateRequest {})
+            .await?
+            .into_inner()
+            .state
+            .is_some()
+    );
+    assert_eq!(
+        http.get(&base)
+            .header("host", "evil.example")
+            .send()
+            .await?
+            .status(),
+        403
+    );
+    session.stop().wait().await?;
+    Ok(())
 }

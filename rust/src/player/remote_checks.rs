@@ -24,6 +24,16 @@ pub(super) fn run() -> Result<(), Box<dyn std::error::Error>> {
     );
     assert_eq!(player.remote_status().to_string(), "listening");
     player.pin_mut().rust_mut().autoplay_pending = true;
+    let keys = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let emitted_keys = keys.clone();
+    let _keys = player
+        .pin_mut()
+        .on_remote_key_requested(move |_, key| emitted_keys.lock().unwrap().push(key));
+    let kinds = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let emitted_kinds = kinds.clone();
+    let _kinds = player
+        .pin_mut()
+        .on_remote_command_executed(move |_, kind| emitted_kinds.lock().unwrap().push(kind));
 
     let client = thread::spawn(move || {
         let runtime = tokio::runtime::Builder::new_current_thread()
@@ -89,6 +99,60 @@ pub(super) fn run() -> Result<(), Box<dyn std::error::Error>> {
                     .code(),
                 Code::FailedPrecondition
             );
+            macro_rules! unavailable {
+                ($method:ident, $request:expr) => {
+                    assert_eq!(
+                        client.$method($request).await.unwrap_err().code(),
+                        Code::FailedPrecondition
+                    );
+                };
+            }
+            unavailable!(set_paused, proto::SetPausedRequest { paused: Some(true) });
+            unavailable!(
+                seek_relative,
+                proto::SeekRelativeRequest {
+                    delta_ms: Some(-10_000)
+                }
+            );
+            unavailable!(
+                seek_to,
+                proto::SeekToRequest {
+                    position_ms: Some(0)
+                }
+            );
+            unavailable!(return_to_live, proto::ReturnToLiveRequest {});
+            unavailable!(
+                set_playback_rate,
+                proto::SetPlaybackRateRequest { tenths: Some(15) }
+            );
+            unavailable!(step_channel, proto::StepChannelRequest { offset: Some(1) });
+            unavailable!(previous_channel, proto::PreviousChannelRequest {});
+            unavailable!(
+                select_remote_key,
+                proto::SelectRemoteKeyRequest {
+                    number: Some(1),
+                    band: 0
+                }
+            );
+            for key in 1..=9 {
+                client
+                    .send_key(proto::SendKeyRequest { key })
+                    .await
+                    .unwrap();
+            }
+            let state = client
+                .get_state(proto::GetStateRequest {})
+                .await
+                .unwrap()
+                .into_inner()
+                .state
+                .unwrap();
+            assert!(
+                !state.can_pause
+                    && !state.can_seek
+                    && !state.can_return_to_live
+                    && !state.can_set_rate
+            );
             client
                 .stop(Request::new(proto::StopRequest {}))
                 .await
@@ -102,6 +166,17 @@ pub(super) fn run() -> Result<(), Box<dyn std::error::Error>> {
         thread::sleep(Duration::from_millis(1));
     }
     client.join().map_err(|_| "remote client check panicked")?;
+    assert_eq!(*keys.lock().unwrap(), (1..=9).collect::<Vec<_>>());
+    let mut expected = vec![
+        proto::RemoteCommandKind::SetMuted as i32,
+        proto::RemoteCommandKind::SetVolume as i32,
+    ];
+    expected.extend(std::iter::repeat_n(
+        proto::RemoteCommandKind::SendKey as i32,
+        9,
+    ));
+    expected.push(proto::RemoteCommandKind::Stop as i32);
+    assert_eq!(*kinds.lock().unwrap(), expected);
     assert!(!player.rust().autoplay_pending);
     assert!(!player.audio_muted());
     assert!((*player.volume_level() - 0.23).abs() < 1e-9);
@@ -115,6 +190,7 @@ pub(super) fn run() -> Result<(), Box<dyn std::error::Error>> {
     }
     std::net::TcpListener::bind(address)?;
     check_reconfiguration()?;
+    check_web_settings_and_qr()?;
     eprintln!("Remote RPC/Player integration checks passed (no hardware)");
     Ok(())
 }
@@ -244,4 +320,83 @@ fn check_reconfiguration() -> Result<(), Box<dyn std::error::Error>> {
     std::net::TcpListener::bind(replacement)?;
     std::net::TcpListener::bind(other)?;
     Ok(())
+}
+
+fn check_web_settings_and_qr() -> Result<(), Box<dyn std::error::Error>> {
+    use base64::Engine;
+    let temporary = tempfile::tempdir()?;
+    let path = temporary.path().join("remote-control.toml");
+    let mut player = ffi::new_player();
+    player.pin_mut().rust_mut().remote = Control::new(Preferences::open(path.clone())?);
+    assert!(player.remote_web_allowed());
+    assert!(!player.remote_web_enabled());
+    assert_eq!(player.remote_web_urls().to_string(), "[]");
+    let address = unused_address()?;
+    assert!(
+        player
+            .pin_mut()
+            .configure_remote(true, "127.0.0.1".into(), address.port().into())
+    );
+    assert_eq!(remote_http_status(address)?, 404);
+    assert!(player.pin_mut().set_remote_web_enabled(true));
+    wait_for(&mut player, "listening");
+    assert_eq!(remote_http_status(address)?, 200);
+    let expected = format!("http://{address}/");
+    let urls: Vec<String> = serde_json::from_str(&player.remote_web_urls().to_string())?;
+    assert_eq!(urls, vec![expected.clone()]);
+    let uri = player
+        .remote_qr_data_uri(expected.clone().into())
+        .to_string();
+    let svg = String::from_utf8(
+        base64::engine::general_purpose::STANDARD.decode(
+            uri.strip_prefix("data:image/svg+xml;base64,")
+                .expect("SVG data URI"),
+        )?,
+    )?;
+    assert!(svg.contains("<svg") && svg.contains("<path"));
+    assert!(
+        player
+            .remote_qr_data_uri("http://evil.example/".into())
+            .is_empty()
+    );
+    assert!(Preferences::open(path.clone())?.current().web_enabled());
+    assert!(player.pin_mut().set_remote_web_enabled(false));
+    wait_for(&mut player, "listening");
+    assert_eq!(remote_http_status(address)?, 404);
+    assert!(player.pin_mut().set_remote_web_enabled(true));
+    wait_for(&mut player, "listening");
+    assert_eq!(remote_http_status(address)?, 200);
+    assert!(
+        player
+            .pin_mut()
+            .configure_remote(false, "127.0.0.1".into(), address.port().into())
+    );
+    wait_for(&mut player, "disabled");
+    assert!(
+        player.remote_web_enabled(),
+        "listener edits preserve the web preference"
+    );
+    assert_eq!(player.remote_web_urls().to_string(), "[]");
+    assert_eq!(player.remote_watchers(), 0);
+    assert!(player.pin_mut().set_remote_web_enabled(false));
+    assert!(!Preferences::open(path)?.current().web_enabled());
+    assert!(player.pin_mut().shutdown());
+    Ok(())
+}
+
+fn remote_http_status(address: std::net::SocketAddr) -> Result<u16, Box<dyn std::error::Error>> {
+    use std::io::{BufRead, Write};
+    let mut stream = std::net::TcpStream::connect(address)?;
+    stream.set_read_timeout(Some(Duration::from_secs(2)))?;
+    write!(
+        stream,
+        "GET / HTTP/1.1\r\nHost: {address}\r\nConnection: close\r\n\r\n"
+    )?;
+    let mut status = String::new();
+    std::io::BufReader::new(stream).read_line(&mut status)?;
+    Ok(status
+        .split_whitespace()
+        .nth(1)
+        .ok_or("missing HTTP status")?
+        .parse()?)
 }

@@ -232,18 +232,23 @@ impl ffi::Player {
         self.control_transport(|media| media.transport_control()?.skip(milliseconds))
     }
     fn control_transport(
-        mut self: Pin<&mut Self>,
+        self: Pin<&mut Self>,
         operation: impl FnOnce(&mut playback::Session) -> Result<(), Error>,
     ) -> bool {
+        self.control_transport_result(operation).is_ok()
+    }
+    pub(super) fn control_transport_result(
+        mut self: Pin<&mut Self>,
+        operation: impl FnOnce(&mut playback::Session) -> Result<(), Error>,
+    ) -> Result<(), Error> {
         let result = if self.pausable() {
             operation(&mut self.as_mut().rust_mut().media)
         } else {
             Err(Error::Unavailable)
         };
-        let accepted = result.is_ok();
-        let message = result.err().map_or(Message::None, |error| {
+        let message = result.as_ref().err().map_or(Message::None, |error| {
             tracing::error!(
-                error = &error as &dyn std::error::Error,
+                error = error as &dyn std::error::Error,
                 "Playback transport operation failed"
             );
             Message::Failure(error.present())
@@ -266,7 +271,7 @@ impl ffi::Player {
                 self.as_mut().set_program_progress(0.0);
             }
         }
-        accepted
+        result
     }
     pub(super) fn set_transport_message(mut self: Pin<&mut Self>, message: Message) {
         if self.rust().transport_message != message {

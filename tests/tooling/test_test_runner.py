@@ -19,6 +19,18 @@ LOCK = ROOT / "scripts/build/with-build-lock.sh"
 
 
 class RunnerTests(unittest.TestCase):
+    def test_remote_web_is_a_cpu_check_without_qt_or_gui_setup(self):
+        for group in ("cpu", "all"):
+            self.assertIn("remote-web", runner.GROUPS[group])
+        steps = runner.plan(["remote-web"], Path("/unused"),
+                            Namespace(profile="dev", suite_args=[]))
+        self.assertEqual([step.name for step in steps], ["remote-web"])
+        self.assertEqual(steps[0].command,
+                         [sys.executable, "-m", "scripts.testing.check_remote_web"])
+        checks = runner.plan(["checks"], Path("/unused"),
+                             Namespace(profile="dev", suite_args=[]))
+        self.assertNotIn("remote-web", [step.name for step in checks])
+
     def test_shared_checks_run_once_when_selected_with_localization(self):
         steps = runner.plan(["checks", "tooling", "localization"], Path("/unused"),
                             Namespace(profile="dev", suite_args=[]))

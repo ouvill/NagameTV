@@ -37,9 +37,11 @@ python3 scripts/test.py tooling                  # スクリプト自身の回�
 python3 scripts/test.py arib-b24                 # データカルーセルの機器不要テスト
 python3 scripts/test.py viewer-web-bml            # web-bml への変換の機器不要テスト
 python3 scripts/test.py web-bml-adapter           # ブラウザー接続・起動制御。開発用Node.jsが必要
+python3 scripts/test.py remote-web                # Webリモコンの型・単体試験・dist再現性。Node.js/npmが必要
 python3 scripts/test.py viewer-mpegts            # 共通TS・PAT/PMTの機器不要テスト
 python3 scripts/test.py libaribcaption           # 字幕デコーダーの所有権試験。C++/CMake/libclangが必要
 python3 scripts/test.py connection localization  # 機器不要のQt試験
+python3 scripts/test.py remote-keys               # 専用画面・実GPUでリモコンキー配送と非アクティブ時の挙動を確認
 python3 scripts/test.py danmaku ui-style          # 専用画面・実GPU・仮想音声を検証
 python3 scripts/test.py startup -- recording-pid-change
 python3 scripts/test.py danmaku -- --evaluation-legacy-comments
@@ -52,6 +54,16 @@ QML試験の関数指定や `-o` も同じ形式です。`checks` には `toolin
 標準実行ではQt不要のRustクレートを先に検証します。クレートごとにビルド・実行するため、
 テスト失敗後に残りのクレートやQtをビルドしません。`core`はアプリ・Qtの検証を含まないので、
 変更範囲に応じて選択します。CIと引数なしの実行は引き続き全CPUスイートを検証します。
+
+`remote-web` は `web-bml-adapter` と同じく `cpu` / `all` に含み、`checks` には含みません。
+初回は `rust/crates/viewer-remote/web/` で `npm ci` を実行してください。
+共通ランナーから [check_remote_web.py](testing/check_remote_web.py) を呼び出し、
+`npm run check`、`npm test`、一時ディレクトリーへのビルドと `dist/` のバイト比較を順に行います。
+Node.js 18以降とnpm、導入済みの依存が必要で、表示・GPU・音声は使用しません。
+依存未導入時や成果物の不一致は失敗とし、検査中の依存取得や `dist/` の書き換えは行いません。
+不一致の場合はWebディレクトリーで `npm run build` を実行し、更新した `dist/` をコミットします。
+ログは共通の実行ディレクトリーの `remote-web.log` に残し、一時ビルドは終了時に削除します。
+CIは試験前の準備として `npm ci` を実行します。
 
 GUI試験は [gui_session.py](testing/gui_session.py) が専用画面と音声出力を所有し、
 検証成功後に [suites.py](testing/suites.py) がテストを実行します。

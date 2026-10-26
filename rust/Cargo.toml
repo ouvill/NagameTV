@@ -59,6 +59,8 @@ tempfile = "3.27"
 bitfield = "0.19.5"
 local-ip-address = "0.6.13"
 memmap2 = "0.9.11"
+qrcode = { version = "0.14", default-features = false, features = ["svg"] }
+base64 = "0.22"
 
 [dev-dependencies]
 proptest = { version = "1", default-features = false, features = ["std"] }

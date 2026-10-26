@@ -2,6 +2,8 @@
 pub mod config;
 pub mod model;
 mod projection;
+pub use projection::command_kind;
+mod http;
 mod rpc;
 
 pub mod proto {
@@ -22,6 +24,7 @@ use tokio::{
 };
 use tokio_util::sync::CancellationToken;
 
+const MAX_WATCHERS: usize = 16;
 const QUEUE_CAPACITY: usize = 32;
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(2);
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(3);
@@ -78,6 +81,7 @@ struct Published {
 
 /// Owns a successfully bound socket before any task is allowed to start.
 pub struct Bound {
+    web_enabled: bool,
     listener: std::net::TcpListener,
 }
 
@@ -85,7 +89,10 @@ impl Bound {
     pub fn bind(config: config::Config) -> std::io::Result<Self> {
         let listener = std::net::TcpListener::bind(config.address)?;
         listener.set_nonblocking(true)?;
-        Ok(Self { listener })
+        Ok(Self {
+            listener,
+            web_enabled: config.web_enabled,
+        })
     }
 
     pub fn address(&self) -> std::io::Result<SocketAddr> {
@@ -98,6 +105,7 @@ impl Bound {
         state: State,
         channels: Vec<model::Channel>,
     ) -> std::io::Result<Session> {
+        let web_enabled = self.web_enabled;
         let _entered = runtime.enter();
         let address = self.listener.local_addr()?;
         let listener = tokio::net::TcpListener::from_std(self.listener)?;
@@ -107,7 +115,8 @@ impl Bound {
             channels: channels.iter().map(projection::channel).collect(),
         }));
         let stop = CancellationToken::new();
-        let rpc = rpc::Rpc::new(commands, snapshots, stop.clone());
+        let subscribers = Arc::new(tokio::sync::Semaphore::new(MAX_WATCHERS));
+        let rpc = rpc::Rpc::new(commands, snapshots, stop.clone(), subscribers.clone());
         let service = proto::player_service_server::PlayerServiceServer::new(rpc)
             .max_decoding_message_size(4096)
             .max_encoding_message_size(4 * 1024 * 1024);
@@ -118,7 +127,11 @@ impl Bound {
                 .max_concurrent_streams(32)
                 .concurrency_limit_per_connection(32)
                 .load_shed(true)
-                .layer(tonic_web::GrpcWebLayer::new())
+                .layer(
+                    tower::ServiceBuilder::new()
+                        .layer(http::HttpLayer { web_enabled })
+                        .layer(tonic_web::GrpcWebLayer::new()),
+                )
                 .add_service(service)
                 .serve_with_incoming_shutdown(
                     tokio_stream::wrappers::TcpListenerStream::new(listener),
@@ -136,6 +149,7 @@ impl Bound {
         });
         Ok(Session {
             address,
+            subscribers,
             requests,
             published,
             state,
@@ -169,6 +183,7 @@ impl Drop for Task {
 
 /// The application thread owns command consumption and snapshot publication.
 pub struct Session {
+    subscribers: Arc<tokio::sync::Semaphore>,
     address: SocketAddr,
     requests: mpsc::Receiver<Pending>,
     published: watch::Sender<Arc<Published>>,
@@ -178,6 +193,9 @@ pub struct Session {
 }
 
 impl Session {
+    pub fn watchers(&self) -> usize {
+        MAX_WATCHERS - self.subscribers.available_permits()
+    }
     pub fn address(&self) -> SocketAddr {
         self.address
     }

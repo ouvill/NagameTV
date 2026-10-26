@@ -1,6 +1,6 @@
 use crate::{
     COMMAND_TIMEOUT, Pending, Published,
-    model::{Command, CommandError, Volume},
+    model::{self, Command, CommandError, Volume},
     proto,
 };
 use std::{pin::Pin, sync::Arc, time::Instant};
@@ -20,12 +20,13 @@ impl Rpc {
         commands: mpsc::Sender<Pending>,
         snapshots: watch::Receiver<Arc<Published>>,
         stop: CancellationToken,
+        subscribers: Arc<Semaphore>,
     ) -> Self {
         Self {
             commands,
             snapshots,
             stop,
-            subscribers: Arc::new(Semaphore::new(16)),
+            subscribers,
         }
     }
 
@@ -174,4 +175,107 @@ impl proto::player_service_server::PlayerService for Rpc {
         .await?;
         Ok(Response::new(proto::SetSubtitlesResponse {}))
     }
+
+    async fn set_paused(
+        &self,
+        request: Request<proto::SetPausedRequest>,
+    ) -> Result<Response<proto::SetPausedResponse>, Status> {
+        self.execute(Command::SetPaused(required(
+            request.into_inner().paused,
+            "paused",
+        )?))
+        .await?;
+        Ok(Response::new(proto::SetPausedResponse {}))
+    }
+    async fn seek_relative(
+        &self,
+        request: Request<proto::SeekRelativeRequest>,
+    ) -> Result<Response<proto::SeekRelativeResponse>, Status> {
+        self.execute(Command::SeekRelative(valid(model::SeekDelta::new(
+            required(request.into_inner().delta_ms, "delta_ms")?,
+        ))?))
+        .await?;
+        Ok(Response::new(proto::SeekRelativeResponse {}))
+    }
+    async fn seek_to(
+        &self,
+        request: Request<proto::SeekToRequest>,
+    ) -> Result<Response<proto::SeekToResponse>, Status> {
+        self.execute(Command::SeekTo(valid(model::SeekPosition::new(required(
+            request.into_inner().position_ms,
+            "position_ms",
+        )?))?))
+        .await?;
+        Ok(Response::new(proto::SeekToResponse {}))
+    }
+    async fn return_to_live(
+        &self,
+        _: Request<proto::ReturnToLiveRequest>,
+    ) -> Result<Response<proto::ReturnToLiveResponse>, Status> {
+        self.execute(Command::ReturnToLive).await?;
+        Ok(Response::new(proto::ReturnToLiveResponse {}))
+    }
+    async fn set_playback_rate(
+        &self,
+        request: Request<proto::SetPlaybackRateRequest>,
+    ) -> Result<Response<proto::SetPlaybackRateResponse>, Status> {
+        self.execute(Command::SetPlaybackRate(valid(model::PlaybackRate::new(
+            required(request.into_inner().tenths, "tenths")?,
+        ))?))
+        .await?;
+        Ok(Response::new(proto::SetPlaybackRateResponse {}))
+    }
+    async fn step_channel(
+        &self,
+        request: Request<proto::StepChannelRequest>,
+    ) -> Result<Response<proto::StepChannelResponse>, Status> {
+        self.execute(Command::StepChannel(valid(model::Step::new(required(
+            request.into_inner().offset,
+            "offset",
+        )?))?))
+        .await?;
+        Ok(Response::new(proto::StepChannelResponse {}))
+    }
+    async fn previous_channel(
+        &self,
+        _: Request<proto::PreviousChannelRequest>,
+    ) -> Result<Response<proto::PreviousChannelResponse>, Status> {
+        self.execute(Command::PreviousChannel).await?;
+        Ok(Response::new(proto::PreviousChannelResponse {}))
+    }
+    async fn send_key(
+        &self,
+        request: Request<proto::SendKeyRequest>,
+    ) -> Result<Response<proto::SendKeyResponse>, Status> {
+        self.execute(Command::SendKey(valid(model::RemoteKey::new(
+            request.into_inner().key,
+        ))?))
+        .await?;
+        Ok(Response::new(proto::SendKeyResponse {}))
+    }
+    async fn select_remote_key(
+        &self,
+        request: Request<proto::SelectRemoteKeyRequest>,
+    ) -> Result<Response<proto::SelectRemoteKeyResponse>, Status> {
+        let request = request.into_inner();
+        let number = valid(model::RemoteNumber::new(required(
+            request.number,
+            "number",
+        )?))?;
+        let band = match proto::BroadcastBand::try_from(request.band) {
+            Ok(proto::BroadcastBand::Unspecified) => None,
+            Ok(proto::BroadcastBand::Terrestrial) => Some(model::Band::Terrestrial),
+            Ok(proto::BroadcastBand::Bs) => Some(model::Band::Bs),
+            Ok(proto::BroadcastBand::Cs) => Some(model::Band::Cs),
+            Ok(proto::BroadcastBand::Sky) => Some(model::Band::Sky),
+            Ok(proto::BroadcastBand::Other) => Some(model::Band::Other),
+            Err(_) => return Err(Status::invalid_argument("band is unknown")),
+        };
+        self.execute(Command::SelectRemoteKey(number, band)).await?;
+        Ok(Response::new(proto::SelectRemoteKeyResponse {}))
+    }
+}
+
+fn valid<T>(value: Result<T, model::InvalidCommand>) -> Result<T, Status> {
+    value.map_err(|error| Status::invalid_argument(error.to_string()))
 }

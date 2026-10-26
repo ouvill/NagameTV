@@ -99,6 +99,33 @@ ViewerWindow {
         }
         function onDanmaku_enabledChanged() { root.recordUsage(); }
         function onComments_enabledChanged() { root.recordUsage(); }
+        // Navigation keys go through normal focus delivery so every panel keeps
+        // its own D-pad handling.
+        function onRemote_key_requested(key: int) {
+            switch (key) {
+            case Player.RemoteKeyUp: root.postRemoteKey(Qt.Key_Up); break;
+            case Player.RemoteKeyDown: root.postRemoteKey(Qt.Key_Down); break;
+            case Player.RemoteKeyLeft: root.postRemoteKey(Qt.Key_Left); break;
+            case Player.RemoteKeyRight: root.postRemoteKey(Qt.Key_Right); break;
+            case Player.RemoteKeyOk: root.postRemoteKey(Qt.Key_Return); break;
+            case Player.RemoteKeyBack: root.postRemoteKey(Qt.Key_Back); break;
+            case Player.RemoteKeyGuide: viewerActions.toggleGuide.trigger(); break;
+            case Player.RemoteKeyChannels: viewerActions.toggleChannels.trigger(); break;
+            case Player.RemoteKeyFullscreen: viewerActions.toggleFullscreen.trigger(); break;
+            }
+        }
+        function onRemote_command_executed(kind: int) {
+            remoteNotice.show(kind);
+            // Seeks and channel changes are easier to follow with the usual overlay.
+            if (kind !== Player.RemoteCommandSendKey) overlayVisibility.reveal();
+            if (kind === Player.RemoteCommandSeekRelative || kind === Player.RemoteCommandSeekTo)
+                recordingTimeline.flashSeek();
+        }
+    }
+    ShortcutKey { id: remoteKeys }
+    function postRemoteKey(key: int) {
+        // post_key records the reason in tracing when it rejects a key.
+        remoteKeys.post_key(root.contentItem, key);
     }
     readonly property bool showGuide: player.guide_visible
     property bool showChannels: false
@@ -817,6 +844,14 @@ ViewerWindow {
                 // An empty band lets the backend choose from the station being watched.
                 if (player.select_remote_key(key, "")) overlayVisibility.reveal();
             }
+        }
+        RemoteNotice {
+            id: remoteNotice
+            objectName: "remoteNotice"
+            backend: player
+            // Centered above the video so it clears the program title and number entry.
+            anchors { horizontalCenter: parent.horizontalCenter; top: parent.top; topMargin: Theme.spaceXl }
+            z: 8
         }
         ScreenshotNotice {
             id: screenshotNotice
