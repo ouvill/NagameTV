@@ -21,6 +21,7 @@ impl PlayerRust {
     }
 
     fn remote_channels(&self) -> Vec<model::Channel> {
+        let now = epoch_ms();
         self.catalog
             .channels()
             .iter()
@@ -29,6 +30,13 @@ impl PlayerRust {
                 name: channel.name.clone(),
                 label: channel.label.clone(),
                 band: crate::remote::band(channel.band),
+                remote_key: channel
+                    .remote_key
+                    .map(u32::from)
+                    .filter(|key| (1..=12).contains(key)),
+                current_program: now
+                    .and_then(|now| self.epg.current(channel.broadcast, now))
+                    .map(remote_program),
             })
             .collect()
     }
@@ -78,10 +86,7 @@ impl PlayerRust {
                 None,
             ),
         };
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .ok()
-            .and_then(|duration| u64::try_from(duration.as_millis()).ok());
+        let now = epoch_ms();
         // The remote API's program IDs come from the server's wall-clock EPG.
         // Do not label retained playback with a program currently on air.
         let broadcast = if self.stream_state.timeshift(self.timeline.range.is_some()) {
@@ -91,13 +96,19 @@ impl PlayerRust {
         };
         let current_program = now
             .and_then(|now| self.epg.current(broadcast, now))
-            .map(|program| model::Program {
-                id: program.id,
-                name: program.name.clone().unwrap_or_default(),
-                description: program.description.clone().unwrap_or_default(),
-                start_at_ms: program.start_at,
-                duration_ms: program.duration,
-            });
+            .map(remote_program);
+        let recording = self.stream_state.recording().is_some();
+        let timeshift = self.stream_state.timeshift(self.timeline.range.is_some());
+        let can_pause = self.stream_state.active() && (recording || self.stream_state.pausable());
+        let can_seek = can_pause && (recording || timeshift) && self.timeline.range.is_some();
+        let live_ready = self.media.playback().is_some()
+            && !self.preferences.preferences().server.trim().is_empty()
+            && self.pending_server.is_none();
+        let previous = self.stream_state.active_service().and_then(|current| {
+            self.viewing_history.previous(current, |id| {
+                self.catalog.channels().iter().any(|c| c.id == id)
+            })
+        });
         model::State {
             selected_channel_id: self.catalog.selected().map(|channel| channel.id),
             playback,
@@ -114,11 +125,75 @@ impl PlayerRust {
             playback_error: self.playback_error.render().to_string(),
             settings_error: self.settings_error.render().to_string(),
             current_program,
+            transport: model::Transport {
+                position_ms: self.timeline.position.map(|value| value.mseconds()),
+                duration_ms: self.timeline.duration.map(|value| value.mseconds()),
+                seek_range: self
+                    .timeline
+                    .range
+                    .filter(|_| can_seek)
+                    .map(|range| (range.start().mseconds(), range.end().mseconds())),
+                playback_rate_tenths: self.speed.applied.tenths(),
+                can_pause,
+                can_seek,
+                can_return_to_live: can_pause && timeshift && self.timeline.range.is_some(),
+                can_set_rate: can_pause
+                    && self.speed.availability == crate::playback::speed::Availability::Variable,
+                at_live_edge: match self.stream_state {
+                    State::Playing(_, phase) => self.speed.playing_at_live_edge(phase),
+                    _ => false,
+                },
+                can_step_channel: live_ready && !self.catalog.channels().is_empty(),
+                can_previous_channel: live_ready && previous.is_some(),
+            },
         }
     }
 }
 
 impl ffi::Player {
+    pub fn remote_web_enabled(&self) -> bool {
+        self.rust().remote.settings().web_enabled()
+    }
+    pub fn remote_web_allowed(&self) -> bool {
+        self.rust().remote.web_allowed()
+    }
+    pub fn remote_web_urls(&self) -> QString {
+        QString::from(
+            serde_json::to_string(&self.rust().remote.web_urls())
+                .expect("URL string list serializes"),
+        )
+    }
+    pub fn set_remote_web_enabled(mut self: Pin<&mut Self>, enabled: bool) -> bool {
+        if !self.as_mut().rust_mut().remote.configure_web(enabled) {
+            return false;
+        }
+        self.as_mut().rust_mut().start_remote_if_requested();
+        self.notify_remote();
+        true
+    }
+    pub fn remote_qr_data_uri(&self, url: QString) -> QString {
+        let url = url.to_string();
+        if !self.rust().remote.web_urls().contains(&url) {
+            tracing::warn!("Remote QR generation rejected: URL is not a current web endpoint");
+            return QString::default();
+        }
+        match crate::remote::qr::data_uri(&url) {
+            Ok(uri) => QString::from(uri),
+            Err(error) => {
+                tracing::error!(
+                    error = &error as &dyn std::error::Error,
+                    "Remote QR generation failed"
+                );
+                QString::default()
+            }
+        }
+    }
+    pub fn remote_watchers(&self) -> i32 {
+        self.rust()
+            .remote
+            .session()
+            .map_or(0, |session| session.watchers() as i32)
+    }
     pub fn remote_enabled(&self) -> bool {
         self.rust().remote.settings().enabled()
     }
@@ -154,6 +229,9 @@ impl ffi::Player {
 
     fn notify_remote(mut self: Pin<&mut Self>) {
         // Every getter already reflects the complete update before any signal fires.
+        self.as_mut().remote_web_enabled_changed();
+        self.as_mut().remote_web_urls_changed();
+        self.as_mut().remote_watchers_changed();
         self.as_mut().remote_enabled_changed();
         self.as_mut().remote_address_changed();
         self.as_mut().remote_port_changed();
@@ -163,7 +241,8 @@ impl ffi::Player {
         self.as_mut().remote_endpoints_changed();
         self.as_mut().remote_session_only_changed();
     }
-    pub fn refresh_remote_addresses(self: Pin<&mut Self>) {
+    pub fn refresh_remote_addresses(mut self: Pin<&mut Self>) {
+        self.as_mut().remote_web_urls_changed();
         self.remote_endpoints_changed();
     }
     pub fn configure_remote(
@@ -177,6 +256,7 @@ impl ffi::Player {
         else {
             return false;
         };
+        let settings = settings.with_web_enabled(self.remote_web_enabled());
         self.as_mut().rust_mut().remote.configure(settings);
         self.as_mut().rust_mut().start_remote_if_requested();
         self.notify_remote();
@@ -202,7 +282,14 @@ impl ffi::Player {
             let Some(request) = pending.claim() else {
                 continue;
             };
-            let result = self.as_mut().execute_remote(request.command());
+            let command = request.command();
+            let result = self.as_mut().execute_remote(command);
+            if result.is_ok() {
+                self.as_mut()
+                    .remote_command_executed(viewer_remote::command_kind(command) as i32);
+            }
+            // Native operation handlers already log their failures; logging again
+            // here would duplicate them when forwarding the status to the caller.
             // Publish before replying so a following GetState includes this operation.
             self.as_mut().publish_remote();
             request.complete(result);
@@ -213,16 +300,26 @@ impl ffi::Player {
         let Some(session) = self.rust().remote.session() else {
             return;
         };
-        let channels_changed = session.channels().len() != self.rust().catalog.channels().len()
+        let now = epoch_ms();
+        let catalog = self.rust().catalog.channels();
+        let channels_changed = session.channels().len() != catalog.len()
             || session
                 .channels()
                 .iter()
-                .zip(self.rust().catalog.channels())
-                .any(|(a, b)| {
-                    a.id != b.id
-                        || a.name != b.name
-                        || a.label != b.label
-                        || a.band != crate::remote::band(b.band)
+                .zip(catalog)
+                .any(|(published, channel)| {
+                    let program =
+                        now.and_then(|now| self.rust().epg.current(channel.broadcast, now));
+                    published.id != channel.id
+                        || published.name != channel.name
+                        || published.label != channel.label
+                        || published.band != crate::remote::band(channel.band)
+                        || published.remote_key
+                            != channel
+                                .remote_key
+                                .map(u32::from)
+                                .filter(|key| (1..=12).contains(key))
+                        || !same_program(published.current_program.as_ref(), program)
                 });
         let channels = channels_changed.then(|| self.rust().remote_channels());
         let state = self.rust().remote_state();
@@ -264,6 +361,92 @@ impl ffi::Player {
                     Ok(())
                 }
             }
+            Command::SetPaused(paused) => {
+                if !self.pausable() {
+                    return Err(CommandError::NotReady("pause is unavailable"));
+                }
+                if self.paused() == paused {
+                    return Ok(());
+                }
+                self.remote_transport(|media| {
+                    media.transport_control()?.resume(if paused {
+                        crate::playback::timeline::Resume::Paused
+                    } else {
+                        crate::playback::timeline::Resume::Playing
+                    })
+                })
+            }
+            Command::SeekRelative(delta) => {
+                if !self.seekable() {
+                    return Err(CommandError::NotReady("seeking is unavailable"));
+                }
+                self.remote_transport(|media| media.transport_control()?.skip(delta.milliseconds()))
+            }
+            Command::SeekTo(position) => {
+                if !self.seekable() {
+                    return Err(CommandError::NotReady("seeking is unavailable"));
+                }
+                self.remote_transport(|media| {
+                    media.transport_control()?.seek(position.milliseconds())
+                })
+            }
+            Command::ReturnToLive => {
+                if !self.timeshift() {
+                    return Err(CommandError::NotReady(
+                        "retained live playback is unavailable",
+                    ));
+                }
+                self.remote_transport(crate::playback::Session::return_to_live)
+            }
+            Command::SetPlaybackRate(rate) => {
+                if !self.speed_available() {
+                    return Err(CommandError::NotReady("speed control is unavailable"));
+                }
+                self.remote_transport(|media| {
+                    media.transport_control()?.set_rate(
+                        crate::playback::speed::Rate::checked(rate.tenths())
+                            .expect("validated remote rate"),
+                    )
+                })
+            }
+            Command::StepChannel(step) => {
+                self.remote_live_ready()?;
+                if self.rust().catalog.channels().is_empty() {
+                    return Err(CommandError::ChannelNotFound);
+                }
+                self.as_mut().step_channel(step.offset());
+                self.remote_play_result()
+            }
+            Command::PreviousChannel => {
+                self.remote_live_ready()?;
+                if !self.previous_channel_available() {
+                    return Err(CommandError::NotReady("no previous channel"));
+                }
+                self.as_mut().previous_channel();
+                self.remote_play_result()
+            }
+            Command::SelectRemoteKey(number, band) => {
+                self.remote_live_ready()?;
+                let band = match band {
+                    None => "",
+                    Some(model::Band::Terrestrial) => "GR",
+                    Some(model::Band::Bs) => "BS",
+                    Some(model::Band::Cs) => "CS",
+                    Some(model::Band::Sky) => "SKY",
+                    Some(model::Band::Other) => "OTHER",
+                };
+                if !self
+                    .as_mut()
+                    .select_remote_key(number.number(), QString::from(band))
+                {
+                    return Err(CommandError::ChannelNotFound);
+                }
+                self.remote_play_result()
+            }
+            Command::SendKey(key) => {
+                self.as_mut().remote_key_requested(key as i32);
+                Ok(())
+            }
             Command::SetVolume(volume) => {
                 self.volume(volume.fraction());
                 Ok(())
@@ -283,6 +466,22 @@ impl ffi::Player {
                 Ok(())
             }
         }
+    }
+
+    fn remote_transport(
+        self: Pin<&mut Self>,
+        operation: impl FnOnce(
+            &mut crate::playback::Session,
+        ) -> Result<(), crate::playback::timeline::Error>,
+    ) -> Result<(), CommandError> {
+        use crate::playback::timeline::Error;
+        self.control_transport_result(operation)
+            .map_err(|error| match error {
+                Error::Unavailable | Error::RateUnavailable => {
+                    CommandError::NotReady("transport is not ready")
+                }
+                error => CommandError::Playback(error.to_string()),
+            })
     }
 
     fn remote_output_ready(&self) -> Result<(), CommandError> {
@@ -313,4 +512,102 @@ impl ffi::Player {
             }
         }
     }
+}
+
+fn epoch_ms() -> Option<u64> {
+    match SystemTime::now().duration_since(UNIX_EPOCH) {
+        Ok(duration) => Some(
+            duration
+                .as_millis()
+                .try_into()
+                .expect("epoch milliseconds fit u64"),
+        ),
+        Err(error) => {
+            tracing::warn!(%error, "Remote program publication cannot read wall clock");
+            None
+        }
+    }
+}
+fn remote_program(program: &crate::features::program_info::model::Program) -> model::Program {
+    model::Program {
+        id: program.id,
+        name: program.name.clone().unwrap_or_default(),
+        description: program.description.clone().unwrap_or_default(),
+        start_at_ms: program.start_at,
+        duration_ms: program.duration,
+    }
+}
+
+fn same_program(
+    published: Option<&model::Program>,
+    current: Option<&crate::features::program_info::model::Program>,
+) -> bool {
+    match (published, current) {
+        (None, None) => true,
+        (Some(a), Some(b)) => {
+            a.id == b.id
+                && a.name == b.name.as_deref().unwrap_or_default()
+                && a.description == b.description.as_deref().unwrap_or_default()
+                && a.start_at_ms == b.start_at
+                && a.duration_ms == b.duration
+        }
+        _ => false,
+    }
+}
+
+mod enum_contract {
+    use super::ffi;
+    use viewer_remote::proto;
+
+    macro_rules! wire_contract {
+        ($test:ident, $kind:ident { $($wire:ident => $qml:ident),+ $(,)? }) => {
+            // QML-only constants otherwise look unused to Rust. Check their wire
+            // values in every build instead of suppressing dead-code diagnostics.
+            const _: () = {
+                $(assert!(ffi::$kind::$qml.repr == proto::$kind::$wire as i32,
+                          stringify!($qml));)+
+            };
+
+            #[test]
+            fn $test() {
+                let qml_value = |wire: proto::$kind| match wire {
+                    $(proto::$kind::$wire => ffi::$kind::$qml.repr),+
+                };
+                $(assert_eq!(qml_value(proto::$kind::$wire), proto::$kind::$wire as i32,
+                             stringify!($qml));)+
+            }
+        };
+    }
+
+    wire_contract!(qml_remote_keys_match_every_proto_value, RemoteKey {
+        Unspecified => RemoteKeyUnspecified,
+        Up => RemoteKeyUp,
+        Down => RemoteKeyDown,
+        Left => RemoteKeyLeft,
+        Right => RemoteKeyRight,
+        Ok => RemoteKeyOk,
+        Back => RemoteKeyBack,
+        Guide => RemoteKeyGuide,
+        Channels => RemoteKeyChannels,
+        Fullscreen => RemoteKeyFullscreen,
+    });
+
+    wire_contract!(qml_remote_commands_match_every_proto_value, RemoteCommandKind {
+        Unspecified => RemoteCommandUnspecified,
+        SelectChannel => RemoteCommandSelectChannel,
+        Play => RemoteCommandPlay,
+        Stop => RemoteCommandStop,
+        SetVolume => RemoteCommandSetVolume,
+        SetMuted => RemoteCommandSetMuted,
+        SetSubtitles => RemoteCommandSetSubtitles,
+        SetPaused => RemoteCommandSetPaused,
+        SeekRelative => RemoteCommandSeekRelative,
+        SeekTo => RemoteCommandSeekTo,
+        ReturnToLive => RemoteCommandReturnToLive,
+        SetPlaybackRate => RemoteCommandSetPlaybackRate,
+        StepChannel => RemoteCommandStepChannel,
+        PreviousChannel => RemoteCommandPreviousChannel,
+        SelectRemoteKey => RemoteCommandSelectRemoteKey,
+        SendKey => RemoteCommandSendKey,
+    });
 }

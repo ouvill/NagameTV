@@ -25,7 +25,8 @@ NATIVE = tuple(name for name, suite in SUITES.items() if suite.requirement == Re
 GUI = tuple(name for name, suite in SUITES.items() if suite.requirement == Requirement.GUI
             and name != "ui-capture")
 GROUPS = {"core": CRATES, "rust": RUST, "native": NATIVE, "gui": GUI,
-          "cpu": ("checks", "web-bml-adapter", *RUST, *NATIVE), "all": ("checks", "web-bml-adapter", *RUST, *NATIVE, *GUI)}
+          "cpu": ("checks", "web-bml-adapter", "remote-web", *RUST, *NATIVE),
+          "all": ("checks", "web-bml-adapter", "remote-web", *RUST, *NATIVE, *GUI)}
 
 
 class Status(StrEnum):
@@ -92,6 +93,8 @@ def plan(suites, directory, args):
     checks, tests = [], []
     if "web-bml-adapter" in suites:
         tests.append(Step("web-bml-adapter", ["node", "--test", "tests/web-bml/adapter.test.mjs"]))
+    if "remote-web" in suites:
+        tests.append(Step("remote-web", [sys.executable, "-m", "scripts.testing.check_remote_web"]))
     if "checks" in suites:
         checks = [Step("format", ["cargo", "fmt", "--manifest-path", "rust/Cargo.toml", "--check"])]
         for module in ("packaging.check_release_metadata", "testing.check_ui_style",
@@ -175,12 +178,13 @@ def main():
         for group, members in GROUPS.items():
             print(f"{group}: {', '.join(members)}")
         print("web-bml-adapter: hardware-free browser adapter state and protocol tests (Node.js)")
+        print("remote-web: hardware-free type, unit and committed asset checks (Node.js/npm)")
         print("tooling: hardware-free tests of scripts (also included in checks)")
         print("ui-capture: manual GUI images for review (explicit selection only)")
         return 0
     suites = []
     for name in args.suites or ["cpu"]:
-        if name not in (*GROUPS, "checks", "tooling", "web-bml-adapter", *RUST, *SUITES):
+        if name not in (*GROUPS, "checks", "tooling", "web-bml-adapter", "remote-web", *RUST, *SUITES):
             parser.error(f"unknown suite: {name}; use --list")
         suites.extend(suite for suite in GROUPS.get(name, (name,)) if suite not in suites)
     if args.suite_args:

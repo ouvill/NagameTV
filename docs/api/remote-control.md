@@ -14,15 +14,33 @@
     - [PlayRequest](#viewer-v1-PlayRequest)
     - [PlayResponse](#viewer-v1-PlayResponse)
     - [PlayerState](#viewer-v1-PlayerState)
+    - [PreviousChannelRequest](#viewer-v1-PreviousChannelRequest)
+    - [PreviousChannelResponse](#viewer-v1-PreviousChannelResponse)
     - [Program](#viewer-v1-Program)
+    - [ReturnToLiveRequest](#viewer-v1-ReturnToLiveRequest)
+    - [ReturnToLiveResponse](#viewer-v1-ReturnToLiveResponse)
+    - [SeekRelativeRequest](#viewer-v1-SeekRelativeRequest)
+    - [SeekRelativeResponse](#viewer-v1-SeekRelativeResponse)
+    - [SeekToRequest](#viewer-v1-SeekToRequest)
+    - [SeekToResponse](#viewer-v1-SeekToResponse)
     - [SelectChannelRequest](#viewer-v1-SelectChannelRequest)
     - [SelectChannelResponse](#viewer-v1-SelectChannelResponse)
+    - [SelectRemoteKeyRequest](#viewer-v1-SelectRemoteKeyRequest)
+    - [SelectRemoteKeyResponse](#viewer-v1-SelectRemoteKeyResponse)
+    - [SendKeyRequest](#viewer-v1-SendKeyRequest)
+    - [SendKeyResponse](#viewer-v1-SendKeyResponse)
     - [SetMutedRequest](#viewer-v1-SetMutedRequest)
     - [SetMutedResponse](#viewer-v1-SetMutedResponse)
+    - [SetPausedRequest](#viewer-v1-SetPausedRequest)
+    - [SetPausedResponse](#viewer-v1-SetPausedResponse)
+    - [SetPlaybackRateRequest](#viewer-v1-SetPlaybackRateRequest)
+    - [SetPlaybackRateResponse](#viewer-v1-SetPlaybackRateResponse)
     - [SetSubtitlesRequest](#viewer-v1-SetSubtitlesRequest)
     - [SetSubtitlesResponse](#viewer-v1-SetSubtitlesResponse)
     - [SetVolumeRequest](#viewer-v1-SetVolumeRequest)
     - [SetVolumeResponse](#viewer-v1-SetVolumeResponse)
+    - [StepChannelRequest](#viewer-v1-StepChannelRequest)
+    - [StepChannelResponse](#viewer-v1-StepChannelResponse)
     - [StopRequest](#viewer-v1-StopRequest)
     - [StopResponse](#viewer-v1-StopResponse)
     - [StoppedPlayback](#viewer-v1-StoppedPlayback)
@@ -30,6 +48,8 @@
     - [WatchStateResponse](#viewer-v1-WatchStateResponse)
 
     - [BroadcastBand](#viewer-v1-BroadcastBand)
+    - [RemoteCommandKind](#viewer-v1-RemoteCommandKind)
+    - [RemoteKey](#viewer-v1-RemoteKey)
     - [SubtitleDisplay](#viewer-v1-SubtitleDisplay)
 
     - [PlayerService](#viewer-v1-PlayerService)
@@ -72,6 +92,8 @@
 | name | [string](#string) |  |  |
 | label | [string](#string) |  |  |
 | band | [BroadcastBand](#viewer-v1-BroadcastBand) |  |  |
+| current_program | [Program](#viewer-v1-Program) |  | Current wall-clock EPG program; absent if unavailable or ambiguous. |
+| remote_key | [uint32](#uint32) | optional | Desktop remote-control number, absent when unassigned/outside 1 through 12. |
 
 
 
@@ -194,6 +216,38 @@ A consistent projection of the player&#39;s authoritative state.
 | playback_error | [string](#string) |  | Last playback error, empty if none. Human-readable; not a stable error code. |
 | current_program | [Program](#viewer-v1-Program) |  | Current program for the active channel, absent when unknown or stopped. |
 | settings_error | [string](#string) |  | Last settings write error; a successful control RPC does not guarantee persistence. |
+| position_ms | [uint64](#uint64) | optional | Absent until known. Live values use the retained session timeline, not Unix time. |
+| duration_ms | [uint64](#uint64) | optional | Recording duration, or the end of the live session timeline; absent if unknown. |
+| seek_start_ms | [uint64](#uint64) | optional | Both present together when seeking is available; endpoints are inclusive. |
+| seek_end_ms | [uint64](#uint64) | optional |  |
+| playback_rate_tenths | [int32](#int32) |  | Applied speed; 10 means normal speed, even while inactive. |
+| can_pause | [bool](#bool) |  |  |
+| can_seek | [bool](#bool) |  |  |
+| can_return_to_live | [bool](#bool) |  |  |
+| can_set_rate | [bool](#bool) |  |  |
+| at_live_edge | [bool](#bool) |  | True only while actively playing at the live edge (not paused near the edge). |
+| can_step_channel | [bool](#bool) |  |  |
+| can_previous_channel | [bool](#bool) |  |  |
+
+
+
+
+
+
+<a name="viewer-v1-PreviousChannelRequest"></a>
+
+### PreviousChannelRequest
+
+
+
+
+
+
+
+<a name="viewer-v1-PreviousChannelResponse"></a>
+
+### PreviousChannelResponse
+
 
 
 
@@ -213,6 +267,76 @@ A consistent projection of the player&#39;s authoritative state.
 | description | [string](#string) |  |  |
 | start_at_ms | [uint64](#uint64) |  | Unix epoch milliseconds. |
 | duration_ms | [uint64](#uint64) |  |  |
+
+
+
+
+
+
+<a name="viewer-v1-ReturnToLiveRequest"></a>
+
+### ReturnToLiveRequest
+
+
+
+
+
+
+
+<a name="viewer-v1-ReturnToLiveResponse"></a>
+
+### ReturnToLiveResponse
+
+
+
+
+
+
+
+<a name="viewer-v1-SeekRelativeRequest"></a>
+
+### SeekRelativeRequest
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| delta_ms | [sint64](#sint64) | optional | Required. Inclusive range -9007199254740991 to 9007199254740991. |
+
+
+
+
+
+
+<a name="viewer-v1-SeekRelativeResponse"></a>
+
+### SeekRelativeResponse
+
+
+
+
+
+
+
+<a name="viewer-v1-SeekToRequest"></a>
+
+### SeekToRequest
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| position_ms | [uint64](#uint64) | optional | Required. Inclusive range 0 to 9007199254740991. |
+
+
+
+
+
+
+<a name="viewer-v1-SeekToResponse"></a>
+
+### SeekToResponse
+
 
 
 
@@ -244,6 +368,57 @@ A consistent projection of the player&#39;s authoritative state.
 
 
 
+<a name="viewer-v1-SelectRemoteKeyRequest"></a>
+
+### SelectRemoteKeyRequest
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| number | [uint32](#uint32) | optional | Required, 1 through 12 inclusive. Missing catalog match returns NOT_FOUND. |
+| band | [BroadcastBand](#viewer-v1-BroadcastBand) |  | UNSPECIFIED uses the viewed/selected band, or terrestrial with no selection. |
+
+
+
+
+
+
+<a name="viewer-v1-SelectRemoteKeyResponse"></a>
+
+### SelectRemoteKeyResponse
+
+
+
+
+
+
+
+<a name="viewer-v1-SendKeyRequest"></a>
+
+### SendKeyRequest
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| key | [RemoteKey](#viewer-v1-RemoteKey) |  |  |
+
+
+
+
+
+
+<a name="viewer-v1-SendKeyResponse"></a>
+
+### SendKeyResponse
+
+
+
+
+
+
+
 <a name="viewer-v1-SetMutedRequest"></a>
 
 ### SetMutedRequest
@@ -262,6 +437,56 @@ A consistent projection of the player&#39;s authoritative state.
 <a name="viewer-v1-SetMutedResponse"></a>
 
 ### SetMutedResponse
+
+
+
+
+
+
+
+<a name="viewer-v1-SetPausedRequest"></a>
+
+### SetPausedRequest
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| paused | [bool](#bool) | optional | Required, including false. |
+
+
+
+
+
+
+<a name="viewer-v1-SetPausedResponse"></a>
+
+### SetPausedResponse
+
+
+
+
+
+
+
+<a name="viewer-v1-SetPlaybackRateRequest"></a>
+
+### SetPlaybackRateRequest
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| tenths | [int32](#int32) | optional | Required. 5 through 20 inclusive: 0.5x through 2.0x, in steps of 0.1x. |
+
+
+
+
+
+
+<a name="viewer-v1-SetPlaybackRateResponse"></a>
+
+### SetPlaybackRateResponse
 
 
 
@@ -312,6 +537,31 @@ A consistent projection of the player&#39;s authoritative state.
 <a name="viewer-v1-SetVolumeResponse"></a>
 
 ### SetVolumeResponse
+
+
+
+
+
+
+
+<a name="viewer-v1-StepChannelRequest"></a>
+
+### StepChannelRequest
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| offset | [int32](#int32) | optional | Required. Exactly -1 (previous) or &#43;1 (next). |
+
+
+
+
+
+
+<a name="viewer-v1-StepChannelResponse"></a>
+
+### StepChannelResponse
 
 
 
@@ -392,6 +642,52 @@ A consistent projection of the player&#39;s authoritative state.
 
 
 
+<a name="viewer-v1-RemoteCommandKind"></a>
+
+### RemoteCommandKind
+Values emitted by Player.remote_command_executed(kind) after successful execution.
+
+| Name | Number | Description |
+| ---- | ------ | ----------- |
+| REMOTE_COMMAND_KIND_UNSPECIFIED | 0 |  |
+| REMOTE_COMMAND_KIND_SELECT_CHANNEL | 1 |  |
+| REMOTE_COMMAND_KIND_PLAY | 2 |  |
+| REMOTE_COMMAND_KIND_STOP | 3 |  |
+| REMOTE_COMMAND_KIND_SET_VOLUME | 4 |  |
+| REMOTE_COMMAND_KIND_SET_MUTED | 5 |  |
+| REMOTE_COMMAND_KIND_SET_SUBTITLES | 6 |  |
+| REMOTE_COMMAND_KIND_SET_PAUSED | 7 |  |
+| REMOTE_COMMAND_KIND_SEEK_RELATIVE | 8 |  |
+| REMOTE_COMMAND_KIND_SEEK_TO | 9 |  |
+| REMOTE_COMMAND_KIND_RETURN_TO_LIVE | 10 |  |
+| REMOTE_COMMAND_KIND_SET_PLAYBACK_RATE | 11 |  |
+| REMOTE_COMMAND_KIND_STEP_CHANNEL | 12 |  |
+| REMOTE_COMMAND_KIND_PREVIOUS_CHANNEL | 13 |  |
+| REMOTE_COMMAND_KIND_SELECT_REMOTE_KEY | 14 |  |
+| REMOTE_COMMAND_KIND_SEND_KEY | 15 |  |
+
+
+
+<a name="viewer-v1-RemoteKey"></a>
+
+### RemoteKey
+
+
+| Name | Number | Description |
+| ---- | ------ | ----------- |
+| REMOTE_KEY_UNSPECIFIED | 0 |  |
+| REMOTE_KEY_UP | 1 |  |
+| REMOTE_KEY_DOWN | 2 |  |
+| REMOTE_KEY_LEFT | 3 |  |
+| REMOTE_KEY_RIGHT | 4 |  |
+| REMOTE_KEY_OK | 5 |  |
+| REMOTE_KEY_BACK | 6 |  |
+| REMOTE_KEY_GUIDE | 7 |  |
+| REMOTE_KEY_CHANNELS | 8 |  |
+| REMOTE_KEY_FULLSCREEN | 9 |  |
+
+
+
 <a name="viewer-v1-SubtitleDisplay"></a>
 
 ### SubtitleDisplay
@@ -431,6 +727,15 @@ reconcile using GetState before retrying. No command is automatically replayed.
 | SetVolume | [SetVolumeRequest](#viewer-v1-SetVolumeRequest) | [SetVolumeResponse](#viewer-v1-SetVolumeResponse) | Sets the volume fraction and unmutes, matching the desktop volume slider. |
 | SetMuted | [SetMutedRequest](#viewer-v1-SetMutedRequest) | [SetMutedResponse](#viewer-v1-SetMutedResponse) | Sets mute explicitly. Unmuting restores the selected volume. |
 | SetSubtitles | [SetSubtitlesRequest](#viewer-v1-SetSubtitlesRequest) | [SetSubtitlesResponse](#viewer-v1-SetSubtitlesResponse) | Controls subtitle display. A disabled subtitle feature returns FAILED_PRECONDITION. |
+| SetPaused | [SetPausedRequest](#viewer-v1-SetPausedRequest) | [SetPausedResponse](#viewer-v1-SetPausedResponse) | Explicit pause/resume. Requires can_pause; safe to repeat. |
+| SeekRelative | [SeekRelativeRequest](#viewer-v1-SeekRelativeRequest) | [SeekRelativeResponse](#viewer-v1-SeekRelativeResponse) | Relative to the current position; clamps to the current seekable range. |
+| SeekTo | [SeekToRequest](#viewer-v1-SeekToRequest) | [SeekToResponse](#viewer-v1-SeekToResponse) | Uses the same millisecond timeline as PlayerState; clamps to its seekable range. |
+| ReturnToLive | [ReturnToLiveRequest](#viewer-v1-ReturnToLiveRequest) | [ReturnToLiveResponse](#viewer-v1-ReturnToLiveResponse) | Returns retained live playback to the live edge and normal speed. |
+| SetPlaybackRate | [SetPlaybackRateRequest](#viewer-v1-SetPlaybackRateRequest) | [SetPlaybackRateResponse](#viewer-v1-SetPlaybackRateResponse) | Changes speed in tenths, matching the desktop controls. Requires can_set_rate. |
+| StepChannel | [StepChannelRequest](#viewer-v1-StepChannelRequest) | [StepChannelResponse](#viewer-v1-StepChannelResponse) | Uses the desktop channel order and program-aware subchannel skipping. |
+| PreviousChannel | [PreviousChannelRequest](#viewer-v1-PreviousChannelRequest) | [PreviousChannelResponse](#viewer-v1-PreviousChannelResponse) | Selects the last viewed channel using desktop viewing history. |
+| SelectRemoteKey | [SelectRemoteKeyRequest](#viewer-v1-SelectRemoteKeyRequest) | [SelectRemoteKeyResponse](#viewer-v1-SelectRemoteKeyResponse) | Selects a remote-control number, using the viewed/selected band when unspecified. |
+| SendKey | [SendKeyRequest](#viewer-v1-SendKeyRequest) | [SendKeyResponse](#viewer-v1-SendKeyResponse) | Success means the validated key was emitted to QML on the Qt thread, not that QML completed an action. Unknown and unspecified keys are rejected. |
 
 
 

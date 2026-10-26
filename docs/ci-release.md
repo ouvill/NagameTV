@@ -36,6 +36,11 @@ nextestは固定版0.9.146の公式バイナリーをSHA-256で検証して導�
 Dockerレイヤーのキャッシュがない場合も、nextest自体のコンパイルは行わない。
 更新時は[ローカル用インストーラー](../scripts/testing/install-nextest.sh)の版・チェックサムも合わせる。
 FlatpakはマニフェストのKDE 6.10 SDKを使う。26.04用debは[専用Dockerfile](../packaging/deb/Dockerfile)でUbuntuのQt/GStreamerを使う。
+
+機器不要のWeb試験にはNode.jsとnpmを使う。`scripts/testing/ci.sh` は
+Webリモコンの依存を `npm ci` で導入してから `cpu` スイートを実行する。
+`remote-web` スイート自体は依存を取得せず、型・単体試験とコミット対象の `dist/` の再現性を検査する。
+
 GitHubの実行ホストはいずれも`ubuntu-24.04`。
 CIのビルド並列数は実行ホストの`nproc`に合わせる。公開リポジトリー用の標準Linux runnerは
 [4 vCPU・16 GB RAM](https://docs.github.com/en/actions/reference/runners/github-hosted-runners#standard-github-hosted-runners-for-public-repositories)

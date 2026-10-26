@@ -20,6 +20,9 @@ getent passwd "$(id -u)" >/dev/null || {
 # including on a runner without a restored download cache.
 bash scripts/build/with-build-lock.sh cargo fetch --manifest-path rust/Cargo.toml --locked
 
+# The remote-web suite validates installed dependencies without network access.
+bash scripts/build/with-build-lock.sh npm --prefix rust/crates/viewer-remote/web ci --cache "$PWD/build/ci/npm"
+
 # Match the distribution profile so dependencies are reused by packaging and
 # the real EPGStation contract tests; local development defaults to dev.
 exec python3 scripts/test.py cpu --profile release "$@"

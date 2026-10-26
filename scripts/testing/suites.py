@@ -33,6 +33,7 @@ SUITES = {
     "subtitle-outline": Suite(Requirement.CPU, ("--native-tests", "subtitle-outline")),
     "danmaku": Suite(Requirement.GUI, ("--qml-tests",)),
     "ui-style": Suite(Requirement.GUI, ("--native-tests", "channel-views", "-input", "tests/ui-gallery")),
+    "remote-keys": Suite(Requirement.GUI, ("--native-tests", "channel-views", "-input", "tests/remote-keys")),
     "channel-wheel": Suite(Requirement.GUI, ("--native-tests", "channel-views", "-input", "tests/channel-wheel")),
     "startup": Suite(Requirement.GUI, ("--native-tests", "startup")),
     "screenshot": Suite(Requirement.GUI, ("--native-tests", "screenshots")),
