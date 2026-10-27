@@ -35,14 +35,20 @@ impl ffi::Player {
         match events {
             Some(Ok(update)) => {
                 if let Some(error) = update.failure {
-                    tracing::error!("EPG event stream: {error}");
+                    tracing::warn!(
+                        error = error.as_ref() as &dyn std::error::Error,
+                        "EPG event subscription interrupted"
+                    );
                 }
                 if update.refresh {
                     self.as_mut().rust_mut().epg.refresh();
                     self.as_mut().refresh_channels(true);
                 }
             }
-            Some(Err(error)) => tracing::error!("EPG event subscription: {error}"),
+            Some(Err(error)) => tracing::error!(
+                error = &error as &dyn std::error::Error,
+                "EPG event subscription failed"
+            ),
             None => {}
         }
     }
