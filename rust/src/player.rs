@@ -442,6 +442,7 @@ pub mod ffi {
         #[qsignal]
         fn desktop_raise_requested(self: Pin<&mut Player>);
         fn server_configured(self: &Player) -> bool;
+        fn server_product(self: &Player) -> QString;
         fn loading(self: &Player) -> bool;
         fn connecting(self: &Player) -> bool;
         fn playing(self: &Player) -> bool;
