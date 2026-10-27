@@ -688,28 +688,28 @@
       <translation>現在ストリームを利用できません。サーバーやチューナーが使用中、または利用できない可能性があります。少し待って再試行するか、サーバーの状態を確認してください。</translation>
     </message>
     <message>
-      <source>This channel was not found on Mirakurun. Refresh the channel list and choose a channel again.</source>
-      <translation>Mirakurunにこのチャンネルが見つかりません。チャンネル一覧を更新して選び直してください。</translation>
+      <source>This channel was not found on the server. Refresh the channel list and choose a channel again.</source>
+      <translation>サーバーにこのチャンネルが見つかりません。チャンネル一覧を更新して選び直してください。</translation>
     </message>
     <message>
-      <source>Mirakurun denied access to the stream. Check the server's access settings.</source>
-      <translation>ストリームへのアクセスが拒否されました。サーバーのアクセス設定を確認してください。</translation>
+      <source>The server denied access to the stream. Check the server's access settings.</source>
+      <translation>サーバーが視聴を許可しませんでした。サーバーのアクセス設定を確認してください。</translation>
     </message>
     <message>
       <source>The server did not respond in time. Check the connection and try again.</source>
       <translation>サーバーの応答がタイムアウトしました。接続を確認して再試行してください。</translation>
     </message>
     <message>
-      <source>Mirakurun could not start the stream. Check the server and try again.</source>
-      <translation>Mirakurunで配信を開始できませんでした。サーバーの状態を確認して再試行してください。</translation>
+      <source>The server could not start the stream. Check the server and try again.</source>
+      <translation>サーバーで配信を開始できませんでした。サーバーの状態を確認して再試行してください。</translation>
     </message>
     <message>
-      <source>Mirakurun rejected the stream request. Check the connection settings and channel.</source>
-      <translation>Mirakurunが視聴リクエストを拒否しました。接続設定とチャンネルを確認してください。</translation>
+      <source>The server rejected the stream request. Check the connection settings and channel.</source>
+      <translation>サーバーが視聴リクエストを拒否しました。接続設定とチャンネルを確認してください。</translation>
     </message>
     <message>
-      <source>Could not receive the stream from Mirakurun. Check the server and network connection, then try again.</source>
-      <translation>Mirakurunから映像を受信できませんでした。サーバーとネットワークの接続を確認して再試行してください。</translation>
+      <source>Could not receive the stream from the server. Check the server and network connection, then try again.</source>
+      <translation>サーバーから映像を受信できませんでした。サーバーとネットワークの接続を確認して再試行してください。</translation>
     </message>
     <message>
       <source>Enter a valid Mirakurun service ID</source>
@@ -1524,8 +1524,12 @@
       <translation>番組の説明はありません</translation>
     </message>
     <message>
-      <source>Program information provided by Mirakurun</source>
-      <translation>番組情報は Mirakurun より提供されています</translation>
+      <source>Program information provided by %1</source>
+      <translation>番組情報は %1 より提供されています</translation>
+    </message>
+    <message>
+      <source>Program information provided by the server</source>
+      <translation>番組情報はサーバーより提供されています</translation>
     </message>
     <message>
       <source>This broadcast has only one audio track.</source>
@@ -2013,8 +2017,8 @@
       <translation>詳細を表示</translation>
     </message>
     <message>
-      <source>Mirakurun connection</source>
-      <translation>Mirakurun 接続</translation>
+      <source>Server connection</source>
+      <translation>サーバー接続</translation>
     </message>
     <message>
       <source>Could not read or save settings. Your changes may not be available the next time you open the app.</source>
@@ -2025,8 +2029,8 @@
       <translation>サーバーURL</translation>
     </message>
     <message>
-      <source>Enter the Mirakurun server address starting with http:// or https://.</source>
-      <translation>http:// または https:// で始まるMirakurunのアドレスを入力してください。</translation>
+      <source>Enter the Mirakurun or mirakc server address starting with http:// or https://.</source>
+      <translation>http:// または https:// で始まる Mirakurun または mirakc のアドレスを入力してください。</translation>
     </message>
     <message>
       <source>Loading channels…</source>
@@ -2408,8 +2412,12 @@
       <translation>接続できませんでした。サーバーURLとネットワーク接続を確認して、もう一度お試しください。</translation>
     </message>
     <message>
-      <source>Connected, but no channels were found. Check the tuner and channel settings on your Mirakurun server, then try again.</source>
-      <translation>接続できましたが、チャンネルが見つかりませんでした。Mirakurun サーバーのチューナー・チャンネル設定を確認して、もう一度お試しください。</translation>
+      <source>Connected, but no channels were found. Check the tuner and channel settings on %1, then try again.</source>
+      <translation>接続できましたが、チャンネルが見つかりませんでした。%1 のチューナー・チャンネル設定を確認して、もう一度お試しください。</translation>
+    </message>
+    <message>
+      <source>Connected, but no channels were found. Check the tuner and channel settings on the server, then try again.</source>
+      <translation>接続できましたが、チャンネルが見つかりませんでした。サーバーのチューナー・チャンネル設定を確認して、もう一度お試しください。</translation>
     </message>
     <message>
       <source>Connected. %1 channels were found.</source>
@@ -2428,16 +2436,24 @@
       <translation>接続する</translation>
     </message>
     <message>
-      <source>Need to set up a Mirakurun server?</source>
+      <source>Need to set up a server?</source>
       <translation>サーバーをまだ用意していない方へ</translation>
     </message>
     <message>
-      <source>Connect to Mirakurun</source>
-      <translation>Mirakurun に接続</translation>
+      <source>Setting up Mirakurun</source>
+      <translation>Mirakurun の導入方法</translation>
     </message>
     <message>
-      <source>To watch TV, you need a configured Mirakurun server. Enter its URL to get started.</source>
-      <translation>テレビを見るには、設定済みの Mirakurun サーバーが必要です。サーバーのURLを入力してください。</translation>
+      <source>Setting up mirakc</source>
+      <translation>mirakc の導入方法</translation>
+    </message>
+    <message>
+      <source>Connect to Mirakurun or mirakc</source>
+      <translation>Mirakurun / mirakc に接続</translation>
+    </message>
+    <message>
+      <source>To watch TV, you need a configured Mirakurun or mirakc server. Enter its URL to get started.</source>
+      <translation>テレビを見るには、設定済みの Mirakurun または mirakc サーバーが必要です。サーバーのURLを入力してください。</translation>
     </message>
     <message>
       <source>Reconnect</source>

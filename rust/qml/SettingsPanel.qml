@@ -400,7 +400,7 @@ Popup {
                         visible: root.page === SettingsPanel.Connection
                         Layout.fillWidth: true
                         spacing: Theme.spaceLg
-                        Heading { text: qsTranslate("Settings", "Mirakurun connection") }
+                        Heading { text: qsTranslate("Settings", "Server connection") }
                         ConnectionForm {
                             id: connectionForm
                             Layout.fillWidth: true

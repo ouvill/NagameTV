@@ -24,20 +24,22 @@ impl Hint {
                 "The stream is temporarily unavailable. The server or tuners may be busy or unavailable. Wait a moment and try again, or check the server."
             }
             Self::MissingChannel => {
-                "This channel was not found on Mirakurun. Refresh the channel list and choose a channel again."
+                "This channel was not found on the server. Refresh the channel list and choose a channel again."
             }
             Self::AccessDenied => {
-                "Mirakurun denied access to the stream. Check the server's access settings."
+                "The server denied access to the stream. Check the server's access settings."
             }
             Self::Timeout => {
                 "The server did not respond in time. Check the connection and try again."
             }
-            Self::Server => "Mirakurun could not start the stream. Check the server and try again.",
+            Self::Server => {
+                "The server could not start the stream. Check the server and try again."
+            }
             Self::Rejected => {
-                "Mirakurun rejected the stream request. Check the connection settings and channel."
+                "The server rejected the stream request. Check the connection settings and channel."
             }
             Self::Network => {
-                "Could not receive the stream from Mirakurun. Check the server and network connection, then try again."
+                "Could not receive the stream from the server. Check the server and network connection, then try again."
             }
             Self::Ended => "The live stream ended unexpectedly. Try again to reconnect.",
             Self::Generic => {
