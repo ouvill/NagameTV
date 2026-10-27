@@ -29,7 +29,7 @@ impl<T: Send + 'static, E: Send + 'static> Job<T, E> {
         client: &reqwest::Client,
         url: String,
         limit: usize,
-        parse: fn(&[u8]) -> Result<T, E>,
+        parse: impl FnOnce(&reqwest::header::HeaderMap, &[u8]) -> Result<T, E> + Send + 'static,
     ) -> Self {
         let (tx, rx) = mpsc::sync_channel(1);
         let client = client.clone();
@@ -57,7 +57,7 @@ impl<T: Send + 'static, E: Send + 'static> Job<T, E> {
                     bytes.len(),
                     bytes.capacity()
                 );
-                parse(&bytes).map_err(FetchError::Parse)
+                parse(response.headers(), &bytes).map_err(FetchError::Parse)
             }
             .await;
             let _ = tx.try_send(result);
@@ -125,7 +125,7 @@ impl Drop for Task {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{channels, services::Request};
+    use crate::channels;
     #[test]
     fn queued_result_stays_owned_until_worker_completion() -> Result<(), Box<dyn std::error::Error>>
     {
@@ -174,7 +174,7 @@ mod tests {
         let (tx, rx) = mpsc::sync_channel(1);
         let task = runtime.spawn(std::future::pending());
         let handle = task.abort_handle();
-        let request = Request {
+        let request: Job<Vec<channels::Channel>, channels::Error> = Job {
             task: Task(task),
             rx,
         };

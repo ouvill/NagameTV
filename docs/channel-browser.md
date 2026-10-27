@@ -18,6 +18,18 @@ flowchart TD
     Select --> Rust[Player::select_channel]
 ```
 
+### サーバー製品名のQML契約
+
+既存の`Player`オブジェクト（Main.qmlの`player`）は、読み取り専用のQStringプロパティー
+`server_product`と変更通知`server_productChanged`を公開します。値は`"Mirakurun"`、
+`"mirakc"`、不明時の`""`です。通常の`GET /api/services`が成功したときのHTTP
+`Server`ヘッダーから取得し、追加の要求や設定への保存は行いません。
+初期値と別の接続先への切り替え時は空文字列です。同じ接続先の再取得が失敗した場合は
+前回成功時の値を保持します。表示文言だけに使い、APIの選択には使いません。
+
+[Mirakurun 4.1.3のServer実装](https://github.com/Chinachu/Mirakurun/blob/4.1.3/src/Mirakurun/Server.ts)
+は`Mirakurun/`にバージョンを付けます。mirakc 3.4.89では`mirakc/3.4.89`を実測しています。
+
 ### 1. 放送種別（Band）の分類
 放送サービスは以下の `Band` enum に分類されます：
 - **`GR`** (地デジ: Terrestrial)
