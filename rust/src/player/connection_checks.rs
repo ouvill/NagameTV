@@ -227,6 +227,7 @@ fn checks() -> TestResult {
     check_stream_state(&mut player)?;
     check_data_broadcast_mode(&mut player)?;
     check_viewing_channel()?;
+    check_server_products()?;
     crate::channel_model::checks::run()?;
     crate::guide_model::checks::run()?;
     super::recording_library_checks::run()?;
@@ -715,6 +716,69 @@ fn check_data_broadcast_mode(player: &mut cxx::UniquePtr<ffi::Player>) -> TestRe
     assert_eq!(*enabled_changes.lock().unwrap(), [true, false, true, false]);
     player.pin_mut().stop();
     player.pin_mut().rust_mut().data_broadcast_allowed = false;
+    Ok(())
+}
+
+fn check_server_products() -> TestResult {
+    use wiremock::{Mock, MockServer, ResponseTemplate, matchers::path};
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()?;
+    let server = runtime.block_on(MockServer::start());
+    let directory = tempfile::tempdir()?;
+    let mut player = ffi::new_player();
+    player.pin_mut().rust_mut().preferences =
+        settings::Loaded::open(directory.path().join("settings.toml"))?.activate(None, None);
+    assert!(player.server_product().is_empty());
+    let changes = Arc::new(Mutex::new(Vec::new()));
+    let observed = changes.clone();
+    let _signal = player.pin_mut().on_server_product_changed(move |player| {
+        observed
+            .lock()
+            .unwrap()
+            .push(player.server_product().to_string());
+        assert!(!player.server().is_empty());
+    });
+    for (status, header, expected) in [
+        (200, Some("mirakc/3.4.89"), "mirakc"),
+        (503, None, "mirakc"),
+        (200, Some("Mirakurun/4.1.3"), "Mirakurun"),
+        (200, Some("Mirakurun/4.1.3"), "Mirakurun"),
+        (200, None, ""),
+        (200, Some("mirakc/3.4.89"), "mirakc"),
+    ] {
+        runtime.block_on(server.reset());
+        let mut response = ResponseTemplate::new(status).set_body_string(CHANNELS);
+        if let Some(header) = header {
+            response = response.insert_header("Server", header);
+        }
+        runtime.block_on(
+            Mock::given(path("/api/services"))
+                .respond_with(response)
+                .expect(1)
+                .mount(&server),
+        );
+        assert!(player.pin_mut().connect_server(server.uri().into()));
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while player.loading() {
+            runtime.block_on(async { tokio::time::sleep(Duration::from_millis(1)).await });
+            player.pin_mut().poll_channels();
+            assert!(Instant::now() < deadline);
+        }
+        assert_eq!(player.server_product().to_string(), expected);
+        runtime.block_on(server.verify());
+    }
+    let response = Response::new(503, "unavailable")?;
+    response.begin(&mut player)?;
+    assert!(
+        player.server_product().is_empty(),
+        "new server must not display old product"
+    );
+    response.finish(&mut player)?;
+    assert_eq!(
+        *changes.lock().unwrap(),
+        ["mirakc", "Mirakurun", "", "mirakc", ""]
+    );
     Ok(())
 }
 

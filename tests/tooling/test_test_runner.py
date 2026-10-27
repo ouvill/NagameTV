@@ -40,6 +40,7 @@ class RunnerTests(unittest.TestCase):
 
     def test_invalid_suite_options_fail_before_build_or_hardware_detection(self):
         for arguments in (["video-item", "--", "unexpected"],
+                          ["app", "--run-ignored"],
                           ["ui-style", "--", "--evaluation-legacy-comments"],
                           ["gui", "--", "unexpected"],
                           ["startup", "--", "recording-audit", "/missing-file.ts"]):
@@ -48,6 +49,15 @@ class RunnerTests(unittest.TestCase):
                                         text=True, capture_output=True, timeout=10)
                 self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
                 self.assertNotIn("Test logs", result.stdout)
+
+    def test_ignored_rust_checks_keep_the_explicit_filter_and_show_measurements(self):
+        steps = runner.plan(["app"], Path("/unused"), Namespace(
+            profile="release", suite_args=[], filter="test(captured_program_snapshot_performance)",
+            test_threads=None, run_ignored=True))
+        command = next(step.command for step in steps if step.name == "app")
+        self.assertEqual(command[command.index("--run-ignored") + 1], "only")
+        self.assertEqual(command[command.index("-E") + 1], "test(captured_program_snapshot_performance)")
+        self.assertEqual(command[command.index("--success-output") + 1], "immediate")
 
     def test_startup_recording_paths_and_evaluation_selection(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -200,7 +210,7 @@ elif args[0] == 'test':
 
     def test_gui_preflight_precedes_builds_and_qt_preparation_is_shared(self):
         steps = runner.plan(["app", "connection", "danmaku", "ui-style"], Path("/unused"),
-                            Namespace(profile="dev", suite_args=[], filter=None, test_threads=None))
+                            Namespace(profile="dev", suite_args=[], filter=None, test_threads=None, run_ignored=False))
         names = [step.name for step in steps]
         self.assertEqual(names[0], "gui-environment")
         self.assertTrue(steps[0].environment_check)
