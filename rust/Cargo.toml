@@ -47,7 +47,7 @@ reqwest = { version = "0.13", default-features = false, features = ["rustls", "c
 tokio = { version = "1.47", features = ["rt-multi-thread", "time", "net", "sync", "macros"] }
 tokio-tungstenite = { version = "0.30", default-features = false, features = ["handshake"] }
 futures-util = "0.3"
-getrandom = "0.3"
+getrandom = { version = "0.3", features = ["std"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0", features = ["raw_value"] }
 serde_path_to_error = "0.1"
