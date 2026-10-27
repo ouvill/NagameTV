@@ -16,7 +16,9 @@ ColumnLayout {
         : phase === ConnectionForm.SaveFailed ? backend.settings_error : ""
     property bool detailsVisible: false
     readonly property bool busy: phase === ConnectionForm.Checking || backend.loading
-    readonly property list<Item> navigationItems: [server, detailsToggle, action, setupHelp]
+    // Test doubles and older backends may not expose the product; fall back to generic wording.
+    readonly property string serverProduct: backend && backend.server_product ? backend.server_product : ""
+    readonly property list<Item> navigationItems: [server, detailsToggle, action, mirakurunHelp, mirakcHelp]
     signal completed
     spacing: Theme.spaceLg
 
@@ -79,7 +81,7 @@ ColumnLayout {
     }
     Detail {
         visible: root.presentation === ConnectionForm.Setup
-        text: qsTranslate("Settings", "Enter the Mirakurun server address starting with http:// or https://.")
+        text: qsTranslate("Settings", "Enter the Mirakurun or mirakc server address starting with http:// or https://.")
     }
     BusyIndicator {
         Layout.alignment: Qt.AlignHCenter
@@ -99,7 +101,9 @@ ColumnLayout {
             case ConnectionForm.Failed:
                 return qsTranslate("Connection", "Could not connect. Check the server URL and network connection, then try again.");
             case ConnectionForm.Empty:
-                return qsTranslate("Connection", "Connected, but no channels were found. Check the tuner and channel settings on your Mirakurun server, then try again.");
+                return root.serverProduct.length
+                    ? qsTranslate("Connection", "Connected, but no channels were found. Check the tuner and channel settings on %1, then try again.").arg(root.serverProduct)
+                    : qsTranslate("Connection", "Connected, but no channels were found. Check the tuner and channel settings on the server, then try again.");
             case ConnectionForm.Ready:
                 return qsTranslate("Connection", "Connected. %1 channels were found.").arg(root.channelCount);
             case ConnectionForm.SaveFailed:
@@ -140,12 +144,28 @@ ColumnLayout {
             else root.connectToServer();
         }
     }
-    ActionButton {
-        id: setupHelp
-        objectName: "serverSetupHelp"
+    Detail {
         visible: root.presentation === ConnectionForm.Setup
         Layout.alignment: Qt.AlignHCenter
-        text: qsTranslate("Connection", "Need to set up a Mirakurun server?")
-        onClicked: Qt.openUrlExternally("https://github.com/Chinachu/Mirakurun/blob/master/doc/Platforms.md")
+        horizontalAlignment: Text.AlignHCenter
+        text: qsTranslate("Connection", "Need to set up a server?")
+    }
+    Flow {
+        visible: root.presentation === ConnectionForm.Setup
+        Layout.alignment: Qt.AlignHCenter
+        Layout.maximumWidth: root.width
+        spacing: Theme.spaceMd
+        ActionButton {
+            id: mirakurunHelp
+            objectName: "mirakurunSetupHelp"
+            text: qsTranslate("Connection", "Setting up Mirakurun")
+            onClicked: Qt.openUrlExternally("https://github.com/Chinachu/Mirakurun/blob/master/doc/Platforms.md")
+        }
+        ActionButton {
+            id: mirakcHelp
+            objectName: "mirakcSetupHelp"
+            text: qsTranslate("Connection", "Setting up mirakc")
+            onClicked: Qt.openUrlExternally("https://github.com/mirakc/mirakc#quick-start")
+        }
     }
 }

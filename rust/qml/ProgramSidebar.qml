@@ -14,6 +14,7 @@ FocusScope {
     }
     property bool recording: false
     property string fallbackTitle: ""
+    property string serverProduct: ""
     property bool danmakuEnabled: false
     property bool commentsEnabled: false
     property bool evaluationCommentList: false
@@ -280,10 +281,12 @@ FocusScope {
                     color: Theme.overlayHover
                 }
                 Label {
+                    objectName: "programSource"
                     Layout.fillWidth: true
                     text: root.recording ? qsTranslate("Viewer", "Program information from recording TS")
                         : root.program && root.program.source === "broadcast_ts" ? qsTranslate("Viewer", "Program information from broadcast TS")
-                        : qsTranslate("Viewer", "Program information provided by Mirakurun")
+                        : root.serverProduct.length ? qsTranslate("Viewer", "Program information provided by %1").arg(root.serverProduct)
+                        : qsTranslate("Viewer", "Program information provided by the server")
                     color: Theme.textMuted
                     font.pixelSize: Theme.fontCaption
                     wrapMode: Text.Wrap

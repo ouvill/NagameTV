@@ -16,6 +16,7 @@ TestCase {
         property bool loading: false
         property string status: ""
         property string settings_error: ""
+        property string server_product: ""
         property int requests: 0
         signal connectionFinished(bool success, int channels)
         function connect_server(url) { requests++; loading = true; return true; }
@@ -36,6 +37,7 @@ TestCase {
         backend.loading = false;
         backend.status = "";
         backend.settings_error = "";
+        backend.server_product = "";
         backend.requests = 0;
         completed.clear();
         openFile.clear();
@@ -109,6 +111,33 @@ TestCase {
         tryCompare(setup, "visible", false);
         compare(completed.count, 1);
         compare(backend.requests, 4);
+    }
+    function test_empty_catalog_names_the_responding_server_only_when_known() {
+        const result = findChild(setup.contentItem, "connectionResult");
+        field().text = "http://example.test:40772";
+        form().connectToServer();
+        finish(true, 0);
+        compare(form().phase, ConnectionForm.Empty);
+        verify(result.text.indexOf("the server") >= 0);
+        backend.server_product = "mirakc";
+        verify(result.text.indexOf("mirakc") >= 0);
+        verify(result.text.indexOf("the server") < 0);
+    }
+    function test_setup_help_offers_both_servers_and_is_reachable_by_keys() {
+        const mirakurun = findChild(setup.contentItem, "mirakurunSetupHelp");
+        const mirakc = findChild(setup.contentItem, "mirakcSetupHelp");
+        verify(mirakurun.visible);
+        verify(mirakc.visible);
+        keyClick(Qt.Key_Escape);
+        field().text = "http://example.test:40772";
+        keyClick(Qt.Key_Down);
+        verify(action().activeFocus);
+        keyClick(Qt.Key_Down);
+        verify(mirakurun.activeFocus);
+        keyClick(Qt.Key_Down);
+        verify(mirakc.activeFocus);
+        keyClick(Qt.Key_Down);
+        verify(findChild(setup.contentItem, "setupOpenRecording").activeFocus);
     }
     function test_editing_successful_address_requires_another_check() {
         field().text = "http://example.test:40772";

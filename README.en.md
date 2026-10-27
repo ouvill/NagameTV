@@ -2,7 +2,7 @@
 
 [日本語](README.md) | English
 
-NagameTV is a TV viewer and recording player for Linux desktops, designed for Japanese digital TV broadcasts. It supports live terrestrial, BS, and CS broadcasts through a Mirakurun server, as well as playback of local MPEG-2 TS recordings.
+NagameTV is a TV viewer and recording player for Linux desktops, designed for Japanese digital TV broadcasts. It supports live terrestrial, BS, and CS broadcasts through a Mirakurun or mirakc server, as well as playback of local MPEG-2 TS recordings.
 
 Features include a seven-day electronic program guide (EPG), ARIB-compliant subtitles, and live comment overlays and posting through NX-Jikkyo.
 
@@ -22,7 +22,7 @@ The detailed documentation linked below is currently available in Japanese.
 
 ### Live TV
 
-- **Mirakurun integration**: Connect to a Mirakurun server on your network to receive and play TV broadcasts.
+- **Mirakurun and mirakc integration**: Connect to a Mirakurun or mirakc server on your network to receive and play TV broadcasts. Program guide change notifications work with both.
 - **Channel selection**: Browse a channel carousel with station logos, and filter channels using terrestrial, BS, CS, and CATV tabs.
 - **Channel switching**: Use Page Up and Page Down to switch to the previous or next channel.
 - **Home and favorites**: While nothing is playing, see recordings to continue, favorite channels, and everything on air now. Add a favorite with the star on a channel card or beside the channel name over the video. [Stored data and behavior](docs/viewing-history.md)
@@ -30,7 +30,7 @@ The detailed documentation linked below is currently available in Japanese.
 
 ### Recordings, video files, and timeshift
 
-- **Local playback**: Drag and drop TS, MP4, or MKV files onto the window, or open them with the file picker. This works without a configured Mirakurun server. MP4 and MKV playback has been tested with H.264/HEVC video and AAC audio. [Supported formats and limitations](docs/recording-playback.md#mp4mkvの再生)
+- **Local playback**: Drag and drop TS, MP4, or MKV files onto the window, or open them with the file picker. This works without a configured server. MP4 and MKV playback has been tested with H.264/HEVC video and AAC audio. [Supported formats and limitations](docs/recording-playback.md#mp4mkvの再生)
 - **HTTP recording playback**: Paste the URL of a recording from EPGStation or another server into “Open recording” to play it. The server must support HTTP Range requests. [Usage and supported features](docs/recording-playback.md#epgstationの録画url)
 - **EPGStation recording browser**: Search recordings on the server and choose an original TS recording or an encoded video to play. Supports the common APIs of upstream EPGStation v2 and username/password authentication in the stuayu fork. [Connection setup and supported features](docs/epgstation.md)
 - **Resume playback**: Recordings resume from where you stopped. The recording browser and the home screen show progress, watched recordings, and thumbnails.
@@ -75,7 +75,7 @@ The following environment is required to run the application:
 - **OS**: A Linux desktop environment (X11 or XWayland).
   - Tested on Ubuntu 24.04 LTS, Ubuntu 26.04 LTS, and Fedora 40 or later.
 - **Audio server**: PipeWire or PulseAudio.
-- **Mirakurun server**: Required for live TV and fetching EPG data. A Mirakurun server is not required to play recordings or video files.
+- **Mirakurun or mirakc server**: Required for live TV and fetching EPG data. mirakc has been tested with version 3.4.89. A server is not required to play recordings or video files.
 - **Graphics**: An OpenGL-capable GPU is recommended.
 
 ---
@@ -150,9 +150,9 @@ For removal instructions and information about saved data, see the guide for you
 
 ## Basic usage
 
-### 1. Initial setup (connecting to Mirakurun)
+### 1. Initial setup (connecting to a server)
 
-On first launch, the “Connect to Mirakurun” screen appears. Enter the URL of a running Mirakurun server (for example, `http://192.168.1.100:40772`) and select “Connect.” Once the connection is verified, the settings are saved and the channel selection screen opens. You can change the server later under “Connection” in Settings.
+On first launch, the “Connect to Mirakurun or mirakc” screen appears. Enter the URL of a running Mirakurun or mirakc server (for example, `http://192.168.1.100:40772`) and select “Connect.” Once the connection is verified, the settings are saved and the channel selection screen opens. You can change the server later under “Connection” in Settings.
 
 ### 2. Selecting a channel
 
