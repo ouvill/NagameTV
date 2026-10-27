@@ -1005,6 +1005,7 @@ ViewerWindow {
         shuttingDown: root.closing
         onOpenChanged: if (open && view) view.openChannels()
         sourceComponent: ProgramSidebar {
+            serverProduct: player.server_product
             dataBroadcastAvailable: player.media_active && player.data_broadcast_available
             dataBroadcastPresenting: root.showDataBroadcast
             dataBroadcastKeys: dataBroadcast.view ? dataBroadcast.view.usedKeyGroups : []

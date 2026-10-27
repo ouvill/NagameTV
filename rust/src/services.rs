@@ -4,7 +4,7 @@ use std::time::Duration;
 mod job;
 pub use job::{Job, Progress, Stopping};
 mod server;
-pub use server::{Probe, ServerUrl, VerifiedServer};
+pub use server::{Probe, ServerProduct, ServerUrl, VerifiedServer};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -113,10 +113,17 @@ impl Network {
     pub fn fetch(&self, server: &ServerUrl) -> Probe {
         Probe::new(
             server.clone(),
-            self.fetch_json(
+            Job::start(
+                self.runtime.handle(),
+                &self.client,
                 format!("{}/api/services", server.as_str()),
                 1024 * 1024,
-                channels::parse,
+                |headers, bytes| {
+                    Ok(server::Catalog {
+                        channels: channels::parse(bytes)?,
+                        product: ServerProduct::from_headers(headers),
+                    })
+                },
             ),
         )
     }
@@ -126,11 +133,15 @@ impl Network {
         limit: usize,
         parse: fn(&[u8]) -> Result<T, E>,
     ) -> Job<T, E> {
-        Job::start(self.runtime.handle(), &self.client, url, limit, parse)
+        Job::start(
+            self.runtime.handle(),
+            &self.client,
+            url,
+            limit,
+            move |_, bytes| parse(bytes),
+        )
     }
 }
-
-pub type Request = Job<Vec<channels::Channel>, channels::Error>;
 
 #[cfg(test)]
 mod tests {
@@ -144,6 +155,47 @@ mod tests {
             ServerUrl::parse(" http://localhost:40772/ ")?.as_str(),
             "http://localhost:40772"
         );
+        Ok(())
+    }
+    #[test]
+    fn catalog_probe_keeps_product_with_its_verified_server()
+    -> Result<(), Box<dyn std::error::Error>> {
+        use wiremock::{Mock, MockServer, ResponseTemplate, matchers::path};
+        let network = Network::new()?;
+        for (header, expected) in [
+            (Some("Mirakurun/4.1.3"), ServerProduct::Mirakurun),
+            (Some("mirakc/3.4.89"), ServerProduct::Mirakc),
+            (Some("nginx/1.27"), ServerProduct::Unknown),
+            (Some("mirakc-proxy/1"), ServerProduct::Unknown),
+            (None, ServerProduct::Unknown),
+        ] {
+            let server = network.runtime.block_on(MockServer::start());
+            let mut response = ResponseTemplate::new(200).set_body_string("[]");
+            if let Some(header) = header {
+                response = response.insert_header("Server", header);
+            }
+            network.runtime.block_on(
+                Mock::given(path("/api/services"))
+                    .respond_with(response)
+                    .expect(1)
+                    .mount(&server),
+            );
+            let url = ServerUrl::parse(&server.uri())?;
+            let mut probe = network.fetch(&url);
+            let deadline = std::time::Instant::now() + Duration::from_secs(3);
+            let verified = loop {
+                match probe.poll() {
+                    Progress::Pending(pending) => probe = pending,
+                    Progress::Complete(result) => break result?,
+                }
+                assert!(std::time::Instant::now() < deadline);
+                std::thread::sleep(Duration::from_millis(1));
+            };
+            assert_eq!(verified.url(), &url);
+            assert_eq!(verified.product(), expected);
+            assert!(verified.channels().is_empty());
+            network.runtime.block_on(server.verify());
+        }
         Ok(())
     }
     #[test]

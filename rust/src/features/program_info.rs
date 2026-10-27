@@ -11,6 +11,7 @@ pub mod schedule;
 pub mod view;
 mod visibility;
 pub mod watch;
+mod wire;
 use model::{Snapshot, parse};
 use std::time::{Duration, Instant};
 
