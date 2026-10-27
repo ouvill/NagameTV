@@ -200,6 +200,8 @@ artifactの保存期限を過ぎた場合は、ビルドを含む全ジョブを
 
 外部ActionはコミットSHAで固定し、[Dependabot](../.github/dependabot.yml)で毎週更新を提案する。
 配布用UbuntuベースイメージのdigestとRustの依存crateもDependabotの対象。
+Ubuntuのリリース（AppImageの24.04、debの26.04）は配布先に合わせて固定し、
+同じリリースのdigest更新だけを受け取る。
 Rustは本体の`rust/Cargo.lock`と、独立テストで使う各crateのロックファイルを対象にする。
 minor・patch更新はまとめ、major更新は個別のPRにする。Rustの通常更新PRは同時に5件までとし、
 更新内容をレビューして既存CIを通してからマージする。0.x系ではminor更新でも互換性が変わり得る。
@@ -211,6 +213,9 @@ Flatpakの同一SDKブランチ内の更新とUbuntuのapt更新は可変のた�
 生成された`packaging/flatpak/cargo-sources.json`も同じブランチでコミットする。
 Dependabotはこの生成ファイルを更新しないため、再生成するまでは`Release metadata`が失敗する。
 独立crateだけのロックファイル更新では、この再生成は不要。
+ただし独立crateの`Cargo.toml`を変えるmajor更新は本体からも参照されるため、
+`rust/Cargo.lock`と`cargo-sources.json`も更新しないと`--locked`のビルドが失敗する。
+本体が同じcrateを直接使う場合は、本体の版も揃えて重複を避ける。
 
 [Dependency review](../.github/workflows/dependency-review.yml)は、各PRの依存差分を
 GitHubの依存関係グラフで検査する。結果はActionsのログとサマリーに表示する。

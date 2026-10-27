@@ -32,7 +32,15 @@ updates:
     directory: /packaging/appimage
     schedule:
       interval: weekly
+    # 24.04 is the glibc 2.39 baseline the AppImage runs on; only take new digests of it.
+    ignore:
+      - dependency-name: ubuntu
+        versions: ['> 24.04']
   - package-ecosystem: docker
     directory: /packaging/deb
     schedule:
       interval: weekly
+    # This deb targets Ubuntu 26.04 by name; a newer release needs its own deb.
+    ignore:
+      - dependency-name: ubuntu
+        versions: ['> 26.04']
