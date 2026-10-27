@@ -80,6 +80,20 @@ bash scripts/build/with-build-lock.sh cargo clippy --manifest-path rust/Cargo.to
 ```
 
 ログと結果は `build/test-runs/run-*/`、GUI環境のログは `build/gui-tests/` に保存します。
+
+外部データ・実サーバーを使うignoredのRust試験は、`--run-ignored`と`--filter`で明示して
+実行します。フィルターなしでは起動できません。通常スイートには含まれません。
+次のEPG診断は表示・GPU・音声を使わず、結果を同じ実行ディレクトリーのログへ出力します。
+実サーバー試験は番組一覧を2回取得し、イベントを12秒購読します。チューナーを使う映像配信は
+要求しません。fixture試験は5回の解析時間と保持量、LinuxではプロセスのRSS最大値も出力します。
+
+```sh
+NAGAMETV_PROGRAM_FIXTURE=/absolute/path/programs.json \
+python3 scripts/test.py app --profile release --run-ignored --filter 'test(captured_program_snapshot_performance)'
+NAGAMETV_MIRAKC_SERVER=http://your-server:40772 \
+python3 scripts/test.py app --profile release --run-ignored --filter 'test(live_mirakc_notification_refreshes_resolved_programs)'
+```
+
 詳細は [開発手順](../docs/development.md)、[Qtテスト](../docs/qt-tests.md)、
 [GUI環境](../docs/gui-test-environment.md)を参照してください。
 
