@@ -327,27 +327,27 @@
   {
     "type": "archive",
     "archive-type": "tar-gzip",
-    "url": "https://static.crates.io/crates/bitfield/bitfield-0.19.5.crate",
-    "sha256": "b45721c9db4c7a20899d05efb7ad9235f50b256e980db30ffb229abf732934c3",
-    "dest": "cargo/vendor/bitfield-0.19.5"
+    "url": "https://static.crates.io/crates/bitfield/bitfield-0.20.0.crate",
+    "sha256": "2b56e92e42c7e82416925c583156d76ae1d3d83fa5133c379173319dbe1ad51e",
+    "dest": "cargo/vendor/bitfield-0.20.0"
   },
   {
     "type": "inline",
-    "contents": "{\"package\": \"b45721c9db4c7a20899d05efb7ad9235f50b256e980db30ffb229abf732934c3\", \"files\": {}}",
-    "dest": "cargo/vendor/bitfield-0.19.5",
+    "contents": "{\"package\": \"2b56e92e42c7e82416925c583156d76ae1d3d83fa5133c379173319dbe1ad51e\", \"files\": {}}",
+    "dest": "cargo/vendor/bitfield-0.20.0",
     "dest-filename": ".cargo-checksum.json"
   },
   {
     "type": "archive",
     "archive-type": "tar-gzip",
-    "url": "https://static.crates.io/crates/bitfield-macros/bitfield-macros-0.19.5.crate",
-    "sha256": "c0cb6f3d4773a2107b94cbeccaa5b5f0b35a88389b5d522d13d659f64317b22d",
-    "dest": "cargo/vendor/bitfield-macros-0.19.5"
+    "url": "https://static.crates.io/crates/bitfield-macros/bitfield-macros-0.20.0.crate",
+    "sha256": "11499bf38d9079be6f0f993f9d033ab3cc4dbd66bd5a51a63b6310ea689f534b",
+    "dest": "cargo/vendor/bitfield-macros-0.20.0"
   },
   {
     "type": "inline",
-    "contents": "{\"package\": \"c0cb6f3d4773a2107b94cbeccaa5b5f0b35a88389b5d522d13d659f64317b22d\", \"files\": {}}",
-    "dest": "cargo/vendor/bitfield-macros-0.19.5",
+    "contents": "{\"package\": \"11499bf38d9079be6f0f993f9d033ab3cc4dbd66bd5a51a63b6310ea689f534b\", \"files\": {}}",
+    "dest": "cargo/vendor/bitfield-macros-0.20.0",
     "dest-filename": ".cargo-checksum.json"
   },
   {
