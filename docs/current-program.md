@@ -5,6 +5,34 @@ EPG有効時は番組表を閉じていても選択局の現在番組を表示�
 
 ## データと照合
 
+### Mirakurun・mirakcの入力契約
+
+`GET /api/programs`は製品名による分岐をせず、`features/program_info/wire.rs`で
+内部のProgramへ変換する。`startAt: null`の番組だけを除き、取得ごとの除外件数を
+`tracing::warn!`へ一度記録する。`duration: null`はMirakurunの`duration: 1`と同じ
+終了未定（`End::Unknown`）へ正規化する。型が不正なフィールドは従来どおり取得を失敗にする。
+
+説明情報がない番組の`relatedItems`に`type: "shared"`があれば、参照先から名前・説明・
+拡張情報・ジャンル・映像・音声・シリーズを補う。`networkId`のnull／省略は同一ネットワークを
+意味する。ID・サービス・eventId・開始時刻・長さ・無料放送フラグは参照元の値を保つ。
+eventIdの再利用による誤照合を避けるため、開始時刻が同じで、内容の競合がない参照先だけを
+使う。説明情報が既にある番組、見つからない参照、説明のない番組間の循環は変更しない。
+参照用の索引は変換後に解放する。サブチャンネルの同時放送判定は従来のeventId・開始時刻・
+長さを使うため、補ったタイトルには依存しない。
+
+シリーズの空の名前とepisode／lastEpisodeの0はNoneへ変換する。
+[ARIB STD-B10 v4.6-E2 §6.2.33](https://www.arib.or.jp/english/html/overview/doc/6-STD-B10v4_6-E2.pdf)
+では、0はそれぞれ話数を定義できない場合と最終話数が未定の場合を表す。
+音声の`componentTag`がない場合は不明のまま保持し、音声ストリームとの照合には使わない。
+
+[Mirakurun 4.1.3のEIT処理](https://github.com/Chinachu/Mirakurun/blob/4.1.3/src/Mirakurun/EPG.ts#L406)
+もshared参照を保存する。[番組一覧API](https://github.com/Chinachu/Mirakurun/blob/4.1.3/src/Mirakurun/api/programs.ts)
+は保存済み番組を返すため、この補完はMirakurunの説明がない共有番組にも適用される。
+mirakc 3.4.89の実応答から抽出した3番組をfixtureとして、識別・番組内容・同時放送判定を
+検証する。実応答にはnullableな時刻がなかったため、そのケースは合成入力で検証する。
+
+### 内部の識別と保持
+
 `channels::BroadcastService` はnetworkIdとserviceIdのu16の組。
 配信用のu64 IDとは別に保持し、チャンネルJSONの明示メタデータでEPGを照合する。
 配信用IDの桁から放送局を推測しない。古いサーバーでメタデータが欠ける局は選局できるが、
