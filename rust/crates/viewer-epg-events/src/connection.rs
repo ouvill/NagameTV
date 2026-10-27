@@ -57,12 +57,14 @@ struct Timing {
     retry: Duration,
     tick: Duration,
     refresh: Duration,
+    reprobe: Duration,
 }
 const TIMING: Timing = Timing {
     headers: Duration::from_secs(10),
     retry: Duration::from_secs(5),
     tick: Duration::from_secs(1),
     refresh: crate::gate::INTERVAL,
+    reprobe: Duration::from_secs(300),
 };
 
 pub struct Subscription {
@@ -99,13 +101,10 @@ impl Subscription {
         self.pending.swap(false, Ordering::AcqRel)
     }
     pub fn state(&self) -> State {
-        let state = self.state.borrow().clone();
-        if matches!(state, State::Unsupported(_)) {
-            state
-        } else if self.task.job.is_finished() {
+        if self.task.job.is_finished() {
             State::WorkerStopped
         } else {
-            state
+            self.state.borrow().clone()
         }
     }
     /// Consuming the subscription makes its old notifications inaccessible immediately.
@@ -170,34 +169,63 @@ async fn run(
     timing: Timing,
 ) {
     let mut gate = RefreshGate::with_interval(Instant::now(), timing.refresh);
-    let mut endpoint = Endpoint::OpenArray(url);
+    let mut selection = Selection::Probing(Endpoint::OpenArray(url.clone()));
     loop {
-        state.send_replace(State::Connecting);
-        let error = match receive(&client, &endpoint, &pending, &state, &mut gate, timing).await {
-            Received::Missing { status, mut url } => match endpoint {
-                Endpoint::OpenArray(_) => {
-                    let prefix = url.path().strip_suffix("/api/events/stream").unwrap_or("");
-                    url.set_path(&format!("{prefix}/events"));
-                    url.set_query(None);
-                    endpoint = Endpoint::Sse {
-                        url: url.into(),
-                        open_array_status: status,
-                    };
-                    continue;
-                }
-                Endpoint::Sse {
-                    open_array_status, ..
-                } => {
-                    pending.store(false, Ordering::Release);
-                    state.send_replace(State::Unsupported(Arc::new(Error::Unsupported {
-                        open_array: open_array_status,
-                        sse: status,
-                    })));
-                    return;
-                }
-            },
-            Received::Failed(error) => error,
-        };
+        // A background capability probe is not a recovery. Preserve the previous
+        // outcome until a response changes it, so observers do not re-log it.
+        if !matches!(*state.borrow(), State::Unsupported(_)) {
+            state.send_replace(State::Connecting);
+        }
+        let error =
+            match receive(&client, &mut selection, &pending, &state, &mut gate, timing).await {
+                Received::Missing {
+                    status,
+                    url: mut response_url,
+                } => match selection {
+                    Selection::Established(_) => {
+                        selection = Selection::Probing(Endpoint::OpenArray(url.clone()));
+                        continue;
+                    }
+                    Selection::Probing(Endpoint::OpenArray(_)) => {
+                        let prefix = response_url
+                            .path()
+                            .strip_suffix("/api/events/stream")
+                            .unwrap_or("");
+                        response_url.set_path(&format!("{prefix}/events"));
+                        response_url.set_query(None);
+                        selection = Selection::Probing(Endpoint::Sse {
+                            url: response_url.into(),
+                            open_array_status: status,
+                        });
+                        continue;
+                    }
+                    Selection::Probing(Endpoint::Sse {
+                        open_array_status, ..
+                    }) => {
+                        pending.store(false, Ordering::Release);
+                        gate = RefreshGate::with_interval(Instant::now(), timing.refresh);
+                        let previous = state.borrow().clone();
+                        let error = match previous {
+                            State::Unsupported(error)
+                                if matches!(error.as_ref(),
+                            Error::Unsupported { open_array, sse }
+                                if *open_array == open_array_status && *sse == status) =>
+                            {
+                                error
+                            }
+                            _ => Arc::new(Error::Unsupported {
+                                open_array: open_array_status,
+                                sse: status,
+                            }),
+                        };
+                        state.send_replace(State::Unsupported(error));
+                        tokio::time::sleep(timing.reprobe).await;
+                        selection = Selection::Probing(Endpoint::OpenArray(url.clone()));
+                        continue;
+                    }
+                },
+                Received::Failed(error) => error,
+            };
         // Reconcile changes lost on EOF, malformed data, or a failed reconnect.
         gate.changed();
         state.send_replace(State::Retrying(Arc::new(error)));
@@ -213,6 +241,24 @@ async fn run(
     }
 }
 
+enum Selection {
+    Probing(Endpoint),
+    Established(Endpoint),
+}
+impl Selection {
+    fn endpoint(&self) -> &Endpoint {
+        match self {
+            Self::Probing(endpoint) | Self::Established(endpoint) => endpoint,
+        }
+    }
+    fn establish(&mut self) {
+        if let Self::Probing(endpoint) = self {
+            *self = Self::Established(endpoint.clone());
+        }
+    }
+}
+
+#[derive(Clone)]
 enum Endpoint {
     OpenArray(String),
     Sse {
@@ -259,12 +305,13 @@ fn flush(gate: &mut RefreshGate, pending: &AtomicBool) {
 }
 async fn receive(
     client: &reqwest::Client,
-    endpoint: &Endpoint,
+    selection: &mut Selection,
     pending: &AtomicBool,
     state: &watch::Sender<State>,
     gate: &mut RefreshGate,
     timing: Timing,
 ) -> Received {
+    let endpoint = selection.endpoint();
     let request = client.get(endpoint.url()).header(
         reqwest::header::ACCEPT,
         match endpoint {
@@ -290,9 +337,10 @@ async fn receive(
         Ok(response) => response,
         Err(error) => return Received::Failed(Error::Http(error.without_url())),
     };
+    selection.establish();
     state.send_replace(State::Receiving);
     let mut body = response.bytes_stream();
-    let mut decoder = endpoint.decoder();
+    let mut decoder = selection.endpoint().decoder();
     let mut tick = tokio::time::interval(timing.tick);
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     loop {
@@ -311,6 +359,9 @@ async fn receive(
         }
     }
 }
+
+#[cfg(test)]
+mod reprobe_tests;
 
 #[cfg(test)]
 mod tests {
@@ -415,6 +466,7 @@ mod tests {
         retry: Duration::from_millis(20),
         tick: Duration::from_millis(5),
         refresh: Duration::from_millis(40),
+        reprobe: TIMING.reprobe,
     };
     async fn request(listener: &TcpListener) -> std::io::Result<TcpStream> {
         requested(listener).await.map(|(socket, _)| socket)
