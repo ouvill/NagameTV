@@ -1,22 +1,36 @@
 # チャンネル選局とブラウザー
 
-ながめTVにおけるチャンネル選局、放送波の分類・ソート規則、Mirakurun連携、局ロゴの取得、およびチャンネルブラウザー（カルーセルUI）の統合仕様書です。
+ながめTVにおけるチャンネル選局、放送波の分類・ソート規則、Mirakurun・mirakc連携、局ロゴの取得、およびチャンネルブラウザー（カルーセルUI）の統合仕様書です。
 
 ---
 
 ## 放送局の取得と分類・並び順
 
-Mirakurunの `/api/services` から取得した放送局一覧を、Rustの `channels` モジュールで解析・ソートし、UI向けのデータモデルを構築します。
+Mirakurunまたはmirakcの `/api/services` から取得した放送局一覧を、Rustの `channels` モジュールで解析・ソートし、UI向けのデータモデルを構築します。
+ライブ配信の`/api/services/{id}/stream`と局ロゴの`/api/services/{id}/logo`も共通です。
+`hasLogoData`がfalseの局にはロゴを要求しません。mirakcではその局のロゴ要求は503になります。
 
 ```mermaid
 flowchart TD
-    M[Mirakurun /api/services] --> C[channelsモジュール]
+    M[Mirakurun・mirakc /api/services] --> C[channelsモジュール]
     C --> Sort[ソート・フィルタリング]
     Sort --> Model[Qt向け表示モデル]
     Model --> UI[ChannelBrowser UI / カルーセル]
     UI --> Select[ユーザーの選局]
     Select --> Rust[Player::select_channel]
 ```
+
+### サーバー製品名のQML契約
+
+既存の`Player`オブジェクト（Main.qmlの`player`）は、読み取り専用のQStringプロパティー
+`server_product`と変更通知`server_productChanged`を公開します。値は`"Mirakurun"`、
+`"mirakc"`、不明時の`""`です。通常の`GET /api/services`が成功したときのHTTP
+`Server`ヘッダーから取得し、追加の要求や設定への保存は行いません。
+初期値と別の接続先への切り替え時は空文字列です。同じ接続先の再取得が失敗した場合は
+前回成功時の値を保持します。表示文言だけに使い、APIの選択には使いません。
+
+[Mirakurun 4.1.3のServer実装](https://github.com/Chinachu/Mirakurun/blob/4.1.3/src/Mirakurun/Server.ts)
+は`Mirakurun/`にバージョンを付けます。mirakc 3.4.89では`mirakc/3.4.89`を実測しています。
 
 ### 1. 放送種別（Band）の分類
 放送サービスは以下の `Band` enum に分類されます：
@@ -48,7 +62,7 @@ flowchart TD
 ### 主なUI仕様
 - **カード型レイアウト**: 各局のロゴ、局名、現在放送中の番組情報、番組進行バーを1つのカードに集約。
 - **放送種別タブ (`BroadcastTabs`)**: 地デジ、BS、CSなどのタブで素早く絞り込み。タブの切り替えのみでは選局は行われず、カードをクリック（またはEnter）した時点で選局が実行されます。
-- **局ロゴの取得**: Mirakurunにロゴデータが存在する局（`hasLogoData == true`）について、`/api/services/{id}/logo` から非同期に取得します。ロゴが存在しない場合や取得失敗時は局名テキスト表示へフォールバックします。
+- **局ロゴの取得**: サーバーにロゴデータが存在する局（`hasLogoData == true`）について、`/api/services/{id}/logo` から非同期に取得します。ロゴが存在しない場合や取得失敗時は局名テキスト表示へフォールバックします。
 - **仮想化と軽量化**: `ListView` による画面外カードの仮想化を行い、多チャンネル環境でもメモリ使用量と描画負荷を最小限に抑えています。
 - **キーボード操作**:
   - **`←` / `→`**: チャンネルカードのフォーカス移動

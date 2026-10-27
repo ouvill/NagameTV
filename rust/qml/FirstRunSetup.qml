@@ -60,14 +60,14 @@ Popup {
                 spacing: Theme.spaceXl
                 Label {
                     Layout.fillWidth: true
-                    text: qsTranslate("Connection", "Connect to Mirakurun")
+                    text: qsTranslate("Connection", "Connect to Mirakurun or mirakc")
                     color: Theme.textPrimary
                     font.pixelSize: Theme.fontDisplay; font.bold: true
                     wrapMode: Text.Wrap
                 }
                 Label {
                     Layout.fillWidth: true
-                    text: qsTranslate("Connection", "To watch TV, you need a configured Mirakurun server. Enter its URL to get started.")
+                    text: qsTranslate("Connection", "To watch TV, you need a configured Mirakurun or mirakc server. Enter its URL to get started.")
                     color: Theme.textSecondary
                     font.pixelSize: Theme.fontControl
                     wrapMode: Text.Wrap

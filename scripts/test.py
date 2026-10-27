@@ -133,6 +133,8 @@ def plan(suites, directory, args):
             command.extend(["--test-threads", str(args.test_threads)])
         if args.filter:
             command.extend(["-E", args.filter])
+        if args.run_ignored:
+            command.extend(["--run-ignored", "only", "--success-output", "immediate"])
         if "checks" in suites and suite == "app":
             tests.append(Step("qml-lint", ["bash", "scripts/testing/check-qml.sh"]))
         tests.append(Step(suite, command))
@@ -170,6 +172,8 @@ def main():
                         help="parent directory for per-run logs and binaries")
     parser.add_argument("--test-threads", type=int, help="nextest concurrency (default: 2)")
     parser.add_argument("--filter", help="nextest filterset; only allowed with Rust suites")
+    parser.add_argument("--run-ignored", action="store_true",
+                        help="run only ignored Rust tests selected by an explicit --filter")
     arguments = sys.argv[1:]
     delimiter = arguments.index("--") if "--" in arguments else len(arguments)
     args = parser.parse_args(arguments[:delimiter])
@@ -197,6 +201,8 @@ def main():
             parser.error(str(error))
     if args.filter and any(suite not in RUST for suite in suites):
         parser.error("--filter requires explicit Rust suites (for example: app --filter 'test(settings::)')")
+    if args.run_ignored and not args.filter:
+        parser.error("--run-ignored requires --filter to select an external/diagnostic test explicitly")
     if args.test_threads is not None and args.test_threads < 1:
         parser.error("--test-threads must be positive")
     ensure_lock()

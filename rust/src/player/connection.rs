@@ -7,6 +7,10 @@ use cxx_qt_lib::QString;
 use std::{pin::Pin, time::Instant};
 
 impl ffi::Player {
+    pub fn server_product(&self) -> QString {
+        QString::from(self.rust().server_product.display_name())
+    }
+
     pub fn server_configured(&self) -> bool {
         !self
             .rust()
@@ -23,8 +27,16 @@ impl ffi::Player {
 
     fn begin_connection(mut self: Pin<&mut Self>, server: services::ServerUrl) {
         let was_loading = self.loading();
+        let product_changed = self.server().to_string() != server.as_str()
+            && self.rust().server_product != services::ServerProduct::Unknown;
+        if product_changed {
+            self.as_mut().rust_mut().server_product = services::ServerProduct::Unknown;
+        }
         self.as_mut().rust_mut().pending_server = Some(server.clone());
         self.as_mut().set_server(QString::from(server.as_str()));
+        if product_changed {
+            self.as_mut().server_product_changed();
+        }
         if !was_loading {
             self.loading_changed();
         }
@@ -150,6 +162,10 @@ impl ffi::Player {
         if let Some(result) = fetched {
             match result {
                 Ok(verified) => {
+                    if self.rust().server_product != verified.product() {
+                        self.as_mut().rust_mut().server_product = verified.product();
+                        self.as_mut().server_product_changed();
+                    }
                     let changed = self.rust().catalog.channels() != verified.channels();
                     if self.rust().pending_server.is_some() {
                         self.as_mut().confirm_server(&verified);

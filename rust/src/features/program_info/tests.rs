@@ -854,3 +854,124 @@ fn epg_enrichment_requires_service_event_and_start_and_keeps_ts_fields() {
         assert_eq!(mismatched["description"], "");
     }
 }
+
+#[test]
+#[ignore = "manual fixture performance check; requires NAGAMETV_PROGRAM_FIXTURE"]
+fn captured_program_snapshot_performance() -> Result<(), Box<dyn std::error::Error>> {
+    use std::io::Read as _;
+    let path = std::env::var("NAGAMETV_PROGRAM_FIXTURE")?;
+    let mut bytes = Vec::new();
+    std::fs::File::open(path)?
+        .take(MAX_RESPONSE as u64 + 1)
+        .read_to_end(&mut bytes)?;
+    assert!(bytes.len() <= MAX_RESPONSE);
+    let mut previous = Snapshot::default();
+    for pass in 0..5 {
+        let started = Instant::now();
+        let snapshot = parse(&bytes)?;
+        let elapsed = started.elapsed();
+        let named = (0..snapshot.len())
+            .filter(|&i| snapshot.program(i).name.is_some())
+            .count();
+        eprintln!(
+            "EPG_PARSE pass={pass} body_bytes={} programs={} named={} unknown_ends={} elapsed_us={} owned_bytes={}",
+            bytes.len(),
+            snapshot.len(),
+            named,
+            snapshot.unknown_ends(),
+            elapsed.as_micros(),
+            snapshot.storage().total()
+        );
+        // Linux-only process accounting, including the old and replacement snapshots.
+        #[cfg(target_os = "linux")]
+        for line in std::fs::read_to_string("/proc/self/status")?
+            .lines()
+            .filter(|line| line.starts_with("VmRSS:") || line.starts_with("VmHWM:"))
+        {
+            eprintln!("{line}");
+        }
+        previous = snapshot;
+    }
+    assert!(previous.len() > 0);
+    Ok(())
+}
+
+#[test]
+#[ignore = "manual read-only mirakc integration; requires NAGAMETV_MIRAKC_SERVER"]
+fn live_mirakc_notification_refreshes_resolved_programs() -> Result<(), Box<dyn std::error::Error>>
+{
+    use viewer_epg_events::connection::{Client, State, Subscription};
+    let server = crate::services::ServerUrl::parse(&std::env::var("NAGAMETV_MIRAKC_SERVER")?)?;
+    let network = Network::new()?;
+    let mut feature = ProgramInfo::default();
+    feature.configure(Some(server.as_str().into()));
+    let deadline = Instant::now() + Duration::from_secs(15);
+    loop {
+        let update = feature.poll(&network);
+        if update.completed == Some(Completion::Succeeded) {
+            break;
+        }
+        assert_ne!(update.completed, Some(Completion::Failed));
+        assert!(
+            Instant::now() < deadline,
+            "initial programs fetch did not finish"
+        );
+        thread::sleep(Duration::from_millis(10));
+    }
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(1)
+        .enable_all()
+        .build()?;
+    let subscription = Subscription::start(
+        runtime.handle(),
+        &Client::new()?,
+        format!("{}/api/events/stream?resource=program", server.as_str()),
+    );
+    let deadline = Instant::now() + Duration::from_secs(12);
+    let mut receiving = false;
+    let mut notifications = 0;
+    let mut completed = 0;
+    let observation = (|| -> Result<(), Box<dyn std::error::Error>> {
+        while Instant::now() < deadline {
+            match subscription.state() {
+                State::Receiving => receiving = true,
+                State::Connecting => {}
+                State::Retrying(error) | State::Unsupported(error) => {
+                    return Err(error.to_string().into());
+                }
+                State::WorkerStopped => return Err("event worker stopped".into()),
+            }
+            if subscription.take_refresh() {
+                notifications += 1;
+                feature.refresh();
+            }
+            match feature.poll(&network).completed {
+                Some(Completion::Succeeded) => completed += 1,
+                Some(Completion::Failed) => {
+                    return Err("notification-triggered programs fetch failed".into());
+                }
+                None => {}
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+        Ok(())
+    })();
+    runtime.block_on(async {
+        tokio::time::timeout(Duration::from_secs(5), subscription.stop().wait()).await
+    })??;
+    observation?;
+    assert!(receiving);
+    assert_eq!(
+        notifications, 1,
+        "expected one coalesced connect-time burst"
+    );
+    assert_eq!(completed, 1);
+    let named = (0..feature.snapshot.len())
+        .filter(|&i| feature.snapshot.program(i).name.is_some())
+        .count();
+    eprintln!(
+        "LIVE_MIRAKC receiving=true notifications={notifications} additional_fetches={completed} programs={} named={named}",
+        feature.snapshot.len()
+    );
+    Ok(())
+}

@@ -13,7 +13,7 @@ import QtQml
       property string memoryDescription: qsTranslate("Viewer", "Memory keeps rewinding quick without writing to storage. Choose a limit that leaves room for your other apps.")
       property string filesDescription: qsTranslate("Viewer", "Temporary files keep longer history with less RAM. They use storage space and continuous disk writes, and are deleted when playback stops.")
       property string historyEstimate: qsTranslate("Viewer", "About %1 of history").arg(qsTranslate("Viewer", "%1 min %2 sec").arg(1).arg(30))
-      property string failureSource: "This channel was not found on Mirakurun. Refresh the channel list and choose a channel again."
+      property string failureSource: "This channel was not found on the server. Refresh the channel list and choose a channel again."
       readonly property string failureLabel: qsTranslate("Backend", failureSource)
       property var snapshot: ({state: "Playing"})
       function metric(key) {

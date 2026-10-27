@@ -109,6 +109,11 @@ Item {
                 view.recording = false;
                 compare(findChild(view, "programDescription").textFormat, Text.PlainText);
                 compare(findChild(view, "programDescription").text, "<b>plain</b>");
+                const source = findChild(view, "programSource");
+                compare(source.text, "Program information provided by the server");
+                view.serverProduct = "mirakc";
+                compare(source.text, "Program information provided by mirakc");
+                view.serverProduct = "";
                 testCase.programData = JSON.stringify({
                     name: "Second",
                     description: "new",

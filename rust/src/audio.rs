@@ -26,7 +26,8 @@ const SAMPLING_RATES_HZ: [Option<i32>; 8] = [
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Descriptor {
-    pub component_tag: u8,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub component_tag: Option<u8>,
     component_type: u8,
     is_main: bool,
     #[serde(default)]
@@ -73,7 +74,7 @@ impl Descriptor {
             })
             .collect::<Option<Box<[_]>>>()?;
         Some(Self {
-            component_tag: header[COMPONENT_TAG_OFFSET],
+            component_tag: Some(header[COMPONENT_TAG_OFFSET]),
             component_type: header[COMPONENT_TYPE_OFFSET],
             is_main: flags & MAIN_COMPONENT_FLAG != 0,
             langs,
@@ -152,7 +153,7 @@ pub fn matching(descriptors: &[Descriptor], tag: Option<u8>) -> Option<&Descript
     let tag = tag?;
     let mut matches = descriptors
         .iter()
-        .filter(|audio| audio.component_tag == tag);
+        .filter(|audio| audio.component_tag == Some(tag));
     let first = matches.next()?;
     matches.next().is_none().then_some(first)
 }
@@ -168,7 +169,7 @@ mod tests {
             0xf2, 0x02, 0x10, 0x0f, 0xff, 0xc7, b'j', b'p', b'n', b'e', b'n', b'g',
         ];
         let parsed = Descriptor::from_arib(&dual).ok_or("dual descriptor")?;
-        assert_eq!(parsed.component_tag, 0x10);
+        assert_eq!(parsed.component_tag, Some(0x10));
         assert_eq!(parsed.kind(), Kind::DualMono);
         assert!(parsed.is_main());
         assert_eq!(&*parsed.langs, ["jpn", "eng"]);

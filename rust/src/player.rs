@@ -167,6 +167,7 @@ pub mod ffi {
         #[qproperty(QString, screenshot_options, READ = screenshot_options, NOTIFY)]
         #[qproperty(bool, screenshot_busy, READ = screenshot_busy, NOTIFY)]
         #[qproperty(QString, server, READ, NOTIFY)]
+        #[qproperty(QString, server_product, READ = server_product, NOTIFY)]
         #[qproperty(bool, server_configured, READ = server_configured, NOTIFY)]
         #[qproperty(QString, status, READ, NOTIFY)]
         #[qproperty(QString, playback_error, READ = playback_error, NOTIFY)]
@@ -441,6 +442,7 @@ pub mod ffi {
         #[qsignal]
         fn desktop_raise_requested(self: Pin<&mut Player>);
         fn server_configured(self: &Player) -> bool;
+        fn server_product(self: &Player) -> QString;
         fn loading(self: &Player) -> bool;
         fn connecting(self: &Player) -> bool;
         fn playing(self: &Player) -> bool;
@@ -713,6 +715,7 @@ pub struct PlayerRust {
     ui_language: QString,
     server: QString,
     pending_server: Option<services::ServerUrl>,
+    server_product: services::ServerProduct,
     status: QString,
     lifecycle_status: PlaybackStatus,
     playback_error: error_text::Text,
