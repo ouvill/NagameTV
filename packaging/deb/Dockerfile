@@ -1,6 +1,6 @@
 # Native Ubuntu 26.04 debs use the distribution's Qt and GStreamer ABI.
 # Ubuntu 24.04 debs reuse packaging/appimage/Dockerfile instead.
-FROM ubuntu:26.04@sha256:da6fc2be547864451aa253836dd926da33623312df4a9a243e35dc877c378a78
+FROM ubuntu:26.04@sha256:f144425ff09be612d6d9ad965196e9cdc23dae1f42110a8a11a3e9a8198759f7
 
 COPY runtime-dependencies-26.04.txt /tmp/runtime-dependencies.txt
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
