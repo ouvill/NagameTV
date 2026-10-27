@@ -1,18 +1,18 @@
 //! Owned EPG data and borrowed schedule queries; independent of Qt and clocks.
+use super::Error;
 use super::schedule::{End, Resolution, Schedule, Segment};
-use super::{Error, MAX_PROGRAMS};
 use crate::channels::BroadcastService;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::{collections::BTreeMap, sync::Arc};
 
-#[derive(Deserialize, Serialize, Debug, PartialEq, Eq)]
+#[derive(Clone, Serialize, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct Program {
     pub id: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub event_id: Option<u16>,
     #[serde(flatten)]
-    service: BroadcastService,
+    pub(super) service: BroadcastService,
     pub start_at: u64,
     pub duration: u64,
     pub name: Option<String>,
@@ -73,13 +73,7 @@ pub struct Snapshot {
 }
 
 pub(crate) fn parse(bytes: &[u8]) -> Result<Snapshot, Error> {
-    let mut entries: Vec<Program> = crate::json::from_slice(bytes)?;
-    if entries.len() > MAX_PROGRAMS {
-        return Err(Error::TooManyPrograms {
-            actual: entries.len(),
-            limit: MAX_PROGRAMS,
-        });
-    }
+    let mut entries = super::wire::parse(bytes)?;
     entries.sort_unstable_by_key(|p| (p.service(), p.start_at, p.id));
     // Equal identities can contain conflicting revisions. Only discard equal
     // decoded records, keeping all distinct candidates without quadratic scans.

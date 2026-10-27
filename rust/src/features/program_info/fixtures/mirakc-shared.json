@@ -1,0 +1,109 @@
+[
+  {
+    "id": 327210205603876,
+    "eventId": 3876,
+    "serviceId": 2056,
+    "networkId": 32721,
+    "startAt": 1793049900000,
+    "duration": 600000,
+    "isFree": true,
+    "name": "テレビ体操[字]",
+    "description": "【指導】鈴木大輔【ピアノ】細貝柊【実技】我喜屋佑衣，福島波奈，新井庸太",
+    "extended": {
+      "番組内容": "火曜日、朝のテレビ体操は「オリジナルの体操」と「ラジオ体操第１」です。",
+      "出演者": "【出演】鈴木大輔，我喜屋佑衣，福島波奈，新井庸太，【ピアノ】細貝柊"
+    },
+    "video": {
+      "type": "mpeg2",
+      "resolution": "1080i",
+      "streamContent": 1,
+      "componentType": 179
+    },
+    "audio": {
+      "componentType": 3,
+      "isMain": true,
+      "samplingRate": 48000,
+      "langs": [
+        "jpn"
+      ]
+    },
+    "audios": [
+      {
+        "componentType": 3,
+        "isMain": true,
+        "samplingRate": 48000,
+        "langs": [
+          "jpn"
+        ]
+      }
+    ],
+    "genres": [
+      {
+        "lv1": 10,
+        "lv2": 15,
+        "un1": 15,
+        "un2": 15
+      },
+      {
+        "lv1": 2,
+        "lv2": 3,
+        "un1": 15,
+        "un2": 15
+      }
+    ],
+    "relatedItems": [
+      {
+        "type": "shared",
+        "networkId": null,
+        "serviceId": 2056,
+        "eventId": 3876
+      },
+      {
+        "type": "shared",
+        "networkId": null,
+        "serviceId": 2057,
+        "eventId": 3876
+      },
+      {
+        "type": "shared",
+        "networkId": null,
+        "serviceId": 2058,
+        "eventId": 3876
+      }
+    ]
+  },
+  {
+    "id": 327210205703876,
+    "eventId": 3876,
+    "serviceId": 2057,
+    "networkId": 32721,
+    "startAt": 1793049900000,
+    "duration": 600000,
+    "isFree": true,
+    "relatedItems": [
+      {
+        "type": "shared",
+        "networkId": null,
+        "serviceId": 2056,
+        "eventId": 3876
+      }
+    ]
+  },
+  {
+    "id": 327210205803876,
+    "eventId": 3876,
+    "serviceId": 2058,
+    "networkId": 32721,
+    "startAt": 1793049900000,
+    "duration": 600000,
+    "isFree": true,
+    "relatedItems": [
+      {
+        "type": "shared",
+        "networkId": null,
+        "serviceId": 2056,
+        "eventId": 3876
+      }
+    ]
+  }
+]

@@ -10,6 +10,7 @@ pub mod presentation;
 pub mod schedule;
 pub mod view;
 mod visibility;
+mod wire;
 pub mod watch;
 use model::{Snapshot, parse};
 use std::time::{Duration, Instant};
