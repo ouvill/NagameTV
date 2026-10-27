@@ -83,7 +83,7 @@ impl Controller {
         if let Phase::Running(subscription) = &self.phase {
             update.refresh = subscription.take_refresh();
             match subscription.state() {
-                State::Retrying(error) => {
+                State::Retrying(error) | State::Unsupported(error) => {
                     if self
                         .last_failure
                         .as_ref()
@@ -100,7 +100,7 @@ impl Controller {
                     // The reconnect may have missed updates even if the worker panicked.
                     update.refresh = true;
                 }
-                _ => self.last_failure = None,
+                State::Connecting | State::Receiving => self.last_failure = None,
             }
         }
         Ok(update)
