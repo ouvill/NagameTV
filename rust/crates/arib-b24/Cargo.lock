@@ -12,7 +12,7 @@ checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 name = "arib-b24"
 version = "0.1.0"
 dependencies = [
- "bitfield",
+ "bitfield 0.20.0",
  "flate2",
  "thiserror",
  "viewer-mpegts",
@@ -24,7 +24,16 @@ version = "0.19.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b45721c9db4c7a20899d05efb7ad9235f50b256e980db30ffb229abf732934c3"
 dependencies = [
- "bitfield-macros",
+ "bitfield-macros 0.19.5",
+]
+
+[[package]]
+name = "bitfield"
+version = "0.20.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2b56e92e42c7e82416925c583156d76ae1d3d83fa5133c379173319dbe1ad51e"
+dependencies = [
+ "bitfield-macros 0.20.0",
 ]
 
 [[package]]
@@ -32,6 +41,17 @@ name = "bitfield-macros"
 version = "0.19.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c0cb6f3d4773a2107b94cbeccaa5b5f0b35a88389b5d522d13d659f64317b22d"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "bitfield-macros"
+version = "0.20.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "11499bf38d9079be6f0f993f9d033ab3cc4dbd66bd5a51a63b6310ea689f534b"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -139,7 +159,7 @@ checksum = "d245f478577f809a851594d02313b640fb437e0bb33866753cff937863096954"
 name = "viewer-mpegts"
 version = "0.1.0"
 dependencies = [
- "bitfield",
+ "bitfield 0.19.5",
  "thiserror",
 ]
 
