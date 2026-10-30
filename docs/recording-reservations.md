@@ -17,7 +17,11 @@ QMLは以下の契約で設定スイッチ、番組表の印、番組詳細の�
 | 読取専用プロパティ | `reservations_enabled: bool` | フラグONかつEPGStationの現在の認証セッションが接続確認済み |
 | 読取専用プロパティ | `reservation_busy: bool` | 一覧取得・追加・取消し・除外・除外解除・その後の再取得が進行中。取消し待ちを含む |
 | 読取専用プロパティ | `reservation_error: string` | 正常時は空。Backend文脈で翻訳済みの利用者向けエラー。URL・サーバー本文・資格情報を含めない |
-| シグナル | `reservations_changed()` | 上記3プロパティと番組ごとの操作可否・予約状態の変更。通知前にモデルへ反映 |
+| 読取専用プロパティ | `reservation_encode_modes: QStringList` | `/api/config`の`encode`をサーバー順で返す。フラグOFF・未接続・未取得・取得失敗・候補なしでは空。NOTIFYは`reservations_changed()` |
+| 読取専用プロパティ | `reservation_encode_mode: QString` | 保存した候補名。空文字列はエンコード指定なし。現在の候補にない名前も保持し、QMLでは指定なしとして表示する。NOTIFYは`reservations_changed()` |
+| 読取専用プロパティ | `reservation_delete_original: bool` | 保存した「エンコード後に元ファイルを削除」の選択。既定false。NOTIFYは`reservations_changed()` |
+| invokable | `configure_reservation_encode(mode: QString, delete_original: bool): bool` | 両方を保存する。modeは空文字列か現在の候補名に限る。それ以外はfalseを返し、どちらも変更しない。変更後に`reservations_changed()`で通知 |
+| シグナル | `reservations_changed()` | 予約・エンコード設定のプロパティと番組ごとの操作可否・予約状態の変更。通知前にモデルへ反映 |
 | invokable | `refresh_reservations(): bool` | 一覧を再取得。未接続・フラグOFF・操作中はfalse |
 | invokable | `reservation_state(program_key: string): string` | 番組の予約状態。値は下記roleと同じ。古いキー・曖昧な番組は空 |
 | invokable | `can_reserve_program(program_key: string): bool` | 現在の状態で追加できるか。実行時にも検証する |
@@ -32,6 +36,13 @@ QMLは以下の契約で設定スイッチ、番組表の印、番組詳細の�
 program_keyは`watch_program(key)`と同じ`watchKey`。QMLで番組IDへ分解しない。
 二重操作は受け付けず、成功応答後も一覧再取得が終わるまでbusyを維持する。
 通信失敗後は書込を自動再送しない。再取得して実際の状態を確認してから次の操作を行う。
+
+`reserve_program(key)`は、保存した候補名が最新の取得済み一覧にある場合だけ
+`encodeOption: { mode1, isDeleteOriginalAfterEncode }`を送る。
+指定なし・取得失敗・現在のサーバーに候補がない場合は`encodeOption`自体を省略し、
+サーバーの既定動作を使う。`allowEndLack: false`と追加前の番組照合は維持する。
+保存キーは`recording_encode_mode`と`recording_delete_original`で、通常設定を読み書きしない
+明示的な`--features`起動では、この選択もその起動内だけで保持する。
 
 ### GuideModel
 
