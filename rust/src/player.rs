@@ -134,6 +134,8 @@ pub mod ffi {
         type CommentModel = crate::comment_model::ffi::CommentModel;
         include!("cxx-qt-lib/qstring.h");
         type QString = cxx_qt_lib::QString;
+        include!("cxx-qt-lib/qstringlist.h");
+        type QStringList = cxx_qt_lib::QStringList;
         include!("cxx-qt-lib/qurl.h");
         type QUrl = cxx_qt_lib::QUrl;
         include!("cxx-qt-lib/qimage.h");
@@ -270,6 +272,9 @@ pub mod ffi {
         #[qproperty(bool, reservations_enabled, READ = reservations_enabled, NOTIFY = reservations_changed)]
         #[qproperty(bool, reservation_busy, READ = reservation_busy, NOTIFY = reservations_changed)]
         #[qproperty(QString, reservation_error, READ = reservation_error, NOTIFY = reservations_changed)]
+        #[qproperty(QStringList, reservation_encode_modes, READ = reservation_encode_modes, NOTIFY = reservations_changed)]
+        #[qproperty(QString, reservation_encode_mode, READ = reservation_encode_mode, NOTIFY = reservations_changed)]
+        #[qproperty(bool, reservation_delete_original, READ = reservation_delete_original, NOTIFY = reservations_changed)]
         #[qproperty(bool, data_broadcast_available, READ = data_broadcast_available, NOTIFY)]
         #[qproperty(QString, data_broadcast_endpoint, READ, NOTIFY)]
         #[qproperty(bool, subtitles_active, READ, NOTIFY)]
@@ -516,6 +521,15 @@ pub mod ffi {
         fn reservations_enabled(self: &Player) -> bool;
         fn reservation_busy(self: &Player) -> bool;
         fn reservation_error(self: &Player) -> QString;
+        fn reservation_encode_modes(self: &Player) -> QStringList;
+        fn reservation_encode_mode(self: &Player) -> QString;
+        fn reservation_delete_original(self: &Player) -> bool;
+        #[qinvokable]
+        fn configure_reservation_encode(
+            self: Pin<&mut Player>,
+            mode: QString,
+            delete_original: bool,
+        ) -> bool;
         #[qsignal]
         fn reservations_changed(self: Pin<&mut Player>);
         #[qinvokable]

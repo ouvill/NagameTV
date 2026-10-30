@@ -3,7 +3,7 @@ use super::{ffi, status::tr};
 use crate::epgstation::reservations::{Change, Error, Program};
 use crate::services::FetchError;
 use cxx_qt::CxxQtType;
-use cxx_qt_lib::QString;
+use cxx_qt_lib::{QString, QStringList};
 use std::{
     pin::Pin,
     time::{Instant, SystemTime, UNIX_EPOCH},
@@ -29,6 +29,57 @@ fn now_ms() -> Result<u64, Error> {
         .and_then(|duration| u64::try_from(duration.as_millis()).map_err(|_| Error::Unavailable))
 }
 impl ffi::Player {
+    pub fn reservation_encode_modes(&self) -> QStringList {
+        self.rust()
+            .recording_reservations
+            .encode_modes()
+            .iter()
+            .map(QString::from)
+            .collect()
+    }
+    pub fn reservation_encode_mode(&self) -> QString {
+        QString::from(&self.rust().preferences.preferences().recording_encode_mode)
+    }
+    pub fn reservation_delete_original(&self) -> bool {
+        self.rust()
+            .preferences
+            .preferences()
+            .recording_delete_original
+    }
+    pub fn configure_reservation_encode(
+        mut self: Pin<&mut Self>,
+        mode: QString,
+        delete_original: bool,
+    ) -> bool {
+        self.as_mut().poll_recording_reservations();
+        let mode = mode.to_string();
+        if !self
+            .rust()
+            .recording_reservations
+            .accepts_encode_mode(&mode)
+        {
+            tracing::warn!(
+                operation = "configure reservation encode",
+                "Encode mode is not in the current server list"
+            );
+            return false;
+        }
+        let preferences = self.rust().preferences.preferences();
+        if preferences.recording_encode_mode != mode
+            || preferences.recording_delete_original != delete_original
+        {
+            self.as_mut()
+                .rust_mut()
+                .preferences
+                .change(crate::settings::Change::RecordingEncode {
+                    mode,
+                    delete_original,
+                });
+            self.as_mut().reservations_changed();
+        }
+        self.save_settings();
+        true
+    }
     pub fn recording_reservations_enabled(&self) -> bool {
         self.rust()
             .preferences
@@ -169,7 +220,16 @@ impl ffi::Player {
         let this = self.as_mut().rust_mut().get_mut();
         let accepted = match (target, this.network.as_ref()) {
             (Ok((program, now)), Some(network)) => match request {
-                Request::Reserve => this.recording_reservations.reserve(network, program, now),
+                Request::Reserve => {
+                    let preferences = this.preferences.preferences();
+                    this.recording_reservations.reserve(
+                        network,
+                        program,
+                        now,
+                        &preferences.recording_encode_mode,
+                        preferences.recording_delete_original,
+                    )
+                }
                 Request::Change(Change::Cancel) => {
                     this.recording_reservations.cancel(network, program, now)
                 }

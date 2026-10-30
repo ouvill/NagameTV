@@ -156,6 +156,10 @@ pub enum Change {
     SubtitleForceOutline(bool),
     DataBroadcastEnabled(bool),
     RecordingReservationsEnabled(bool),
+    RecordingEncode {
+        mode: String,
+        delete_original: bool,
+    },
     DataBroadcastPrefetch(bool),
     Comments(bool),
     CommentCacheLimit(CommentCacheLimit),
@@ -242,6 +246,13 @@ impl Session {
             Change::DataBroadcastEnabled(enabled) => preferences.data_broadcast_enabled = enabled,
             Change::RecordingReservationsEnabled(enabled) => {
                 preferences.recording_reservations_enabled = enabled
+            }
+            Change::RecordingEncode {
+                mode,
+                delete_original,
+            } => {
+                preferences.recording_encode_mode = mode;
+                preferences.recording_delete_original = delete_original;
             }
             Change::DataBroadcastPrefetch(enabled) => preferences.data_broadcast_prefetch = enabled,
             Change::Comments(enabled) => preferences.comments_enabled = enabled,

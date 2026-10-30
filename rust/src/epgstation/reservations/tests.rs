@@ -1,4 +1,5 @@
 use super::*;
+mod encode_checks;
 use crate::epgstation::{Library, Login};
 use serde_json::{Value, json};
 use std::{
@@ -170,7 +171,7 @@ fn disabled_connected_owner_makes_no_requests_and_authenticated_writes_are_seria
     let mut manager = Manager::default();
     library.synchronize_reservations(false, &mut manager, Instant::now());
     fixture.finish(&mut manager);
-    assert!(!manager.reserve(&fixture.network, program(), NOW));
+    assert!(!manager.reserve(&fixture.network, program(), NOW, "", false));
     assert!(!manager.refresh(&fixture.network));
     assert!(
         fixture
@@ -183,8 +184,8 @@ fn disabled_connected_owner_makes_no_requests_and_authenticated_writes_are_seria
     library.synchronize_reservations(true, &mut manager, Instant::now());
     fixture.finish(&mut manager);
     assert!(manager.can_reserve(program(), NOW));
-    assert!(manager.reserve(&fixture.network, program(), NOW));
-    assert!(!manager.reserve(&fixture.network, program(), NOW));
+    assert!(manager.reserve(&fixture.network, program(), NOW, "", false));
+    assert!(!manager.reserve(&fixture.network, program(), NOW, "", false));
     fixture.finish(&mut manager);
     assert_eq!(manager.snapshot().status(program()), Some(Status::Reserved));
     assert!(manager.can_cancel(program(), NOW));
@@ -332,7 +333,7 @@ fn changed_program_never_sends_a_reservation() {
     let mut manager = Manager::default();
     library.synchronize_reservations(true, &mut manager, Instant::now());
     fixture.finish(&mut manager);
-    assert!(manager.reserve(&fixture.network, program(), NOW));
+    assert!(manager.reserve(&fixture.network, program(), NOW, "", false));
     fixture.finish(&mut manager);
     assert!(matches!(
         manager.error(),
@@ -394,7 +395,7 @@ fn successful_write_with_failed_refresh_is_not_repeated() {
     let mut manager = Manager::default();
     library.synchronize_reservations(true, &mut manager, Instant::now());
     fixture.finish(&mut manager);
-    assert!(manager.reserve(&fixture.network, program(), NOW));
+    assert!(manager.reserve(&fixture.network, program(), NOW, "", false));
     fixture.finish(&mut manager);
     assert!(matches!(
         manager.error(),

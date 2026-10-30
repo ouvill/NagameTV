@@ -1,5 +1,6 @@
 //! Serial, cancellable guide reservations owned independently of Qt.
 mod data;
+mod encode;
 mod http;
 #[cfg(test)]
 mod tests;
@@ -88,10 +89,13 @@ impl Change {
         }
     }
 }
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 enum Operation {
     Refresh,
-    Add(Program),
+    Add {
+        program: Program,
+        encode: Option<encode::Options>,
+    },
     Change {
         program: Program,
         target: data::Target,
@@ -128,6 +132,7 @@ pub struct Manager {
     mode: Mode,
     work: Work,
     catalogue: Catalogue,
+    encode: encode::Catalogue,
     error: Option<FetchError<Error>>,
     next_refresh: Instant,
     revision: u64,
@@ -138,6 +143,7 @@ impl Default for Manager {
             mode: Mode::Disabled,
             work: Work::Idle,
             catalogue: Catalogue::Unknown,
+            encode: encode::Catalogue::Unknown,
             error: None,
             next_refresh: Instant::now(),
             revision: 0,
@@ -145,6 +151,12 @@ impl Default for Manager {
     }
 }
 impl Manager {
+    pub fn encode_modes(&self) -> &[String] {
+        self.encode.modes()
+    }
+    pub fn accepts_encode_mode(&self, mode: &str) -> bool {
+        self.encode.accepts(mode)
+    }
     pub fn enabled(&self) -> bool {
         matches!(self.mode, Mode::Connected { .. })
     }
@@ -182,6 +194,7 @@ impl Manager {
             work => work,
         };
         self.catalogue = Catalogue::Unknown;
+        self.encode.reset();
         self.error = None;
         self.next_refresh = now;
         self.revision = self.revision.wrapping_add(1);
@@ -217,7 +230,14 @@ impl Manager {
         self.revision = self.revision.wrapping_add(1);
         false
     }
-    pub fn reserve(&mut self, network: &Network, program: Program, now_ms: u64) -> bool {
+    pub fn reserve(
+        &mut self,
+        network: &Network,
+        program: Program,
+        now_ms: u64,
+        mode: &str,
+        delete_original: bool,
+    ) -> bool {
         if !self.can_reserve(program, now_ms) {
             let error = if self.busy() {
                 Error::Busy
@@ -230,7 +250,8 @@ impl Manager {
             };
             return self.reject("reserve", error);
         }
-        self.begin(network, Operation::Add(program), now_ms);
+        let encode = self.encode.selection(mode, delete_original);
+        self.begin(network, Operation::Add { program, encode }, now_ms);
         true
     }
     pub fn cancel(&mut self, network: &Network, program: Program, now_ms: u64) -> bool {
@@ -272,6 +293,7 @@ impl Manager {
         if !self.enabled() || self.busy() {
             return false;
         }
+        self.encode.reset();
         self.begin(network, Operation::Refresh, 0);
         true
     }
@@ -280,9 +302,10 @@ impl Manager {
             return;
         };
         let connection = connection.clone();
+        let request = operation.clone();
         self.work = Work::Running {
             job: network.job(async move {
-                http::execute(connection, operation, now_ms)
+                http::execute(connection, request, now_ms)
                     .await
                     .map_err(FetchError::Parse)
             }),
@@ -292,6 +315,13 @@ impl Manager {
         self.revision = self.revision.wrapping_add(1);
     }
     pub fn poll(&mut self, network: &Network, now: Instant) {
+        let connection = match &self.mode {
+            Mode::Connected { connection, .. } => Some(connection),
+            Mode::Disabled | Mode::Closed => None,
+        };
+        if self.encode.poll(network, connection) {
+            self.revision = self.revision.wrapping_add(1);
+        }
         self.work = match std::mem::take(&mut self.work) {
             Work::Idle => Work::Idle,
             Work::Retiring(job) => match job.poll() {
@@ -314,7 +344,7 @@ impl Manager {
                         Err(error) => {
                             let operation = match operation {
                                 Operation::Refresh => "refresh",
-                                Operation::Add(_) => "reserve",
+                                Operation::Add { .. } => "reserve",
                                 Operation::Change { change, .. } => change.name(),
                             };
                             tracing::warn!(
