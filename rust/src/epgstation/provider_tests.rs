@@ -488,6 +488,15 @@ fn check_reservation_reads(
         manager.error().is_none(),
         "real provider reservations failed"
     );
+    while manager.encode_modes().is_empty() {
+        assert!(
+            Instant::now() < deadline,
+            "real provider encode config timed out"
+        );
+        manager.poll(network, Instant::now());
+        thread::sleep(POLL_INTERVAL);
+    }
+    assert_eq!(manager.encode_modes(), ["Contract HD", "Contract SD"]);
     for (id, status) in [
         (1, Status::Reserved),
         (2, Status::Conflict),

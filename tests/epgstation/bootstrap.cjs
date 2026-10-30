@@ -18,6 +18,11 @@ fs.writeFileSync('config/config.yml', JSON.stringify({
     subDirectory: mode === 'password' ? '/protected' : '/',
     auth: { enabled: mode === 'password', allowAnonymous: false },
     recorded: [{ name: 'recorded', path: '/app/recorded' }],
+    // Only advertise names through /api/config; no encoder process is started.
+    encode: [
+        { name: 'Contract HD', cmd: '/bin/false', suffix: '.mp4' },
+        { name: 'Contract SD', cmd: '/bin/false', suffix: '.mp4' },
+    ],
     // No background integrations are part of this API contract suite.
     featureFlags: Object.fromEntries(FEATURE_FLAG_KEYS.map(key => [key, false])),
 }));
@@ -99,15 +104,32 @@ async function main() {
 }
 
 if (typeof process.send === 'undefined') {
-    // The provider service expects a child-process IPC channel. This suite does
-    // not execute operator operations; any accidental use must fail explicitly.
+    // /api/config also reads broadcast status via IPC. Dispatch only that read
+    // to the real reservation model, which obtains channel types from this DB.
+    // Starting the full operator would also start recording/EPG background work.
+    const { ModelName, ReserveationFunctions } = require('./dist/model/ipc/IPCMessageDefine');
     const child = require('node:child_process').fork(__filename, [], {
         stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
     });
-    child.on('message', () => {
-        console.error('Unexpected operator IPC request in the recorded-file API suite');
+    function fail(error) {
+        console.error('EPGStation contract IPC failed:', error);
         child.kill();
         process.exitCode = 1;
+    }
+    child.on('message', async message => {
+        if (message.model !== ModelName.reserveation || message.func !== ReserveationFunctions.getBroadcastStatus) {
+            fail(new Error('Unexpected operator IPC request in the read-only API suite'));
+            return;
+        }
+        try {
+            const result = await container.get('IReservationManageModel').getBroadcastStatus();
+            assert.equal(result.BS, true, 'broadcast status must come from the seeded channel DB');
+            child.send({ id: message.id, result }, error => {
+                if (error) fail(error);
+            });
+        } catch (error) {
+            fail(error);
+        }
     });
     child.on('error', error => {
         console.error('Failed to start EPGStation API child:', error);
