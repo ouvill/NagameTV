@@ -28,6 +28,16 @@ fn now_ms() -> Result<u64, Error> {
         .map_err(|_| Error::Unavailable)
         .and_then(|duration| u64::try_from(duration.as_millis()).map_err(|_| Error::Unavailable))
 }
+impl super::PlayerRust {
+    pub(super) fn verify_reservation_session(&mut self) {
+        let preferences = self.preferences.preferences();
+        self.recording_library.verify_for_reservations(
+            self.network.as_ref(),
+            preferences.recording_reservations_enabled,
+            &preferences.epgstation_server,
+        );
+    }
+}
 impl ffi::Player {
     pub fn reservation_encode_modes(&self) -> QStringList {
         self.rust()
@@ -127,6 +137,7 @@ impl ffi::Player {
             self.as_mut().rust_mut().preferences.change(
                 crate::settings::Change::RecordingReservationsEnabled(enabled),
             );
+            self.as_mut().rust_mut().verify_reservation_session();
             self.as_mut().poll_recording_reservations();
             self.as_mut().recording_reservations_enabled_changed();
         }
@@ -245,6 +256,11 @@ impl ffi::Player {
         let now = Instant::now();
         let state = self.as_mut().rust_mut().get_mut();
         let before = state.recording_reservations.revision();
+        if let Some(network) = &state.network {
+            state
+                .recording_library
+                .poll_reservation_verification(network);
+        }
         state.recording_library.synchronize_reservations(
             state
                 .preferences
@@ -261,6 +277,10 @@ impl ffi::Player {
         }
     }
     pub(super) fn shutdown_recording_reservations(mut self: Pin<&mut Self>) {
+        self.as_mut()
+            .rust_mut()
+            .recording_library
+            .close_reservation_verification();
         self.as_mut()
             .rust_mut()
             .recording_reservations

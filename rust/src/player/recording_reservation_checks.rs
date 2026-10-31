@@ -1,4 +1,5 @@
 //! Hardware-free QML contract and role update checks with real asynchronous owners.
+mod verification;
 use super::ffi;
 use cxx_qt::CxxQtType;
 use cxx_qt_lib::{QModelIndex, QString};
@@ -27,6 +28,7 @@ fn finish(player: &mut cxx::UniquePtr<ffi::Player>) {
     }
 }
 pub(super) fn run() -> TestResult {
+    verification::run()?;
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(1)
         .enable_all()

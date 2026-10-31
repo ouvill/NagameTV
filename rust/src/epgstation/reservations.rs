@@ -46,7 +46,7 @@ pub enum Error {
 // Retain the original cause without exposing its Display through source():
 // serde may quote a password or token from an invalid response field.
 #[derive(thiserror::Error)]
-pub struct JsonError(crate::json::Error);
+pub struct JsonError(pub(super) crate::json::Error);
 impl std::fmt::Display for JsonError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let (path, source) = match &self.0 {
@@ -55,7 +55,7 @@ impl std::fmt::Display for JsonError {
         };
         write!(
             formatter,
-            "Invalid reservation JSON at {path}: {:?}, line {}, column {}",
+            "Invalid EPGStation JSON at {path}: {:?}, line {}, column {}",
             source.classify(),
             source.line(),
             source.column()

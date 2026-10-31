@@ -130,7 +130,7 @@ async fn body(response: reqwest::Response) -> Result<Vec<u8>> {
     }
     Ok(bytes)
 }
-pub(super) async fn fetch(endpoint: Endpoint, url: String, access: Access) -> Result<Fetched> {
+async fn catalogue(endpoint: Endpoint, url: String, access: Access) -> Result<Fetched> {
     let connection = match access {
         Access::Connected(connection) => connection,
         Access::Anonymous | Access::Login(_) => {
@@ -182,7 +182,26 @@ pub(super) async fn fetch(endpoint: Endpoint, url: String, access: Access) -> Re
         }
     };
     let response = connection.client.get(url).send().await.map_err(network)?;
-    let mut page = super::parse(&body(response).await?).map_err(FetchError::Parse)?;
+    let page = super::parse(&body(response).await?).map_err(FetchError::Parse)?;
+    Ok(Fetched { page, connection })
+}
+pub(super) async fn verify(endpoint: Endpoint) -> Result<Connection> {
+    let url = super::Query {
+        endpoint: endpoint.clone(),
+        keyword: String::new(),
+        offset: 0,
+    }
+    .url();
+    // Channel enrichment is useful only when displaying recordings, not for session proof.
+    catalogue(endpoint, url, Access::Anonymous)
+        .await
+        .map(|fetched| fetched.connection)
+}
+pub(super) async fn fetch(endpoint: Endpoint, url: String, access: Access) -> Result<Fetched> {
+    let Fetched {
+        mut page,
+        connection,
+    } = catalogue(endpoint, url, access).await?;
     if page.rows.iter().any(|row| row.channel_id.is_some()) {
         // Some older servers do not expose channels to this account. Media still
         // opens, but we never guess broadcast IDs from opaque API resource IDs.
