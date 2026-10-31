@@ -273,6 +273,14 @@ Item {
                 view.actions.openChannels.trigger();
                 compare(view.channelRequests, 2);
             }
+            function test_media_stop_key_stops_any_playback() {
+                keyClick(Qt.Key_MediaStop);
+                compare(view.backend.stopRequests, 0);
+                view.backend.recording = true;
+                view.backend.playing = true;
+                keyClick(Qt.Key_MediaStop);
+                compare(view.backend.stopRequests, 1);
+            }
             function test_page_and_media_keys_move_between_chapters() {
                 view.backend.recording = true;
                 view.backend.playing = true;

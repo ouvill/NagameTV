@@ -34,6 +34,8 @@ TestCase {
         }
     }
     Component { id: resumable; Viewer.ContinueWatchingModel {} }
+    ActionTestBackend { id: actionBackend }
+    Viewer.ViewerActions { id: viewerActions; backend: actionBackend; targetWindow: testCase.Window.window }
     property var home
     SignalSpy { id: selection; signalName: "selectRequested" }
     SignalSpy { id: resume; signalName: "resumeRequested" }
@@ -120,6 +122,23 @@ TestCase {
         home.playing = false;
         home.enterBottom();
         tryCompare(findChild(home, "homeChannels"), "activeFocus", true);
+    }
+    function test_the_bar_stops_recordings_but_leaves_live_stop_to_its_main_button() {
+        actionBackend.playing = true;
+        actionBackend.recording = true;
+        actionBackend.playback_action = Viewer.Player.Pause;
+        actionBackend.stopRequests = 0;
+        home.actions = viewerActions;
+        home.playing = true;
+        const stop = findChild(home, "homeStop");
+        verify(stop.visible);
+        verify(waitForRendering(home));
+        mouseClick(stop);
+        compare(actionBackend.stopRequests, 1);
+        actionBackend.recording = false;
+        actionBackend.playback_action = Viewer.Player.Stop;
+        verify(!stop.visible);
+        verify(findChild(home, "homePlayback").visible);
     }
     function test_the_bar_shows_what_plays_and_leads_back_to_it() {
         const bar = findChild(home, "homeNowPlaying");

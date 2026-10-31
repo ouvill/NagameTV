@@ -131,6 +131,13 @@ Item {
             scope: InputContext.Seek
             condition: qsTranslate("Settings", "Recordings with chapters")
         },
+        Binding {
+            objectName: "stopShortcut"
+            sequence: "Media Stop"
+            operation: root.actions.stopPlayback
+            scope: InputContext.Playback
+            condition: qsTranslate("Settings", "While something plays")
+        },
         Binding { id: dismiss; objectName: "dismissShortcut"; sequence: "Escape"; operation: root.actions.dismissTopmost; scope: InputContext.Dismiss },
         Binding { id: back; objectName: "backShortcut"; sequence: "Back"; operation: root.actions.goBack; scope: InputContext.Dismiss }
     ]

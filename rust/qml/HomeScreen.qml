@@ -375,7 +375,7 @@ Rectangle {
         implicitHeight: 90
         visible: root.playing
         Accessible.name: qsTranslate("Main", "Now playing")
-        navigationItems: [returnButton, playbackButton, muteButton]
+        navigationItems: [returnButton, playbackButton, stopButton, muteButton]
         initialItem: returnButton
         onBoundaryReached: function(key) { if (key === Qt.Key_Up) root.leave(nowPlaying, -1, -1); }
         RowLayout {
@@ -454,6 +454,14 @@ Rectangle {
                 iconSource: root.iconDirectory + (root.actions ? root.actions.playbackIcon : "play.svg")
                 tip: root.actions ? root.actions.playbackToggle.text : ""
                 onClicked: root.actions.playbackToggle.trigger()
+            }
+            IconAction {
+                id: stopButton
+                objectName: "homeStop"
+                visible: root.actions !== null && root.actions.separateStop
+                iconSource: root.iconDirectory + "square.svg"
+                tip: root.actions ? root.actions.stopPlayback.text : ""
+                onClicked: root.actions.stopPlayback.trigger()
             }
             IconAction {
                 id: muteButton

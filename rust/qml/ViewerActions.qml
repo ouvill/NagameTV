@@ -67,6 +67,14 @@ Item {
         enabled: root.enabled && root.backend.playback_action !== Player.Unavailable
         onTriggered: { root.backend.toggle_playback(); root.activity(); }
     }
+    // Stops any playback, including recordings and timeshift whose main action pauses.
+    readonly property Action stopPlayback: Operation {
+        text: qsTranslate("Main", "Stop")
+        enabled: root.enabled && (root.backend.media_active || root.backend.recording)
+        onTriggered: { root.backend.stop(); root.activity(); }
+    }
+    // The main button already stops plain live TV; a second stop would only repeat it.
+    readonly property bool separateStop: stopPlayback.enabled && backend.playback_action !== Player.Stop
     readonly property string playbackIcon: backend.playback_action === Player.Pause ? "pause.svg"
         : backend.playback_action === Player.Stop ? "square.svg" : "play.svg"
     readonly property Action seekBackward: Operation {

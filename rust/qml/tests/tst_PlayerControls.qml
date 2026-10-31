@@ -72,6 +72,7 @@ Item {
                 overlay.playing = false;
                 backend.playback_action = Player.Play;
                 backend.playbackRequests = 0;
+                backend.stopRequests = 0;
                 backend.playback_rate = 10; backend.requested_playback_rate = 10;
                 backend.rateRequests = []; backend.rateAccepted = true; backend.speed_available = true;
                 backend.speed_reason = ""; backend.transport_error = "";
@@ -333,6 +334,24 @@ Item {
                 backend.seekable = false;
                 verify(next.visible && next.enabled);
                 backend.seekable = Qt.binding(function() { return (backend.recording || backend.timeshift) && backend.media_active; });
+            }
+            function test_stop_sits_apart_from_pause_and_never_repeats_the_main_stop() {
+                backend.playing = true;
+                const stop = findChild(controls, "stopButton");
+                // Plain live TV: the main button already stops.
+                backend.playback_action = Player.Stop;
+                verify(!stop.visible);
+                backend.recording = true;
+                backend.playback_action = Player.Pause;
+                verify(stop.visible);
+                waitForRendering(controls);
+                verify(stop.mapToItem(controls, 0, 0).x < findChild(controls, "skipBackButton").mapToItem(controls, 0, 0).x);
+                mouseClick(stop);
+                compare(backend.stopRequests, 1);
+                compare(backend.playbackRequests, 0);
+                backend.playing = false;
+                backend.recording = false;
+                verify(!stop.visible);
             }
             function test_pause_on_demand_allows_button_and_space_without_seeking() {
                 backend.pauseOnDemand = true;
