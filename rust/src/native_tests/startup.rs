@@ -396,7 +396,7 @@ fn check_screen_navigation(
             "!root.guideVisible && root.showProgram && sidebar.open && sidebar.reveal === 1 && surface.width === root.viewport.width - sidebar.width",
         )?;
         // Direct backend requests and rapid shortcut reversals share the same layout rules.
-        evaluate(engine, "player.guide_open(true); true")?;
+        evaluate(engine, "player.open_screen(2); true")?;
         wait_for(app, engine, "guideLoader.item !== null && !sidebar.visible")?;
         evaluate(
             engine,
@@ -672,7 +672,7 @@ fn window(
             const programs = guide.guideModel.revision;
             const visibility = guide.visibilityJson;
             const status = guide.status;
-            player.guide_open(false);
+            player.go_back();
             !guideLoader.enabled && guideLoader.item === guide && guideLoader.opacity === 1
                 && guide.guideModel.count > 0 && guide.guideModel.revision === programs
                 && guide.visibilityJson === visibility && guide.status === status
@@ -689,7 +689,7 @@ fn window(
             r#"
             const guide = guideLoader.item;
             const opacity = guideLoader.opacity;
-            player.guide_open(true);
+            player.open_screen(2);
             guideLoader.item === guide && guideLoader.enabled && guideLoader.opacity === opacity
             "#,
         )?);

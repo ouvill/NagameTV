@@ -87,9 +87,13 @@ pub(super) fn run() -> TestResult {
     let _guard = startup.pin_mut().on_epgstation_changed(move |_| {
         observer.fetch_add(1, Ordering::SeqCst);
     });
-    startup.pin_mut().guide_open(true);
-    startup.pin_mut().guide_open(false);
-    startup.pin_mut().guide_open(true);
+    startup
+        .pin_mut()
+        .open_screen(crate::screen_navigation::Screen::Guide as i32);
+    startup.pin_mut().go_back();
+    startup
+        .pin_mut()
+        .open_screen(crate::screen_navigation::Screen::Guide as i32);
     finish_verification(&mut startup);
     assert!(startup.reservations_enabled());
     assert!(startup.reservation_error().is_empty());
@@ -109,7 +113,8 @@ pub(super) fn run() -> TestResult {
     );
 
     let (mut off, _off_directory, _) = from_saved(&server.uri(), false)?;
-    off.pin_mut().guide_open(true);
+    off.pin_mut()
+        .open_screen(crate::screen_navigation::Screen::Guide as i32);
     finish_verification(&mut off);
     assert!(!off.reservations_enabled());
     assert_eq!(calls.load(Ordering::SeqCst), 1);
@@ -129,7 +134,9 @@ pub(super) fn run() -> TestResult {
     }
     assert_eq!(calls.load(Ordering::SeqCst), 3);
     allowed.store(true, Ordering::SeqCst);
-    denied.pin_mut().guide_open(true);
+    denied
+        .pin_mut()
+        .open_screen(crate::screen_navigation::Screen::Guide as i32);
     finish_verification(&mut denied);
     assert!(denied.reservations_enabled());
     assert!(!denied.epgstation_loaded());

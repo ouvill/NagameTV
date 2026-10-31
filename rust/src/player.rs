@@ -275,8 +275,6 @@ pub mod ffi {
         #[qproperty(bool, data_broadcast_allowed, READ, CONSTANT)]
         #[qproperty(bool, recording_reservations_enabled, READ = recording_reservations_enabled, NOTIFY)]
         #[qproperty(bool, recording_reservations_allowed, READ, CONSTANT)]
-        #[qproperty(bool, screen_navigation, READ = screen_navigation, NOTIFY)]
-        #[qproperty(bool, screen_navigation_allowed, READ, CONSTANT)]
         #[qproperty(i32, screen, READ = screen, NOTIFY = screen_changed)]
         #[qproperty(i32, back_screen, READ = back_screen, NOTIFY = screen_changed)]
         #[qproperty(bool, watching_available, READ = watching_available, NOTIFY)]
@@ -299,7 +297,6 @@ pub mod ffi {
         #[qproperty(QString, subtitle_status, READ, NOTIFY)]
         #[qproperty(*mut GuideModel, guide_model, READ = guide_model, CONSTANT)]
         #[qproperty(QString, epg_status, READ, NOTIFY)]
-        #[qproperty(bool, guide_visible, READ = guide_visible, NOTIFY)]
         #[qproperty(QString, chapters_data, READ = chapters_data, NOTIFY = chapters_changed)]
         #[qproperty(i32, current_chapter, READ = current_chapter, NOTIFY = chapters_changed)]
         #[qproperty(QString, current_program_data, READ, NOTIFY)]
@@ -508,7 +505,6 @@ pub mod ffi {
         ) -> bool;
         fn recording(self: &Player) -> bool;
         fn recording_name(self: &Player) -> QString;
-        fn guide_visible(self: &Player) -> bool;
         fn chapters_data(self: &Player) -> QString;
         fn current_chapter(self: &Player) -> i32;
         #[qinvokable]
@@ -536,18 +532,11 @@ pub mod ffi {
         fn data_broadcast_prefetch(self: &Player) -> bool;
         fn data_broadcast_enabled(self: &Player) -> bool;
         fn recording_reservations_enabled(self: &Player) -> bool;
-        fn screen_navigation(self: &Player) -> bool;
         fn screen(self: &Player) -> i32;
         fn back_screen(self: &Player) -> i32;
         fn watching_available(self: &Player) -> bool;
         #[qsignal]
         fn screen_changed(self: Pin<&mut Player>);
-        #[qinvokable]
-        fn configure_screen_navigation(
-            self: Pin<&mut Player>,
-            enabled: bool,
-            legacy_screen: i32,
-        ) -> bool;
         #[qinvokable]
         fn open_screen(self: Pin<&mut Player>, screen: i32) -> bool;
         #[qinvokable]
@@ -606,8 +595,6 @@ pub mod ffi {
         );
         #[qinvokable]
         fn browser_open(self: Pin<&mut Player>, open: bool);
-        #[qinvokable]
-        fn guide_open(self: Pin<&mut Player>, open: bool);
         #[qinvokable]
         fn guide_day(self: Pin<&mut Player>, start: f64, end: f64);
         #[qinvokable]
@@ -827,7 +814,6 @@ pub struct PlayerRust {
     data_broadcast_mode: data_broadcast::Mode,
     data_broadcast_allowed: bool,
     recording_reservations_allowed: bool,
-    screen_navigation_allowed: bool,
     navigation: crate::screen_navigation::Navigation,
     viewing: crate::playback::viewing::Viewing,
     recording_reservations: crate::epgstation::reservations::Manager,

@@ -1513,23 +1513,28 @@ fn check_guide_state() {
     player.pin_mut().rust_mut().epg_enabled = true;
     let changes = Arc::new(Mutex::new(Vec::new()));
     let recorded = changes.clone();
-    let _signal = player
+    let _signal = player.pin_mut().on_screen_changed(move |mut player| {
+        recorded
+            .lock()
+            .unwrap()
+            .push(player.screen() == crate::screen_navigation::Screen::Guide as i32);
+        if player.screen() == crate::screen_navigation::Screen::Guide as i32 {
+            // A newly constructed QML guide asks for its day during notification.
+            player.as_mut().guide_day(0.0, 86_400_000.0);
+            assert!(matches!(player.rust().guide, Guide::Showing(_)));
+        }
+    });
+    player
         .pin_mut()
-        .on_guide_visible_changed(move |mut player| {
-            recorded.lock().unwrap().push(player.guide_visible());
-            if player.guide_visible() {
-                // A newly constructed QML guide asks for its day during notification.
-                player.as_mut().guide_day(0.0, 86_400_000.0);
-                assert!(matches!(player.rust().guide, Guide::Showing(_)));
-            }
-        });
-    player.pin_mut().guide_open(true);
-    player.pin_mut().guide_open(true);
+        .open_screen(crate::screen_navigation::Screen::Guide as i32);
+    player
+        .pin_mut()
+        .open_screen(crate::screen_navigation::Screen::Guide as i32);
     assert!(
         matches!(player.rust().guide, Guide::Showing(_)),
         "reopening must not discard the current day"
     );
-    player.pin_mut().guide_open(false);
+    player.pin_mut().go_back();
     player.pin_mut().guide_day(0.0, 86_400_000.0);
     assert!(matches!(player.rust().guide, Guide::Closed));
     assert_eq!(*changes.lock().unwrap(), [true, false]);

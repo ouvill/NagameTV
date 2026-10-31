@@ -365,7 +365,6 @@ impl ffi::Player {
         super::comment_projection::publish(self.as_mut(), Some(update));
         self.as_mut().browser_open(false);
         self.as_mut().rust_mut().epg.configure(None);
-        self.as_mut().guide_open(false);
         if let Err(error) = self.as_mut().end_stream() {
             tracing::error!("Stream cleanup after shutdown failed: {error}");
         }

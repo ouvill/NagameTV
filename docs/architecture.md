@@ -179,9 +179,11 @@ PlayerのFFIにはQML公開APIと必要な型の参照を残し、他のモジ�
 `confirm_server(&VerifiedServer)`だけを受け付ける。起動時の既存設定の復元と、
 実行中の新規接続先の確定を区別し、保存形式と環境変数の挙動は維持する。
 
-番組表の表示は既存の`Guide`型を正とし、`guide_visible`を読み取り専用で公開する。
-QMLの操作は`guide_open`を呼ぶだけで、表示フラグを別に書き換えない。
-公開データの初期化後に表示を通知するため、Loader生成中の最初の日付要求も受け付ける。
+画面の履歴はQt非依存の`screen_navigation::Navigation`が所有し、Playerが`screen`と
+`back_screen`を読み取り専用で公開する。QMLは`open_screen`・`go_back`で移動を要求し、
+番組表の表示は`screen == Guide`から決める。番組表の読込状態は既存の`Guide`型が保持する。
+履歴・Guideの状態・公開データを確定してから`screen_changed`を通知するため、
+Loader生成中の最初の日付要求も受け付ける。
 同じ表示状態への要求では選択中の日付を消さない。日付選択部品の遅延処理は
 その部品が所有するTimerで実行し、破棄とともに取り消す。
 
