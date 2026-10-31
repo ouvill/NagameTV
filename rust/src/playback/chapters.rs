@@ -103,11 +103,7 @@ impl List {
         let target = match offset {
             1 => {
                 let next = current.map_or(0, |index| index + 1);
-                self.entries
-                    .get(next..)?
-                    .iter()
-                    .find(|chapter| !chapter.commercial)
-                    .or_else(|| self.entries.get(next))
+                self.entries.get(next)
             }
             -1 => {
                 let index = current?;
@@ -115,15 +111,9 @@ impl List {
                 if position_ms - chapter.start_ms > RESTART_AFTER_MS {
                     Some(chapter)
                 } else {
-                    self.entries[..index]
-                        .iter()
-                        .rev()
-                        .find(|chapter| !chapter.commercial)
-                        .or_else(|| {
-                            index
-                                .checked_sub(1)
-                                .and_then(|index| self.entries.get(index))
-                        })
+                    index
+                        .checked_sub(1)
+                        .and_then(|index| self.entries.get(index))
                 }
             }
             _ => None,

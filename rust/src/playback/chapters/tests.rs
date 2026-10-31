@@ -203,7 +203,7 @@ fn large_media_payload_is_skipped_without_reading_it() {
 }
 
 #[test]
-fn navigation_skips_commercials_and_obeys_restart_threshold_and_edges() {
+fn navigation_visits_every_boundary_and_obeys_restart_threshold_and_edges() {
     let chapters = list(&[
         (0, "CM?"),
         (10_000, "A"),
@@ -214,11 +214,17 @@ fn navigation_skips_commercials_and_obeys_restart_threshold_and_edges() {
     ]);
     for (position, offset, expected) in [
         (0, 1, Some(10_000)),
-        (10_000, 1, Some(30_000)),
+        (10_000, 1, Some(20_000)),
+        (20_000, 1, Some(30_000)),
         (30_000, 1, Some(40_000)),
+        (40_000, 1, Some(50_000)),
         (50_000, 1, None),
-        (33_000, -1, Some(10_000)),
+        (50_000, -1, Some(40_000)),
+        (30_000, -1, Some(20_000)),
+        (33_000, -1, Some(20_000)),
         (33_001, -1, Some(30_000)),
+        (23_000, -1, Some(10_000)),
+        (23_001, -1, Some(20_000)),
         (10_000, -1, Some(0)),
         (0, -1, None),
         (3000, -1, None),
@@ -235,7 +241,7 @@ fn navigation_skips_commercials_and_obeys_restart_threshold_and_edges() {
     }
     let delayed = list(&[(10_000, "CM"), (20_000, "A")]);
     assert_eq!(delayed.current(9999), None);
-    assert_eq!(delayed.target(1, 0), Some(20_000));
+    assert_eq!(delayed.target(1, 0), Some(10_000));
     assert_eq!(delayed.target(-1, 0), None);
     assert_eq!(List::default().target(1, 0), None);
 }
@@ -270,6 +276,8 @@ fn container_toc_and_controller_publish_only_seekable_recordings_and_reset() {
     );
     assert_eq!(controller.current(), 1);
     assert_eq!(controller.target(-1, Some(6000)), Some(0));
+    assert_eq!(controller.target(1, Some(0)), Some(5000));
+    assert_eq!(controller.target(1, None), None);
     let revision = controller.revision();
     controller.update(
         Some(Source::transport(1)),

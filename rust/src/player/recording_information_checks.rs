@@ -220,6 +220,7 @@ pub(super) fn run() -> TestResult {
     resumed.pin_mut().change_stream_state(State::stopped);
     assert!(data(&resumed).is_null());
     assert!(!resumed.pin_mut().seek_chapter(1));
+    check_chapter_targets(&mut resumed)?;
 
     let mut toc = gstreamer::Toc::new(gstreamer::TocScope::Global);
     let mut chapter = gstreamer::TocEntry::new(gstreamer::TocEntryType::Chapter, "chapter");
@@ -252,5 +253,84 @@ pub(super) fn run() -> TestResult {
         );
     }
     runtime.block_on(server.verify());
+    Ok(())
+}
+
+fn check_chapter_targets(player: &mut cxx::UniquePtr<ffi::Player>) -> TestResult {
+    let mut toc = gstreamer::Toc::new(gstreamer::TocScope::Global);
+    for (index, (start_ms, name)) in [(1000, "CM?"), (5000, "A"), (10000, "CM"), (15000, "B")]
+        .into_iter()
+        .enumerate()
+    {
+        let mut chapter =
+            gstreamer::TocEntry::new(gstreamer::TocEntryType::Chapter, &index.to_string());
+        chapter
+            .get_mut()
+            .unwrap()
+            .set_start_stop_times(start_ms * 1_000_000, -1);
+        let mut tags = gstreamer::TagList::new();
+        tags.get_mut()
+            .unwrap()
+            .add::<gstreamer::tags::Title>(&name, gstreamer::TagMergeMode::Replace);
+        chapter.get_mut().unwrap().set_tags(tags);
+        toc.get_mut().unwrap().append_entry(chapter);
+    }
+    player.pin_mut().rust_mut().chapters.seed_for_check(&toc);
+    let chapters: Value = serde_json::from_str(&player.chapters_data().to_string())?;
+    assert_eq!(
+        chapters
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|chapter| chapter["commercial"].as_bool().unwrap())
+            .collect::<Vec<_>>(),
+        [true, false, true, false]
+    );
+    assert_eq!(
+        player.current_chapter(),
+        -1,
+        "position before the first chapter has no current chapter"
+    );
+    assert_eq!(
+        player.chapter_target(1),
+        None,
+        "a loaded table alone does not supply a position"
+    );
+    for (position, offset, expected) in [
+        (0, 1, Some(1000)),
+        (0, -1, None),
+        (5000, 1, Some(10000)),
+        (5000, -1, Some(1000)),
+        (15000, -1, Some(10000)),
+        (18000, -1, Some(10000)),
+        (18001, -1, Some(15000)),
+        (13000, -1, Some(5000)),
+        (13001, -1, Some(10000)),
+        (15000, 1, None),
+        (5000, 0, None),
+        (5000, 2, None),
+    ] {
+        player.pin_mut().rust_mut().timeline.position =
+            Some(gstreamer::ClockTime::from_mseconds(position));
+        assert_eq!(
+            player.chapter_target(offset),
+            expected,
+            "{position}, {offset}"
+        );
+    }
+    player.pin_mut().rust_mut().timeline.position = Some(gstreamer::ClockTime::from_mseconds(5000));
+    player.pin_mut().rust_mut().timeline.seek_target =
+        Some(gstreamer::ClockTime::from_mseconds(10000));
+    assert_eq!(
+        player.chapter_target(1),
+        Some(10000),
+        "chapter selection still uses confirmed position during a pending seek"
+    );
+    assert!(!player.seekable());
+    assert!(
+        !player.pin_mut().seek_chapter(1),
+        "a table cannot authorize transport without a seekable range"
+    );
+    player.pin_mut().rust_mut().timeline = Default::default();
     Ok(())
 }
