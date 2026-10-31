@@ -108,6 +108,17 @@ fn enter_watching(
             engine,
             "!player.recording_loading && player.file_error.length > 0",
         )?;
+        wait_for(
+            app,
+            engine,
+            "Array.from(recordingInput.data).some(item => item.objectName === 'recordingOpenError' && item.opened)",
+        )?;
+        ffi::clickRootKey(engine.pin_mut(), &QString::from("Escape"))?;
+        wait_for(
+            app,
+            engine,
+            "!inputContext.popupOpen && !Array.from(recordingInput.data).some(item => item.objectName === 'recordingOpenError' && item.visible)",
+        )?;
     }
     assert!(evaluate(
         engine,
@@ -116,7 +127,7 @@ fn enter_watching(
     wait_for(
         app,
         engine,
-        "player.watching_available && player.screen === ViewerActions.WatchingScreen && modeNavigation.mode === ModeNavigation.None",
+        "player.watching_available && player.screen === ViewerActions.WatchingScreen && modeNavigation.mode === ModeNavigation.None && !inputContext.popupOpen",
     )?;
     Ok(())
 }
@@ -1001,11 +1012,15 @@ fn window(
             &mut engine,
             "root.setupRequired && !player.server_configured && !player.loading && !player.server.length && !player.channels.count"
         )?);
-        check_danmaku_layout(app, &mut engine)?;
         // Comments are enabled here with an empty catalog, so shortcut coverage
         // does not start external comment/activity requests.
         evaluate(&mut engine, "setup.close(); true")?;
-        wait_for(app, &mut engine, "!setup.visible")?;
+        wait_for(
+            app,
+            &mut engine,
+            "!setup.visible && !inputContext.popupOpen",
+        )?;
+        check_danmaku_layout(app, &mut engine)?;
         check_shortcuts(app, &mut engine)?;
         evaluate(&mut engine, "setup.open(); true")?;
         wait_for(app, &mut engine, "setup.opened")?;
@@ -1383,7 +1398,15 @@ fn check_epgstation_library(
     wait_for(
         app,
         engine,
-        "!recordingLibrary.visible && player.playing && player.seekable && player.duration_ms > 11900 && player.duration_ms < 13000 && player.media_subtitle_available && player.current_program_data === 'null' && JSON.parse(player.video_stats()).rendered > 0",
+        r#"
+        const program = JSON.parse(player.current_program_data);
+        !recordingLibrary.visible && player.playing && player.seekable
+            && player.duration_ms > 11900 && player.duration_ms < 13000
+            && player.media_subtitle_available && JSON.parse(player.video_stats()).rendered > 0
+            && program !== null && program.source === 'epgstation'
+            && program.name === 'EPGStation recording 2' && program.station === 'Test TV'
+            && program.progressKnown === false
+        "#,
     )?;
     assert!(evaluate(engine, "player.pause() && player.seek_to(8000)")?);
     wait_for(
@@ -1776,7 +1799,18 @@ fn check_recording(
     wait_for(app, engine, &format!("!{picker}.visible"))?;
     assert!(evaluate(
         engine,
-        "!player.recording_loading && !player.recording && !player.playing && root.libraryVisible && modeNavigation.mode === ModeNavigation.Recording"
+        r#"
+        function find(item, name) {
+            if (item.objectName === name) return item;
+            for (const child of item.children || []) { const result = find(child, name); if (result) return result; }
+            return null;
+        }
+        const navigation = find(recordingLibrary, 'recordingModeNavigation');
+        !player.recording_loading && !player.recording && !player.playing
+            && player.screen === ViewerActions.RecordingsScreen && root.libraryVisible
+            && !modeNavigation.visible && navigation !== null && navigation.visible
+            && navigation.mode === ModeNavigation.Recording
+        "#
     )?);
     assert!(ffi::drop_file_on_root(
         engine.pin_mut(),
