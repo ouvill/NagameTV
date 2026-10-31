@@ -21,9 +21,6 @@ impl ffi::Player {
         };
         self.as_mut().rust_mut().epg.configure(server);
         self.as_mut().reconcile_navigation();
-        if !self.rust().epg_enabled {
-            self.as_mut().guide_open(false);
-        }
     }
     pub(super) fn poll_epg_events(mut self: Pin<&mut Self>) {
         let events = {

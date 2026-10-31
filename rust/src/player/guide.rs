@@ -15,28 +15,16 @@ impl ffi::Player {
                 .replace(Default::default());
         }
     }
-    pub fn guide_visible(&self) -> bool {
+    pub(super) fn guide_is_open(&self) -> bool {
         match self.rust().guide {
             Guide::Closed => false,
             Guide::AwaitingDay | Guide::Showing(_) => true,
         }
     }
 
-    pub fn guide_open(mut self: Pin<&mut Self>, open: bool) {
-        if self.screen_navigation() {
-            self.as_mut().reconcile_navigation();
-            if open {
-                self.open_screen(crate::screen_navigation::Screen::Guide as i32);
-            } else if self.screen() == crate::screen_navigation::Screen::Guide as i32 {
-                self.go_back();
-            }
-            return;
-        }
-        self.apply_guide_visibility(open);
-    }
     pub(super) fn apply_guide_visibility(mut self: Pin<&mut Self>, open: bool) {
         let open = open && self.rust().epg_enabled;
-        if open == self.guide_visible() {
+        if open == self.guide_is_open() {
             return;
         }
         self.as_mut().rust_mut().guide = if open {
@@ -62,9 +50,6 @@ impl ffi::Player {
                 .pin_mut()
                 .replace(Default::default());
         }
-        // The QML Loader may synchronously request its first day on this signal.
-        // Publish visibility only after the backend is ready to accept that day.
-        self.guide_visible_changed();
     }
     pub(super) fn poll_guide_visibility(self: Pin<&mut Self>, now: Option<u64>) {
         if matches!(self.rust().guide, Guide::Closed) {
@@ -103,7 +88,7 @@ impl ffi::Player {
         self.as_mut().publish_guide();
         self.refresh_epg_status();
     }
-    pub fn watch_program(mut self: Pin<&mut Self>, key: QString) -> QString {
+    pub fn watch_program(self: Pin<&mut Self>, key: QString) -> QString {
         use crate::features::program_info::watch::Error;
         let result = (|| {
             if !self.rust().epg_enabled || !matches!(self.rust().guide, Guide::Showing(_)) {
@@ -123,9 +108,6 @@ impl ffi::Player {
         })();
         match result {
             Ok(index) => {
-                if !self.screen_navigation() {
-                    self.as_mut().guide_open(false);
-                }
                 self.select(index);
                 QString::default()
             }

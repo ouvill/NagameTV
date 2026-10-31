@@ -56,7 +56,7 @@ pub(super) fn wait_for_timeout(
         }
         if Instant::now() >= deadline {
             let state = ffi::evaluate_root(engine.pin_mut(), &QString::from(
-                "JSON.stringify({bml: {requested: player.data_broadcast_requested, showing: root.showDataBroadcast, keys: (dataBroadcast.view ? dataBroadcast.view.usedKeyGroups : []), focused: (dataBroadcast.view !== null && dataBroadcast.view.activeFocus), presentation: dataBroadcast.view ? dataBroadcast.view.presentation : null}, focus: root.activeFocusItem ? root.activeFocusItem.objectName : null, playing: player.playing, loading: player.recording_loading, fileError: player.file_error, playbackError: player.playback_error, duration: player.duration_ms, position: player.position_ms, seekable: player.seekable, subtitles: player.subtitles_active, program: player.current_program_data, video: JSON.parse(player.video_stats()), epgstation: {busy: player.epgstation_busy, loaded: player.epgstation_loaded, count: player.recordings.count, error: player.epgstation_error}})",
+                "JSON.stringify({screen: player.screen, back: player.back_screen, home: root.homeScreen, mode: modeNavigation.mode, guide: root.showGuide, library: root.libraryVisible, bml: {requested: player.data_broadcast_requested, showing: root.showDataBroadcast, keys: (dataBroadcast.view ? dataBroadcast.view.usedKeyGroups : []), focused: (dataBroadcast.view !== null && dataBroadcast.view.activeFocus), presentation: dataBroadcast.view ? dataBroadcast.view.presentation : null}, focus: root.activeFocusItem ? root.activeFocusItem.objectName : null, playing: player.playing, loading: player.recording_loading, fileError: player.file_error, playbackError: player.playback_error, duration: player.duration_ms, position: player.position_ms, seekable: player.seekable, subtitles: player.subtitles_active, program: player.current_program_data, video: JSON.parse(player.video_stats()), epgstation: {busy: player.epgstation_busy, loaded: player.epgstation_loaded, count: player.recordings.count, error: player.epgstation_error}})",
             ))?.value::<QString>().ok_or("missing timeout snapshot")?;
             return Err(format!("Timed out: {source}; playback: {state}").into());
         }
@@ -86,10 +86,170 @@ fn wait_for_epgstation(
     Ok(())
 }
 
+fn enter_watching(
+    app: &QGuiApplication,
+    engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
+) -> TestResult {
+    if !evaluate(engine, "player.watching_available")? {
+        // Watching needs an accepted session even when first-run setup has no channels.
+        // A failed local inspection keeps that session without an external broadcaster.
+        let directory = tempfile::tempdir()?;
+        let url = url::Url::from_file_path(directory.path().join("missing.ts"))
+            .map_err(|_| "missing recording fixture URL")?;
+        assert!(evaluate(
+            engine,
+            &format!(
+                "player.open_recording({})",
+                serde_json::to_string(url.as_str())?
+            ),
+        )?);
+        wait_for(
+            app,
+            engine,
+            "!player.recording_loading && player.file_error.length > 0",
+        )?;
+        wait_for(
+            app,
+            engine,
+            "Array.from(recordingInput.data).some(item => item.objectName === 'recordingOpenError' && item.opened)",
+        )?;
+        ffi::clickRootKey(engine.pin_mut(), &QString::from("Escape"))?;
+        wait_for(
+            app,
+            engine,
+            "!inputContext.popupOpen && !Array.from(recordingInput.data).some(item => item.objectName === 'recordingOpenError' && item.visible)",
+        )?;
+    }
+    assert!(evaluate(
+        engine,
+        "player.open_screen(ViewerActions.WatchingScreen)"
+    )?);
+    wait_for(
+        app,
+        engine,
+        "player.watching_available && player.screen === ViewerActions.WatchingScreen && modeNavigation.mode === ModeNavigation.None && !inputContext.popupOpen",
+    )?;
+    Ok(())
+}
+
+fn check_home_navigation(
+    app: &QGuiApplication,
+    engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
+) -> TestResult {
+    let watching = evaluate(engine, "player.watching_available")?;
+    evaluate(
+        engine,
+        "root.requestActivate(); player.open_screen(ViewerActions.HomeScreen); true",
+    )?;
+    wait_for(
+        app,
+        engine,
+        "root.active && root.homeScreen && homeLoader.item !== null && homeLoader.item.stops[1].activeFocus",
+    )?;
+    assert!(evaluate(
+        engine,
+        &format!(
+            "modeNavigation.mode === ModeNavigation.Home && player.watching_available === {watching} && homeLoader.item.stops[3].visible === {watching} && !bottomPanel.enabled && !sidebar.visible && homeLoader.item.stops[1].currentItem.channelIndex === (player.viewing_channel >= 0 ? player.viewing_channel : player.selected)"
+        )
+    )?);
+    capture_navigation(app, engine, "dpad-home.png")?;
+    let band = "root.activeFocusItem && root.activeFocusItem.objectName.startsWith('band-')";
+    let grid = "homeLoader.item.stops[1].activeFocus";
+    for _ in 0..4 {
+        ffi::clickRootKey(engine.pin_mut(), &QString::from("Up"))?;
+        app.process_events();
+        if evaluate(engine, band)? {
+            break;
+        }
+    }
+    wait_for(app, engine, band)?;
+    ffi::clickRootKey(engine.pin_mut(), &QString::from("Up"))?;
+    wait_for(
+        app,
+        engine,
+        "modeNavigation.navigating && root.activeFocusItem.objectName === 'homeModeButton'",
+    )?;
+    ffi::clickRootKey(engine.pin_mut(), &QString::from("Down"))?;
+    wait_for(app, engine, band)?;
+    ffi::clickRootKey(engine.pin_mut(), &QString::from("Down"))?;
+    wait_for(app, engine, grid)?;
+    // Reach the last channel row, then check the next usable row in visual order.
+    for _ in 0..4 {
+        if evaluate(
+            engine,
+            "const grid = homeLoader.item.stops[1]; Math.floor(grid.currentIndex / grid.columns) === Math.floor((grid.count - 1) / grid.columns)",
+        )? {
+            break;
+        }
+        ffi::clickRootKey(engine.pin_mut(), &QString::from("Down"))?;
+        app.process_events();
+    }
+    let continued = evaluate(
+        engine,
+        "homeLoader.item.stops[2].visible && homeLoader.item.stops[2].count > 0",
+    )?;
+    ffi::clickRootKey(engine.pin_mut(), &QString::from("Down"))?;
+    if continued {
+        wait_for(app, engine, "homeLoader.item.stops[2].activeFocus")?;
+        ffi::clickRootKey(engine.pin_mut(), &QString::from("Down"))?;
+    }
+    if watching {
+        wait_for(
+            app,
+            engine,
+            "root.activeFocusItem.objectName === 'homeReturn'",
+        )?;
+        ffi::clickRootKey(engine.pin_mut(), &QString::from("Up"))?;
+        wait_for(
+            app,
+            engine,
+            if continued {
+                "homeLoader.item.stops[2].activeFocus"
+            } else {
+                grid
+            },
+        )?;
+        ffi::clickRootKey(engine.pin_mut(), &QString::from("Down"))?;
+        wait_for(
+            app,
+            engine,
+            "root.activeFocusItem.objectName === 'homeReturn'",
+        )?;
+        ffi::clickRootKey(engine.pin_mut(), &QString::from("Return"))?;
+    } else {
+        // A stopped Home has no playback bar and cannot enter hidden video controls.
+        assert!(evaluate(
+            engine,
+            "!homeLoader.item.stops[3].visible && !playerControls.navigating"
+        )?);
+        if continued {
+            wait_for(app, engine, "homeLoader.item.stops[2].activeFocus")?;
+            ffi::clickRootKey(engine.pin_mut(), &QString::from("Up"))?;
+        }
+        wait_for(app, engine, grid)?;
+        ffi::clickRootKey(engine.pin_mut(), &QString::from("Return"))?;
+    }
+    wait_for(
+        app,
+        engine,
+        "player.screen === ViewerActions.WatchingScreen && player.watching_available && modeNavigation.mode === ModeNavigation.None",
+    )?;
+    wait_for(
+        app,
+        engine,
+        "!player.connecting && player.playback_error.length > 0",
+    )?;
+    println!(
+        "Home navigation: selected channel focus, mode/band/channel/continue/bar order, stopped and active session paths passed"
+    );
+    Ok(())
+}
+
 fn check_danmaku_layout(
     app: &QGuiApplication,
     engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
 ) -> TestResult {
+    enter_watching(app, engine)?;
     // Use the production overlay and layout with synthetic comments, without
     // needing a successful broadcast stream from the HTTP failure fixture.
     evaluate(
@@ -312,6 +472,7 @@ fn check_screen_navigation(
     app: &QGuiApplication,
     engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
 ) -> TestResult {
+    enter_watching(app, engine)?;
     let capture = |engine: &mut cxx::UniquePtr<QQmlApplicationEngine>, name: &str| {
         capture_navigation(app, engine, name)
     };
@@ -387,16 +548,16 @@ fn check_screen_navigation(
         wait_for(
             app,
             engine,
-            "!settings.visible && root.guideVisible && !sidebar.visible && guideLoader.item.width === root.viewport.width",
+            "!settings.visible && root.showGuide && !sidebar.visible && guideLoader.item.width === root.viewport.width",
         )?;
         evaluate(engine, "guideLoader.item.closeRequested(); true")?;
         wait_for(
             app,
             engine,
-            "!root.guideVisible && root.showProgram && sidebar.open && sidebar.reveal === 1 && surface.width === root.viewport.width - sidebar.width",
+            "!root.showGuide && root.showProgram && sidebar.open && sidebar.reveal === 1 && surface.width === root.viewport.width - sidebar.width",
         )?;
         // Direct backend requests and rapid shortcut reversals share the same layout rules.
-        evaluate(engine, "player.guide_open(true); true")?;
+        evaluate(engine, "player.open_screen(2); true")?;
         wait_for(app, engine, "guideLoader.item !== null && !sidebar.visible")?;
         evaluate(
             engine,
@@ -409,11 +570,20 @@ fn check_screen_navigation(
         )?;
         evaluate(engine, "root.requestMode(ModeNavigation.Settings); true")?;
         wait_for(app, engine, "settings.opened")?;
-        evaluate(engine, "settings.modeRequested(ModeNavigation.Live); true")?;
+        evaluate(engine, "settings.modeRequested(ModeNavigation.Home); true")?;
         wait_for(
             app,
             engine,
-            "!settings.visible && !root.showGuide && root.showProgram && sidebar.visible && sidebar.reveal === 1",
+            "!settings.visible && root.homeScreen && modeNavigation.mode === ModeNavigation.Home && !root.showGuide && !sidebar.visible && player.watching_available",
+        )?;
+        assert!(evaluate(
+            engine,
+            "player.open_screen(ViewerActions.WatchingScreen)"
+        )?);
+        wait_for(
+            app,
+            engine,
+            "sidebar.open && sidebar.reveal === 1 && modeNavigation.mode === ModeNavigation.None",
         )?;
     }
     evaluate(engine, "root.requestMode(ModeNavigation.Settings); true")?;
@@ -446,7 +616,7 @@ fn check_screen_navigation(
     wait_for(
         app,
         engine,
-        "!settings.visible && root.guideVisible && !sidebar.visible",
+        "!settings.visible && root.showGuide && !sidebar.visible",
     )?;
     evaluate(
         engine,
@@ -595,7 +765,7 @@ fn window(
     assert!(evaluate(&mut engine, "!screenshot.canCapture")?);
     assert!(evaluate(
         &mut engine,
-        "modeNavigation.mode === ModeNavigation.Live"
+        "(root.homeScreen && modeNavigation.mode === ModeNavigation.Home) || (player.screen === ViewerActions.WatchingScreen && modeNavigation.mode === ModeNavigation.None)"
     )?);
     assert!(evaluate(
         &mut engine,
@@ -636,6 +806,15 @@ fn window(
                 "!player.playing && !player.connecting && !player.playback_error.length"
             )?);
         }
+        assert!(evaluate(
+            &mut engine,
+            if autoplay {
+                "player.screen === ViewerActions.WatchingScreen && modeNavigation.mode === ModeNavigation.None"
+            } else {
+                "root.homeScreen && modeNavigation.mode === ModeNavigation.Home && !player.watching_available"
+            },
+        )?);
+        check_home_navigation(app, &mut engine)?;
         // The restored channel is now stable. Exercise danmaku before opening
         // the channel browser, whose navigation is checked separately below.
         check_danmaku_layout(app, &mut engine)?;
@@ -643,12 +822,9 @@ fn window(
         check_screen_navigation(app, &mut engine)?;
         // Every way of changing guide visibility must run the same synchronization.
         evaluate(&mut engine, "viewerActions.toggleGuide.trigger(); true")?;
-        wait_for(app, &mut engine, "root.guideVisible && root.showGuide")?;
+        wait_for(app, &mut engine, "root.showGuide")?;
         evaluate(&mut engine, "viewerActions.dismissTopmost.trigger(); true")?;
-        assert!(evaluate(
-            &mut engine,
-            "!root.guideVisible && !root.showGuide"
-        )?);
+        assert!(evaluate(&mut engine, "!root.showGuide")?);
         evaluate(&mut engine, "viewerActions.toggleGuide.trigger(); true")?;
         wait_for(app, &mut engine, "guideLoader.item !== null")?;
         wait_for(
@@ -672,7 +848,7 @@ fn window(
             const programs = guide.guideModel.revision;
             const visibility = guide.visibilityJson;
             const status = guide.status;
-            player.guide_open(false);
+            player.go_back();
             !guideLoader.enabled && guideLoader.item === guide && guideLoader.opacity === 1
                 && guide.guideModel.count > 0 && guide.guideModel.revision === programs
                 && guide.visibilityJson === visibility && guide.status === status
@@ -689,7 +865,7 @@ fn window(
             r#"
             const guide = guideLoader.item;
             const opacity = guideLoader.opacity;
-            player.guide_open(true);
+            player.open_screen(2);
             guideLoader.item === guide && guideLoader.enabled && guideLoader.opacity === opacity
             "#,
         )?);
@@ -742,7 +918,7 @@ fn window(
             &mut engine,
             "guideLoader.item.modeRequested(ModeNavigation.Settings); true",
         )?;
-        wait_for(app, &mut engine, "settings.opened && root.guideVisible")?;
+        wait_for(app, &mut engine, "settings.opened && root.showGuide")?;
         evaluate(&mut engine, "settings.close(); true")?;
         wait_for(app, &mut engine, "!settings.visible")?;
         evaluate(
@@ -752,7 +928,7 @@ fn window(
         wait_for(
             app,
             &mut engine,
-            "recordingLibrary.visible && !root.guideVisible",
+            "recordingLibrary.visible && !root.showGuide",
         )?;
         evaluate(
             &mut engine,
@@ -761,18 +937,22 @@ fn window(
         wait_for(
             app,
             &mut engine,
-            "!recordingLibrary.visible && root.guideVisible && guideLoader.item !== null",
+            "!recordingLibrary.visible && root.showGuide && guideLoader.item !== null",
         )?;
         evaluate(
             &mut engine,
-            "guideLoader.item.modeRequested(ModeNavigation.Live); true",
+            "guideLoader.item.modeRequested(ModeNavigation.Home); true",
         )?;
-        wait_for(app, &mut engine, "!root.guideVisible && !root.showGuide")?;
+        wait_for(app, &mut engine, "!root.showGuide")?;
         evaluate(
             &mut engine,
             "viewerActions.toggleGuide.trigger(); root.chooseConnectedChannel(); true",
         )?;
-        wait_for(app, &mut engine, "!root.guideVisible && root.showChannels")?;
+        wait_for(
+            app,
+            &mut engine,
+            "root.homeScreen && !root.showGuide && homeLoader.item !== null",
+        )?;
         // Exercise real GStreamer start/failure/stop without an external tuner.
         evaluate(&mut engine, "player.play(); true")?;
         wait_for(
@@ -811,12 +991,19 @@ fn window(
             check_recording(app, &mut engine)?;
             evaluate(
                 &mut engine,
-                "modeNavigation.modeRequested(ModeNavigation.Live); true",
+                "modeNavigation.modeRequested(ModeNavigation.Home); true",
             )?;
             wait_for(
                 app,
                 &mut engine,
-                "!player.recording && !player.connecting && player.playback_error.length > 0 && modeNavigation.mode === ModeNavigation.Live",
+                "root.homeScreen && player.recording && !player.media_active && modeNavigation.mode === ModeNavigation.Home",
+            )?;
+            // Home leaves the recording selected. Returning to live is an explicit channel choice.
+            evaluate(&mut engine, "player.select(player.selected); true")?;
+            wait_for(
+                app,
+                &mut engine,
+                "!player.recording && !player.connecting && player.playback_error.length > 0 && modeNavigation.mode === ModeNavigation.None",
             )?;
         }
     } else {
@@ -825,11 +1012,15 @@ fn window(
             &mut engine,
             "root.setupRequired && !player.server_configured && !player.loading && !player.server.length && !player.channels.count"
         )?);
-        check_danmaku_layout(app, &mut engine)?;
         // Comments are enabled here with an empty catalog, so shortcut coverage
         // does not start external comment/activity requests.
         evaluate(&mut engine, "setup.close(); true")?;
-        wait_for(app, &mut engine, "!setup.visible")?;
+        wait_for(
+            app,
+            &mut engine,
+            "!setup.visible && !inputContext.popupOpen",
+        )?;
+        check_danmaku_layout(app, &mut engine)?;
         check_shortcuts(app, &mut engine)?;
         evaluate(&mut engine, "setup.open(); true")?;
         wait_for(app, &mut engine, "setup.opened")?;
@@ -1207,7 +1398,15 @@ fn check_epgstation_library(
     wait_for(
         app,
         engine,
-        "!recordingLibrary.visible && player.playing && player.seekable && player.duration_ms > 11900 && player.duration_ms < 13000 && player.media_subtitle_available && player.current_program_data === 'null' && JSON.parse(player.video_stats()).rendered > 0",
+        r#"
+        const program = JSON.parse(player.current_program_data);
+        !recordingLibrary.visible && player.playing && player.seekable
+            && player.duration_ms > 11900 && player.duration_ms < 13000
+            && player.media_subtitle_available && JSON.parse(player.video_stats()).rendered > 0
+            && program !== null && program.source === 'epgstation'
+            && program.name === 'EPGStation recording 2' && program.station === 'Test TV'
+            && program.progressKnown === false
+        "#,
     )?;
     assert!(evaluate(engine, "player.pause() && player.seek_to(8000)")?);
     wait_for(
@@ -1600,7 +1799,18 @@ fn check_recording(
     wait_for(app, engine, &format!("!{picker}.visible"))?;
     assert!(evaluate(
         engine,
-        "!player.recording_loading && !player.recording && !player.playing && modeNavigation.mode === ModeNavigation.Live"
+        r#"
+        function find(item, name) {
+            if (item.objectName === name) return item;
+            for (const child of item.children || []) { const result = find(child, name); if (result) return result; }
+            return null;
+        }
+        const navigation = find(recordingLibrary, 'recordingModeNavigation');
+        !player.recording_loading && !player.recording && !player.playing
+            && player.screen === ViewerActions.RecordingsScreen && root.libraryVisible
+            && !modeNavigation.visible && navigation !== null && navigation.visible
+            && navigation.mode === ModeNavigation.Recording
+        "#
     )?);
     assert!(ffi::drop_file_on_root(
         engine.pin_mut(),
@@ -1616,8 +1826,27 @@ fn check_recording(
     super::desktop_media::check_playback(app)?;
     assert!(evaluate(
         engine,
-        "player.recording && player.recording_name === '録画 #100%.ts' && modeNavigation.mode === ModeNavigation.Recording && !setup.visible && player.current_program_data === 'null' && !player.comment_post_available && !danmaku.active && player.subtitles_active"
+        "player.recording && player.recording_name === '録画 #100%.ts' && player.screen === ViewerActions.WatchingScreen && modeNavigation.mode === ModeNavigation.None && !setup.visible && player.current_program_data === 'null' && !player.comment_post_available && !danmaku.active && player.subtitles_active"
     )?);
+    evaluate(engine, "player.open_screen(ViewerActions.HomeScreen); true")?;
+    wait_for(
+        app,
+        engine,
+        "root.homeScreen && modeNavigation.mode === ModeNavigation.Home",
+    )?;
+    assert!(evaluate(
+        engine,
+        "player.recording && player.media_active && player.watching_available && !root.libraryVisible"
+    )?);
+    assert!(evaluate(
+        engine,
+        "player.open_screen(ViewerActions.WatchingScreen)"
+    )?);
+    wait_for(
+        app,
+        engine,
+        "modeNavigation.mode === ModeNavigation.None && player.recording && player.media_active",
+    )?;
     wait_for(app, engine, "!overlayVisibility.pinned")?;
     assert!(evaluate(
         engine,
@@ -1775,8 +2004,8 @@ fn check_recording(
         engine,
         "root.active && inputContext.accepts(InputContext.Playback)",
     )?;
-    // The stopped overview owns its card clicks. Exercise the video gesture
-    // during playback, when the video surface is the hit-test target.
+    // Home owns its card clicks. Exercise the video gesture on Watching,
+    // where the video surface is the hit-test target.
     for fullscreen in [true, false] {
         ffi::doubleClickRoot(engine.pin_mut(), &cxx_qt_lib::QPoint::new(450, 200))?;
         wait_for(
@@ -1962,9 +2191,10 @@ fn check_shortcuts(
     app: &QGuiApplication,
     engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
 ) -> TestResult {
+    enter_watching(app, engine)?;
     evaluate(
         engine,
-        "root.showChannels = false; root.requestActivate(); surface.forceActiveFocus(); true",
+        "root.showProgram = false; root.showChannels = false; root.requestActivate(); surface.forceActiveFocus(); true",
     )?;
     wait_for(app, engine, "root.active && inputContext.navigationEnabled")?;
     ffi::clickRootKey(engine.pin_mut(), &QString::from("F11"))?;
@@ -1974,7 +2204,14 @@ fn check_shortcuts(
         assert!(evaluate(engine, "viewerActions.fullscreen")?);
     }
     ffi::clickRootKey(engine.pin_mut(), &QString::from("Escape"))?;
-    wait_for(app, engine, "!viewerActions.fullscreen")?;
+    wait_for(app, engine, "!viewerActions.fullscreen && root.homeScreen")?;
+    enter_watching(app, engine)?;
+    wait_for(
+        app,
+        engine,
+        "bottomPanel.enabled && bottomPanel.opacity === 1",
+    )?;
+    wait_navigation_frames(app, engine)?;
     ffi::clickRootItem(engine.pin_mut(), &QString::from("audioSettingsButton"))?;
     wait_for(
         app,
@@ -2153,12 +2390,9 @@ fn check_sidebar_navigation(
         engine,
         "root.showStats = false; surface.forceActiveFocus(); true",
     )?;
-    if evaluate(engine, "root.stoppedOverview")? {
-        // Down enters the home page first; this sequence starts at the controls.
-        evaluate(engine, "playerControls.enter(); true")?;
-    } else {
-        ffi::clickRootKey(engine.pin_mut(), &QString::from("Down"))?;
-    }
+    enter_watching(app, engine)?;
+    evaluate(engine, "surface.forceActiveFocus(); true")?;
+    ffi::clickRootKey(engine.pin_mut(), &QString::from("Down"))?;
     wait_for(app, engine, "playerControls.navigating")?;
     let focused = |name: &str| {
         format!("root.activeFocusItem && root.activeFocusItem.objectName === '{name}'")
@@ -2213,8 +2447,8 @@ fn check_directional_navigation(
     app: &QGuiApplication,
     engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
 ) -> TestResult {
-    // Finish the preceding popup's queued focus restoration before resetting
-    // focus for this independent navigation sequence.
+    // Finish queued popup focus restoration before checking Watching controls.
+    enter_watching(app, engine)?;
     app.process_events();
     evaluate(
         engine,
@@ -2222,22 +2456,6 @@ fn check_directional_navigation(
     )?;
     wait_for(app, engine, "!sidebar.active && inputContext.videoFocused")?;
     ffi::clickRootKey(engine.pin_mut(), &QString::from("Return"))?;
-    // While nothing plays, the home page lies between the video and the
-    // playback controls: confirm enters it and Down walks through its rows.
-    let focused = |name: &str| {
-        format!("root.activeFocusItem && root.activeFocusItem.objectName === '{name}'")
-    };
-    let home = evaluate(engine, "root.stoppedOverview")?;
-    if home {
-        wait_for(app, engine, &focused("overviewWatch"))?;
-        capture_navigation(app, engine, "dpad-home.png")?;
-        for _ in 0..20 {
-            if evaluate(engine, "playerControls.navigating")? {
-                break;
-            }
-            ffi::clickRootKey(engine.pin_mut(), &QString::from("Down"))?;
-        }
-    }
     wait_for(
         app,
         engine,
@@ -2274,31 +2492,14 @@ fn check_directional_navigation(
         )?;
     }
     ffi::clickRootKey(engine.pin_mut(), &QString::from("Up"))?;
-    if home {
-        // Up from the controls returns to the last row of the home page.
-        wait_for(app, engine, &focused("overviewChannelCell"))?;
-        ffi::clickRootKey(engine.pin_mut(), &QString::from("Down"))?;
-        wait_for(app, engine, "playerControls.navigating")?;
-        evaluate(engine, "surface.forceActiveFocus(); true")?;
-        wait_for(app, engine, "inputContext.videoFocused")?;
-        ffi::clickRootKey(engine.pin_mut(), &QString::from("Up"))?;
-    }
     wait_for(app, engine, "modeNavigation.navigating")?;
     capture_navigation(app, engine, "dpad-navigation.png")?;
     ffi::clickRootKey(engine.pin_mut(), &QString::from("Down"))?;
-    if home {
-        wait_for(app, engine, &focused("overviewWatch"))?;
-        evaluate(engine, "playerControls.enter(); true")?;
-    }
     wait_for(app, engine, "playerControls.navigating")?;
     ffi::clickRootKey(engine.pin_mut(), &QString::from("Escape"))?;
     wait_for(app, engine, "inputContext.videoFocused")?;
     if evaluate(engine, "player.channels.count > 0")? {
-        if home {
-            evaluate(engine, "playerControls.enter(); true")?;
-        } else {
-            ffi::clickRootKey(engine.pin_mut(), &QString::from("Down"))?;
-        }
+        ffi::clickRootKey(engine.pin_mut(), &QString::from("Down"))?;
         wait_for(app, engine, "playerControls.navigating")?;
         ffi::clickRootKey(engine.pin_mut(), &QString::from("Return"))?;
         wait_for(

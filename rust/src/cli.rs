@@ -9,12 +9,12 @@ struct Arguments {
     /// Print build identity as JSON without initializing the application
     #[arg(group = "mode", long)]
     build_info: bool,
-    /// Restrict available features and use transient settings
+    /// Restrict available features and use transient settings (screen-navigation is ignored)
     #[arg(
         group = "mode",
         long,
         require_equals = true,
-        value_name = "none|subtitles,epg,comments,data-broadcast,recording-reservations,remote-web,screen-navigation"
+        value_name = "none|subtitles,epg,comments,data-broadcast,recording-reservations,remote-web"
     )]
     features: Option<FeatureSet>,
     // The test runner owns these arguments, including Qt Quick Test switches.
@@ -144,11 +144,17 @@ mod tests {
         assert!(parse(&["--features=recording-reservations,recording-reservations"]).is_err());
     }
     #[test]
-    fn navigation_experiments_parse_the_explicit_runtime_flag() {
-        let Command::Launch(plan) = parse(&["--features=epg,screen-navigation"]).unwrap() else {
-            panic!("launch");
-        };
-        assert!(plan.locked() && plan.screen_navigation(false) && plan.epg());
+    fn retired_navigation_argument_preserves_script_compatibility() {
+        for (names, equivalent) in [
+            ("screen-navigation", "none"),
+            ("epg,screen-navigation", "epg"),
+        ] {
+            let Command::Launch(plan) = parse(&[&format!("--features={names}")]).unwrap() else {
+                panic!("launch");
+            };
+            assert_eq!(plan, LaunchPlan::Restricted(equivalent.parse().unwrap()));
+            assert!(plan.locked());
+        }
         assert!(parse(&["--features=screen-navigation,screen-navigation"]).is_err());
     }
 

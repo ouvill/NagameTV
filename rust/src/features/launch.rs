@@ -16,7 +16,6 @@ pub struct FeatureSet {
     data_broadcast: bool,
     recording_reservations: bool,
     remote_web: bool,
-    screen_navigation: bool,
 }
 
 impl FromStr for FeatureSet {
@@ -30,11 +29,12 @@ impl FromStr for FeatureSet {
             data_broadcast: false,
             recording_reservations: false,
             remote_web: false,
-            screen_navigation: false,
         };
         if value == "none" {
             return Ok(features);
         }
+        // Keep old launch scripts valid without retaining a navigation feature gate.
+        let mut navigation_alias_seen = false;
         for name in value.split(',') {
             match name {
                 "subtitles" if !features.subtitles => features.subtitles = true,
@@ -44,9 +44,7 @@ impl FromStr for FeatureSet {
                 "recording-reservations" if !features.recording_reservations => {
                     features.recording_reservations = true
                 }
-                "screen-navigation" if !features.screen_navigation => {
-                    features.screen_navigation = true
-                }
+                "screen-navigation" if !navigation_alias_seen => navigation_alias_seen = true,
                 "remote-web" if !features.remote_web => features.remote_web = true,
                 _ => return Err(FeatureError(name.to_owned())),
             }
@@ -64,12 +62,6 @@ pub enum LaunchPlan {
 }
 
 impl LaunchPlan {
-    pub fn screen_navigation(self, preference: bool) -> bool {
-        match self {
-            Self::Preferences => preference,
-            Self::Restricted(features) => features.screen_navigation,
-        }
-    }
     pub fn remote_web(self, preference: bool) -> bool {
         match self {
             Self::Preferences => preference,
@@ -118,20 +110,24 @@ impl LaunchPlan {
 mod tests {
     use super::*;
     #[test]
-    fn navigation_respects_saved_defaults_and_explicit_allowlists() {
-        assert!(!LaunchPlan::default().screen_navigation(false));
-        assert!(LaunchPlan::default().screen_navigation(true));
-        for names in ["none", "epg,recording-reservations"] {
-            let plan = LaunchPlan::Restricted(names.parse().unwrap());
-            assert!(!plan.screen_navigation(true));
-            assert!(plan.locked());
+    fn retired_navigation_name_does_not_change_the_feature_set() {
+        for (names, equivalent) in [
+            ("screen-navigation", "none"),
+            ("epg,screen-navigation", "epg"),
+            ("screen-navigation,epg,comments", "epg,comments"),
+        ] {
+            assert_eq!(
+                names.parse::<FeatureSet>().unwrap(),
+                equivalent.parse::<FeatureSet>().unwrap()
+            );
         }
-        let plan = LaunchPlan::Restricted("epg,screen-navigation".parse().unwrap());
-        assert!(plan.screen_navigation(false) && plan.epg() && plan.locked());
-        assert!(
-            "screen-navigation,screen-navigation"
-                .parse::<FeatureSet>()
-                .is_err()
-        );
+        for invalid in [
+            "screen-navigation,screen-navigation",
+            "none,screen-navigation",
+            "screen-navigation,unknown",
+            "screen-navigation,epg,epg",
+        ] {
+            assert!(invalid.parse::<FeatureSet>().is_err());
+        }
     }
 }

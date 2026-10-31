@@ -4,11 +4,9 @@ import MinimalViewer
 
 DirectionalFocus {
     id: root
-    // None marks the watching screen under screen navigation: it has no button of its own.
-    enum Mode { Live, Recording, Guide, Settings, None }
+    // None marks the watching screen: it has no button of its own and is reached from home.
+    enum Mode { Home, Recording, Guide, Settings, None }
     required property int mode
-    // Screen navigation turns the first button into Home; playback is reached from there.
-    property bool homeButton: false
     required property Window targetWindow
     property bool guideEnabled: false
     property url iconDirectory: "qrc:/qt/qml/MinimalViewer/assets/icons/"
@@ -18,10 +16,10 @@ DirectionalFocus {
     anchors { right: parent.right; top: parent.top; margins: root.edgeMargin }
     implicitWidth: layout.implicitWidth
     implicitHeight: layout.implicitHeight
-    navigationItems: [liveButton, recordingButton, guideButton, settingsButton,
+    navigationItems: [homeButton, recordingButton, guideButton, settingsButton,
         ...windowButtons.navigationButtons]
     initialItem: mode === ModeNavigation.Recording ? recordingButton
-        : mode === ModeNavigation.Guide ? guideButton : mode === ModeNavigation.Settings ? settingsButton : liveButton
+        : mode === ModeNavigation.Guide ? guideButton : mode === ModeNavigation.Settings ? settingsButton : homeButton
 
     Row {
         id: layout
@@ -29,14 +27,14 @@ DirectionalFocus {
         Row {
             spacing: Theme.spaceSm
             IconAction {
-                id: liveButton
-                objectName: "liveModeButton"
-                iconSource: root.iconDirectory + (root.homeButton ? "house.svg" : "tv.svg")
-                tip: root.homeButton ? qsTranslate("Main", "Home") : qsTranslate("Main", "Live TV")
+                id: homeButton
+                objectName: "homeModeButton"
+                iconSource: root.iconDirectory + "house.svg"
+                tip: qsTranslate("Main", "Home")
                 flat: true
                 focusLabelBelow: true
-                active: root.mode === ModeNavigation.Live
-                onClicked: root.modeRequested(ModeNavigation.Live)
+                active: root.mode === ModeNavigation.Home
+                onClicked: root.modeRequested(ModeNavigation.Home)
             }
             IconAction {
                 id: recordingButton

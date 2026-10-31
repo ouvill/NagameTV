@@ -1,10 +1,6 @@
 //! Hardware-free checks use real request validation and logical session ownership.
 use super::ffi;
-use crate::{
-    features::program_info::guide::Guide,
-    screen_navigation::{Navigation, Screen},
-    settings,
-};
+use crate::{features::program_info::guide::Guide, screen_navigation::Screen, settings};
 use cxx_qt::CxxQtType;
 use cxx_qt_lib::{QString, QUrl};
 use std::{
@@ -20,41 +16,29 @@ fn assert_screen(player: &ffi::Player, screen: Screen, back: Option<Screen>) {
         player.back_screen(),
         back.map_or(-1, |screen| screen as i32)
     );
-    if player.screen_navigation() {
-        assert_eq!(player.guide_visible(), screen == Screen::Guide);
-    }
+    assert_eq!(player.guide_is_open(), screen == Screen::Guide);
 }
 fn observe(player: &ffi::Player) {
-    if player.screen_navigation() {
-        assert_eq!(
-            player.guide_visible(),
-            player.screen() == Screen::Guide as i32
-        );
-        assert!(player.screen() != Screen::Watching as i32 || player.watching_available());
-    } else {
-        assert_screen(player, Screen::Home, None);
-    }
+    assert_eq!(
+        player.guide_is_open(),
+        player.screen() == Screen::Guide as i32
+    );
+    assert!(player.screen() != Screen::Watching as i32 || player.watching_available());
 }
 
 pub(super) fn run() -> TestResult {
     guide_requests()?;
     let directory = tempfile::tempdir()?;
-    let settings_path = directory.path().join("settings.toml");
     let mut player = ffi::new_player();
-    assert!(!player.screen_navigation());
+    // The native test launch plan has no feature entries; navigation is still active.
+    assert_screen(&player, Screen::Home, None);
     assert!(!player.watching_available());
-    assert!(
-        !player
-            .pin_mut()
-            .configure_screen_navigation(true, Screen::Home as i32)
-    );
-    {
-        // Native checks use a locked launch plan; load only this private settings file.
-        let state = player.pin_mut().rust_mut().get_mut();
-        state.preferences = settings::Loaded::open(settings_path.clone())?.activate(None, None);
-        state.screen_navigation_allowed = true;
-        state.epg_enabled = true;
-    }
+    assert!(!player.pin_mut().open_screen(Screen::Watching as i32));
+    assert!(!player.pin_mut().open_screen(Screen::Guide as i32));
+    assert!(player.pin_mut().open_screen(Screen::Recordings as i32));
+    assert_screen(&player, Screen::Recordings, Some(Screen::Home));
+    assert!(player.pin_mut().go_back());
+    player.pin_mut().rust_mut().epg_enabled = true;
     let changes = Arc::new(Mutex::new(Vec::new()));
     let observed = changes.clone();
     let _screen = player.pin_mut().on_screen_changed(move |player| {
@@ -64,54 +48,23 @@ pub(super) fn run() -> TestResult {
             .unwrap()
             .push((player.screen(), player.back_screen()));
     });
-    let _guide = player
-        .pin_mut()
-        .on_guide_visible_changed(move |mut player| {
-            observe(&player);
-            if player.guide_visible() {
-                assert!(matches!(player.rust().guide, Guide::AwaitingDay));
+    let _guide = player.pin_mut().on_screen_changed(move |mut player| {
+        observe(&player);
+        if player.screen() == Screen::Guide as i32 {
+            if matches!(player.rust().guide, Guide::AwaitingDay) {
                 player.as_mut().guide_day(0.0, 86_400_000.0);
-                assert!(matches!(player.rust().guide, Guide::Showing(_)));
             }
-        });
-    let _flag = player
-        .pin_mut()
-        .on_screen_navigation_changed(move |player| observe(&player));
+            assert!(matches!(player.rust().guide, Guide::Showing(_)));
+        }
+    });
     let _watching = player
         .pin_mut()
         .on_watching_available_changed(move |player| observe(&player));
 
-    for screen in [
-        Screen::Home,
-        Screen::Watching,
-        Screen::Guide,
-        Screen::Recordings,
-    ] {
-        assert!(!player.pin_mut().open_screen(screen as i32));
-    }
     assert!(!player.pin_mut().go_back());
-    player.pin_mut().guide_open(true);
-    assert!(player.guide_visible());
-    assert!(
-        changes.lock().unwrap().is_empty(),
-        "OFF must not publish a history"
-    );
-    assert!(!player.pin_mut().configure_screen_navigation(true, -9));
-    assert!(
-        !player
-            .pin_mut()
-            .configure_screen_navigation(true, Screen::Watching as i32)
-    );
-    assert!(
-        player
-            .pin_mut()
-            .configure_screen_navigation(true, Screen::Guide as i32)
-    );
+    assert!(player.pin_mut().open_screen(Screen::Guide as i32));
     assert_screen(&player, Screen::Guide, Some(Screen::Home));
-    assert!(
-        matches!(player.rust().guide, Guide::Showing(_)),
-        "toggle preserves the visible day"
-    );
+    assert!(matches!(player.rust().guide, Guide::Showing(_)));
     let count = changes.lock().unwrap().len();
     assert!(player.pin_mut().open_screen(Screen::Guide as i32));
     assert_eq!(changes.lock().unwrap().len(), count);
@@ -123,10 +76,8 @@ pub(super) fn run() -> TestResult {
     assert!(!player.pin_mut().open_screen(99));
 
     player.pin_mut().open_screen(Screen::Recordings as i32);
-    player.pin_mut().guide_open(true);
-    player.pin_mut().guide_open(false);
-    assert_screen(&player, Screen::Recordings, Some(Screen::Home));
-    player.pin_mut().guide_open(false);
+    player.pin_mut().open_screen(Screen::Guide as i32);
+    assert!(player.pin_mut().go_back());
     assert_screen(&player, Screen::Recordings, Some(Screen::Home));
 
     // Accepted inspection is observable before any decoder or media device is touched.
@@ -152,7 +103,7 @@ pub(super) fn run() -> TestResult {
     assert!(!player.watching_available());
     assert_screen(&player, Screen::Recordings, Some(Screen::Home));
 
-    player.pin_mut().guide_open(true);
+    player.pin_mut().open_screen(Screen::Guide as i32);
     assert!(player.pin_mut().open_recording(missing.clone()));
     assert_screen(&player, Screen::Watching, Some(Screen::Guide));
     assert!(player.pin_mut().go_back());
@@ -224,41 +175,8 @@ pub(super) fn run() -> TestResult {
     player.pin_mut().configure_epg();
     assert_screen(&player, Screen::Recordings, Some(Screen::Home));
 
-    // OFF returns ownership without changing the Guide beneath QML's settings popup.
     player.pin_mut().rust_mut().epg_enabled = true;
-    player.pin_mut().open_screen(Screen::Guide as i32);
-    assert!(player.pin_mut().configure_screen_navigation(false, -1));
-    assert!(!player.screen_navigation() && player.guide_visible());
-    assert_screen(&player, Screen::Home, None);
-    player.pin_mut().guide_open(false);
-    assert!(!player.guide_visible());
-    assert!(
-        player
-            .pin_mut()
-            .configure_screen_navigation(true, Screen::Recordings as i32)
-    );
-    assert_screen(&player, Screen::Recordings, Some(Screen::Home));
-    let preferences = settings::Loaded::open(settings_path.clone())?;
-    assert!(preferences.preferences().screen_navigation_enabled);
-    let mut restored = ffi::new_player();
-    let state = restored.pin_mut().rust_mut().get_mut();
-    state.preferences = preferences.activate(None, None);
-    state.navigation = Navigation::new(state.preferences.preferences().screen_navigation_enabled);
-    assert!(restored.screen_navigation());
-    assert_screen(&restored, Screen::Home, None);
-
-    // A write error retains the accepted runtime choice through the normal settings API.
-    std::fs::remove_file(&settings_path)?;
-    std::fs::create_dir(&settings_path)?;
-    assert!(player.pin_mut().configure_screen_navigation(false, -1));
-    assert!(!player.screen_navigation() && !player.settings_error().is_empty());
-    std::fs::remove_dir(&settings_path)?;
-    assert!(
-        player
-            .pin_mut()
-            .configure_screen_navigation(true, Screen::Home as i32)
-    );
-    assert!(player.settings_error().is_empty());
+    player.pin_mut().open_screen(Screen::Home as i32);
     player.pin_mut().open_screen(Screen::Guide as i32);
     assert!(player.pin_mut().open_recording(missing));
     assert_screen(&player, Screen::Watching, Some(Screen::Guide));
@@ -268,10 +186,10 @@ pub(super) fn run() -> TestResult {
         &changes.lock().unwrap()[before_shutdown..],
         &[(Screen::Home as i32, -1)]
     );
-    assert!(!player.watching_available() && !player.guide_visible());
+    assert!(!player.watching_available() && !player.guide_is_open());
     assert_screen(&player, Screen::Home, None);
     println!(
-        "Screen navigation: flag gates, distinct history, Guide coherence, accepted loading/error/cancellation, toggle, persistence and shutdown passed"
+        "Screen navigation: always active, distinct history, Guide coherence, accepted loading/error/cancellation and shutdown passed"
     );
     Ok(())
 }
@@ -306,7 +224,6 @@ fn guide_requests() -> TestResult {
     {
         let state = player.pin_mut().rust_mut().get_mut();
         state.epg_enabled = true;
-        state.screen_navigation_allowed = true;
         state.server = QString::from(server.uri());
         state.channel_refresh.requested(Instant::now());
         state.epg.configure(Some(server.uri()));
@@ -317,11 +234,6 @@ fn guide_requests() -> TestResult {
         })
         .activate(None, None);
     }
-    assert!(
-        player
-            .pin_mut()
-            .configure_screen_navigation(true, Screen::Home as i32)
-    );
     assert!(player.pin_mut().open_screen(Screen::Guide as i32));
     assert!(matches!(player.rust().guide, Guide::AwaitingDay));
     assert!(player.rust().request.is_busy());

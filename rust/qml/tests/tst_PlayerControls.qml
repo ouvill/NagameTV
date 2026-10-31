@@ -52,7 +52,7 @@ Item {
         ModeNavigation {
             id: navigation
             targetWindow: host
-            mode: backend.recording ? ModeNavigation.Recording : ModeNavigation.Live
+            mode: ModeNavigation.Home
             guideEnabled: true
             iconDirectory: controls.iconDirectory
         }
@@ -405,15 +405,15 @@ Item {
                 mouseClick(recording);
                 compare(modes.count, 1);
                 compare(modes.signalArguments[0][0], ModeNavigation.Recording);
-                compare(navigation.mode, ModeNavigation.Live);
-                compare(recording.active, false);
+                compare(navigation.mode, ModeNavigation.Home);
+                // Playing a recording does not light "Recordings"; only the screen does.
                 backend.recording = true;
-                compare(recording.active, true);
+                compare(recording.active, false);
                 navigation.guideEnabled = false;
                 mouseClick(findChild(navigation, "guideModeButton"));
                 compare(modes.count, 1);
-                mouseClick(findChild(navigation, "liveModeButton"));
-                compare(modes.signalArguments[1][0], ModeNavigation.Live);
+                mouseClick(findChild(navigation, "homeModeButton"));
+                compare(modes.signalArguments[1][0], ModeNavigation.Home);
             }
             function cleanup() {
                 audioPopup.close();

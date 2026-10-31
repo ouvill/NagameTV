@@ -9,22 +9,33 @@
 
 | 種類 | 名前・型 | 契約 |
 | --- | --- | --- |
-| 読取専用プロパティ | `screen_navigation: bool` | 画面移動機能が現在ONか。通知は`screen_navigationChanged()` |
-| 読取専用プロパティ | `screen_navigation_allowed: bool` | この起動設定でONにできるか。起動中は不変 |
-| 読取専用プロパティ | `screen: int` | 現在の画面。OFFでは`Home`を返し、従来の画面表示には使わない |
-| 読取専用プロパティ | `back_screen: int` | 戻る操作後の画面。`[Home]`とOFFでは`-1` |
+| 読取専用プロパティ | `screen: int` | 現在の画面。起動時は`Home` |
+| 読取専用プロパティ | `back_screen: int` | 戻る操作後の画面。`[Home]`では`-1` |
 | 読取専用プロパティ | `watching_available: bool` | 読込中・エラー・録画終端を含む視聴セッションがあるか。通知は`watching_availableChanged()` |
-| invokable | `open_screen(screen: int) -> bool` | 指定画面を開く。OFF、未知の番号、EPG無効時のGuide、セッション不在時のWatchingは`false`。現在と同じ画面も受理し`true` |
-| invokable | `go_back() -> bool` | 直前の画面へ戻る。`[Home]`とOFFでは変更せず`false` |
-| invokable | `configure_screen_navigation(enabled: bool, legacy_screen: int) -> bool` | 設定を変更して保存する。OFF→ONではQMLが現在表示している画面番号を渡す。未知・利用不可の画面や起動設定で禁止されたONは`false`で変更しない。OFFへの切替と同じ値の再設定では第2引数を使わない。保存失敗は既存の`settings_error`で通知し、受理済みの実行時設定は維持する |
-| signal | `screen_changed()` | `screen`と`back_screen`の通知。両方とGuideの状態を確定してから通知する |
+| invokable | `open_screen(screen: int) -> bool` | 指定画面を開く。未知の番号、EPG無効時のGuide、セッション不在時のWatchingは`false`。現在と同じ画面も受理し`true` |
+| invokable | `go_back() -> bool` | 直前の画面へ戻る。`[Home]`では変更せず`false` |
+| signal | `screen_changed()` | `screen`と`back_screen`の通知。両方とGuideの状態・公開データを確定してから通知し、通知中の`guide_day()`を受け付ける |
 
-QMLのハンドラー名は`onScreen_changed`、`onScreen_navigationChanged`、
-`onWatching_availableChanged`。後者2つはCXX-Qtが生成するプロパティ通知名を使う。
+QMLのハンドラー名は`onScreen_changed`と`onWatching_availableChanged`。
+後者はCXX-Qtが生成するプロパティ通知名を使う。
+画面移動は常に有効で、`screen_navigation`、`screen_navigation_allowed`、
+`configure_screen_navigation`、`guide_open`、`guide_visible`とその専用通知は削除する。
 
-`guide_visible`は引き続き「番組表が表示されている」を表す。
-ONでは`guide_open(true)`をGuideへの移動、`guide_open(false)`を現在のGuideからの戻る操作として扱う。
-Guide以外での`guide_open(false)`は何もしない。OFFでは既存の動作を維持する。
+### QMLの変更箇所
+
+- 有効・無効を切り替える設定と、`screen_navigation`による表示・操作の分岐を削除する。
+  `Main.page`などの従来の画面状態も削除し、表示とナビゲーションの選択状態を`screen`から決める。
+- 番組表の表示判定は`screen === 2`とする。Loaderとフォーカスの更新は`screen_changed`に従う。
+- Gキー・リモコンの番組表キーは、`screen === 2`なら`go_back()`、それ以外なら
+  `open_screen(2)`を呼ぶ。番組表の戻るボタンも`go_back()`を使う。
+  番組表を閉じるだけの処理は`screen === 2`を確認してから`go_back()`を呼ぶ。
+- Home・Recordingsへの移動はそれぞれ`open_screen(0)`・`open_screen(3)`、視聴へ戻る操作は
+  `open_screen(1)`を使う。戻る操作では`go_back()`が`false`の場合だけ既存の全画面解除を行う。
+- 再生開始時に録画一覧・番組表をQMLから閉じる処理を削除する。
+  受理した再生要求でRustがWatchingを開くため、`onStarted`で画面を上書きしない。
+
+Guideのカード・日付・フォーカスなど表示部品の状態は引き続きQMLが所有する。
+`guide_day()`、`guide_release()`と番組表のデータAPIは維持する。
 
 ## 履歴と再生の寿命
 
@@ -49,35 +60,21 @@ Guideが現在の画面になると、予約接続の確認、チャンネル・
 EPGを無効にすると履歴中のGuideを取り除く。
 起動時は`[Home]`とし、自動再生や起動時の動画読込が始まるとWatchingを追加する。
 
-## フラグとQML側の切替
+## 設定と起動引数の互換性
 
-保存設定`screen_navigation_enabled`は既定OFF。
-検証時は`--features=screen-navigation`、番組表も使う場合は
-`--features=epg,screen-navigation`で有効にする。
-明示的な`--features`指定では通常設定を読み書きせず、screen-navigationを含まなければ
-設定画面からもONにできない。
+保存設定の`screen_navigation_enabled`は廃止する。以前の`true`・`false`はどちらも
+読み込めるが、画面移動の動作には影響せず、次回の保存でキーを削除する。
 
-OFFでは履歴を保持せず、既存のQML画面移動とGuideの動作を使う。
-ONにすると`[Home, 現在の画面]`から始める（Homeなら1件）。
-現在の画面は設定ポップアップの背後を指す。QMLだけが持つRecordingsの表示状態を
-Rustが推測しないため、切替APIの第2引数で渡す。
-
-QMLはONで`screen`を表示とナビゲーションの選択状態に使い、再生種類から推測しない。
-戻る操作では`go_back()`が`false`の場合だけ既存の全画面解除を行う。
-OFFへ切り替える直前に`screen`を読み取り、従来の`Main.page`をRecordingsなら録画一覧、
-それ以外ならViewingへ設定する。GuideはRustが表示状態を維持する。
-Homeで再生中の場合、従来画面には対応する表示がないためViewingへ戻る。
-
-再生開始の通知をQMLから追加する必要はない。ONでは既存の`onStarted`や選局処理から
-録画一覧・Guideを手動で閉じる処理を行わず、Rustが確定した`screen`に従う。
-Guideのカード・日付・フォーカスなど表示部品の状態は引き続きQMLが所有する。
+既存の起動スクリプトのため、`--features`の`screen-navigation`は受理して無視する。
+この名前の有無や`--features=none`にかかわらず画面移動は有効とする。
+重複指定はほかの名前と同様にエラーにする。
+明示的な`--features`指定は引き続き通常設定を読み書きせず、ほかの機能を指定内容に制限する。
+たとえば`--features=screen-navigation`は`--features=none`と同じ機能構成となり、
+番組表を使うには`--features=epg`を指定する。
 
 ## 画面
 
-設定の「表示」に「新しい画面移動を使う（実験的）」のスイッチを置く。
-切り替えは`Main.qml`が受け、設定の背後にある画面を`configure_screen_navigation`へ渡す。
-
-ONでは右上のナビゲーションの先頭を「ライブ」からホーム（家のアイコン）に変え、
+右上のナビゲーションの先頭にホーム（家のアイコン）を置き、
 選択状態は`screen`から決める。視聴画面には対応するボタンがないため、どれも選択しない。
 録画を再生していても、視聴画面で「録画」を選択状態にしない。
 
@@ -111,6 +108,6 @@ Escだけが全画面を解除する。番組表と録画一覧の左上の戻�
 ## 検証
 
 履歴の重複排除、Homeへの復帰、戻る操作、セッション終了、EPG無効化を単体テストで検証する。
-ハードウェア不要のPlayer接続試験でOFF時の既存動作、ONでの画面・Guideの整合性、
-通知中の読み取り、実行時切替、設定保存・復元を確認する。
+ハードウェア不要のPlayer接続試験で画面・Guideの整合性と通知中の読み取りを確認する。
+設定と起動引数の試験で、廃止したキーの読込・保存と互換名の扱いを確認する。
 製品QMLの起動・操作試験はUI担当が行う。

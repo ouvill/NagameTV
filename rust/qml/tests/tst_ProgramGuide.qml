@@ -483,7 +483,7 @@ TestCase {
         compare(navigation.mode, Viewer.ModeNavigation.Guide)
         verify(findChild(navigation, "guideModeButton").active)
         for (const entry of [
-            ["liveModeButton", Viewer.ModeNavigation.Live],
+            ["homeModeButton", Viewer.ModeNavigation.Home],
             ["recordingModeButton", Viewer.ModeNavigation.Recording],
             ["guideModeButton", Viewer.ModeNavigation.Guide],
             ["settingsModeButton", Viewer.ModeNavigation.Settings]

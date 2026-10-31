@@ -763,19 +763,30 @@ fn reservation_encode_choices_round_trip_without_requiring_a_connected_server()
 }
 
 #[test]
-fn screen_navigation_is_default_off_and_round_trips_without_erasing_future_settings()
+fn retired_navigation_settings_load_and_are_dropped_on_save_without_erasing_future_keys()
 -> Result<(), Box<dyn std::error::Error>> {
     let dir = tempfile::tempdir()?;
     let path = dir.path().join("settings.toml");
-    fs::write(&path, "future_setting = 'keep'\n")?;
-    let mut session = open(path.clone())?;
-    assert!(!Preferences::default().screen_navigation_enabled);
-    assert!(!session.preferences().screen_navigation_enabled);
     for enabled in [true, false] {
-        session.change(Change::ScreenNavigationEnabled(enabled));
+        fs::write(
+            &path,
+            format!(
+                "screen_navigation_enabled = {enabled}\nautoplay = true\nfuture_setting = 'keep'\n"
+            ),
+        )?;
+        let mut session = open(path.clone())?;
+        assert!(
+            !session
+                .preferences()
+                .extra
+                .contains_key("screen_navigation_enabled")
+        );
+        assert!(session.preferences().autoplay);
+        session.change(Change::Autoplay(false));
         assert_eq!(session.flush()?, SaveStatus::Saved);
         let restored = open(path.clone())?;
-        assert_eq!(restored.preferences().screen_navigation_enabled, enabled);
+        assert!(!restored.preferences().autoplay);
+        assert!(!fs::read_to_string(&path)?.contains("screen_navigation_enabled"));
         assert_eq!(
             restored.preferences().extra["future_setting"].as_str(),
             Some("keep")

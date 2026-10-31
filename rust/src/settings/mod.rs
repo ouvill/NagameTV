@@ -103,8 +103,9 @@ fn load(path: &Path) -> Result<Preferences, Error> {
         path: path.into(),
         source,
     })?;
-    // This removed preference must not be preserved as an unknown future setting.
+    // Retired keys must not be preserved as unknown future settings.
     preferences.extra.remove("recording_delete_original");
+    preferences.extra.remove("screen_navigation_enabled");
     Ok(preferences)
 }
 
@@ -159,7 +160,6 @@ pub enum Change {
     SubtitleForceOutline(bool),
     DataBroadcastEnabled(bool),
     RecordingReservationsEnabled(bool),
-    ScreenNavigationEnabled(bool),
     RecordingEncode(String),
     DataBroadcastPrefetch(bool),
     Comments(bool),
@@ -247,9 +247,6 @@ impl Session {
             Change::DataBroadcastEnabled(enabled) => preferences.data_broadcast_enabled = enabled,
             Change::RecordingReservationsEnabled(enabled) => {
                 preferences.recording_reservations_enabled = enabled
-            }
-            Change::ScreenNavigationEnabled(enabled) => {
-                preferences.screen_navigation_enabled = enabled
             }
             Change::RecordingEncode(mode) => preferences.recording_encode_mode = mode,
             Change::DataBroadcastPrefetch(enabled) => preferences.data_broadcast_prefetch = enabled,

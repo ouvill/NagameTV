@@ -42,19 +42,21 @@ Item {
     onFullscreenChanged: activity()
 
     enum DismissMode { PanelsOnly, PanelsOrFullscreen }
+    // Player.screen values, shared by the window and the actions.
+    enum Screen { HomeScreen, WatchingScreen, GuideScreen, RecordingsScreen }
     function dismiss(mode: int) {
         activity();
         // Match stacking order: the guide covers the channel browser.
         if (libraryVisible) libraryCloseRequested();
-        else if (backend.guide_visible) backend.guide_open(false);
+        else if (backend.screen === ViewerActions.GuideScreen) backend.go_back();
         else if (channelsVisible) channelsVisibilityRequested(false);
         else if (composerVisible) composerVisibilityRequested(false);
         else if (programVisible && programFocused) programVisibilityRequested(false);
         else if (statsVisible) statsVisibilityRequested(false);
         else if (programVisible) programVisibilityRequested(false);
         else if (controlsFocused) controlsDismissRequested();
-        // Screen navigation: one screen back first; fullscreen ends only with nowhere to go.
-        else if (backend.screen_navigation && backend.go_back()) return;
+        // One screen back first; fullscreen ends only with nowhere to go.
+        else if (backend.go_back()) return;
         else if (mode === ViewerActions.PanelsOrFullscreen) leaveFullscreen();
     }
 
@@ -140,7 +142,11 @@ Item {
     readonly property Action toggleGuide: Operation {
         text: qsTranslate("Main", "Program guide")
         enabled: root.enabled && root.backend.epg_enabled
-        onTriggered: { root.backend.guide_open(!root.backend.guide_visible); root.activity(); }
+        onTriggered: {
+            if (root.backend.screen === ViewerActions.GuideScreen) root.backend.go_back();
+            else root.backend.open_screen(ViewerActions.GuideScreen);
+            root.activity();
+        }
     }
     readonly property Action previousChannel: Operation {
         text: qsTranslate("Settings", "Previous channel")
@@ -202,7 +208,7 @@ Item {
         enabled: root.enabled && root.backend.comments_enabled && !root.backend.recording
         onTriggered: {
             // Reveal the editor before Main gives it focus.
-            if (root.backend.guide_visible) root.backend.guide_open(false);
+            if (root.backend.screen === ViewerActions.GuideScreen) root.backend.go_back();
             if (root.channelsVisible) root.channelsVisibilityRequested(false);
             root.composerVisibilityRequested(true);
             root.activity();

@@ -35,14 +35,12 @@ Popup {
     signal connectionAccepted
     signal recordingSearchReset
     signal modeRequested(int mode)
-    // The owner knows which screen is behind settings, which the switch must hand over.
-    signal screenNavigationRequested(bool enabled)
     readonly property list<Item> pageFields: {
         switch (page) {
         case SettingsPanel.Connection:
             return [...connectionForm.navigationItems, autoplay, ...liveBufferSettings.navigationItems, ...epgstationConnection.navigationItems, recordingReservations];
         case SettingsPanel.Display:
-            return [languageBox, subtitleDisplay, subtitleOutline, screenNavigation, dataBroadcastEnabled, dataBroadcastPrefetch, chooseScreenshotDirectory, openScreenshotDirectory,
+            return [languageBox, subtitleDisplay, subtitleOutline, dataBroadcastEnabled, dataBroadcastPrefetch, chooseScreenshotDirectory, openScreenshotDirectory,
                 resetScreenshotDirectory, ...screenshotOptions.navigationItems];
         case SettingsPanel.Comments:
             return [commentsEnabled, danmakuEnabled, ...commentPresentation.navigationItems,
@@ -533,17 +531,6 @@ Popup {
                                 onClicked: root.backend.configure_subtitle_outline(checked)
                             }
                         }
-                        Heading { Layout.topMargin: 20; text: qsTranslate("Settings", "Screens") }
-                        SettingsToggle {
-                            id: screenNavigation
-                            objectName: "screenNavigationSetting"
-                            Layout.fillWidth: true
-                            text: qsTranslate("Settings", "Use the new screen navigation (experimental)")
-                            description: qsTranslate("Settings", "Home, the program guide and recordings become separate screens, and Back returns to the screen you came from.")
-                            checked: root.backend.screen_navigation
-                            enabled: root.backend.screen_navigation_allowed
-                            onClicked: root.screenNavigationRequested(checked)
-                        }
                         Heading { Layout.topMargin: 20; text: qsTranslate("Viewer", "Data broadcast") }
                         SettingsToggle {
                             id: dataBroadcastEnabled
@@ -944,7 +931,7 @@ Popup {
                 id: closeSettings
                 objectName: "closeSettings"
                 // Settings returns to the screen behind it, which is not always the viewer.
-                text: root.backend.screen_navigation ? qsTranslate("Main", "Close") : qsTranslate("Settings", "Back to viewing")
+                text: qsTranslate("Main", "Close")
                 onClicked: root.close()
                 Keys.onUpPressed: root.enterLast()
                 Keys.onLeftPressed: root.focusCategory()
@@ -956,7 +943,6 @@ Popup {
             targetWindow: root.targetWindow
             iconDirectory: root.iconDirectory
             mode: ModeNavigation.Settings
-            homeButton: root.backend.screen_navigation
             guideEnabled: root.backend.epg_enabled
             onModeRequested: function(mode) { root.modeRequested(mode); }
             onBoundaryReached: function(key) {

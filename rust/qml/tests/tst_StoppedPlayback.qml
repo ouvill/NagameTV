@@ -21,7 +21,10 @@ TestCase {
     SignalSpy { id: settings; target: panel; signalName: "settingsRequested" }
     SignalSpy { id: reconnect; target: panel; signalName: "reconnectRequested" }
     SignalSpy { id: openFile; target: panel; signalName: "openFileRequested" }
+    SignalSpy { id: returning; target: panel; signalName: "returnRequested" }
     function init() {
+        panel.returnAvailable = false;
+        returning.clear();
         panel.hasServer = false;
         panel.recording = false;
         openFile.clear();
@@ -31,6 +34,16 @@ TestCase {
         panel.hasChannels = false;
         panel.playbackError = "";
         play.clear(); channels.clear(); settings.clear();
+    }
+    function test_home_without_channels_offers_the_return_in_the_centered_prompt() {
+        panel.loading = true;
+        panel.returnAvailable = true;
+        const action = findChild(panel, "stoppedAction");
+        verify(action.visible);
+        compare(action.text, "Return to watching");
+        mouseClick(action);
+        compare(returning.count, 1);
+        compare(play.count, 0);
     }
     function test_recording_can_be_replayed_without_channels() {
         panel.recording = true;

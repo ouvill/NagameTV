@@ -14,7 +14,6 @@ Rectangle {
     required property string band
     required property Window targetWindow
     property url iconDirectory: "qrc:/qt/qml/MinimalViewer/assets/icons/"
-    property bool homeButton: false
     signal closeRequested
     signal modeRequested(int mode)
     signal bandRequested(string band)
@@ -99,7 +98,6 @@ Rectangle {
         targetWindow: root.targetWindow
         iconDirectory: root.iconDirectory
         mode: ModeNavigation.Guide
-        homeButton: root.homeButton
         guideEnabled: true
         onModeRequested: function(mode) { root.modeRequested(mode) }
     }

@@ -36,7 +36,8 @@ def main():
         if flag == "--build-info":
             json.loads(result.stdout)
     for arguments in (["--unknown"], ["--features=none,epg"], ["--features=epg,epg"],
-                      ["--features=none", "--features=comments"]):
+                      ["--features=none", "--features=comments"],
+                      ["--features=screen-navigation,screen-navigation"]):
         result = invoke(binary, arguments)
         assert result.returncode == 2, (arguments, result.returncode, result.stderr)
         assert not result.stdout and "error:" in result.stderr, (arguments, result)

@@ -14,37 +14,9 @@ Rectangle {
     property string playbackMessage: ""
     property bool recording: false
     property bool showDetails: false
-    // Without a channel model the centered prompt is the whole screen.
-    property ChannelModel channels: null
-    property int selected: -1
-    property string programsJson: "[]"
-    property string visibilityJson: "[]"
-    property real now: 0
-    property ContinueWatchingModel continueWatching: null
-    property bool favoritesReady: false
-    property bool historyFailed: false
-    // A stream that is starting shows only its progress: listing other channels
-    // during a channel change reads as if the choice had not been taken.
-    property bool connecting: false
-    // Home under screen navigation without channels: playback may continue behind it.
+    // Home without channels: playback may continue behind it.
     property bool returnAvailable: false
     signal returnRequested
-    // A channel refresh stays inside the overview, which started that refresh.
-    readonly property bool overviewVisible: channels !== null && hasChannels && !recording && !connecting
-        && !playbackError.length
-    signal selectRequested(int index)
-    signal recordingsRequested
-    signal favoriteRequested(string serviceId)
-    signal resumeRequested(string recordingKey)
-    signal boundaryReached(int key)
-    // Directional entry into the overview; false while the centered prompt is shown.
-    function enter(fromBelow: bool): bool {
-        const overview = overviewLoader.item as StoppedOverview;
-        if (!overview) return false;
-        if (fromBelow) overview.enterBottom();
-        else overview.enterTop();
-        return true;
-    }
     onPlaybackErrorChanged: if (!playbackError.length)
         showDetails = false
     signal playRequested
@@ -61,34 +33,9 @@ Rectangle {
             GradientStop { position: 0.6; color: Theme.canvas }
         }
     }
-    Loader {
-        id: overviewLoader
-        objectName: "stoppedOverviewLoader"
-        anchors.fill: parent
-        active: root.overviewVisible
-        sourceComponent: StoppedOverview {
-            channels: root.channels
-            selected: root.selected
-            programsJson: root.programsJson
-            visibilityJson: root.visibilityJson
-            now: root.now
-            loading: root.loading
-            continueWatching: root.continueWatching
-            favoritesReady: root.favoritesReady
-            historyFailed: root.historyFailed
-            onFavoriteRequested: function(serviceId) { root.favoriteRequested(serviceId); }
-            onResumeRequested: function(recordingKey) { root.resumeRequested(recordingKey); }
-            onBoundaryReached: function(key) { root.boundaryReached(key); }
-            onPlayRequested: root.playRequested()
-            onSelectRequested: function(index) { root.selectRequested(index); }
-            onRecordingsRequested: root.recordingsRequested()
-            onOpenFileRequested: root.openFileRequested()
-        }
-    }
     Column {
         anchors.centerIn: parent
         spacing: Theme.spaceLg
-        visible: !root.overviewVisible
         Label {
             anchors.horizontalCenter: parent.horizontalCenter
             text: root.playbackError.length ? qsTranslate("Viewer", "Playback unavailable") : root.recording ? qsTranslate("Recording", "Recording") : qsTranslate("Main", "Live TV")
