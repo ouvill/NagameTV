@@ -85,6 +85,7 @@ Item {
                 backend.danmaku_enabled = false;
                 backend.saved = 0;
                 backend.skips = [];
+                backend.chapters_data = "[]"; backend.chapterSeeks = []; backend.chapterAccepted = true;
                 backend.subtitles_enabled = true;
                 backend.media_subtitle_available = false;
                 backend.subtitle_display = true;
@@ -276,6 +277,62 @@ Item {
                     mouseClick(forward);
                 }
                 compare(backend.skips, [-10000, 10000, -10000, 10000]);
+            }
+            function test_chapter_buttons_sit_outside_the_ten_second_skips_only_with_chapters() {
+                backend.playing = true;
+                backend.recording = true;
+                const previous = findChild(controls, "previousChapterButton");
+                const next = findChild(controls, "nextChapterButton");
+                verify(!previous.visible);
+                verify(!next.visible);
+                backend.chapters_data = JSON.stringify([{startMs: 0, name: "CM?", commercial: true}, {startMs: 10000, name: "A", commercial: false}, {startMs: 40000, name: "CM", commercial: true}]);
+                verify(previous.visible);
+                verify(next.visible);
+                waitForRendering(controls);
+                const backward = findChild(controls, "skipBackButton");
+                const forward = findChild(controls, "skipForwardButton");
+                verify(previous.x < backward.x);
+                verify(next.x > forward.x);
+                mouseClick(previous);
+                mouseClick(next);
+                compare(backend.chapterSeeks, [-1, 1]);
+                // Live TV has no chapters even when a stale list is around.
+                backend.recording = false;
+                backend.timeshift = false;
+                verify(!next.visible);
+            }
+            function test_chapter_buttons_take_focus_by_click_and_by_arrow_keys() {
+                host.requestActivate(); tryCompare(host, "active", true);
+                backend.playing = true;
+                backend.recording = true;
+                backend.chapters_data = JSON.stringify([{startMs: 0, name: "A", commercial: false}, {startMs: 10000, name: "B", commercial: false}]);
+                waitForRendering(controls);
+                const next = findChild(controls, "nextChapterButton");
+                const play = findChild(controls, "playStopButton");
+                mouseClick(next);
+                compare(backend.chapterSeeks, [1]);
+                // A click keeps focus on the clicked button without a keyboard cue elsewhere.
+                wait(50);
+                verify(!play.focusVisible);
+                compare(controls.currentItem, next);
+                play.forceActiveFocus(Qt.TabFocusReason);
+                tryCompare(controls, "currentItem", play);
+                keyClick(Qt.Key_Right);
+                keyClick(Qt.Key_Right);
+                tryCompare(controls, "currentItem", next);
+                for (let step = 0; step < 4; ++step) keyClick(Qt.Key_Left);
+                tryCompare(controls, "currentItem", findChild(controls, "previousChapterButton"));
+            }
+            function test_chapter_buttons_stay_on_while_a_seek_flushes() {
+                backend.playing = true;
+                backend.recording = true;
+                backend.chapters_data = JSON.stringify([{startMs: 0, name: "A", commercial: false}, {startMs: 10000, name: "B", commercial: false}]);
+                const next = findChild(controls, "nextChapterButton");
+                verify(next.visible && next.enabled);
+                // The seek range disappears while the pipeline flushes.
+                backend.seekable = false;
+                verify(next.visible && next.enabled);
+                backend.seekable = Qt.binding(function() { return (backend.recording || backend.timeshift) && backend.media_active; });
             }
             function test_pause_on_demand_allows_button_and_space_without_seeking() {
                 backend.pauseOnDemand = true;

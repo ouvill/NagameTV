@@ -95,6 +95,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "../assets/icons/pause.svg",
         "../assets/icons/rotate-ccw.svg",
         "../assets/icons/rotate-cw.svg",
+        "../assets/icons/skip-back.svg",
+        "../assets/icons/skip-forward.svg",
         "../assets/icons/tv.svg",
         "../assets/icons/house.svg",
         "../assets/icons/recording.svg",

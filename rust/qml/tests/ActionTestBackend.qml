@@ -59,6 +59,10 @@ QtObject {
     function skip(milliseconds) { skips.push(milliseconds); }
     function step_channel(offset) { channelSteps += offset; }
     function guide_open(visible) { guide_visible = visible; }
+    property string chapters_data: "[]"
+    property var chapterSeeks: []
+    property bool chapterAccepted: true
+    function seek_chapter(offset) { chapterSeeks = chapterSeeks.concat([offset]); return chapterAccepted; }
     // Screen history: each entry is one screen Back can still return to.
     property bool screen_navigation: false
     property int screenHistory: 0

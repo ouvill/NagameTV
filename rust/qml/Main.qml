@@ -357,6 +357,9 @@ ViewerWindow {
         playing: player.playing
         // Like main, the persistent sidebar does not pin the video controls.
         pinned: root.showChannels || root.showGuide || inputContext.popupOpen || inputContext.editingText || viewerActions.controlsFocused || playerControls.screenshotHovered || recordingTimeline.pressed || recordingTimeline.hovered
+            // A resting pointer on a control must not let the controls fade under it;
+            // the next click would only bring them back instead of pressing the button.
+            || controlsHover.hovered || modeHover.hovered
     }
     AudioSettings {
         id: audioSettings
@@ -921,6 +924,7 @@ ViewerWindow {
             background: Rectangle {
                 color: "transparent"
             }
+            HoverHandler { id: controlsHover }
             contentItem: ColumnLayout {
                 spacing: 0
                 PlaybackTimeline {
@@ -1188,6 +1192,7 @@ ViewerWindow {
             : root.homeScreen ? ModeNavigation.Live : ModeNavigation.None
         homeButton: root.screenNavigation
         guideEnabled: player.epg_enabled
+        HoverHandler { id: modeHover }
         onModeRequested: function(mode) { root.requestMode(mode); }
         onBoundaryReached: function(key) {
             if (key === Qt.Key_Down && !root.enterHome(false) && !recordingTimeline.enter()) playerControls.enter();

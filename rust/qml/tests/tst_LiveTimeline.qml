@@ -9,6 +9,7 @@ Item {
         width: 860; height: 400; visible: true
         QtObject {
             id: backend
+            property string chapters_data: "[]"
             property string seek_preview_image: ""
             property var previewRequests: []
             function request_seek_preview(milliseconds) { previewRequests.push(milliseconds); }

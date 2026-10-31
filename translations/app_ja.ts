@@ -1263,6 +1263,8 @@
 </context>
   <context>
     <name>Viewer</name>
+    <message><source>Previous chapter</source><translation>前のチャプター</translation></message>
+    <message><source>Next chapter</source><translation>次のチャプター</translation></message>
     <message><source>Favorites and playback positions could not be saved. They are kept only until the app closes.</source><translation>お気に入りと再生位置を保存できませんでした。アプリを閉じるまでの間だけ保持します。</translation></message>
     <message><source>Recording now</source><translation>録画中</translation></message>
     <message><source>Reservation conflict</source><translation>予約競合</translation></message>
@@ -1888,6 +1890,7 @@
 </context>
   <context>
     <name>Settings</name>
+    <message><source>Recordings with chapters</source><translation>チャプターのある録画</translation></message>
     <message><source>Screens</source><translation>画面</translation></message>
     <message><source>Use the new screen navigation (experimental)</source><translation>新しい画面移動を使う（実験的）</translation></message>
     <message><source>Home, the program guide and recordings become separate screens, and Back returns to the screen you came from.</source><translation>ホーム・番組表・録画一覧をそれぞれ別の画面にし、戻るで直前の画面に戻ります。</translation></message>
