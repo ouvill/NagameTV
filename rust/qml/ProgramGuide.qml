@@ -159,18 +159,22 @@ Rectangle {
                 target: root.reservationBackend
                 function onReservations_changed() { details.reservationRevision++; }
             }
-            readonly property string reservationKey: reservationRevision >= 0 && reservationsEnabled && root.selectedProgram
+            readonly property string reservationKey: reservationsEnabled && root.selectedProgram
                 ? root.selectedProgram.watchKey : ""
+            // Not folded into reservationKey: the same key string notifies nothing, so answers went stale.
+            function askBackend(method) {
+                return reservationRevision >= 0 && reservationKey.length > 0 && root.reservationBackend[method](reservationKey)
+            }
             reservationsEnabled: root.reservationBackend !== null && root.reservationBackend.reservations_enabled
             reservationBusy: reservationsEnabled && root.reservationBackend.reservation_busy
             reservationError: reservationsEnabled ? root.reservationBackend.reservation_error : ""
-            reservation: reservationKey.length ? root.reservationBackend.reservation_state(reservationKey) : ""
-            canReserve: reservationKey.length > 0 && root.reservationBackend.can_reserve_program(reservationKey)
-            canCancelReservation: reservationKey.length > 0 && root.reservationBackend.can_cancel_reservation(reservationKey)
+            reservation: askBackend("reservation_state") || ""
+            canReserve: askBackend("can_reserve_program")
+            canCancelReservation: askBackend("can_cancel_reservation")
             onReserveRequested: function(key) { root.reservationBackend.reserve_program(key); }
             onCancelReservationRequested: function(key) { root.reservationBackend.cancel_reservation(key); }
-            canExcludeReservation: reservationKey.length > 0 && root.reservationBackend.can_exclude_reservation(reservationKey)
-            canUnexcludeReservation: reservationKey.length > 0 && root.reservationBackend.can_unexclude_reservation(reservationKey)
+            canExcludeReservation: askBackend("can_exclude_reservation")
+            canUnexcludeReservation: askBackend("can_unexclude_reservation")
             onExcludeReservationRequested: function(key) { root.reservationBackend.exclude_reservation(key); }
             onUnexcludeReservationRequested: function(key) { root.reservationBackend.unexclude_reservation(key); }
             encodeModes: reservationsEnabled ? root.reservationBackend.reservation_encode_modes : []

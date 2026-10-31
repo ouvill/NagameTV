@@ -506,11 +506,15 @@ TestCase {
             property bool rule: false
             property var calls: []
             signal reservations_changed
-            function reservation_state(key) { return state; }
-            function can_reserve_program(key) { return state === ""; }
-            function can_cancel_reservation(key) { return !rule && state === "reserved"; }
-            function can_exclude_reservation(key) { return rule && state === "reserved"; }
-            function can_unexclude_reservation(key) { return rule && state === "skipped"; }
+            // Like Player's invokables, answers change without notifying; only reservations_changed tells.
+            readonly property var answers: ({ state: "", rule: false })
+            onStateChanged: answers.state = state
+            onRuleChanged: answers.rule = rule
+            function reservation_state(key) { return answers.state; }
+            function can_reserve_program(key) { return answers.state === ""; }
+            function can_cancel_reservation(key) { return !answers.rule && answers.state === "reserved"; }
+            function can_exclude_reservation(key) { return answers.rule && answers.state === "reserved"; }
+            function can_unexclude_reservation(key) { return answers.rule && answers.state === "skipped"; }
             function reserve_program(key) { calls = calls.concat([["reserve", key]]); return true; }
             function cancel_reservation(key) { calls = calls.concat([["cancel", key]]); return true; }
             function exclude_reservation(key) { calls = calls.concat([["exclude", key]]); return true; }
