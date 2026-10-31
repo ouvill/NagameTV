@@ -3,7 +3,7 @@ use std::str::FromStr;
 
 #[derive(Debug, PartialEq, Eq, thiserror::Error)]
 #[error(
-    "invalid or repeated feature: {0} (expected none / subtitles / epg / comments / data-broadcast / recording-reservations / remote-web)"
+    "invalid or repeated feature: {0} (expected none / subtitles / epg / comments / data-broadcast / recording-reservations / remote-web / screen-navigation)"
 )]
 pub struct FeatureError(String);
 
@@ -16,6 +16,7 @@ pub struct FeatureSet {
     data_broadcast: bool,
     recording_reservations: bool,
     remote_web: bool,
+    screen_navigation: bool,
 }
 
 impl FromStr for FeatureSet {
@@ -29,6 +30,7 @@ impl FromStr for FeatureSet {
             data_broadcast: false,
             recording_reservations: false,
             remote_web: false,
+            screen_navigation: false,
         };
         if value == "none" {
             return Ok(features);
@@ -41,6 +43,9 @@ impl FromStr for FeatureSet {
                 "data-broadcast" if !features.data_broadcast => features.data_broadcast = true,
                 "recording-reservations" if !features.recording_reservations => {
                     features.recording_reservations = true
+                }
+                "screen-navigation" if !features.screen_navigation => {
+                    features.screen_navigation = true
                 }
                 "remote-web" if !features.remote_web => features.remote_web = true,
                 _ => return Err(FeatureError(name.to_owned())),
@@ -59,6 +64,12 @@ pub enum LaunchPlan {
 }
 
 impl LaunchPlan {
+    pub fn screen_navigation(self, preference: bool) -> bool {
+        match self {
+            Self::Preferences => preference,
+            Self::Restricted(features) => features.screen_navigation,
+        }
+    }
     pub fn remote_web(self, preference: bool) -> bool {
         match self {
             Self::Preferences => preference,
@@ -100,5 +111,27 @@ impl LaunchPlan {
             Self::Preferences => preference,
             Self::Restricted(features) => features.data_broadcast,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn navigation_respects_saved_defaults_and_explicit_allowlists() {
+        assert!(!LaunchPlan::default().screen_navigation(false));
+        assert!(LaunchPlan::default().screen_navigation(true));
+        for names in ["none", "epg,recording-reservations"] {
+            let plan = LaunchPlan::Restricted(names.parse().unwrap());
+            assert!(!plan.screen_navigation(true));
+            assert!(plan.locked());
+        }
+        let plan = LaunchPlan::Restricted("epg,screen-navigation".parse().unwrap());
+        assert!(plan.screen_navigation(false) && plan.epg() && plan.locked());
+        assert!(
+            "screen-navigation,screen-navigation"
+                .parse::<FeatureSet>()
+                .is_err()
+        );
     }
 }

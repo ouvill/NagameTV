@@ -59,6 +59,14 @@ QtObject {
     function skip(milliseconds) { skips.push(milliseconds); }
     function step_channel(offset) { channelSteps += offset; }
     function guide_open(visible) { guide_visible = visible; }
+    // Screen history: each entry is one screen Back can still return to.
+    property bool screen_navigation: false
+    property int screenHistory: 0
+    function go_back() {
+        if (!screen_navigation || screenHistory === 0) return false;
+        screenHistory--;
+        return true;
+    }
     function mute(value) { audio_muted = value; }
     function volume(value) { volume_level = value; }
     function save_settings() { saved++; }

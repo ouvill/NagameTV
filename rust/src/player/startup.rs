@@ -24,6 +24,7 @@ impl Default for PlayerRust {
                     danmaku_enabled: plan.comments(false),
                     data_broadcast_enabled: plan.data_broadcast(false),
                     recording_reservations_enabled: plan.recording_reservations(false),
+                    screen_navigation_enabled: plan.screen_navigation(false),
                     ..Default::default()
                 }),
                 Text::default(),
@@ -171,6 +172,11 @@ impl Default for PlayerRust {
             data_broadcast_allowed: !plan.locked() || plan.data_broadcast(false),
             recording_reservations_allowed: !plan.locked() || plan.recording_reservations(false),
             recording_reservations: Default::default(),
+            screen_navigation_allowed: !plan.locked() || plan.screen_navigation(false),
+            navigation: crate::screen_navigation::Navigation::new(
+                preferences.preferences().screen_navigation_enabled,
+            ),
+            viewing: Default::default(),
             danmaku_enabled: preferences.preferences().danmaku_enabled,
             comment_font_size: preferences.preferences().comment_font_size.into(),
             comment_opacity: preferences.preferences().comment_opacity.into(),

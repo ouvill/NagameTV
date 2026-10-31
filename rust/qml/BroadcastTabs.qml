@@ -8,9 +8,11 @@ SegmentedControl {
     property string uiLanguage: Qt.uiLanguage
     objectNamePrefix: "band-"
     directionalNavigation: false
+    // Home lists favorites across bands as the first tab.
+    property bool favorites: false
     options: {
         channels.revision;
-        return [
+        return (favorites ? [{ value: "FAV", label: qsTranslate("Viewer", "Favorites") }] : []).concat([
             {
                 value: "GR",
                 label: qsTranslate("Main", "Terrestrial")
@@ -31,8 +33,8 @@ SegmentedControl {
                 value: "OTHER",
                 label: qsTranslate("Viewer", "Other")
             }
-        ].filter(option => channels.has_band(option.value));
+        ].filter(option => channels.has_band(option.value)));
     }
-    implicitWidth: Math.max(82, options.length * (uiLanguage === "en" ? 96 : 76) + 6)
+    implicitWidth: Math.max(82, options.length * (uiLanguage === "en" ? 96 : 76) + 6 + (favorites ? 24 : 0))
     visible: options.length > 0
 }

@@ -74,6 +74,7 @@ pub struct Preferences {
     pub subtitle_force_outline: bool,
     pub data_broadcast_enabled: bool,
     pub recording_reservations_enabled: bool,
+    pub screen_navigation_enabled: bool,
     pub recording_encode_mode: String,
     pub data_broadcast_prefetch: bool,
     pub comments_enabled: bool,
@@ -113,6 +114,7 @@ impl Default for Preferences {
             subtitle_force_outline: false,
             data_broadcast_enabled: false,
             recording_reservations_enabled: false,
+            screen_navigation_enabled: false,
             recording_encode_mode: String::new(),
             data_broadcast_prefetch: false,
             // main receives history independently of the scrolling overlay.

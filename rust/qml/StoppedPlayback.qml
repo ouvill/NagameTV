@@ -26,6 +26,9 @@ Rectangle {
     // A stream that is starting shows only its progress: listing other channels
     // during a channel change reads as if the choice had not been taken.
     property bool connecting: false
+    // Home under screen navigation without channels: playback may continue behind it.
+    property bool returnAvailable: false
+    signal returnRequested
     // A channel refresh stays inside the overview, which started that refresh.
     readonly property bool overviewVisible: channels !== null && hasChannels && !recording && !connecting
         && !playbackError.length
@@ -121,11 +124,13 @@ Rectangle {
             anchors.horizontalCenter: parent.horizontalCenter
             implicitWidth: Math.max(180, contentItem.implicitWidth + leftPadding + rightPadding)
             implicitHeight: 44
-            visible: !root.loading
-            enabled: !root.loading
-            text: root.canPlay ? (root.playbackError.length ? qsTranslate("Main", "Retry") : root.recording ? qsTranslate("Viewer", "Play") : qsTranslate("Main", "Watch")) : root.hasChannels ? qsTranslate("Viewer", "Choose a channel") : root.hasServer ? qsTranslate("Connection", "Reconnect") : qsTranslate("Main", "Connection settings")
+            visible: root.returnAvailable || !root.loading
+            enabled: root.returnAvailable || !root.loading
+            text: root.returnAvailable ? qsTranslate("Main", "Return to watching") : root.canPlay ? (root.playbackError.length ? qsTranslate("Main", "Retry") : root.recording ? qsTranslate("Viewer", "Play") : qsTranslate("Main", "Watch")) : root.hasChannels ? qsTranslate("Viewer", "Choose a channel") : root.hasServer ? qsTranslate("Connection", "Reconnect") : qsTranslate("Main", "Connection settings")
             onClicked: {
-                if (root.canPlay)
+                if (root.returnAvailable)
+                    root.returnRequested();
+                else if (root.canPlay)
                     root.playRequested();
                 else if (root.hasChannels)
                     root.channelsRequested();

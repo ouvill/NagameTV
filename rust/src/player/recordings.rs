@@ -56,6 +56,8 @@ impl ffi::Player {
     pub(super) fn begin_recording(mut self: Pin<&mut Self>, request: Request) {
         let before = self.recording_loading();
         self.as_mut().rust_mut().recording_loader.begin(request);
+        self.as_mut()
+            .change_viewing(crate::playback::viewing::Viewing::inspect, true);
         if before != self.recording_loading() {
             self.recording_loading_changed();
         }
@@ -63,6 +65,8 @@ impl ffi::Player {
     pub fn cancel_recording_open(mut self: Pin<&mut Self>) {
         let before = self.recording_loading();
         self.as_mut().rust_mut().recording_loader.cancel();
+        self.as_mut()
+            .change_viewing(crate::playback::viewing::Viewing::cancel_inspection, false);
         if before != self.recording_loading() {
             self.recording_loading_changed();
         }
@@ -73,10 +77,12 @@ impl ffi::Player {
         // Process the result before notifying completion. A signal handler can
         // request a new file; it must never be cancelled by this older result.
         let completed = outcome.map(|(purpose, result)| {
+            self.as_mut()
+                .change_viewing(crate::playback::viewing::Viewing::retain, false);
             let success = match result {
                 Ok(file) => {
                     self.as_mut().clear_playback_failure();
-                    self.as_mut().start_stream(Attempt::File(file))
+                    self.as_mut().continue_stream(Attempt::File(file))
                 }
                 Err(error) => {
                     match purpose {

@@ -27,6 +27,7 @@ mod player;
 mod qt;
 mod recording_model;
 mod remote;
+mod screen_navigation;
 mod screenshots;
 mod services;
 mod settings;

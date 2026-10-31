@@ -3,6 +3,9 @@
 <TS version="2.1" language="ja_JP" sourcelanguage="en">
   <context>
     <name>Main</name>
+    <message><source>Now playing</source><translation>再生中</translation></message>
+    <message><source>Home</source><translation>ホーム</translation></message>
+    <message><source>Return to watching</source><translation>視聴に戻る</translation></message>
     <message><source>Comment amount</source><translation>コメントの表示量</translation></message>
     <message><source>Standard</source><translation>通常</translation></message>
     <message><source>Show all</source><translation>すべて表示</translation></message>
@@ -1885,6 +1888,9 @@
 </context>
   <context>
     <name>Settings</name>
+    <message><source>Screens</source><translation>画面</translation></message>
+    <message><source>Use the new screen navigation (experimental)</source><translation>新しい画面移動を使う（実験的）</translation></message>
+    <message><source>Home, the program guide and recordings become separate screens, and Back returns to the screen you came from.</source><translation>ホーム・番組表・録画一覧をそれぞれ別の画面にし、戻るで直前の画面に戻ります。</translation></message>
     <message><source>Reserve recordings from the program guide (experimental)</source><translation>番組表から録画予約する（実験的）</translation></message>
     <message><source>Adds and cancels single-program reservations on the connected EPGStation.</source><translation>接続中のEPGStationへ、番組単位の予約を追加・取り消します。</translation></message>
     <message><source>Last channel</source><translation>前に見ていたチャンネル</translation></message>

@@ -14,7 +14,7 @@ struct Arguments {
         group = "mode",
         long,
         require_equals = true,
-        value_name = "none|subtitles,epg,comments,data-broadcast,recording-reservations,remote-web"
+        value_name = "none|subtitles,epg,comments,data-broadcast,recording-reservations,remote-web,screen-navigation"
     )]
     features: Option<FeatureSet>,
     // The test runner owns these arguments, including Qt Quick Test switches.
@@ -143,6 +143,15 @@ mod tests {
         assert!(!plan.data_broadcast(true));
         assert!(parse(&["--features=recording-reservations,recording-reservations"]).is_err());
     }
+    #[test]
+    fn navigation_experiments_parse_the_explicit_runtime_flag() {
+        let Command::Launch(plan) = parse(&["--features=epg,screen-navigation"]).unwrap() else {
+            panic!("launch");
+        };
+        assert!(plan.locked() && plan.screen_navigation(false) && plan.epg());
+        assert!(parse(&["--features=screen-navigation,screen-navigation"]).is_err());
+    }
+
     #[test]
     fn invalid_arguments_fail_before_startup() {
         for args in [

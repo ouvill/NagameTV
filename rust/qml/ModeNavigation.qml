@@ -4,8 +4,11 @@ import MinimalViewer
 
 DirectionalFocus {
     id: root
-    enum Mode { Live, Recording, Guide, Settings }
+    // None marks the watching screen under screen navigation: it has no button of its own.
+    enum Mode { Live, Recording, Guide, Settings, None }
     required property int mode
+    // Screen navigation turns the first button into Home; playback is reached from there.
+    property bool homeButton: false
     required property Window targetWindow
     property bool guideEnabled: false
     property url iconDirectory: "qrc:/qt/qml/MinimalViewer/assets/icons/"
@@ -28,8 +31,8 @@ DirectionalFocus {
             IconAction {
                 id: liveButton
                 objectName: "liveModeButton"
-                iconSource: root.iconDirectory + "tv.svg"
-                tip: qsTranslate("Main", "Live TV")
+                iconSource: root.iconDirectory + (root.homeButton ? "house.svg" : "tv.svg")
+                tip: root.homeButton ? qsTranslate("Main", "Home") : qsTranslate("Main", "Live TV")
                 flat: true
                 focusLabelBelow: true
                 active: root.mode === ModeNavigation.Live

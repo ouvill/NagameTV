@@ -761,3 +761,25 @@ fn reservation_encode_choices_round_trip_without_requiring_a_connected_server()
     assert!(open(path)?.preferences().recording_encode_mode.is_empty());
     Ok(())
 }
+
+#[test]
+fn screen_navigation_is_default_off_and_round_trips_without_erasing_future_settings()
+-> Result<(), Box<dyn std::error::Error>> {
+    let dir = tempfile::tempdir()?;
+    let path = dir.path().join("settings.toml");
+    fs::write(&path, "future_setting = 'keep'\n")?;
+    let mut session = open(path.clone())?;
+    assert!(!Preferences::default().screen_navigation_enabled);
+    assert!(!session.preferences().screen_navigation_enabled);
+    for enabled in [true, false] {
+        session.change(Change::ScreenNavigationEnabled(enabled));
+        assert_eq!(session.flush()?, SaveStatus::Saved);
+        let restored = open(path.clone())?;
+        assert_eq!(restored.preferences().screen_navigation_enabled, enabled);
+        assert_eq!(
+            restored.preferences().extra["future_setting"].as_str(),
+            Some("keep")
+        );
+    }
+    Ok(())
+}
