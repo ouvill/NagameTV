@@ -44,6 +44,8 @@ Item {
                 property bool data_broadcast_prefetch: false
                 property bool data_broadcast_enabled: false
                 property bool data_broadcast_allowed: true
+                property bool screen_navigation: false
+                property bool screen_navigation_allowed: true
                 function configure_data_broadcast(value) { data_broadcast_enabled = value; }
                 function configure_data_broadcast_prefetch(value) { data_broadcast_prefetch = value; }
                 function configure_subtitle_outline(value) { subtitle_force_outline = value; }
@@ -214,6 +216,8 @@ Item {
                 host.requestActivate();
                 tryCompare(host, "active", true);
                 backend.loading = false;
+                backend.screen_navigation = false;
+                backend.screen_navigation_allowed = true;
                 backend.epgstation_server = "http://recordings.example:8888";
                 backend.epgstation_busy = false;
                 backend.epgstation_loaded = false;
@@ -515,11 +519,31 @@ Item {
                 keyClick(Qt.Key_Down); expectFocus("subtitleDisplay");
                 backend.subtitles_enabled = false;
                 language.forceActiveFocus(Qt.TabFocusReason);
+                keyClick(Qt.Key_Down); expectFocus("screenNavigationSetting");
                 keyClick(Qt.Key_Down); expectFocus("dataBroadcastEnabledSetting");
                 keyClick(Qt.Key_Down); expectFocus("chooseScreenshotDirectory");
                 keyClick(Qt.Key_Right); expectFocus("openScreenshotDirectory");
                 keyClick(Qt.Key_Left); expectFocus("chooseScreenshotDirectory");
                 keyClick(Qt.Key_Back); expectFocus("settingsCategory1");
+            }
+            function test_screen_navigation_switch_asks_the_owner_and_relabels_closing() {
+                const requests = [];
+                const record = function(enabled) { requests.push(enabled); };
+                panel.screenNavigationRequested.connect(record);
+                keyboardPage(SettingsPanel.Display);
+                const toggle = findChild(panel, "screenNavigationSetting");
+                const close = findChild(panel.contentItem, "closeSettings");
+                compare(close.text, "Back to viewing");
+                toggle.forceActiveFocus(Qt.TabFocusReason);
+                keyClick(Qt.Key_Return);
+                compare(requests, [true]);
+                // The owner decides; the switch follows what the backend reports.
+                backend.screen_navigation = true;
+                verify(toggle.checked);
+                compare(close.text, "Close");
+                backend.screen_navigation_allowed = false;
+                verify(!toggle.enabled);
+                panel.screenNavigationRequested.disconnect(record);
             }
             function test_data_broadcast_opt_in_controls_prefetch_and_respects_restrictions() {
                 keyboardPage(SettingsPanel.Display);

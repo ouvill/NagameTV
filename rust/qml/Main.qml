@@ -36,9 +36,45 @@ ViewerWindow {
             else surface.forceActiveFocus();
         });
     }
-    readonly property bool libraryVisible: !closing && page === Main.Recordings
+    // Screen navigation: Rust owns the current screen and its history; page is the legacy path.
+    readonly property bool screenNavigation: player.screen_navigation
+    // Matches Player.screen.
+    enum Screen { HomeScreen, WatchingScreen, GuideScreen, RecordingsScreen }
+    readonly property bool homeScreen: screenNavigation && player.screen === Main.HomeScreen
+    readonly property bool libraryVisible: !closing
+        && (screenNavigation ? player.screen === Main.RecordingsScreen : page === Main.Recordings)
+    onLibraryVisibleChanged: if (libraryVisible && screenNavigation) recordingLibrary.activate()
+    Connections {
+        target: player
+        function onScreen_changed() {
+            if (!root.screenNavigation) return;
+            if (player.screen === Main.HomeScreen) Qt.callLater(root.focusHome);
+            else if (player.screen === Main.WatchingScreen) root.restoreFocus(null);
+        }
+    }
+    // Arriving home lands on the channel being watched, not on the hidden video.
+    function focusHome() {
+        const home = homeLoader.item as HomeScreen;
+        if (!root.homeScreen || root.closing || inputContext.popupOpen) return;
+        if (home) home.focusChannels();
+        else root.restoreFocus(null);
+    }
+    function configureScreenNavigation(enabled: bool) {
+        const current = root.libraryVisible ? Main.RecordingsScreen : root.showGuide ? Main.GuideScreen
+            : player.watching_available ? Main.WatchingScreen : Main.HomeScreen;
+        // The legacy path has no home with playback behind it; that becomes the viewer.
+        if (!enabled && root.screenNavigation)
+            page = player.screen === Main.RecordingsScreen ? Main.Recordings : Main.Viewing;
+        player.configure_screen_navigation(enabled, current);
+    }
     function openRecordingLibrary() {
         if (closing) return;
+        if (screenNavigation) {
+            setup.close();
+            closeSettings();
+            player.open_screen(Main.RecordingsScreen);
+            return;
+        }
         if (!libraryVisible) focusHistory.library = root.activeFocusItem;
         setup.close();
         closeSettings();
@@ -47,6 +83,10 @@ ViewerWindow {
         recordingLibrary.activate();
     }
     function closeRecordingLibrary() {
+        if (screenNavigation) {
+            if (player.screen === Main.RecordingsScreen) player.go_back();
+            return;
+        }
         const wasVisible = libraryVisible;
         page = Main.Viewing;
         if (wasVisible) root.restoreFocus(focusHistory.library);
@@ -179,7 +219,7 @@ ViewerWindow {
     // The stopped overview lists every channel's current program, as the browser does.
     readonly property bool stoppedOverview: !player.media_active && !player.recording
         && !player.connecting && player.channels.count > 0 && !player.playback_error.length
-    readonly property bool summariesVisible: !closing && (channelPanel.active || stoppedOverview
+    readonly property bool summariesVisible: !closing && (channelPanel.active || stoppedOverview || homeScreen
         || (sidebar.active && sidebarPage === ProgramSidebar.Channels))
     readonly property bool commentaryVisible: !closing && sidebar.active && sidebarPage === ProgramSidebar.Program
     readonly property bool guideVisible: !closing && player.epg_enabled && showGuide
@@ -202,10 +242,12 @@ ViewerWindow {
         enabled: !root.closing
         onLibraryRequested: root.openRecordingLibrary()
         onStarted: {
-            root.closeRecordingLibrary();
+            if (!root.screenNavigation) {
+                root.closeRecordingLibrary();
+                player.guide_open(false);
+            }
             setup.close();
             root.closeSettings();
-            player.guide_open(false);
             root.showChannels = false;
             root.showProgram = false;
             root.closeCommentComposer();
@@ -229,6 +271,12 @@ ViewerWindow {
     }
     // The home page sits between the mode buttons and the playback controls.
     function enterHome(fromBelow: bool): bool {
+        const home = homeLoader.item as HomeScreen;
+        if (home) {
+            if (fromBelow) home.enterBottom();
+            else home.enterTop();
+            return true;
+        }
         const stopped = stoppedLoader.item as StoppedPlayback;
         return stopped !== null && stopped.enter(fromBelow);
     }
@@ -239,6 +287,12 @@ ViewerWindow {
         }
     }
     function chooseConnectedChannel() {
+        if (root.screenNavigation) {
+            // Home lists the channels; no separate browser is needed there.
+            player.open_screen(Main.HomeScreen);
+            Qt.callLater(root.enterHome, false);
+            return;
+        }
         root.closeRecordingLibrary();
         player.guide_open(false);
         root.showChannels = true;
@@ -246,6 +300,10 @@ ViewerWindow {
     }
     function requestMode(mode) {
         overlayVisibility.reveal();
+        if (screenNavigation) {
+            requestScreen(mode);
+            return;
+        }
         switch (mode) {
         case ModeNavigation.Live:
             root.closeRecordingLibrary();
@@ -269,6 +327,24 @@ ViewerWindow {
             if (settings && settings.visible) player.guide_open(true);
             else viewerActions.toggleGuide.trigger();
             root.closeSettings();
+            break;
+        case ModeNavigation.Settings:
+            root.openSettings();
+            break;
+        }
+    }
+    function requestScreen(mode) {
+        switch (mode) {
+        case ModeNavigation.Live:
+            root.closeSettings();
+            if (root.setupRequired) setup.open();
+            else player.open_screen(Main.HomeScreen);
+            break;
+        case ModeNavigation.Recording:
+            root.openRecordingLibrary();
+            break;
+        case ModeNavigation.Guide:
+            if (player.open_screen(Main.GuideScreen)) root.closeSettings();
             break;
         case ModeNavigation.Settings:
             root.openSettings();
@@ -612,13 +688,16 @@ ViewerWindow {
             }
         }
         HoverHandler {
-            cursorShape: overlayVisibility.controlsVisible ? Qt.ArrowCursor : Qt.BlankCursor
+            // Home is a page, not video: its pointer never hides.
+            cursorShape: overlayVisibility.controlsVisible || root.homeScreen ? Qt.ArrowCursor : Qt.BlankCursor
         }
         Loader {
             id: stoppedLoader
             anchors.fill: parent
-            active: !root.closing && !player.media_active
+            active: !root.closing && !homeLoader.active && (!player.media_active || root.homeScreen)
             sourceComponent: StoppedPlayback {
+                returnAvailable: root.homeScreen && player.watching_available
+                onReturnRequested: player.open_screen(Main.WatchingScreen)
                 onBoundaryReached: function(key) {
                     if (key === Qt.Key_Up) modeNavigation.enter();
                     else if (!recordingTimeline.enter()) playerControls.enter();
@@ -652,6 +731,39 @@ ViewerWindow {
                 onSettingsRequested: root.openConnectionSettings()
                 onReconnectRequested: player.connect_server(player.server)
                 onOpenFileRequested: viewerActions.openRecording.trigger()
+            }
+        }
+        Loader {
+            id: homeLoader
+            anchors.fill: parent
+            // Without channels the centered prompts of the stopped view explain what to do.
+            active: !root.closing && root.homeScreen && player.channels.count > 0
+            onLoaded: Qt.callLater(root.focusHome)
+            sourceComponent: HomeScreen {
+                channels: player.channels
+                selected: player.selected
+                viewingIndex: player.viewing_channel
+                programsJson: player.channel_program_data
+                visibilityJson: player.channel_visibility_data
+                now: player.channel_program_now
+                loading: player.loading
+                continueWatching: player.continue_recordings
+                favoritesReady: player.viewing_history_ready
+                historyFailed: player.viewing_history_error.length > 0
+                playing: player.watching_available
+                previewSource: videoPicture
+                previewAvailable: player.media_active
+                playingChannel: player.recording ? player.recording_name
+                    : player.selected >= 0 && player.selected < player.channels.count ? root.selectedChannel.label : ""
+                playingLogo: !player.recording && player.selected >= 0 && player.selected < player.channels.count ? root.selectedChannel.logo : ""
+                playingTitle: player.recording_name
+                playingProgramJson: player.current_program_data
+                actions: viewerActions
+                onSelectRequested: function(index) { player.select(index); }
+                onFavoriteRequested: function(serviceId) { player.toggle_favorite(serviceId); }
+                onResumeRequested: function(recordingKey) { player.resume_recording(recordingKey); }
+                onReturnRequested: player.open_screen(Main.WatchingScreen)
+                onBoundaryReached: function(key) { if (key === Qt.Key_Up) modeNavigation.enter(); }
             }
         }
         WindowDragArea {
@@ -694,7 +806,7 @@ ViewerWindow {
             }
             width: Math.max(360, surface.width - 430)
             active: !root.closing && (!player.recording || player.current_program_data !== "null")
-            visible: overlayVisibility.controlsVisible && !root.showGuide
+            visible: overlayVisibility.controlsVisible && !root.showGuide && !root.homeScreen
             sourceComponent: CurrentProgram {
                 recording: player.recording
                 fallbackTitle: player.recording_name
@@ -716,7 +828,7 @@ ViewerWindow {
         Label {
             anchors { left: parent.left; top: parent.top; margins: 24 }
             width: Math.max(220, surface.width - 580)
-            visible: player.recording && player.current_program_data === "null" && overlayVisibility.controlsVisible && !root.showGuide
+            visible: player.recording && player.current_program_data === "null" && overlayVisibility.controlsVisible && !root.showGuide && !root.homeScreen
             text: player.recording_name
             textFormat: Text.PlainText
             color: Theme.textPrimary
@@ -744,6 +856,7 @@ ViewerWindow {
                 }
                 onConnectionAccepted: root.chooseConnectedChannel()
                 onModeRequested: function(mode) { root.requestMode(mode); }
+                onScreenNavigationRequested: function(enabled) { root.configureScreenNavigation(enabled); }
                 onRecordingSearchReset: recordingLibrary.clearSearch()
             }
         }
@@ -788,7 +901,7 @@ ViewerWindow {
             // Keyboard focus can return as soon as the panel is enabled,
             // including the first frame of its reveal animation.
             visible: enabled || opacity > 0
-            enabled: overlayVisibility.controlsVisible && !root.showChannels && !root.showCommentComposer
+            enabled: overlayVisibility.controlsVisible && !root.showChannels && !root.showCommentComposer && !root.homeScreen
             opacity: enabled ? 1 : 0
             Behavior on opacity {
                 NumberAnimation {
@@ -868,7 +981,7 @@ ViewerWindow {
             id: composer
             anchors { horizontalCenter: parent.horizontalCenter; bottom: parent.bottom; bottomMargin: 16 }
             width: Math.min(760, parent.width - 48)
-            visible: root.showCommentComposer && !root.showChannels && !root.showGuide && !root.closing
+            visible: root.showCommentComposer && !root.showChannels && !root.showGuide && !root.homeScreen && !root.closing
             draft: player.comment_draft
             status: player.comment_post_status
             available: player.comment_post_available
@@ -908,6 +1021,7 @@ ViewerWindow {
                     }
                     targetWindow: root
                     onModeRequested: function(mode) { root.requestMode(mode); }
+                    homeButton: root.screenNavigation
                     channels: player.channels
                     selected: player.selected
                     viewingIndex: player.viewing_channel
@@ -1000,8 +1114,8 @@ ViewerWindow {
         id: sidebar
         readonly property ProgramSidebar view: item as ProgramSidebar
         width: root.panelWidth
-        open: root.showProgram && !root.guideVisible && !root.libraryVisible
-        visible: active && !root.guideVisible && !root.libraryVisible
+        open: root.showProgram && !root.guideVisible && !root.libraryVisible && !root.homeScreen
+        visible: active && !root.guideVisible && !root.libraryVisible && !root.homeScreen
         shuttingDown: root.closing
         onOpenChanged: if (open && view) view.openChannels()
         sourceComponent: ProgramSidebar {
@@ -1068,8 +1182,11 @@ ViewerWindow {
         z: 20
         targetWindow: root
         enabled: !root.closing
-        visible: !root.libraryVisible && !root.showGuide && !(root.settings && root.settings.visible) && (root.showProgram || overlayVisibility.controlsVisible)
-        mode: player.recording ? ModeNavigation.Recording : ModeNavigation.Live
+        visible: !root.libraryVisible && !root.showGuide && !(root.settings && root.settings.visible)
+            && (root.homeScreen || root.showProgram || overlayVisibility.controlsVisible)
+        mode: !root.screenNavigation ? (player.recording ? ModeNavigation.Recording : ModeNavigation.Live)
+            : root.homeScreen ? ModeNavigation.Live : ModeNavigation.None
+        homeButton: root.screenNavigation
         guideEnabled: player.epg_enabled
         onModeRequested: function(mode) { root.requestMode(mode); }
         onBoundaryReached: function(key) {

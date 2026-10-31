@@ -111,6 +111,7 @@ Rectangle {
             objectName: "recordingModeNavigation"
             targetWindow: root.targetWindow
             mode: ModeNavigation.Recording
+            homeButton: root.backend.screen_navigation
             guideEnabled: root.backend.epg_enabled
             onModeRequested: function(mode) { root.modeRequested(mode); }
             onBoundaryReached: function(key) {

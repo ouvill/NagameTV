@@ -53,6 +53,8 @@ Item {
         else if (statsVisible) statsVisibilityRequested(false);
         else if (programVisible) programVisibilityRequested(false);
         else if (controlsFocused) controlsDismissRequested();
+        // Screen navigation: one screen back first; fullscreen ends only with nowhere to go.
+        else if (backend.screen_navigation && backend.go_back()) return;
         else if (mode === ViewerActions.PanelsOrFullscreen) leaveFullscreen();
     }
 

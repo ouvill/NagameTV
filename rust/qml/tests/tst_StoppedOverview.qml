@@ -44,13 +44,14 @@ TestCase {
     SignalSpy { id: favorite; signalName: "favoriteRequested" }
     SignalSpy { id: resume; signalName: "resumeRequested" }
     SignalSpy { id: boundary; signalName: "boundaryReached" }
+    SignalSpy { id: returning; signalName: "returnRequested" }
     Component { id: resumable; Viewer.ContinueWatchingModel {} }
     function init() {
         failOnWarning(/.*/);
         panel = createTemporaryObject(component, testCase);
         verify(panel !== null);
         verify(waitForRendering(panel));
-        for (const spy of [play, selection, recordings, openFile, favorite, resume, boundary]) { spy.target = panel; spy.clear(); }
+        for (const spy of [play, selection, recordings, openFile, favorite, resume, boundary, returning]) { spy.target = panel; spy.clear(); }
     }
     function cards() {
         const grid = findChild(panel, "overviewChannels");
@@ -84,6 +85,17 @@ TestCase {
         mouseClick(cards()[2]);
         compare(selection.count, 1);
         compare(selection.signalArguments[0][0], 2);
+    }
+    function test_home_without_channels_offers_the_return_in_the_centered_prompt() {
+        panel.rows = [];
+        panel.hasChannels = false;
+        panel.loading = true;
+        panel.returnAvailable = true;
+        const action = findChild(panel, "stoppedAction");
+        verify(action.visible);
+        compare(action.text, "Return to watching");
+        mouseClick(action);
+        compare(returning.count, 1);
     }
     function test_directional_keys_move_between_actions_bands_and_cards() {
         const grid = findChild(panel, "overviewChannels");

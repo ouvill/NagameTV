@@ -434,6 +434,23 @@ Item {
                 compare(area.clicks, 4);
                 compare(view.dismissals, 1);
             }
+            function test_back_returns_screens_before_leaving_fullscreen_data() { return dismissInputs(); }
+            function test_back_returns_screens_before_leaving_fullscreen(data) {
+                view.backend.screen_navigation = true;
+                view.backend.screenHistory = 1;
+                keyClick(Qt.Key_F11);
+                tryCompare(host, "visibility", Window.FullScreen);
+                view.actions.channelsVisible = true;
+                dismiss(data);
+                compare(view.channelRequests, 1);
+                compare(view.backend.screenHistory, 1);
+                view.actions.channelsVisible = false;
+                dismiss(data);
+                compare(view.backend.screenHistory, 0);
+                compare(host.visibility, Window.FullScreen);
+                dismiss(data);
+                tryCompare(host, "visibility", data.key === Qt.Key_Escape ? Window.Windowed : Window.FullScreen);
+            }
             function test_dismiss_in_fullscreen_data() { return dismissInputs(); }
             function test_dismiss_in_fullscreen(data) {
                 keyClick(Qt.Key_F11);
