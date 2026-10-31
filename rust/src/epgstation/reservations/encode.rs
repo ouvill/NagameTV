@@ -62,13 +62,13 @@ impl Catalogue {
     pub(super) fn accepts(&self, mode: &str) -> bool {
         mode.is_empty() || self.modes().iter().any(|candidate| candidate == mode)
     }
-    pub(super) fn selection(&self, mode: &str, delete_original: bool) -> Option<Options> {
+    pub(super) fn selection(&self, mode: &str) -> Option<Options> {
         self.modes()
             .iter()
             .find(|candidate| *candidate == mode)
             .map(|mode| Options {
                 mode1: mode.clone(),
-                is_delete_original_after_encode: delete_original,
+                is_delete_original_after_encode: false,
             })
     }
     pub(super) fn reset(&mut self) {

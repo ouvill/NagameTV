@@ -75,7 +75,6 @@ pub struct Preferences {
     pub data_broadcast_enabled: bool,
     pub recording_reservations_enabled: bool,
     pub recording_encode_mode: String,
-    pub recording_delete_original: bool,
     pub data_broadcast_prefetch: bool,
     pub comments_enabled: bool,
     pub comment_cache_limit_mib: super::CommentCacheLimit,
@@ -115,7 +114,6 @@ impl Default for Preferences {
             data_broadcast_enabled: false,
             recording_reservations_enabled: false,
             recording_encode_mode: String::new(),
-            recording_delete_original: false,
             data_broadcast_prefetch: false,
             // main receives history independently of the scrolling overlay.
             // Its settings have no comments_enabled field; preserve reception

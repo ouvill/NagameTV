@@ -236,7 +236,6 @@ impl Manager {
         program: Program,
         now_ms: u64,
         mode: &str,
-        delete_original: bool,
     ) -> bool {
         if !self.can_reserve(program, now_ms) {
             let error = if self.busy() {
@@ -250,7 +249,7 @@ impl Manager {
             };
             return self.reject("reserve", error);
         }
-        let encode = self.encode.selection(mode, delete_original);
+        let encode = self.encode.selection(mode);
         self.begin(network, Operation::Add { program, encode }, now_ms);
         true
     }

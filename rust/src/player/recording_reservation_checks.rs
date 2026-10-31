@@ -95,7 +95,7 @@ pub(super) fn run() -> TestResult {
     mount(
         Mock::given(method("POST"))
             .and(path("/api/reserves"))
-            .and(body_json(json!({"programId":100,"allowEndLack":false,"encodeOption":{"mode1":"HD","isDeleteOriginalAfterEncode":true}})))
+            .and(body_json(json!({"programId":100,"allowEndLack":false,"encodeOption":{"mode1":"HD","isDeleteOriginalAfterEncode":false}})))
             .respond_with(move |_: &wiremock::Request| {
                 added.store(true, Ordering::SeqCst);
                 ResponseTemplate::new(201).set_body_json(json!({"reserveId":7}))
@@ -139,14 +139,12 @@ pub(super) fn run() -> TestResult {
     let mut player = ffi::new_player();
     assert!(player.reservation_encode_modes().is_empty());
     assert!(player.reservation_encode_mode().is_empty());
-    assert!(!player.reservation_delete_original());
     assert!(
         !player
             .pin_mut()
-            .configure_reservation_encode(QString::from("HD"), true)
+            .configure_reservation_encode(QString::from("HD"))
     );
     assert!(player.reservation_encode_mode().is_empty());
-    assert!(!player.reservation_delete_original());
     assert!(!player.recording_reservations_enabled());
     player.pin_mut().configure_recording_reservations(true);
     assert!(!player.recording_reservations_enabled());
@@ -247,7 +245,10 @@ pub(super) fn run() -> TestResult {
     );
     let directory = tempfile::tempdir()?;
     let settings_path = directory.path().join("settings.toml");
-    std::fs::write(&settings_path, "recording_reservations_enabled = true\n")?;
+    std::fs::write(
+        &settings_path,
+        "recording_reservations_enabled = true\nrecording_delete_original = true\n",
+    )?;
     player.pin_mut().rust_mut().preferences =
         crate::settings::Loaded::open(settings_path.clone())?.activate(None, None);
     let changes = Arc::new(AtomicUsize::new(0));
@@ -256,24 +257,24 @@ pub(super) fn run() -> TestResult {
         notified.fetch_add(1, Ordering::SeqCst);
         if !p.reservation_encode_mode().is_empty() {
             assert_eq!(p.reservation_encode_mode().to_string(), "HD");
-            assert!(p.reservation_delete_original());
         }
     });
     assert!(
         player
             .pin_mut()
-            .configure_reservation_encode(QString::from("HD"), true)
+            .configure_reservation_encode(QString::from("HD"))
     );
     let before_rejected = changes.load(Ordering::SeqCst);
+    assert_eq!(before_rejected, 1);
     assert!(
         !player
             .pin_mut()
-            .configure_reservation_encode(QString::from("missing"), false)
+            .configure_reservation_encode(QString::from("missing"))
     );
     assert_eq!(changes.load(Ordering::SeqCst), before_rejected);
-    let restored = crate::settings::Loaded::open(settings_path)?;
+    let restored = crate::settings::Loaded::open(settings_path.clone())?;
+    assert!(!std::fs::read_to_string(settings_path)?.contains("recording_delete_original"));
     assert_eq!(restored.preferences().recording_encode_mode, "HD");
-    assert!(restored.preferences().recording_delete_original);
     assert!(player.pin_mut().reserve_program(key.clone()));
     finish(&mut player);
     assert_eq!(
@@ -335,7 +336,6 @@ pub(super) fn run() -> TestResult {
     assert!(!player.reservations_enabled());
     assert!(player.reservation_encode_modes().is_empty());
     assert_eq!(player.reservation_encode_mode().to_string(), "HD");
-    assert!(player.reservation_delete_original());
     assert!(!player.pin_mut().reserve_program(key));
     assert!(player.pin_mut().request_language(QString::from("en")));
     assert_eq!(

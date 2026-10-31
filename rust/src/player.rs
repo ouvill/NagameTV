@@ -274,7 +274,6 @@ pub mod ffi {
         #[qproperty(QString, reservation_error, READ = reservation_error, NOTIFY = reservations_changed)]
         #[qproperty(QStringList, reservation_encode_modes, READ = reservation_encode_modes, NOTIFY = reservations_changed)]
         #[qproperty(QString, reservation_encode_mode, READ = reservation_encode_mode, NOTIFY = reservations_changed)]
-        #[qproperty(bool, reservation_delete_original, READ = reservation_delete_original, NOTIFY = reservations_changed)]
         #[qproperty(bool, data_broadcast_available, READ = data_broadcast_available, NOTIFY)]
         #[qproperty(QString, data_broadcast_endpoint, READ, NOTIFY)]
         #[qproperty(bool, subtitles_active, READ, NOTIFY)]
@@ -523,13 +522,8 @@ pub mod ffi {
         fn reservation_error(self: &Player) -> QString;
         fn reservation_encode_modes(self: &Player) -> QStringList;
         fn reservation_encode_mode(self: &Player) -> QString;
-        fn reservation_delete_original(self: &Player) -> bool;
         #[qinvokable]
-        fn configure_reservation_encode(
-            self: Pin<&mut Player>,
-            mode: QString,
-            delete_original: bool,
-        ) -> bool;
+        fn configure_reservation_encode(self: Pin<&mut Player>, mode: QString) -> bool;
         #[qsignal]
         fn reservations_changed(self: Pin<&mut Player>);
         #[qinvokable]

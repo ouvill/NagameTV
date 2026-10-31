@@ -40,17 +40,7 @@ impl ffi::Player {
     pub fn reservation_encode_mode(&self) -> QString {
         QString::from(&self.rust().preferences.preferences().recording_encode_mode)
     }
-    pub fn reservation_delete_original(&self) -> bool {
-        self.rust()
-            .preferences
-            .preferences()
-            .recording_delete_original
-    }
-    pub fn configure_reservation_encode(
-        mut self: Pin<&mut Self>,
-        mode: QString,
-        delete_original: bool,
-    ) -> bool {
+    pub fn configure_reservation_encode(mut self: Pin<&mut Self>, mode: QString) -> bool {
         self.as_mut().poll_recording_reservations();
         let mode = mode.to_string();
         if !self
@@ -65,16 +55,11 @@ impl ffi::Player {
             return false;
         }
         let preferences = self.rust().preferences.preferences();
-        if preferences.recording_encode_mode != mode
-            || preferences.recording_delete_original != delete_original
-        {
+        if preferences.recording_encode_mode != mode {
             self.as_mut()
                 .rust_mut()
                 .preferences
-                .change(crate::settings::Change::RecordingEncode {
-                    mode,
-                    delete_original,
-                });
+                .change(crate::settings::Change::RecordingEncode(mode));
             self.as_mut().reservations_changed();
         }
         self.save_settings();
@@ -227,7 +212,6 @@ impl ffi::Player {
                         program,
                         now,
                         &preferences.recording_encode_mode,
-                        preferences.recording_delete_original,
                     )
                 }
                 Request::Change(Change::Cancel) => {

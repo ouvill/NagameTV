@@ -22,13 +22,7 @@ fn config_done(fixture: &Fixture, manager: &mut Manager) {
         thread::sleep(Duration::from_millis(1));
     }
 }
-fn write(
-    fixture: &Fixture,
-    manager: &mut Manager,
-    mode: &str,
-    delete_original: bool,
-    expected: Value,
-) {
+fn write(fixture: &Fixture, manager: &mut Manager, mode: &str, expected: Value) {
     fixture.mount(
         Mock::given(method("GET"))
             .and(path("/api/schedules/detail/100"))
@@ -47,14 +41,14 @@ fn write(
             .expect(1),
     );
     assert!(manager.can_reserve(program(), NOW));
-    assert!(manager.reserve(&fixture.network, program(), NOW, mode, delete_original));
+    assert!(manager.reserve(&fixture.network, program(), NOW, mode));
     fixture.finish(manager);
     assert!(manager.error().is_none());
 }
 
 #[test]
-fn only_a_listed_saved_mode_is_sent_with_the_saved_delete_choice() {
-    for (mode, delete_original) in [("HD", true), ("SD", false), ("absent", true), ("", true)] {
+fn only_a_listed_saved_mode_is_sent_and_originals_are_always_kept() {
+    for mode in ["HD", "SD", "absent", ""] {
         let fixture = Fixture::new();
         let library = fixture.connect(true);
         empty_lists(&fixture);
@@ -72,10 +66,9 @@ fn only_a_listed_saved_mode_is_sent_with_the_saved_delete_choice() {
         assert_eq!(manager.encode_modes(), ["HD", "SD"]);
         let mut expected = json!({"programId":100,"allowEndLack":false});
         if matches!(mode, "HD" | "SD") {
-            expected["encodeOption"] =
-                json!({"mode1":mode,"isDeleteOriginalAfterEncode":delete_original});
+            expected["encodeOption"] = json!({"mode1":mode,"isDeleteOriginalAfterEncode":false});
         }
-        write(&fixture, &mut manager, mode, delete_original, expected);
+        write(&fixture, &mut manager, mode, expected);
     }
 }
 
@@ -112,7 +105,6 @@ fn unavailable_config_is_optional_and_never_becomes_a_reservation_error() {
             &fixture,
             &mut manager,
             "HD",
-            true,
             json!({"programId":100,"allowEndLack":false}),
         );
     }
@@ -146,7 +138,6 @@ fn config_redirect_does_not_forward_the_authenticated_session() {
         &fixture,
         &mut manager,
         "HD",
-        false,
         json!({"programId":100,"allowEndLack":false}),
     );
 }
@@ -185,7 +176,6 @@ fn slow_config_does_not_block_writes_and_disabled_sessions_discard_late_modes() 
         &fixture,
         &mut manager,
         "late",
-        true,
         json!({"programId":100,"allowEndLack":false}),
     );
     library.synchronize_reservations(false, &mut manager, Instant::now());
