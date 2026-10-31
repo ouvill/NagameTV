@@ -56,6 +56,8 @@ QtObject {
     property int channelSteps: 0
     property var skips: []
     function toggle_playback() { playbackRequests++; }
+    property int stopRequests: 0
+    function stop() { stopRequests++; }
     function skip(milliseconds) { skips.push(milliseconds); }
     function step_channel(offset) { channelSteps += offset; }
     function guide_open(visible) { guide_visible = visible; }

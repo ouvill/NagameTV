@@ -1890,6 +1890,7 @@
 </context>
   <context>
     <name>Settings</name>
+    <message><source>While something plays</source><translation>再生中</translation></message>
     <message><source>Recordings with chapters</source><translation>チャプターのある録画</translation></message>
     <message><source>Screens</source><translation>画面</translation></message>
     <message><source>Use the new screen navigation (experimental)</source><translation>新しい画面移動を使う（実験的）</translation></message>

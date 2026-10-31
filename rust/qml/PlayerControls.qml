@@ -5,7 +5,7 @@ import QtQuick.Controls
 
 DirectionalFocus {
     id: root
-    navigationItems: [volume, liveButton, speedButton, previousChapterButton, backwardButton, playButton, forwardButton, nextChapterButton,
+    navigationItems: [stopButton, volume, liveButton, speedButton, previousChapterButton, backwardButton, playButton, forwardButton, nextChapterButton,
         channelsButton, commentButton, screenshot, subtitleButton, danmakuButton, fullscreenButton, more, sideButton]
     initialItem: playButton.enabled ? playButton : channelsButton
     enum Density { Wide, Narrow, Dense }
@@ -52,6 +52,16 @@ DirectionalFocus {
         objectName: "volumeControls"
         anchors { left: parent.left; verticalCenter: parent.verticalCenter; verticalCenterOffset: root.stacked ? 24 : 0 }
         spacing: Theme.spaceSm
+        IconAction {
+            id: stopButton
+            objectName: "stopButton"
+            flat: true
+            // Kept away from pause in the middle so the two are hard to confuse.
+            visible: root.actions.separateStop
+            iconSource: root.iconDirectory + "square.svg"
+            tip: action.text
+            action: root.actions.stopPlayback
+        }
         PlayerVolumeButton {
             id: volume
             actions: root.actions
