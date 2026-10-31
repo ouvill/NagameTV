@@ -20,7 +20,11 @@ impl ffi::Player {
         self.seek_to(target as f64)
     }
     pub(super) fn chapter_target(&self, offset: i32) -> Option<u64> {
-        let position = self.rust().timeline.position.map(|time| time.mseconds());
+        let timeline = &self.rust().timeline;
+        let position = timeline
+            .seek_target
+            .or(timeline.position)
+            .map(|time| time.mseconds());
         self.rust().chapters.target(offset, position)
     }
 }

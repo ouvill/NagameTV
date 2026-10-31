@@ -318,14 +318,7 @@ fn check_chapter_targets(player: &mut cxx::UniquePtr<ffi::Player>) -> TestResult
             "{position}, {offset}"
         );
     }
-    player.pin_mut().rust_mut().timeline.position = Some(gstreamer::ClockTime::from_mseconds(5000));
-    player.pin_mut().rust_mut().timeline.seek_target =
-        Some(gstreamer::ClockTime::from_mseconds(10000));
-    assert_eq!(
-        player.chapter_target(1),
-        Some(10000),
-        "chapter selection still uses confirmed position during a pending seek"
-    );
+    check_pending_chapter_targets(player);
     assert!(!player.seekable());
     assert!(
         !player.pin_mut().seek_chapter(1),
@@ -333,4 +326,47 @@ fn check_chapter_targets(player: &mut cxx::UniquePtr<ffi::Player>) -> TestResult
     );
     player.pin_mut().rust_mut().timeline = Default::default();
     Ok(())
+}
+
+fn check_pending_chapter_targets(player: &mut cxx::UniquePtr<ffi::Player>) {
+    use gstreamer::ClockTime;
+    for (confirmed, pending, offset, targets) in [
+        (Some(5000), None, 1, [10000, 15000]),
+        (Some(1000), Some(5000), 1, [10000, 15000]),
+        (Some(15000), None, -1, [10000, 5000]),
+        (Some(1000), Some(15000), -1, [10000, 5000]),
+        (Some(1000), Some(18000), -1, [10000, 5000]),
+        (Some(1000), Some(18001), -1, [15000, 10000]),
+        (None, Some(5000), 1, [10000, 15000]),
+    ] {
+        let position = confirmed.map(ClockTime::from_mseconds);
+        player.pin_mut().rust_mut().timeline.position = position;
+        player.pin_mut().rust_mut().timeline.seek_target = pending.map(ClockTime::from_mseconds);
+        for target in targets {
+            assert_eq!(
+                player.chapter_target(offset),
+                Some(target),
+                "confirmed={confirmed:?}, pending={pending:?}, offset={offset}"
+            );
+            player.pin_mut().rust_mut().timeline.seek_target =
+                Some(ClockTime::from_mseconds(target));
+            assert_eq!(
+                player.rust().timeline.position,
+                position,
+                "repeated clicks do not require playback position to advance"
+            );
+        }
+    }
+    assert_eq!(
+        player.chapter_target(1),
+        None,
+        "no boundary follows the last pending target"
+    );
+    player.pin_mut().rust_mut().timeline.position = Some(ClockTime::from_mseconds(5000));
+    player.pin_mut().rust_mut().timeline.seek_target = None;
+    assert_eq!(
+        player.chapter_target(1),
+        Some(10000),
+        "confirmed position is used after the pending target clears"
+    );
 }
