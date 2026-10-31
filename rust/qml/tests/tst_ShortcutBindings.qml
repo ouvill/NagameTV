@@ -273,6 +273,19 @@ Item {
                 view.actions.openChannels.trigger();
                 compare(view.channelRequests, 2);
             }
+            function test_page_and_media_keys_move_between_chapters() {
+                view.backend.recording = true;
+                view.backend.playing = true;
+                keyClick(Qt.Key_PageDown);
+                compare(view.backend.chapterSeeks, []);
+                view.backend.chapters_data = JSON.stringify([{startMs: 0, name: "CM?", commercial: true}, {startMs: 10000, name: "A", commercial: false}, {startMs: 40000, name: "CM", commercial: true}]);
+                keyClick(Qt.Key_PageDown);
+                keyClick(Qt.Key_PageUp);
+                keyClick(Qt.Key_MediaNext);
+                keyClick(Qt.Key_MediaPrevious);
+                compare(view.backend.chapterSeeks, [1, -1, 1, -1]);
+                compare(view.backend.skips, []);
+            }
             function test_seek_yields_to_slider_and_panels_and_closing_disables_all() {
                 view.backend.recording = true;
                 view.backend.playing = true;

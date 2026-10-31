@@ -87,6 +87,28 @@ Item {
             if (accepted) root.seekFeedbackRequested();
         }
     }
+    // Chapters come from the recording and Rust picks the target. Not gated on seekable:
+    // the seek range drops while each seek flushes, and a clicked button that turns off
+    // hands focus on as if by keyboard. seek_chapter itself rejects unseekable moments.
+    readonly property bool chaptersAvailable: backend.recording && JSON.parse(backend.chapters_data).length > 0
+    readonly property Action previousChapter: Operation {
+        text: qsTranslate("Viewer", "Previous chapter")
+        enabled: root.enabled && root.chaptersAvailable
+        onTriggered: {
+            const accepted = root.backend.seek_chapter(-1);
+            root.activity();
+            if (accepted) root.seekFeedbackRequested();
+        }
+    }
+    readonly property Action nextChapter: Operation {
+        text: qsTranslate("Viewer", "Next chapter")
+        enabled: root.enabled && root.chaptersAvailable
+        onTriggered: {
+            const accepted = root.backend.seek_chapter(1);
+            root.activity();
+            if (accepted) root.seekFeedbackRequested();
+        }
+    }
     readonly property Action openRecording: Operation {
         text: qsTranslate("Recording", "Open recording")
         onTriggered: root.recordingRequested()

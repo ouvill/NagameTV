@@ -72,8 +72,9 @@ Item {
             scope: InputContext.Navigation
             available: root.inputContext.viewing
         },
-        Binding { id: previous; objectName: "previousChannelShortcut"; sequence: "PgUp"; operation: root.actions.previousChannel; scope: InputContext.Navigation },
-        Binding { id: next; objectName: "nextChannelShortcut"; sequence: "PgDown"; operation: root.actions.nextChannel; scope: InputContext.Navigation },
+        // A recording with chapters has no channel to step; the same keys move between chapters.
+        Binding { id: previous; objectName: "previousChannelShortcut"; sequence: "PgUp"; operation: root.actions.previousChannel; scope: InputContext.Navigation; available: !root.actions.chaptersAvailable },
+        Binding { id: next; objectName: "nextChannelShortcut"; sequence: "PgDown"; operation: root.actions.nextChannel; scope: InputContext.Navigation; available: !root.actions.chaptersAvailable },
         Binding { id: last; objectName: "lastChannelShortcut"; sequence: "L"; operation: root.actions.lastChannel; scope: InputContext.Navigation },
         Binding {
             id: playback
@@ -101,6 +102,34 @@ Item {
             scope: InputContext.Seek
             autoRepeat: true
             condition: qsTranslate("Settings", "Recordings and timeshift")
+        },
+        Binding {
+            objectName: "previousChapterShortcut"
+            sequence: "PgUp"
+            operation: root.actions.previousChapter
+            scope: InputContext.Seek
+            condition: qsTranslate("Settings", "Recordings with chapters")
+        },
+        Binding {
+            objectName: "nextChapterShortcut"
+            sequence: "PgDown"
+            operation: root.actions.nextChapter
+            scope: InputContext.Seek
+            condition: qsTranslate("Settings", "Recordings with chapters")
+        },
+        Binding {
+            objectName: "previousChapterMediaShortcut"
+            sequence: "Media Previous"
+            operation: root.actions.previousChapter
+            scope: InputContext.Seek
+            condition: qsTranslate("Settings", "Recordings with chapters")
+        },
+        Binding {
+            objectName: "nextChapterMediaShortcut"
+            sequence: "Media Next"
+            operation: root.actions.nextChapter
+            scope: InputContext.Seek
+            condition: qsTranslate("Settings", "Recordings with chapters")
         },
         Binding { id: dismiss; objectName: "dismissShortcut"; sequence: "Escape"; operation: root.actions.dismissTopmost; scope: InputContext.Dismiss },
         Binding { id: back; objectName: "backShortcut"; sequence: "Back"; operation: root.actions.goBack; scope: InputContext.Dismiss }

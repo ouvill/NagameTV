@@ -5,7 +5,7 @@ import QtQuick.Controls
 
 DirectionalFocus {
     id: root
-    navigationItems: [volume, liveButton, speedButton, backwardButton, playButton, forwardButton,
+    navigationItems: [volume, liveButton, speedButton, previousChapterButton, backwardButton, playButton, forwardButton, nextChapterButton,
         channelsButton, commentButton, screenshot, subtitleButton, danmakuButton, fullscreenButton, more, sideButton]
     initialItem: playButton.enabled ? playButton : channelsButton
     enum Density { Wide, Narrow, Dense }
@@ -102,6 +102,15 @@ DirectionalFocus {
         y: root.stacked ? 0 : (root.height - height) / 2
         spacing: Theme.spaceMd
         IconAction {
+            id: previousChapterButton
+            objectName: "previousChapterButton"
+            flat: true
+            visible: root.transportControls && root.actions.chaptersAvailable
+            iconSource: root.iconDirectory + "skip-back.svg"
+            tip: action.text
+            action: root.actions.previousChapter
+        }
+        IconAction {
             id: backwardButton
             objectName: "skipBackButton"
             flat: true
@@ -128,6 +137,15 @@ DirectionalFocus {
             iconLabel: String(root.actions.seekSteps.forwardSeconds)
             tip: action.text
             action: root.actions.seekForward
+        }
+        IconAction {
+            id: nextChapterButton
+            objectName: "nextChapterButton"
+            flat: true
+            visible: root.transportControls && root.actions.chaptersAvailable
+            iconSource: root.iconDirectory + "skip-forward.svg"
+            tip: action.text
+            action: root.actions.nextChapter
         }
     }
     Row {

@@ -13,6 +13,7 @@ ColumnLayout {
     readonly property real progressStart: axisStart
     readonly property real progressEnd: backend.position_ms
     readonly property real seekTarget: backend.seek_target_ms
+    readonly property var chapters: JSON.parse(backend.chapters_data)
     readonly property RecordingSeekSteps seekSteps: RecordingSeekSteps {}
     readonly property real millisecondsPerSecond: 1000
     function fraction(time) { return Math.max(0, Math.min(1, (time - axisStart) / Math.max(1, axisEnd - axisStart))); }
@@ -99,6 +100,24 @@ ColumnLayout {
                 width: parent.width; height: slider.trackThickness; radius: height / 2; color: Theme.overlayBorder
                 Behavior on height { NumberAnimation { duration: Theme.colorDuration } }
             }
+            // Commercial chapters are shaded so their breaks can be seen before skipping them.
+            Repeater {
+                model: root.chapters
+                Rectangle {
+                    required property var modelData
+                    required property int index
+                    readonly property real end: index + 1 < root.chapters.length ? root.chapters[index + 1].startMs : root.axisEnd
+                    objectName: "chapterCommercial"
+                    visible: modelData.commercial
+                    x: track.startX(modelData.startMs, end)
+                    width: Math.max(0, root.fraction(end) - root.fraction(modelData.startMs)) * track.width
+                    anchors.verticalCenter: parent.verticalCenter
+                    anchors.alignWhenCentered: false
+                    height: slider.trackThickness
+                    color: Theme.warning
+                    opacity: 0.5
+                }
+            }
             Rectangle {
                 objectName: "programProgressFill"
                 x: parent.startX(root.progressStart, root.progressEnd)
@@ -107,6 +126,21 @@ ColumnLayout {
                 anchors.alignWhenCentered: false
                 height: slider.progressThickness; radius: height / 2; color: Theme.textPrimary
                 Behavior on height { NumberAnimation { duration: Theme.colorDuration } }
+            }
+            Repeater {
+                model: root.chapters
+                Rectangle {
+                    required property var modelData
+                    required property int index
+                    objectName: "chapterMark"
+                    // The first chapter starts with the recording; a mark there says nothing.
+                    visible: modelData.startMs > root.axisStart
+                    x: (slider.mirrored ? 1 - root.fraction(modelData.startMs) : root.fraction(modelData.startMs)) * track.width - width / 2
+                    anchors.verticalCenter: parent.verticalCenter
+                    anchors.alignWhenCentered: false
+                    width: 2; height: slider.trackThickness + 6; radius: width / 2
+                    color: Theme.textSecondary
+                }
             }
             Rectangle {
                 objectName: "recordingSeekTargetMarker"

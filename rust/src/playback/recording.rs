@@ -28,6 +28,7 @@ pub enum Recording {
 pub struct TransportStream {
     source: Source,
     history: Option<Arc<crate::viewing_history::recordings::Identity>>,
+    program: Option<Arc<crate::epgstation::program::Information>>,
     name: String,
     service: u16,
     inspection: Inspection,
@@ -55,6 +56,7 @@ impl Eq for TransportStream {}
 pub struct MediaFile {
     source: Source,
     history: Option<Arc<crate::viewing_history::recordings::Identity>>,
+    program: Option<Arc<crate::epgstation::program::Information>>,
     name: String,
     size: u64,
     caps: gstreamer::Caps,
@@ -73,6 +75,11 @@ impl PartialEq for MediaFile {
 }
 impl Eq for MediaFile {}
 impl MediaFile {
+    pub(in crate::playback) fn is_mp4(&self) -> bool {
+        self.caps
+            .structure(0)
+            .is_some_and(|structure| structure.name() == "video/quicktime")
+    }
     pub fn external_subtitle(&self) -> Option<&crate::media_subtitles::Script> {
         self.external_subtitle.as_ref()
     }
@@ -190,6 +197,7 @@ impl Recording {
                 return Ok(Self::Media(MediaFile {
                     source,
                     history: None,
+                    program: None,
                     name,
                     size: file_size,
                     caps,
@@ -216,6 +224,7 @@ impl Recording {
         Ok(Self::Transport(TransportStream {
             source,
             history: None,
+            program: None,
             name,
             service,
             inspection: Inspection {
@@ -231,6 +240,18 @@ impl Recording {
             file.external_subtitle = script;
         }
     }
+    pub(crate) fn program(&self) -> Option<&crate::epgstation::program::Information> {
+        match self {
+            Self::Transport(file) => file.program.as_deref(),
+            Self::Media(file) => file.program.as_deref(),
+        }
+    }
+    fn set_program(&mut self, program: Option<Arc<crate::epgstation::program::Information>>) {
+        match self {
+            Self::Transport(file) => file.program = program,
+            Self::Media(file) => file.program = program,
+        }
+    }
     pub fn name(&self) -> &str {
         match self {
             Self::Transport(file) => &file.name,
@@ -241,6 +262,12 @@ impl Recording {
         match self {
             Self::Transport(file) => &file.source,
             Self::Media(file) => &file.source,
+        }
+    }
+    pub(crate) fn stored_history(&self) -> Option<&crate::viewing_history::recordings::Identity> {
+        match self {
+            Self::Transport(file) => file.history.as_deref(),
+            Self::Media(file) => file.history.as_deref(),
         }
     }
     pub(crate) fn history_identity(&self) -> crate::viewing_history::recordings::Identity {
@@ -280,6 +307,7 @@ impl Recording {
             request.external_subtitle = file.external_subtitle.clone();
         }
         request.history = Some(Arc::new(self.history_identity()));
+        request.program = self.program().cloned().map(Arc::new);
         request
     }
     #[cfg(feature = "native_tests")]

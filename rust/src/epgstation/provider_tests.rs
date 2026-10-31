@@ -119,6 +119,17 @@ fn catalogue_pagination_metadata_and_file_bytes() -> TestResult {
         finish(&mut library, &network)?;
         assert_eq!(library.rows().len(), 12);
         let row = &library.rows()[0];
+        let (_, connection) = library.session.as_ref().ok_or("missing provider session")?;
+        let detail = runtime.block_on(client::recorded(connection.clone(), row.id))?;
+        assert_eq!(detail, program::Information::from(row));
+        if matches!(auth, Authentication::Anonymous) {
+            let anonymous_detail = runtime.block_on(async {
+                let anonymous =
+                    Connection::anonymous(Endpoint::parse(&endpoint).map_err(FetchError::Parse)?)?;
+                client::recorded(anonymous, row.id).await
+            })?;
+            assert_eq!(anonymous_detail, detail);
+        }
         assert_eq!(row.start_ms, FIRST_START_MS);
         assert_eq!(row.channel, "Test TV");
         assert_eq!(

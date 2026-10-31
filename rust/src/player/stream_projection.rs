@@ -23,6 +23,7 @@ macro_rules! snapshot {
 }
 
 snapshot! {
+    chapters: u64 = |p| p.rust().chapters.revision() => [chapters_changed];
     previous_channel: bool = |p| p.previous_channel_available() => [viewing_history_changed];
     data_broadcast_available: bool = |p| p.data_broadcast_available() => [data_broadcast_available_changed];
     data_broadcast_requested: bool = |p| p.data_broadcast_requested() => [data_broadcast_requested_changed];
@@ -93,6 +94,21 @@ impl Values {
             subtitle_data: this.subtitle_data.clone(),
             subtitle_cells: this.subtitle_cells,
         };
+        let program_file = if this.epg_enabled {
+            match &next.stream_state {
+                State::Connecting(super::stream_state::Attempt::File(file))
+                | State::Recording(file, _) => Some(file),
+                State::Stopped(_)
+                | State::Connecting(super::stream_state::Attempt::Live(_))
+                | State::Playing(_, _)
+                | State::StopFailed(_) => None,
+            }
+        } else {
+            None
+        };
+        this.recording_program
+            .synchronize(program_file, &this.recording_library);
+        this.recording_program.poll(this.network.as_ref());
         next.timeshift_bytes_per_second =
             this.media.timeshift_bytes_per_second().unwrap_or_default();
         if next.stream_state.active() {
@@ -150,28 +166,28 @@ impl Values {
                 next.live_timeline = QString::from(json);
             }
             if next.stream_state.active() {
-                if next.stream_state.seeking() {
+                if next.stream_state.seeking() && this.epg_enabled {
                     next.program_status = QString::from("pending");
-                } else if let Some(position) = this
-                    .media
-                    .playback()
-                    .and_then(|playback| playback.position())
-                {
-                    let view = this.media.metadata(position);
-                    let (data, progress) = if this.epg_enabled {
-                        view.project(position.nseconds(), &mut this.recording_program_bodies)
-                    } else {
-                        (None, 0.)
-                    };
+                } else {
+                    let position = next.timeline.position.or_else(|| {
+                        this.media
+                            .playback()
+                            .and_then(|playback| playback.position())
+                    });
+                    let view = position
+                        .map(|position| this.media.metadata(position))
+                        .unwrap_or_default();
+                    let (data, progress, status) = this.recording_program.project(
+                        this.epg_enabled,
+                        &view,
+                        position.map_or(0, |position| position.nseconds()),
+                        &mut this.recording_program_bodies,
+                    );
                     if this.program_publication.update(data) {
                         next.current_program_data = QString::from(this.program_publication.json());
                     }
                     next.program_progress = progress;
-                    next.program_status = QString::from(if !this.epg_enabled {
-                        "disabled"
-                    } else {
-                        view.status.as_str()
-                    });
+                    next.program_status = QString::from(status);
                 }
             } else {
                 next.program_status = QString::from("pending");
@@ -206,6 +222,18 @@ impl Values {
             .viewing_history
             .observe_live(service, std::time::Instant::now());
         player.timeline = timeline;
+        let chapter_source = if player.stream_state.active() {
+            player.media.chapter_source()
+        } else {
+            None
+        };
+        player.chapters.update(
+            chapter_source,
+            player.media.chapters(),
+            player.timeline.range.is_some(),
+            player.timeline.position.map(|time| time.mseconds()),
+            player.timeline.duration.map(|time| time.mseconds()),
+        );
         player.speed = speed;
         player.timeshift_bytes_per_second = timeshift_bytes_per_second;
         player.live_timeline = live_timeline;
@@ -290,4 +318,20 @@ impl Committed<'_> {
 
 pub(super) fn apply(player: Pin<&mut ffi::Player>, change: impl FnOnce(State) -> State) {
     Prepared::new(player, change).commit().notify();
+}
+
+#[cfg(feature = "native_tests")]
+pub(super) fn chapter_range_for_check(
+    mut player: Pin<&mut ffi::Player>,
+    seekable: bool,
+    position: Option<u64>,
+) {
+    let before = Snapshot::capture(&player);
+    player
+        .as_mut()
+        .rust_mut()
+        .chapters
+        .range_for_check(seekable, position);
+    let after = Snapshot::capture(&player);
+    before.notify_changes(&after, player);
 }

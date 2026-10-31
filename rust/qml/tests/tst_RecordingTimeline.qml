@@ -8,6 +8,7 @@ Item {
         width: 720; height: 320; visible: true
         QtObject {
             id: backend
+            property string chapters_data: "[]"
             property string seek_preview_image: ""
             property var previewRequests: []
             function request_seek_preview(milliseconds) { previewRequests.push(milliseconds); }
@@ -58,6 +59,7 @@ Item {
                 backend.seek_target_ms = -1; backend.seeking = false;
                 backend.deferSeekCompletion = false;
                 backend.previewRequests = [];
+                backend.chapters_data = "[]";
                 host.contentItem.forceActiveFocus();
                 timeline.visible = false; timeline.visible = true;
                 timeline.LayoutMirroring.enabled = false;
@@ -65,6 +67,31 @@ Item {
                 tryCompare(host, "active", true);
                 waitForRendering(timeline);
                 mouseMove(host.contentItem, 5, 5);
+            }
+            function findChildren(item, name) {
+                let found = item.objectName === name ? [item] : [];
+                for (const child of item.children) found = found.concat(findChildren(child, name));
+                return found;
+            }
+            function test_chapters_mark_boundaries_and_shade_commercials() {
+                const slider = findChild(timeline, "recordingSeekSlider");
+                backend.chapters_data = JSON.stringify([{startMs: 0, name: "CM?", commercial: true},
+                    {startMs: 15000, name: "A", commercial: false}, {startMs: 45000, name: "CM", commercial: true}]);
+                waitForRendering(timeline);
+                const marks = findChildren(slider, "chapterMark");
+                compare(marks.length, 3);
+                verify(!marks[0].visible);
+                verify(marks[1].visible && marks[2].visible);
+                const track = findChild(slider, "programTrack");
+                fuzzyCompare(marks[1].x + marks[1].width / 2, track.width * 0.25, 1);
+                fuzzyCompare(marks[2].x + marks[2].width / 2, track.width * 0.75, 1);
+                const shades = findChildren(slider, "chapterCommercial").filter(item => item.visible);
+                compare(shades.length, 2);
+                // The last commercial runs to the end of the recording.
+                fuzzyCompare(shades[1].x, track.width * 0.75, 1);
+                fuzzyCompare(shades[1].width, track.width * 0.25, 1);
+                backend.chapters_data = "[]";
+                compare(findChildren(slider, "chapterMark").length, 0);
             }
             function test_partial_index_remains_seekable_before_total_duration_is_known() {
                 backend.duration_ms = -1;

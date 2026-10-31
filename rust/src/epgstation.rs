@@ -3,6 +3,7 @@ use crate::services::{FetchError, Job, Network, Progress, ServerUrl, Stopping};
 use serde::Deserialize;
 use std::sync::Arc;
 mod client;
+pub(crate) mod program;
 #[cfg(test)]
 mod provider_tests;
 pub mod reservations;
@@ -94,6 +95,8 @@ pub struct Recording {
     pub start_ms: i64,
     pub end_ms: i64,
     pub description: String,
+    pub extended: String,
+    pub genres: Vec<(u8, u8)>,
     pub availability: Availability,
     channel_id: Option<u64>,
     pub service: Option<crate::channels::BroadcastService>,
@@ -116,6 +119,13 @@ struct WireRecording {
     start_at: i64,
     end_at: i64,
     description: Option<String>,
+    extended: Option<String>,
+    genre1: Option<u8>,
+    sub_genre1: Option<u8>,
+    genre2: Option<u8>,
+    sub_genre2: Option<u8>,
+    genre3: Option<u8>,
+    sub_genre3: Option<u8>,
     is_recording: bool,
     #[serde(default)]
     video_files: Vec<WireVideo>,
@@ -162,62 +172,79 @@ fn parse(bytes: &[u8]) -> Result<Page, Error> {
         .records
         .into_iter()
         .map(|record| {
-            if !ids.insert(record.id) || record.end_at < record.start_at {
-                return Err(Error::InvalidCatalogue("duplicate ID or invalid dates"));
+            if !ids.insert(record.id) {
+                return Err(Error::InvalidCatalogue("duplicate ID"));
             }
-            let availability = if record.is_recording {
-                Availability::Recording
-            } else {
-                let mut ids = std::collections::HashSet::new();
-                let mut files = record
-                    .video_files
-                    .into_iter()
-                    .filter(|file| file.kind != VideoType::Unsupported && file.size > 0)
-                    .map(|file| {
-                        if !ids.insert(file.id) {
-                            return Err(Error::InvalidCatalogue("duplicate video ID"));
-                        }
-                        Ok(Video {
-                            id: file.id,
-                            name: file.name,
-                            filename: file.filename,
-                            kind: file.kind,
-                            start_ms: file.start_at.filter(|ms| *ms > 0),
-                        })
-                    })
-                    .collect::<Result<Vec<_>, Error>>()?;
-                // Preserve existing one-click TS playback; encoded-only recordings
-                // use their first completed file. The chooser exposes every candidate.
-                files.sort_by_key(|file| file.kind != VideoType::Ts);
-                if files.is_empty() {
-                    Availability::NoVideoFile
-                } else {
-                    Availability::Recorded {
-                        files: files.into(),
-                    }
-                }
-            };
-            Ok(Recording {
-                id: record.id,
-                thumbnail_id: record.thumbnails.first().copied(),
-                name: record.name,
-                channel: record
-                    .ts_channel_name
-                    .filter(|name| !name.is_empty())
-                    .or(record.channel_name)
-                    .unwrap_or_default(),
-                start_ms: record.start_at,
-                end_ms: record.end_at,
-                description: record.description.unwrap_or_default(),
-                availability,
-                channel_id: record.channel_id,
-                service: None,
-            })
+            recording(record)
         })
         .collect::<Result<Vec<_>, Error>>()?;
     Ok(Page {
         rows: rows.into(),
         total: response.total,
+    })
+}
+fn recording(record: WireRecording) -> Result<Recording, Error> {
+    if record.end_at < record.start_at {
+        return Err(Error::InvalidCatalogue("invalid dates"));
+    }
+    let availability = if record.is_recording {
+        Availability::Recording
+    } else {
+        let mut ids = std::collections::HashSet::new();
+        let mut files = record
+            .video_files
+            .into_iter()
+            .filter(|file| file.kind != VideoType::Unsupported && file.size > 0)
+            .map(|file| {
+                if !ids.insert(file.id) {
+                    return Err(Error::InvalidCatalogue("duplicate video ID"));
+                }
+                Ok(Video {
+                    id: file.id,
+                    name: file.name,
+                    filename: file.filename,
+                    kind: file.kind,
+                    start_ms: file.start_at.filter(|ms| *ms > 0),
+                })
+            })
+            .collect::<Result<Vec<_>, Error>>()?;
+        // Preserve existing one-click TS playback; encoded-only recordings
+        // use their first completed file. The chooser exposes every candidate.
+        files.sort_by_key(|file| file.kind != VideoType::Ts);
+        if files.is_empty() {
+            Availability::NoVideoFile
+        } else {
+            Availability::Recorded {
+                files: files.into(),
+            }
+        }
+    };
+    Ok(Recording {
+        id: record.id,
+        thumbnail_id: record.thumbnails.first().copied(),
+        name: record.name,
+        channel: record
+            .ts_channel_name
+            .filter(|name| !name.is_empty())
+            .or(record.channel_name)
+            .unwrap_or_default(),
+        start_ms: record.start_at,
+        end_ms: record.end_at,
+        description: record.description.unwrap_or_default(),
+        extended: record.extended.unwrap_or_default(),
+        genres: [
+            (record.genre1, record.sub_genre1),
+            (record.genre2, record.sub_genre2),
+            (record.genre3, record.sub_genre3),
+        ]
+        .into_iter()
+        .filter_map(|(main, sub)| main.zip(sub))
+        // Unknown optional genre codes do not identify a broadcast genre.
+        .filter(|(main, sub)| *main <= 15 && *sub <= 15)
+        .collect(),
+        availability,
+        channel_id: record.channel_id,
+        service: None,
     })
 }
 
@@ -614,7 +641,11 @@ impl Library {
             broadcast,
             metadata,
         ) {
-            Ok(request) => Some(request.with_history(identity)),
+            Ok(request) => Some(
+                request
+                    .with_history(identity)
+                    .with_program(program::Information::from(recording)),
+            ),
             Err(error) => {
                 tracing::error!(
                     error = &error as &dyn std::error::Error,

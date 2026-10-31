@@ -4,6 +4,7 @@ mod audio_streams;
 mod channel_programs;
 mod channel_refresh;
 mod channels;
+mod chapters;
 mod comment_posting;
 mod comment_projection;
 mod comments;
@@ -16,6 +17,8 @@ mod epg;
 mod guide;
 mod language;
 mod lifecycle;
+#[cfg(feature = "native_tests")]
+mod recording_information_checks;
 use lifecycle::{Failure as StatusFailure, Status as PlaybackStatus};
 mod data_broadcast;
 mod error_text;
@@ -297,6 +300,8 @@ pub mod ffi {
         #[qproperty(*mut GuideModel, guide_model, READ = guide_model, CONSTANT)]
         #[qproperty(QString, epg_status, READ, NOTIFY)]
         #[qproperty(bool, guide_visible, READ = guide_visible, NOTIFY)]
+        #[qproperty(QString, chapters_data, READ = chapters_data, NOTIFY = chapters_changed)]
+        #[qproperty(i32, current_chapter, READ = current_chapter, NOTIFY = chapters_changed)]
         #[qproperty(QString, current_program_data, READ, NOTIFY)]
         #[qproperty(f64, program_progress, READ, NOTIFY)]
         #[qproperty(QString, program_status, READ, NOTIFY)]
@@ -504,6 +509,12 @@ pub mod ffi {
         fn recording(self: &Player) -> bool;
         fn recording_name(self: &Player) -> QString;
         fn guide_visible(self: &Player) -> bool;
+        fn chapters_data(self: &Player) -> QString;
+        fn current_chapter(self: &Player) -> i32;
+        #[qinvokable]
+        fn seek_chapter(self: Pin<&mut Player>, offset: i32) -> bool;
+        #[qsignal]
+        fn chapters_changed(self: Pin<&mut Player>);
         #[qinvokable]
         fn request_language(self: Pin<&mut Player>, language: QString) -> bool;
         #[qinvokable]
@@ -771,6 +782,8 @@ pub struct PlayerRust {
     recording_model: cxx::UniquePtr<crate::recording_model::ffi::RecordingModel>,
     video_file_model: cxx::UniquePtr<crate::video_file_model::ffi::VideoFileModel>,
     recording_library: crate::epgstation::Library,
+    recording_program: crate::epgstation::program::Fallback,
+    chapters: crate::playback::chapters::Controller,
     epgstation_input_error: error_text::Text,
     channel_program_data: QString,
     channel_visibility_data: QString,

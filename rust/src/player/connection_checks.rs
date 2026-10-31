@@ -231,6 +231,7 @@ fn checks() -> TestResult {
     crate::channel_model::checks::run()?;
     crate::guide_model::checks::run()?;
     super::recording_library_checks::run()?;
+    super::recording_information_checks::run()?;
     super::viewing_history_checks::run()?;
     super::recording_reservation_checks::run()?;
     super::navigation_checks::run()?;

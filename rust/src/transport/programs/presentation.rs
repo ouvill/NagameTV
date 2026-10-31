@@ -16,7 +16,7 @@ struct Body {
 #[derive(Clone, Debug)]
 pub(crate) struct Data(Arc<Body>);
 impl Data {
-    fn new(value: Value) -> Self {
+    pub(crate) fn new(value: Value) -> Self {
         let encoded = serde_json::value::to_raw_value(&value).expect("finite program body");
         Self(Arc::new(Body { value, encoded }))
     }

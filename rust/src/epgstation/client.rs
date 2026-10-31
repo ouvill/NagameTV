@@ -38,6 +38,13 @@ pub(super) struct Connection {
     media: MediaAccess,
 }
 impl Connection {
+    pub(super) fn anonymous(endpoint: Endpoint) -> Result<Self> {
+        Ok(Self {
+            endpoint,
+            client: http_client()?,
+            media: MediaAccess::Anonymous,
+        })
+    }
     pub(super) fn api_request(
         &self,
         method: reqwest::Method,
@@ -107,6 +114,39 @@ pub(super) struct Fetched {
     pub connection: Connection,
 }
 type Result<T> = std::result::Result<T, FetchError<Error>>;
+fn http_client() -> Result<reqwest::Client> {
+    reqwest::Client::builder()
+        .cookie_store(true)
+        .redirect(reqwest::redirect::Policy::none())
+        .connect_timeout(Duration::from_secs(5))
+        .timeout(Duration::from_secs(10))
+        .pool_max_idle_per_host(1)
+        .build()
+        .map_err(network)
+}
+pub(super) async fn recorded(
+    connection: Connection,
+    id: u64,
+) -> Result<super::program::Information> {
+    let response = connection
+        .api_request(
+            reqwest::Method::GET,
+            &format!("recorded/{id}?isHalfWidth=false"),
+        )
+        .send()
+        .await
+        .map_err(network)?;
+    let wire: super::WireRecording = crate::json::from_slice(&body(response).await?)
+        .map_err(Error::from)
+        .map_err(FetchError::Parse)?;
+    if wire.id != id {
+        return Err(FetchError::Parse(Error::InvalidCatalogue(
+            "recorded ID mismatch",
+        )));
+    }
+    let record = super::recording(wire).map_err(FetchError::Parse)?;
+    Ok(super::program::Information::from(&record))
+}
 fn network(error: reqwest::Error) -> FetchError<Error> {
     // Login errors must never expose a URL carrying credentials or a media token.
     FetchError::Network(NetworkError::Http(error.without_url()))
@@ -134,14 +174,7 @@ async fn catalogue(endpoint: Endpoint, url: String, access: Access) -> Result<Fe
     let connection = match access {
         Access::Connected(connection) => connection,
         Access::Anonymous | Access::Login(_) => {
-            let client = reqwest::Client::builder()
-                .cookie_store(true)
-                .redirect(reqwest::redirect::Policy::none())
-                .connect_timeout(Duration::from_secs(5))
-                .timeout(Duration::from_secs(10))
-                .pool_max_idle_per_host(1)
-                .build()
-                .map_err(network)?;
+            let client = http_client()?;
             let media = match access {
                 Access::Login(Credentials { name, password }) => {
                     let credentials =

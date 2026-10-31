@@ -149,6 +149,8 @@ impl Default for PlayerRust {
             recording_model: crate::recording_model::ffi::make_recording_model(),
             video_file_model: crate::video_file_model::ffi::make_video_file_model(),
             recording_library: Default::default(),
+            recording_program: Default::default(),
+            chapters: Default::default(),
             epgstation_input_error: Text::default(),
             channel_program_data: QString::from("[]"),
             channel_visibility_data: QString::from("[]"),
