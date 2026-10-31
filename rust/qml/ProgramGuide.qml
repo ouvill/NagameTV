@@ -173,6 +173,9 @@ Rectangle {
             canUnexcludeReservation: reservationKey.length > 0 && root.reservationBackend.can_unexclude_reservation(reservationKey)
             onExcludeReservationRequested: function(key) { root.reservationBackend.exclude_reservation(key); }
             onUnexcludeReservationRequested: function(key) { root.reservationBackend.unexclude_reservation(key); }
+            encodeModes: reservationsEnabled ? root.reservationBackend.reservation_encode_modes : []
+            encodeMode: reservationsEnabled ? root.reservationBackend.reservation_encode_mode : ""
+            onEncodeRequested: function(mode) { root.reservationBackend.configure_reservation_encode(mode); }
         }
     }
 }
