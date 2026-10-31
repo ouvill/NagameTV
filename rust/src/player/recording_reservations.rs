@@ -3,7 +3,7 @@ use super::{ffi, status::tr};
 use crate::epgstation::reservations::{Change, Error, Program};
 use crate::services::FetchError;
 use cxx_qt::CxxQtType;
-use cxx_qt_lib::QString;
+use cxx_qt_lib::{QString, QStringList};
 use std::{
     pin::Pin,
     time::{Instant, SystemTime, UNIX_EPOCH},
@@ -28,7 +28,53 @@ fn now_ms() -> Result<u64, Error> {
         .map_err(|_| Error::Unavailable)
         .and_then(|duration| u64::try_from(duration.as_millis()).map_err(|_| Error::Unavailable))
 }
+impl super::PlayerRust {
+    pub(super) fn verify_reservation_session(&mut self) {
+        let preferences = self.preferences.preferences();
+        self.recording_library.verify_for_reservations(
+            self.network.as_ref(),
+            preferences.recording_reservations_enabled,
+            &preferences.epgstation_server,
+        );
+    }
+}
 impl ffi::Player {
+    pub fn reservation_encode_modes(&self) -> QStringList {
+        self.rust()
+            .recording_reservations
+            .encode_modes()
+            .iter()
+            .map(QString::from)
+            .collect()
+    }
+    pub fn reservation_encode_mode(&self) -> QString {
+        QString::from(&self.rust().preferences.preferences().recording_encode_mode)
+    }
+    pub fn configure_reservation_encode(mut self: Pin<&mut Self>, mode: QString) -> bool {
+        self.as_mut().poll_recording_reservations();
+        let mode = mode.to_string();
+        if !self
+            .rust()
+            .recording_reservations
+            .accepts_encode_mode(&mode)
+        {
+            tracing::warn!(
+                operation = "configure reservation encode",
+                "Encode mode is not in the current server list"
+            );
+            return false;
+        }
+        let preferences = self.rust().preferences.preferences();
+        if preferences.recording_encode_mode != mode {
+            self.as_mut()
+                .rust_mut()
+                .preferences
+                .change(crate::settings::Change::RecordingEncode(mode));
+            self.as_mut().reservations_changed();
+        }
+        self.save_settings();
+        true
+    }
     pub fn recording_reservations_enabled(&self) -> bool {
         self.rust()
             .preferences
@@ -91,6 +137,7 @@ impl ffi::Player {
             self.as_mut().rust_mut().preferences.change(
                 crate::settings::Change::RecordingReservationsEnabled(enabled),
             );
+            self.as_mut().rust_mut().verify_reservation_session();
             self.as_mut().poll_recording_reservations();
             self.as_mut().recording_reservations_enabled_changed();
         }
@@ -169,7 +216,15 @@ impl ffi::Player {
         let this = self.as_mut().rust_mut().get_mut();
         let accepted = match (target, this.network.as_ref()) {
             (Ok((program, now)), Some(network)) => match request {
-                Request::Reserve => this.recording_reservations.reserve(network, program, now),
+                Request::Reserve => {
+                    let preferences = this.preferences.preferences();
+                    this.recording_reservations.reserve(
+                        network,
+                        program,
+                        now,
+                        &preferences.recording_encode_mode,
+                    )
+                }
                 Request::Change(Change::Cancel) => {
                     this.recording_reservations.cancel(network, program, now)
                 }
@@ -201,6 +256,11 @@ impl ffi::Player {
         let now = Instant::now();
         let state = self.as_mut().rust_mut().get_mut();
         let before = state.recording_reservations.revision();
+        if let Some(network) = &state.network {
+            state
+                .recording_library
+                .poll_reservation_verification(network);
+        }
         state.recording_library.synchronize_reservations(
             state
                 .preferences
@@ -217,6 +277,10 @@ impl ffi::Player {
         }
     }
     pub(super) fn shutdown_recording_reservations(mut self: Pin<&mut Self>) {
+        self.as_mut()
+            .rust_mut()
+            .recording_library
+            .close_reservation_verification();
         self.as_mut()
             .rust_mut()
             .recording_reservations

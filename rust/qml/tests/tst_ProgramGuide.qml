@@ -506,16 +506,108 @@ TestCase {
             property bool rule: false
             property var calls: []
             signal reservations_changed
-            function reservation_state(key) { return state; }
-            function can_reserve_program(key) { return state === ""; }
-            function can_cancel_reservation(key) { return !rule && state === "reserved"; }
-            function can_exclude_reservation(key) { return rule && state === "reserved"; }
-            function can_unexclude_reservation(key) { return rule && state === "skipped"; }
+            // Like Player's invokables, answers change without notifying; only reservations_changed tells.
+            readonly property var answers: ({ state: "", rule: false })
+            onStateChanged: answers.state = state
+            onRuleChanged: answers.rule = rule
+            function reservation_state(key) { return answers.state; }
+            function can_reserve_program(key) { return answers.state === ""; }
+            function can_cancel_reservation(key) { return !answers.rule && answers.state === "reserved"; }
+            function can_exclude_reservation(key) { return answers.rule && answers.state === "reserved"; }
+            function can_unexclude_reservation(key) { return answers.rule && answers.state === "skipped"; }
             function reserve_program(key) { calls = calls.concat([["reserve", key]]); return true; }
             function cancel_reservation(key) { calls = calls.concat([["cancel", key]]); return true; }
             function exclude_reservation(key) { calls = calls.concat([["exclude", key]]); return true; }
             function unexclude_reservation(key) { calls = calls.concat([["unexclude", key]]); return true; }
+            property list<string> reservation_encode_modes: []
+            property string reservation_encode_mode: ""
+            function configure_reservation_encode(mode) {
+                calls = calls.concat([["encode", mode]]);
+                reservation_encode_mode = mode;
+                return true;
+            }
         }
+    }
+    function openTomorrowWithKeys(backend, programs) {
+        guide.reservationBackend = backend
+        guide.dayOffset = 1
+        const start = guide.days[1].start
+        guide.rows = [{index:0, label:"Channel", band:"GR"}]
+        guide.programsJson = JSON.stringify([{index:0, programs:programs.map((program, index) =>
+            Object.assign({startAt:start + index * 3600000, duration:3600000}, program))}])
+        verify(waitForRendering(guide))
+        keyClick(Qt.Key_Return)
+        const popup = findChild(guide, "scheduledDetailsLoader").item
+        tryCompare(popup, "opened", true)
+        return popup
+    }
+    function test_arrow_keys_choose_encoding_and_reserve_without_a_pointer() {
+        const backend = createTemporaryObject(reservationBackend, testCase)
+        backend.reservation_encode_modes = ["H.264", "H.265"]
+        const popup = openTomorrowWithKeys(backend, [{watchKey:"later", name:"Later", description:"Plot"}])
+        const reserve = findChild(popup, "reserveGuideProgram")
+        const encode = findChild(popup, "guideEncodeMode")
+        // The card opens on the action it is most likely opened for.
+        tryVerify(() => reserve.activeFocus)
+        compare(encode.displayText, "No encoding")
+        keyClick(Qt.Key_Up)
+        verify(encode.activeFocus)
+        // Vertical keys move between controls; they do not change the mode by themselves.
+        compare(encode.currentIndex, 0)
+        keyClick(Qt.Key_Return)
+        tryCompare(encode.popup, "opened", true)
+        // Periodic reservation refreshes report the same modes again; the open list must survive them.
+        backend.reservation_encode_modes = ["H.264", "H.265"]
+        backend.reservations_changed()
+        wait(50)
+        verify(encode.popup.visible)
+        keyClick(Qt.Key_Down)
+        keyClick(Qt.Key_Return)
+        tryCompare(encode.popup, "visible", false)
+        compare(backend.calls, [["encode", "H.264"]])
+        compare(encode.displayText, "H.264")
+        keyClick(Qt.Key_Down)
+        verify(reserve.activeFocus)
+        keyClick(Qt.Key_Return)
+        compare(backend.calls[1], ["reserve", guide.keyFor("later")])
+        // While the request runs the buttons are disabled; focus comes back to what can be done next.
+        backend.reservation_busy = true
+        backend.reservations_changed()
+        verify(!reserve.enabled)
+        verify(waitForRendering(popup.contentItem))
+        backend.state = "reserved"
+        backend.reservation_busy = false
+        backend.reservations_changed()
+        const cancel = findChild(popup, "cancelGuideReservation")
+        tryVerify(() => cancel.activeFocus)
+        verify(!encode.visible)
+        keyClick(Qt.Key_Escape)
+        tryCompare(findChild(guide, "scheduledDetailsLoader"), "item", null)
+        keyClick(Qt.Key_Return)
+        tryCompare(findChild(guide, "scheduledDetailsLoader").item, "opened", true)
+    }
+    function test_a_mode_the_server_no_longer_offers_is_shown_as_no_encoding() {
+        const backend = createTemporaryObject(reservationBackend, testCase)
+        backend.reservation_encode_modes = ["H.265"]
+        backend.reservation_encode_mode = "H.264"
+        const popup = openTomorrowWithKeys(backend, [{watchKey:"later", name:"Later"}])
+        compare(findChild(popup, "guideEncodeMode").displayText, "No encoding")
+        backend.reservation_encode_modes = []
+        verify(!findChild(popup, "guideEncodeOptions").visible)
+        verify(findChild(popup, "reserveGuideProgram").visible)
+    }
+    function test_vertical_keys_past_the_controls_scroll_the_description() {
+        const backend = createTemporaryObject(reservationBackend, testCase)
+        const popup = openTomorrowWithKeys(backend, [{watchKey:"long", name:"Long", description:"Line\n".repeat(200)}])
+        const flick = findChild(popup, "programDetailsFlickable")
+        const reserve = findChild(popup, "reserveGuideProgram")
+        tryVerify(() => reserve.activeFocus)
+        verify(flick.contentHeight > flick.height)
+        keyClick(Qt.Key_Down)
+        verify(flick.contentY > 0)
+        verify(reserve.activeFocus)
+        keyClick(Qt.Key_Up)
+        compare(flick.contentY, 0)
     }
     function test_an_upcoming_program_can_be_reserved_and_the_reservation_cancelled() {
         const backend = createTemporaryObject(reservationBackend, testCase)

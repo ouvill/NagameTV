@@ -49,6 +49,39 @@ Popup {
     signal cancelReservationRequested(string key)
     signal excludeReservationRequested(string key)
     signal unexcludeReservationRequested(string key)
+    // Server encode modes and the saved choice; "" records without encoding.
+    property list<string> encodeModes: []
+    property string encodeMode: ""
+    signal encodeRequested(string mode)
+    readonly property bool encodeAvailable: reservationsEnabled && canReserve && encodeModes.length > 0
+    // A saved mode the current server lacks is sent as no encoding, so show it that way.
+    readonly property int encodeIndex: encodeModes.indexOf(encodeMode) + 1
+    // Every reservation refresh re-reports the modes, and a new model closes an open list.
+    property list<string> encodeChoices: []
+    function syncEncodeChoices() {
+        if (JSON.stringify(encodeChoices) !== JSON.stringify(encodeModes)) encodeChoices = encodeModes
+    }
+    onEncodeModesChanged: syncEncodeChoices()
+    // Focus the action now: the first key after opening must already act, not enter the row.
+    function focusActions() {
+        if (!opened || !actions.visible) return
+        actions.enter()
+        if (!actions.currentItem) actions.forceActiveFocus(Qt.TabFocusReason)
+    }
+    // A disabled button drops focus and a hidden one keeps it unseen; move it to an action that exists.
+    function restoreActionFocus() {
+        if (!opened || !actions.visible) return
+        const focused = popup.contentItem.Window.window ? popup.contentItem.Window.window.activeFocusItem : null
+        if (actions.currentItem ? !actions.available(actions.currentItem)
+            : !focused || focused === popup.contentItem || focused === actions || !focused.visible || !focused.enabled)
+            actions.enter()
+    }
+    onReservationBusyChanged: Qt.callLater(restoreActionFocus)
+    onCanReserveChanged: Qt.callLater(restoreActionFocus)
+    onCanCancelReservationChanged: Qt.callLater(restoreActionFocus)
+    onCanExcludeReservationChanged: Qt.callLater(restoreActionFocus)
+    onCanUnexcludeReservationChanged: Qt.callLater(restoreActionFocus)
+    onEncodeIndexChanged: Qt.callLater(restoreActionFocus)
 
     // Keep coordinates, not a delegate reference: offscreen columns are destroyed.
     width: Math.max(0, Math.min(560, parent.width - 48))
@@ -71,8 +104,9 @@ Popup {
         NumberAnimation { property: "opacity"; to: 0; duration: Theme.moveDuration; easing.type: Easing.OutCubic }
         NumberAnimation { property: "scale"; to: 0.97; duration: Theme.moveDuration; easing.type: Easing.OutBack }
     }
-    Component.onCompleted: { refreshCandidates(); open(); }
+    Component.onCompleted: { syncEncodeChoices(); refreshCandidates(); open(); }
     onAboutToShow: now = Date.now()
+    onOpened: focusActions()
     Timer { interval: 1000; repeat: true; running: popup.opened; onTriggered: popup.now = Date.now() }
     background: PanelSurface {}
     contentItem: ColumnLayout {
@@ -220,76 +254,128 @@ Popup {
             id: actions
             objectName: "guideProgramActions"
             Layout.fillWidth: true
-            implicitHeight: actionRow.implicitHeight
+            implicitHeight: actionColumn.implicitHeight
             // From the conditions, not the buttons: a hidden row hides its buttons too.
             visible: popup.live || (popup.reservationsEnabled && (popup.canReserve || popup.canCancelReservation
                 || popup.canExcludeReservation || popup.canUnexcludeReservation))
-            navigationItems: [watchButton, reserveButton, cancelReservationButton, excludeReservationButton, unexcludeReservationButton]
-            RowLayout {
-                id: actionRow
+            navigationItems: [encodeChoice, watchButton, reserveButton, cancelReservationButton, excludeReservationButton,
+                unexcludeReservationButton]
+            // The action the card is most likely opened for; the others are one key away.
+            initialItem: popup.live ? watchButton : unexcludeButtonShown ? unexcludeReservationButton : reserveButton
+            readonly property bool unexcludeButtonShown: unexcludeReservationButton.visible
+            // Past the first or last control, keep reading the description.
+            onBoundaryReached: function(key) {
+                if (key !== Qt.Key_Up && key !== Qt.Key_Down) return
+                const step = Math.max(Theme.controlHeight, detailsFlick.height / 3) * (key === Qt.Key_Up ? -1 : 1)
+                detailsFlick.contentY = Math.max(0, Math.min(detailsFlick.contentHeight - detailsFlick.height,
+                    detailsFlick.contentY + step))
+            }
+            ColumnLayout {
+                id: actionColumn
                 anchors.fill: parent
                 spacing: Theme.spaceMd
-                ActionButton {
-                    emphasis: ActionButton.Primary
-                    id: watchButton
-                    objectName: "watchGuideProgram"
-                    visible: popup.live
-                    Layout.preferredWidth: Math.max(168, implicitWidth)
-                    Layout.preferredHeight: Theme.controlHeight
-                    text: popup.watchAction === GuideModel.WatchChannel ? qsTranslate("Viewer", "Watch this channel") : qsTranslate("Viewer", "Watch this program")
-                    onClicked: popup.watchRequested(popup.selection.watchKey)
+                RowLayout {
+                    objectName: "guideEncodeOptions"
+                    visible: popup.encodeAvailable
+                    Layout.fillWidth: true
+                    spacing: Theme.spaceMd
+                    Label {
+                        text: qsTranslate("Viewer", "Encoding")
+                        color: Theme.textSecondary; font.pixelSize: Theme.fontCaption
+                    }
+                    SettingsChoice {
+                        id: encodeChoice
+                        objectName: "guideEncodeMode"
+                        visible: popup.encodeAvailable
+                        enabled: !popup.reservationBusy
+                        Layout.fillWidth: true
+                        Layout.maximumWidth: 260
+                        Accessible.name: qsTranslate("Viewer", "Encoding")
+                        model: [qsTranslate("Viewer", "No encoding")].concat(popup.encodeChoices)
+                        currentIndex: popup.encodeIndex
+                        onActivated: function(index) {
+                            popup.encodeRequested(index > 0 ? popup.encodeModes[index - 1] : "")
+                            currentIndex = Qt.binding(function() { return popup.encodeIndex })
+                        }
+                        // Vertical keys move between controls; Enter opens the list to change the mode.
+                        // The open list keeps focus on the choice, so its keys must stay with the list.
+                        Keys.onUpPressed: function(event) {
+                            event.accepted = !encodeChoice.popup.visible
+                            if (event.accepted) actions.move(Qt.Key_Up)
+                        }
+                        Keys.onDownPressed: function(event) {
+                            event.accepted = !encodeChoice.popup.visible
+                            if (event.accepted) actions.move(Qt.Key_Down)
+                        }
+                    }
+                    Item { Layout.fillWidth: true }
                 }
-                ActionButton {
-                    id: reserveButton
-                    objectName: "reserveGuideProgram"
-                    // A program already on air is watched first; one still ahead is reserved first.
-                    emphasis: popup.live ? ActionButton.Secondary : ActionButton.Primary
-                    visible: popup.reservationsEnabled && popup.canReserve
-                    enabled: !popup.reservationBusy
-                    Layout.preferredHeight: Theme.controlHeight
-                    text: qsTranslate("Viewer", "Reserve recording")
-                    onClicked: popup.reserveRequested(popup.selection.watchKey)
+                RowLayout {
+                    id: actionRow
+                    Layout.fillWidth: true
+                    spacing: Theme.spaceMd
+                    ActionButton {
+                        emphasis: ActionButton.Primary
+                        id: watchButton
+                        objectName: "watchGuideProgram"
+                        visible: popup.live
+                        Layout.preferredWidth: Math.max(168, implicitWidth)
+                        Layout.preferredHeight: Theme.controlHeight
+                        text: popup.watchAction === GuideModel.WatchChannel ? qsTranslate("Viewer", "Watch this channel") : qsTranslate("Viewer", "Watch this program")
+                        onClicked: popup.watchRequested(popup.selection.watchKey)
+                    }
+                    ActionButton {
+                        id: reserveButton
+                        objectName: "reserveGuideProgram"
+                        // A program already on air is watched first; one still ahead is reserved first.
+                        emphasis: popup.live ? ActionButton.Secondary : ActionButton.Primary
+                        visible: popup.reservationsEnabled && popup.canReserve
+                        enabled: !popup.reservationBusy
+                        Layout.preferredHeight: Theme.controlHeight
+                        text: qsTranslate("Viewer", "Reserve recording")
+                        onClicked: popup.reserveRequested(popup.selection.watchKey)
+                    }
+                    ActionButton {
+                        id: cancelReservationButton
+                        objectName: "cancelGuideReservation"
+                        visible: popup.reservationsEnabled && popup.canCancelReservation
+                        enabled: !popup.reservationBusy
+                        Layout.preferredHeight: Theme.controlHeight
+                        text: qsTranslate("Viewer", "Cancel reservation")
+                        onClicked: popup.cancelReservationRequested(popup.selection.watchKey)
+                    }
+                    ActionButton {
+                        id: excludeReservationButton
+                        objectName: "excludeGuideReservation"
+                        visible: popup.reservationsEnabled && popup.canExcludeReservation
+                        enabled: !popup.reservationBusy
+                        Layout.preferredHeight: Theme.controlHeight
+                        text: qsTranslate("Viewer", "Exclude")
+                        onClicked: popup.excludeReservationRequested(popup.selection.watchKey)
+                    }
+                    ActionButton {
+                        id: unexcludeReservationButton
+                        objectName: "unexcludeGuideReservation"
+                        // Recording again is what the viewer came for when the airing is excluded.
+                        emphasis: popup.live ? ActionButton.Secondary : ActionButton.Primary
+                        visible: popup.reservationsEnabled && popup.canUnexcludeReservation
+                        enabled: !popup.reservationBusy
+                        Layout.preferredHeight: Theme.controlHeight
+                        text: qsTranslate("Viewer", "Remove exclusion")
+                        onClicked: popup.unexcludeReservationRequested(popup.selection.watchKey)
+                    }
+                    BusyIndicator {
+                        objectName: "reservationBusy"
+                        implicitWidth: Theme.compactControlHeight
+                        implicitHeight: Theme.compactControlHeight
+                        visible: popup.reservationsEnabled && popup.reservationBusy
+                        running: visible
+                        palette.dark: Theme.accent
+                        palette.text: Theme.accent
+                        Accessible.name: qsTranslate("Viewer", "Loading…")
+                    }
+                    Item { Layout.fillWidth: true }
                 }
-                ActionButton {
-                    id: cancelReservationButton
-                    objectName: "cancelGuideReservation"
-                    visible: popup.reservationsEnabled && popup.canCancelReservation
-                    enabled: !popup.reservationBusy
-                    Layout.preferredHeight: Theme.controlHeight
-                    text: qsTranslate("Viewer", "Cancel reservation")
-                    onClicked: popup.cancelReservationRequested(popup.selection.watchKey)
-                }
-                ActionButton {
-                    id: excludeReservationButton
-                    objectName: "excludeGuideReservation"
-                    visible: popup.reservationsEnabled && popup.canExcludeReservation
-                    enabled: !popup.reservationBusy
-                    Layout.preferredHeight: Theme.controlHeight
-                    text: qsTranslate("Viewer", "Exclude")
-                    onClicked: popup.excludeReservationRequested(popup.selection.watchKey)
-                }
-                ActionButton {
-                    id: unexcludeReservationButton
-                    objectName: "unexcludeGuideReservation"
-                    // Recording again is what the viewer came for when the airing is excluded.
-                    emphasis: popup.live ? ActionButton.Secondary : ActionButton.Primary
-                    visible: popup.reservationsEnabled && popup.canUnexcludeReservation
-                    enabled: !popup.reservationBusy
-                    Layout.preferredHeight: Theme.controlHeight
-                    text: qsTranslate("Viewer", "Remove exclusion")
-                    onClicked: popup.unexcludeReservationRequested(popup.selection.watchKey)
-                }
-                BusyIndicator {
-                    objectName: "reservationBusy"
-                    implicitWidth: Theme.compactControlHeight
-                    implicitHeight: Theme.compactControlHeight
-                    visible: popup.reservationsEnabled && popup.reservationBusy
-                    running: visible
-                    palette.dark: Theme.accent
-                    palette.text: Theme.accent
-                    Accessible.name: qsTranslate("Viewer", "Loading…")
-                }
-                Item { Layout.fillWidth: true }
             }
         }
     }

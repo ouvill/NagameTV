@@ -99,10 +99,13 @@ fn load(path: &Path) -> Result<Preferences, Error> {
         path: path.into(),
         source: io::Error::new(io::ErrorKind::InvalidData, error),
     })?;
-    toml::from_str(text).map_err(|source| Error::Parse {
+    let mut preferences: Preferences = toml::from_str(text).map_err(|source| Error::Parse {
         path: path.into(),
         source,
-    })
+    })?;
+    // This removed preference must not be preserved as an unknown future setting.
+    preferences.extra.remove("recording_delete_original");
+    Ok(preferences)
 }
 
 fn save(path: &Path, preferences: &Preferences) -> Result<(), Error> {
@@ -156,6 +159,7 @@ pub enum Change {
     SubtitleForceOutline(bool),
     DataBroadcastEnabled(bool),
     RecordingReservationsEnabled(bool),
+    RecordingEncode(String),
     DataBroadcastPrefetch(bool),
     Comments(bool),
     CommentCacheLimit(CommentCacheLimit),
@@ -243,6 +247,7 @@ impl Session {
             Change::RecordingReservationsEnabled(enabled) => {
                 preferences.recording_reservations_enabled = enabled
             }
+            Change::RecordingEncode(mode) => preferences.recording_encode_mode = mode,
             Change::DataBroadcastPrefetch(enabled) => preferences.data_broadcast_prefetch = enabled,
             Change::Comments(enabled) => preferences.comments_enabled = enabled,
             Change::CommentCacheLimit(limit) => preferences.comment_cache_limit_mib = limit,

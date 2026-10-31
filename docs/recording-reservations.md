@@ -17,7 +17,10 @@ QMLは以下の契約で設定スイッチ、番組表の印、番組詳細の�
 | 読取専用プロパティ | `reservations_enabled: bool` | フラグONかつEPGStationの現在の認証セッションが接続確認済み |
 | 読取専用プロパティ | `reservation_busy: bool` | 一覧取得・追加・取消し・除外・除外解除・その後の再取得が進行中。取消し待ちを含む |
 | 読取専用プロパティ | `reservation_error: string` | 正常時は空。Backend文脈で翻訳済みの利用者向けエラー。URL・サーバー本文・資格情報を含めない |
-| シグナル | `reservations_changed()` | 上記3プロパティと番組ごとの操作可否・予約状態の変更。通知前にモデルへ反映 |
+| 読取専用プロパティ | `reservation_encode_modes: QStringList` | `/api/config`の`encode`をサーバー順で返す。フラグOFF・未接続・未取得・取得失敗・候補なしでは空。NOTIFYは`reservations_changed()` |
+| 読取専用プロパティ | `reservation_encode_mode: QString` | 保存した候補名。空文字列はエンコード指定なし。現在の候補にない名前も保持し、QMLでは指定なしとして表示する。NOTIFYは`reservations_changed()` |
+| invokable | `configure_reservation_encode(mode: QString): bool` | 候補名を保存する。modeは空文字列か現在の候補名に限る。それ以外はfalseを返し、変更しない。変更後に`reservations_changed()`で通知 |
+| シグナル | `reservations_changed()` | 予約・エンコード設定のプロパティと番組ごとの操作可否・予約状態の変更。通知前にモデルへ反映 |
 | invokable | `refresh_reservations(): bool` | 一覧を再取得。未接続・フラグOFF・操作中はfalse |
 | invokable | `reservation_state(program_key: string): string` | 番組の予約状態。値は下記roleと同じ。古いキー・曖昧な番組は空 |
 | invokable | `can_reserve_program(program_key: string): bool` | 現在の状態で追加できるか。実行時にも検証する |
@@ -32,6 +35,13 @@ QMLは以下の契約で設定スイッチ、番組表の印、番組詳細の�
 program_keyは`watch_program(key)`と同じ`watchKey`。QMLで番組IDへ分解しない。
 二重操作は受け付けず、成功応答後も一覧再取得が終わるまでbusyを維持する。
 通信失敗後は書込を自動再送しない。再取得して実際の状態を確認してから次の操作を行う。
+
+`reserve_program(key)`は、保存した候補名が最新の取得済み一覧にある場合だけ
+`encodeOption: { mode1, isDeleteOriginalAfterEncode: false }`を送り、エンコード後も元ファイルを保持する。
+指定なし・取得失敗・現在のサーバーに候補がない場合は`encodeOption`自体を省略し、
+サーバーの既定動作を使う。`allowEndLack: false`と追加前の番組照合は維持する。
+保存キーは`recording_encode_mode`で、通常設定を読み書きしない
+明示的な`--features`起動では、この選択もその起動内だけで保持する。
 
 ### GuideModel
 
@@ -66,8 +76,23 @@ recording → conflict → reserved → skipped → overlapの順に表示する
 ## 設定と所有関係
 
 設定名は`recording_reservations_enabled`。既存設定と同じ保存・復元処理を使う。
+エンコード候補名も同じ処理で保存・復元する。
+廃止した`recording_delete_original`は読み込み時に破棄し、設定の保存時にも書き戻さない。
 検証用の`--features=epg,recording-reservations`では通常設定を読み書きしない。
 `--features=none`など予約を含まない明示指定では設定からも有効化できない。
+
+フラグONで保存済みのEPGStation接続先がある場合は、起動時に資格情報なしで接続を確認する。
+フラグをONにしたときと、未確認のまま番組表を開いたときも確認する。同時に行う確認は1件とし、
+それ以外の自動再試行は行わない。確認には録画一覧と同じ
+`GET /api/recorded?isHalfWidth=false&offset=0&limit=50`と一覧の解析を使う。
+放送局情報の補完は不要なので行わない。成功後は録画一覧と予約で同じセッションを共有し、
+録画画面を開く前から予約一覧・エンコード候補を取得できる。
+
+この確認で録画一覧の表示・検索条件・ページ・エラーや保存設定を変更しない。
+認証が必要な場合や通信・解析に失敗した場合は、操作名と原因を一度ログへ記録し、未確認のままにする。
+パスワードは保存せず、認証が必要なサーバーへは設定の既存のログイン操作で接続する。
+通信失敗後は番組表を開き直すと再試行できる。
+OFFへの切替・接続先変更・再認証・終了では進行中の確認を取り消し、古い結果を受け取らない。
 
 OFFでは予約専用Job・通信を開始しない。OFFまたは接続先・認証の変更時は
 一覧を破棄し、進行中のJobを取消し、終了確認後に新しい要求を許す。
@@ -77,6 +102,18 @@ OFFでは予約専用Job・通信を開始しない。OFFまたは接続先・�
 ONかつ確認済み接続では初回取得し、以後30秒間隔と明示更新・操作完了後に再取得する。
 同時操作は1件。1応答4 MiB、一覧は合計10,000件、ページは100件に制限する。
 上限超過や途中の取得失敗では、不完全な一覧を確定せず操作を無効化する。
+
+エンコード候補は確認済み接続の初回と`refresh_reservations()`で取得し、30秒の定期更新や
+書込後の一覧再取得では取得しない。候補設定は予約状態ほど頻繁に変わらないため、明示更新で
+取り直す。専用の取消し可能なJobで取得し、候補の応答待ち・取得失敗で予約操作を止めない。
+OFF・接続先変更・再認証では候補も破棄し、古いJobの結果を採用しない。
+未取得・取得中・取得済み・取得不可・取消し待ちをRustのenumで区別する。
+取得の開始時は候補を空にし、取得できるまでエンコード指定を送らない。
+
+候補の応答は4 MiB、一覧は重複除去前に64件、各名前は空でなく256文字以内に制限する。
+重複は最初の出現を残し、サーバーの順序を保つ。上限超過・不正な応答・通信失敗では
+候補全体を空にし、処理時に操作名と原因を一度ログへ記録する。
+候補は任意データとして扱い、失敗を`reservation_error`へは設定しない。
 
 ## APIと番組IDの対応
 
@@ -92,7 +129,8 @@ ID・局ID・開始／終了時刻を照合する。番組が存在しない場�
 
 - `GET /api/reserves?type=all&isHalfWidth=false&offset=…&limit=100`で予約一覧を取得する。
 - `GET /api/recording?isHalfWidth=false&offset=…&limit=100`の録画中一覧をprogramId・局・開始時刻で照合する。
-- `POST /api/reserves`へ`{programId, allowEndLack:false}`を渡す。保存先・エンコードはサーバー既定値を使う。
+- `GET /api/config`の`encode: string[]`からエンコード候補を取得する。
+- `POST /api/reserves`へ`{programId, allowEndLack:false}`を渡す。保存した候補が現在の一覧にある場合のみ`encodeOption: {mode1, isDeleteOriginalAfterEncode:false}`を加える。APIが要求する削除フラグは常にfalseとする。保存先はサーバー既定値を使う。
 - `DELETE /api/reserves/{reserveId}`で手動予約を取り消す。直前に予約詳細と録画中一覧を再確認する。
 - 同じDELETEをルール予約へ送ると除外になる。詳細の予約ID・ruleId・番組ID・局・開始時刻と、除外/重複/中継の条件を再確認し、録画中一覧にも照合する。確認中に開始時刻へ達した場合は送信しない。
 - `DELETE /api/reserves/{reserveId}/skip`で除外を解除する。直前に同一ルール予約の詳細を取得し、除外中かつ開始前であることを再確認する。
@@ -108,6 +146,8 @@ ID・局ID・開始／終了時刻を照合する。番組が存在しない場�
 取消しは開始前で録画中でない手動予約1件に限定する。ルール予約は公開APIの条件を
 満たす1件に限り除外・除外解除できる。時刻指定予約・複数予約は状態表示のみとする。
 録画停止・重複解除・ルール編集・予約詳細設定は今回の操作に含めない。
+エンコード候補を1件指定できる。エンコード後も元ファイルを保持し、削除する選択肢は設けない。
+保存先・保存名などの保存オプション、複数のエンコード候補の同時指定は対象外とする。
 
 固定版の`ReserveItem`は`ruleId`・`isSkip`・`isOverlap`を返すが、`isEventRelay`を返さない。
 [応答生成処理](https://github.com/stuayu/EPGStation/blob/26f56720722e61e66fc33fc0c4aacfd3d98913ba/src/model/api/reserve/ReserveApiModel.ts)も
@@ -126,10 +166,18 @@ ruleIdの有無で判定する。**固定版では中継予約に「除外」を
 `python3 scripts/test.py connection`でQtモデルと通知中の整合性を確認する。
 wiremockでは認証Cookie、ページ取得、追加・取消し・除外・除外解除、対象外への送信防止、
 送信前の状態変化、失敗後の重複送信防止、取消し・切断後の古い結果の破棄を扱う。
+エンコード候補の上限・順序・重複除去、Cookieとリダイレクト拒否、設定の保存・復元、
+候補取得の失敗・遅延中の予約、候補名の照合とPOST本文も検証する。
+起動時・ONへの切替・番組表を開く操作による匿名確認、認証失敗後の再試行、重複要求の防止、
+Cookieの共有、録画画面と設定の維持、古い確認結果の破棄も検証する。
 固定版での中継予約の削除と、200を返しても変化しない除外解除も、再取得した状態で検証する。
 
 `python3 -m scripts.testing.epgstation_integration`の固定版Docker環境には
 4状態の予約・録画中データを登録する。認証あり／なしで製品クライアントの一覧取得と
 番組詳細の照合を検証する。番組・時刻は合成データで、チューナーや録画処理は起動しない。
-この環境はoperator IPCを起動しないため、予約追加・取消し・除外・除外解除の実サーバー結合は未検証。
+この環境に2件のエンコード候補を宣言し、認証あり／なしの`/api/config`を製品クライアントで読み取る。
+エンコード処理自体は起動しない。
+IPCは`/api/config`が必要とする放送波状態の読取だけを上流の予約モデルへ渡し、
+登録済みの局DBから応答を作る。それ以外のIPCは検査を失敗させるため、
+予約追加・取消し・除外・除外解除の実サーバー結合は未検証。
 未検証経路を含むため、検査に成功してもフラグの既定値はOFFを維持する。

@@ -726,3 +726,38 @@ fn recording_reservations_default_off_and_restore_explicit_changes()
     }
     Ok(())
 }
+
+#[test]
+fn reservation_encode_choices_round_trip_without_requiring_a_connected_server()
+-> Result<(), Box<dyn std::error::Error>> {
+    let dir = tempfile::tempdir()?;
+    let path = dir.path().join("settings.toml");
+    fs::write(
+        &path,
+        "future_setting = 'keep'\nrecording_delete_original = true\n",
+    )?;
+    let mut session = open(path.clone())?;
+    assert!(session.preferences().recording_encode_mode.is_empty());
+    assert!(
+        !session
+            .preferences()
+            .extra
+            .contains_key("recording_delete_original")
+    );
+    for mode in ["高画質", ""] {
+        session.change(Change::RecordingEncode(mode.into()));
+        assert_eq!(session.flush()?, SaveStatus::Saved);
+        let restored = open(path.clone())?;
+        assert_eq!(restored.preferences().recording_encode_mode, mode);
+        assert!(!fs::read_to_string(&path)?.contains("recording_delete_original"));
+        assert_eq!(
+            restored.preferences().extra["future_setting"].as_str(),
+            Some("keep")
+        );
+    }
+    let mut transient = Loaded::transient(Preferences::default()).activate(None, None);
+    transient.change(Change::RecordingEncode("temporary".into()));
+    assert_eq!(transient.flush()?, SaveStatus::Transient);
+    assert!(open(path)?.preferences().recording_encode_mode.is_empty());
+    Ok(())
+}

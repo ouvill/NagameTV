@@ -77,6 +77,26 @@ fn catalogue_pagination_metadata_and_file_bytes() -> TestResult {
     for auth in [Authentication::Anonymous, Authentication::Password] {
         let endpoint = auth.endpoint()?;
         let mut library = Library::default();
+        assert!(library.verify_for_reservations(Some(&network), true, &endpoint));
+        let deadline = Instant::now() + DEADLINE;
+        while library.verifying_reservations() {
+            library.poll_reservation_verification(&network);
+            assert!(
+                Instant::now() < deadline,
+                "real provider startup verification timed out"
+            );
+            thread::sleep(POLL_INTERVAL);
+        }
+        assert!(!library.loaded() && !library.busy());
+        assert!(library.error().is_none());
+        assert_eq!(library.revision(), 0);
+        match auth {
+            Authentication::Anonymous => {
+                assert!(library.session.is_some());
+                check_reservation_reads(&library, &network, &runtime)?;
+            }
+            Authentication::Password => assert!(library.session.is_none()),
+        }
         library.open(&network, &endpoint, "", auth.login())?;
         finish(&mut library, &network)?;
         check_reservation_reads(&library, &network, &runtime)?;
@@ -488,6 +508,15 @@ fn check_reservation_reads(
         manager.error().is_none(),
         "real provider reservations failed"
     );
+    while manager.encode_modes().is_empty() {
+        assert!(
+            Instant::now() < deadline,
+            "real provider encode config timed out"
+        );
+        manager.poll(network, Instant::now());
+        thread::sleep(POLL_INTERVAL);
+    }
+    assert_eq!(manager.encode_modes(), ["Contract HD", "Contract SD"]);
     for (id, status) in [
         (1, Status::Reserved),
         (2, Status::Conflict),

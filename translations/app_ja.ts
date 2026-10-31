@@ -1267,6 +1267,8 @@
     <message><source>Duplicate reservation</source><translation>重複</translation></message>
     <message><source>Reserved</source><translation>予約済み</translation></message>
     <message><source>Reserve recording</source><translation>録画予約</translation></message>
+    <message><source>Encoding</source><translation>エンコード</translation></message>
+    <message><source>No encoding</source><translation>エンコードしない</translation></message>
     <message><source>Cancel reservation</source><translation>予約を取り消す</translation></message>
     <message><source>Exclude</source><translation>除外</translation></message>
     <message><source>Remove exclusion</source><translation>除外解除</translation></message>

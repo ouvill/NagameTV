@@ -1,4 +1,5 @@
 use super::*;
+mod verification;
 use crate::services::NetworkError;
 use serde_json::{Value, json};
 use std::{

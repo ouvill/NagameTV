@@ -28,6 +28,7 @@ impl ffi::Player {
             return;
         }
         if open {
+            self.as_mut().rust_mut().verify_reservation_session();
             self.as_mut().refresh_channels(true);
             self.as_mut().refresh_epg();
         }

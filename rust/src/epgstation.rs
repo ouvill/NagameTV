@@ -9,6 +9,7 @@ pub mod reservations;
 #[cfg(test)]
 mod tests;
 pub mod thumbnails;
+mod verification;
 pub use client::Login;
 pub(crate) use client::PlaybackMetadata;
 use client::{Access, Connection, Fetched};
@@ -285,6 +286,7 @@ enum Catalogue {
 #[derive(Default)]
 pub struct Library {
     operation: Operation,
+    verification: verification::Verification,
     catalogue: Catalogue,
     session: Option<(Endpoint, Connection)>,
     session_generation: u64,
@@ -293,6 +295,62 @@ pub struct Library {
     thumbnails: thumbnails::Cache,
 }
 impl Library {
+    #[cfg(any(test, feature = "native_tests"))]
+    pub fn verifying_reservations(&self) -> bool {
+        matches!(
+            self.verification,
+            verification::Verification::Fetching { .. }
+                | verification::Verification::Retiring { .. }
+                | verification::Verification::Closed(Some(_))
+        )
+    }
+    pub fn verify_for_reservations(
+        &mut self,
+        network: Option<&Network>,
+        enabled: bool,
+        server: &str,
+    ) -> bool {
+        if !enabled {
+            self.verification.cancel();
+            return false;
+        }
+        if server.is_empty()
+            || self.session.is_some()
+            || self.busy()
+            || matches!(self.verification, verification::Verification::Closed(_))
+        {
+            return false;
+        }
+        let endpoint = match Endpoint::parse(server) {
+            Ok(endpoint) => endpoint,
+            Err(error) => {
+                tracing::warn!(
+                    operation = "verify EPGStation reservation session",
+                    error = &error as &dyn std::error::Error,
+                    "Invalid saved EPGStation endpoint"
+                );
+                return false;
+            }
+        };
+        let Some(network) = network else {
+            tracing::warn!(
+                operation = "verify EPGStation reservation session",
+                "Network is unavailable"
+            );
+            return false;
+        };
+        self.verification.request(network, endpoint)
+    }
+    pub fn poll_reservation_verification(&mut self, network: &Network) {
+        if let Some(session) = self.verification.poll(network) {
+            self.session_generation = self.session_generation.wrapping_add(1);
+            self.session = Some(session);
+            self.thumbnails.clear();
+        }
+    }
+    pub fn close_reservation_verification(&mut self) {
+        self.verification.close();
+    }
     pub fn synchronize_reservations(
         &self,
         enabled: bool,
@@ -356,6 +414,7 @@ impl Library {
         if keyword.chars().count() > MAX_KEYWORD_CHARS {
             return Err(Error::KeywordTooLong);
         }
+        self.verification.cancel();
         let access = match login {
             Login::Password(credentials) => Access::Login(credentials),
             Login::Current => match &self.session {
@@ -421,6 +480,7 @@ impl Library {
         };
     }
     pub fn cancel(&mut self) {
+        self.verification.cancel();
         self.operation = match std::mem::take(&mut self.operation) {
             Operation::Idle => Operation::Idle,
             Operation::Fetching { job, .. } => Operation::Stopping {

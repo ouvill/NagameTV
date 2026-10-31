@@ -30,7 +30,10 @@ fn decode<T: DeserializeOwned>(bytes: &[u8]) -> Result<T, Error> {
     // Provider error text and malformed field values can contain credentials.
     crate::json::from_slice(bytes).map_err(|error| Error::Json(super::JsonError(error)))
 }
-async fn get<T: DeserializeOwned>(connection: &Connection, path: &str) -> Result<T, Error> {
+pub(super) async fn get<T: DeserializeOwned>(
+    connection: &Connection,
+    path: &str,
+) -> Result<T, Error> {
     decode(&body(connection.api_request(Method::GET, path), 200).await?)
 }
 #[derive(Deserialize)]
@@ -113,9 +116,10 @@ pub(super) async fn execute(
     let started = std::time::Instant::now();
     let current =
         || now.saturating_add(u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX));
+    let writes = !matches!(operation, Operation::Refresh);
     match operation {
         Operation::Refresh => {}
-        Operation::Add(program) => {
+        Operation::Add { program, encode } => {
             let schedule: data::Schedule = get(
                 &connection,
                 &format!("schedules/detail/{}?isHalfWidth=false", program.key.id),
@@ -131,7 +135,11 @@ pub(super) async fn execute(
             if !program.ongoing(current()) {
                 return Err(Error::ProgramChanged);
             }
-            let payload = serde_json::json!({"programId": program.key.id, "allowEndLack": false});
+            let mut payload =
+                serde_json::json!({"programId": program.key.id, "allowEndLack": false});
+            if let Some(encode) = encode {
+                payload["encodeOption"] = serde_json::json!(encode);
+            }
             #[derive(Deserialize)]
             #[serde(rename_all = "camelCase")]
             struct Added {
@@ -184,14 +192,13 @@ pub(super) async fn execute(
             body(connection.api_request(Method::DELETE, &path), 200).await?;
         }
     }
-    snapshot(&connection)
-        .await
-        .map_err(|error| match operation {
-            Operation::Refresh => error,
-            Operation::Add(_) | Operation::Change { .. } => {
-                Error::RefreshAfterWrite(Box::new(error))
-            }
-        })
+    snapshot(&connection).await.map_err(|error| {
+        if writes {
+            Error::RefreshAfterWrite(Box::new(error))
+        } else {
+            error
+        }
+    })
 }
 
 #[cfg(test)]

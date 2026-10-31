@@ -233,6 +233,7 @@ impl Default for PlayerRust {
             media,
         };
         player.start_remote_if_requested();
+        player.verify_reservation_session();
         player
     }
 }
