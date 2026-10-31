@@ -1892,9 +1892,6 @@
     <name>Settings</name>
     <message><source>While something plays</source><translation>再生中</translation></message>
     <message><source>Recordings with chapters</source><translation>チャプターのある録画</translation></message>
-    <message><source>Screens</source><translation>画面</translation></message>
-    <message><source>Use the new screen navigation (experimental)</source><translation>新しい画面移動を使う（実験的）</translation></message>
-    <message><source>Home, the program guide and recordings become separate screens, and Back returns to the screen you came from.</source><translation>ホーム・番組表・録画一覧をそれぞれ別の画面にし、戻るで直前の画面に戻ります。</translation></message>
     <message><source>Reserve recordings from the program guide (experimental)</source><translation>番組表から録画予約する（実験的）</translation></message>
     <message><source>Adds and cancels single-program reservations on the connected EPGStation.</source><translation>接続中のEPGStationへ、番組単位の予約を追加・取り消します。</translation></message>
     <message><source>Last channel</source><translation>前に見ていたチャンネル</translation></message>
@@ -2275,10 +2272,6 @@
     <message>
       <source>Changes take effect immediately.</source>
       <translation>変更はすぐに反映されます。</translation>
-    </message>
-    <message>
-      <source>Back to viewing</source>
-      <translation>視聴へ戻る</translation>
     </message>
     <message>
       <source>Acquiring program information…</source>

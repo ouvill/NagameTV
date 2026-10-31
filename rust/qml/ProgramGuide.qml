@@ -32,7 +32,6 @@ Rectangle {
     property string band: "GR"
     required property Window targetWindow
     signal modeRequested(int mode)
-    property bool homeButton: false
     signal watchRequested(string key)
     property string watchError: ""
     // Owner of recording reservations; absent where the guide is shown without them.
@@ -97,7 +96,6 @@ Rectangle {
             uiLanguage: root.uiLanguage
             channels: root.channels; days: root.days; dayOffset: root.dayOffset; band: root.band
             targetWindow: root.targetWindow; iconDirectory: root.iconDirectory
-            homeButton: root.homeButton
             onCloseRequested: root.closeRequested()
             onModeRequested: function(mode) { root.modeRequested(mode) }
             onDayRequested: function(index) { root.dayOffset = index }

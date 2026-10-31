@@ -35,18 +35,19 @@ TestCase {
     }
     Component { id: resumable; Viewer.ContinueWatchingModel {} }
     ActionTestBackend { id: actionBackend }
-    Viewer.ViewerActions { id: viewerActions; backend: actionBackend; targetWindow: testCase.Window.window }
+    Viewer.ViewerActions { id: viewerActions; backend: actionBackend; targetWindow: null }
     property var home
     SignalSpy { id: selection; signalName: "selectRequested" }
     SignalSpy { id: resume; signalName: "resumeRequested" }
     SignalSpy { id: returning; signalName: "returnRequested" }
     SignalSpy { id: boundary; signalName: "boundaryReached" }
+    SignalSpy { id: favorite; signalName: "favoriteRequested" }
     function init() {
         failOnWarning(/.*/);
         home = createTemporaryObject(component, testCase);
         verify(home !== null);
         verify(waitForRendering(home));
-        for (const spy of [selection, resume, returning, boundary]) { spy.target = home; spy.clear(); }
+        for (const spy of [selection, resume, returning, boundary, favorite]) { spy.target = home; spy.clear(); }
     }
     function addRecordings() {
         home.continueWatching = resumable.createObject(home);
@@ -69,6 +70,51 @@ TestCase {
         compare(grid.currentIndex, 1);
         keyClick(Qt.Key_Return);
         compare(selection.signalArguments[0][0], 1);
+    }
+    function test_bands_switch_the_listed_channels() {
+        const grid = findChild(home, "homeChannels");
+        compare(grid.count, 5);
+        mouseClick(findChild(home, "band-BS"));
+        tryCompare(grid, "count", 1);
+        compare(findChild(grid.itemAtIndex(0), "cardProgramTitle").text, "Satellite film");
+    }
+    function test_a_history_failure_is_reported_on_the_page() {
+        const warning = findChild(home, "homeHistoryWarning");
+        verify(!warning.visible);
+        home.historyFailed = true;
+        verify(warning.visible);
+    }
+    function test_cards_toggle_favorites_by_star_and_key() {
+        home.favoritesReady = true;
+        const grid = findChild(home, "homeChannels");
+        tryVerify(() => grid.itemAtIndex(0) !== null);
+        const star = findChild(grid.itemAtIndex(0), "cardFavorite");
+        mouseMove(grid.itemAtIndex(0), 20, 20);
+        tryVerify(() => star.visible);
+        mouseClick(star);
+        compare(favorite.count, 1);
+        compare(selection.count, 0);
+        home.focusChannels();
+        tryCompare(grid, "activeFocus", true);
+        keyClick(Qt.Key_F);
+        compare(favorite.count, 2);
+    }
+    function test_unfinished_recordings_resume_by_pointer_and_keys() {
+        addRecordings();
+        const row = findChild(home, "homeContinue");
+        tryVerify(() => row.itemAtIndex(0) !== null);
+        compare(findChild(row.itemAtIndex(0), "continueTitle").text, "Evening drama");
+        compare(findChild(row.itemAtIndex(0), "continueRemaining").text, "45 min left");
+        mouseClick(row.itemAtIndex(1));
+        compare(resume.signalArguments[0][0], "key-b");
+        home.focusChannels();
+        keyClick(Qt.Key_Down);
+        keyClick(Qt.Key_Down);
+        tryCompare(row, "activeFocus", true);
+        keyClick(Qt.Key_Left);
+        keyClick(Qt.Key_Return);
+        compare(resume.count, 2);
+        compare(resume.signalArguments[1][0], "key-a");
     }
     function test_favorites_open_first_when_the_watched_channel_is_one() {
         home.rows = [

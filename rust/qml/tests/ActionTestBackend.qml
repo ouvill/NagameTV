@@ -50,7 +50,6 @@ QtObject {
     readonly property bool data_broadcast_available: dataBroadcastAvailable
     property bool subtitle_display: true
     property bool epg_enabled: true
-    property bool guide_visible: false
     property int saved: 0
     property int playbackRequests: 0
     property int channelSteps: 0
@@ -60,17 +59,24 @@ QtObject {
     function stop() { stopRequests++; }
     function skip(milliseconds) { skips.push(milliseconds); }
     function step_channel(offset) { channelSteps += offset; }
-    function guide_open(visible) { guide_visible = visible; }
     property string chapters_data: "[]"
     property var chapterSeeks: []
     property bool chapterAccepted: true
     function seek_chapter(offset) { chapterSeeks = chapterSeeks.concat([offset]); return chapterAccepted; }
-    // Screen history: each entry is one screen Back can still return to.
-    property bool screen_navigation: false
-    property int screenHistory: 0
+    // Screen history like Player's: Home at the bottom, Back pops one screen.
+    property int screen: 0
+    property var history: []
+    readonly property bool guide_visible: screen === 2
+    function open_screen(value) {
+        if (value === screen) return true;
+        history = value === 0 ? [] : history.filter(item => item !== value).concat([screen]);
+        screen = value;
+        return true;
+    }
     function go_back() {
-        if (!screen_navigation || screenHistory === 0) return false;
-        screenHistory--;
+        if (history.length === 0) return false;
+        screen = history[history.length - 1];
+        history = history.slice(0, -1);
         return true;
     }
     function mute(value) { audio_muted = value; }

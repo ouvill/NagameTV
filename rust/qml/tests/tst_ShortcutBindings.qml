@@ -339,7 +339,7 @@ Item {
             function test_escape_closes_guide_before_channels_data() { return dismissInputs(); }
             function test_escape_closes_guide_before_channels(data) {
                 view.actions.channelsVisible = true;
-                view.backend.guide_visible = true;
+                view.backend.open_screen(2);
                 dismiss(data);
                 verify(!view.backend.guide_visible);
                 compare(view.channelRequests, 0);
@@ -457,17 +457,16 @@ Item {
             }
             function test_back_returns_screens_before_leaving_fullscreen_data() { return dismissInputs(); }
             function test_back_returns_screens_before_leaving_fullscreen(data) {
-                view.backend.screen_navigation = true;
-                view.backend.screenHistory = 1;
+                view.backend.open_screen(3);
                 keyClick(Qt.Key_F11);
                 tryCompare(host, "visibility", Window.FullScreen);
                 view.actions.channelsVisible = true;
                 dismiss(data);
                 compare(view.channelRequests, 1);
-                compare(view.backend.screenHistory, 1);
+                compare(view.backend.screen, 3);
                 view.actions.channelsVisible = false;
                 dismiss(data);
-                compare(view.backend.screenHistory, 0);
+                compare(view.backend.screen, 0);
                 compare(host.visibility, Window.FullScreen);
                 dismiss(data);
                 tryCompare(host, "visibility", data.key === Qt.Key_Escape ? Window.Windowed : Window.FullScreen);
@@ -476,7 +475,7 @@ Item {
             function test_dismiss_in_fullscreen(data) {
                 keyClick(Qt.Key_F11);
                 tryCompare(host, "visibility", Window.FullScreen);
-                view.backend.guide_visible = true;
+                view.backend.open_screen(2);
                 view.popup.open();
                 tryCompare(view.popup, "opened", true);
                 dismiss(data);
