@@ -262,6 +262,31 @@ impl Session {
             } => None,
         }
     }
+    pub(crate) fn chapter_source(&self) -> Option<super::chapters::Source> {
+        match &self.input {
+            Input::Media {
+                identity, source, ..
+            } => Some(super::chapters::Source::media(
+                *identity,
+                source.preview_source(),
+            )),
+            Input::Active {
+                source,
+                projection: Projection::Recording,
+                ..
+            } => Some(super::chapters::Source::transport(source.identity())),
+            Input::Idle
+            | Input::Active {
+                projection: Projection::Live(_),
+                ..
+            } => None,
+        }
+    }
+    pub(crate) fn chapters(&self) -> Option<super::chapters::List> {
+        self.playback
+            .as_ref()
+            .and_then(|playback| playback.chapters.borrow().clone())
+    }
     pub fn preview_identity(&self) -> Option<u64> {
         match &self.input {
             Input::Idle => None,

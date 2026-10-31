@@ -6,6 +6,7 @@ pub mod audio_output;
 mod audio_routing;
 mod audio_sink;
 pub mod audio_streams;
+pub(crate) mod chapters;
 mod clock;
 pub(crate) use audio_sink::Error as AudioSinkError;
 pub(crate) use clock::Error as ClockError;
@@ -206,6 +207,7 @@ pub struct Playback {
     audio_default: RefCell<audio_default::Policy>,
     requested_uri: RefCell<Option<String>>,
     warnings: Cell<warnings::Counts>,
+    chapters: RefCell<Option<chapters::List>>,
     program_number: Arc<std::sync::atomic::AtomicI32>,
     presentation: crate::screenshots::native::Presentation,
 }
@@ -333,6 +335,7 @@ impl Playback {
             audio_default: RefCell::default(),
             requested_uri: RefCell::new(None),
             warnings: Cell::default(),
+            chapters: RefCell::default(),
             program_number,
             presentation,
         })
@@ -461,6 +464,7 @@ impl Playback {
             _ => stop_stream(&self.playbin)?,
         }
         *self.requested_uri.borrow_mut() = None;
+        *self.chapters.borrow_mut() = None;
         self.presentation.clear();
         self.presentation.set_latency(None);
         *self.audio_streams.borrow_mut() = audio_streams::Streams::default();
@@ -528,6 +532,20 @@ impl Playback {
                 tracing::error!("Audio selection: {error}");
             }
             match message.view() {
+                gst::MessageView::Toc(message) => {
+                    let (toc, _) = message.toc();
+                    match chapters::List::from_toc(&toc) {
+                        Ok(chapters) => *self.chapters.borrow_mut() = Some(chapters),
+                        Err(error) => {
+                            *self.chapters.borrow_mut() = None;
+                            tracing::warn!(
+                                operation = "read container TOC",
+                                error = &error as &dyn std::error::Error,
+                                "Container chapters unavailable"
+                            );
+                        }
+                    }
+                }
                 gst::MessageView::Element(_) => {
                     if failure.is_none() {
                         failure = missing_decoder(&message);
@@ -612,6 +630,7 @@ impl Playback {
             .set_property("widget", std::ptr::null_mut::<std::ffi::c_void>());
         self.video_output = VideoOutputState::Closed;
         *self.requested_uri.borrow_mut() = None;
+        *self.chapters.borrow_mut() = None;
         Ok(())
     }
 

@@ -23,6 +23,7 @@ pub struct Request {
     purpose: Purpose,
     broadcast: Option<super::Broadcast>,
     metadata: Option<crate::epgstation::PlaybackMetadata>,
+    pub(super) program: Option<Arc<crate::epgstation::program::Information>>,
     pub(super) external_subtitle: Option<crate::media_subtitles::Script>,
 }
 impl Request {
@@ -33,6 +34,7 @@ impl Request {
             broadcast: None,
             external_subtitle: None,
             metadata: None,
+            program: None,
             history: None,
         }
     }
@@ -43,6 +45,7 @@ impl Request {
             broadcast: None,
             external_subtitle: None,
             metadata: None,
+            program: None,
             history: None,
         })
     }
@@ -55,6 +58,10 @@ impl Request {
         request.broadcast = broadcast;
         request.metadata = metadata;
         Ok(request)
+    }
+    pub(crate) fn with_program(mut self, program: crate::epgstation::program::Information) -> Self {
+        self.program = Some(Arc::new(program));
+        self
     }
     pub(crate) fn with_history(
         mut self,
@@ -75,6 +82,7 @@ impl Request {
             broadcast,
             external_subtitle: None,
             metadata: None,
+            program: None,
             history: None,
         }
     }
@@ -144,6 +152,7 @@ impl Loader {
         match Job::spawn(move |cancelled| {
             let mut recording = Recording::inspect(&request.location, cancelled)?;
             recording.set_history_identity(request.history);
+            recording.set_program(request.program);
             if let Recording::Media(file) = &mut recording {
                 file.broadcast = request.broadcast.map(|broadcast| {
                     match request
