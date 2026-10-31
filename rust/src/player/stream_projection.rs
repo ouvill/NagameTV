@@ -319,3 +319,19 @@ impl Committed<'_> {
 pub(super) fn apply(player: Pin<&mut ffi::Player>, change: impl FnOnce(State) -> State) {
     Prepared::new(player, change).commit().notify();
 }
+
+#[cfg(feature = "native_tests")]
+pub(super) fn chapter_range_for_check(
+    mut player: Pin<&mut ffi::Player>,
+    seekable: bool,
+    position: Option<u64>,
+) {
+    let before = Snapshot::capture(&player);
+    player
+        .as_mut()
+        .rust_mut()
+        .chapters
+        .range_for_check(seekable, position);
+    let after = Snapshot::capture(&player);
+    before.notify_changes(&after, player);
+}

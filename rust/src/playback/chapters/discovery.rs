@@ -92,6 +92,16 @@ impl Controller {
             None,
         );
     }
+    #[cfg(feature = "native_tests")]
+    pub(crate) fn range_for_check(&mut self, seekable: bool, position: Option<u64>) {
+        self.update(
+            Some(Source::transport(u64::MAX)),
+            None,
+            seekable,
+            position,
+            None,
+        );
+    }
     pub(crate) fn revision(&self) -> u64 {
         self.revision
     }
@@ -113,7 +123,8 @@ impl Controller {
         duration: Option<u64>,
     ) {
         let identity = source.as_ref().map(|source| source.identity);
-        if self.identity != identity {
+        let source_changed = self.identity != identity;
+        if source_changed {
             self.work = match std::mem::take(&mut self.work) {
                 Work::Reading(job) | Work::Retiring(job) => {
                     job.cancel();
@@ -130,9 +141,22 @@ impl Controller {
         let before_current = self.current;
         let selected = toc
             .filter(|list| !list.entries.is_empty())
-            .unwrap_or_else(|| self.fallback.clone());
-        let visible = identity.is_some() && seekable;
-        if self.selected != selected || self.duration != duration || self.visible != visible {
+            .unwrap_or_else(|| {
+                if source_changed || self.selected.entries.is_empty() {
+                    self.fallback.clone()
+                } else {
+                    self.selected.clone()
+                }
+            });
+        // Seek flushes can temporarily lose range/metadata answers. Retained
+        // presentation must not authorize transport; Player checks the current range.
+        let visible = identity.is_some() && (seekable || (!source_changed && self.visible));
+        let duration = duration.or(if source_changed { None } else { self.duration });
+        if source_changed
+            || self.selected != selected
+            || self.duration != duration
+            || self.visible != visible
+        {
             self.display = if visible {
                 selected.within(duration)
             } else {
@@ -142,7 +166,11 @@ impl Controller {
             self.duration = duration;
             self.visible = visible;
         }
-        self.current = position.and_then(|position| self.display.current(position));
+        self.current = match position {
+            Some(position) => self.display.current(position),
+            None if !source_changed && before == self.display => before_current,
+            None => None,
+        };
         if before != self.display || before_current != self.current {
             self.revision = self.revision.wrapping_add(1);
         }

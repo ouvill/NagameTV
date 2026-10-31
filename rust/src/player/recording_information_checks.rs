@@ -228,6 +228,7 @@ pub(super) fn run() -> TestResult {
     toc.get_mut().unwrap().append_entry(chapter);
     resumed.pin_mut().rust_mut().chapters.seed_for_check(&toc);
     assert_eq!(resumed.current_chapter(), 0);
+    check_chapter_flush(&mut resumed);
     let changes = Arc::new(Mutex::new(0));
     let observed = changes.clone();
     let _signal = resumed.pin_mut().on_chapters_changed(move |player| {
@@ -254,6 +255,30 @@ pub(super) fn run() -> TestResult {
     }
     runtime.block_on(server.verify());
     Ok(())
+}
+
+fn check_chapter_flush(player: &mut cxx::UniquePtr<ffi::Player>) {
+    let published = player.chapters_data();
+    let current = player.current_chapter();
+    let notifications = Arc::new(Mutex::new(0));
+    let observed = notifications.clone();
+    let _signal = player.pin_mut().on_chapters_changed(move |_| {
+        *observed.lock().unwrap() += 1;
+    });
+    for (seekable, position) in [(false, None), (false, Some(0)), (true, Some(0))] {
+        super::stream_projection::chapter_range_for_check(player.pin_mut(), seekable, position);
+        assert_eq!(player.chapters_data(), published);
+        assert_eq!(player.current_chapter(), current);
+    }
+    assert_eq!(*notifications.lock().unwrap(), 0);
+    player.pin_mut().rust_mut().timeline.position = Some(gstreamer::ClockTime::from_mseconds(4000));
+    assert_eq!(player.chapter_target(-1), Some(0));
+    assert!(!player.seekable());
+    assert!(
+        !player.pin_mut().seek_chapter(-1),
+        "retained chapters cannot authorize a seek without a current range"
+    );
+    player.pin_mut().rust_mut().timeline.position = None;
 }
 
 fn check_chapter_targets(player: &mut cxx::UniquePtr<ffi::Player>) -> TestResult {

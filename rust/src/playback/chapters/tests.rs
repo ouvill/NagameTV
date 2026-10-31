@@ -306,11 +306,99 @@ fn container_toc_and_controller_publish_only_seekable_recordings_and_reset() {
     controller.update(Some(Source::transport(2)), None, true, Some(0), None);
     assert_eq!(controller.json(), "[]");
     assert_eq!(controller.current(), -1);
-    for (source, seekable) in [(Some(Source::transport(2)), false), (None, true)] {
+    for (source, seekable) in [(Some(Source::transport(3)), false), (None, true)] {
         controller.update(source, Some(chapters.clone()), seekable, Some(0), None);
         assert_eq!(controller.json(), "[]");
         assert_eq!(controller.target(1, Some(0)), None);
     }
+}
+
+#[test]
+fn seek_flush_keeps_published_chapters_duration_and_index_without_notifications() {
+    let chapters = list(&[(0, "Opening"), (5000, "CM"), (10000, "Past duration")]);
+    let mut controller = Controller::default();
+    controller.update(
+        Some(Source::transport(1)),
+        Some(chapters.clone()),
+        true,
+        Some(6000),
+        Some(9000),
+    );
+    let published = controller.json().to_owned();
+    let revision = controller.revision();
+    assert!(!published.contains("Past duration"));
+    for (seekable, position, duration) in [
+        (false, None, None),
+        (false, Some(6000), None),
+        (true, None, None),
+        (true, Some(6000), Some(9000)),
+    ] {
+        controller.update(
+            Some(Source::transport(1)),
+            None,
+            seekable,
+            position,
+            duration,
+        );
+        assert_eq!(controller.json(), published);
+        assert_eq!(controller.current(), 1);
+        assert_eq!(
+            controller.revision(),
+            revision,
+            "a range/position gap must not notify QML"
+        );
+    }
+    controller.update(
+        Some(Source::transport(1)),
+        Some(chapters.clone()),
+        true,
+        Some(2000),
+        Some(9000),
+    );
+    assert_eq!(controller.json(), published);
+    assert_eq!(controller.current(), 0);
+    assert_eq!(
+        controller.revision(),
+        revision + 1,
+        "confirmed chapter changes still notify"
+    );
+
+    controller.update(
+        Some(Source::transport(2)),
+        Some(chapters.clone()),
+        false,
+        None,
+        None,
+    );
+    assert_eq!(controller.json(), "[]");
+    assert_eq!(controller.current(), -1);
+    controller.update(
+        Some(Source::transport(2)),
+        Some(chapters.clone()),
+        true,
+        Some(6000),
+        Some(9000),
+    );
+    assert_eq!(controller.json(), published);
+    controller.update(None, Some(chapters.clone()), true, None, None);
+    assert_eq!(
+        controller.json(),
+        "[]",
+        "stop/live/timeshift must clear a retained list"
+    );
+    assert_eq!(controller.current(), -1);
+    controller.update(
+        Some(Source::transport(2)),
+        Some(chapters),
+        false,
+        Some(6000),
+        Some(9000),
+    );
+    assert_eq!(
+        controller.json(),
+        "[]",
+        "reopening must establish seekability again"
+    );
 }
 
 #[test]
@@ -369,7 +457,7 @@ fn chapter_discovery_handles_local_and_http_mp4_and_toc_wins() {
         assert_eq!(controller.current(), 1);
         assert!(controller.json().contains("A90Sec"));
         controller.update(
-            Some(Source::media(1, file)),
+            Some(Source::media(1, file.clone())),
             Some(List::from_toc(&toc()).unwrap()),
             true,
             Some(0),
@@ -377,6 +465,15 @@ fn chapter_discovery_handles_local_and_http_mp4_and_toc_wins() {
         );
         assert!(controller.json().contains("Opening"));
         assert!(!controller.json().contains("A90Sec"));
+        let published = controller.json().to_owned();
+        let revision = controller.revision();
+        controller.update(Some(Source::media(1, file)), None, false, None, None);
+        assert_eq!(
+            controller.json(),
+            published,
+            "a missing TOC during flush must not restore the MP4 fallback"
+        );
+        assert_eq!(controller.revision(), revision);
         controller.update(None, None, false, None, None);
         assert_eq!(controller.json(), "[]");
         assert_eq!(controller.current(), -1);
