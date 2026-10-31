@@ -233,6 +233,7 @@ fn checks() -> TestResult {
     super::recording_library_checks::run()?;
     super::viewing_history_checks::run()?;
     super::recording_reservation_checks::run()?;
+    super::navigation_checks::run()?;
     super::updates_checks::run()?;
     check_playback_actions(&mut player)?;
     check_recording_input(&mut player)?;

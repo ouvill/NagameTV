@@ -20,6 +20,7 @@ impl ffi::Player {
             None
         };
         self.as_mut().rust_mut().epg.configure(server);
+        self.as_mut().reconcile_navigation();
         if !self.rust().epg_enabled {
             self.as_mut().guide_open(false);
         }

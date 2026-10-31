@@ -159,6 +159,7 @@ pub enum Change {
     SubtitleForceOutline(bool),
     DataBroadcastEnabled(bool),
     RecordingReservationsEnabled(bool),
+    ScreenNavigationEnabled(bool),
     RecordingEncode(String),
     DataBroadcastPrefetch(bool),
     Comments(bool),
@@ -246,6 +247,9 @@ impl Session {
             Change::DataBroadcastEnabled(enabled) => preferences.data_broadcast_enabled = enabled,
             Change::RecordingReservationsEnabled(enabled) => {
                 preferences.recording_reservations_enabled = enabled
+            }
+            Change::ScreenNavigationEnabled(enabled) => {
+                preferences.screen_navigation_enabled = enabled
             }
             Change::RecordingEncode(mode) => preferences.recording_encode_mode = mode,
             Change::DataBroadcastPrefetch(enabled) => preferences.data_broadcast_prefetch = enabled,

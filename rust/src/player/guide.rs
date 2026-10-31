@@ -23,20 +23,32 @@ impl ffi::Player {
     }
 
     pub fn guide_open(mut self: Pin<&mut Self>, open: bool) {
+        if self.screen_navigation() {
+            self.as_mut().reconcile_navigation();
+            if open {
+                self.open_screen(crate::screen_navigation::Screen::Guide as i32);
+            } else if self.screen() == crate::screen_navigation::Screen::Guide as i32 {
+                self.go_back();
+            }
+            return;
+        }
+        self.apply_guide_visibility(open);
+    }
+    pub(super) fn apply_guide_visibility(mut self: Pin<&mut Self>, open: bool) {
         let open = open && self.rust().epg_enabled;
         if open == self.guide_visible() {
             return;
-        }
-        if open {
-            self.as_mut().rust_mut().verify_reservation_session();
-            self.as_mut().refresh_channels(true);
-            self.as_mut().refresh_epg();
         }
         self.as_mut().rust_mut().guide = if open {
             Guide::AwaitingDay
         } else {
             Guide::Closed
         };
+        if open {
+            self.as_mut().rust_mut().verify_reservation_session();
+            self.as_mut().refresh_channels(true);
+            self.as_mut().refresh_epg();
+        }
         self.as_mut()
             .set_guide_visibility_data(QString::from("null"));
         self.as_mut().rust_mut().next_current_program = std::time::Instant::now();
@@ -111,7 +123,9 @@ impl ffi::Player {
         })();
         match result {
             Ok(index) => {
-                self.as_mut().guide_open(false);
+                if !self.screen_navigation() {
+                    self.as_mut().guide_open(false);
+                }
                 self.select(index);
                 QString::default()
             }

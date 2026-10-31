@@ -23,6 +23,7 @@ mod video_info;
 #[cfg(feature = "video_item_tests")]
 pub(crate) mod video_item_checks;
 mod video_output;
+pub mod viewing;
 pub mod warnings;
 
 use gstreamer::{self as gst, prelude::*};

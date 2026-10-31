@@ -35,6 +35,12 @@ impl ffi::Player {
     }
     /// READY joins streaming callbacks before dropping their subscriptions/state.
     pub(super) fn end_stream(mut self: Pin<&mut Self>) -> Result<(), playback::Error> {
+        self.as_mut().release_stream()?;
+        self.change_viewing(playback::viewing::Viewing::close, false);
+        Ok(())
+    }
+    // Native cleanup after an error/reconnect does not close the user-visible attempt.
+    fn release_stream(mut self: Pin<&mut Self>) -> Result<(), playback::Error> {
         self.as_mut().save_recording_history(true);
         let result = self.as_mut().rust_mut().media.stop().map(|_| ());
         if let Err(error) = result {
@@ -58,15 +64,20 @@ impl ffi::Player {
             return;
         }
         if self.paused() {
+            self.as_mut()
+                .change_viewing(playback::viewing::Viewing::retain, true);
             self.resume_transport();
             return;
         }
         if self.ended() {
+            self.as_mut()
+                .change_viewing(playback::viewing::Viewing::retain, true);
             self.seek_to(0.0);
             return;
         }
         if let Some(file) = self.rust().stream_state.recording() {
             if self.playing() || self.connecting() {
+                self.change_viewing(playback::viewing::Viewing::retain, true);
                 return;
             }
             let request = file.replay();
@@ -77,6 +88,7 @@ impl ffi::Player {
             return;
         };
         if self.rust().stream_state.requested(entry.id) {
+            self.change_viewing(playback::viewing::Viewing::retain, true);
             return;
         }
         let attempt = Attempt::new(
@@ -85,7 +97,15 @@ impl ffi::Player {
         );
         self.start_stream(attempt);
     }
-    pub(super) fn start_stream(mut self: Pin<&mut Self>, attempt: Attempt) -> bool {
+    pub(super) fn start_stream(self: Pin<&mut Self>, attempt: Attempt) -> bool {
+        self.start_stream_request(attempt, true)
+    }
+    pub(super) fn continue_stream(self: Pin<&mut Self>, attempt: Attempt) -> bool {
+        self.start_stream_request(attempt, false)
+    }
+    fn start_stream_request(mut self: Pin<&mut Self>, attempt: Attempt, open: bool) -> bool {
+        self.as_mut()
+            .change_viewing(playback::viewing::Viewing::retain, open);
         self.as_mut()
             .set_transport_message(super::transport::Message::None);
         self.as_mut().cancel_recording_open();
@@ -249,7 +269,7 @@ impl ffi::Player {
                 self.as_mut().set_subtitle_data(QString::default());
                 self.as_mut().reset_media_subtitles();
             }
-            Ok(playback::Event::Ended(_)) => match self.as_mut().end_stream() {
+            Ok(playback::Event::Ended(_)) => match self.as_mut().release_stream() {
                 Ok(()) => self.as_mut().playback_failed(playback::Error::EndOfStream),
                 Err(error) => self.as_mut().playback_failed(error),
             },
@@ -269,7 +289,7 @@ impl ffi::Player {
                     .is_live_resume_rejected()
                     .then(|| self.as_mut().rust_mut().stream_state.take_retry())
                     .flatten();
-                if let Err(stop_error) = self.as_mut().end_stream() {
+                if let Err(stop_error) = self.as_mut().release_stream() {
                     self.playback_failed(playback::Error::Cleanup {
                         primary: Box::new(error),
                         cleanup: Box::new(stop_error),
@@ -281,7 +301,7 @@ impl ffi::Player {
                         error = &error as &dyn std::error::Error,
                         "Live resume rejected; opening one fresh stream connection"
                     );
-                    self.as_mut().start_stream(attempt);
+                    self.as_mut().continue_stream(attempt);
                     if self.connecting() {
                         self.as_mut().update_status(PlaybackStatus::Reconnecting);
                     }
@@ -308,6 +328,12 @@ impl ffi::Player {
         self.as_mut().data_broadcast_open(false);
         self.as_mut().rust_mut().data_broadcast_mode.close();
         self.as_mut().cancel_epgstation();
+        // Cancelling a pending first file must not reveal a historical Guide
+        // and start new requests while shutdown is already releasing owners.
+        if self.watching_available() {
+            self.as_mut()
+                .change_viewing(playback::viewing::Viewing::retain, false);
+        }
         self.as_mut().cancel_recording_open();
         // Retained native screenshot buffers may still need the GL context for
         // readback. Complete accepted work before stopping that context.
@@ -319,6 +345,9 @@ impl ffi::Player {
             self.playback_failed(error);
             return false;
         }
+        // Closing Watching must not reveal and refresh a historical Guide during shutdown.
+        self.as_mut()
+            .open_screen(crate::screen_navigation::Screen::Home as i32);
         self.as_mut().shutdown_recording_reservations();
         #[cfg(target_os = "linux")]
         {

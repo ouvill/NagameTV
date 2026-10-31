@@ -9,15 +9,18 @@
 
 | 種類 | 名前・型 | 契約 |
 | --- | --- | --- |
-| 読取専用プロパティ | `screen_navigation: bool` | 画面移動機能が現在ONか。通知は`screen_navigation_changed()` |
+| 読取専用プロパティ | `screen_navigation: bool` | 画面移動機能が現在ONか。通知は`screen_navigationChanged()` |
 | 読取専用プロパティ | `screen_navigation_allowed: bool` | この起動設定でONにできるか。起動中は不変 |
 | 読取専用プロパティ | `screen: int` | 現在の画面。OFFでは`Home`を返し、従来の画面表示には使わない |
 | 読取専用プロパティ | `back_screen: int` | 戻る操作後の画面。`[Home]`とOFFでは`-1` |
-| 読取専用プロパティ | `watching_available: bool` | 読込中・エラー・録画終端を含む視聴セッションがあるか。通知は`watching_available_changed()` |
+| 読取専用プロパティ | `watching_available: bool` | 読込中・エラー・録画終端を含む視聴セッションがあるか。通知は`watching_availableChanged()` |
 | invokable | `open_screen(screen: int) -> bool` | 指定画面を開く。OFF、未知の番号、EPG無効時のGuide、セッション不在時のWatchingは`false`。現在と同じ画面も受理し`true` |
-| invokable | `go_back() -> bool` | 履歴の先頭へ戻る。`[Home]`とOFFでは変更せず`false` |
+| invokable | `go_back() -> bool` | 直前の画面へ戻る。`[Home]`とOFFでは変更せず`false` |
 | invokable | `configure_screen_navigation(enabled: bool, legacy_screen: int) -> bool` | 設定を変更して保存する。OFF→ONではQMLが現在表示している画面番号を渡す。未知・利用不可の画面や起動設定で禁止されたONは`false`で変更しない。OFFへの切替と同じ値の再設定では第2引数を使わない。保存失敗は既存の`settings_error`で通知し、受理済みの実行時設定は維持する |
 | signal | `screen_changed()` | `screen`と`back_screen`の通知。両方とGuideの状態を確定してから通知する |
+
+QMLのハンドラー名は`onScreen_changed`、`onScreen_navigationChanged`、
+`onWatching_availableChanged`。後者2つはCXX-Qtが生成するプロパティ通知名を使う。
 
 `guide_visible`は引き続き「番組表が表示されている」を表す。
 ONでは`guide_open(true)`をGuideへの移動、`guide_open(false)`を現在のGuideからの戻る操作として扱う。
@@ -34,6 +37,7 @@ Homeを開くと`[Home]`へ戻す。戻る操作は末尾を取り除く。
 画面移動だけでは再生を停止しない。受理した選局、ファイル・URL・録画の読込要求は
 Watchingを開く。入力検証で拒否された要求は画面を変えない。
 読込失敗・再生失敗・一時的な再接続でも視聴セッションを維持する。
+読込完了や自動再接続によって、ユーザーがその後に選んだ画面を変更しない。
 録画の終端では再開・シークができるため、閉じるまでWatchingを維持する。
 明示的な停止、サーバーの置換、正常な終了でセッションを閉じ、履歴からWatchingを取り除く。
 停止に失敗して再生資源が残った場合は維持する。

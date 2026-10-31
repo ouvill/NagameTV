@@ -20,6 +20,9 @@ use lifecycle::{Failure as StatusFailure, Status as PlaybackStatus};
 mod data_broadcast;
 mod error_text;
 mod media_subtitles;
+mod navigation;
+#[cfg(feature = "native_tests")]
+mod navigation_checks;
 mod playback_failure;
 mod preferences;
 mod program_info;
@@ -269,6 +272,11 @@ pub mod ffi {
         #[qproperty(bool, data_broadcast_allowed, READ, CONSTANT)]
         #[qproperty(bool, recording_reservations_enabled, READ = recording_reservations_enabled, NOTIFY)]
         #[qproperty(bool, recording_reservations_allowed, READ, CONSTANT)]
+        #[qproperty(bool, screen_navigation, READ = screen_navigation, NOTIFY)]
+        #[qproperty(bool, screen_navigation_allowed, READ, CONSTANT)]
+        #[qproperty(i32, screen, READ = screen, NOTIFY = screen_changed)]
+        #[qproperty(i32, back_screen, READ = back_screen, NOTIFY = screen_changed)]
+        #[qproperty(bool, watching_available, READ = watching_available, NOTIFY)]
         #[qproperty(bool, reservations_enabled, READ = reservations_enabled, NOTIFY = reservations_changed)]
         #[qproperty(bool, reservation_busy, READ = reservation_busy, NOTIFY = reservations_changed)]
         #[qproperty(QString, reservation_error, READ = reservation_error, NOTIFY = reservations_changed)]
@@ -517,6 +525,22 @@ pub mod ffi {
         fn data_broadcast_prefetch(self: &Player) -> bool;
         fn data_broadcast_enabled(self: &Player) -> bool;
         fn recording_reservations_enabled(self: &Player) -> bool;
+        fn screen_navigation(self: &Player) -> bool;
+        fn screen(self: &Player) -> i32;
+        fn back_screen(self: &Player) -> i32;
+        fn watching_available(self: &Player) -> bool;
+        #[qsignal]
+        fn screen_changed(self: Pin<&mut Player>);
+        #[qinvokable]
+        fn configure_screen_navigation(
+            self: Pin<&mut Player>,
+            enabled: bool,
+            legacy_screen: i32,
+        ) -> bool;
+        #[qinvokable]
+        fn open_screen(self: Pin<&mut Player>, screen: i32) -> bool;
+        #[qinvokable]
+        fn go_back(self: Pin<&mut Player>) -> bool;
         fn reservations_enabled(self: &Player) -> bool;
         fn reservation_busy(self: &Player) -> bool;
         fn reservation_error(self: &Player) -> QString;
@@ -790,6 +814,9 @@ pub struct PlayerRust {
     data_broadcast_mode: data_broadcast::Mode,
     data_broadcast_allowed: bool,
     recording_reservations_allowed: bool,
+    screen_navigation_allowed: bool,
+    navigation: crate::screen_navigation::Navigation,
+    viewing: crate::playback::viewing::Viewing,
     recording_reservations: crate::epgstation::reservations::Manager,
     data_broadcast_endpoint: QString,
     subtitle_display: bool,
