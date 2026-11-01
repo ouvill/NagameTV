@@ -144,6 +144,12 @@ QMLは更新前のスクロール位置と現在の録画ID（`recordedId`）を
 新しい範囲に収める。最終ページへの補正で別のページになった場合も同様に処理する。
 検索欄の内容と画面の移動履歴は変更しない。
 
+`RecordingModel.row_for_recording(recorded_id: QString) -> i32`は、文字列の録画IDを
+現在の行番号へ変換するinvokableである。一致する録画がない場合、空・不正なID・
+`u64`の範囲外の場合は`-1`を返す。状態や通知は変更しない。
+QMLはモデルリセット後に保存した`recordedId`を渡して選択を復元する。
+64bitのIDをJavaScriptの数値へ変換しない。
+
 ## 検証
 
 ローカルのHTTP応答を使うRustテストで、共通API、認証Cookie、再生トークン、
