@@ -14,7 +14,7 @@ Rectangle {
     signal fileRequested
     signal urlRequested
     signal connectionRequested
-    enum AfterLoad { KeepFocus, ResetSearch, FocusFirstRecording }
+    enum AfterLoad { KeepFocus, ResetSearch, FocusFirstRecording, RestorePosition }
     property int afterLoad: RecordingLibrary.KeepFocus
     color: Theme.canvas
     function clearSearch() { keywordField.clear(); }
@@ -24,9 +24,30 @@ Rectangle {
             if (!backend.browse_epgstation(backend.epgstation_server, keywordField.text)) afterLoad = RecordingLibrary.KeepFocus;
         }
     }
+    // A refresh replaces the rows; the reader stays on the same recording and scroll position.
+    QtObject {
+        id: restore
+        property string recording: ""
+        property real contentY: 0
+    }
     function activate() {
-        if (backend.epgstation_server.length && !backend.epgstation_loaded && !backend.epgstation_busy) search();
+        if (backend.epgstation_loaded && !backend.epgstation_busy) {
+            const current = list.currentItem as RecordingRow;
+            restore.recording = current ? current.recordedId : "";
+            restore.contentY = list.contentY;
+            afterLoad = RecordingLibrary.RestorePosition;
+            if (!backend.refresh_epgstation()) afterLoad = RecordingLibrary.KeepFocus;
+        } else if (backend.epgstation_server.length && !backend.epgstation_loaded && !backend.epgstation_busy) {
+            search();
+        }
         keywordField.focusForNavigation();
+    }
+    function restorePosition() {
+        const row = restore.recording.length ? backend.recordings.row_for_recording(restore.recording) : -1;
+        list.currentIndex = row >= 0 ? row : Math.min(list.currentIndex, list.count - 1);
+        list.contentY = restore.contentY;
+        list.returnToBounds();
+        if (list.currentIndex >= 0 && row >= 0) list.positionViewAtIndex(list.currentIndex, ListView.Contain);
     }
     function focusRecordings(last: bool) {
         if (list.count > 0) {
@@ -65,7 +86,9 @@ Rectangle {
             root.afterLoad = RecordingLibrary.KeepFocus;
             Qt.callLater(function() {
                 if (root.backend.epgstation_error.length) return;
-                if (action === RecordingLibrary.ResetSearch) {
+                if (action === RecordingLibrary.RestorePosition) {
+                    root.restorePosition();
+                } else if (action === RecordingLibrary.ResetSearch) {
                     list.currentIndex = list.count > 0 ? 0 : -1;
                     list.positionViewAtBeginning();
                 } else if (root.visible && keywordField.activeFocus && keywordField.interaction === NavigationField.Navigating) {
