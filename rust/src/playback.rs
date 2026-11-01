@@ -6,6 +6,7 @@ pub mod audio_output;
 mod audio_routing;
 mod audio_sink;
 pub mod audio_streams;
+mod av1;
 pub(crate) mod chapters;
 mod clock;
 pub(crate) use audio_sink::Error as AudioSinkError;
@@ -292,6 +293,9 @@ impl Playback {
                 .and_then(|value| value.get::<gst::Element>().ok())
             {
                 decoder_policy.configure(&element);
+                if let Err(error) = av1::configure(&element) {
+                    tracing::warn!(%error, "Failed to install AV1 timestamp restoration");
+                }
                 if element
                     .factory()
                     .is_some_and(|factory| factory.name() == "tsdemux")
