@@ -101,6 +101,24 @@ impl ffi::Player {
         self.as_mut()
             .request_recording_library(server, keyword, crate::epgstation::Login::Current)
     }
+    pub fn refresh_epgstation(mut self: Pin<&mut Self>) -> bool {
+        let state = self.as_mut().rust_mut().get_mut();
+        if !state.recording_library.loaded() || state.recording_library.busy() {
+            return false;
+        }
+        let Some(network) = &state.network else {
+            tracing::error!("Recording catalogue refresh failed: network is unavailable");
+            state.epgstation_input_error = Text::source("Network is unavailable.");
+            self.epgstation_changed();
+            return false;
+        };
+        if !state.recording_library.refresh(network) {
+            return false;
+        }
+        state.epgstation_input_error = Text::default();
+        self.publish_recording_library();
+        true
+    }
     pub fn login_epgstation(
         mut self: Pin<&mut Self>,
         server: QString,

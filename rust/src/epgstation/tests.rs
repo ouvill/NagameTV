@@ -1,4 +1,5 @@
 use super::*;
+mod refresh;
 mod verification;
 use crate::services::NetworkError;
 use serde_json::{Value, json};
@@ -164,7 +165,7 @@ fn authenticated_session_token_and_server_isolation() -> TestResult {
                 ResponseTemplate::new(200)
                     .set_body_json(json!({"records":[record(7,123)],"total":1})),
             )
-            .expect(2),
+            .expect(3),
     );
     let mut library = Library::default();
     library.open(
@@ -189,6 +190,12 @@ fn authenticated_session_token_and_server_isolation() -> TestResult {
         fixture.finish(&mut library).is_some(),
         "search reuses the login"
     );
+    assert!(library.refresh(&fixture.network));
+    assert!(
+        fixture.finish(&mut library).is_some(),
+        "refresh reuses the login"
+    );
+    assert_eq!(library.playback_url(7), Some(url.to_string()));
     let other = Fixture::new()?;
     other.mount(
         Mock::given(method("GET"))
