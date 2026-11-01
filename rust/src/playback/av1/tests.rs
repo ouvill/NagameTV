@@ -1,6 +1,7 @@
 //! CPU-only parser tests: encoded buffers and memory sinks, with no decoder,
 //! display, GPU, audio device or Qt application.
 use super::*;
+use proptest::prelude::*;
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
 
@@ -44,30 +45,136 @@ fn assert_timing(buffer: &gst::BufferRef, pts: Option<u64>, duration: Option<u64
     );
 }
 
+fn with_bytes(mut buffer: gst::Buffer, bytes: &[u8]) -> gst::Buffer {
+    buffer.make_mut().remove_all_memory();
+    buffer
+        .make_mut()
+        .append_memory(gst::Memory::from_slice(bytes.to_vec()));
+    buffer
+}
+
 #[test]
-fn hidden_frames_share_vfr_timing_until_the_temporal_unit_marker() {
-    let mut state = state();
-    state.sink_buffer(&unit(100, 33));
-    state.sink_buffer(&unit(133, 67));
-    for _ in 0..3 {
-        let mut hidden = buffer(
-            None,
-            None,
-            gst::BufferFlags::DECODE_ONLY | gst::BufferFlags::DELTA_UNIT,
-        );
-        let flags = hidden.flags();
-        let bytes = hidden.map_readable().unwrap().as_slice().to_vec();
-        state.src_buffer(hidden.make_mut());
-        assert_timing(&hidden, Some(100), Some(33));
-        assert_eq!(hidden.flags(), flags);
-        assert_eq!(hidden.map_readable().unwrap().as_slice(), bytes);
+fn hidden_frames_share_vfr_timing_regardless_of_marker_placement() {
+    for marker in [gst::BufferFlags::empty(), gst::BufferFlags::MARKER] {
+        let mut state = state();
+        state.sink_buffer(&with_bytes(unit(100, 33), &[1, 2, 3, 4]));
+        state.sink_buffer(&with_bytes(unit(133, 67), &[5]));
+        for byte in 1..=4 {
+            let mut output = with_bytes(
+                buffer(
+                    None,
+                    None,
+                    marker
+                        | if byte < 4 {
+                            gst::BufferFlags::DECODE_ONLY | gst::BufferFlags::DELTA_UNIT
+                        } else {
+                            gst::BufferFlags::empty()
+                        },
+                ),
+                &[byte],
+            );
+            let flags = output.flags();
+            state.src_buffer(output.make_mut());
+            assert_timing(&output, Some(100), Some(33));
+            assert_eq!(output.flags(), flags);
+            assert_eq!(output.map_readable().unwrap().as_slice(), &[byte]);
+        }
+        let mut next = with_bytes(missing_marker(), &[5]);
+        state.src_buffer(next.make_mut());
+        assert_timing(&next, Some(133), Some(67));
+        assert!(!state.warned);
     }
-    let mut shown = missing_marker();
-    state.src_buffer(shown.make_mut());
-    assert_timing(&shown, Some(100), Some(33));
-    let mut next = missing_marker();
-    state.src_buffer(next.make_mut());
-    assert_timing(&next, Some(133), Some(67));
+}
+
+#[test]
+fn dropped_units_and_partial_output_do_not_shift_later_timestamps() {
+    let mut state = state();
+    state.sink_buffer(&with_bytes(unit(100, 33), &[1, 2]));
+    state.sink_buffer(&with_bytes(unit(133, 67), &[3]));
+    state.sink_buffer(&with_bytes(unit(200, 33), &[4]));
+    let mut hidden = with_bytes(missing_marker(), &[1]);
+    state.src_buffer(hidden.make_mut());
+    assert_timing(&hidden, Some(100), Some(33));
+    // The parser drops the rest of TU 0 and all of TU 1.
+    let mut later = with_bytes(missing_marker(), &[4]);
+    state.src_buffer(later.make_mut());
+    assert_timing(&later, Some(200), Some(33));
+    assert!(!state.warned);
+}
+
+proptest! {
+    #[test]
+    fn arbitrary_drops_and_markers_keep_each_frames_own_tu_timing(
+        units in proptest::collection::vec(
+            (1_u64..100, proptest::collection::vec((any::<bool>(), any::<bool>()), 1..6)),
+            1..32,
+        )
+    ) {
+        let mut state = state();
+        let mut outputs = Vec::new();
+        let mut pts = 100;
+        for (index, (duration, frames)) in units.iter().enumerate() {
+            let mut payload = Vec::new();
+            for (frame, &(emitted, marker)) in frames.iter().enumerate() {
+                let bytes = [0xff, index as u8, frame as u8, 0xfe];
+                payload.extend_from_slice(&bytes);
+                if emitted {
+                    outputs.push((bytes, pts, *duration, marker));
+                }
+            }
+            state.sink_buffer(&with_bytes(unit(pts, *duration), &payload));
+            pts += duration;
+        }
+        for (bytes, pts, duration, marker) in outputs {
+            let flags = if marker { gst::BufferFlags::MARKER } else { gst::BufferFlags::empty() };
+            let mut output = with_bytes(buffer(None, None, flags), &bytes);
+            state.src_buffer(output.make_mut());
+            prop_assert_eq!(output.pts(), Some(gst::ClockTime::from_mseconds(pts)));
+            prop_assert_eq!(output.duration(), Some(gst::ClockTime::from_mseconds(duration)));
+        }
+        prop_assert!(!state.warned);
+    }
+}
+
+#[test]
+fn ambiguous_or_changed_payloads_suspend_without_guessing() {
+    for bytes in [&[0_u8; 4][..], &[1_u8][..], &[][..]] {
+        let mut state = state();
+        state.sink_buffer(&unit(100, 33));
+        state.sink_buffer(&unit(133, 67));
+        let mut output = with_bytes(missing_marker(), bytes);
+        state.src_buffer(output.make_mut());
+        assert_timing(&output, None, None);
+        assert!(state.warned);
+        state.sink_buffer(&with_bytes(unit(200, 33), &[2]));
+        let mut later = with_bytes(missing_marker(), &[2]);
+        state.src_buffer(later.make_mut());
+        assert_timing(&later, None, None);
+    }
+}
+
+#[test]
+fn repeated_bytes_within_one_unit_keep_that_units_timing() {
+    let mut state = state();
+    state.sink_buffer(&with_bytes(unit(100, 33), &[1, 1]));
+    for _ in 0..2 {
+        let mut output = with_bytes(missing_marker(), &[1]);
+        state.src_buffer(output.make_mut());
+        assert_timing(&output, Some(100), Some(33));
+    }
+    assert!(!state.warned);
+}
+
+#[test]
+fn payload_memory_is_bounded() {
+    let mut state = state();
+    state.sink_buffer(&with_bytes(unit(100, 33), &vec![0; MAX_PENDING_BYTES]));
+    assert!(!state.warned);
+    state.sink_buffer(&unit(133, 67));
+    assert!(state.warned);
+    let mut output = missing_marker();
+    state.src_buffer(output.make_mut());
+    assert_timing(&output, None, None);
 }
 
 #[test]
@@ -115,6 +222,32 @@ fn only_temporal_unit_to_frame_conversion_is_modified() {
 }
 
 #[test]
+fn format_conversion_or_unspecified_format_is_left_unchanged() {
+    for input_format in [Some("obu-stream"), Some("annexb"), None] {
+        for output_format in [Some("obu-stream"), Some("annexb"), None] {
+            if input_format == Some("obu-stream") && output_format == input_format {
+                continue;
+            }
+            let mut state = state();
+            let make_caps = |alignment, format: Option<&str>| {
+                let builder = gst::Caps::builder("video/x-av1").field("alignment", alignment);
+                match format {
+                    Some(format) => builder.field("stream-format", format).build(),
+                    None => builder.build(),
+                }
+            };
+            state.sink_event(&gst::event::Caps::new(&make_caps("tu", input_format)));
+            state.src_event(&gst::event::Caps::new(&make_caps("frame", output_format)));
+            state.sink_buffer(&unit(100, 33));
+            let mut output = missing_marker();
+            state.src_buffer(output.make_mut());
+            assert_timing(&output, None, None);
+            assert!(!state.warned);
+        }
+    }
+}
+
+#[test]
 fn flush_segment_caps_and_discontinuity_discard_previous_timing() {
     gst::init().unwrap();
     for event in [
@@ -157,11 +290,11 @@ fn output_during_flush_cannot_consume_stale_timestamps_or_report_desync() {
 fn buffer_lists_preserve_order_and_suspend_on_internal_discontinuity() {
     let mut state = state();
     let mut list = gst::BufferList::new();
-    list.make_mut().add(unit(100, 33));
-    list.make_mut().add(unit(133, 67));
+    list.make_mut().add(with_bytes(unit(100, 33), &[1]));
+    list.make_mut().add(with_bytes(unit(133, 67), &[2]));
     state.sink_list(&list);
-    for (pts, duration) in [(100, 33), (133, 67)] {
-        let mut output = missing_marker();
+    for (byte, pts, duration) in [(1, 100, 33), (2, 133, 67)] {
+        let mut output = with_bytes(missing_marker(), &[byte]);
         state.src_buffer(output.make_mut());
         assert_timing(&output, Some(pts), Some(duration));
     }
@@ -200,7 +333,7 @@ fn new_stream_requires_new_caps_and_keeps_first_buffer_through_deferred_events()
 fn eos_allows_drain_then_discards_unconsumed_timestamps() {
     let mut state = state();
     state.sink_buffer(&unit(100, 33));
-    state.sink_buffer(&unit(133, 33));
+    state.sink_buffer(&with_bytes(unit(133, 33), &[1]));
     state.sink_event(&gst::event::Eos::new());
     let mut output = missing_marker();
     state.src_buffer(output.make_mut());
@@ -217,7 +350,7 @@ fn eos_allows_drain_then_discards_unconsumed_timestamps() {
 }
 
 #[test]
-fn unmatched_marker_suspends_restoration_until_reset() {
+fn unmatched_output_suspends_restoration_until_reset() {
     let mut state = state();
     let mut output = missing_marker();
     state.src_buffer(output.make_mut());
@@ -365,8 +498,27 @@ fn real_parser_frame_output_keeps_each_temporal_units_vfr_timestamps() -> TestRe
             .any(|b| b.flags().contains(gst::BufferFlags::DECODE_ONLY)),
         "fixture must contain hidden frames"
     );
-    let mut unit = 0;
     for (before, after) in observations.original.iter().zip(&observations.restored) {
+        // Identify fixture provenance independently of parser flags, output
+        // counts and restoration queue state, including inputs dropped by 1.24.
+        let payload = before.map_readable()?;
+        assert!(!payload.is_empty());
+        let mut origins = Vec::new();
+        for (index, input) in observations.input.iter().enumerate() {
+            if input
+                .map_readable()?
+                .windows(payload.len())
+                .any(|bytes| bytes == payload.as_slice())
+            {
+                origins.push(index);
+            }
+        }
+        assert_eq!(
+            origins.len(),
+            1,
+            "fixture frame must identify exactly one TU"
+        );
+        let unit = origins[0];
         let input = &observations.input[unit];
         assert_eq!(after.pts(), before.pts().or(input.pts()), "TU {unit}");
         assert_eq!(
@@ -382,11 +534,7 @@ fn real_parser_frame_output_keeps_each_temporal_units_vfr_timestamps() -> TestRe
             after.map_readable()?.as_slice(),
             before.map_readable()?.as_slice()
         );
-        if after.flags().contains(gst::BufferFlags::MARKER) {
-            unit += 1;
-        }
     }
-    assert_eq!(unit, observations.input.len());
     Ok(())
 }
 
@@ -394,8 +542,8 @@ fn real_parser_frame_output_keeps_each_temporal_units_vfr_timestamps() -> TestRe
 fn real_parser_temporal_unit_output_is_unchanged() -> TestResult {
     let observations = parse_fixture("tu")?;
     assert_eq!(observations.input.len(), 32);
-    assert_eq!(observations.original.len(), 32);
-    assert_eq!(observations.restored.len(), 32);
+    assert!(!observations.original.is_empty());
+    assert_eq!(observations.restored.len(), observations.original.len());
     for (before, after) in observations.original.iter().zip(&observations.restored) {
         assert_eq!(after.pts(), before.pts());
         assert_eq!(after.duration(), before.duration());

@@ -6,6 +6,7 @@ use std::{
 };
 
 const MAX_PENDING_UNITS: usize = 256;
+const MAX_PENDING_BYTES: usize = 32 * 1024 * 1024;
 
 #[derive(Clone, Copy)]
 struct Timing {
@@ -26,16 +27,56 @@ impl Alignment {
     fn from_caps(caps: &gst::CapsRef) -> Self {
         // Missing alignment is legal; only explicitly TU-aligned input gives
         // us a reliable one-buffer-to-one-temporal-unit correspondence.
-        match caps.structure(0).map(|s| s.get::<&str>("alignment")) {
-            Some(Ok("tu")) => Self::TemporalUnit,
-            Some(Ok("frame")) => Self::Frame,
+        let Some(structure) = caps.structure(0) else {
+            return Self::Other;
+        };
+        // Format conversion can rewrite payloads, so byte correspondence is
+        // only meaningful when both pads negotiate the same OBU stream format.
+        if !matches!(structure.get::<&str>("stream-format"), Ok("obu-stream")) {
+            return Self::Other;
+        }
+        match structure.get::<&str>("alignment") {
+            Ok("tu") => Self::TemporalUnit,
+            Ok("frame") => Self::Frame,
             _ => Self::Other,
         }
     }
 }
 
+struct PendingUnit {
+    timing: Timing,
+    bytes: Vec<u8>,
+    consumed: usize,
+}
+
+fn take_timing(pending: &mut VecDeque<PendingUnit>, frame: &[u8]) -> Option<Timing> {
+    if frame.is_empty() {
+        return None;
+    }
+    let mut matches = pending.iter().enumerate().filter_map(|(index, unit)| {
+        unit.bytes[unit.consumed..]
+            .windows(frame.len())
+            .position(|bytes| bytes == frame)
+            .map(|offset| (index, unit.consumed + offset + frame.len()))
+    });
+    let (index, end) = matches.next()?;
+    if matches.next().is_some() {
+        // Repeated encoded frames can occur in different TUs. Neither MARKER
+        // nor the latest sink buffer disambiguates delayed/batched output.
+        return None;
+    }
+    pending.drain(..index);
+    let unit = pending.front_mut()?;
+    let timing = unit.timing;
+    unit.consumed = end;
+    if end == unit.bytes.len() {
+        pending.pop_front();
+    }
+    Some(timing)
+}
+
 enum Queue {
-    Tracking(VecDeque<Timing>),
+    Tracking(VecDeque<PendingUnit>),
     Suspended,
 }
 
@@ -116,9 +157,27 @@ impl Restoration {
                 self.suspend("more than 256 temporal units without matching output");
                 return;
             }
-            pending.push_back(Timing {
-                pts: buffer.pts(),
-                duration: buffer.duration(),
+            if buffer.size() > MAX_PENDING_BYTES
+                || pending.iter().map(|unit| unit.bytes.len()).sum::<usize>()
+                    > MAX_PENDING_BYTES - buffer.size()
+            {
+                self.suspend("more than 32 MiB of pending temporal unit payloads");
+                return;
+            }
+            let bytes = match buffer.map_readable() {
+                Ok(map) => map.as_slice().to_vec(),
+                Err(error) => {
+                    self.suspend(&format!("cannot read temporal unit payload: {error}"));
+                    return;
+                }
+            };
+            pending.push_back(PendingUnit {
+                timing: Timing {
+                    pts: buffer.pts(),
+                    duration: buffer.duration(),
+                },
+                bytes,
+                consumed: 0,
             });
         }
     }
@@ -134,27 +193,26 @@ impl Restoration {
             pending.clear();
             return;
         }
-        let Some(timing) = pending.front() else {
-            self.suspend(if buffer.flags().contains(gst::BufferFlags::MARKER) {
-                "end-of-TU MARKER without a pending temporal unit"
-            } else {
-                "frame output without a pending temporal unit"
-            });
+        let timing = match buffer.map_readable() {
+            Ok(map) => take_timing(pending, map.as_slice()),
+            Err(error) => {
+                self.suspend(&format!("cannot read frame payload: {error}"));
+                return;
+            }
+        };
+        let Some(timing) = timing else {
+            self.suspend("frame payload has no unique pending temporal unit");
             return;
         };
-        // GStreamer 1.28.2 av1parse loses PTS/duration during TU -> frame
-        // conversion, including hidden frames. NVDEC then emits untimed video.
-        // Do not replace decoder selection or infer a constant frame rate:
-        // retain the demuxer's VFR timing, and remove this workaround when the
-        // upstream parser preserves it (see docs/recording-playback.md).
+        // av1parse emits OBU-stream frames in encoded order, but 1.24 marks
+        // every frame and can drop whole TUs. Match unchanged encoded bytes,
+        // not MARKER counts, before restoring missing timing (including hidden
+        // frames needed by NVDEC). See docs/recording-playback.md.
         if buffer.pts().is_none() {
             buffer.set_pts(timing.pts);
         }
         if buffer.duration().is_none() {
             buffer.set_duration(timing.duration);
-        }
-        if buffer.flags().contains(gst::BufferFlags::MARKER) {
-            pending.pop_front();
         }
     }
 

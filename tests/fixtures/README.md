@@ -32,8 +32,11 @@ GStreamer 1.28.2; encoded bytes may change with the encoder version.
 `av1parse`, a capsfilter and an in-memory sink, without a decoder. It supplies
 alternating 33/67 ms TU timestamps to cover VFR, checks frame-aligned restoration
 including hidden frames, and checks that TU-aligned output remains unchanged.
-Synthetic-buffer tests also cover existing timestamps, reset events, EOS drain,
-empty-queue output and the queue limit.
+Frame provenance comes from the fixture's encoded payloads, independent of output
+counts and MARKER placement (which differ between GStreamer 1.24 and 1.28; see
+[the observed results](../../docs/recording-playback.md#av1のフレーム時刻補完)).
+Synthetic-buffer tests also cover dropped/partially emitted TUs, ambiguous payloads,
+format conversion, existing timestamps, reset events, EOS drain and memory limits.
 
 ```sh
 python3 scripts/test.py app --profile release --filter 'test(playback::av1::)'
