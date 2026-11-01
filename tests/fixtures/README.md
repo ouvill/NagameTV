@@ -13,6 +13,32 @@ gst-launch-1.0 -q videotestsrc num-buffers=50 pattern=black \
   ! filesink location=tests/fixtures/subtitle-clock.ts
 ```
 
+## AV1 frame timestamp fixture
+
+`av1-timestamps.mp4` contains 32 synthetic 64×64 AV1 temporal units, including
+hidden frames, with no audio or broadcast content. Regenerate it with:
+
+```sh
+python3 tests/fixtures/generate_av1_timestamps.py
+```
+
+The generator uses GStreamer's `videotestsrc`, CPU `av1enc` (libaom, one thread,
+16-frame lookahead) and `mp4mux`. It requires `gst-launch-1.0` and those plugins;
+it never opens a display, GPU or audio device. Regeneration is a maintenance
+operation, not a test prerequisite. The checked-in fixture was generated with
+GStreamer 1.28.2; encoded bytes may change with the encoder version.
+
+`playback::av1::tests` in the `app` suite demuxes this fixture through the real
+`av1parse`, a capsfilter and an in-memory sink, without a decoder. It supplies
+alternating 33/67 ms TU timestamps to cover VFR, checks frame-aligned restoration
+including hidden frames, and checks that TU-aligned output remains unchanged.
+Synthetic-buffer tests also cover existing timestamps, reset events, EOS drain,
+empty-queue output and the queue limit.
+
+```sh
+python3 scripts/test.py app --profile release --filter 'test(playback::av1::)'
+```
+
 ## Recording playback fixture
 
 `recording.ts` contains three seconds of synthetic 160×90 MPEG-2 video (25 fps)
