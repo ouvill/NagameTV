@@ -1,4 +1,5 @@
 //! Real model/notification/persistence checks without display or playback devices.
+mod refresh;
 use super::ffi;
 use cxx_qt::CxxQtType;
 use cxx_qt_lib::{QModelIndex, QString};
@@ -13,6 +14,7 @@ use wiremock::{
 };
 
 pub(super) fn run() -> Result<(), Box<dyn std::error::Error>> {
+    refresh::run()?;
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(1)
         .enable_all()

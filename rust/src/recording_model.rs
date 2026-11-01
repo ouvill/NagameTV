@@ -27,6 +27,8 @@ pub mod ffi {
         fn notify_recording_data(model: Pin<&mut RecordingModel>);
         include!("cxx-qt-lib/qmodelindex.h");
         type QModelIndex = cxx_qt_lib::QModelIndex;
+        include!("cxx-qt-lib/qstring.h");
+        type QString = cxx_qt_lib::QString;
         include!("cxx-qt-lib/qvariant.h");
         type QVariant = cxx_qt_lib::QVariant;
         include!("cxx-qt-lib/qhash.h");
@@ -38,6 +40,11 @@ pub mod ffi {
     #[cfg(feature = "native_tests")]
     unsafe extern "C++" {
         include!("channel_model_test.h");
+        type ChannelModelSignals = crate::channel_model::ffi::ChannelModelSignals;
+        #[cxx_name = "observeChannelModel"]
+        fn observe_recording_model(
+            model: Pin<&mut RecordingModel>,
+        ) -> UniquePtr<ChannelModelSignals>;
         #[cxx_name = "checkChannelModel"]
         fn check_model(model: Pin<&mut RecordingModel>);
     }
@@ -48,6 +55,8 @@ pub mod ffi {
         #[qproperty(i32, count, READ = count, NOTIFY = changed)]
         type RecordingModel = super::Presentation;
         fn count(self: &RecordingModel) -> i32;
+        #[qinvokable]
+        fn row_for_recording(self: &RecordingModel, recorded_id: QString) -> i32;
         #[cxx_override]
         #[cxx_name = "rowCount"]
         fn row_count(self: &RecordingModel, parent: &QModelIndex) -> i32;
@@ -82,6 +91,18 @@ pub struct Presentation {
     progress: std::collections::HashMap<u64, crate::viewing_history::recordings::Position>,
 }
 impl ffi::RecordingModel {
+    pub fn row_for_recording(&self, recorded_id: QString) -> i32 {
+        let Ok(id) = recorded_id.to_string().parse::<u64>() else {
+            return -1;
+        };
+        self.rust()
+            .rows
+            .iter()
+            .position(|row| row.id == id)
+            .map_or(-1, |row| {
+                i32::try_from(row).expect("bounded recording page")
+            })
+    }
     pub fn count(&self) -> i32 {
         i32::try_from(self.rust().rows.len()).expect("bounded recording page")
     }

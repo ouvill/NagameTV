@@ -352,6 +352,8 @@ pub mod ffi {
         #[qinvokable]
         fn browse_epgstation(self: Pin<&mut Player>, server: QString, keyword: QString) -> bool;
         #[qinvokable]
+        fn refresh_epgstation(self: Pin<&mut Player>) -> bool;
+        #[qinvokable]
         fn login_epgstation(
             self: Pin<&mut Player>,
             server: QString,

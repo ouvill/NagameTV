@@ -272,16 +272,52 @@ impl Query {
 struct Pending {
     query: Query,
     access: Access,
+    mode: FetchMode,
+}
+enum FetchMode {
+    Replace,
+    Refresh,
 }
 impl Pending {
     fn start(self, network: &Network) -> Operation {
-        let endpoint = self.query.endpoint.clone();
-        let url = self.query.url();
-        let job = network.job(client::fetch(endpoint, url, self.access));
         Operation::Fetching {
-            query: self.query,
-            job,
+            job: network.job(self.fetch()),
         }
+    }
+
+    async fn fetch(self) -> Result<(Query, Fetched), FetchError<Error>> {
+        let Self {
+            mut query,
+            access,
+            mode,
+        } = self;
+        let mut fetched = client::fetch(query.endpoint.clone(), query.url(), access).await?;
+        if matches!(mode, FetchMode::Refresh) {
+            let last_offset = fetched.page.total.saturating_sub(1) / PAGE_SIZE * PAGE_SIZE;
+            if query.offset > last_offset {
+                query.offset = last_offset;
+                if fetched.page.total > 0 {
+                    fetched = client::fetch(
+                        query.endpoint.clone(),
+                        query.url(),
+                        Access::Connected(fetched.connection),
+                    )
+                    .await?;
+                    // Repeated deletions must not create an unbounded retry loop
+                    // or publish an invalid page. Keep the previous snapshot.
+                    if fetched.page.total == 0 {
+                        query.offset = 0;
+                    } else if query.offset
+                        > fetched.page.total.saturating_sub(1) / PAGE_SIZE * PAGE_SIZE
+                    {
+                        return Err(FetchError::Parse(Error::InvalidCatalogue(
+                            "recordings changed again while correcting the last page",
+                        )));
+                    }
+                }
+            }
+        }
+        Ok((query, fetched))
     }
 }
 
@@ -290,8 +326,7 @@ enum Operation {
     #[default]
     Idle,
     Fetching {
-        query: Query,
-        job: Job<Fetched, Error>,
+        job: Job<(Query, Fetched), Error>,
     },
     Stopping {
         stopping: Stopping,
@@ -422,12 +457,10 @@ impl Library {
         }
     }
     pub fn has_previous(&self) -> bool {
-        !self.busy() && self.offset() > 0
+        self.offset() > 0
     }
     pub fn has_next(&self) -> bool {
-        !self.busy()
-            && !self.rows().is_empty()
-            && self.offset().saturating_add(PAGE_SIZE) < self.total()
+        !self.rows().is_empty() && self.offset().saturating_add(PAGE_SIZE) < self.total()
     }
     pub fn open(
         &mut self,
@@ -465,9 +498,29 @@ impl Library {
                     offset: 0,
                 },
                 access,
+                mode: FetchMode::Replace,
             },
         );
         Ok(())
+    }
+    pub fn refresh(&mut self, network: &Network) -> bool {
+        if self.busy() {
+            return false;
+        }
+        let Catalogue::Loaded {
+            query, connection, ..
+        } = &self.catalogue
+        else {
+            return false;
+        };
+        let pending = Pending {
+            query: query.clone(),
+            access: Access::Connected(connection.clone()),
+            mode: FetchMode::Refresh,
+        };
+        self.error = None;
+        self.operation = pending.start(network);
+        true
     }
     pub fn next(&mut self, network: &Network) {
         if self.has_next() {
@@ -487,7 +540,14 @@ impl Library {
             let mut query = query.clone();
             query.offset = offset;
             let access = Access::Connected(connection.clone());
-            self.begin(network, Pending { query, access });
+            self.begin(
+                network,
+                Pending {
+                    query,
+                    access,
+                    mode: FetchMode::Replace,
+                },
+            );
         }
     }
     fn begin(&mut self, network: &Network, query: Pending) {
@@ -533,13 +593,15 @@ impl Library {
                     }
                 }
             },
-            Operation::Fetching { query, job } => match job.poll() {
-                Progress::Pending(job) => self.operation = Operation::Fetching { query, job },
+            Operation::Fetching { job } => match job.poll() {
+                Progress::Pending(job) => self.operation = Operation::Fetching { job },
                 Progress::Complete(result) => {
                     self.revision = self.revision.wrapping_add(1);
                     match result {
-                        Ok(Fetched { page, connection }) => {
-                            if self.session.is_none() {
+                        Ok((query, Fetched { page, connection })) => {
+                            // A retained catalogue identifies a refresh. Thumbnail
+                            // bytes can change even when the server reuses an ID.
+                            if self.session.is_none() || self.loaded() {
                                 self.thumbnails.clear();
                             }
                             let verified = VerifiedEndpoint(query.endpoint.clone());
@@ -565,9 +627,6 @@ impl Library {
         None
     }
     pub fn files(&self, id: u64) -> Arc<[Video]> {
-        if self.busy() {
-            return Arc::default();
-        }
         self.rows()
             .iter()
             .find(|row| row.id == id)
