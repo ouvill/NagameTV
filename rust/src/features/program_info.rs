@@ -13,10 +13,17 @@ mod visibility;
 pub mod watch;
 mod wire;
 use model::{Snapshot, parse};
-use std::time::{Duration, Instant};
+use std::{
+    collections::BTreeMap,
+    time::{Duration, Instant},
+};
+use viewer_epg_events::{Changes, MAX_PENDING_SERVICES};
 
 const MAX_RESPONSE: usize = 32 * 1024 * 1024;
 const MAX_PROGRAMS: usize = 50_000;
+const MAX_SNAPSHOT_BYTES: usize = 128 * 1024 * 1024;
+const RETRY_INITIAL: Duration = Duration::from_secs(5);
+const RETRY_MAX: Duration = Duration::from_secs(60);
 const REFRESH: Duration = Duration::from_secs(300);
 
 #[derive(Debug, thiserror::Error)]
@@ -25,6 +32,12 @@ pub enum Error {
     Projection(#[source] serde_json::Error),
     #[error("番組JSONの解析失敗: {0}")]
     Json(#[from] crate::json::Error),
+    #[error("番組データのメモリー上限を超えています（{actual} > {limit} bytes）")]
+    TooMuchMemory { actual: usize, limit: usize },
+    #[error("番組イベントの識別子が本文と一致しません")]
+    WrongProgramId,
+    #[error("サービス別番組応答に別のサービスが含まれています")]
+    WrongService,
     #[error("番組数が上限を超えています（{actual} > {limit}）")]
     TooManyPrograms { actual: usize, limit: usize },
 }
@@ -37,7 +50,24 @@ enum Outcome {
     #[default]
     Waiting,
     Ready,
-    Failed(RequestError),
+    Failed {
+        error: RequestError,
+        retry_at: Instant,
+    },
+}
+
+#[derive(Clone, Copy)]
+enum Scope {
+    Full,
+    Service {
+        endpoint: u64,
+        broadcast: BroadcastService,
+    },
+}
+struct Fetching {
+    job: Request,
+    scope: Scope,
+    next: Option<Instant>,
 }
 
 // Each active state owns exactly one job. Cancelling retains ownership until
@@ -47,7 +77,7 @@ enum Acquisition {
         next: Option<Instant>,
         outcome: Outcome,
     },
-    Fetching(Request),
+    Fetching(Fetching),
     Cancelling(Stopping),
 }
 impl Default for Acquisition {
@@ -87,6 +117,9 @@ pub struct ProgramInfo {
     acquisition: Acquisition,
     // Preserve one follow-up request even when notifications arrive during a fetch.
     refresh_pending: bool,
+    deferred: Changes,
+    services: BTreeMap<u64, BroadcastService>,
+    failures: u32,
     snapshot: Snapshot,
     pub revision: u64,
     pub text_capacity_bytes: usize,
@@ -113,17 +146,116 @@ impl ProgramInfo {
         self.desired = server;
         self.generation = self.generation.wrapping_add(1);
         self.refresh_pending = false;
+        self.deferred = Changes::default();
+        self.services.clear();
+        self.failures = 0;
         self.snapshot = Snapshot::default();
         self.text_capacity_bytes = 0;
         self.revision += 1;
         self.acquisition = match std::mem::take(&mut self.acquisition) {
-            Acquisition::Fetching(job) => Acquisition::Cancelling(job.cancel()),
+            Acquisition::Fetching(fetch) => Acquisition::Cancelling(fetch.job.cancel()),
             Acquisition::Cancelling(job) => Acquisition::Cancelling(job),
             Acquisition::Idle { .. } => Acquisition::default(),
         };
     }
     pub fn refresh(&mut self) {
         self.refresh_pending = true;
+    }
+    /// Returns whether an unknown service also requires catalog reconciliation.
+    pub fn events(&mut self, changes: Changes, channels: &[crate::channels::Channel]) -> bool {
+        let delta = match changes {
+            Changes::Full => {
+                if self.desired.is_none() {
+                    return false;
+                }
+                self.refresh();
+                self.deferred = Changes::default();
+                self.services.clear();
+                return false;
+            }
+            Changes::Delta(delta) => delta,
+        };
+        let (programs, services) = delta.into_parts();
+        // An empty initial catalog disables acquisition, but its active event
+        // subscription can still discover a newly announced service.
+        if self.desired.is_none() {
+            return services.iter().any(|id| {
+                !channels
+                    .iter()
+                    .any(|channel| channel.id == *id && channel.broadcast.is_some())
+            });
+        }
+        let mut catalog = false;
+        for id in services {
+            match channels
+                .iter()
+                .find(|channel| channel.id == id)
+                .and_then(|channel| channel.broadcast)
+            {
+                Some(service) => {
+                    self.services.insert(id, service);
+                }
+                None => {
+                    catalog = true;
+                    self.refresh();
+                }
+            }
+        }
+        for program in programs {
+            self.deferred.program(program);
+        }
+        if self.services.len() > MAX_PENDING_SERVICES || matches!(self.deferred, Changes::Full) {
+            self.refresh();
+            self.deferred = Changes::default();
+            self.services.clear();
+        }
+        if matches!(self.acquisition, Acquisition::Idle { .. }) {
+            self.apply_deferred();
+        }
+        catalog
+    }
+    fn publish(&mut self, snapshot: Snapshot, force: bool) {
+        if force || !self.snapshot.same_programs(&snapshot) {
+            self.revision += 1;
+        }
+        let storage = snapshot.storage();
+        tracing::debug!(
+            programs = snapshot.len(),
+            record_capacity_bytes = storage.records,
+            string_capacity_bytes = storage.strings,
+            audio_heap_bytes = storage.audio,
+            detail_record_bytes = storage.details,
+            index_bytes = storage.index,
+            source_bytes = storage.source,
+            snapshot_capacity_bytes = storage.total(),
+            "EPG_MEMORY"
+        );
+        tracing::debug!(
+            conflict_services = snapshot.conflict_services(),
+            unknown_ends = snapshot.unknown_ends(),
+            "EPG schedule validation completed"
+        );
+        self.text_capacity_bytes = storage.strings + snapshot.source_string_bytes();
+        self.snapshot = snapshot;
+    }
+    fn apply_deferred(&mut self) {
+        match std::mem::take(&mut self.deferred) {
+            Changes::Full => self.refresh(),
+            Changes::Delta(delta) => {
+                let (programs, _) = delta.into_parts();
+                match self.snapshot.apply(programs) {
+                    Ok(Some(snapshot)) => self.publish(snapshot, false),
+                    Ok(None) => {}
+                    Err(error) => {
+                        tracing::warn!(
+                            error = &error as &dyn std::error::Error,
+                            "EPG event application failed; requesting full reconciliation"
+                        );
+                        self.refresh();
+                    }
+                }
+            }
+        }
     }
     pub fn poll(&mut self, network: &Network) -> Update {
         self.poll_at(network, Instant::now())
@@ -135,31 +267,29 @@ impl ProgramInfo {
                 Progress::Pending(job) => Acquisition::Cancelling(job),
                 Progress::Complete(()) => Acquisition::default(),
             },
-            Acquisition::Fetching(job) => match job.poll() {
-                Progress::Pending(job) => Acquisition::Fetching(job),
+            Acquisition::Fetching(Fetching { job, scope, next }) => match job.poll() {
+                Progress::Pending(job) => Acquisition::Fetching(Fetching { job, scope, next }),
                 Progress::Complete(result) => {
-                    let outcome = match result {
-                        Ok(programs) => {
+                    let result = result.and_then(|snapshot| match scope {
+                        Scope::Full => Ok(snapshot),
+                        Scope::Service { broadcast, .. } => self
+                            .snapshot
+                            .replace_service(broadcast, snapshot)
+                            .map_err(FetchError::Parse),
+                    });
+                    match result {
+                        Ok(snapshot) => {
                             update.completed = Some(Completion::Succeeded);
-                            let storage = programs.storage();
-                            tracing::debug!(
-                                "EPG_MEMORY programs={} record_capacity_bytes={} string_capacity_bytes={} audio_heap_bytes={} detail_record_bytes={} snapshot_capacity_bytes={}",
-                                programs.len(),
-                                storage.records,
-                                storage.strings,
-                                storage.audio,
-                                storage.details,
-                                storage.total()
-                            );
-                            self.text_capacity_bytes = storage.strings;
-                            tracing::debug!(
-                                conflict_services = programs.conflict_services(),
-                                unknown_ends = programs.unknown_ends(),
-                                "EPG schedule validation completed"
-                            );
-                            self.snapshot = programs;
-                            self.revision += 1;
-                            Outcome::Ready
+                            self.failures = 0;
+                            self.publish(snapshot, matches!(scope, Scope::Full));
+                            Acquisition::Idle {
+                                next: if matches!(scope, Scope::Full) {
+                                    Some(now + REFRESH)
+                                } else {
+                                    next
+                                },
+                                outcome: Outcome::Ready,
+                            }
                         }
                         Err(error) => {
                             tracing::error!(
@@ -167,27 +297,83 @@ impl ProgramInfo {
                                 "Program guide fetch failed"
                             );
                             update.completed = Some(Completion::Failed);
-                            Outcome::Failed(error)
+                            self.failures = self.failures.saturating_add(1);
+                            let delay = (RETRY_INITIAL * 2_u32.pow((self.failures - 1).min(4)))
+                                .min(RETRY_MAX);
+                            match scope {
+                                Scope::Full => self.refresh(),
+                                Scope::Service {
+                                    endpoint,
+                                    broadcast,
+                                } => {
+                                    self.services.insert(endpoint, broadcast);
+                                    if self.services.len() > MAX_PENDING_SERVICES {
+                                        self.services.clear();
+                                        self.refresh();
+                                    }
+                                }
+                            }
+                            Acquisition::Idle {
+                                next,
+                                outcome: Outcome::Failed {
+                                    error,
+                                    retry_at: now + delay,
+                                },
+                            }
                         }
-                    };
-                    Acquisition::Idle {
-                        next: Some(now + REFRESH),
-                        outcome,
                     }
                 }
             },
             state @ Acquisition::Idle { .. } => state,
         };
+        if matches!(self.acquisition, Acquisition::Idle { .. }) {
+            self.apply_deferred();
+        }
         if let Some(server) = &self.desired
-            && matches!(&self.acquisition, Acquisition::Idle { next, .. } if self.refresh_pending || next.is_none_or(|deadline| now >= deadline))
+            && let Acquisition::Idle { next, outcome } = &self.acquisition
+            && !matches!(outcome, Outcome::Failed { retry_at, .. } if now < *retry_at)
         {
-            self.refresh_pending = false;
-            update.started = true;
-            self.acquisition = Acquisition::Fetching(network.fetch_json(
-                format!("{server}/api/programs"),
-                MAX_RESPONSE,
-                parse,
-            ));
+            let scope = if self.refresh_pending || next.is_none_or(|deadline| now >= deadline) {
+                self.refresh_pending = false;
+                self.services.clear();
+                Some(Scope::Full)
+            } else {
+                self.services
+                    .pop_first()
+                    .map(|(endpoint, broadcast)| Scope::Service {
+                        endpoint,
+                        broadcast,
+                    })
+            };
+            if let Some(scope) = scope {
+                let next = *next;
+                let client = network.large_json();
+                let (url, fallback) = match scope {
+                    Scope::Full => (format!("{server}/api/programs"), None),
+                    Scope::Service {
+                        endpoint,
+                        broadcast,
+                    } => (
+                        format!("{server}/api/services/{endpoint}/programs"),
+                        Some(format!(
+                            "{server}/api/programs?networkId={}&serviceId={}",
+                            broadcast.network_id, broadcast.service_id
+                        )),
+                    ),
+                };
+                let job = network.job(async move {
+                    client
+                        .fetch(url, fallback, MAX_RESPONSE, move |bytes| match scope {
+                            Scope::Full => parse(bytes),
+                            Scope::Service { broadcast, .. } => {
+                                model::parse_service(bytes, broadcast)
+                            }
+                        })
+                        .await
+                });
+                self.acquisition = Acquisition::Fetching(Fetching { job, scope, next });
+                update.started = true;
+            }
         }
         update
     }
@@ -205,7 +391,7 @@ impl ProgramInfo {
                 ..
             } => Status::Ready(self.snapshot.len()),
             Acquisition::Idle {
-                outcome: Outcome::Failed(error),
+                outcome: Outcome::Failed { error, .. },
                 ..
             } => Status::Failed(error),
         }
@@ -294,3 +480,6 @@ impl ProgramInfo {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod incremental_tests;

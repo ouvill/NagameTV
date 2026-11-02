@@ -242,8 +242,9 @@ Playbackに単一ディスパッチャーを置く。機能ごとに上書きす
 ## EPGの停止順序とデータ
 
 取得状態は `Acquisition::Idle / Fetching / Cancelling` で表す。
-Fetchingは結果受信可能なJob、Cancellingは終了確認専用のStoppingを所有し、
-待機中だけ次回取得期限と前回の結果を持つ。Job::cancelは所有権を消費し、
+Fetchingは取得範囲（全件／サービス別）と結果受信可能なJobを所有する。
+次回の全件取得期限はサービス別取得の間も維持し、Idleの失敗状態は再試行可能時刻を持つ。
+Cancellingは終了確認専用のStoppingを所有する。Job::cancelは所有権を消費し、
 結果チャネルをその場で解放する。Stoppingには結果を読むAPIがない。表示用の文字列は保持せず、
 型付きStatusをPlayerでQt向けの文字列へ変換する。
 

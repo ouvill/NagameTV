@@ -31,23 +31,31 @@ impl ffi::Player {
                 .map(|network| network.poll_epg_events(&mut this.epg_events))
         };
         match events {
-            Some(Ok(update)) => {
-                if let Some(error) = update.failure {
-                    tracing::warn!(
-                        error = error.as_ref() as &dyn std::error::Error,
-                        "EPG event subscription interrupted"
-                    );
-                }
-                if update.refresh {
-                    self.as_mut().rust_mut().epg.refresh();
-                    self.as_mut().refresh_channels(true);
-                }
-            }
+            Some(Ok(update)) => self.as_mut().apply_epg_events(update),
             Some(Err(error)) => tracing::error!(
                 error = &error as &dyn std::error::Error,
                 "EPG event subscription failed"
             ),
             None => {}
+        }
+    }
+    pub(super) fn apply_epg_events(
+        mut self: Pin<&mut Self>,
+        update: viewer_epg_events::controller::Update,
+    ) {
+        if let Some(error) = update.failure {
+            tracing::warn!(
+                error = error.as_ref() as &dyn std::error::Error,
+                "EPG event subscription interrupted"
+            );
+        }
+        let catalog = {
+            let mut this = self.as_mut().rust_mut();
+            let this = &mut *this;
+            this.epg.events(update.changes, this.catalog.channels())
+        };
+        if update.refresh_channels || catalog {
+            self.as_mut().refresh_channels(true);
         }
     }
     pub(super) fn poll_epg(mut self: Pin<&mut Self>) {

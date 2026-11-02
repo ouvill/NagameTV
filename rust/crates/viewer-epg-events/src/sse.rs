@@ -1,5 +1,5 @@
 //! Bounded SSE frames; only EPG updates are interpreted as program changes.
-use crate::{Error, MAX_EVENT_BYTES};
+use crate::{Changes, Error, MAX_EVENT_BYTES};
 use serde::Deserialize;
 
 #[derive(Default)]
@@ -18,20 +18,25 @@ pub struct Decoder {
 }
 impl Decoder {
     pub fn push(&mut self, bytes: &[u8]) -> Result<bool, Error> {
-        match self.decode(bytes) {
+        let mut changes = Changes::default();
+        self.push_changes(bytes, &mut changes)?;
+        Ok(!changes.is_empty())
+    }
+    pub fn push_changes(&mut self, bytes: &[u8], changes: &mut Changes) -> Result<(), Error> {
+        match self.decode(bytes, changes) {
             Ok(changed) => Ok(changed),
             Err(error) => {
+                changes.full();
                 self.state = State::Failed;
                 self.pending = Vec::new();
                 Err(error)
             }
         }
     }
-    fn decode(&mut self, bytes: &[u8]) -> Result<bool, Error> {
+    fn decode(&mut self, bytes: &[u8], changes: &mut Changes) -> Result<(), Error> {
         if matches!(self.state, State::Failed) {
             return Err(Error::Failed);
         }
-        let mut changed = false;
         for &byte in bytes {
             if std::mem::take(&mut self.after_cr) && byte == b'\n' {
                 continue;
@@ -39,7 +44,9 @@ impl Decoder {
             if matches!(byte, b'\r' | b'\n') {
                 self.after_cr = byte == b'\r';
                 if self.pending.len() == self.line_start {
-                    changed |= event(&self.pending)?;
+                    if let Some(service) = event(&self.pending)? {
+                        changes.service(service);
+                    }
                     self.pending.clear();
                     self.line_start = 0;
                     continue;
@@ -50,7 +57,7 @@ impl Decoder {
                 self.append(byte)?;
             }
         }
-        Ok(changed)
+        Ok(())
     }
     fn append(&mut self, byte: u8) -> Result<(), Error> {
         if self.pending.len() == MAX_EVENT_BYTES {
@@ -60,7 +67,7 @@ impl Decoder {
         Ok(())
     }
 }
-fn event(frame: &[u8]) -> Result<bool, Error> {
+fn event(frame: &[u8]) -> Result<Option<u64>, Error> {
     let mut kind = b"".as_slice();
     let mut data = Vec::new();
     for line in frame.split(|byte| *byte == b'\n') {
@@ -79,15 +86,15 @@ fn event(frame: &[u8]) -> Result<bool, Error> {
         }
     }
     if kind != b"epg.programs-updated" || data.is_empty() {
-        return Ok(false);
+        return Ok(None);
     }
     #[derive(Deserialize)]
     struct Update {
         #[serde(rename = "serviceId")]
-        _service_id: u64,
+        service_id: u64,
     }
-    let _: Update = serde_json::from_slice(&data)?;
-    Ok(true)
+    let update: Update = serde_json::from_slice(&data)?;
+    Ok(Some(update.service_id))
 }
 
 #[cfg(test)]

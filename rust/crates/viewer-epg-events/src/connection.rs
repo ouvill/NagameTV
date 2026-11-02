@@ -1,11 +1,8 @@
 //! One bounded event subscription, using the caller's existing Tokio runtime.
-use crate::{Decoder, RefreshGate};
+use crate::{Changes, Decoder, RefreshGate};
 use futures_util::{FutureExt, StreamExt};
 use std::{
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
+    sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
 use tokio::{runtime::Handle, sync::watch, task::JoinHandle};
@@ -67,9 +64,15 @@ const TIMING: Timing = Timing {
     reprobe: Duration::from_secs(300),
 };
 
+#[derive(Default)]
+pub struct Notifications {
+    pub changes: Changes,
+    pub refresh_channels: bool,
+}
+
 pub struct Subscription {
     task: Task,
-    pending: Arc<AtomicBool>,
+    pending: Arc<Mutex<Notifications>>,
     state: watch::Receiver<State>,
 }
 impl Subscription {
@@ -77,7 +80,7 @@ impl Subscription {
         Self::start_with(runtime, client, url, TIMING)
     }
     fn start_with(runtime: &Handle, client: &Client, url: String, timing: Timing) -> Self {
-        let pending = Arc::new(AtomicBool::new(false));
+        let pending = Arc::new(Mutex::new(Notifications::default()));
         let output = pending.clone();
         let (state_tx, state) = watch::channel(State::Connecting);
         let client = client.0.clone();
@@ -96,9 +99,12 @@ impl Subscription {
             state,
         }
     }
-    /// All notifications for this generation occupy one bit, never a growing queue.
+    pub fn take_changes(&self) -> Notifications {
+        std::mem::take(&mut *self.pending.lock().expect("EPG notifications"))
+    }
+    /// Compatibility for diagnostics that explicitly reconcile every notification.
     pub fn take_refresh(&self) -> bool {
-        self.pending.swap(false, Ordering::AcqRel)
+        !self.take_changes().changes.is_empty()
     }
     pub fn state(&self) -> State {
         if self.task.job.is_finished() {
@@ -164,11 +170,12 @@ impl Stopping {
 async fn run(
     client: reqwest::Client,
     url: String,
-    pending: Arc<AtomicBool>,
+    pending: Arc<Mutex<Notifications>>,
     state: watch::Sender<State>,
     timing: Timing,
 ) {
     let mut gate = RefreshGate::with_interval(Instant::now(), timing.refresh);
+    let mut changes = Changes::default();
     let mut selection = Selection::Probing(Endpoint::OpenArray(url.clone()));
     loop {
         // A background capability probe is not a recovery. Preserve the previous
@@ -176,63 +183,74 @@ async fn run(
         if !matches!(*state.borrow(), State::Unsupported(_)) {
             state.send_replace(State::Connecting);
         }
-        let error =
-            match receive(&client, &mut selection, &pending, &state, &mut gate, timing).await {
-                Received::Missing {
-                    status,
-                    url: mut response_url,
-                } => match selection {
-                    Selection::Established(_) => {
-                        selection = Selection::Probing(Endpoint::OpenArray(url.clone()));
-                        continue;
-                    }
-                    Selection::Probing(Endpoint::OpenArray(_)) => {
-                        let prefix = response_url
-                            .path()
-                            .strip_suffix("/api/events/stream")
-                            .unwrap_or("");
-                        response_url.set_path(&format!("{prefix}/events"));
-                        response_url.set_query(None);
-                        selection = Selection::Probing(Endpoint::Sse {
-                            url: response_url.into(),
-                            open_array_status: status,
-                        });
-                        continue;
-                    }
-                    Selection::Probing(Endpoint::Sse {
-                        open_array_status, ..
-                    }) => {
-                        pending.store(false, Ordering::Release);
-                        gate = RefreshGate::with_interval(Instant::now(), timing.refresh);
-                        let previous = state.borrow().clone();
-                        let error = match previous {
-                            State::Unsupported(error)
-                                if matches!(error.as_ref(),
+        let error = match receive(
+            &client,
+            &mut selection,
+            &pending,
+            &state,
+            &mut gate,
+            &mut changes,
+            timing,
+        )
+        .await
+        {
+            Received::Missing {
+                status,
+                url: mut response_url,
+            } => match selection {
+                Selection::Established(_) => {
+                    pending.lock().expect("EPG notifications").changes.full();
+                    selection = Selection::Probing(Endpoint::OpenArray(url.clone()));
+                    continue;
+                }
+                Selection::Probing(Endpoint::OpenArray(_)) => {
+                    let prefix = response_url
+                        .path()
+                        .strip_suffix("/api/events/stream")
+                        .unwrap_or("");
+                    response_url.set_path(&format!("{prefix}/events"));
+                    response_url.set_query(None);
+                    selection = Selection::Probing(Endpoint::Sse {
+                        url: response_url.into(),
+                        open_array_status: status,
+                    });
+                    continue;
+                }
+                Selection::Probing(Endpoint::Sse {
+                    open_array_status, ..
+                }) => {
+                    changes = Changes::default();
+                    gate = RefreshGate::with_interval(Instant::now(), timing.refresh);
+                    let previous = state.borrow().clone();
+                    let error = match previous {
+                        State::Unsupported(error)
+                            if matches!(error.as_ref(),
                             Error::Unsupported { open_array, sse }
                                 if *open_array == open_array_status && *sse == status) =>
-                            {
-                                error
-                            }
-                            _ => Arc::new(Error::Unsupported {
-                                open_array: open_array_status,
-                                sse: status,
-                            }),
-                        };
-                        state.send_replace(State::Unsupported(error));
-                        tokio::time::sleep(timing.reprobe).await;
-                        selection = Selection::Probing(Endpoint::OpenArray(url.clone()));
-                        continue;
-                    }
-                },
-                Received::Failed(error) => error,
-            };
+                        {
+                            error
+                        }
+                        _ => Arc::new(Error::Unsupported {
+                            open_array: open_array_status,
+                            sse: status,
+                        }),
+                    };
+                    state.send_replace(State::Unsupported(error));
+                    tokio::time::sleep(timing.reprobe).await;
+                    selection = Selection::Probing(Endpoint::OpenArray(url.clone()));
+                    continue;
+                }
+            },
+            Received::Failed(error) => error,
+        };
         // Reconcile changes lost on EOF, malformed data, or a failed reconnect.
+        changes.full();
         gate.changed();
         state.send_replace(State::Retrying(Arc::new(error)));
         let retry = tokio::time::sleep(timing.retry);
         tokio::pin!(retry);
         loop {
-            flush(&mut gate, &pending);
+            flush(&mut gate, &pending, &mut changes);
             tokio::select! {
                 _ = &mut retry => break,
                 _ = tokio::time::sleep(timing.tick) => {}
@@ -284,10 +302,10 @@ enum EventDecoder {
     Sse(crate::sse::Decoder),
 }
 impl EventDecoder {
-    fn push(&mut self, bytes: &[u8]) -> Result<bool, crate::Error> {
+    fn push(&mut self, bytes: &[u8], changes: &mut Changes) -> Result<(), crate::Error> {
         match self {
-            Self::OpenArray(decoder) => decoder.push(bytes),
-            Self::Sse(decoder) => decoder.push(bytes),
+            Self::OpenArray(decoder) => decoder.push_changes(bytes, changes),
+            Self::Sse(decoder) => decoder.push_changes(bytes, changes),
         }
     }
 }
@@ -298,17 +316,22 @@ enum Received {
     },
     Failed(Error),
 }
-fn flush(gate: &mut RefreshGate, pending: &AtomicBool) {
+fn flush(gate: &mut RefreshGate, pending: &Mutex<Notifications>, changes: &mut Changes) {
     if gate.take_due(Instant::now()) {
-        pending.store(true, Ordering::Release);
+        pending
+            .lock()
+            .expect("EPG notifications")
+            .changes
+            .merge(std::mem::take(changes));
     }
 }
 async fn receive(
     client: &reqwest::Client,
     selection: &mut Selection,
-    pending: &AtomicBool,
+    pending: &Mutex<Notifications>,
     state: &watch::Sender<State>,
     gate: &mut RefreshGate,
+    changes: &mut Changes,
     timing: Timing,
 ) -> Received {
     let endpoint = selection.endpoint();
@@ -338,21 +361,23 @@ async fn receive(
         Err(error) => return Received::Failed(Error::Http(error.without_url())),
     };
     selection.establish();
+    changes.full();
+    gate.changed();
+    pending.lock().expect("EPG notifications").refresh_channels = true;
     state.send_replace(State::Receiving);
     let mut body = response.bytes_stream();
     let mut decoder = selection.endpoint().decoder();
     let mut tick = tokio::time::interval(timing.tick);
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     loop {
-        flush(gate, pending);
+        flush(gate, pending, changes);
         tokio::select! {
             _ = tick.tick() => {},
             chunk = body.next() => match chunk {
                 None => return Received::Failed(Error::Ended),
                 Some(Err(error)) => return Received::Failed(Error::Http(error.without_url())),
-                Some(Ok(bytes)) => match decoder.push(&bytes) {
-                    Ok(true) => gate.changed(),
-                    Ok(false) => {},
+                Some(Ok(bytes)) => match decoder.push(&bytes, changes) {
+                    Ok(()) => { if !changes.is_empty() { gate.changed(); } },
                     Err(error) => return Received::Failed(Error::Decode(error)),
                 }
             }
@@ -714,7 +739,7 @@ mod compatibility_tests {
             timeout(Duration::from_secs(2), async {
                 loop {
                     let update = controller.poll(&Handle::current())?;
-                    assert!(!update.refresh);
+                    assert!(update.changes.is_empty());
                     if let Some(error) = update.failure {
                         assert!(matches!(*error, Error::Unsupported { .. }));
                         break;
@@ -727,7 +752,7 @@ mod compatibility_tests {
             controller.configure(Some(url));
             for _ in 0..10 {
                 let update = controller.poll(&Handle::current())?;
-                assert!(!update.refresh);
+                assert!(update.changes.is_empty());
                 assert!(update.failure.is_none());
                 tokio::time::sleep(Duration::from_millis(10)).await;
             }

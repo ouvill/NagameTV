@@ -2,6 +2,7 @@ use crate::channels;
 use std::time::Duration;
 
 mod job;
+mod large_json;
 pub use job::{Job, Progress, Stopping};
 mod server;
 pub use server::{Probe, ServerProduct, ServerUrl, VerifiedServer};
@@ -22,6 +23,10 @@ pub enum NetworkError {
     Http(#[from] reqwest::Error),
     #[error("Response exceeds {limit} bytes")]
     ResponseTooLarge { limit: usize },
+    #[error("Response made no progress for {limit:?}")]
+    Stalled { limit: Duration },
+    #[error("Response exceeded overall deadline {limit:?}")]
+    Deadline { limit: Duration },
     #[error("Channel worker stopped")]
     WorkerStopped,
 }
@@ -38,10 +43,14 @@ pub enum FetchError<E> {
 pub struct Network {
     runtime: tokio::runtime::Runtime,
     client: reqwest::Client,
+    large_json: large_json::Client,
     comments: viewer_comments::service::Client,
 }
 
 impl Network {
+    pub(crate) fn large_json(&self) -> large_json::Client {
+        self.large_json.clone()
+    }
     pub fn job<T: Send + 'static, E: Send + 'static>(
         &self,
         operation: impl std::future::Future<Output = Result<T, FetchError<E>>> + Send + 'static,
@@ -98,6 +107,7 @@ impl Network {
 
     pub fn new() -> Result<Self, NetworkError> {
         Ok(Self {
+            large_json: large_json::Client::new()?,
             comments: viewer_comments::service::Client::new()?,
             runtime: tokio::runtime::Builder::new_multi_thread()
                 .worker_threads(1)
@@ -127,6 +137,7 @@ impl Network {
             ),
         )
     }
+    #[cfg(test)]
     pub fn fetch_json<T: Send + 'static, E: Send + 'static>(
         &self,
         url: String,

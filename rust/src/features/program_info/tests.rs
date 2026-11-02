@@ -10,7 +10,7 @@ use std::{
 };
 
 #[test]
-fn each_failed_fetch_is_logged_once_with_causes_even_when_immediately_refreshed()
+fn each_failed_fetch_is_logged_once_and_pending_refresh_cannot_bypass_backoff()
 -> Result<(), Box<dyn std::error::Error>> {
     let network = Network::new()?;
     let now = Instant::now();
@@ -20,20 +20,20 @@ fn each_failed_fetch_is_logged_once_with_causes_even_when_immediately_refreshed(
             let failure = parse(br#"[{"id":"invalid"}]"#)
                 .err()
                 .ok_or("expected invalid EPG")?;
-            feature.acquisition =
-                Acquisition::Fetching(network.job(async { Err(FetchError::Parse(failure)) }));
-            // Starting a queued refresh replaces Failed status in the same poll.
+            feature.acquisition = Acquisition::Fetching(Fetching {
+                job: network.job(async { Err(FetchError::Parse(failure)) }),
+                scope: Scope::Full,
+                next: None,
+            });
+            // Even a queued refresh must preserve failure status during backoff.
             feature.desired = Some("http://127.0.0.1:1".into());
             feature.refresh_pending = refresh_pending;
             let deadline = Instant::now() + Duration::from_secs(3);
             loop {
                 let update = feature.poll_at(&network, now);
                 if update.completed == Some(Completion::Failed) {
-                    assert_eq!(update.started, refresh_pending);
-                    assert_eq!(
-                        matches!(feature.status(), Status::Fetching),
-                        refresh_pending
-                    );
+                    assert!(!update.started);
+                    assert!(matches!(feature.status(), Status::Failed(_)));
                     break;
                 }
                 assert!(Instant::now() < deadline, "EPG worker did not complete");
@@ -220,10 +220,16 @@ fn updates_replace_failure_retains_refresh_waits_and_disable_clears()
             )?
             .contains("番組")
     );
-    feature.poll_at(&network, Instant::now() + REFRESH - Duration::from_secs(1));
+    feature.poll_at(
+        &network,
+        Instant::now() + RETRY_INITIAL - Duration::from_secs(1),
+    );
     assert_eq!(count.load(Ordering::SeqCst), 3);
     assert_eq!(feature.counters().0, 0);
-    feature.poll_at(&network, Instant::now() + REFRESH + Duration::from_secs(1));
+    feature.poll_at(
+        &network,
+        Instant::now() + RETRY_INITIAL + Duration::from_secs(1),
+    );
     assert!(matches!(feature.status(), Status::Fetching));
     feature.configure(None);
     let deadline = Instant::now() + Duration::from_secs(3);

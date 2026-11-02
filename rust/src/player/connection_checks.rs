@@ -243,6 +243,7 @@ fn checks() -> TestResult {
     check_live_timeline_publication();
     check_commentary_projection()?;
     check_guide_state();
+    super::epg_checks::run()?;
     check_autoplay()?;
     check_live_buffer()?;
     check_timeshift_options()?;
