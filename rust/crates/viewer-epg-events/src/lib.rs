@@ -1,9 +1,13 @@
 //! Bounded open-array and SSE decoding. No Qt or playback resources.
+mod changes;
 #[cfg(feature = "network")]
 pub mod connection;
 #[cfg(feature = "network")]
 pub mod controller;
 mod gate;
+pub use changes::{
+    Changes, Delta, MAX_PENDING_BYTES, MAX_PENDING_PROGRAMS, MAX_PENDING_SERVICES, ProgramChange,
+};
 pub mod sse;
 pub use gate::RefreshGate;
 use serde::Deserialize;
@@ -44,20 +48,25 @@ impl Decoder {
     /// True means at least one program changed. A transport failure must also trigger
     /// reconciliation: a chunk containing valid events followed by invalid data returns Err.
     pub fn push(&mut self, bytes: &[u8]) -> Result<bool, Error> {
-        match self.decode(bytes) {
+        let mut changes = Changes::default();
+        self.push_changes(bytes, &mut changes)?;
+        Ok(!changes.is_empty())
+    }
+    pub fn push_changes(&mut self, bytes: &[u8], changes: &mut Changes) -> Result<(), Error> {
+        match self.decode(bytes, changes) {
             Ok(changed) => Ok(changed),
             Err(error) => {
+                changes.full();
                 self.state = State::Failed;
                 self.pending = Vec::new();
                 Err(error)
             }
         }
     }
-    fn decode(&mut self, bytes: &[u8]) -> Result<bool, Error> {
+    fn decode(&mut self, bytes: &[u8], changes: &mut Changes) -> Result<(), Error> {
         if matches!(self.state, State::Failed) {
             return Err(Error::Failed);
         }
-        let mut changed = false;
         for &byte in bytes {
             match &mut self.state {
                 State::Between => {
@@ -109,10 +118,12 @@ impl Decoder {
                             resource: Cow<'a, str>,
                             #[serde(borrow, rename = "type")]
                             kind: Cow<'a, str>,
+                            data: Option<Box<serde_json::value::RawValue>>,
                         }
                         let event: Event<'_> = serde_json::from_slice(&self.pending)?;
-                        changed |= event.resource == "program"
-                            && matches!(event.kind.as_ref(), "create" | "update" | "remove");
+                        if event.resource == "program" {
+                            changes.event(&event.kind, event.data)?;
+                        }
                         // One reusable buffer per connection, never a history of event payloads.
                         self.pending.clear();
                         self.state = State::Between;
@@ -121,7 +132,7 @@ impl Decoder {
                 State::Failed => return Err(Error::Failed),
             }
         }
-        Ok(changed)
+        Ok(())
     }
 }
 
@@ -132,7 +143,7 @@ mod tests {
     #[test]
     fn every_byte_split_handles_nested_data_utf8_and_escaped_delimiters() -> TestResult {
         let event = serde_json::to_vec(&serde_json::json!({
-            "resource":"program", "type":"update", "data":{"name":"日本語[},\\\"", "items":[{"text":"\\"}]}
+            "resource":"program", "type":"update", "data":{"id":1,"name":"日本語[},\\\"", "items":[{"text":"\\"}]}
         }))?;
         for split in 0..=event.len() {
             let mut decoder = Decoder::default();
@@ -146,11 +157,10 @@ mod tests {
         Ok(())
     }
     #[test]
-    fn filters_resources_and_unknown_event_types_and_coalesces_bursts() -> TestResult {
+    fn filters_resources_and_reconciles_unknown_program_event_types() -> TestResult {
         let mut decoder = Decoder::default();
-        assert!(!decoder.push(
-            br#"[{"resource":"tuner","type":"update"},{"resource":"program","type":"future"},"#
-        )?);
+        assert!(!decoder.push(br#"[{"resource":"tuner","type":"update"},"#)?);
+        assert!(decoder.push(br#"{"resource":"program","type":"future"},"#)?);
         assert!(decoder.push(
             br#"{"resource":"program","type":"create"},{"resource":"program","type":"remove"}]"#
         )?);
@@ -159,8 +169,8 @@ mod tests {
     }
     #[test]
     fn large_fragmented_event_is_only_decoded_when_complete_and_buffer_is_reused() -> TestResult {
-        let prefix = br#"{"resource":"program","type":"update","data":""#;
-        let suffix = br#""}"#;
+        let prefix = br#"{"resource":"program","type":"update","data":{"id":1,"name":""#;
+        let suffix = br#""}}"#;
         let mut decoder = Decoder::default();
         assert!(!decoder.push(prefix)?);
         for _ in 0..MAX_EVENT_BYTES - prefix.len() - suffix.len() {

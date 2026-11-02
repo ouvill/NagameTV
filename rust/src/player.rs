@@ -14,6 +14,8 @@ pub(crate) mod connection_checks;
 #[cfg(target_os = "linux")]
 mod desktop_media;
 mod epg;
+#[cfg(feature = "native_tests")]
+mod epg_checks;
 mod guide;
 mod language;
 mod lifecycle;

@@ -63,6 +63,7 @@ qrcode = { version = "0.14", default-features = false, features = ["svg"] }
 base64 = "0.23"
 
 [dev-dependencies]
+tokio = { version = "1.47", features = ["test-util"] }
 proptest = { version = "1", default-features = false, features = ["std"] }
 wiremock = "0.6"
 

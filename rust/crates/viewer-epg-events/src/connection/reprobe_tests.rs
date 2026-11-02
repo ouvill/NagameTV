@@ -127,8 +127,8 @@ async fn unsupported_rechecks_at_five_minutes_without_refresh_or_duplicate_outco
             .wait_for(|state| matches!(state, State::Receiving))
             .await?;
         assert!(
-            !subscription.take_refresh(),
-            "capability recovery alone must not request programs"
+            subscription.take_refresh(),
+            "a newly established stream must reconcile programs"
         );
         chunk(&mut socket, br#"[{"resource":"program","type":"update"},"#).await?;
         while !subscription.take_refresh() {
@@ -187,8 +187,8 @@ async fn vanished_working_endpoints_redetect_once_at_the_same_address() -> TestR
                     .wait_for(|state| matches!(state, State::Receiving))
                     .await?;
                 assert!(
-                    !subscription.take_refresh(),
-                    "detection itself must not refresh"
+                    subscription.take_refresh(),
+                    "a re-established stream must reconcile programs"
                 );
                 let event = if replacement == ARRAY_PATH {
                     br#"[{"resource":"program","type":"update"},"#.as_slice()
@@ -217,6 +217,10 @@ async fn vanished_working_endpoints_redetect_once_at_the_same_address() -> TestR
                     .await?;
                 tokio::time::advance(TIMING.retry).await;
                 assert!(matches!(subscription.state(), State::Unsupported(_)));
+                assert!(
+                    subscription.take_refresh(),
+                    "losing an established endpoint requires reconciliation"
+                );
                 assert!(!subscription.take_refresh());
                 assert!(
                     listener.accept().now_or_never().is_none(),
@@ -225,6 +229,74 @@ async fn vanished_working_endpoints_redetect_once_at_the_same_address() -> TestR
                 subscription.stop().wait().await?;
             }
         }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test(start_paused = true)]
+async fn established_stream_delivers_deltas_and_decode_failure_reconnects_with_full_reconciliation()
+-> TestResult {
+    drive(async {
+        use crate::Changes;
+        let listener = TcpListener::bind("127.0.0.1:0").await?;
+        let url = format!("http://{}{ARRAY_PATH}", listener.local_addr()?);
+        let subscription = Subscription::start_with(
+            &Handle::current(),
+            &Client::new()?,
+            url,
+            Timing {
+                refresh: Duration::ZERO,
+                ..TIMING
+            },
+        );
+        let mut state = subscription.state.clone();
+        let mut socket = working(&listener, ARRAY_PATH).await?;
+        state
+            .wait_for(|state| matches!(state, State::Receiving))
+            .await?;
+        let initial = subscription.take_changes();
+        assert!(matches!(initial.changes, Changes::Full));
+        assert!(initial.refresh_channels);
+        chunk(
+            &mut socket,
+            br#"[{"resource":"program","type":"update","data":{"id":1,"name":"changed"}},"#,
+        )
+        .await?;
+        let delta = loop {
+            let notification = subscription.take_changes();
+            if !notification.changes.is_empty() {
+                break notification;
+            }
+            tokio::task::yield_now().await;
+        };
+        assert!(!delta.refresh_channels);
+        let Changes::Delta(delta) = delta.changes else {
+            panic!("ordinary program events must remain incremental")
+        };
+        let (mut programs, services) = delta.into_parts();
+        assert_eq!(programs.next().expect("program").id(), 1);
+        assert!(programs.next().is_none());
+        assert!(services.is_empty());
+        chunk(
+            &mut socket,
+            br#"{"resource":"program","type":"remove","data":{"id":1}},invalid"#,
+        )
+        .await?;
+        state
+            .wait_for(|state| matches!(state, State::Retrying(_)))
+            .await?;
+        assert!(matches!(subscription.take_changes().changes, Changes::Full));
+        drop(socket);
+        tokio::time::advance(TIMING.retry).await;
+        let _reconnected = working(&listener, ARRAY_PATH).await?;
+        state
+            .wait_for(|state| matches!(state, State::Receiving))
+            .await?;
+        let reconnected = subscription.take_changes();
+        assert!(matches!(reconnected.changes, Changes::Full));
+        assert!(reconnected.refresh_channels);
+        subscription.stop().wait().await?;
         Ok(())
     })
     .await

@@ -29,7 +29,7 @@ struct Entry {
     related_items: Box<[Related]>,
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Related {
     #[serde(rename = "type")]
@@ -38,7 +38,7 @@ struct Related {
     service_id: u16,
     event_id: u16,
 }
-#[derive(Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
 enum Relation {
     Shared,
@@ -59,53 +59,101 @@ fn descriptive(program: &Program) -> bool {
             .is_some_and(|s| s.name.is_some() || s.episode.is_some() || s.last_episode.is_some())
 }
 
-pub(super) fn parse(bytes: &[u8]) -> Result<Vec<Program>, Error> {
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct Record {
+    pub program: Program,
+    related: Box<[Related]>,
+}
+impl Record {
+    pub fn storage_bytes(&self) -> usize {
+        self.program.storage().total() + std::mem::size_of::<Self>()
+            - std::mem::size_of::<Program>()
+            + self.related.len() * std::mem::size_of::<Related>()
+    }
+}
+
+fn normalize(entry: Entry) -> Option<Record> {
+    let start_at = entry.start_at?;
+    let series = entry.series.map(|mut series| {
+        series.name = series.name.filter(|name| !name.is_empty());
+        // ARIB STD-B10 6.2.33: zero means unspecified, not episode zero.
+        series.episode = series.episode.filter(|episode| *episode != 0);
+        series.last_episode = series.last_episode.filter(|episode| *episode != 0);
+        series
+    });
+    let program = Program {
+        id: entry.id,
+        event_id: entry.event_id,
+        service: entry.service,
+        start_at,
+        duration: entry.duration.unwrap_or(UNKNOWN_DURATION_MS),
+        name: entry.name,
+        description: entry.description,
+        extended: entry.extended,
+        video: entry.video,
+        series,
+        is_free: entry.is_free,
+        genre: entry.genres,
+        audios: entry.audios,
+    };
+    Some(Record {
+        program,
+        related: entry.related_items,
+    })
+}
+
+pub(super) fn parse_one(bytes: &[u8], id: u64) -> Result<Option<Record>, Error> {
+    let entry: Entry = crate::json::from_slice(bytes)?;
+    if entry.id != id {
+        return Err(Error::WrongProgramId);
+    }
+    Ok(normalize(entry))
+}
+
+pub(super) fn records(bytes: &[u8]) -> Result<Vec<Record>, Error> {
+    records_for(bytes, None)
+}
+pub(super) fn records_for(
+    bytes: &[u8],
+    service: Option<BroadcastService>,
+) -> Result<Vec<Record>, Error> {
     let entries: Vec<Entry> = crate::json::from_slice(bytes)?;
+    if service.is_some_and(|service| entries.iter().any(|entry| entry.service != service)) {
+        return Err(Error::WrongService);
+    }
     if entries.len() > MAX_PROGRAMS {
         return Err(Error::TooManyPrograms {
             actual: entries.len(),
             limit: MAX_PROGRAMS,
         });
     }
-    let mut dropped = 0;
-    let mut programs = Vec::with_capacity(entries.len());
-    let mut relations = Vec::with_capacity(entries.len());
-    for entry in entries {
-        let Some(start_at) = entry.start_at else {
-            dropped += 1;
-            continue;
-        };
-        let series = entry.series.map(|mut series| {
-            series.name = series.name.filter(|name| !name.is_empty());
-            // ARIB STD-B10 6.2.33: zero means unspecified, not episode zero.
-            series.episode = series.episode.filter(|episode| *episode != 0);
-            series.last_episode = series.last_episode.filter(|episode| *episode != 0);
-            series
-        });
-        programs.push(Program {
-            id: entry.id,
-            event_id: entry.event_id,
-            service: entry.service,
-            start_at,
-            duration: entry.duration.unwrap_or(UNKNOWN_DURATION_MS),
-            name: entry.name,
-            description: entry.description,
-            extended: entry.extended,
-            video: entry.video,
-            series,
-            is_free: entry.is_free,
-            genre: entry.genres,
-            audios: entry.audios,
-        });
-        relations.push(entry.related_items);
-    }
+    let count = entries.len();
+    let records: Vec<_> = entries.into_iter().filter_map(normalize).collect();
+    let dropped = count - records.len();
     if dropped != 0 {
         tracing::warn!(
             dropped_programs = dropped,
             "Program guide fetch discarded programs without startAt"
         );
     }
+    Ok(records)
+}
 
+#[cfg(test)]
+pub(super) fn parse(bytes: &[u8]) -> Result<Vec<Program>, Error> {
+    resolve(&records(bytes)?)
+}
+
+pub(super) fn resolve(records: &[Record]) -> Result<Vec<Program>, Error> {
+    let mut bytes = records
+        .iter()
+        .map(|r| r.storage_bytes() + r.program.storage().total())
+        .sum::<usize>();
+    check_memory(bytes)?;
+    let mut programs: Vec<_> = records
+        .iter()
+        .map(|record| record.program.clone())
+        .collect();
     // EIT event IDs are reused. Only copy from an unambiguous occurrence at the
     // same start time; never let an old or conflicting revision supply a title.
     let mut sources = BTreeMap::new();
@@ -124,7 +172,8 @@ pub(super) fn parse(bytes: &[u8]) -> Result<Vec<Program>, Error> {
     }
     // Sources contain only original descriptive records, so cycles/self-links
     // cannot manufacture metadata or make the result depend on input order.
-    for (index, related) in relations.iter().enumerate() {
+    for (index, record) in records.iter().enumerate() {
+        let related = &record.related;
         if descriptive(&programs[index]) {
             continue;
         }
@@ -143,6 +192,9 @@ pub(super) fn parse(bytes: &[u8]) -> Result<Vec<Program>, Error> {
                     .flatten()
             });
         if let Some(source) = source {
+            // Bound shared-description expansion before allocating each copy.
+            bytes = bytes - programs[index].storage().total() + programs[source].storage().total();
+            check_memory(bytes)?;
             let source = programs[source].clone();
             let target = &mut programs[index];
             target.name = source.name;
@@ -155,6 +207,17 @@ pub(super) fn parse(bytes: &[u8]) -> Result<Vec<Program>, Error> {
         }
     }
     Ok(programs)
+}
+
+fn check_memory(actual: usize) -> Result<(), Error> {
+    if actual > super::MAX_SNAPSHOT_BYTES {
+        Err(Error::TooMuchMemory {
+            actual,
+            limit: super::MAX_SNAPSHOT_BYTES,
+        })
+    } else {
+        Ok(())
+    }
 }
 
 #[cfg(test)]

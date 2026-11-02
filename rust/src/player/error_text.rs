@@ -176,7 +176,7 @@ impl PresentError for crate::services::NetworkError {
     fn present(&self) -> Text {
         match self {
             Self::Runtime(error) => detail("Could not initialize networking: %1", error),
-            Self::Http(_) => Text::literal(self),
+            Self::Http(_) | Self::Stalled { .. } | Self::Deadline { .. } => Text::literal(self),
             Self::ResponseTooLarge { limit } => detail("The response exceeds %1 bytes", limit),
             Self::WorkerStopped => Text::source("The channel worker stopped unexpectedly"),
         }

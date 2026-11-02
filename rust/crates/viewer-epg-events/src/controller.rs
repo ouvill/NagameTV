@@ -22,7 +22,8 @@ enum Phase {
 }
 #[derive(Default)]
 pub struct Update {
-    pub refresh: bool,
+    pub changes: crate::Changes,
+    pub refresh_channels: bool,
     pub failure: Option<Arc<crate::connection::Error>>,
 }
 #[derive(Default)]
@@ -81,7 +82,9 @@ impl Controller {
         }
         let mut update = Update::default();
         if let Phase::Running(subscription) = &self.phase {
-            update.refresh = subscription.take_refresh();
+            let notifications = subscription.take_changes();
+            update.changes = notifications.changes;
+            update.refresh_channels = notifications.refresh_channels;
             match subscription.state() {
                 State::Retrying(error) | State::Unsupported(error) => {
                     if self
@@ -98,7 +101,7 @@ impl Controller {
                         self.phase = Phase::Stopping(subscription.stop());
                     }
                     // The reconnect may have missed updates even if the worker panicked.
-                    update.refresh = true;
+                    update.changes.full();
                 }
                 State::Connecting | State::Receiving => self.last_failure = None,
             }
@@ -122,7 +125,7 @@ mod tests {
         let runtime = Handle::current();
         let mut controller = Controller::default();
         assert!(controller.is_stopped());
-        assert!(!controller.poll(&runtime)?.refresh);
+        assert!(controller.poll(&runtime)?.changes.is_empty());
         assert!(controller.client.is_none());
         let a = Some("http://127.0.0.1:1/a".to_owned());
         controller.configure(a.clone());
@@ -132,7 +135,7 @@ mod tests {
         controller.configure(a.clone());
         // Current-thread runtime has not yielded: abort cannot have completed yet.
         for _ in 0..100 {
-            assert!(!controller.poll(&runtime)?.refresh);
+            assert!(controller.poll(&runtime)?.changes.is_empty());
             assert!(matches!(controller.phase, Phase::Stopping(_)));
         }
         timeout(Duration::from_secs(2), async {
@@ -149,7 +152,7 @@ mod tests {
         timeout(Duration::from_secs(2), async {
             while !controller.is_stopped() {
                 tokio::task::yield_now().await;
-                assert!(!controller.poll(&runtime)?.refresh);
+                assert!(controller.poll(&runtime)?.changes.is_empty());
             }
             Ok::<_, Error>(())
         })
@@ -196,7 +199,7 @@ mod tests {
             controller.configure(None);
             timeout(Duration::from_secs(2), async {
                 while !controller.is_stopped() {
-                    assert!(!controller.poll(&runtime)?.refresh);
+                    assert!(controller.poll(&runtime)?.changes.is_empty());
                     tokio::task::yield_now().await;
                 }
                 Ok::<_, Error>(())

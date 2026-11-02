@@ -17,7 +17,11 @@ impl<T: Send + 'static, E: Send + 'static> Job<T, E> {
     ) -> Self {
         let (tx, rx) = mpsc::sync_channel(1);
         let task = runtime.spawn(async move {
-            let _ = tx.try_send(operation.await);
+            // Cancellation drops the receiver before the worker exits; a
+            // disconnected receiver is normal and needs no error notification.
+            if let Err(mpsc::TrySendError::Full(_)) = tx.try_send(operation.await) {
+                tracing::error!("Network job result channel unexpectedly full");
+            }
         });
         Self {
             task: Task(task),

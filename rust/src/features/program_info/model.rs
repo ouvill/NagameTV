@@ -59,51 +59,131 @@ pub struct Storage {
     pub audio: usize,
     pub details: usize,
     pub index: usize,
+    pub source: usize,
 }
 impl Storage {
     pub fn total(self) -> usize {
-        self.records + self.strings + self.audio + self.details + self.index
+        self.records + self.strings + self.audio + self.details + self.index + self.source
     }
 }
 
 #[derive(Clone, Default)]
 pub struct Snapshot {
+    source: Arc<[super::wire::Record]>,
     programs: Arc<[Program]>,
     schedules: Arc<BTreeMap<BroadcastService, Schedule>>,
 }
 
 pub(crate) fn parse(bytes: &[u8]) -> Result<Snapshot, Error> {
-    let mut entries = super::wire::parse(bytes)?;
-    entries.sort_unstable_by_key(|p| (p.service(), p.start_at, p.id));
-    // Equal identities can contain conflicting revisions. Only discard equal
-    // decoded records, keeping all distinct candidates without quadratic scans.
-    let mut previous = None;
-    let mut seen = BTreeMap::new();
-    let mut programs = Vec::with_capacity(entries.len());
-    for program in entries {
-        let key = (program.service(), program.start_at, program.id);
-        if previous != Some(key) {
-            programs.extend(std::mem::take(&mut seen).into_values());
-            previous = Some(key);
-        }
-        seen.entry(serde_json::to_vec(&program).map_err(Error::Projection)?)
-            .or_insert(program);
-    }
-    programs.extend(seen.into_values());
-    let mut schedules = BTreeMap::new();
-    let mut start = 0;
-    while start < programs.len() {
-        let service = programs[start].service();
-        let end = start + programs[start..].partition_point(|p| p.service() == service);
-        schedules.insert(service, Schedule::build(&programs, start..end));
-        start = end;
-    }
-    Ok(Snapshot {
-        programs: programs.into(),
-        schedules: Arc::new(schedules),
-    })
+    Snapshot::from_records(super::wire::records(bytes)?)
+}
+
+pub(super) fn parse_service(bytes: &[u8], service: BroadcastService) -> Result<Snapshot, Error> {
+    Snapshot::from_records(super::wire::records_for(bytes, Some(service))?)
 }
 impl Snapshot {
+    fn from_records(records: Vec<super::wire::Record>) -> Result<Self, Error> {
+        if records.len() > super::MAX_PROGRAMS {
+            return Err(Error::TooManyPrograms {
+                actual: records.len(),
+                limit: super::MAX_PROGRAMS,
+            });
+        }
+        let mut entries = super::wire::resolve(&records)?;
+        entries.sort_unstable_by_key(|p| (p.service(), p.start_at, p.id));
+        // Equal identities can contain conflicting revisions. Only discard equal
+        // decoded records, keeping all distinct candidates without quadratic scans.
+        let mut previous = None;
+        let mut seen = BTreeMap::new();
+        let mut programs = Vec::with_capacity(entries.len());
+        for program in entries {
+            let key = (program.service(), program.start_at, program.id);
+            if previous != Some(key) {
+                programs.extend(std::mem::take(&mut seen).into_values());
+                previous = Some(key);
+            }
+            seen.entry(serde_json::to_vec(&program).map_err(Error::Projection)?)
+                .or_insert(program);
+        }
+        programs.extend(seen.into_values());
+        let mut schedules = BTreeMap::new();
+        let mut start = 0;
+        while start < programs.len() {
+            let service = programs[start].service();
+            let end = start + programs[start..].partition_point(|p| p.service() == service);
+            schedules.insert(service, Schedule::build(&programs, start..end));
+            start = end;
+        }
+        let snapshot = Snapshot {
+            source: records.into(),
+            programs: programs.into(),
+            schedules: Arc::new(schedules),
+        };
+        let actual = snapshot.storage().total();
+        if actual > super::MAX_SNAPSHOT_BYTES {
+            return Err(Error::TooMuchMemory {
+                actual,
+                limit: super::MAX_SNAPSHOT_BYTES,
+            });
+        }
+        Ok(snapshot)
+    }
+    pub(super) fn same_programs(&self, other: &Self) -> bool {
+        self.programs == other.programs
+    }
+    pub(super) fn apply(
+        &self,
+        changes: impl Iterator<Item = viewer_epg_events::ProgramChange>,
+    ) -> Result<Option<Self>, Error> {
+        use viewer_epg_events::ProgramChange;
+        let mut updates = BTreeMap::new();
+        for change in changes {
+            let id = change.id();
+            let record = match change {
+                ProgramChange::Upsert { data, .. } => {
+                    super::wire::parse_one(data.get().as_bytes(), id)?
+                }
+                ProgramChange::Remove(_) => None,
+            };
+            let mut previous = self.source.iter().filter(|record| record.program.id == id);
+            if previous.next() != record.as_ref() || previous.next().is_some() {
+                updates.insert(id, record);
+            }
+        }
+        if updates.is_empty() {
+            return Ok(None);
+        }
+        let mut records: Vec<_> = self
+            .source
+            .iter()
+            .filter(|record| !updates.contains_key(&record.program.id))
+            .cloned()
+            .collect();
+        records.extend(updates.into_values().flatten());
+        Self::from_records(records).map(Some)
+    }
+    pub(super) fn replace_service(
+        &self,
+        service: BroadcastService,
+        incoming: Self,
+    ) -> Result<Self, Error> {
+        if incoming
+            .source
+            .iter()
+            .any(|record| record.program.service != service)
+        {
+            return Err(Error::WrongService);
+        }
+        let mut records: Vec<_> = self
+            .source
+            .iter()
+            .filter(|record| record.program.service != service)
+            .cloned()
+            .collect();
+        records.extend(incoming.source.iter().cloned());
+        Self::from_records(records)
+    }
+
     pub fn len(&self) -> usize {
         self.programs.len()
     }
@@ -188,48 +268,61 @@ impl Snapshot {
             .collect();
         serde_json::to_string(&programs)
     }
+    pub(super) fn source_string_bytes(&self) -> usize {
+        self.source
+            .iter()
+            .map(|record| record.program.storage().strings)
+            .sum()
+    }
     pub fn storage(&self) -> Storage {
-        let record_bytes = self.programs.len() * std::mem::size_of::<Program>();
-        let string_bytes: usize = self
-            .programs
-            .iter()
-            .map(|p| {
-                p.name.as_ref().map_or(0, String::capacity)
-                    + p.description.as_ref().map_or(0, String::capacity)
-                    + p.extended
-                        .as_ref()
-                        .map_or(0, super::details::Extended::string_bytes)
-                    + p.video
-                        .as_ref()
-                        .map_or(0, super::details::Video::string_bytes)
-                    + p.series
-                        .as_ref()
-                        .map_or(0, super::details::Series::string_bytes)
-            })
-            .sum();
-        let audio_bytes: usize = self
-            .programs
-            .iter()
-            .map(|program| {
-                program.audios.len() * std::mem::size_of::<crate::audio::Descriptor>()
-                    + program
-                        .audios
-                        .iter()
-                        .map(crate::audio::Descriptor::heap_bytes)
-                        .sum::<usize>()
-            })
-            .sum();
-        Storage {
-            records: record_bytes,
+        let mut storage = Storage {
             index: self.schedules.values().map(Schedule::bytes).sum(),
-            strings: string_bytes,
-            audio: audio_bytes,
-            details: self
-                .programs
+            source: self
+                .source
                 .iter()
-                .filter_map(|program| program.extended.as_ref())
-                .map(super::details::Extended::record_bytes)
+                .map(super::wire::Record::storage_bytes)
                 .sum(),
+            ..Storage::default()
+        };
+        for program in self.programs.iter() {
+            let item = program.storage();
+            storage.records += item.records;
+            storage.strings += item.strings;
+            storage.audio += item.audio;
+            storage.details += item.details;
+        }
+        storage
+    }
+}
+impl Program {
+    pub(super) fn storage(&self) -> Storage {
+        Storage {
+            records: std::mem::size_of::<Self>(),
+            strings: self.name.as_ref().map_or(0, String::capacity)
+                + self.description.as_ref().map_or(0, String::capacity)
+                + self
+                    .extended
+                    .as_ref()
+                    .map_or(0, super::details::Extended::string_bytes)
+                + self
+                    .video
+                    .as_ref()
+                    .map_or(0, super::details::Video::string_bytes)
+                + self
+                    .series
+                    .as_ref()
+                    .map_or(0, super::details::Series::string_bytes),
+            audio: self.audios.len() * std::mem::size_of::<crate::audio::Descriptor>()
+                + self
+                    .audios
+                    .iter()
+                    .map(crate::audio::Descriptor::heap_bytes)
+                    .sum::<usize>(),
+            details: self
+                .extended
+                .as_ref()
+                .map_or(0, super::details::Extended::record_bytes),
+            ..Storage::default()
         }
     }
 }
