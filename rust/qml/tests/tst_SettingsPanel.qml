@@ -477,7 +477,7 @@ Item {
                 compare(backend.autoplay, true);
                 keyClick(Qt.Key_Down);
                 const number = expectFocus("liveBufferMilliseconds");
-                keyClick(Qt.Key_Right); compare(number.value, 251);
+                keyClick(Qt.Key_Right); compare(number.value, 350);
                 keyClick(Qt.Key_Left); compare(number.value, 250);
                 keyClick(Qt.Key_Return);
                 compare(number.interaction, ThemedSpinBox.Editing);
