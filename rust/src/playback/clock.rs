@@ -45,6 +45,27 @@ pub(super) fn redistribute_latency(
 }
 
 impl Policy {
+    pub(super) fn configure(
+        self,
+        player: &gst::Element,
+        start: super::Start,
+    ) -> Result<(), gst::glib::BoolError> {
+        let pipeline = player
+            .downcast_ref::<gst::Pipeline>()
+            .ok_or_else(|| gst::glib::bool_error!("Playback is not a GstPipeline"))?;
+        match (self, start) {
+            (Self::Automatic, super::Start::Beginning) => pipeline.auto_clock(),
+            (Self::Automatic, super::Start::Live) | (Self::System, _) => {
+                // A new audio clock can start at zero. Advancing running time
+                // beyond it wraps base_time and stalls audio ringbuffer writes.
+                // Live preroll needs an advancing, shared monotonic clock.
+                pipeline.use_clock(Some(&gst::SystemClock::obtain()));
+                tracing::info!("Using system clock for shared playback synchronization");
+            }
+        }
+        Ok(())
+    }
+
     pub fn from_environment() -> Result<Self, Error> {
         match std::env::var("NAGAMETV_PLAYBACK_CLOCK") {
             Ok(value) => Self::parse(Some(&value)),
@@ -161,6 +182,26 @@ mod tests {
                 .pipeline_flags()
                 .contains(gst::PipelineFlags::FIXED_CLOCK)
         );
+        Ok(())
+    }
+
+    #[test]
+    fn live_clock_can_advance_preroll_and_recording_restores_the_configured_policy()
+    -> Result<(), Box<dyn std::error::Error>> {
+        gst::init()?;
+        for policy in [Policy::Automatic, Policy::System] {
+            let player = policy.build_playbin()?;
+            let pipeline = player.downcast_ref::<gst::Pipeline>().ok_or("pipeline")?;
+            for start in [super::super::Start::Live, super::super::Start::Beginning] {
+                policy.configure(&player, start)?;
+                assert_eq!(
+                    pipeline
+                        .pipeline_flags()
+                        .contains(gst::PipelineFlags::FIXED_CLOCK),
+                    policy == Policy::System || matches!(start, super::super::Start::Live)
+                );
+            }
+        }
         Ok(())
     }
 

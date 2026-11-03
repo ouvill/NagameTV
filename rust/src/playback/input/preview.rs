@@ -128,7 +128,7 @@ impl Cursor {
             let bytes = match &mut self.source {
                 ReaderSource::File(file) => {
                     file.seek(SeekFrom::Start(self.offset))?;
-                    store::ReadBytes::Owned(read_block(file, read_bytes)?)
+                    store::ReadBytes(read_block(file, read_bytes)?)
                 }
                 ReaderSource::Live(store) => match store
                     .lock()

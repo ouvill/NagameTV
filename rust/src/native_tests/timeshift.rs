@@ -1350,35 +1350,22 @@ fn start_near_live(
         engine,
         "(() => { const s = JSON.parse(player.video_stats()).pcr_deviation; return s.samples > 0 && [s.latest_ms, s.median_ms, s.p95_ms].every(Number.isFinite) && s.p95_ms >= s.median_ms; })()"
     )?);
-    // A fast startup already inside the live reserve needs no forward seek.
-    // Wait for advancing playback above so the first-render decision is over.
-    // If alignment was needed, bracket its target by the receive snapshots
-    // before/after notification; reception continues during a native flush.
+    // Initial preroll establishes the common A/V clock without a flushing seek.
     let requests = super::bridge::ffi::evaluate_root(
         engine.pin_mut(),
         &cxx_qt_lib::QString::from(format!("{OBSERVER}.seekRequests")),
     )?
     .value::<i32>()
     .ok_or("seek request count")?;
-    assert!(
-        (previous..=previous + 1).contains(&requests),
-        "{startup_state:?}"
-    );
-    assert!(
-        evaluate(
-            engine,
-            &format!(
-                "{OBSERVER}.seekRequests === {previous} || ({OBSERVER}.lastSeekTarget + {headroom} >= {OBSERVER}.lastSeekPreviousEdge && {OBSERVER}.lastSeekTarget + {headroom} <= {OBSERVER}.lastSeekEdge && {OBSERVER}.lastSeekSession === JSON.parse(player.live_timeline).session)",
-                headroom = headroom
-            ),
-        )?,
-        "{context}: startup did not target this source's live reserve: {startup_state:?}"
+    assert_eq!(
+        requests, previous,
+        "{context}: startup unexpectedly sought: {startup_state:?}"
     );
     observe_playback(
         app,
         engine,
         &format!(
-            "{OBSERVER}.seekRequests === {} && JSON.parse(player.live_timeline).live.position - player.position_ms < {}",
+            "{OBSERVER}.seekRequests === {} && Math.abs(JSON.parse(player.live_timeline).live.position - player.position_ms - {headroom}) < {}",
             requests,
             STARTUP_LIVE_EDGE_TOLERANCE.as_millis()
         ),

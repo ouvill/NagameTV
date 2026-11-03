@@ -1,7 +1,10 @@
 //! Bounded raw TS retention. Logical offsets never refer to reused physical bytes.
 use super::index::Index;
 use memmap2::MmapMut;
-use std::{collections::VecDeque, ops::Range, sync::Arc, time::Duration};
+use std::{collections::VecDeque, time::Duration};
+
+#[cfg(test)]
+mod forward_tests;
 
 pub(super) const SEGMENT_BYTES: usize = 1024 * 1024;
 pub(super) const READ_BYTES: usize = super::TS_PACKET_SIZE * 256;
@@ -40,42 +43,41 @@ impl RetentionState {
     }
 }
 enum Bytes {
-    Memory(Arc<MmapMut>),
+    Memory(MmapMut),
     File,
 }
 impl Bytes {
     fn memory() -> std::io::Result<Self> {
-        // Anonymous mappings return pages to the OS when the last reader drops
-        // them. Small Vec allocations instead left an entire paused history in
-        // glibc's arenas after live return. Keep the same bounded read leases;
-        // mutation still requires exclusive Arc ownership. No file mapping or
-        // process-wide allocator purge is involved.
-        Ok(Self::Memory(Arc::new(MmapMut::map_anon(READ_BYTES)?)))
+        // Dropping anonymous mappings returns paused history to the OS without
+        // keeping it in allocator arenas. Readers copy bounded blocks so they
+        // cannot freeze a partially filled tail and waste the retention budget.
+        Ok(Self::Memory(MmapMut::map_anon(READ_BYTES)?))
     }
     fn writable(&mut self, size: usize) -> bool {
         match self {
-            Self::Memory(bytes) => size < READ_BYTES && Arc::get_mut(bytes).is_some(),
+            Self::Memory(_) => size < READ_BYTES,
             Self::File => size + super::TS_PACKET_SIZE <= SEGMENT_BYTES,
         }
     }
 }
-// A live read pins at most READ_BYTES, independently of the retained history.
-// The single Reader releases it after normalization, before returning to appsrc.
-// File reads own their allocation; live reads share bytes without holding Store's
-// mutex. Only the store can obtain mutable access, and only without a reader.
+// The reader owns one bounded copy while normalizing outside Store's mutex.
+// Keeping the writable tail private avoids fragmentation on small HTTP chunks.
 #[derive(Debug)]
-pub(super) enum ReadBytes {
-    Owned(Vec<u8>),
-    Shared {
-        bytes: Arc<MmapMut>,
-        range: Range<usize>,
-    },
-}
+pub(super) struct ReadBytes(pub Vec<u8>);
 impl AsRef<[u8]> for ReadBytes {
     fn as_ref(&self) -> &[u8] {
+        &self.0
+    }
+}
+#[derive(Clone, Copy)]
+enum PlaybackCursor {
+    Reading(u64),
+    Expired(u64),
+}
+impl PlaybackCursor {
+    fn offset(self) -> u64 {
         match self {
-            Self::Owned(bytes) => bytes,
-            Self::Shared { bytes, range } => &bytes[range.clone()],
+            Self::Reading(offset) | Self::Expired(offset) => offset,
         }
     }
 }
@@ -102,6 +104,7 @@ pub(super) struct Store {
     segments: VecDeque<Segment>,
     boundaries: VecDeque<u64>,
     end: u64,
+    playback: PlaybackCursor,
     policy: super::Policy,
     retention: RetentionState,
     pub index: Index,
@@ -139,7 +142,7 @@ impl Prepared<'_> {
         } else {
             None
         };
-        self.store.trim(bytes, time)?;
+        self.store.trim(bytes, time, self.retention)?;
         self.store.policy = self.policy;
         self.store.retention = self.retention;
         Ok(change)
@@ -164,6 +167,7 @@ impl Store {
             segments: VecDeque::new(),
             boundaries: VecDeque::new(),
             end: 0,
+            playback: PlaybackCursor::Reading(0),
             policy,
             retention,
             index,
@@ -296,7 +300,7 @@ impl Store {
             self.segments = segments;
         }
         self.retention = RetentionState::Forward;
-        self.trim(bytes, time)
+        self.trim(bytes, time, self.retention)
     }
     fn copy_tail(
         &mut self,
@@ -327,21 +331,18 @@ impl Store {
                     .min(capacity - last.size)
                     .min(READ_BYTES);
                 let data = match (&segment.bytes, &mut self.storage) {
-                    (Bytes::Memory(bytes), _) => ReadBytes::Shared {
-                        bytes: bytes.clone(),
-                        range: within..within + count,
-                    },
+                    (Bytes::Memory(bytes), _) => ReadBytes(bytes[within..within + count].to_vec()),
                     (Bytes::File, Storage::Filesystem(buffer)) => {
-                        ReadBytes::Owned(buffer.read(segment.start, within, count)?)
+                        ReadBytes(buffer.read(segment.start, within, count)?)
                     }
                     (Bytes::File, Storage::Memory) => {
                         unreachable!("file bytes require file storage")
                     }
                 };
                 match (&mut last.bytes, &mut storage) {
-                    (Bytes::Memory(bytes), _) => Arc::get_mut(bytes).expect("unpublished copy")
-                        [last.size..last.size + count]
-                        .copy_from_slice(data.as_ref()),
+                    (Bytes::Memory(bytes), _) => {
+                        bytes[last.size..last.size + count].copy_from_slice(data.as_ref())
+                    }
                     (Bytes::File, Storage::Filesystem(buffer)) => {
                         buffer.write(last.start, last.size, data.as_ref())?
                     }
@@ -388,16 +389,6 @@ impl Store {
                 .back_mut()
                 .is_none_or(|segment| !segment.bytes.writable(segment.size))
             {
-                // Free an old allocation before reserving another chunk. The
-                // ring capacity counts allocations, including unused capacity.
-                // A reader can retain one retired chunk (at most READ_BYTES).
-                if matches!(self.storage, Storage::Memory) {
-                    while !self.segments.is_empty()
-                        && (self.segments.len() as u64 + 1) * READ_BYTES as u64 > byte_limit
-                    {
-                        self.segments.pop_front();
-                    }
-                }
                 let bytes = match &self.storage {
                     Storage::Memory => Bytes::memory()?,
                     Storage::Filesystem(_) => Bytes::File,
@@ -415,9 +406,9 @@ impl Store {
             );
             let packets = &remaining[..count];
             match &mut segment.bytes {
-                Bytes::Memory(bytes) => Arc::get_mut(bytes).expect("writable chunk has no reader")
-                    [segment.size..segment.size + count]
-                    .copy_from_slice(packets),
+                Bytes::Memory(bytes) => {
+                    bytes[segment.size..segment.size + count].copy_from_slice(packets)
+                }
                 Bytes::File => {
                     let Storage::Filesystem(buffer) = &mut self.storage else {
                         unreachable!("file segment belongs to filesystem storage")
@@ -457,34 +448,64 @@ impl Store {
             remaining = &remaining[count..];
             // Reclaim between chunks even when a caller supplies a large batch.
             if !remaining.is_empty() {
-                self.trim(byte_limit, time_limit)?;
+                self.trim(byte_limit, time_limit, self.retention)?;
             }
         }
-        self.trim(byte_limit, time_limit)?;
+        self.trim(byte_limit, time_limit, self.retention)?;
         if !packets.is_empty() {
             self.activity.notify(super::activity::Change::Data);
         }
         Ok(())
     }
-    fn trim(&mut self, byte_limit: u64, time_limit: Duration) -> std::io::Result<()> {
-        let earliest = self
-            .index
-            .end_ns()
-            .unwrap_or_default()
-            .saturating_sub(time_limit.as_nanos() as u64);
+    fn trim(
+        &mut self,
+        byte_limit: u64,
+        time_limit: Duration,
+        retention: RetentionState,
+    ) -> std::io::Result<()> {
+        let earliest = match retention {
+            RetentionState::Forward => 0,
+            RetentionState::History { .. } => self
+                .index
+                .end_ns()
+                .unwrap_or_default()
+                .saturating_sub(time_limit.as_nanos() as u64),
+        };
+        let consumed_before = self
+            .playback
+            .offset()
+            .saturating_sub(super::limits::CONSUMED_MARGIN_BYTES);
+        let previous_start = self.start();
         while self.segments.len() > 1
             && self.segments.front().is_some_and(|first| {
-                (match self.storage {
-                    Storage::Memory => self.segments.len() as u64 * READ_BYTES as u64,
-                    Storage::Filesystem(_) => self.end - first.start,
-                }) > byte_limit
-                    || first.end_ns < earliest
+                self.end - first.start > byte_limit
+                    || match retention {
+                        RetentionState::Forward => {
+                            first.start + first.size as u64 <= consumed_before
+                        }
+                        RetentionState::History { .. } => first.end_ns < earliest,
+                    }
             })
         {
             if let Storage::Filesystem(buffer) = &mut self.storage {
                 buffer.remove(self.segments.front().expect("nonempty store").start)?;
             }
             self.segments.pop_front();
+        }
+        if matches!(retention, RetentionState::Forward)
+            && let PlaybackCursor::Reading(cursor) = self.playback
+            && self.start() > cursor
+            && self.start() > previous_start
+        {
+            tracing::warn!(
+                cursor,
+                previous_start,
+                start = self.start(),
+                retained_bytes = self.end - self.start(),
+                byte_limit,
+                "Forward TS buffer limit exceeded; unread data expired and live recovery is required"
+            );
+            self.playback = PlaybackCursor::Expired(cursor);
         }
         self.index.expire(self.start());
         while self
@@ -507,6 +528,13 @@ impl Store {
         self.segments
             .front()
             .map_or(self.end, |segment| segment.start)
+    }
+    pub fn read_for_playback(&mut self, offset: u64) -> std::io::Result<ReadResult> {
+        let result = self.read(offset)?;
+        if let ReadResult::Data { bytes, .. } = &result {
+            self.playback = PlaybackCursor::Reading(offset + bytes.as_ref().len() as u64);
+        }
+        Ok(result)
     }
     pub fn read(&mut self, offset: u64) -> std::io::Result<ReadResult> {
         let readable_start = self
@@ -537,15 +565,12 @@ impl Store {
             .map_or(READ_BYTES, |boundary| (*boundary - offset) as usize);
         let count = READ_BYTES.min(segment.size - within).min(until_boundary);
         let bytes = match &mut segment.bytes {
-            Bytes::Memory(bytes) => ReadBytes::Shared {
-                bytes: Arc::clone(bytes),
-                range: within..within + count,
-            },
+            Bytes::Memory(bytes) => ReadBytes(bytes[within..within + count].to_vec()),
             Bytes::File => {
                 let Storage::Filesystem(buffer) = &mut self.storage else {
                     unreachable!("file segment belongs to filesystem storage")
                 };
-                ReadBytes::Owned(buffer.read(segment.start, within, count)?)
+                ReadBytes(buffer.read(segment.start, within, count)?)
             }
         };
         Ok(ReadResult::Data {
@@ -596,10 +621,7 @@ mod tests {
             assert!(!store.retaining());
             assert!(matches!(store.storage, Storage::Memory));
             assert_eq!(store.policy(), policy);
-            assert!(
-                store.segments.len() as u64 * READ_BYTES as u64
-                    <= store.effective_policy().budget().0
-            );
+            assert!(store.end - store.start() <= store.effective_policy().budget().0);
             let since = store.index.end_ns().unwrap();
             assert!(
                 store.begin_pause_with(since, || super::super::filesystem::Buffer::in_root(
@@ -667,7 +689,7 @@ mod tests {
                 }
                 proptest::prop_assert_eq!(store.end, received);
                 proptest::prop_assert!(store.start() <= store.end);
-                proptest::prop_assert!(store.segments.len() as u64 * READ_BYTES as u64 <= store.effective_policy().budget().0);
+                proptest::prop_assert!(store.end - store.start() <= store.effective_policy().budget().0);
                 if store.policy().storage() == Retention::Off { proptest::prop_assert!(!store.retaining()); }
                 if store.policy().storage() == Retention::Memory && store.policy().activation() == Activation::Always { proptest::prop_assert!(store.retaining()); }
                 if !store.retaining() { proptest::prop_assert!(matches!(store.storage, Storage::Memory)); }
@@ -675,23 +697,18 @@ mod tests {
         }
     }
     #[test]
-    fn shared_read_survives_append_eviction_and_store_destruction_without_copying()
+    fn read_copy_survives_append_eviction_and_store_destruction_without_fragmenting_the_tail()
     -> std::io::Result<()> {
         let mut store = Store::new(Retention::Off, 1, false)?;
         let first = [0; super::super::TS_PACKET_SIZE];
         let next = [1; super::super::TS_PACKET_SIZE];
         store.append(&first)?;
-        let Bytes::Memory(stored) = &store.segments[0].bytes else {
-            unreachable!()
+        let ReadResult::Data { bytes, .. } = store.read_for_playback(0)? else {
+            panic!("first packet")
         };
-        let original = stored.as_ptr();
-        let ReadResult::Data { bytes, .. } = store.read(0)? else {
-            unreachable!()
-        };
-        assert_eq!(bytes.as_ref().as_ptr(), original);
-        // The live writer must neither mutate nor copy-on-write the leased chunk.
         store.append(&next)?;
-        assert_eq!(store.segments[1].start, first.len() as u64);
+        assert_eq!(store.segments.len(), 1);
+        assert_eq!(store.segments[0].size, first.len() + next.len());
         assert_eq!(bytes.as_ref(), first);
         let (budget, _) = store.policy.budget();
         let block = next.repeat(READ_BYTES / next.len());
@@ -699,15 +716,10 @@ mod tests {
             store.append(&block)?;
         }
         assert!(matches!(store.read(0)?, ReadResult::Expired));
-        assert!(store.segments.len() as u64 * READ_BYTES as u64 <= budget);
+        assert!(store.end - store.start() <= budget);
+        assert!(store.segments.len() as u64 * READ_BYTES as u64 <= budget + READ_BYTES as u64);
         drop(store);
-        assert_eq!(bytes.as_ref().as_ptr(), original);
         assert_eq!(bytes.as_ref(), first);
-        let ReadBytes::Shared { bytes, .. } = bytes else {
-            unreachable!()
-        };
-        assert_eq!(Arc::strong_count(&bytes), 1);
-        assert_eq!(bytes.len(), READ_BYTES);
         Ok(())
     }
 
@@ -849,10 +861,14 @@ mod tests {
                 store.append(&block)?;
             }
             let full = resident()?;
+            // Confirmed live output has consumed the old history.
+            store.playback = PlaybackCursor::Reading(store.end);
             store.finish_pause()?;
             let released = resident()?;
             eprintln!(
-                "history cycle={cycle} private_kib: before={before} full={full} released={released}"
+                "history cycle={cycle} private_kib: before={before} full={full} released={released}; payload={} segments={}",
+                store.end - store.start(),
+                store.segments.len()
             );
             assert!(!store.retaining());
             assert!(
@@ -998,10 +1014,15 @@ mod timeline_tests {
         let fixture = include_bytes!("../../../../tests/fixtures/recording-seek.ts");
         let mut store = Store::new(Retention::Off, 1, true).unwrap();
         store.append(fixture).unwrap();
+        // Force the hard bound below this fixture's size: queued output and its
+        // metadata must survive a genuine overflow too.
+        store
+            .trim(READ_BYTES as u64, Duration::MAX, RetentionState::Forward)
+            .unwrap();
         let start = store.index.entries().front().unwrap().time_ns;
         let end = store.index.end_ns().unwrap();
         let mut presenter = Presenter::new();
-        // Decoded frames can outlive the two-second raw forward buffer. Cross
+        // Decoded frames can outlive the retained raw forward buffer. Cross
         // an EIT event boundary while both positions precede its retained TS.
         const FIRST_EVENT_SECONDS: u64 = 10;
         const SECOND_EVENT_SECONDS: u64 = 31;

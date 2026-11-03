@@ -8,8 +8,8 @@ pub struct LiveBuffer(i32);
 impl LiveBuffer {
     // Seeking needs a target strictly before the receive edge.
     pub const MIN_MS: i32 = 1;
-    pub const MAX_MS: i32 = 1000;
-    pub const DEFAULT_MS: i32 = 250;
+    pub const MAX_MS: i32 = 5000;
+    pub const DEFAULT_MS: i32 = 1500;
 
     pub fn checked(milliseconds: i32) -> Option<Self> {
         (Self::MIN_MS..=Self::MAX_MS)

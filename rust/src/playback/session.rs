@@ -751,8 +751,12 @@ impl Stopped<'_> {
             // policy creates the receiver only after playback owns this input.
             self.0.data_broadcast = Some(broadcast::Broadcast::new(service, original_network_id));
         }
+        let start = match &input {
+            Input::Active { controller, .. } => controller.start(),
+            Input::Idle | Input::Media { .. } => super::Start::Beginning,
+        };
         self.0.input = input;
-        if let Err(error) = playback.play(uri, service) {
+        if let Err(error) = playback.play(uri, service, start) {
             let failure = match self.0.stop() {
                 Ok(_) => error,
                 Err(cleanup) => Error::Cleanup {

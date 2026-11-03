@@ -99,10 +99,11 @@ struct Window {
     end: u64,
     coverage: Coverage,
     seekable: bool,
+    video_end: Option<u64>,
 }
 impl Shared {
     fn window(&self) -> Result<Option<Window>, Error> {
-        let (start, end, coverage, seekable) = match self {
+        let (start, end, coverage, seekable, video_end) = match self {
             Self::File(shared) => {
                 let state = shared.lock().map_err(|_| Error::Poisoned)?;
                 if let Status::Failed(message) = &state.status {
@@ -132,6 +133,7 @@ impl Shared {
                         Coverage::Partial
                     },
                     true,
+                    None,
                 )
             }
             Self::Live(shared) => {
@@ -141,6 +143,7 @@ impl Shared {
                     store.index.end_ns(),
                     Coverage::Partial,
                     store.retaining(),
+                    store.latency.receive_end(),
                 )
             }
         };
@@ -149,6 +152,7 @@ impl Shared {
             end,
             coverage,
             seekable,
+            video_end,
         }))
     }
     fn anchor(&self, target: u64) -> Result<Anchor, Error> {
@@ -325,7 +329,7 @@ impl Reader {
                     ReadResult::End
                 } else {
                     ReadResult::Data {
-                        bytes: store::ReadBytes::Owned(data),
+                        bytes: store::ReadBytes(data),
                         reconnected: false,
                     }
                 }
@@ -333,7 +337,7 @@ impl Reader {
             ReaderSource::Live(store) => store
                 .lock()
                 .map_err(|_| Error::Poisoned)?
-                .read(self.offset)?,
+                .read_for_playback(self.offset)?,
         };
         match data {
             ReadResult::Data {

@@ -555,9 +555,15 @@ impl Input {
             return None;
         }
         let window = self.shared.window().ok()??;
+        // Audio can lead video, including unselected tracks. Do not count
+        // those timestamps as a reserve of decodable video.
         let range = Range::new(
             gst::ClockTime::from_nseconds(window.start),
-            gst::ClockTime::from_nseconds(window.end),
+            gst::ClockTime::from_nseconds(
+                window
+                    .video_end
+                    .map_or(window.end, |end| end.min(window.end)),
+            ),
         )?;
         Some(if window.seekable {
             LiveWindow::History(range)

@@ -62,6 +62,8 @@ fn live_buffer_defaults_migrate_and_custom_values_survive_restart()
     for value in [
         LiveBuffer::MIN_MS,
         CUSTOM_MS,
+        250, // Existing saved defaults remain explicit values.
+        1000,
         LiveBuffer::MAX_MS,
         LiveBuffer::DEFAULT_MS,
     ] {
