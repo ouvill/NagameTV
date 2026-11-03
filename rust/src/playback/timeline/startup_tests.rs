@@ -7,40 +7,24 @@ const RECEIVE_EDGE: gst::ClockTime = gst::ClockTime::from_seconds(10);
 const USER_POSITION: gst::ClockTime = gst::ClockTime::SECOND;
 
 #[test]
-fn live_alignment_keeps_audio_on_time_through_a_short_delivery_stall()
+fn live_reserve_keeps_audio_on_time_through_a_short_delivery_stall()
 -> Result<(), Box<dyn std::error::Error>> {
-    use gstreamer_app::{AppSrc, AppSrcCallbacks};
-
+    use gstreamer_app::AppSrc;
+    use std::sync::atomic::{AtomicU64, Ordering};
     const SAMPLE_RATE: u64 = 48_000;
-    const SAMPLE_BYTES: u64 = 2;
-    const PACKET: gst::ClockTime = gst::ClockTime::from_mseconds(20);
-    const STALL_AT: gst::ClockTime = gst::ClockTime::SECOND;
-    const STALL: gst::ClockTime = gst::ClockTime::from_mseconds(120);
-    const AFTER_EDGE: gst::ClockTime = gst::ClockTime::from_seconds(2);
-    enum Delivery {
-        Preroll {
-            next: gst::ClockTime,
-        },
-        Following {
-            next: gst::ClockTime,
-            started: Instant,
-        },
-    }
-
+    const PACKET: Duration = Duration::from_millis(20);
+    const END: Duration = Duration::from_secs(4);
+    const STALL_AT: Duration = Duration::from_secs(2);
+    const STALL: Duration = Duration::from_secs(1);
     gst::init()?;
-    // Explicit CPU sink: count missed audio deadlines without opening a device.
-    // The source has retained history, then delivers clock-paced live packets.
+    // Explicit synchronized memory output; this checks audio deadlines without
+    // a display or physical audio device. Reception is paced, never a file burst.
     let pipeline = gst::parse::launch(&format!(
-        "appsrc name=source format=time stream-type=seekable ! audio/x-raw,format=S16LE,rate={SAMPLE_RATE},channels=1,layout=interleaved ! fakesink name=output sync=true",
-    ))?
-    .downcast::<gst::Pipeline>()
-    .map_err(|_| "pipeline")?;
-    let sink = pipeline.by_name("output").ok_or("sink")?;
-    sink.set_property("max-lateness", PACKET.nseconds() as i64);
-    let controller = Controller::new(
-        &sink,
-        StartPosition::LiveEdge(crate::settings::LiveBuffer::default()),
-    )?;
+        "appsrc name=source format=time max-bytes=1000000 ! audio/x-raw,format=S16LE,rate={SAMPLE_RATE},channels=1,layout=interleaved ! fakesink name=output sync=true"
+    ))?.downcast::<gst::Pipeline>().map_err(|_| "pipeline")?;
+    let sink = pipeline.by_name("output").ok_or("output")?;
+    sink.set_property("max-lateness", PACKET.as_nanos() as i64);
+    let controller = Controller::new(&sink, StartPosition::LiveEdge(LiveBuffer::default()))?;
     let mut playback = Playback {
         pipeline,
         controller,
@@ -51,87 +35,70 @@ fn live_alignment_keeps_audio_on_time_through_a_short_delivery_stall()
         .ok_or("source")?
         .downcast::<AppSrc>()
         .map_err(|_| "appsrc")?;
-    let delivery = Arc::new(Mutex::new(Delivery::Preroll {
-        next: gst::ClockTime::ZERO,
-    }));
-    let seeking = delivery.clone();
-    source.set_callbacks(
-        AppSrcCallbacks::builder()
-            .seek_data(move |_, target| {
-                let next = gst::ClockTime::from_nseconds(target);
-                *seeking.lock().unwrap() = if target == 0 {
-                    Delivery::Preroll { next }
-                } else {
-                    Delivery::Following {
-                        next,
-                        started: Instant::now(),
-                    }
-                };
-                true
-            })
-            .need_data(move |source, _| {
-                let (pts, arrival) = {
-                    let mut delivery = delivery.lock().unwrap();
-                    let (next, started) = match &mut *delivery {
-                        Delivery::Preroll { next } => (next, None),
-                        Delivery::Following { next, started } => (next, Some(*started)),
-                    };
-                    let pts = *next;
-                    *next += PACKET;
-                    let arrival = started.map(|started| {
-                        let since_edge = pts.saturating_sub(RECEIVE_EDGE);
-                        // One delayed delivery, followed by a catch-up burst; no
-                        // missing samples or timestamp discontinuity in the source.
-                        let arrival = if (STALL_AT..STALL_AT + STALL).contains(&since_edge) {
-                            STALL_AT + STALL
-                        } else {
-                            since_edge
-                        };
-                        started + Duration::from_nanos(arrival.nseconds())
-                    });
-                    (pts, arrival)
-                };
-                if pts >= RECEIVE_EDGE + AFTER_EDGE {
-                    let _ = source.end_of_stream();
-                    return;
-                }
-                if let Some(arrival) = arrival {
-                    std::thread::sleep(arrival.saturating_duration_since(Instant::now()));
-                }
-                let bytes = (SAMPLE_RATE * SAMPLE_BYTES * PACKET.nseconds()
-                    / gst::ClockTime::SECOND.nseconds()) as usize;
-                let mut buffer = gst::Buffer::from_mut_slice(vec![0; bytes]);
-                buffer.make_mut().set_pts(pts);
-                buffer.make_mut().set_duration(PACKET);
-                let _ = source.push_buffer(buffer);
-            })
-            .build(),
-    );
-
-    playback.state(gst::State::Playing)?;
-    let range = Range::new(gst::ClockTime::ZERO, RECEIVE_EDGE).ok_or("range")?;
-    assert!(
-        playback
-            .controller
-            .align_live_start(playback.pipeline.upcast_ref(), range)?
-    );
-    playback.finish_seek()?;
-    let message = playback
-        .pipeline
-        .bus()
-        .ok_or("bus")?
-        .timed_pop_filtered(
-            TEST_TIMEOUT,
-            &[gst::MessageType::Error, gst::MessageType::Eos],
-        )
-        .ok_or("live audio did not finish")?;
-    assert_eq!(message.type_(), gst::MessageType::Eos, "{message:?}");
+    let received = Arc::new(AtomicU64::new(0));
+    let edge = received.clone();
+    let began = Instant::now();
+    // Reception must continue independently while the pipeline prerolls.
+    let receiver = std::thread::spawn(move || -> Result<(), gst::FlowError> {
+        let mut pts = Duration::ZERO;
+        while pts < END {
+            let arrival = if (STALL_AT..STALL_AT + STALL).contains(&pts) {
+                STALL_AT + STALL
+            } else {
+                pts
+            };
+            std::thread::sleep((began + arrival).saturating_duration_since(Instant::now()));
+            let mut buffer = gst::Buffer::from_mut_slice(vec![
+                0;
+                (SAMPLE_RATE * 2 * PACKET.as_millis() as u64 / 1000)
+                    as usize
+            ]);
+            buffer
+                .make_mut()
+                .set_pts(gst::ClockTime::from_nseconds(pts.as_nanos() as u64));
+            buffer
+                .make_mut()
+                .set_duration(gst::ClockTime::from_nseconds(PACKET.as_nanos() as u64));
+            edge.store((pts + PACKET).as_nanos() as u64, Ordering::Release);
+            source.push_buffer(buffer)?;
+            pts += PACKET;
+        }
+        source.end_of_stream()?;
+        Ok(())
+    });
+    playback.state(playback.controller.start().state())?;
+    let bus = playback.pipeline.bus().ok_or("bus")?;
+    let deadline = began + END + Duration::from_secs(4);
+    let mut finished = false;
+    while Instant::now() < deadline {
+        playback.controller.poll(playback.pipeline.upcast_ref())?;
+        let end = gst::ClockTime::from_nseconds(received.load(Ordering::Acquire));
+        if let Some(range) = Range::new(gst::ClockTime::ZERO, end) {
+            playback.controller.retained(
+                playback.pipeline.upcast_ref(),
+                LiveWindow::ForwardBuffer(range),
+                false,
+                crate::playback::input::ReadProgress::idle(),
+            )?;
+        }
+        while let Some(message) = bus.pop() {
+            assert_ne!(message.type_(), gst::MessageType::Error, "{message:?}");
+            finished |= message.type_() == gst::MessageType::Eos;
+        }
+        if finished {
+            break;
+        }
+        std::thread::sleep(TEST_POLL);
+    }
+    receiver.join().expect("receiver panicked")?;
+    assert!(finished, "buffered audio did not finish");
     let counts = crate::playback::stats::frame_counters(&sink).ok_or("audio counters")?;
-    assert!(counts.rendered + counts.dropped >= AFTER_EDGE.nseconds() / PACKET.nseconds());
     assert_eq!(
-        counts.dropped, 0,
-        "audio packets missed their playback deadlines"
+        counts.rendered,
+        (END.as_millis() / PACKET.as_millis()) as u64
     );
+    assert_eq!(counts.dropped, 0, "audio missed its playback deadline");
+    assert!(playback.controller.seek_target().is_none());
     Ok(())
 }
 
@@ -316,134 +283,129 @@ fn rewind_supersedes_pending_live_return_without_publishing_live_status()
 }
 
 #[test]
-fn initial_alignment_waits_for_rendering_after_decoded_preroll()
+fn live_start_waits_for_preroll_and_reserve_then_aligns_only_once()
 -> Result<(), Box<dyn std::error::Error>> {
-    let mut playback = Playback::new(StartPosition::LiveEdge(
-        crate::settings::LiveBuffer::default(),
-    ))?;
-    // A future first PTS puts the graph in PLAYING with decoded preroll but no
-    // rendered frames. No wall-clock sleep is needed to reproduce this ordering.
-    playback
-        .pipeline
-        .by_name("source")
-        .ok_or("source")?
-        .set_property("timestamp-offset", RECEIVE_EDGE.nseconds() as i64);
-    playback.pipeline.set_state(gst::State::Playing)?;
-    playback.pipeline.state(TEST_TIMEOUT).0?;
-    assert!(
+    for (history, milliseconds) in [
+        (false, LiveBuffer::DEFAULT_MS),
+        (true, LiveBuffer::DEFAULT_MS),
+        (false, LiveBuffer::MAX_MS),
+        (true, LiveBuffer::MAX_MS),
+    ] {
+        let buffer = LiveBuffer::checked(milliseconds).unwrap();
+        let mut playback = Playback::new(StartPosition::LiveEdge(buffer))?;
+        assert_eq!(playback.controller.start().state(), gst::State::Paused);
+        let short = Range::new(gst::ClockTime::ZERO, live_headroom(buffer) / 2).unwrap();
         playback
             .controller
-            .output
-            .lock()
-            .unwrap()
-            .buffered
-            .is_some()
-    );
-    let range = Range::new(gst::ClockTime::ZERO, RECEIVE_EDGE).ok_or("range")?;
-    assert!(
-        !playback
-            .controller
-            .align_live_start(playback.pipeline.upcast_ref(), range)?
-    );
-    assert!(matches!(
-        playback.controller.startup,
-        Startup::AwaitingLiveOutput
-    ));
-    assert!(playback.controller.seek_target().is_none());
-    Ok(())
-}
-
-#[test]
-fn live_start_waits_for_output_and_aligns_only_once_per_source()
--> Result<(), Box<dyn std::error::Error>> {
-    let range = Range::new(gst::ClockTime::ZERO, RECEIVE_EDGE).ok_or("range")?;
-    // A replacement source owns a fresh controller. Both user-visible history
-    // and the small forward buffer permit this private startup operation.
-    for window in [LiveWindow::History(range), LiveWindow::ForwardBuffer(range)] {
-        let mut playback = Playback::new(StartPosition::LiveEdge(
-            crate::settings::LiveBuffer::default(),
-        ))?;
-        playback
-            .controller
-            .align_live_start(playback.pipeline.upcast_ref(), range)?;
-        assert!(playback.controller.seek_target().is_none());
+            .align_live_start(playback.pipeline.upcast_ref(), short)?;
+        assert!(matches!(
+            playback.controller.startup,
+            Startup::AwaitingLiveOutput
+        ));
         playback.state(gst::State::Paused)?;
-        assert!(
-            playback
-                .controller
-                .output
-                .lock()
-                .unwrap()
-                .buffered
-                .is_some()
+        playback
+            .controller
+            .align_live_start(playback.pipeline.upcast_ref(), short)?;
+        assert_eq!(
+            playback.pipeline.current_state(),
+            gst::State::Paused,
+            "insufficient reserve must wait"
         );
-        assert!(
-            !playback
-                .controller
-                .align_live_start(playback.pipeline.upcast_ref(), range)?
-        );
-        playback.state(gst::State::Playing)?;
+        let range = Range::new(gst::ClockTime::ZERO, RECEIVE_EDGE).unwrap();
         playback.controller.retained(
             playback.pipeline.upcast_ref(),
-            window,
+            if history {
+                LiveWindow::History(range)
+            } else {
+                LiveWindow::ForwardBuffer(range)
+            },
             false,
             crate::playback::input::ReadProgress::idle(),
         )?;
+        playback.pipeline.state(TEST_TIMEOUT).0?;
+        assert_eq!(playback.pipeline.current_state(), gst::State::Playing);
+        assert!(matches!(playback.controller.startup, Startup::Complete));
+        assert!(playback.controller.seek_target().is_none());
         assert_eq!(
-            playback.controller.seek_target(),
-            Some(range.live_target(LiveBuffer::default()))
+            playback.pipeline.start_time(),
+            Some(RECEIVE_EDGE - live_headroom(buffer))
         );
-        playback.finish_seek()?;
-        assert_eq!(playback.controller.phase(), Phase::Playing);
-        assert!(
-            playback
-                .controller
-                .snapshot()
-                .position
-                .is_some_and(|p| p >= range.live_target(LiveBuffer::default()))
-        );
-        let later = Range::new(gst::ClockTime::ZERO, RECEIVE_EDGE * 2).ok_or("range")?;
+        let before = playback.pipeline.start_time();
+        let later = Range::new(gst::ClockTime::ZERO, RECEIVE_EDGE * 2).unwrap();
         assert!(
             !playback
                 .controller
                 .align_live_start(playback.pipeline.upcast_ref(), later)?
         );
-        assert!(playback.controller.seek_target().is_none());
-        assert!(playback.controller.take_notice().is_none());
+        assert_eq!(
+            playback.pipeline.start_time(),
+            before,
+            "ordinary viewing must not realign"
+        );
     }
     Ok(())
 }
 
 #[test]
-fn startup_already_inside_the_live_reserve_does_not_seek_backwards()
+fn live_return_and_forward_expiry_do_not_add_preroll_reception_to_the_reserve()
 -> Result<(), Box<dyn std::error::Error>> {
-    let mut playback = Playback::new(StartPosition::LiveEdge(
-        crate::settings::LiveBuffer::default(),
-    ))?;
-    playback.state(gst::State::Playing)?;
-    let position = playback
-        .pipeline
-        .query_position::<gst::ClockTime>()
-        .ok_or("position")?;
-    let range = Range::new(
-        gst::ClockTime::ZERO,
-        position + live_headroom(LiveBuffer::default()) / 2,
-    )
-    .ok_or("range")?;
-    assert!(
-        !playback
-            .controller
-            .align_live_start(playback.pipeline.upcast_ref(), range)?
-    );
-    assert!(matches!(playback.controller.startup, Startup::Complete));
-    assert!(playback.controller.seek_target().is_none());
-    let later = Range::new(gst::ClockTime::ZERO, RECEIVE_EDGE).ok_or("range")?;
-    assert!(
-        !playback
-            .controller
-            .align_live_start(playback.pipeline.upcast_ref(), later)?
-    );
-    assert_eq!(playback.controller.phase(), Phase::Playing);
+    for expired in [false, true] {
+        let mut playback = Playback::new(StartPosition::Beginning)?;
+        playback.state(gst::State::Playing)?;
+        let range = Range::new(gst::ClockTime::ZERO, RECEIVE_EDGE).unwrap();
+        if expired {
+            playback.controller.retained(
+                playback.pipeline.upcast_ref(),
+                LiveWindow::ForwardBuffer(range),
+                true,
+                crate::playback::input::ReadProgress::idle(),
+            )?;
+        } else {
+            Ready {
+                controller: &mut playback.controller,
+                pipeline: playback.pipeline.upcast_ref(),
+                range,
+            }
+            .return_to_live()?;
+        }
+        playback.state(gst::State::Paused)?;
+        // Reception progresses while the decoder is prerolling. Resuming the
+        // original seek target alone would leave two extra seconds of delay.
+        let later = Range::new(
+            gst::ClockTime::ZERO,
+            RECEIVE_EDGE + gst::ClockTime::from_seconds(2),
+        )
+        .unwrap();
+        playback.controller.retained(
+            playback.pipeline.upcast_ref(),
+            if expired {
+                LiveWindow::ForwardBuffer(later)
+            } else {
+                LiveWindow::History(later)
+            },
+            false,
+            crate::playback::input::ReadProgress::idle(),
+        )?;
+        playback.finish_seek()?;
+        let target = later.live_target(LiveBuffer::default());
+        let deadline = Instant::now() + Duration::from_millis(300);
+        loop {
+            let position = playback
+                .pipeline
+                .query_position::<gst::ClockTime>()
+                .ok_or("position")?;
+            if position.absdiff(target) < gst::ClockTime::from_mseconds(250) {
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "preroll increased live delay: {position}"
+            );
+            std::thread::sleep(TEST_POLL);
+        }
+        assert_eq!(playback.controller.phase(), Phase::Playing);
+        assert!(playback.controller.seek_target().is_none());
+    }
     Ok(())
 }
 
@@ -519,13 +481,11 @@ fn beginning_playback_is_not_advanced_to_the_receive_edge() -> Result<(), Box<dy
 }
 
 #[test]
-fn rejected_initial_seek_keeps_playback_and_is_not_retried()
--> Result<(), Box<dyn std::error::Error>> {
+fn live_start_does_not_require_seek_support() -> Result<(), Box<dyn std::error::Error>> {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     gst::init()?;
-    // A streaming appsrc accepts buffers but rejects seeks. Exercise the native
-    // rejection boundary without substituting any hardware-dependent output.
+    // Live preroll can establish a reserve even when seeking is unsupported.
     let pipeline =
         gst::parse::launch("appsrc name=source format=time ! fakesink name=output sync=false")?
             .downcast::<gst::Pipeline>()
@@ -548,7 +508,7 @@ fn rejected_initial_seek_keeps_playback_and_is_not_retried()
     buffer.make_mut().set_pts(gst::ClockTime::ZERO);
     buffer.make_mut().set_duration(USER_POSITION);
     source.push_buffer(buffer)?;
-    playback.state(gst::State::Playing)?;
+    playback.state(gst::State::Paused)?;
     assert!(
         playback
             .pipeline
@@ -571,11 +531,11 @@ fn rejected_initial_seek_keeps_playback_and_is_not_retried()
     );
     let range = Range::new(gst::ClockTime::ZERO, RECEIVE_EDGE).ok_or("range")?;
     assert!(
-        !playback
+        playback
             .controller
             .align_live_start(playback.pipeline.upcast_ref(), range)?
     );
-    assert_eq!(attempts.load(Ordering::Relaxed), 1);
+    assert_eq!(attempts.load(Ordering::Relaxed), 0);
     assert_eq!(playback.controller.phase(), Phase::Playing);
     assert!(playback.controller.seek_target().is_none());
     assert!(playback.controller.take_notice().is_none());
@@ -584,6 +544,6 @@ fn rejected_initial_seek_keeps_playback_and_is_not_retried()
             .controller
             .align_live_start(playback.pipeline.upcast_ref(), range)?
     );
-    assert_eq!(attempts.load(Ordering::Relaxed), 1);
+    assert_eq!(attempts.load(Ordering::Relaxed), 0);
     Ok(())
 }

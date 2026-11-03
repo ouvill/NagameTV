@@ -49,8 +49,8 @@ Item {
                 compare(number().value, 150);
                 number().forceActiveFocus();
                 keyClick(Qt.Key_Up);
-                tryCompare(backend, "requests", [150, 151]);
-                compare(number().contentItem.text, "151");
+                tryCompare(backend, "requests", [150, 250]);
+                compare(number().contentItem.text, "250");
             }
             function test_text_entry_commits_on_focus_loss() {
                 enterValue(number(), "100");
@@ -59,9 +59,9 @@ Item {
             }
             function test_repeated_steps_are_coalesced() {
                 number().forceActiveFocus();
-                keyClick(Qt.Key_Down); keyClick(Qt.Key_Down); keyClick(Qt.Key_Down);
+                keyClick(Qt.Key_Down); keyClick(Qt.Key_Down);
                 compare(backend.requests.length, 0);
-                tryCompare(backend, "requests", [247]);
+                tryCompare(backend, "requests", [50]);
             }
             function test_hiding_page_commits_unfinished_entry_data() {
                 return [
@@ -107,8 +107,8 @@ Item {
                 settings.visible = true;
                 number().forceActiveFocus();
                 keyClick(Qt.Key_Up);
-                tryCompare(backend, "requests", [251]);
-                compare(number().contentItem.text, "251");
+                tryCompare(backend, "requests", [350]);
+                compare(number().contentItem.text, "350");
             }
         }
     }

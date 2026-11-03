@@ -21,8 +21,10 @@ const SECONDS_PER_MINUTE: u64 = 60;
 const DEFAULT_MEMORY_MIB: u32 = 256;
 const DEFAULT_FILESYSTEM_MIB: u32 = 2048;
 const DEFAULT_MINUTES: u32 = 30;
-const FORWARD_BUFFER_BYTES: u64 = 2 * MIB_BYTES;
-const FORWARD_BUFFER_TIME: Duration = Duration::from_secs(2);
+pub(super) const FORWARD_BUFFER_BYTES: u64 = 32 * MIB_BYTES;
+pub(super) const CONSUMED_MARGIN_BYTES: u64 = 2 * MIB_BYTES;
+// Forward retention follows the playback cursor, not the receive clock.
+const FORWARD_BUFFER_TIME: Duration = Duration::MAX;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "SavedLimits", into = "SavedLimits")]

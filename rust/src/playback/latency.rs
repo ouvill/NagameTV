@@ -121,6 +121,14 @@ impl Tracker {
             }
         }
     }
+    /// Latest received video PTS on the normalized media axis. Unlike a wall
+    /// clock estimate, this stops advancing during a delivery stall.
+    pub fn receive_end(&self) -> Option<u64> {
+        self.state()
+            .receipts
+            .last_key_value()
+            .map(|(position, _)| *position)
+    }
     pub fn match_frame(&self, position: u64) -> Option<Pending> {
         let state = self.state();
         let mut candidates = state.receipts.range(

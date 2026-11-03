@@ -189,7 +189,14 @@ enum LivePosition {
     Behind,
 }
 
+#[derive(Clone, Copy)]
+enum StartClock {
+    Preserve,
+    LivePreroll,
+}
+
 struct Seek {
+    clock: StartClock,
     sequence: gst::Seqnum,
     target: gst::ClockTime,
     resume: Resume,
@@ -214,13 +221,15 @@ pub(super) struct Controller {
     live_buffer: LiveBuffer,
     live_position: LivePosition,
     reception: Option<(gst::ClockTime, Instant)>,
+    receive_range: Option<Range>,
     supply: supply::Supply,
     rate: Rate,
-    sink: gst::glib::WeakRef<gst::Element>,
     snapshot: Snapshot,
     output: Arc<Mutex<Output>>,
     subscriptions: crate::features::subscriptions::Subscriptions,
     next_sample: Instant,
+    next_diagnostic: Instant,
+    sink: gst::glib::WeakRef<gst::Element>,
     notice: Option<Notice>,
     retention_change: Option<RetentionChange>,
 }
@@ -287,16 +296,25 @@ impl Controller {
                 StartPosition::LiveEdge(_) => LivePosition::ForwardBuffer,
             },
             reception: None,
+            receive_range: None,
             supply: supply::Supply::default(),
             rate: Rate::NORMAL,
-            sink: sink.downgrade(),
             snapshot: Snapshot::default(),
             output,
             subscriptions,
             next_sample: Instant::now(),
+            next_diagnostic: Instant::now(),
+            sink: sink.downgrade(),
             notice: None,
             retention_change: None,
         })
+    }
+
+    pub(super) fn start(&self) -> super::Start {
+        match self.startup {
+            Startup::AwaitingLiveOutput => super::Start::Live,
+            Startup::Complete => super::Start::Beginning,
+        }
     }
 
     pub fn phase(&self) -> Phase {
@@ -486,6 +504,7 @@ impl Controller {
             LiveWindow::ForwardBuffer(range) => (range, None),
             LiveWindow::History(range) => (range, Some(range)),
         };
+        self.receive_range = Some(range);
         self.snapshot.range = history;
         self.snapshot.duration = history.map(|range| range.end);
         if matches!(self.state, State::Playing) {
@@ -496,6 +515,22 @@ impl Controller {
                 .or(self.snapshot.position);
         }
         self.observe_live(range, history.is_some());
+        if tracing::enabled!(target: "live_buffer", tracing::Level::DEBUG)
+            && Instant::now() >= self.next_diagnostic
+        {
+            self.next_diagnostic = Instant::now() + Duration::from_secs(1);
+            let counts = self
+                .sink
+                .upgrade()
+                .and_then(|sink| super::stats::frame_counters(&sink));
+            tracing::debug!(target: "live_buffer", phase = ?self.phase(),
+                reserve_ms = self.live_buffer.milliseconds(), receive_end_ms = range.end.mseconds(),
+                position_ms = self.snapshot.position.map(gst::ClockTime::mseconds),
+                delay_ms = self.snapshot.position.map(|position| range.end.saturating_sub(position).mseconds()),
+                rendered = counts.as_ref().map(|counts| counts.rendered),
+                dropped = counts.as_ref().map(|counts| counts.dropped),
+                "Live receive reserve");
+        }
         let limited = match (self.phase(), self.snapshot.position) {
             (Phase::Playing, Some(position)) => {
                 self.supply
@@ -546,7 +581,7 @@ impl Controller {
             self.retention_change = None;
             return Ok(());
         }
-        if self.align_live_start(pipeline, range)? {
+        if !expired && self.align_live_start(pipeline, range)? {
             return Ok(());
         }
         let behind = history.is_some()
@@ -565,7 +600,12 @@ impl Controller {
             return Ok(());
         }
         if expired || (behind && !matches!(self.state, State::Seeking(_))) {
-            let recovery = range.recovery_target();
+            self.startup = Startup::Complete;
+            let recovery = if history.is_none() {
+                range.live_target(self.live_buffer)
+            } else {
+                range.recovery_target()
+            };
             let (target, resume) = match &self.state {
                 State::Paused | State::ExpiredPause | State::FailedPause => {
                     (recovery, Resume::Paused)
@@ -582,7 +622,17 @@ impl Controller {
                     seek.resume,
                 ),
             };
-            self.start_change(pipeline, target, resume, Rate::NORMAL, Completion::Position)?;
+            self.start_change(
+                pipeline,
+                target,
+                resume,
+                Rate::NORMAL,
+                if history.is_none() {
+                    Completion::Live
+                } else {
+                    Completion::Position
+                },
+            )?;
             if history.is_some() {
                 self.notice = Some(Notice::Expired);
             }
@@ -634,11 +684,18 @@ impl Controller {
         {
             return Ok(false);
         }
-        // Wait for this session's first decoded output and completed startup.
-        // A PLAYING request alone does not mean a flushing seek is ready.
+        if self.resume_live(pipeline, range)? {
+            self.startup = Startup::Complete;
+        }
+        // Initial preroll owns the native PAUSED state until the reserve exists.
+        // Ordinary playback never enters this path again.
+        Ok(true)
+    }
+
+    fn resume_live(&self, pipeline: &gst::Element, range: Range) -> Result<bool, Error> {
         if !matches!(
             pipeline.state(gst::ClockTime::ZERO),
-            (Ok(_), gst::State::Playing, gst::State::VoidPending)
+            (Ok(_), gst::State::Paused, gst::State::VoidPending)
         ) {
             return Ok(false);
         }
@@ -648,49 +705,29 @@ impl Controller {
                 return Ok(false);
             }
         }
-        // Preroll can deliver a decoded buffer before its first display time.
-        // Wait until the sink has rendered in this stream, so the adjustment
-        // does not race the initial clock wait and leave the same startup lag.
-        if !self
-            .sink
-            .upgrade()
-            .and_then(|sink| super::stats::frame_counters(&sink))
-            .is_some_and(|counts| counts.rendered > 0)
-        {
-            return Ok(false);
-        }
         let Some(position) = pipeline.query_position::<gst::ClockTime>() else {
             return Ok(false);
         };
-        // Consume the startup adjustment even if native seeking is rejected.
-        // Never keep jumping to live during ordinary viewing or user transport.
-        self.startup = Startup::Complete;
-        let target = range.live_target(self.live_buffer);
-        if target <= position {
+        let reserve = live_headroom(self.live_buffer);
+        let delay = range.end.saturating_sub(position);
+        if delay < reserve {
             return Ok(false);
         }
-        // The receive window belongs to this active source, including its
-        // bounded forward buffer when user-facing timeshift is disabled.
-        let ready = Ready {
-            controller: self,
-            pipeline,
-            range,
-        };
-        match ready.return_to_live() {
-            Ok(()) => {
-                tracing::info!(
-                    position_ms = position.mseconds(),
-                    target_ms = target.mseconds(),
-                    "Aligning new live playback to the receive edge"
-                );
-                Ok(true)
-            }
-            Err(Error::Rejected) => {
-                tracing::warn!("Initial live alignment rejected; keeping current playback");
-                Ok(false)
-            }
-            Err(error) => Err(error),
-        }
+        let start = pipeline.start_time().ok_or(Error::Observer)?;
+        // A flushing seek resets running time. Account for reception during
+        // decoder preroll before resuming the shared A/V clock, instead of
+        // adding that variable wait to the requested receive reserve.
+        let adjustment = delay - reserve;
+        pipeline.set_start_time(start + adjustment);
+        pipeline.set_state(gst::State::Playing)?;
+        tracing::info!(
+            position_ms = position.mseconds(),
+            receive_end_ms = range.end.mseconds(),
+            reserve_ms = self.live_buffer.milliseconds(),
+            adjustment_ms = adjustment.mseconds(),
+            "Starting live playback with buffered receive reserve"
+        );
+        Ok(true)
     }
 
     pub fn prepare<'a>(&'a mut self, pipeline: &'a gst::Element) -> Result<Ready<'a>, Error> {
@@ -798,6 +835,12 @@ impl Controller {
         completion: Completion,
     ) -> Result<(), Error> {
         self.supply.reset();
+        let clock = if matches!(completion, Completion::Live) && resume == Resume::Playing {
+            pipeline.set_state(gst::State::Paused)?;
+            StartClock::LivePreroll
+        } else {
+            StartClock::Preserve
+        };
         let event = gst::event::Seek::new(
             rate.multiplier(),
             // TS key-unit seeks can land several seconds before the requested
@@ -810,6 +853,12 @@ impl Controller {
         );
         let sequence = event.seqnum();
         if !pipeline.send_event(event) {
+            if matches!(clock, StartClock::LivePreroll) {
+                pipeline.set_state(match self.state {
+                    State::Paused | State::ExpiredPause | State::FailedPause => gst::State::Paused,
+                    State::Playing | State::Seeking(_) | State::Ended => gst::State::Playing,
+                })?;
+            }
             if rate != self.rate {
                 let confirmed = self
                     .output
@@ -826,6 +875,7 @@ impl Controller {
             return Err(Error::Rejected);
         }
         self.state = State::Seeking(Seek {
+            clock,
             sequence,
             target,
             resume,
@@ -834,9 +884,9 @@ impl Controller {
             completion,
             deadline: Instant::now() + SEEK_TIMEOUT,
         });
-        pipeline.set_state(match resume {
-            Resume::Playing => gst::State::Playing,
-            Resume::Paused => gst::State::Paused,
+        pipeline.set_state(match (clock, resume) {
+            (StartClock::Preserve, Resume::Playing) => gst::State::Playing,
+            (StartClock::LivePreroll, _) | (_, Resume::Paused) => gst::State::Paused,
         })?;
         Ok(())
     }
@@ -873,6 +923,25 @@ impl Controller {
                 )
             };
             let (result, _, pending) = pipeline.state(gst::ClockTime::ZERO);
+            if !eos
+                && ready
+                && seek.next.is_none()
+                && seek.resume == Resume::Playing
+                && matches!(seek.clock, StartClock::LivePreroll)
+            {
+                if Instant::now() >= seek.deadline {
+                    pipeline.set_state(gst::State::Paused)?;
+                    self.state = State::FailedPause;
+                    return Err(Error::TimedOut);
+                }
+                if let Some(range) = self.receive_range
+                    && self.resume_live(pipeline, range)?
+                    && let State::Seeking(seek) = &mut self.state
+                {
+                    seek.clock = StartClock::Preserve;
+                }
+                return Ok(Arrival::None);
+            }
             if eos || (ready && result.is_ok() && pending == gst::State::VoidPending) {
                 let resume = seek.resume;
                 let next = seek.next;
@@ -965,10 +1034,10 @@ impl Controller {
 
 impl Ready<'_> {
     pub fn return_to_live(self) -> Result<(), Error> {
+        self.controller.receive_range = Some(self.range);
         let target = self.range.live_target(self.controller.live_buffer);
         match &mut self.controller.state {
             State::Seeking(seek) => {
-                self.pipeline.set_state(gst::State::Playing)?;
                 seek.next = Some(Pending {
                     target: Target::At(target),
                     rate: Rate::NORMAL,
@@ -1176,6 +1245,7 @@ mod tests {
         let sequence = gst::Seqnum::next();
         controller.snapshot.position = Some(position);
         controller.state = State::Seeking(Seek {
+            clock: StartClock::Preserve,
             sequence,
             target: first_target,
             resume: Resume::Paused,
@@ -1240,6 +1310,7 @@ mod tests {
         let mut controller = Controller::new(&sink, StartPosition::Beginning)?;
         let sequence = gst::Seqnum::next();
         controller.state = State::Seeking(Seek {
+            clock: StartClock::Preserve,
             sequence,
             target: gst::ClockTime::from_seconds(5),
             resume: Resume::Paused,
@@ -1315,6 +1386,7 @@ mod tests {
             control.snapshot.range = Range::new(gst::ClockTime::ZERO, edge);
             control.next_sample = Instant::now() + POSITION_SAMPLE_INTERVAL;
             control.state = State::Seeking(Seek {
+                clock: StartClock::Preserve,
                 sequence,
                 target,
                 resume,
@@ -1550,6 +1622,7 @@ mod speed_tests {
         let mut control = Controller::new(&sink, StartPosition::Beginning).unwrap();
         let sequence = gst::Seqnum::next();
         control.state = State::Seeking(Seek {
+            clock: StartClock::Preserve,
             sequence,
             target: gst::ClockTime::SECOND,
             resume: Resume::Paused,

@@ -59,6 +59,9 @@ ColumnLayout {
             objectName: "liveBufferMilliseconds"
             from: root.saved.min_ms
             to: root.saved.max_ms
+            // Arrow keys and buttons move in coarse steps over the 5 s range;
+            // typed values keep millisecond precision.
+            stepSize: 100
             Accessible.name: qsTranslate("Settings", "Live playback buffer (milliseconds)")
             onValueModified: {
                 root.editState = LiveBufferSettings.Pending;

@@ -139,6 +139,7 @@ fn seeking_keeps_confirmed_position_and_range_until_output_arrives() {
     let before = playback.controller.snapshot();
     let sequence = gst::Seqnum::next();
     playback.controller.state = State::Seeking(Seek {
+        clock: StartClock::Preserve,
         sequence,
         target: gst::ClockTime::ZERO,
         resume: Resume::Paused,

@@ -195,6 +195,7 @@ enum VideoOutputState {
 
 pub struct Playback {
     playbin: gst::Element,
+    clock_policy: clock::Policy,
     sink: gst::Element,
     processor: gst::Element,
     video_streams: video_info::Streams,
@@ -211,6 +212,21 @@ pub struct Playback {
     chapters: RefCell<Option<chapters::List>>,
     program_number: Arc<std::sync::atomic::AtomicI32>,
     presentation: crate::screenshots::native::Presentation,
+}
+
+#[derive(Clone, Copy)]
+enum Start {
+    Live,
+    Beginning,
+}
+
+impl Start {
+    fn state(self) -> gst::State {
+        match self {
+            Self::Live => gst::State::Paused,
+            Self::Beginning => gst::State::Playing,
+        }
+    }
 }
 
 impl Playback {
@@ -283,7 +299,8 @@ impl Playback {
             .transpose()?;
         let audio_filter = routing.filter_with_tempo(tempo.as_ref())?;
         aac::register()?;
-        let playbin = clock::Policy::from_environment()?.build_playbin()?;
+        let clock_policy = clock::Policy::from_environment()?;
+        let playbin = clock_policy.build_playbin()?;
         let program_number = Arc::new(std::sync::atomic::AtomicI32::new(-1));
         let program = program_number.clone();
         let decoder_policy = resources::DecoderPolicy::new();
@@ -326,6 +343,7 @@ impl Playback {
         });
         Ok(Self {
             playbin,
+            clock_policy,
             sink,
             processor,
             video_streams,
@@ -409,7 +427,7 @@ impl Playback {
     }
 
     /// Returns false when this stream is already connecting or playing.
-    fn play(&self, uri: &str, service: Option<u16>) -> Result<bool> {
+    fn play(&self, uri: &str, service: Option<u16>, start: Start) -> Result<bool> {
         if self.video_output != VideoOutputState::Attached {
             return Err(Error::OutputNotReady);
         }
@@ -417,6 +435,7 @@ impl Playback {
             return Ok(false);
         }
         self.stop()?;
+        self.clock_policy.configure(&self.playbin, start)?;
         *self.audio_streams.borrow_mut() = audio_streams::Streams::for_service(service);
         self.program_number.store(
             service.map(i32::from).unwrap_or(-1),
@@ -451,7 +470,7 @@ impl Playback {
             self.playbin.set_context(&display);
         }
         self.playbin.set_property("uri", uri);
-        if let Err(error) = self.playbin.set_state(gst::State::Playing) {
+        if let Err(error) = self.playbin.set_state(start.state()) {
             // A synchronous failure may already have a more specific HTTP error queued.
             // Read it before cleanup flushes the bus; never parse diagnostic prose.
             return Err(self.poll().err().unwrap_or(Error::StateChange(error)));
