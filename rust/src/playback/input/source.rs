@@ -10,6 +10,7 @@ mod wait_tests;
 
 pub(super) struct Feedback {
     pub failure: Mutex<Option<String>>,
+    http: Option<crate::playback::recording::http::Control>,
     generation: AtomicU64,
     expired: AtomicU64,
     progress: Mutex<ReadProgress>,
@@ -42,6 +43,7 @@ impl Default for Feedback {
     fn default() -> Self {
         Self {
             failure: Mutex::default(),
+            http: None,
             generation: AtomicU64::new(0),
             expired: AtomicU64::new(NO_EXPIRED_GENERATION),
             progress: Mutex::new(ReadProgress {
@@ -56,6 +58,9 @@ impl Default for Feedback {
 impl Feedback {
     fn begin_seek(&self) {
         let generation = self.generation.fetch_add(1, Ordering::AcqRel) + 1;
+        if let Some(http) = &self.http {
+            http.interrupt();
+        }
         if let Ok(mut progress) = self.progress.lock() {
             *progress = ReadProgress {
                 generation,
@@ -101,7 +106,11 @@ enum BroadcastChange {
 }
 
 impl Feeder {
-    pub fn new(reader: Reader) -> Result<Self, Error> {
+    pub fn new(mut reader: Reader) -> Result<Self, Error> {
+        let http = match &mut reader.source {
+            ReaderSource::File(file) => file.prefetch(),
+            ReaderSource::Live(_) => None,
+        };
         let activity = match &reader.shared {
             Shared::Live(store) => store.lock().map_err(|_| Error::Poisoned)?.activity(),
             Shared::File(_) => Activity::default(),
@@ -111,6 +120,7 @@ impl Feeder {
             broadcast_change: Arc::default(),
             feedback: Arc::new(Feedback {
                 activity,
+                http,
                 ..Feedback::default()
             }),
         })
@@ -131,6 +141,9 @@ impl Feeder {
         self.feedback
             .interrupted
             .store(suspended, Ordering::Release);
+        if suspended && let Some(http) = &self.feedback.http {
+            http.interrupt();
+        }
         self.feedback.activity.notify(Change::Control);
     }
 
@@ -234,6 +247,9 @@ pub(in crate::playback) struct Input {
     sources: Arc<Mutex<Vec<gst::glib::WeakRef<AppSrc>>>>,
 }
 impl Input {
+    pub fn http_control(&self) -> Option<crate::playback::recording::http::Control> {
+        self.feeder.feedback.http.clone()
+    }
     pub fn set_data_broadcast(&mut self, tap: Option<data_broadcast::Tap>) -> Result<(), Error> {
         self.feeder.set_data_broadcast(tap)
     }

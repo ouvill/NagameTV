@@ -517,7 +517,11 @@ fn encoded_clock_uses_explicit_channel_ids_video_metadata_and_survives_replay() 
                     .unwrap();
                 let (start, end) = range.split_once('-').unwrap();
                 let start: usize = start.parse().unwrap();
-                let end = end.parse::<usize>().unwrap().min(bytes.len() - 1);
+                let end = if end.is_empty() {
+                    bytes.len() - 1
+                } else {
+                    end.parse::<usize>().unwrap().min(bytes.len() - 1)
+                };
                 ResponseTemplate::new(206)
                     .insert_header(
                         "content-range",

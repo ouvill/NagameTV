@@ -1214,6 +1214,8 @@ fn check_stream_projection_commit() -> TestResult {
     )))?;
     {
         let mut state = player.pin_mut().rust_mut();
+        // A previously displayed HTTP recovery must clear with the new input.
+        state.recording_reconnecting = true;
         state.speed.applied = crate::playback::speed::Rate::checked(15).unwrap();
         state.timeline.seek_target = Some(gstreamer::ClockTime::from_seconds(10));
         state.current_program_data = QString::from("{\"name\":\"old program\"}");
@@ -1224,11 +1226,22 @@ fn check_stream_projection_commit() -> TestResult {
             &crate::features::subtitles::drcs_test_cue(0x90, false),
         )?;
     }
+    let reconnect_changes = Arc::new(Mutex::new(0));
+    let changes = reconnect_changes.clone();
+    let _reconnecting = player
+        .pin_mut()
+        .on_recording_reconnecting_changed(move |player| {
+            assert!(!player.recording_reconnecting());
+            assert!(player.connecting() && player.recording());
+            assert_eq!(player.recording_name().to_string(), "subtitle-clock.ts");
+            *changes.lock().unwrap() += 1;
+        });
     let observed = Arc::new(Mutex::new(0));
     let changes = observed.clone();
     // Rate is the first emitted stream signal. Every dependent field must
     // already describe the new input when this observer executes.
     let _rate = player.pin_mut().on_playback_rate_changed(move |player| {
+        assert!(!player.recording_reconnecting());
         assert_eq!(player.playback_rate(), 10);
         assert_eq!(player.seek_target_ms(), -1.0);
         assert!(player.connecting());
@@ -1247,6 +1260,7 @@ fn check_stream_projection_commit() -> TestResult {
         .update_stream_state(State::Connecting(Attempt::File(file)));
     player.pin_mut().change_stream_state(|state| state);
     assert_eq!(*observed.lock().unwrap(), 1);
+    assert_eq!(*reconnect_changes.lock().unwrap(), 1);
     Ok(())
 }
 

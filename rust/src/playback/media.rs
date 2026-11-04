@@ -19,6 +19,7 @@ const NO_SEEK: u64 = u64::MAX;
 
 pub(super) struct Input {
     file: MediaFile,
+    http: Arc<Mutex<Option<super::recording::http::Control>>>,
     subscriptions: Subscriptions,
     interrupted: Arc<AtomicBool>,
     sources: Arc<Mutex<Vec<gst::glib::WeakRef<AppSrc>>>>,
@@ -28,6 +29,8 @@ impl Input {
         let subscriptions = Subscriptions::default();
         let interrupted = Arc::new(AtomicBool::new(false));
         let sources = Arc::new(Mutex::new(Vec::new()));
+        let http = Arc::new(Mutex::new(None));
+        let active_http = http.clone();
         let installed = sources.clone();
         let stopped = interrupted.clone();
         let preview_file = file.clone();
@@ -43,17 +46,33 @@ impl Input {
                     sources.retain(|s: &gst::glib::WeakRef<AppSrc>| s.upgrade().is_some());
                     sources.push(source.downgrade());
                 }
-                configure(&source, &file, stopped.clone(), &registrations);
+                configure(
+                    &source,
+                    &file,
+                    stopped.clone(),
+                    &registrations,
+                    &active_http,
+                );
             }
             None
         });
         subscriptions.signal(playbin, id);
         Self {
             file: preview_file,
+            http,
             subscriptions,
             interrupted,
             sources,
         }
+    }
+    pub fn http_control(&self) -> Option<super::recording::http::Control> {
+        self.http
+            .lock()
+            .unwrap_or_else(|error| {
+                tracing::error!(%error, "Media HTTP control lock poisoned");
+                error.into_inner()
+            })
+            .clone()
     }
     pub fn suspend(&self, suspended: bool) {
         self.interrupted.store(suspended, Ordering::Release);
@@ -80,6 +99,7 @@ fn configure(
     file: &MediaFile,
     interrupted: Arc<AtomicBool>,
     registrations: &Subscriptions,
+    active_http: &Mutex<Option<super::recording::http::Control>>,
 ) {
     if let Some(pad) = source.static_pad("src") {
         // In pull mode the demuxer owns TIME segments. appsrc nevertheless emits
@@ -102,7 +122,13 @@ fn configure(
     // Supplying container caps here makes pull-mode typefind report the type
     // twice (upstream CAPS plus its own result), creating two parsebins.
     source.set_caps(None);
-    let reader = Mutex::new(file.source().reader(interrupted.clone()));
+    let mut reader = file.source().reader(interrupted.clone());
+    let http = reader.prefetch();
+    *active_http.lock().unwrap_or_else(|error| {
+        tracing::error!(%error, "Media HTTP control lock poisoned");
+        error.into_inner()
+    }) = http.clone();
+    let reader = Mutex::new(reader);
     let target = Arc::new(AtomicU64::new(0));
     let seek_target = target.clone();
     let size = file.size();
@@ -115,6 +141,9 @@ fn configure(
                 // The GUI can request a seek while a range read is pending. Never do
                 // I/O or lock the reader here; the streaming task applies the request.
                 seek_target.store(offset, Ordering::Release);
+                if let Some(http) = &http {
+                    http.interrupt();
+                }
                 true
             })
             .need_data(move |source, requested| {
@@ -139,9 +168,12 @@ fn configure(
                     if offset != NO_SEEK {
                         reader.seek(SeekFrom::Start(offset))?;
                     }
-                    read_buffer(&mut reader, requested, size, &interrupted)
+                    read_buffer(&mut reader, requested, size, &interrupted, &target)
                 })();
                 if interrupted.load(Ordering::Acquire) {
+                    return;
+                }
+                if target.load(Ordering::Acquire) != NO_SEEK {
                     return;
                 }
                 match result {
@@ -167,6 +199,7 @@ fn read_buffer(
     requested: u32,
     size: u64,
     interrupted: &AtomicBool,
+    seek_target: &AtomicU64,
 ) -> std::io::Result<Option<gst::Buffer>> {
     let offset = reader.stream_position()?;
     let length = (u64::from(requested)).min(size.saturating_sub(offset)) as usize;
@@ -176,7 +209,7 @@ fn read_buffer(
     let mut bytes = vec![0; length];
     let mut filled = 0;
     while filled < length {
-        if interrupted.load(Ordering::Acquire) {
+        if interrupted.load(Ordering::Acquire) || seek_target.load(Ordering::Acquire) != NO_SEEK {
             return Err(std::io::ErrorKind::Interrupted.into());
         }
         let count = match reader.read(&mut bytes[filled..]) {

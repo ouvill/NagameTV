@@ -51,6 +51,7 @@ snapshot! {
     subtitle: QString = |p| p.subtitle_data().clone() => [subtitle_data_changed];
     connecting: bool = |p| p.connecting() => [connecting_changed];
     playing: bool = |p| p.playing() => [playing_changed];
+    recording_reconnecting: bool = |p| p.recording_reconnecting() => [recording_reconnecting_changed];
     recording: bool = |p| p.recording() => [recording_changed];
     recording_name: QString = |p| p.recording_name() => [recording_name_changed];
     media_active: bool = |p| p.media_active() => [media_active_changed];
@@ -64,6 +65,7 @@ snapshot! {
 }
 
 struct Values {
+    recording_reconnecting: bool,
     stream_state: State,
     timeline: playback::timeline::Snapshot,
     speed: playback::speed::Snapshot,
@@ -83,6 +85,7 @@ impl Values {
         change: impl FnOnce(State) -> State,
     ) -> Self {
         let mut next = Self {
+            recording_reconnecting: false,
             stream_state: change(std::mem::take(&mut this.stream_state)),
             timeline: this.timeline,
             speed: this.speed,
@@ -94,6 +97,10 @@ impl Values {
             subtitle_data: this.subtitle_data.clone(),
             subtitle_cells: this.subtitle_cells,
         };
+        next.recording_reconnecting = matches!(
+            next.stream_state,
+            State::Connecting(super::stream_state::Attempt::File(_)) | State::Recording(_, _)
+        ) && this.media.recording_reconnecting();
         let program_file = if this.epg_enabled {
             match &next.stream_state {
                 State::Connecting(super::stream_state::Attempt::File(file))
@@ -198,6 +205,7 @@ impl Values {
 
     fn commit(self, player: &mut PlayerRust) -> bool {
         let Self {
+            recording_reconnecting,
             stream_state,
             timeline,
             speed,
@@ -209,6 +217,7 @@ impl Values {
             subtitle_data,
             subtitle_cells,
         } = self;
+        player.recording_reconnecting = recording_reconnecting;
         player.stream_state = stream_state;
         let service = match &player.stream_state {
             State::Playing(live, playback::timeline::Phase::Playing) => Some(live.service()),

@@ -103,6 +103,7 @@ impl Default for PlayerRust {
             preferences.preferences().auto_update_check,
         );
         let mut player = Self {
+            recording_reconnecting: false,
             #[cfg(target_os = "linux")]
             desktop_media: Default::default(),
             language: QString::from(preferences.preferences().language.code()),

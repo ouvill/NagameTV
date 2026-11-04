@@ -1,6 +1,6 @@
 //! Inspected local/HTTP media. Only transport streams carry a TS service and index.
 mod broadcast;
-mod http;
+pub(in crate::playback) mod http;
 pub use broadcast::Broadcast;
 #[cfg(test)]
 pub(super) use http::tests::serve_ts;
@@ -157,7 +157,7 @@ impl Recording {
                 let name = format!("{}{}", url.host_str().unwrap_or_default(), url.path());
                 (
                     Source::Http(Arc::new(source)),
-                    source::Reader::Http(file),
+                    source::Reader::Http(Box::new(file)),
                     size,
                     name,
                 )

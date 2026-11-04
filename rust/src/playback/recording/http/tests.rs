@@ -18,7 +18,11 @@ pub(in crate::playback) fn serve_ts(bytes: Vec<u8>) -> MockServer {
                     .unwrap();
                 let (start, end) = range.split_once('-').unwrap();
                 let start: usize = start.parse().unwrap();
-                let end = end.parse::<usize>().unwrap();
+                let end = if end.is_empty() {
+                    bytes.len() - 1
+                } else {
+                    end.parse::<usize>().unwrap()
+                };
                 if start >= bytes.len() || end >= bytes.len() {
                     return ResponseTemplate::new(416);
                 }
@@ -132,7 +136,11 @@ fn redirects_and_resources_without_validators_remain_seekable() {
                     .unwrap();
                 let (start, end) = range.split_once('-').unwrap();
                 let start = start.parse::<usize>().unwrap();
-                let end = end.parse::<usize>().unwrap();
+                let end = if end.is_empty() {
+                    SIZE - 1
+                } else {
+                    end.parse::<usize>().unwrap()
+                };
                 const SIZE: usize = 100;
                 assert!(end < SIZE);
                 ResponseTemplate::new(206)
@@ -167,7 +175,6 @@ fn range_ignored_malformed_encoded_and_error_responses_fail_without_exposing_url
             .set_body_bytes(vec![0; 10]),
         ResponseTemplate::new(401),
         ResponseTemplate::new(404),
-        ResponseTemplate::new(500),
     ] {
         let server = response(template);
         let error = inspect(&server).err().expect("invalid response accepted");
