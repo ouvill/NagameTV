@@ -149,7 +149,9 @@ PlayerのFFIにはQML公開APIと必要な型の参照を残し、他のモジ�
 稼働中のvariantは再生対象を持つ`Attempt`を必須とする。
 `Attempt::Live`は対象局と自動再試行の権利、`Attempt::File`は検査したローカル／HTTP動画を保持する。
 停止時の`State::Stopped`にも再再生対象を保持し、別フィールドの選択対象との同期を不要にする。
-録画にはHTTP再試行や現在放送中の番組情報を適用しない。
+録画にはライブ配信の再接続や現在放送中の番組情報を適用しない。
+HTTP録画のRange再取得・先読みはrecordingの入力カーソルが所有する。
+[HTTP録画の再試行・先読み契約](recording-playback.md#http録画の再試行先読み契約2026-11-05)を参照。
 `playing`・`connecting`・対象局・`recording`・録画名はこの状態から取得する。更新は
 `change_stream_state`に集約し、状態全体を置き換えてからQtへ通知する。
 `player/stream_projection.rs`では、名前付きスナップショットの各項目と通知を同じ場所に
