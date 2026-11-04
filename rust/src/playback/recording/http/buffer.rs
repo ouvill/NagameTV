@@ -12,15 +12,22 @@ use std::{
 };
 
 const INITIAL_BYTES: usize = 2 * 1024 * 1024;
+const BACKWARD_BYTES: usize = 2 * 1024 * 1024;
+const FORWARD_JUMP_BYTES: u64 = 512 * 1024;
 const MAX_BYTES: usize = 32 * 1024 * 1024;
 const AHEAD_SECONDS: u128 = 10;
 
 enum Phase {
     Ready,
     Retrying,
-    Superseded,
     Failed(Arc<Error>),
 }
+#[derive(Clone, Copy)]
+enum Reading {
+    Active,
+    Interrupted,
+}
+
 struct Block {
     start: u64,
     bytes: Vec<u8>,
@@ -32,6 +39,9 @@ impl Block {
 }
 struct State {
     wanted: u64,
+    end: u64,
+    reading: Reading,
+    ahead: usize,
     blocks: VecDeque<Block>,
     budget: usize,
     phase: Phase,
@@ -41,19 +51,32 @@ impl State {
         self.blocks.iter().map(|block| block.bytes.len()).sum()
     }
     fn discard_consumed(&mut self) {
+        let before = self
+            .wanted
+            .min(self.end)
+            .saturating_sub(BACKWARD_BYTES as u64);
         while self
             .blocks
             .front()
-            .is_some_and(|block| block.end() <= self.wanted)
+            .is_some_and(|block| block.end() <= before)
         {
             self.blocks.pop_front();
         }
+    }
+    fn has_capacity(&self, reserve: usize) -> bool {
+        self.retained() + reserve <= self.budget
+            && self.end.saturating_sub(self.wanted) + reserve as u64 <= self.ahead as u64
+    }
+    fn can_reuse(&self, position: u64) -> bool {
+        let start = self.blocks.front().map_or(self.end, |block| block.start);
+        position >= start && position <= self.end.saturating_add(FORWARD_JUMP_BYTES)
     }
 }
 struct Shared {
     state: Mutex<State>,
     changed: Condvar,
     generation: AtomicU64,
+    requests: AtomicU64,
     stopped: AtomicBool,
     size: u64,
 }
@@ -80,10 +103,29 @@ impl Control {
             (state.retained(), state.budget)
         })
     }
+    #[cfg(test)]
+    pub(super) fn window(&self) -> Option<(u64, u64)> {
+        self.0.upgrade().map(|shared| {
+            let state = shared.state();
+            (
+                state.blocks.front().map_or(state.end, |block| block.start),
+                state.end,
+            )
+        })
+    }
+    #[cfg(test)]
+    pub(super) fn full(&self) -> bool {
+        self.0.upgrade().is_some_and(|shared| {
+            let state = shared.state();
+            state.end >= shared.size
+                || !state
+                    .has_capacity(RANGE_BYTES.min(shared.size.saturating_sub(state.end) as usize))
+        })
+    }
     pub fn starved(&self) -> bool {
         self.0.upgrade().is_some_and(|shared| {
             let state = shared.state();
-            matches!(state.phase, Phase::Retrying) && state.blocks.is_empty()
+            matches!(state.phase, Phase::Retrying) && state.wanted >= state.end
         })
     }
     pub fn reconnecting(&self) -> bool {
@@ -100,14 +142,15 @@ impl Control {
         }
         let bytes = (u128::from(shared.size) * AHEAD_SECONDS * 1_000_000_000)
             .div_ceil(duration.as_nanos())
-            .min(MAX_BYTES as u128) as usize;
-        let budget = bytes
+            .min((MAX_BYTES - BACKWARD_BYTES) as u128) as usize;
+        let ahead = bytes
             .div_ceil(RANGE_BYTES)
-            .clamp(1, MAX_BYTES / RANGE_BYTES)
+            .clamp(1, (MAX_BYTES - BACKWARD_BYTES) / RANGE_BYTES)
             * RANGE_BYTES;
         let mut state = shared.state();
-        if state.budget != budget {
-            state.budget = budget;
+        if state.ahead != ahead {
+            state.ahead = ahead;
+            state.budget = ahead + BACKWARD_BYTES;
             // Drain an already filled larger window; changing the estimate
             // must not discard bytes or restart a healthy GET.
             shared.changed.notify_all();
@@ -116,30 +159,33 @@ impl Control {
     pub fn interrupt(&self) {
         if let Some(shared) = self.0.upgrade() {
             let mut state = shared.state();
-            shared.generation.fetch_add(1, Ordering::AcqRel);
-            state.phase = Phase::Superseded;
+            shared.requests.fetch_add(1, Ordering::AcqRel);
+            state.reading = Reading::Interrupted;
             shared.changed.notify_all();
         }
     }
+    pub fn request(&self, position: u64) {
+        self.reposition(position, true);
+    }
     pub fn seek(&self, position: u64) {
+        self.reposition(position, false);
+    }
+    fn reposition(&self, position: u64, requested: bool) {
         if let Some(shared) = self.0.upgrade() {
             let mut state = shared.state();
-            // TS reads confirm their byte position before every block. That
-            // confirmation must not cancel a healthy GET or clear a failure.
-            if position == state.wanted && !matches!(state.phase, Phase::Superseded) {
+            // Container byte access can cancel an old read without cancelling
+            // the healthy response that already covers the new position.
+            if !requested && position == state.wanted && matches!(state.reading, Reading::Active) {
                 return;
             }
-            let reusable = state
-                .blocks
-                .iter()
-                .any(|block| block.start <= position && position < block.end());
-            if !reusable || matches!(state.phase, Phase::Failed(_) | Phase::Superseded) {
+            shared.requests.fetch_add(1, Ordering::AcqRel);
+            if !state.can_reuse(position) || matches!(state.phase, Phase::Failed(_)) {
                 shared.generation.fetch_add(1, Ordering::AcqRel);
-                if !reusable {
-                    state.blocks.clear();
-                }
+                state.blocks.clear();
+                state.end = position;
                 state.phase = Phase::Ready;
             }
+            state.reading = Reading::Active;
             state.wanted = position;
             state.discard_consumed();
             shared.changed.notify_all();
@@ -162,12 +208,16 @@ impl Buffer {
             shared: Arc::new(Shared {
                 state: Mutex::new(State {
                     wanted: 0,
+                    end: 0,
+                    reading: Reading::Active,
+                    ahead: INITIAL_BYTES,
                     blocks: VecDeque::new(),
-                    budget: INITIAL_BYTES,
+                    budget: INITIAL_BYTES + BACKWARD_BYTES,
                     phase: Phase::Ready,
                 }),
                 changed: Condvar::new(),
                 generation: AtomicU64::new(0),
+                requests: AtomicU64::new(0),
                 stopped: AtomicBool::new(false),
                 size,
             }),
@@ -189,13 +239,14 @@ impl Buffer {
             );
         }
         let mut state = self.shared.state();
-        let generation = self.shared.generation.load(Ordering::Acquire);
+        let request = self.shared.requests.load(Ordering::Acquire);
         loop {
             if self.cancelled.load(Ordering::Acquire) {
                 return Err(io::Error::other(Error::Cancelled));
             }
-            if self.shared.generation.load(Ordering::Acquire) != generation
-                || matches!(state.phase, Phase::Superseded)
+            if self.shared.requests.load(Ordering::Acquire) != request
+                || matches!(state.reading, Reading::Interrupted)
+                || position != state.wanted
             {
                 return Err(io::Error::other(Error::Cancelled));
             }
@@ -249,15 +300,16 @@ fn run(source: Verified, shared: Arc<Shared>, cancelled: Arc<AtomicBool>) {
             connection = None;
             connection_generation = generation;
         }
-        let end = state.blocks.back().map_or(state.wanted, Block::end);
+        let end = state.end;
         let reserve = RANGE_BYTES.min(source.size.saturating_sub(end) as usize);
         if end >= source.size {
             connection = None;
         }
         if cancelled.load(Ordering::Acquire)
-            || matches!(state.phase, Phase::Superseded | Phase::Failed(_))
+            || matches!(state.reading, Reading::Interrupted)
+            || matches!(state.phase, Phase::Failed(_))
             || end >= source.size
-            || state.retained() + reserve > state.budget
+            || !state.has_capacity(reserve)
         {
             match shared.changed.wait_timeout(state, CANCEL_POLL) {
                 Ok(_) => continue,
@@ -294,7 +346,9 @@ fn run(source: Verified, shared: Arc<Shared>, cancelled: Arc<AtomicBool>) {
                 // Capacity was reserved before polling the response. A smaller
                 // duration estimate only stops subsequent reads until drained.
                 debug_assert!(state.retained() + bytes.len() <= MAX_BYTES);
+                state.end = end + bytes.len() as u64;
                 state.blocks.push_back(Block { start: end, bytes });
+                state.discard_consumed();
                 connection = Some(active);
                 state.phase = Phase::Ready;
             }

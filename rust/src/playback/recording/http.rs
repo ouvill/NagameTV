@@ -13,6 +13,8 @@ use std::{
 };
 use url::Url;
 #[cfg(test)]
+mod playback_tests;
+#[cfg(test)]
 mod recovery_tests;
 #[cfg(test)]
 pub(super) mod tests;

@@ -142,7 +142,7 @@ fn configure(
                 // I/O or lock the reader here; the streaming task applies the request.
                 seek_target.store(offset, Ordering::Release);
                 if let Some(http) = &http {
-                    http.interrupt();
+                    http.request(offset);
                 }
                 true
             })

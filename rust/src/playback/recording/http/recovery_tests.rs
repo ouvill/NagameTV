@@ -298,11 +298,7 @@ fn a_continuous_get_survives_a_pause_longer_than_the_former_request_timeout() {
     let mut cursor = server.inspect();
     let control = cursor.prefetch();
     cursor.read_exact(&mut [0; 8]).unwrap();
-    wait(|| {
-        control
-            .buffered()
-            .is_some_and(|(bytes, budget)| bytes + RANGE_BYTES > budget)
-    });
+    wait(|| control.full());
     let requests = server.requests.lock().unwrap().len();
     thread::sleep(REQUEST_TIMEOUT + Duration::from_millis(200));
     assert_eq!(server.requests.lock().unwrap().len(), requests);
@@ -511,11 +507,7 @@ fn read_ahead_is_limited_by_media_time_and_bytes_and_stops_when_full() {
         let control = cursor.prefetch();
         control.duration(Duration::from_secs(duration));
         cursor.read_exact(&mut [0; 1]).unwrap();
-        wait(|| {
-            control
-                .buffered()
-                .is_some_and(|(bytes, budget)| bytes + RANGE_BYTES > budget)
-        });
+        wait(|| control.full());
         let (bytes, budget) = control.buffered().unwrap();
         assert!(budget <= 32 * 1024 * 1024);
         let estimated = bytes as f64 * duration as f64 / SIZE as f64;
@@ -564,11 +556,7 @@ fn seeks_inside_the_window_reuse_bytes_and_the_final_byte_uses_a_valid_range() {
     let mut cursor = server.inspect();
     let control = cursor.prefetch();
     cursor.read_exact(&mut [0; 8]).unwrap();
-    wait(|| {
-        control
-            .buffered()
-            .is_some_and(|(bytes, budget)| bytes + RANGE_BYTES > budget)
-    });
+    wait(|| control.full());
     let requests = server.requests.lock().unwrap().len();
     cursor.seek(SeekFrom::Start(100)).unwrap();
     let mut bytes = [0; 8];
@@ -601,4 +589,58 @@ fn confirming_the_current_offset_does_not_restart_a_healthy_continuous_get() {
         offset += count;
     }
     assert_eq!(server.requests.lock().unwrap().len(), 2);
+}
+
+#[test]
+fn backward_interleaved_accesses_reuse_history_within_the_total_memory_budget() {
+    const MIB: usize = 1024 * 1024;
+    let server = Server::new(16 * MIB, |_| Reply::Data);
+    let mut cursor = server.inspect();
+    let control = cursor.prefetch();
+    let mut bytes = vec![0; 6 * MIB];
+    cursor.read_exact(&mut bytes).unwrap();
+    pattern(0, &bytes);
+    wait(|| control.full());
+    let (start, end) = control.window().unwrap();
+    assert!(start <= 4 * MIB as u64);
+    assert!(end > 6 * MIB as u64);
+    let requests = server.requests.lock().unwrap().len();
+    let mut sample = [0; 1024];
+    for position in [6 * MIB - 8192, 6 * MIB - 49152, 5 * MIB, 6 * MIB - 24576] {
+        control.request(position as u64);
+        cursor.seek(SeekFrom::Start(position as u64)).unwrap();
+        cursor.read_exact(&mut sample).unwrap();
+        pattern(position, &sample);
+    }
+    assert_eq!(server.requests.lock().unwrap().len(), requests);
+    let (retained, budget) = control.buffered().unwrap();
+    assert!(retained > 2 * MIB, "history was discarded immediately");
+    assert_eq!(
+        budget,
+        4 * MIB,
+        "unknown duration reserves 2 MiB ahead plus 2 MiB behind"
+    );
+    assert!(retained <= budget);
+}
+
+#[test]
+fn a_small_jump_beyond_received_bytes_waits_for_the_same_get() {
+    const SIZE: usize = 8 * 1024 * 1024;
+    const FORWARD: u64 = 256 * 1024;
+    let server = Server::new(SIZE, |_| Reply::Data);
+    let mut cursor = server.inspect();
+    let control = cursor.prefetch();
+    cursor.read_exact(&mut [0; 8]).unwrap();
+    wait(|| control.full());
+    let (_, end) = control.window().unwrap();
+    let requests = server.requests.lock().unwrap().len();
+    let target = end + FORWARD;
+    control.request(target);
+    cursor.seek(SeekFrom::Start(target)).unwrap();
+    let mut bytes = [0; 4096];
+    cursor.read_exact(&mut bytes).unwrap();
+    pattern(target as usize, &bytes);
+    assert_eq!(server.requests.lock().unwrap().len(), requests);
+    let (retained, budget) = control.buffered().unwrap();
+    assert!(retained <= budget);
 }
