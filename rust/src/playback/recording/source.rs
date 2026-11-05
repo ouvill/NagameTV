@@ -40,7 +40,7 @@ impl Source {
     pub fn reader(&self, cancelled: Arc<AtomicBool>) -> Reader {
         match self {
             Self::Local(path) => Reader::Pending(path.clone()),
-            Self::Http(source) => Reader::Http(source.cursor(cancelled)),
+            Self::Http(source) => Reader::Http(Box::new(source.cursor(cancelled))),
         }
     }
 }
@@ -48,9 +48,15 @@ impl Source {
 pub(in crate::playback) enum Reader {
     Pending(PathBuf),
     Local(std::fs::File),
-    Http(http::Cursor),
+    Http(Box<http::Cursor>),
 }
 impl Reader {
+    pub fn prefetch(&mut self) -> Option<http::Control> {
+        match self {
+            Self::Http(cursor) => Some(cursor.prefetch()),
+            Self::Pending(_) | Self::Local(_) => None,
+        }
+    }
     fn open(&mut self) -> io::Result<()> {
         if let Self::Pending(path) = self {
             *self = Self::Local(std::fs::File::open(path)?);

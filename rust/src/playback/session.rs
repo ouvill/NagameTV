@@ -6,6 +6,7 @@ use crate::{
     channels::BroadcastService,
     features::{data_broadcast, subtitles},
 };
+use gstreamer::prelude::ElementExtManual;
 
 pub struct Session {
     playback: Option<Playback>,
@@ -516,6 +517,17 @@ impl Session {
         }
     }
 
+    pub fn recording_reconnecting(&self) -> bool {
+        self.http_control()
+            .is_some_and(|control| control.reconnecting())
+    }
+    fn http_control(&self) -> Option<super::recording::http::Control> {
+        match &self.input {
+            Input::Idle => None,
+            Input::Media { source, .. } => source.http_control(),
+            Input::Active { source, .. } => source.http_control(),
+        }
+    }
     pub fn poll(&mut self) -> Result<super::Event> {
         let Some(playback) = &self.playback else {
             return Ok(super::Event::Idle);
@@ -523,6 +535,13 @@ impl Session {
         if let Input::Active { source, .. } = &self.input {
             source.check()?;
         }
+        if let Some(control) = self.http_control()
+            && let Some(duration) = playback.element().query_duration::<gstreamer::ClockTime>()
+        {
+            control.duration(std::time::Duration::from_nanos(duration.nseconds()));
+        }
+        let reconnecting = self.recording_reconnecting();
+        let starved = self.http_control().is_some_and(|control| control.starved());
         let mut event = playback.poll()?;
         let controller = match &mut self.input {
             Input::Idle => None,
@@ -536,6 +555,10 @@ impl Session {
         };
         let mut arrival = super::timeline::Arrival::None;
         if let Some(controller) = controller {
+            controller.recording_network(playback.element(), starved)?;
+            if reconnecting {
+                controller.await_recording_recovery();
+            }
             if let super::Event::Ended(sequence) = event
                 && !controller.ended(sequence)?
             {

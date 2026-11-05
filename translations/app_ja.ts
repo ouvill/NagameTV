@@ -3,6 +3,7 @@
 <TS version="2.1" language="ja_JP" sourcelanguage="en">
   <context>
     <name>Main</name>
+    <message><source>Reconnecting to the recording server…</source><translation>録画サーバーに再接続しています…</translation></message>
     <message><source>Now playing</source><translation>再生中</translation></message>
     <message><source>Home</source><translation>ホーム</translation></message>
     <message><source>Return to watching</source><translation>視聴に戻る</translation></message>

@@ -11,6 +11,9 @@ use cxx_qt_lib::QString;
 use std::pin::Pin;
 
 impl ffi::Player {
+    pub fn recording_reconnecting(&self) -> bool {
+        self.rust().recording_reconnecting
+    }
     pub fn recording(&self) -> bool {
         self.rust().stream_state.recording().is_some()
     }

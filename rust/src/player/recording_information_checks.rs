@@ -99,7 +99,11 @@ pub(super) fn run() -> TestResult {
                 let (start, end) = range.split_once('-').unwrap();
                 let (start, end) = (
                     start.parse::<usize>().unwrap(),
-                    end.parse::<usize>().unwrap(),
+                    if end.is_empty() {
+                        bytes.len() - 1
+                    } else {
+                        end.parse::<usize>().unwrap()
+                    },
                 );
                 assert!(end < bytes.len());
                 ResponseTemplate::new(206)

@@ -215,7 +215,14 @@ enum State {
     Ended,
 }
 
+#[derive(Clone, Copy)]
+enum RecordingNetwork {
+    Ready,
+    Starved,
+}
+
 pub(super) struct Controller {
+    recording_network: RecordingNetwork,
     state: State,
     startup: Startup,
     live_buffer: LiveBuffer,
@@ -297,6 +304,7 @@ impl Controller {
             },
             reception: None,
             receive_range: None,
+            recording_network: RecordingNetwork::Ready,
             supply: supply::Supply::default(),
             rate: Rate::NORMAL,
             snapshot: Snapshot::default(),
@@ -317,6 +325,48 @@ impl Controller {
         }
     }
 
+    pub(super) fn recording_network(
+        &mut self,
+        pipeline: &gst::Element,
+        starved: bool,
+    ) -> Result<(), Error> {
+        match (self.recording_network, starved) {
+            (RecordingNetwork::Ready, true) => {
+                // Waiting without stopping the clock would make recovered
+                // recording frames late and skip the missing interval.
+                pipeline.set_state(gst::State::Paused)?;
+                self.recording_network = RecordingNetwork::Starved;
+            }
+            (RecordingNetwork::Starved, false) => {
+                if matches!(
+                    self.state,
+                    State::Playing
+                        | State::Seeking(Seek {
+                            resume: Resume::Playing,
+                            ..
+                        })
+                ) {
+                    pipeline.set_state(gst::State::Playing)?;
+                }
+                self.recording_network = RecordingNetwork::Ready;
+            }
+            (RecordingNetwork::Ready, false) | (RecordingNetwork::Starved, true) => {}
+        }
+        Ok(())
+    }
+    fn native_resume(&self, resume: Resume) -> gst::State {
+        match (self.recording_network, resume) {
+            (RecordingNetwork::Ready, Resume::Playing) => gst::State::Playing,
+            (RecordingNetwork::Starved, _) | (_, Resume::Paused) => gst::State::Paused,
+        }
+    }
+    pub(super) fn await_recording_recovery(&mut self) {
+        if let State::Seeking(seek) = &mut self.state {
+            // A range read can legitimately wait longer than decoder preroll.
+            // HTTP recovery owns its finite deadline until bytes are available.
+            seek.deadline = Instant::now() + SEEK_TIMEOUT;
+        }
+    }
     pub fn phase(&self) -> Phase {
         match &self.state {
             State::Playing => Phase::Playing,
@@ -798,10 +848,7 @@ impl Controller {
             )?;
             return Ok(());
         }
-        pipeline.set_state(match resume {
-            Resume::Playing => gst::State::Playing,
-            Resume::Paused => gst::State::Paused,
-        })?;
+        pipeline.set_state(self.native_resume(resume))?;
         self.startup = Startup::Complete;
         match &mut self.state {
             State::Seeking(seek) => seek.resume = resume,
@@ -856,7 +903,9 @@ impl Controller {
             if matches!(clock, StartClock::LivePreroll) {
                 pipeline.set_state(match self.state {
                     State::Paused | State::ExpiredPause | State::FailedPause => gst::State::Paused,
-                    State::Playing | State::Seeking(_) | State::Ended => gst::State::Playing,
+                    State::Playing | State::Seeking(_) | State::Ended => {
+                        self.native_resume(Resume::Playing)
+                    }
                 })?;
             }
             if rate != self.rate {
@@ -885,7 +934,7 @@ impl Controller {
             deadline: Instant::now() + SEEK_TIMEOUT,
         });
         pipeline.set_state(match (clock, resume) {
-            (StartClock::Preserve, Resume::Playing) => gst::State::Playing,
+            (StartClock::Preserve, Resume::Playing) => self.native_resume(Resume::Playing),
             (StartClock::LivePreroll, _) | (_, Resume::Paused) => gst::State::Paused,
         })?;
         Ok(())

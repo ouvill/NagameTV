@@ -241,6 +241,7 @@ pub mod ffi {
         #[qproperty(QString, recording_name, READ = recording_name, NOTIFY)]
         #[qproperty(QString, file_error, READ = file_error, NOTIFY)]
         #[qproperty(bool, recording_loading, READ = recording_loading, NOTIFY)]
+        #[qproperty(bool, recording_reconnecting, READ = recording_reconnecting, NOTIFY)]
         #[qproperty(bool, subtitles_enabled, READ, CONSTANT)]
         #[qproperty(bool, epg_enabled, READ, CONSTANT)]
         #[qproperty(bool, comments_enabled, READ, NOTIFY)]
@@ -644,6 +645,7 @@ pub mod ffi {
         #[qinvokable]
         fn open_recording_transfer(self: Pin<&mut Player>, key: QString) -> bool;
         fn recording_loading(self: &Player) -> bool;
+        fn recording_reconnecting(self: &Player) -> bool;
         #[qsignal]
         #[cxx_name = "recordingOpened"]
         fn recording_opened(self: Pin<&mut Player>, success: bool);
@@ -783,6 +785,7 @@ pub struct PlayerRust {
     browser_projection: Option<crate::features::program_info::browser::Projection>,
     catalog: crate::channels::catalog::Catalog,
     stream_state: stream_state::State,
+    recording_reconnecting: bool,
     timeline: playback::timeline::Snapshot,
     speed: playback::speed::Snapshot,
     timeshift_bytes_per_second: f64,

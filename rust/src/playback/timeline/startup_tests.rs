@@ -547,3 +547,50 @@ fn live_start_does_not_require_seek_support() -> Result<(), Box<dyn std::error::
     assert_eq!(attempts.load(Ordering::Relaxed), 0);
     Ok(())
 }
+
+#[test]
+fn recording_network_wait_freezes_the_clock_and_preserves_user_pause_intent()
+-> Result<(), Box<dyn std::error::Error>> {
+    for pause_during_recovery in [false, true] {
+        let mut playback = Playback::new(StartPosition::Beginning)?;
+        playback.state(gst::State::Playing)?;
+        playback
+            .controller
+            .recording_network(playback.pipeline.upcast_ref(), true)?;
+        playback.pipeline.state(TEST_TIMEOUT).0?;
+        let before = playback
+            .pipeline
+            .query_position::<gst::ClockTime>()
+            .ok_or("position")?;
+        std::thread::sleep(Duration::from_millis(100));
+        assert_eq!(
+            playback.pipeline.query_position::<gst::ClockTime>(),
+            Some(before)
+        );
+        assert_eq!(playback.controller.phase(), Phase::Playing);
+        if pause_during_recovery {
+            playback
+                .controller
+                .pause(playback.pipeline.upcast_ref(), Resume::Paused)?;
+        } else {
+            playback
+                .controller
+                .pause(playback.pipeline.upcast_ref(), Resume::Playing)?;
+            assert_eq!(playback.pipeline.current_state(), gst::State::Paused);
+        }
+        playback
+            .controller
+            .recording_network(playback.pipeline.upcast_ref(), false)?;
+        playback.pipeline.state(TEST_TIMEOUT).0?;
+        assert_eq!(
+            playback.pipeline.current_state(),
+            if pause_during_recovery {
+                gst::State::Paused
+            } else {
+                gst::State::Playing
+            }
+        );
+        assert!(playback.controller.seek_target().is_none());
+    }
+    Ok(())
+}

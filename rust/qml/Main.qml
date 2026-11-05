@@ -876,6 +876,12 @@ ViewerWindow {
             anchors { horizontalCenter: parent.horizontalCenter; top: parent.top; topMargin: Theme.spaceXl }
             z: 8
         }
+        RecordingReconnectNotice {
+            objectName: "recordingReconnectNotice"
+            reconnecting: player.recording && player.recording_reconnecting
+            anchors.centerIn: parent
+            z: 8
+        }
         ScreenshotNotice {
             id: screenshotNotice
             objectName: "screenshotNotice"

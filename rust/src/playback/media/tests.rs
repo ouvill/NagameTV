@@ -88,6 +88,7 @@ fn local_and_http_containers_decode_both_tracks_and_seek_with_the_shared_control
                     &file,
                     Arc::new(AtomicBool::new(false)),
                     &registrations,
+                    &Mutex::new(None),
                 );
                 let video = pipeline.0.by_name("video").unwrap();
                 let audio = pipeline
@@ -236,5 +237,102 @@ fn playbin_typefinds_the_byte_source_once_and_supports_container_seeks() -> Test
         drop(pipeline);
         drop(input);
     }
+    Ok(())
+}
+
+#[test]
+fn http_hevc_playback_recovers_without_replacing_the_source_or_user_action() -> TestResult {
+    use std::sync::atomic::AtomicUsize;
+    use wiremock::{Mock, ResponseTemplate, matchers::method};
+    gst::init()?;
+    let bytes = include_bytes!("../../../../tests/fixtures/media-hevc.mp4").to_vec();
+    let server = crate::playback::recording::serve_ts(bytes.clone());
+    let Recording::Media(file) = load(Request::from_url(&format!(
+        "{}/api/videos/123",
+        server.uri()
+    ))?)?
+    else {
+        panic!("MP4")
+    };
+    let requests = Arc::new(AtomicUsize::new(0));
+    let attempts = requests.clone();
+    let runtime = tokio::runtime::Runtime::new()?;
+    runtime.block_on(async {
+        server.reset().await;
+        Mock::given(method("GET"))
+            .respond_with(move |request: &wiremock::Request| {
+                if attempts.fetch_add(1, Ordering::AcqRel) < 2 {
+                    return ResponseTemplate::new(503);
+                }
+                let range = request.headers[reqwest::header::RANGE]
+                    .to_str()
+                    .unwrap()
+                    .strip_prefix("bytes=")
+                    .unwrap();
+                let (start, end) = range.split_once('-').unwrap();
+                let start = start.parse::<usize>().unwrap();
+                let end = if end.is_empty() {
+                    bytes.len() - 1
+                } else {
+                    end.parse::<usize>().unwrap()
+                };
+                ResponseTemplate::new(206)
+                    .insert_header(
+                        "Content-Range",
+                        format!("bytes {start}-{end}/{}", bytes.len()),
+                    )
+                    .insert_header("ETag", "\"recording-v1\"")
+                    .set_body_bytes(bytes[start..=end].to_vec())
+            })
+            .mount(&server)
+            .await;
+    });
+    // Explicit CPU decoders and memory sinks keep this regression hardware-free.
+    let video = gstreamer_app::AppSink::builder()
+        .max_buffers(1)
+        .drop(true)
+        .sync(true)
+        .build();
+    let audio = gstreamer_app::AppSink::builder()
+        .max_buffers(1)
+        .drop(true)
+        .sync(true)
+        .build();
+    let playbin = gst::ElementFactory::make("playbin3")
+        .property("video-sink", &video)
+        .property("audio-sink", &audio)
+        .build()?;
+    playbin.set_property_from_str("flags", "video+audio+force-sw-decoders");
+    let input = super::Input::new(&playbin, &file);
+    let pipeline = Pipeline(playbin.downcast().map_err(|_| "pipeline")?);
+    pipeline.0.set_property("uri", "appsrc://");
+    pipeline.0.set_state(gst::State::Playing)?;
+    let began = Instant::now();
+    let mut retrying = false;
+    let bus = pipeline.0.bus().ok_or("bus")?;
+    loop {
+        retrying |= input
+            .http_control()
+            .is_some_and(|control| control.reconnecting());
+        if let Some(error) = bus.pop_filtered(&[gst::MessageType::Error]) {
+            panic!("recovery posted playback error: {error:?}");
+        }
+        if pipeline
+            .0
+            .query_position::<gst::ClockTime>()
+            .is_some_and(|position| position.mseconds() > 500)
+        {
+            break;
+        }
+        assert!(began.elapsed() < DEADLINE, "playback failed to recover");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert!(retrying, "reconnecting state was never exposed");
+    assert!(video.try_pull_sample(gst::ClockTime::SECOND).is_some());
+    assert!(audio.try_pull_sample(gst::ClockTime::SECOND).is_some());
+    assert!(requests.load(Ordering::Acquire) >= 3);
+    assert!(!input.http_control().unwrap().reconnecting());
+    drop(pipeline);
+    drop(input);
     Ok(())
 }
