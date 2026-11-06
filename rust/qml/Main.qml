@@ -8,7 +8,8 @@ import MinimalViewer 1.0
 
 ViewerWindow {
     id: root
-    flags: Qt.Window | Qt.FramelessWindowHint
+    // The window chrome components follow this flag; Rust owns the saved choice.
+    flags: player.window_decoration === "system" ? Qt.Window : Qt.Window | Qt.FramelessWindowHint
     title: player.recording ? player.recording_name : programIdentity.view && programIdentity.view.program && programIdentity.view.program.name
         ? programIdentity.view.program.name : qsTranslate("Main", "NagameTV")
     color: Theme.canvas

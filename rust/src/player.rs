@@ -159,6 +159,8 @@ pub mod ffi {
         #[qproperty(QString, language, READ, NOTIFY)]
         #[qproperty(QString, ui_language, READ, NOTIFY)]
         #[qproperty(bool, autoplay, READ = autoplay, NOTIFY)]
+        #[qproperty(QString, window_decoration, READ = window_decoration, NOTIFY)]
+        #[qproperty(bool, window_decoration_restart_pending, READ = window_decoration_restart_pending, NOTIFY)]
         #[qproperty(bool, remote_web_enabled, READ = remote_web_enabled, NOTIFY)]
         #[qproperty(bool, remote_web_allowed, READ = remote_web_allowed, CONSTANT)]
         #[qproperty(QString, remote_web_urls, READ = remote_web_urls, NOTIFY)]
@@ -394,6 +396,8 @@ pub mod ffi {
         fn selected(self: &Player) -> i32;
         fn build_info(self: &Player) -> QString;
         fn autoplay(self: &Player) -> bool;
+        fn window_decoration(self: &Player) -> QString;
+        fn window_decoration_restart_pending(self: &Player) -> bool;
         #[qsignal]
         fn remote_key_requested(self: Pin<&mut Player>, key: i32);
         #[qsignal]
@@ -684,6 +688,8 @@ pub mod ffi {
         #[qinvokable]
         fn configure_autoplay(self: Pin<&mut Player>, enabled: bool);
         #[qinvokable]
+        fn configure_window_decoration(self: Pin<&mut Player>, decoration: QString) -> bool;
+        #[qinvokable]
         fn enable_comments(self: Pin<&mut Player>, enabled: bool);
         #[qinvokable]
         fn edit_comment_draft(self: Pin<&mut Player>, text: QString);
@@ -745,6 +751,8 @@ use std::pin::Pin;
 use std::time::Instant;
 
 pub struct PlayerRust {
+    // The window flag set before the first frame; a later change is saved for the next launch.
+    launched_window_decoration: settings::WindowDecoration,
     #[cfg(target_os = "linux")]
     desktop_media: desktop_media::Registration,
     language: QString,

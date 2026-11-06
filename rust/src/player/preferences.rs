@@ -172,6 +172,38 @@ impl ffi::Player {
         self.save_settings();
     }
 
+    pub fn window_decoration(&self) -> QString {
+        QString::from(
+            self.rust()
+                .preferences
+                .preferences()
+                .window_decoration
+                .code(),
+        )
+    }
+
+    pub fn window_decoration_restart_pending(&self) -> bool {
+        self.rust().preferences.preferences().window_decoration
+            != self.rust().launched_window_decoration
+    }
+
+    pub fn configure_window_decoration(mut self: Pin<&mut Self>, decoration: QString) -> bool {
+        let Some(decoration) = crate::settings::WindowDecoration::parse(&decoration.to_string())
+        else {
+            return false;
+        };
+        if decoration != self.rust().preferences.preferences().window_decoration {
+            self.as_mut()
+                .rust_mut()
+                .preferences
+                .change(crate::settings::Change::WindowDecoration(decoration));
+            self.as_mut().window_decoration_changed();
+            self.as_mut().window_decoration_restart_pending_changed();
+        }
+        self.save_settings();
+        true
+    }
+
     pub fn save_settings(mut self: Pin<&mut Self>) {
         let result = self.as_mut().rust_mut().preferences.flush();
         match result {

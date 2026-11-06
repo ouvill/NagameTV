@@ -40,7 +40,7 @@ Popup {
         case SettingsPanel.Connection:
             return [...connectionForm.navigationItems, autoplay, ...liveBufferSettings.navigationItems, ...epgstationConnection.navigationItems, recordingReservations];
         case SettingsPanel.Display:
-            return [languageBox, subtitleDisplay, subtitleOutline, dataBroadcastEnabled, dataBroadcastPrefetch, chooseScreenshotDirectory, openScreenshotDirectory,
+            return [languageBox, windowDecoration, subtitleDisplay, subtitleOutline, dataBroadcastEnabled, dataBroadcastPrefetch, chooseScreenshotDirectory, openScreenshotDirectory,
                 resetScreenshotDirectory, ...screenshotOptions.navigationItems];
         case SettingsPanel.Comments:
             return [commentsEnabled, danmakuEnabled, ...commentPresentation.navigationItems,
@@ -504,6 +504,36 @@ Popup {
                             visible: false
                             text: qsTranslate("Settings", "Could not change the language. The previous language is still in use.")
                             color: Theme.warning
+                        }
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: Theme.spaceXl
+                            Detail {
+                                text: qsTranslate("Settings", "Window title bar")
+                                color: Theme.textPrimary
+                                font.pixelSize: Theme.fontControl
+                            }
+                            SettingsChoice {
+                                id: windowDecoration
+                                objectName: "windowDecorationSetting"
+                                readonly property list<string> codes: ["custom", "system"]
+                                Layout.preferredWidth: Math.min(280, pageFlick.width * 0.52)
+                                dropdownIcon: root.iconDirectory + "chevron-down.svg"
+                                Accessible.name: qsTranslate("Settings", "Window title bar")
+                                model: [qsTranslate("Settings", "NagameTV (default)"), qsTranslate("Settings", "Desktop environment")]
+                                currentIndex: codes.indexOf(root.backend.window_decoration)
+                                onActivated: function(index) {
+                                    root.backend.configure_window_decoration(codes[index]);
+                                    currentIndex = Qt.binding(function() { return codes.indexOf(root.backend.window_decoration); });
+                                }
+                            }
+                        }
+                        Detail {
+                            objectName: "windowDecorationRestart"
+                            Layout.fillWidth: true
+                            visible: root.backend.window_decoration_restart_pending
+                            text: qsTranslate("Settings", "The title bar change displays correctly after restarting NagameTV.")
+                            wrapMode: Text.WordWrap
                         }
                         ColumnLayout {
                             Layout.topMargin: 8

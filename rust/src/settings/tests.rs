@@ -47,6 +47,30 @@ fn window_size_is_optional_for_old_settings_and_survives_restart()
 }
 
 #[test]
+fn window_decoration_defaults_to_custom_and_the_choice_survives_restart()
+-> Result<(), Box<dyn std::error::Error>> {
+    let directory = tempfile::tempdir()?;
+    let path = directory.path().join("settings.toml");
+    fs::write(&path, "autoplay = true\n")?;
+    assert_eq!(
+        open(path.clone())?.preferences().window_decoration,
+        WindowDecoration::Custom
+    );
+    for decoration in [WindowDecoration::System, WindowDecoration::Custom] {
+        let mut session = open(path.clone())?;
+        session.change(Change::WindowDecoration(decoration));
+        session.flush()?;
+        let restored = open(path.clone())?;
+        assert_eq!(restored.preferences().window_decoration, decoration);
+        assert!(restored.preferences().autoplay);
+    }
+    let future: Preferences = toml::from_str("window_decoration = 'future'\nautoplay = true")?;
+    assert_eq!(future.window_decoration, WindowDecoration::Custom);
+    assert!(future.autoplay);
+    Ok(())
+}
+
+#[test]
 fn live_buffer_defaults_migrate_and_custom_values_survive_restart()
 -> Result<(), Box<dyn std::error::Error>> {
     let old: Preferences = toml::from_str("autoplay = true")?;

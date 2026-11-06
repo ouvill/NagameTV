@@ -1891,6 +1891,10 @@
 </context>
   <context>
     <name>Settings</name>
+    <message><source>Window title bar</source><translation>ウィンドウのタイトルバー</translation></message>
+    <message><source>NagameTV (default)</source><translation>NagameTV（標準）</translation></message>
+    <message><source>Desktop environment</source><translation>デスクトップ環境</translation></message>
+    <message><source>The title bar change displays correctly after restarting NagameTV.</source><translation>タイトルバーの変更は、NagameTVを再起動すると正しく表示されます。</translation></message>
     <message><source>While something plays</source><translation>再生中</translation></message>
     <message><source>Recordings with chapters</source><translation>チャプターのある録画</translation></message>
     <message><source>Reserve recordings from the program guide (experimental)</source><translation>番組表から録画予約する（実験的）</translation></message>

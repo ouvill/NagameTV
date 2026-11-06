@@ -49,6 +49,14 @@ Item {
                 function configure_subtitle_outline(value) { subtitle_force_outline = value; }
                 property bool epg_enabled: true
                 property bool autoplay: false
+                property string window_decoration: "custom"
+                property string launched_window_decoration: "custom"
+                readonly property bool window_decoration_restart_pending: window_decoration !== launched_window_decoration
+                function configure_window_decoration(value) {
+                    if (value !== "custom" && value !== "system") return false;
+                    window_decoration = value;
+                    return true;
+                }
                 property string live_buffer_options: JSON.stringify({milliseconds:250, min_ms:1, max_ms:1000, default_ms:250})
                 function configure_live_buffer(value) {
                     const options = JSON.parse(live_buffer_options);
@@ -244,6 +252,7 @@ Item {
                 backend.data_broadcast_allowed = true;
                 backend.epg_enabled = true;
                 backend.autoplay = false;
+                backend.window_decoration = "custom";
                 backend.configure_live_buffer(250);
                 backend.configure_timeshift_options("pause_memory", 256, 1024, 60);
                 backend.comment_display = "scroll"; backend.comment_placement = "sequential";
@@ -512,9 +521,10 @@ Item {
                 verify(language.popup.opened);
                 keyClick(Qt.Key_Back); tryCompare(language.popup, "visible", false);
                 verify(panel.opened); expectFocus("languageSetting");
+                keyClick(Qt.Key_Down); expectFocus("windowDecorationSetting");
                 keyClick(Qt.Key_Down); expectFocus("subtitleDisplay");
                 backend.subtitles_enabled = false;
-                language.forceActiveFocus(Qt.TabFocusReason);
+                findChild(panel.contentItem, "windowDecorationSetting").forceActiveFocus(Qt.TabFocusReason);
                 keyClick(Qt.Key_Down); expectFocus("dataBroadcastEnabledSetting");
                 keyClick(Qt.Key_Down); expectFocus("chooseScreenshotDirectory");
                 keyClick(Qt.Key_Right); expectFocus("openScreenshotDirectory");
@@ -1216,6 +1226,25 @@ Item {
                 panel.open();
                 tryCompare(panel, "opened", true);
                 compare(findChild(panel.contentItem, "languageError").visible, false);
+            }
+            function test_window_title_bar_choice_tracks_saved_value() {
+                selectPage(SettingsPanel.Display);
+                const choice = findChild(panel.contentItem, "windowDecorationSetting");
+                const restart = findChild(panel.contentItem, "windowDecorationRestart");
+                compare(choice.currentIndex, 0);
+                compare(restart.visible, false);
+                choice.forceActiveFocus();
+                keyClick(Qt.Key_Space);
+                tryCompare(choice.popup, "opened", true);
+                keyClick(Qt.Key_Down);
+                keyClick(Qt.Key_Return);
+                tryCompare(choice.popup, "visible", false);
+                compare(backend.window_decoration, "system");
+                compare(choice.currentIndex, 1);
+                compare(restart.visible, true);
+                backend.window_decoration = "custom";
+                compare(choice.currentIndex, 0);
+                compare(restart.visible, false);
             }
             function test_error_details_are_available_without_overwhelming_the_message() {
                 backend.settings_error = "Cannot read <settings>: " + "technical details ".repeat(80);
