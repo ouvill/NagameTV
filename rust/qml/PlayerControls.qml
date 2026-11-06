@@ -175,7 +175,7 @@ DirectionalFocus {
             Control {
                 id: commentButton
                 objectName: "postCommentButton"
-                visible: !root.backend.recording
+                visible: !root.backend.recording && root.backend.comments_enabled
                 iconSource: root.iconDirectory + "pencil.svg"
                 tip: action.text
                 action: root.actions.openComposer
@@ -200,7 +200,7 @@ DirectionalFocus {
             Control {
                 id: danmakuButton
                 objectName: "danmakuButton"
-                visible: root.density === PlayerControls.Wide
+                visible: root.density === PlayerControls.Wide && root.backend.comments_enabled
                 iconSource: root.iconDirectory + (root.backend.danmaku_enabled ? "message-square.svg" : "message-square-off.svg")
                 tip: action.text
                 active: enabled && root.backend.danmaku_enabled
@@ -247,10 +247,17 @@ DirectionalFocus {
                         onTriggered: if (root.backend.media_subtitle_available) root.subtitlesRequested()
                         icon.source: root.iconDirectory + (root.backend.subtitle_display ? "captions.svg" : "captions-off.svg")
                     }
-                    Entry {
-                        objectName: "overflowDanmaku"
-                        action: root.actions.toggleDanmaku
-                        icon.source: root.iconDirectory + (root.backend.danmaku_enabled ? "message-square.svg" : "message-square-off.svg")
+                    // Added and removed rather than hidden: a hidden MenuItem keeps its row, and a height
+                    // change made while the menu is closed is not laid out again when it opens.
+                    Instantiator {
+                        model: root.backend.comments_enabled ? 1 : 0
+                        delegate: Entry {
+                            objectName: "overflowDanmaku"
+                            action: root.actions.toggleDanmaku
+                            icon.source: root.iconDirectory + (root.backend.danmaku_enabled ? "message-square.svg" : "message-square-off.svg")
+                        }
+                        onObjectAdded: (index, object) => overflow.insertItem(1, object as MenuItem)
+                        onObjectRemoved: (index, object) => overflow.removeItem(object as MenuItem)
                     }
                     Entry {
                         objectName: "overflowFullscreen"
