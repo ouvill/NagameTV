@@ -167,6 +167,7 @@ impl Default for PlayerRust {
             transport_message: super::transport::Message::None,
             recording_loader: Default::default(),
             file_error: Text::default(),
+            launched_window_decoration: preferences.preferences().window_decoration,
             subtitles_enabled: plan.subtitles(),
             epg_enabled: plan.epg(),
             comments_enabled: plan.comments(preferences.preferences().comments_enabled),

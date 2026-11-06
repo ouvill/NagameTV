@@ -31,7 +31,8 @@ TestCase {
         }
     }
     property var guide
-    Window { id: guideWindow }
+    // Match the viewer window's default frameless chrome and toolbar width.
+    Window { id: guideWindow; flags: Qt.Window | Qt.FramelessWindowHint }
     SignalSpy { id: modesSpy; target: testCase.guide || null; signalName: "modeRequested" }
     SignalSpy { id: closeSpy; target: testCase.guide || null; signalName: "closeRequested" }
     SignalSpy { id: watchSpy; target: testCase.guide || null; signalName: "watchRequested" }

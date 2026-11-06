@@ -15,6 +15,11 @@ Item {
             closeRequests++;
             event.accepted = false;
         }
+        MouseArea {
+            objectName: "contentBelowTitle"
+            anchors.fill: parent
+            acceptedButtons: Qt.LeftButton
+        }
         WindowButtons {
             id: buttons
             targetWindow: host
@@ -58,6 +63,7 @@ Item {
             }
             function cleanup() {
                 otherControl.visible = false;
+                host.flags = Qt.Window | Qt.FramelessWindowHint;
                 host.showNormal();
             }
             function test_other_control_press_cannot_start_title_move() {
@@ -108,6 +114,31 @@ Item {
                 tryCompare(host, "visibility", Window.FullScreen);
                 mouseClick(maximize);
                 tryCompare(host, "visibility", Window.Maximized);
+            }
+            function test_desktop_title_bar_replaces_custom_chrome_until_restored() {
+                const content = findChild(host.contentItem, "contentBelowTitle");
+                host.flags = Qt.Window;
+                tryCompare(buttons, "visible", false);
+                compare(buttons.navigationButtons.length, 0);
+                compare(dragArea.visible, false);
+                compare(resizeFrame.visible, false);
+                compare(host.visible, true);
+                // Title-area presses reach the content and neither move nor maximize.
+                mouseDoubleClickSequence(dragArea, 100, 30);
+                compare(host.visibility, Window.Windowed);
+                mousePress(dragArea, 100, 30);
+                try {
+                    verify(content.pressed);
+                    mouseMove(dragArea, 200, 40, 20);
+                } finally {
+                    mouseRelease(dragArea, 200, 40);
+                }
+                compare(moveRequests.count, 0);
+                host.flags = Qt.Window | Qt.FramelessWindowHint;
+                tryCompare(buttons, "visible", true);
+                compare(buttons.navigationButtons.length, 3);
+                compare(dragArea.visible, true);
+                compare(resizeFrame.visible, true);
             }
             function test_minimize_and_close_delivers_closing_event() {
                 mouseClick(findChild(buttons, "minimizeWindow"));

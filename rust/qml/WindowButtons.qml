@@ -7,11 +7,14 @@ Rectangle {
     id: root
     required property Window targetWindow
     property url iconDirectory: "qrc:/qt/qml/MinimalViewer/assets/icons/"
-    readonly property list<Item> navigationButtons: [minimizeButton, maximizeButton, closeButton]
+    // The desktop environment's title bar replaces these buttons.
+    readonly property bool active: (targetWindow.flags & Qt.FramelessWindowHint) !== 0
+    readonly property list<Item> navigationButtons: active ? [minimizeButton, maximizeButton, closeButton] : []
     property bool flat: false
     property bool focusLabelBelow: false
     implicitWidth: Theme.iconButtonSize * 3 + Theme.spaceSm * 2
     implicitHeight: Theme.iconButtonSize
+    visible: active
     radius: height / 2
     color: flat ? "transparent" : Theme.overlaySurface
     border.color: flat ? "transparent" : Theme.overlayBorder

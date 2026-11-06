@@ -245,6 +245,7 @@ fn checks() -> TestResult {
     check_guide_state();
     super::epg_checks::run()?;
     check_autoplay()?;
+    check_window_decoration()?;
     check_live_buffer()?;
     check_timeshift_options()?;
     check_transport_messages();
@@ -972,6 +973,49 @@ fn check_autoplay() -> TestResult {
     player.pin_mut().configure_autoplay(true);
     assert!(player.settings_error().is_empty());
     assert!(settings::Loaded::open(path)?.preferences().autoplay);
+    Ok(())
+}
+
+fn check_window_decoration() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let path = dir.path().join("settings.toml");
+    let mut player = ffi::new_player();
+    player.pin_mut().rust_mut().preferences =
+        settings::Loaded::open(path.clone())?.activate(None, None);
+    let pending = Arc::new(Mutex::new(Vec::new()));
+    let observed = pending.clone();
+    let _signal = player
+        .pin_mut()
+        .on_window_decoration_restart_pending_changed(move |player| {
+            observed
+                .lock()
+                .unwrap()
+                .push(player.window_decoration_restart_pending());
+        });
+    assert_eq!(player.window_decoration().to_string(), "custom");
+    assert!(!player.window_decoration_restart_pending());
+    assert!(
+        !player
+            .pin_mut()
+            .configure_window_decoration("future".into())
+    );
+    for (decoration, restart) in [("system", true), ("system", true), ("custom", false)] {
+        assert!(
+            player
+                .pin_mut()
+                .configure_window_decoration(decoration.into())
+        );
+        assert_eq!(player.window_decoration().to_string(), decoration);
+        assert_eq!(player.window_decoration_restart_pending(), restart);
+        assert_eq!(
+            settings::Loaded::open(path.clone())?
+                .preferences()
+                .window_decoration
+                .code(),
+            decoration
+        );
+    }
+    assert_eq!(*pending.lock().unwrap(), [true, false]);
     Ok(())
 }
 
