@@ -254,8 +254,8 @@ Item {
                 verify(!findChild(controls, "postCommentButton").visible);
                 compare(comments.count, 0);
                 backend.comments_enabled = false;
-                verify(!toggle.enabled);
-                mouseClick(toggle);
+                verify(!toggle.visible);
+                verify(!actions.toggleDanmaku.enabled);
                 compare(backend.danmaku_enabled, false);
                 compare(backend.saved, 3);
                 mouseClick(findChild(controls, "screenshotButton"));
@@ -516,6 +516,35 @@ Item {
                 backend.recording = true; verify(!live.visible);
                 backend.recording = false; actions.enabled = false;
                 mouseClick(live); compare(backend.liveRequests, 1);
+            }
+            function test_disabled_live_comments_hide_post_and_danmaku_controls() {
+                const post = findChild(controls, "postCommentButton");
+                const toggle = findChild(controls, "danmakuButton");
+                verify(post.visible);
+                verify(toggle.visible);
+                backend.comments_enabled = false;
+                verify(!post.visible);
+                verify(!toggle.visible);
+                verify(findChild(controls, "screenshotButton").visible);
+                controls.width = 532;
+                const more = findChild(controls, "moreControlsButton");
+                const menu = findChild(controls, "playerOverflowMenu");
+                waitForRendering(controls);
+                mouseClick(more); tryCompare(menu, "opened", true);
+                const subtitles = findChild(menu, "overflowSubtitles");
+                const fullscreen = findChild(menu, "overflowFullscreen");
+                tryVerify(() => findChild(menu, "overflowDanmaku") === null);
+                compare(fullscreen.mapToItem(menu.contentItem, 0, 0).y,
+                    subtitles.mapToItem(menu.contentItem, 0, 0).y + subtitles.height);
+                keyClick(Qt.Key_Escape); tryCompare(menu, "visible", false);
+                backend.comments_enabled = true;
+                mouseClick(more); tryCompare(menu, "opened", true);
+                const danmaku = findChild(menu, "overflowDanmaku");
+                compare(danmaku.mapToItem(menu.contentItem, 0, 0).y,
+                    subtitles.mapToItem(menu.contentItem, 0, 0).y + subtitles.height);
+                compare(fullscreen.mapToItem(menu.contentItem, 0, 0).y,
+                    danmaku.mapToItem(menu.contentItem, 0, 0).y + danmaku.height);
+                keyClick(Qt.Key_Escape); tryCompare(menu, "visible", false);
             }
             function test_overflow_uses_same_actions_and_keeps_sidebar_at_right_edge() {
                 controls.width = 532;
