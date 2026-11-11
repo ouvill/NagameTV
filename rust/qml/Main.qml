@@ -883,6 +883,20 @@ ViewerWindow {
             anchors.centerIn: parent
             z: 8
         }
+        LiveRecoveryNotice {
+            id: liveRecoveryNotice
+            objectName: "liveRecoveryNotice"
+            recoveryState: player.live_recovery_state
+            message: player.live_recovery_message
+            anchors.centerIn: parent
+            z: 8
+            onRetryRequested: player.retry_live_recovery()
+            onDismissFocusRequested: root.restoreFocus(null)
+            // A remote-only viewer has no pointer: put the retry action under
+            // OK, but only when the video itself had focus so no panel loses it.
+            onPhaseChanged: if (phase === LiveRecoveryNotice.Failed && inputContext.videoFocused && !inputContext.popupOpen)
+                retryButton.forceActiveFocus(Qt.TabFocusReason)
+        }
         ScreenshotNotice {
             id: screenshotNotice
             objectName: "screenshotNotice"

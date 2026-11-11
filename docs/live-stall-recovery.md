@@ -28,7 +28,16 @@
 通常のHTTPエラー表示と、既存の録画用 `recording_reconnecting` はそれぞれ維持する。
 
 QML側では `recovering` の案内と、`failed` の案内・再試行ボタンを表示する。
-製品QMLの実装は統合担当が行う。本作業ではRustの契約と試験を用意する。
+### 画面での表示
+
+[`LiveRecoveryNotice.qml`](../rust/qml/LiveRecoveryNotice.qml)が映像中央に案内を出す。
+`recovering`は0.7秒続いたときだけ回転表示と文言を出し、すぐ戻る復旧では画面を乱さない。
+`failed`はすぐに文言と「再試行」を表示し、再試行は`retry_live_recovery()`を呼ぶ。
+文言はRustの`live_recovery_message`をそのまま表示し、QMLで状態や回数を解釈しない。
+
+リモコンだけで使う場合に備え、`failed`になった時点で映像にフォーカスがあり、ポップアップが
+開いていなければ「再試行」へフォーカスを移す。決定で再試行し、戻る・Escで映像へ戻る。
+パネルやポップアップの操作中はフォーカスを奪わない。
 
 ## 検証記録
 
