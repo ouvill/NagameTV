@@ -53,6 +53,31 @@ impl LiveAttempt {
     }
 }
 
+#[derive(Clone, Debug)]
+pub(super) struct RecoveryTarget {
+    service: u64,
+    name: String,
+    broadcast: Option<BroadcastService>,
+    retention: Policy,
+}
+impl RecoveryTarget {
+    pub(super) fn restart(self, _permit: crate::playback::live_recovery::Restart) -> Attempt {
+        self.attempt(Retry::Used)
+    }
+    pub(super) fn manual_retry(self) -> Attempt {
+        self.attempt(Retry::Available)
+    }
+    fn attempt(self, retry: Retry) -> Attempt {
+        Attempt::Live(LiveAttempt {
+            service: self.service,
+            name: self.name,
+            broadcast: self.broadcast,
+            retention: self.retention,
+            retry,
+        })
+    }
+}
+
 #[derive(Default, Debug, PartialEq, Eq)]
 pub(super) enum Selection {
     #[default]
@@ -105,6 +130,22 @@ impl Default for State {
     }
 }
 impl State {
+    pub(super) fn sleep_inhibit_viewing(
+        &self,
+        reconnecting: bool,
+    ) -> crate::sleep_inhibit::Viewing {
+        use crate::sleep_inhibit::Viewing;
+        match self {
+            Self::Playing(_, phase) | Self::Recording(_, phase) => match phase {
+                Phase::Playing if reconnecting => Viewing::Interrupted,
+                Phase::Playing => Viewing::Playing,
+                Phase::Seeking(Resume::Playing) => Viewing::Interrupted,
+                Phase::Paused | Phase::Seeking(Resume::Paused) | Phase::Ended => Viewing::Inactive,
+            },
+            Self::Stopped(_) | Self::Connecting(_) | Self::StopFailed(_) => Viewing::Inactive,
+        }
+    }
+
     pub(super) fn commentary_playback<'a>(
         &self,
         channel: Option<&'a Channel>,
@@ -152,6 +193,22 @@ impl State {
         self
     }
 
+    pub(super) fn recovery_target(&self) -> Option<RecoveryTarget> {
+        match self {
+            Self::Playing(live, _) | Self::Connecting(Attempt::Live(live)) => {
+                Some(RecoveryTarget {
+                    service: live.service,
+                    name: live.name.clone(),
+                    broadcast: live.broadcast,
+                    retention: live.retention,
+                })
+            }
+            Self::Stopped(_)
+            | Self::Recording(_, _)
+            | Self::StopFailed(_)
+            | Self::Connecting(Attempt::File(_)) => None,
+        }
+    }
     pub(super) fn connecting(&self) -> bool {
         matches!(self, Self::Connecting(_))
     }
@@ -293,6 +350,44 @@ mod tests {
         assert!(State::Connecting(attempt()).take_retry().is_some());
     }
     #[test]
+    fn recovery_restarts_and_manual_retry_preserve_the_failed_channel() {
+        use crate::playback::live_recovery::{
+            Action, Observation, Recovery, STALL_TIMEOUT, Sample,
+        };
+        let state = State::Connecting(attempt()).started();
+        let target = state.recovery_target().unwrap();
+        let mut recovery = Recovery::default();
+        let start = std::time::Instant::now();
+        let mut action = Action::None;
+        for second in 0..=STALL_TIMEOUT.as_secs() {
+            action = recovery.observe(
+                start + std::time::Duration::from_secs(second),
+                Observation::Live(Sample {
+                    generation: 1,
+                    video_expected: true,
+                    video_input: second + 1,
+                    received_bytes: (second + 1) * 188,
+                    video_output: Some(1),
+                    ..Default::default()
+                }),
+            );
+        }
+        let Action::Restart(permit) = action else {
+            panic!("stall permit");
+        };
+        let restart = target.clone().restart(permit);
+        assert_eq!(restart.service(), Some(42));
+        assert_eq!(restart.name(), "Original channel");
+        assert!(
+            State::Connecting(restart).take_retry().is_none(),
+            "stall recovery must not grant another HTTP retry"
+        );
+        let manual = target.manual_retry();
+        assert_eq!(manual.service(), Some(42));
+        assert_eq!(manual.name(), "Original channel");
+        assert!(State::Connecting(manual).take_retry().is_some());
+    }
+    #[test]
     fn stopped_and_failed_cleanup_reject_late_start_events() {
         assert_eq!(State::default().started(), State::default());
         let mut failed = State::Connecting(attempt()).stop_failed().started();
@@ -320,5 +415,61 @@ mod tests {
         state = state.stopped().started();
         assert!(!state.playing() && !state.connecting());
         assert_eq!(state.recording(), Some(&expected));
+    }
+}
+
+#[cfg(test)]
+mod sleep_inhibit_tests {
+    use super::*;
+    use crate::{playback::input::Retention, sleep_inhibit::Viewing};
+
+    #[test]
+    fn live_recording_and_timeshift_phases_share_the_same_inhibition_policy() {
+        let channels = crate::channels::parse(br#"[{"id":1,"name":"TV","type":1}]"#).unwrap();
+        let file = Recording::open(std::path::Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../tests/fixtures/subtitle-clock.ts"
+        )))
+        .unwrap();
+        for live in [false, true] {
+            let state = || {
+                if live {
+                    State::Connecting(Attempt::new(&channels[0], Retention::Memory.into()))
+                } else {
+                    State::Connecting(Attempt::File(file.clone()))
+                }
+            };
+            assert_eq!(state().sleep_inhibit_viewing(false), Viewing::Inactive);
+            assert_eq!(
+                state().started().sleep_inhibit_viewing(false),
+                Viewing::Playing
+            );
+            assert_eq!(
+                state().started().sleep_inhibit_viewing(true),
+                Viewing::Interrupted
+            );
+            for (phase, expected) in [
+                (Phase::Paused, Viewing::Inactive),
+                (Phase::Seeking(Resume::Paused), Viewing::Inactive),
+                (Phase::Seeking(Resume::Playing), Viewing::Interrupted),
+                (Phase::Ended, Viewing::Inactive),
+            ] {
+                assert_eq!(
+                    state()
+                        .started()
+                        .transport(phase)
+                        .sleep_inhibit_viewing(false),
+                    expected
+                );
+            }
+            assert_eq!(
+                state().started().stopped().sleep_inhibit_viewing(false),
+                Viewing::Inactive
+            );
+            assert_eq!(
+                state().started().stop_failed().sleep_inhibit_viewing(false),
+                Viewing::Inactive
+            );
+        }
     }
 }

@@ -98,6 +98,7 @@ def isolated_environment(runtime, inherited, audio_server, sink):
         # audio to a physical output on the shared PipeWire server.
         "PULSE_PROP": "node.dont-fallback=true node.dont-move=true node.dont-reconnect=true",
         "DBUS_SESSION_BUS_ADDRESS": f"unix:path={runtime}/bus",
+        "DBUS_SYSTEM_BUS_ADDRESS": f"unix:path={runtime}/bus",
         "QT_QPA_PLATFORM": "xcb",
         "QSG_RHI_BACKEND": "opengl",
         "NAGAMETV_AUDIO_SINK": "pulsesink",
@@ -432,6 +433,7 @@ def require_inherited_session(env):
             "PULSE_SERVER": (runtime / "pulse-server").read_text().strip(),
             "PULSE_SINK": (runtime / "pulse-sink").read_text().strip(),
             "DBUS_SESSION_BUS_ADDRESS": f"unix:path={runtime}/bus",
+            "DBUS_SYSTEM_BUS_ADDRESS": f"unix:path={runtime}/bus",
         }
         expected["PULSE_SOURCE"] = f"{expected['PULSE_SINK']}.monitor"
         if any(env.get(key) != value for key, value in expected.items()):

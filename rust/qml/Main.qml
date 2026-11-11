@@ -883,6 +883,20 @@ ViewerWindow {
             anchors.centerIn: parent
             z: 8
         }
+        LiveRecoveryNotice {
+            id: liveRecoveryNotice
+            objectName: "liveRecoveryNotice"
+            recoveryState: player.live_recovery_state
+            message: player.live_recovery_message
+            anchors.centerIn: parent
+            z: 8
+            onRetryRequested: player.retry_live_recovery()
+            onDismissFocusRequested: root.restoreFocus(null)
+            // A remote-only viewer has no pointer: put the retry action under
+            // OK, but only when the video itself had focus so no panel loses it.
+            onPhaseChanged: if (phase === LiveRecoveryNotice.Failed && inputContext.videoFocused && !inputContext.popupOpen)
+                retryButton.forceActiveFocus(Qt.TabFocusReason)
+        }
         ScreenshotNotice {
             id: screenshotNotice
             objectName: "screenshotNotice"
@@ -1067,6 +1081,29 @@ ViewerWindow {
             }
             statsVisible: root.showStats
             onStatsRequested: function(visible) { root.showStats = visible; }
+            playing: player.media_active
+            volumeLevel: player.volume_level
+            muted: player.audio_muted
+            subtitlesAvailable: player.subtitles_enabled
+            subtitlesShown: player.subtitle_display
+            onVolumeRequested: function(fraction) { player.volume(fraction); }
+            onMuteRequested: function(muted) { player.mute(muted); }
+            onVolumeSaveRequested: player.save_settings()
+            onAudioTrackRequested: function(trackId) {
+                audioError = player.select_audio(trackId);
+                audioTracksJson = player.audio_tracks();
+            }
+            onSubtitlesRequested: function(shown) { player.display_subtitles(shown); }
+            // Tracks can change with the program; poll only while the list is shown,
+            // as the audio popup does.
+            Timer {
+                interval: 1000
+                repeat: true
+                triggeredOnStart: true
+                running: !root.closing && parent.playbackSettingsVisible
+                onTriggered: parent.audioTracksJson = player.audio_tracks()
+                onRunningChanged: if (!running) parent.audioError = ""
+            }
             commentModel: player.comment_model
             commentStatus: player.comment_status
             commentProgramTitle: player.comment_program_title

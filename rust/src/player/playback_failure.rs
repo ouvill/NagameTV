@@ -49,6 +49,11 @@ impl Player {
     /// User retry/server replacement and successful PLAYING clear this projection.
     pub(super) fn playback_failed(mut self: Pin<&mut Self>, error: crate::playback::Error) {
         tracing::error!(error = &error as &dyn std::error::Error, "Playback failed");
+        let recovery_failed = self.rust().live_recovery.status()
+            == crate::playback::live_recovery::Status::Recovering;
+        if recovery_failed {
+            self.as_mut().rust_mut().live_recovery.fail();
+        }
         self.as_mut()
             .change_stream_state(super::stream_state::State::stop_failed);
         // Store only a static translation source plus the existing latest diagnostics.
@@ -81,6 +86,10 @@ impl Player {
         let log_error = result.err().unwrap_or_default();
         self.as_mut().set_log_error(log_error);
         self.as_mut().set_playback_error(error.present());
-        self.update_status(super::lifecycle::Status::PlaybackFailed(hint));
+        self.as_mut()
+            .update_status(super::lifecycle::Status::PlaybackFailed(hint));
+        if recovery_failed {
+            self.live_recovery_changed();
+        }
     }
 }

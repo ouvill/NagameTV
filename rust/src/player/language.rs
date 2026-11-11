@@ -23,6 +23,7 @@ impl ffi::Player {
         self.as_mut().refresh_epg_status();
         self.as_mut().refresh_subtitle_status();
         self.as_mut().transport_error_changed();
+        self.as_mut().live_recovery_changed();
         self.as_mut().speed_reason_changed();
         self.as_mut().epgstation_changed();
         self.as_mut().reservations_changed();
@@ -30,6 +31,7 @@ impl ffi::Player {
         self.as_mut().playback_error_changed();
         self.as_mut().file_error_changed();
         self.as_mut().settings_error_changed();
+        self.as_mut().sleep_inhibit_changed();
         self.as_mut().log_error_changed();
         self.as_mut().remote_error_changed();
         self.as_mut().remote_save_error_changed();

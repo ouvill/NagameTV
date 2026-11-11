@@ -820,3 +820,25 @@ fn retired_navigation_settings_load_and_are_dropped_on_save_without_erasing_futu
     }
     Ok(())
 }
+
+#[test]
+fn sleep_inhibition_defaults_on_and_round_trips_without_changing_transient_settings() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("settings.toml");
+    let mut session = Loaded::open(path.clone()).unwrap().activate(None, None);
+    assert!(session.preferences().sleep_inhibit_enabled);
+    session.change(Change::SleepInhibit(false));
+    session.flush().unwrap();
+    let loaded = Loaded::open(path.clone()).unwrap();
+    assert!(!loaded.preferences().sleep_inhibit_enabled);
+    let original = std::fs::read(&path).unwrap();
+    let mut transient = Loaded::transient(Preferences::default()).activate(None, None);
+    transient.change(Change::SleepInhibit(false));
+    transient.flush().unwrap();
+    assert_eq!(std::fs::read(&path).unwrap(), original);
+    assert!(
+        toml::from_str::<Preferences>("autoplay = true")
+            .unwrap()
+            .sleep_inhibit_enabled
+    );
+}

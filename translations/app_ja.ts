@@ -451,6 +451,12 @@
 </context>
   <context>
     <name>Backend</name>
+    <message><source>Watching video</source><translation>動画を視聴中</translation></message>
+    <message><source>This desktop does not allow apps to keep the screen on.</source><translation>このデスクトップでは、アプリによる画面消灯の抑止を利用できません。</translation></message>
+    <message><source>Could not keep the screen on while watching.</source><translation>視聴中の画面消灯を抑止できませんでした。</translation></message>
+    <message><source>Could not observe live audio output.</source><translation>ライブの音声出力を監視できませんでした。</translation></message>
+    <message><source>Video or audio stopped. Reconnecting to the same channel…</source><translation>映像・音声が停止したため、同じチャンネルに再接続しています…</translation></message>
+    <message><source>Could not restore video or audio. Please retry.</source><translation>映像・音声を復旧できませんでした。再試行してください。</translation></message>
     <message><source>Data broadcast could not start: %1</source><translation>データ放送を開始できません: %1</translation></message>
     <message><source>Could not read subtitles: %1</source><translation>字幕を読み込めませんでした: %1</translation></message>
     <message><source>Select a valid SRT or ASS subtitle file</source><translation>有効な SRT または ASS 字幕ファイルを選択してください</translation></message>
@@ -1891,6 +1897,11 @@
 </context>
   <context>
     <name>Settings</name>
+    <message><source>This desktop does not allow apps to keep the screen on.</source><translation>このデスクトップ環境では、アプリから画面の消灯を止められません。</translation></message>
+    <message><source>Keep the screen on while watching</source><translation>視聴中は画面を消さない</translation></message>
+    <message><source>Watching</source><translation>視聴</translation></message>
+    <message><source>System</source><translation>システム</translation></message>
+    <message><source>Subtitles</source><translation>字幕</translation></message>
     <message><source>Window title bar</source><translation>ウィンドウのタイトルバー</translation></message>
     <message><source>NagameTV (default)</source><translation>NagameTV（標準）</translation></message>
     <message><source>Desktop environment</source><translation>デスクトップ環境</translation></message>

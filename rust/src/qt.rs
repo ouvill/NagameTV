@@ -2,6 +2,7 @@
 //! Domain modules must not depend on Player to access these services.
 pub mod application;
 pub mod drcs;
+pub mod sleep_inhibit;
 pub mod text;
 pub mod variant;
 
@@ -100,6 +101,34 @@ pub mod ffi {
         fn take_command(self: Pin<&mut DesktopMedia>) -> QString;
         #[cfg(target_os = "linux")]
         fn publish(self: Pin<&mut DesktopMedia>, json: &QString);
+        include!("sleep_inhibit.h");
+        #[cfg(target_os = "linux")]
+        type SleepInhibit;
+        #[cfg(target_os = "linux")]
+        #[cxx_name = "acquireSleepInhibit"]
+        fn acquire_sleep_inhibit(backend: &QString, reason: &QString) -> UniquePtr<SleepInhibit>;
+        #[cfg(target_os = "linux")]
+        type InhibitEnvironment;
+        #[cfg(target_os = "linux")]
+        #[cxx_name = "makeInhibitEnvironment"]
+        fn make_inhibit_environment() -> UniquePtr<InhibitEnvironment>;
+        #[cfg(target_os = "linux")]
+        fn revision(self: &InhibitEnvironment) -> u64;
+        #[cfg(target_os = "linux")]
+        #[cxx_name = "revisionFor"]
+        fn revision_for(self: &InhibitEnvironment, kind: &QString) -> u64;
+        #[cfg(target_os = "linux")]
+        #[cxx_name = "observeSystem"]
+        fn observe_system(self: Pin<&mut InhibitEnvironment>);
+        #[cfg(all(target_os = "linux", feature = "native_tests"))]
+        #[cxx_name = "checkX11SleepInhibit"]
+        fn check_x11_sleep_inhibit() -> Result<()>;
+        #[cfg(target_os = "linux")]
+        fn poll(self: Pin<&mut SleepInhibit>) -> i32;
+        #[cfg(target_os = "linux")]
+        fn error(self: &SleepInhibit) -> QString;
+        #[cfg(target_os = "linux")]
+        fn release(self: Pin<&mut SleepInhibit>) -> Result<()>;
         include!("portal.h");
         #[cfg(target_os = "linux")]
         #[cxx_name = "portalThemeLoaded"]

@@ -129,6 +129,10 @@ Item {
                 function open_screenshot_directory() { screenshotFolderRequests++; return true; }
                 function reset_screenshot_directory() { screenshot_directory = "/pictures/nagametv"; return true; }
                 function configure_autoplay(value) { autoplay = value; }
+                property bool sleep_inhibit_enabled: true
+                property string sleep_inhibit_state: "idle"
+                property string sleep_inhibit_error: ""
+                function configure_sleep_inhibit(value) { sleep_inhibit_enabled = value; sleep_inhibit_state = value ? "idle" : "disabled"; }
                 property string settings_error: ""
                 property string diagnostics: ""
                 property string build_info: JSON.stringify({version: "0.1.0", source: {kind: "git", commit: "a".repeat(40), worktree: "dirty"},
@@ -251,7 +255,7 @@ Item {
                 backend.data_broadcast_enabled = false;
                 backend.data_broadcast_allowed = true;
                 backend.epg_enabled = true;
-                backend.autoplay = false;
+                backend.autoplay = false; backend.sleep_inhibit_enabled = true; backend.sleep_inhibit_state = "idle"; backend.sleep_inhibit_error = "";
                 backend.window_decoration = "custom";
                 backend.configure_live_buffer(250);
                 backend.configure_timeshift_options("pause_memory", 256, 1024, 60);
@@ -297,7 +301,7 @@ Item {
             }
             function cleanup() { panel.close(); tryCompare(panel, "visible", false); }
             function test_manual_update_checks_and_download_requires_a_new_release() {
-                panel.focusCategory(SettingsPanel.Updates);
+                panel.focusCategory(SettingsPanel.System);
                 panel.enterPage();
                 const check = findChild(panel.contentItem, "checkUpdates");
                 const download = findChild(panel.contentItem, "openUpdateRelease");
@@ -321,7 +325,7 @@ Item {
                 tryCompare(panel, "visible", false);
                 panel.open();
                 tryCompare(panel, "opened", true);
-                panel.focusCategory(SettingsPanel.Updates);
+                panel.focusCategory(SettingsPanel.System);
                 panel.enterPage();
                 compare(backend.updateChecks, 1);
                 verify(download.visible);
@@ -334,7 +338,7 @@ Item {
                 ];
             }
             function test_automatic_update_preference_and_last_success() {
-                panel.focusCategory(SettingsPanel.Updates);
+                panel.focusCategory(SettingsPanel.System);
                 panel.enterPage();
                 const toggle = expectFocus("autoUpdateCheck");
                 verify(toggle.checked);
@@ -352,7 +356,7 @@ Item {
                 backend.automatic_updates_allowed = false;
                 backend.auto_update_check = false;
                 backend.update_history_error = "Permission denied";
-                panel.focusCategory(SettingsPanel.Updates);
+                panel.focusCategory(SettingsPanel.System);
                 panel.enterPage();
                 verify(!findChild(panel.contentItem, "autoUpdateCheck").enabled);
                 verify(findChild(panel.contentItem, "updateHistoryProblem").visible);
@@ -362,7 +366,7 @@ Item {
                 verify(findChild(panel.contentItem, "updateHistoryProblem").visible);
             }
             function test_update_results_and_retry(data) {
-                panel.focusCategory(SettingsPanel.Updates);
+                panel.focusCategory(SettingsPanel.System);
                 panel.enterPage();
                 backend.update_check_status = data.state;
                 backend.update_error = data.error;
@@ -455,7 +459,7 @@ Item {
                 keyClick(Qt.Key_Return); keyClick(Qt.Key_Backspace);
                 compare(field.text, backend.server);
                 verify(field.readOnly);
-                keyClick(Qt.Key_Down); expectFocus("autoplaySetting");
+                keyClick(Qt.Key_Down); expectFocus("epgstationServer");
                 compare(connections.count, 0);
                 backend.loading = false;
                 keyClick(Qt.Key_Up); expectFocus("connectServer");
@@ -480,10 +484,16 @@ Item {
                 expectFocus("settingsCategory0");
                 keyClick(Qt.Key_Right); expectFocus("serverField");
                 keyClick(Qt.Key_Down); expectFocus("connectServer");
-                keyClick(Qt.Key_Down); expectFocus("autoplaySetting");
+                keyClick(Qt.Key_Down); expectFocus("epgstationServer");
+                compare(connections.count, 0); compare(catalogues.count, 0);
+                keyClick(Qt.Key_Back); expectFocus("settingsCategory0");
+                keyClick(Qt.Key_Down); expectFocus("settingsCategory1");
+                compare(panel.page, SettingsPanel.Watching);
+                keyClick(Qt.Key_Right); expectFocus("autoplaySetting");
                 keyClick(Qt.Key_Return); compare(backend.autoplay, true);
                 verify(inputEvents.forward_key(Qt.Key_Return, Qt.NoModifier, "", true));
                 compare(backend.autoplay, true);
+                keyClick(Qt.Key_Down); expectFocus("sleepInhibitSetting");
                 keyClick(Qt.Key_Down);
                 const number = expectFocus("liveBufferMilliseconds");
                 keyClick(Qt.Key_Right); compare(number.value, 350);
@@ -501,16 +511,18 @@ Item {
                 expectFocus("liveBufferMilliseconds");
                 keyClick(Qt.Key_Down); expectFocus("resetLiveBuffer");
                 compare(number.value, 300); // Vertical movement must not alter values.
-                keyClick(Qt.Key_Down); expectFocus("epgstationServer");
+                keyClick(Qt.Key_Down); expectFocus("subtitleDisplay");
+                keyClick(Qt.Key_Down); expectFocus("subtitleForceOutline");
+                keyClick(Qt.Key_Down); expectFocus("timeshift-mode-pause");
                 const flick = findChild(panel.contentItem, "settingsFlickable");
                 tryVerify(() => flick.contentY > 0);
-                const field = findChild(panel.contentItem, "epgstationServer");
+                const field = findChild(panel.contentItem, "timeshift-mode-pause");
                 tryVerify(() => field.mapToItem(flick, 0, 0).y >= 0
                     && field.mapToItem(flick, 0, 0).y + field.height <= flick.height);
-                keyClick(Qt.Key_Back); expectFocus("settingsCategory0");
-                keyClick(Qt.Key_Right); expectFocus("epgstationServer");
-                compare(connections.count, 0); compare(catalogues.count, 0);
-                keyClick(Qt.Key_Back); expectFocus("settingsCategory0");
+                keyClick(Qt.Key_Back); expectFocus("settingsCategory1");
+                // Re-entering the page returns to the row last used.
+                keyClick(Qt.Key_Right); expectFocus("timeshift-mode-pause");
+                keyClick(Qt.Key_Back); expectFocus("settingsCategory1");
                 keyClick(Qt.Key_Back); tryCompare(panel, "visible", false);
             }
             function test_dpad_choice_popup_owns_arrows_and_back() {
@@ -522,17 +534,20 @@ Item {
                 keyClick(Qt.Key_Back); tryCompare(language.popup, "visible", false);
                 verify(panel.opened); expectFocus("languageSetting");
                 keyClick(Qt.Key_Down); expectFocus("windowDecorationSetting");
-                keyClick(Qt.Key_Down); expectFocus("subtitleDisplay");
-                backend.subtitles_enabled = false;
-                findChild(panel.contentItem, "windowDecorationSetting").forceActiveFocus(Qt.TabFocusReason);
-                keyClick(Qt.Key_Down); expectFocus("dataBroadcastEnabledSetting");
                 keyClick(Qt.Key_Down); expectFocus("chooseScreenshotDirectory");
                 keyClick(Qt.Key_Right); expectFocus("openScreenshotDirectory");
                 keyClick(Qt.Key_Left); expectFocus("chooseScreenshotDirectory");
+                keyClick(Qt.Key_Back); expectFocus("settingsCategory2");
+            }
+            function test_dpad_watching_skips_subtitles_disabled_by_launch_options() {
+                backend.subtitles_enabled = false;
+                keyboardPage(SettingsPanel.Watching);
+                expectFocus("autoplaySetting");
+                downTo("timeshift-mode-pause", "subtitleDisplay");
                 keyClick(Qt.Key_Back); expectFocus("settingsCategory1");
             }
             function test_data_broadcast_opt_in_controls_prefetch_and_respects_restrictions() {
-                keyboardPage(SettingsPanel.Display);
+                keyboardPage(SettingsPanel.Watching);
                 const enable = findChild(panel, "dataBroadcastEnabledSetting");
                 const prefetch = findChild(panel, "dataBroadcastPrefetchSetting");
                 verify(!enable.checked);
@@ -568,7 +583,7 @@ Item {
                 tryCompare(slider, "activeFocus", true);
                 keyClick(Qt.Key_Right); compare(backend.comment_font_size, 22);
                 keyClick(Qt.Key_Down); compare(backend.comment_font_size, 22);
-                keyClick(Qt.Key_Back); expectFocus("settingsCategory2");
+                keyClick(Qt.Key_Back); expectFocus("settingsCategory3");
             }
             function test_dpad_readonly_page_header_and_footer() {
                 keyboardPage(SettingsPanel.Shortcuts);
@@ -579,7 +594,7 @@ Item {
                 for (let i = 0; i < 20 && !findChild(panel.contentItem, "closeSettings").activeFocus; ++i) keyClick(Qt.Key_Down);
                 expectFocus("closeSettings");
                 keyClick(Qt.Key_Up); expectFocus("settingsScroll");
-                keyClick(Qt.Key_Left); expectFocus("settingsCategory3");
+                keyClick(Qt.Key_Left); expectFocus("settingsCategory5");
                 while (panel.page > 0) keyClick(Qt.Key_Up);
                 keyClick(Qt.Key_Up);
                 const header = findChild(panel.contentItem, "settingsModeNavigation");
@@ -587,12 +602,14 @@ Item {
                 keyClick(Qt.Key_Down); expectFocus("serverField");
             }
             function test_dpad_timeshift_hidden_fields_and_remote_form() {
-                keyboardPage(SettingsPanel.Timeshift);
-                expectFocus("timeshift-mode-pause");
+                keyboardPage(SettingsPanel.Watching);
+                expectFocus("autoplaySetting");
+                downTo("timeshift-mode-pause");
                 keyClick(Qt.Key_Left); compare(backend.timeshift_storage, "off");
                 keyClick(Qt.Key_Down);
                 verify(!findChild(panel.contentItem, "timeshiftMemoryLimit").activeFocus);
-                keyClick(Qt.Key_Back); expectFocus("settingsCategory6");
+                keyClick(Qt.Key_Up); expectFocus("timeshift-mode-off");
+                keyClick(Qt.Key_Back); expectFocus("settingsCategory1");
                 keyClick(Qt.Key_Right); expectFocus("timeshift-mode-off");
                 keyClick(Qt.Key_Right); compare(backend.timeshift_storage, "pause_memory");
                 keyClick(Qt.Key_Down); expectFocus("timeshift-memory");
@@ -600,7 +617,7 @@ Item {
                 keyClick(Qt.Key_Down); const number = expectFocus("timeshiftFileLimit");
                 keyClick(Qt.Key_Right); compare(number.value, 1025);
                 keyClick(Qt.Key_Down); expectFocus("timeshiftMinutes");
-                keyClick(Qt.Key_Back); expectFocus("settingsCategory6");
+                keyClick(Qt.Key_Back); expectFocus("settingsCategory1");
                 keyboardPage(SettingsPanel.Remote);
                 expectFocus("remoteEnabled");
                 keyClick(Qt.Key_Down); expectFocus("remoteWebEnabled");
@@ -767,6 +784,20 @@ Item {
                 mouseClick(findChild(panel.contentItem, "settingsCategory" + index));
                 compare(panel.page, index);
             }
+            function reveal(control) {
+                const flick = findChild(panel.contentItem, "settingsFlickable");
+                flick.contentY = Math.min(control.mapToItem(flick.contentItem, 0, 0).y, Math.max(0, flick.contentHeight - flick.height));
+                verify(waitForRendering(flick));
+            }
+            function downTo(name, avoid) {
+                const target = findChild(panel.contentItem, name);
+                verify(target !== null, name);
+                for (let i = 0; i < 12 && !target.activeFocus; ++i) {
+                    keyClick(Qt.Key_Down);
+                    if (avoid) verify(!findChild(panel.contentItem, avoid).activeFocus, avoid + " must be skipped");
+                }
+                return expectFocus(name);
+            }
             function test_comment_send_shortcut_tracks_setting_and_can_be_toggled() {
                 selectPage(SettingsPanel.Comments);
                 const flick = findChild(panel.contentItem, "settingsFlickable");
@@ -840,9 +871,11 @@ Item {
                 compare(commentPolicy.mode, CommentSubmitPolicy.EnterOrControlEnter);
             }
             function test_autoplay_tracks_preference_without_connecting() {
+                selectPage(SettingsPanel.Watching);
+                tryCompare(panel, "pageReveal", 1);
                 const flick = findChild(panel.contentItem, "settingsFlickable");
                 const toggle = findChild(panel.contentItem, "autoplaySetting");
-                flick.contentY = Math.min(toggle.mapToItem(flick.contentItem, 0, 0).y, Math.max(0, flick.contentHeight - flick.height));
+                reveal(toggle);
                 compare(toggle.checked, false);
                 mouseClick(toggle);
                 compare(backend.autoplay, true);
@@ -1023,7 +1056,7 @@ Item {
                 compare(field.text, backend.server);
             }
             function test_subtitle_outline_can_be_configured_while_subtitles_are_hidden() {
-                selectPage(SettingsPanel.Display);
+                selectPage(SettingsPanel.Watching);
                 backend.subtitle_display = false;
                 const outline = findChild(panel.contentItem, "subtitleForceOutline");
                 verify(outline.enabled);
@@ -1033,8 +1066,10 @@ Item {
                 compare(outline.checked, false);
             }
             function test_subtitle_visibility_is_a_viewer_setting_independent_of_processing() {
-                selectPage(SettingsPanel.Display);
+                selectPage(SettingsPanel.Watching);
+                tryCompare(panel, "pageReveal", 1);
                 const subtitles = findChild(panel.contentItem, "subtitleDisplay");
+                reveal(subtitles);
                 compare(subtitles.visible, true);
                 compare(subtitles.checked, true);
                 mouseClick(subtitles);
@@ -1049,7 +1084,7 @@ Item {
                 compare(backend.subtitle_display, false);
                 compare(backend.subtitles_enabled, true);
                 compare(connections.count, 0);
-                selectPage(SettingsPanel.Diagnostics);
+                selectPage(SettingsPanel.System);
                 compare(subtitles.visible, false);
             }
             function test_screenshot_formats_are_exclusive_and_keyboard_accessible() {
@@ -1149,7 +1184,7 @@ Item {
             function test_development_feature_limit_does_not_enable_processing_from_display() {
                 backend.subtitles_enabled = false;
                 backend.subtitle_display = true;
-                selectPage(SettingsPanel.Display);
+                selectPage(SettingsPanel.Watching);
                 const subtitles = findChild(panel.contentItem, "subtitleDisplay");
                 compare(subtitles.enabled, false);
                 compare(subtitles.checked, false);
@@ -1265,7 +1300,7 @@ Item {
             }
             function test_scroll_keeps_navigation_and_return_visible_and_resets_on_category_change() {
                 backend.diagnostics = "Diagnostic details ".repeat(200);
-                selectPage(SettingsPanel.Diagnostics);
+                selectPage(SettingsPanel.System);
                 const flick = findChild(panel.contentItem, "settingsFlickable");
                 const scroll = findChild(panel.contentItem, "settingsScroll");
                 const nav = findChild(panel.contentItem, "settingsNavigation");
@@ -1289,7 +1324,7 @@ Item {
                 ];
             }
             function test_build_information_is_selectable_plain_text() {
-                selectPage(SettingsPanel.Diagnostics);
+                selectPage(SettingsPanel.System);
                 const details = findChild(panel.contentItem, "buildInformation");
                 verify(details !== null);
                 compare(details.readOnly, true);
@@ -1303,7 +1338,7 @@ Item {
             }
             function test_diagnostics_remain_readable(data) {
                 backend.diagnostics = data.text;
-                selectPage(SettingsPanel.Diagnostics);
+                selectPage(SettingsPanel.System);
                 const label = findChild(panel.contentItem, "featureDiagnostics");
                 verify(label !== null);
                 tryVerify(() => label.lineCount > 1);

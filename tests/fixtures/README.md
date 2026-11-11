@@ -319,3 +319,26 @@ No generated TS is checked in.
 control fixtures. This suite does not establish full STD-B24 conformance.
 Run `python3 scripts/test.py startup -- data-broadcast`; the runner validates the
 private display, GPU and virtual audio output before starting the product window.
+
+## Live broadcast transition fixtures
+
+`generate_live_transitions.py` creates `live-transition-{version,pcr,audio,service,codec}.ts`
+from the checked-in synthetic MPEG-2/AAC recording and H.264 MP4. It is a recurring
+fixture maintenance command, called manually from the repository root:
+
+```sh
+python3 tests/fixtures/generate_live_transitions.py
+python3 scripts/test.py app --profile release --filter 'test(playback::input::live_transition_tests::) | test(playback::input::stall_recovery_tests::) | test(playback::live_recovery::)'
+```
+
+Generation needs Python and GStreamer mux/parser plugins, with file outputs only.
+Tests use the checked-in files and do not regenerate them. No display, GPU or audio
+device is opened. The CPU test explicitly selects software decoding and memory
+sinks; this does not change the product decoder selection or replace GPU testing.
+The version, dedicated PCR PID, secondary audio addition/removal, service removal/return,
+and MPEG-2 to H.264 stream_type cases are described in
+[the recovery specification](../../docs/live-stall-recovery.md#合成tsと再現手順).
+The two MPEG-2 boundaries have increasing PCR/PTS with a 200 ms margin and continuous
+TS counters, without an added discontinuity flag. H.264 is remuxed without encoding;
+its packet ordering can depend on GStreamer scheduling/version. These fixtures
+model transport changes, not a complete regional/national broadcast multiplex.

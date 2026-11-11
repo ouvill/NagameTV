@@ -23,6 +23,7 @@ macro_rules! snapshot {
 }
 
 snapshot! {
+    sleep_inhibit: crate::sleep_inhibit::Status = |p| p.rust().sleep_inhibit.status() => [sleep_inhibit_changed];
     chapters: u64 = |p| p.rust().chapters.revision() => [chapters_changed];
     previous_channel: bool = |p| p.previous_channel_available() => [viewing_history_changed];
     data_broadcast_available: bool = |p| p.data_broadcast_available() => [data_broadcast_available_changed];
@@ -300,6 +301,7 @@ impl<'a> Prepared<'a> {
     fn commit(mut self) -> Committed<'a> {
         let history_changed = self.next.commit(&mut self.player.as_mut().rust_mut());
         super::data_broadcast::synchronize(&mut self.player.as_mut().rust_mut());
+        super::sleep_inhibit::synchronize(&mut self.player.as_mut().rust_mut());
         let after = Snapshot::capture(&self.player);
         Committed {
             player: self.player,

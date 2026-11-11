@@ -37,6 +37,12 @@ enum Suite {
     PointerActivity,
     #[cfg(target_os = "linux")]
     DesktopMedia,
+    #[cfg(target_os = "linux")]
+    SleepInhibit,
+    #[cfg(target_os = "linux")]
+    SleepInhibitNoBus,
+    #[cfg(target_os = "linux")]
+    SleepInhibitX11,
     Connection,
     Startup,
     StartupWindow,
@@ -96,6 +102,12 @@ pub fn run(arguments: Vec<OsString>) -> i32 {
         Suite::PointerActivity => pointer::run(),
         #[cfg(target_os = "linux")]
         Suite::DesktopMedia => desktop_media::run(),
+        #[cfg(target_os = "linux")]
+        Suite::SleepInhibit => crate::player::sleep_inhibit_checks::run(false),
+        #[cfg(target_os = "linux")]
+        Suite::SleepInhibitNoBus => crate::player::sleep_inhibit_checks::run(true),
+        #[cfg(target_os = "linux")]
+        Suite::SleepInhibitX11 => crate::player::sleep_inhibit_checks::run_x11(),
         Suite::Connection => crate::player::connection_checks::run(),
         Suite::Startup => startup::run(),
         Suite::StartupWindow => startup::run_window(),

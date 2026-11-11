@@ -247,6 +247,28 @@ pub(in crate::playback) struct Input {
     sources: Arc<Mutex<Vec<gst::glib::WeakRef<AppSrc>>>>,
 }
 impl Input {
+    pub fn recovery_sample(&self) -> Result<Option<crate::playback::live_recovery::Sample>, Error> {
+        match &self.shared {
+            Shared::Live(store) => Ok(Some(
+                store
+                    .lock()
+                    .map_err(|_| Error::Poisoned)?
+                    .index
+                    .recovery_sample(self.identity),
+            )),
+            Shared::File(_) => Ok(None),
+        }
+    }
+    pub fn recovery_diagnostic(&self) -> Result<String, Error> {
+        match &self.shared {
+            Shared::Live(store) => Ok(store
+                .lock()
+                .map_err(|_| Error::Poisoned)?
+                .index
+                .recovery_diagnostic()),
+            Shared::File(_) => Ok(String::new()),
+        }
+    }
     pub fn http_control(&self) -> Option<crate::playback::recording::http::Control> {
         self.feeder.feedback.http.clone()
     }

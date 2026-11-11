@@ -121,6 +121,11 @@ pub(super) struct Index {
     observed_end: Option<u64>,
     entries: VecDeque<Anchor>,
     metadata_bytes: usize,
+    video_expected: bool,
+    audio_expected: bool,
+    received_video: u64,
+    received_audio: u64,
+    received_bytes: u64,
 }
 impl Index {
     pub fn new(service: u16, programs: bool) -> Self {
@@ -151,6 +156,11 @@ impl Index {
             observed_end: None,
             entries: VecDeque::new(),
             metadata_bytes: 0,
+            video_expected: false,
+            audio_expected: false,
+            received_video: 0,
+            received_audio: 0,
+            received_bytes: 0,
         }
     }
     pub fn catalog(&self) -> Arc<Mutex<Catalog>> {
@@ -226,11 +236,58 @@ impl Index {
             return ReceivedPacket::default();
         };
         let anchor = self.parsed_packet(offset, bytes, &packet);
+        self.received_bytes = offset + TS_PACKET_SIZE as u64;
+        if packet.start
+            && self.presentation_pids.contains(&packet.pid)
+            && let Some(header) = crate::transport::pes::PesHeader::parse(packet.payload)
+        {
+            if header.is_video() {
+                self.received_video = self.received_video.wrapping_add(1);
+            } else {
+                self.received_audio = self.received_audio.wrapping_add(1);
+            }
+        }
         // Use the clock and selected PID after this packet's table/PCR updates.
         ReceivedPacket {
             anchor,
             video_time: self.video_time(&packet),
         }
+    }
+    pub fn recovery_sample(&self, generation: u64) -> crate::playback::live_recovery::Sample {
+        crate::playback::live_recovery::Sample {
+            generation,
+            received_bytes: self.received_bytes,
+            video_expected: self.video_expected,
+            audio_expected: self.audio_expected,
+            video_input: self.received_video,
+            audio_input: self.received_audio,
+            input_time_ns: self.end_ns(),
+            ..Default::default()
+        }
+    }
+    pub fn recovery_diagnostic(&self) -> String {
+        let configuration = if self.last_pmt.is_empty() {
+            "unavailable".to_owned()
+        } else {
+            match viewer_mpegts::PsiSection::parse(&self.last_pmt)
+                .and_then(|section| section.program_map().map(|map| (section.version, map)))
+            {
+                Ok((version, map)) => format!(
+                    "version={version} pcr={:?} streams={:?}",
+                    map.pcr_pid,
+                    map.streams
+                        .iter()
+                        .map(|stream| (stream.pid.0, stream.stream_type))
+                        .collect::<Vec<_>>()
+                ),
+                // Include a broken invariant in the diagnostic rather than hiding the cause.
+                Err(error) => format!("retained PMT could not be parsed: {error}"),
+            }
+        };
+        format!(
+            "service={} pmt_pid={:?} {configuration} epoch={}",
+            self.service, self.pmt_pid, self.epoch
+        )
     }
     fn video_time(&self, packet: &TransportPacket<'_>) -> Option<u64> {
         if !packet.start || Some(packet.pid) != self.video_pid {
@@ -304,6 +361,8 @@ impl Index {
         self.pcr_pid = None;
         self.presentation_pids.clear();
         self.video_pid = None;
+        self.video_expected = false;
+        self.audio_expected = false;
         self.last_pts.clear();
         self.tables = Arc::default();
         self.last_pmt.clear();
@@ -344,6 +403,8 @@ impl Index {
                         self.pcr_pid = None;
                         self.presentation_pids.clear();
                         self.video_pid = None;
+                        self.video_expected = false;
+                        self.audio_expected = false;
                         self.last_pts.clear();
                         self.last_pmt.clear();
                     }
@@ -365,6 +426,11 @@ impl Index {
                 if map.service != self.service {
                     continue;
                 }
+                self.video_expected = !map.video_pids.is_empty();
+                self.audio_expected = map
+                    .presentation_pids
+                    .iter()
+                    .any(|pid| !map.video_pids.contains(pid));
                 self.pcr_pid = Some(map.pcr_pid);
                 self.last_pts
                     .retain(|pid, _| *pid == map.pcr_pid || map.presentation_pids.contains(pid));

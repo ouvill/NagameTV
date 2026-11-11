@@ -7,7 +7,7 @@ import QtQuick.Dialogs
 
 Popup {
     id: root
-    enum Page { Connection, Display, Comments, Shortcuts, Diagnostics, Remote, Timeshift, Updates }
+    enum Page { Connection, Watching, Display, Comments, Remote, Shortcuts, System }
     required property var backend
     readonly property var buildInfo: JSON.parse(backend.build_info)
     required property list<ShortcutBinding> shortcutEntries
@@ -26,10 +26,10 @@ Popup {
     readonly property real pageWidth: Math.min(880, width - contentStart - sideMargin)
     readonly property real contentLeft: contentStart + Math.max(0, (width - contentStart - sideMargin - pageWidth) / 2)
     readonly property var categories: [
-        qsTranslate("Settings", "Connection"), qsTranslate("Settings", "Display"),
-        qsTranslate("Main", "Comments"), qsTranslate("Settings", "Shortcuts"),
-        qsTranslate("Settings", "Diagnostics"), qsTranslate("Remote", "Remote control"), qsTranslate("Viewer", "Timeshift"),
-        qsTranslate("Settings", "Updates")
+        qsTranslate("Settings", "Connection"), qsTranslate("Settings", "Watching"),
+        qsTranslate("Settings", "Display"), qsTranslate("Main", "Comments"),
+        qsTranslate("Remote", "Remote control"), qsTranslate("Settings", "Shortcuts"),
+        qsTranslate("Settings", "System")
     ]
     signal statsRequested(bool visible)
     signal connectionAccepted
@@ -38,20 +38,23 @@ Popup {
     readonly property list<Item> pageFields: {
         switch (page) {
         case SettingsPanel.Connection:
-            return [...connectionForm.navigationItems, autoplay, ...liveBufferSettings.navigationItems, ...epgstationConnection.navigationItems, recordingReservations];
+            return [...connectionForm.navigationItems, ...epgstationConnection.navigationItems, recordingReservations];
+        case SettingsPanel.Watching:
+            return [autoplay, sleepInhibit, ...liveBufferSettings.navigationItems, subtitleDisplay, subtitleOutline,
+                ...(timeshiftLoader.item ? (timeshiftLoader.item as TimeshiftSettings).navigationItems : []),
+                dataBroadcastEnabled, dataBroadcastPrefetch];
         case SettingsPanel.Display:
-            return [languageBox, windowDecoration, subtitleDisplay, subtitleOutline, dataBroadcastEnabled, dataBroadcastPrefetch, chooseScreenshotDirectory, openScreenshotDirectory,
+            return [languageBox, windowDecoration, chooseScreenshotDirectory, openScreenshotDirectory,
                 resetScreenshotDirectory, ...screenshotOptions.navigationItems];
         case SettingsPanel.Comments:
             return [commentsEnabled, danmakuEnabled, ...commentPresentation.navigationItems,
                 commentSize.navigationItem, commentOpacity.navigationItem, commentSpeed.navigationItem,
                 commentShadow, sendKey, commentCacheLimit, refreshRecordingComments, clearCommentCache];
-        case SettingsPanel.Shortcuts: return [];
-        case SettingsPanel.Diagnostics: return [statsToggle, buildInformation, openLogFolder, ...logProblem.navigationItems];
-        case SettingsPanel.Updates: return [autoUpdateCheck, checkUpdates, openUpdateRelease, ...updateProblem.navigationItems, ...updateHistoryProblem.navigationItems];
         case SettingsPanel.Remote: return remoteSettings.navigationItems;
-        case SettingsPanel.Timeshift:
-            return timeshiftLoader.item ? (timeshiftLoader.item as TimeshiftSettings).navigationItems : [];
+        case SettingsPanel.Shortcuts: return [];
+        case SettingsPanel.System:
+            return [autoUpdateCheck, checkUpdates, openUpdateRelease, ...updateProblem.navigationItems, ...updateHistoryProblem.navigationItems,
+                statsToggle, buildInformation, openLogFolder, ...logProblem.navigationItems];
         default: return [];
         }
     }
@@ -104,6 +107,13 @@ Popup {
         function onEscapePressed(event) { event.accepted = true; if (!event.isAutoRepeat) root.focusCategory(); }
         function onReturnPressed(event) { event.accepted = true; if (!event.isAutoRepeat) closeSettings.forceActiveFocus(Qt.TabFocusReason); }
         function onEnterPressed(event) { event.accepted = true; if (!event.isAutoRepeat) closeSettings.forceActiveFocus(Qt.TabFocusReason); }
+    }
+    Connections {
+        // Escape from a segmented choice inside the timeshift Loader stops at the
+        // Loader and never reaches pageScroll, so take it at the focused field.
+        target: root.visible && formNavigation.navigating && formNavigation.currentField instanceof SegmentedControl
+            ? formNavigation.focusItem.Keys : null
+        function onEscapePressed(event) { event.accepted = true; if (!event.isAutoRepeat) root.focusCategory(); }
     }
     function connectToServer() { connectionForm.connectToServer(); }
     function revealEpgstationConnection() {
@@ -412,21 +422,6 @@ Popup {
                             }
                         }
                         Detail { text: qsTranslate("Settings", "Changing the server stops playback and loads the new channel list.") }
-                        SettingsToggle {
-                            id: autoplay
-                            objectName: "autoplaySetting"
-                            Layout.topMargin: 12
-                            Layout.fillWidth: true
-                            text: qsTranslate("Settings", "Play automatically on startup")
-                            checked: root.backend.autoplay
-                            onClicked: root.backend.configure_autoplay(checked)
-                        }
-                        LiveBufferSettings {
-                            id: liveBufferSettings
-                            Layout.topMargin: 12
-                            Layout.fillWidth: true
-                            backend: root.backend
-                        }
                         Heading {
                             Layout.topMargin: Theme.spaceXl
                             text: qsTranslate("RecordingLibrary", "EPGStation connection")
@@ -459,12 +454,91 @@ Popup {
                             onClicked: root.backend.configure_recording_reservations(checked)
                         }
                     }
-                    Loader {
-                        id: timeshiftLoader
+                    ColumnLayout {
+                        visible: root.page === SettingsPanel.Watching
                         Layout.fillWidth: true
-                        active: root.page === SettingsPanel.Timeshift
-                        visible: active
-                        sourceComponent: TimeshiftSettings { backend: root.backend }
+                        spacing: Theme.spaceLg
+                        SettingsToggle {
+                            id: autoplay
+                            objectName: "autoplaySetting"
+                            Layout.fillWidth: true
+                            text: qsTranslate("Settings", "Play automatically on startup")
+                            checked: root.backend.autoplay
+                            onClicked: root.backend.configure_autoplay(checked)
+                        }
+                        SettingsToggle {
+                            id: sleepInhibit
+                            objectName: "sleepInhibitSetting"
+                            Layout.fillWidth: true
+                            text: qsTranslate("Settings", "Keep the screen on while watching")
+                            // Only say something when the preference cannot take effect.
+                            description: root.backend.sleep_inhibit_error.length > 0 ? root.backend.sleep_inhibit_error
+                                : root.backend.sleep_inhibit_state === "unavailable"
+                                    ? qsTranslate("Settings", "This desktop does not allow apps to keep the screen on.") : ""
+                            checked: root.backend.sleep_inhibit_enabled
+                            onClicked: root.backend.configure_sleep_inhibit(checked)
+                        }
+                        LiveBufferSettings {
+                            id: liveBufferSettings
+                            Layout.topMargin: 12
+                            Layout.fillWidth: true
+                            backend: root.backend
+                        }
+                        Heading { Layout.topMargin: 20; text: qsTranslate("Settings", "Subtitles") }
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 0
+                            SettingsToggle {
+                                id: subtitleDisplay
+                                objectName: "subtitleDisplay"
+                                Layout.fillWidth: true
+                                text: qsTranslate("Settings", "Show subtitles")
+                                description: root.backend.subtitles_enabled
+                                    ? ""
+                                    : qsTranslate("Settings", "Subtitles are disabled by the launch options.")
+                                checked: root.backend.subtitles_enabled && root.backend.subtitle_display
+                                enabled: root.backend.subtitles_enabled
+                                onClicked: root.backend.display_subtitles(checked)
+                            }
+                            SettingsToggle {
+                                id: subtitleOutline
+                                objectName: "subtitleForceOutline"
+                                Layout.fillWidth: true
+                                text: qsTranslate("Settings", "Always outline subtitles")
+                                checked: root.backend.subtitle_force_outline
+                                enabled: root.backend.subtitles_enabled
+                                onClicked: root.backend.configure_subtitle_outline(checked)
+                            }
+                        }
+                        Heading { Layout.topMargin: 20; text: qsTranslate("Viewer", "Timeshift") }
+                        Loader {
+                            id: timeshiftLoader
+                            Layout.fillWidth: true
+                            active: root.page === SettingsPanel.Watching
+                            visible: active
+                            sourceComponent: TimeshiftSettings { backend: root.backend }
+                        }
+                        Heading { Layout.topMargin: 20; text: qsTranslate("Viewer", "Data broadcast") }
+                        SettingsToggle {
+                            id: dataBroadcastEnabled
+                            objectName: "dataBroadcastEnabledSetting"
+                            Layout.fillWidth: true
+                            text: qsTranslate("Settings", "Enable data broadcast (experimental)")
+                            description: qsTranslate("Settings", "Some broadcasts may not display or respond correctly.")
+                            checked: root.backend.data_broadcast_enabled
+                            enabled: root.backend.data_broadcast_allowed
+                            onClicked: root.backend.configure_data_broadcast(checked)
+                        }
+                        SettingsToggle {
+                            id: dataBroadcastPrefetch
+                            objectName: "dataBroadcastPrefetchSetting"
+                            Layout.fillWidth: true
+                            text: qsTranslate("Settings", "Prefetch data broadcast")
+                            description: qsTranslate("Settings", "Keep data broadcast content ready while watching live TV. Uses additional memory and processing. Broadcasts can start automatically even when prefetch is off.")
+                            checked: root.backend.data_broadcast_prefetch
+                            enabled: root.backend.data_broadcast_enabled
+                            onClicked: root.backend.configure_data_broadcast_prefetch(checked)
+                        }
                     }
                     RemoteSettings {
                         id: remoteSettings
@@ -534,53 +608,6 @@ Popup {
                             visible: root.backend.window_decoration_restart_pending
                             text: qsTranslate("Settings", "The title bar change displays correctly after restarting NagameTV.")
                             wrapMode: Text.WordWrap
-                        }
-                        ColumnLayout {
-                            Layout.topMargin: 8
-                            Layout.fillWidth: true
-                            spacing: 0
-                            SettingsToggle {
-                                id: subtitleDisplay
-                                objectName: "subtitleDisplay"
-                                Layout.fillWidth: true
-                                text: qsTranslate("Settings", "Show subtitles")
-                                description: root.backend.subtitles_enabled
-                                    ? ""
-                                    : qsTranslate("Settings", "Subtitles are disabled by the launch options.")
-                                checked: root.backend.subtitles_enabled && root.backend.subtitle_display
-                                enabled: root.backend.subtitles_enabled
-                                onClicked: root.backend.display_subtitles(checked)
-                            }
-                            SettingsToggle {
-                                id: subtitleOutline
-                                objectName: "subtitleForceOutline"
-                                Layout.fillWidth: true
-                                text: qsTranslate("Settings", "Always outline subtitles")
-                                checked: root.backend.subtitle_force_outline
-                                enabled: root.backend.subtitles_enabled
-                                onClicked: root.backend.configure_subtitle_outline(checked)
-                            }
-                        }
-                        Heading { Layout.topMargin: 20; text: qsTranslate("Viewer", "Data broadcast") }
-                        SettingsToggle {
-                            id: dataBroadcastEnabled
-                            objectName: "dataBroadcastEnabledSetting"
-                            Layout.fillWidth: true
-                            text: qsTranslate("Settings", "Enable data broadcast (experimental)")
-                            description: qsTranslate("Settings", "Some broadcasts may not display or respond correctly.")
-                            checked: root.backend.data_broadcast_enabled
-                            enabled: root.backend.data_broadcast_allowed
-                            onClicked: root.backend.configure_data_broadcast(checked)
-                        }
-                        SettingsToggle {
-                            id: dataBroadcastPrefetch
-                            objectName: "dataBroadcastPrefetchSetting"
-                            Layout.fillWidth: true
-                            text: qsTranslate("Settings", "Prefetch data broadcast")
-                            description: qsTranslate("Settings", "Keep data broadcast content ready while watching live TV. Uses additional memory and processing. Broadcasts can start automatically even when prefetch is off.")
-                            checked: root.backend.data_broadcast_prefetch
-                            enabled: root.backend.data_broadcast_enabled
-                            onClicked: root.backend.configure_data_broadcast_prefetch(checked)
                         }
                         Heading { Layout.topMargin: 20; text: qsTranslate("Settings", "Screenshots") }
                         Detail {
@@ -799,7 +826,7 @@ Popup {
                         }
                     }
                     ColumnLayout {
-                        visible: root.page === SettingsPanel.Updates
+                        visible: root.page === SettingsPanel.System
                         Layout.fillWidth: true
                         spacing: Theme.spaceXl
                         Heading { text: qsTranslate("Settings", "Version: %1").arg(root.buildInfo.version) }
@@ -865,9 +892,10 @@ Popup {
                         }
                     }
                     ColumnLayout {
-                        visible: root.page === SettingsPanel.Diagnostics
+                        visible: root.page === SettingsPanel.System
                         Layout.fillWidth: true
                         spacing: Theme.spaceXl
+                        Heading { Layout.topMargin: 20; text: qsTranslate("Settings", "Diagnostics") }
                         SettingsToggle {
                             id: statsToggle
                             objectName: "statsVisible"
@@ -950,7 +978,7 @@ Popup {
             spacing: Theme.spaceXl
             Label {
                 Layout.fillWidth: true
-                text: root.page === SettingsPanel.Diagnostics
+                text: root.page === SettingsPanel.System
                     ? qsTranslate("Settings", "Diagnostic display settings apply to this session only.")
                     : ""
                 color: Theme.textMuted

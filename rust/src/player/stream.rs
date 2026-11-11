@@ -38,12 +38,13 @@ impl ffi::Player {
     }
     /// READY joins streaming callbacks before dropping their subscriptions/state.
     pub(super) fn end_stream(mut self: Pin<&mut Self>) -> Result<(), playback::Error> {
+        self.as_mut().reset_live_recovery();
         self.as_mut().release_stream()?;
         self.change_viewing(playback::viewing::Viewing::close, false);
         Ok(())
     }
     // Native cleanup after an error/reconnect does not close the user-visible attempt.
-    fn release_stream(mut self: Pin<&mut Self>) -> Result<(), playback::Error> {
+    pub(super) fn release_stream(mut self: Pin<&mut Self>) -> Result<(), playback::Error> {
         self.as_mut().save_recording_history(true);
         let result = self.as_mut().rust_mut().media.stop().map(|_| ());
         if let Err(error) = result {
@@ -62,6 +63,7 @@ impl ffi::Player {
     }
     pub fn play(mut self: Pin<&mut Self>) {
         self.record_diagnostic(viewer_diagnostics::recorder::Event::PlayRequested);
+        self.as_mut().reset_live_recovery();
         self.as_mut().clear_playback_failure();
         if self.recording_loading() {
             return;
@@ -107,6 +109,9 @@ impl ffi::Player {
         self.start_stream_request(attempt, false)
     }
     fn start_stream_request(mut self: Pin<&mut Self>, attempt: Attempt, open: bool) -> bool {
+        if open {
+            self.as_mut().reset_live_recovery();
+        }
         self.as_mut()
             .change_viewing(playback::viewing::Viewing::retain, open);
         self.as_mut()
@@ -242,6 +247,7 @@ impl ffi::Player {
             .unwrap_or(0.0);
         self.as_mut().set_video_aspect_ratio(aspect);
         self.as_mut().publish_remote();
+        self.as_mut().poll_sleep_inhibit();
         #[cfg(target_os = "linux")]
         self.poll_desktop_media();
     }
@@ -315,6 +321,7 @@ impl ffi::Player {
             Ok(playback::Event::Idle) => {}
         }
         self.as_mut().change_stream_state(|state| state);
+        self.as_mut().poll_live_recovery();
         if let Some(notice) = notice {
             self.as_mut()
                 .set_transport_message(super::transport::Message::notice(
@@ -328,6 +335,7 @@ impl ffi::Player {
         self.as_mut().poll_features();
     }
     pub fn shutdown(mut self: Pin<&mut Self>) -> bool {
+        self.as_mut().stop_sleep_inhibit();
         self.as_mut().data_broadcast_open(false);
         self.as_mut().rust_mut().data_broadcast_mode.close();
         self.as_mut().cancel_epgstation();

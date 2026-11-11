@@ -505,7 +505,7 @@ fn check_screen_navigation(
         )?;
         wait_for(app, engine, "settings.opened")?;
         capture(engine, &format!("settings-{width}.png"))?;
-        evaluate(engine, "settings.page = SettingsPanel.Connection; true")?;
+        evaluate(engine, "settings.page = SettingsPanel.Watching; true")?;
         wait_for(app, engine, "settings.pageReveal === 1")?;
         assert!(evaluate(
             engine,
@@ -661,6 +661,14 @@ fn window(
         .load(&QUrl::from("qrc:/qt/qml/MinimalViewer/qml/Main.qml"));
     assert_eq!(ffi::root_count(&engine), 1);
     assert!(evaluate(&mut engine, "root.settings === null")?);
+    assert!(evaluate(
+        &mut engine,
+        "player.live_recovery_state === 'idle' && player.live_recovery_message === ''"
+    )?);
+    assert!(evaluate(
+        &mut engine,
+        "player.retry_live_recovery(); player.live_recovery_state === 'idle'"
+    )?);
     match check {
         WindowCheck::PlaybackPerformance => {
             eprintln!(
@@ -1211,7 +1219,7 @@ fn check_epgstation_library(
             return null;
         }
     "#;
-    evaluate(engine, "root.requestMode(ModeNavigation.Recording); true")?;
+    open_recordings(app, engine)?;
     wait_for(
         app,
         engine,
@@ -1339,7 +1347,7 @@ fn check_epgstation_library(
     )?;
     // Multiple files require an explicit stable video ID. Cancelling the chooser
     // leaves TS playback intact; single encoded recordings play immediately.
-    evaluate(engine, "root.requestMode(ModeNavigation.Recording); true")?;
+    open_recordings(app, engine)?;
     wait_for(
         app,
         engine,
@@ -1420,7 +1428,7 @@ fn check_epgstation_library(
         engine,
         "player.paused && !player.seeking && player.playback_rate === 15",
     )?;
-    evaluate(engine, "root.requestMode(ModeNavigation.Recording); true")?;
+    open_recordings(app, engine)?;
     wait_for(
         app,
         engine,
@@ -1441,9 +1449,10 @@ fn check_epgstation_library(
         engine,
         "player.playing && player.duration_ms > 59000 && player.subtitles_active && JSON.parse(player.video_stats()).rendered > 0",
     )?;
-    // Browsing during playback and leaving the page must retain both the
-    // existing stream and the search editor, without fetching another catalogue.
-    evaluate(engine, "root.requestMode(ModeNavigation.Recording); true")?;
+    // Browsing during playback and leaving the page must retain the existing
+    // stream and the search editor. Reopening refreshes the catalogue and
+    // restores the scroll position once that refresh finishes.
+    open_recordings(app, engine)?;
     wait_for(
         app,
         engine,
@@ -1457,12 +1466,13 @@ fn check_epgstation_library(
     )?;
     wait_for(app, engine, "!recordingLibrary.visible && player.playing")?;
     evaluate(engine, "root.requestMode(ModeNavigation.Recording); true")?;
-    assert!(evaluate(
+    wait_for(
+        app,
         engine,
         &format!(
-            "{FIND} const retainedScrollOffset = 200; find(recordingLibrary, 'epgstationKeyword').text === 'retained search' && find(recordingLibrary, 'epgstationRecordings').contentY === retainedScrollOffset && player.epgstation_loaded && !player.epgstation_busy"
-        )
-    )?);
+            "{FIND} const retainedScrollOffset = 200; find(recordingLibrary, 'epgstationKeyword').text === 'retained search' && find(recordingLibrary, 'epgstationRecordings').contentY === retainedScrollOffset && player.epgstation_loaded && !player.epgstation_busy && player.playing"
+        ),
+    )?;
     evaluate(
         engine,
         &format!(
@@ -2309,11 +2319,11 @@ fn check_shortcuts(
         ffi::clickRootKey(engine.pin_mut(), &QString::from("Escape"))?;
         wait_for(app, engine, "!root.showChannels")?;
     }
-    evaluate(engine, "root.openSettings(SettingsPanel.Updates); true")?;
+    evaluate(engine, "root.openSettings(SettingsPanel.System); true")?;
     wait_for(
         app,
         engine,
-        "settings.opened && settings.page === SettingsPanel.Updates",
+        "settings.opened && settings.page === SettingsPanel.System",
     )?;
     assert!(evaluate(
         engine,
@@ -2369,7 +2379,7 @@ fn check_shortcuts(
         ),
         (
             "Back",
-            "root.activeFocusItem.objectName === 'settingsCategory1' && settings.opened",
+            "root.activeFocusItem.objectName === 'settingsCategory2' && settings.opened",
         ),
     ] {
         ffi::clickRootKey(engine.pin_mut(), &QString::from(key))?;
@@ -2380,6 +2390,20 @@ fn check_shortcuts(
     check_directional_navigation(app, engine)?;
     check_sidebar_navigation(app, engine)?;
     Ok(())
+}
+
+/// Opening the recordings screen refreshes the catalogue; act on rows only
+/// after that refresh has replaced them.
+fn open_recordings(
+    app: &QGuiApplication,
+    engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
+) -> TestResult {
+    evaluate(engine, "root.requestMode(ModeNavigation.Recording); true")?;
+    wait_for(
+        app,
+        engine,
+        "recordingLibrary.visible && !player.epgstation_busy",
+    )
 }
 
 fn check_sidebar_navigation(
@@ -2410,9 +2434,11 @@ fn check_sidebar_navigation(
         engine,
         "root.showProgram && sidebar.reveal === 1 && sidebar.view !== null && sidebar.view.activeFocus",
     )?;
+    // Audio and subtitles come first so a remote reaches them with the fewest presses.
+    wait_for(app, engine, &focused("settingSlider"))?;
     capture_navigation(app, engine, "sidebar-viewing-settings.png")?;
     if evaluate(engine, "player.comments_enabled")? {
-        for _ in 0..10 {
+        for _ in 0..20 {
             if evaluate(engine, &focused("playbackAppearanceButton"))? {
                 break;
             }
@@ -2423,7 +2449,7 @@ fn check_sidebar_navigation(
         capture_navigation(app, engine, "sidebar-comment-appearance.png")?;
         ffi::clickRootKey(engine.pin_mut(), &QString::from("Return"))?;
     }
-    for _ in 0..10 {
+    for _ in 0..20 {
         if evaluate(engine, &focused("playbackStatsToggle"))? {
             break;
         }

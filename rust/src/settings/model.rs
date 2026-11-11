@@ -57,6 +57,7 @@ pub struct Preferences {
     pub epgstation_server: String,
     pub service_id: String,
     pub autoplay: bool,
+    pub sleep_inhibit_enabled: bool,
     pub auto_update_check: bool,
     pub live_buffer_ms: super::LiveBuffer,
     #[serde(default)]
@@ -102,6 +103,7 @@ impl Default for Preferences {
             epgstation_server: String::new(),
             service_id: String::new(),
             autoplay: false,
+            sleep_inhibit_enabled: true,
             auto_update_check: true,
             live_buffer_ms: Default::default(),
             timeshift: crate::playback::input::Retention::Memory,

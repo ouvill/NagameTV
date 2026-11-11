@@ -15,10 +15,12 @@ pub mod deinterlace;
 pub mod failure;
 pub mod input;
 pub(crate) mod latency;
+pub(crate) mod live_recovery;
 pub(crate) mod live_timeline;
 pub mod preview;
 pub mod recording;
 pub mod speed;
+mod stall_observation;
 pub mod stats;
 pub mod timeline;
 mod video_info;
@@ -86,6 +88,10 @@ pub enum Error {
     MissingBus,
     #[error("Missing video or audio decoder: {0}")]
     MissingDecoder(String),
+    #[error("Live video/audio recovery failed or reached its retry limit")]
+    LiveRecoveryFailed,
+    #[error("Could not observe live audio output")]
+    LiveObservation,
     #[error("配信が終了しました")]
     EndOfStream,
     #[error("{0}")]
@@ -212,6 +218,8 @@ pub struct Playback {
     chapters: RefCell<Option<chapters::List>>,
     program_number: Arc<std::sync::atomic::AtomicI32>,
     presentation: crate::screenshots::native::Presentation,
+    output_activity: stall_observation::Outputs,
+    bus_history: RefCell<stall_observation::BusHistory>,
 }
 
 #[derive(Clone, Copy)]
@@ -304,12 +312,15 @@ impl Playback {
         let program_number = Arc::new(std::sync::atomic::AtomicI32::new(-1));
         let program = program_number.clone();
         let decoder_policy = resources::DecoderPolicy::new();
+        let output_activity = stall_observation::Outputs::default();
+        let observe_output = output_activity.clone();
         playbin.connect("element-setup", false, move |values| {
             if let Some(element) = values
                 .get(1)
                 .and_then(|value| value.get::<gst::Element>().ok())
             {
                 decoder_policy.configure(&element);
+                observe_output.register(&element);
                 if let Err(error) = av1::configure(&element) {
                     tracing::warn!(%error, "Failed to install AV1 timestamp restoration");
                 }
@@ -329,6 +340,7 @@ impl Playback {
         playbin.set_property_from_str("flags", "video+audio+soft-volume+buffering+native-video");
         playbin.set_property("video-sink", &output);
         if let Some(audio) = audio {
+            output_activity.register_explicit(&audio);
             playbin.set_property("audio-sink", &audio);
         }
         playbin.set_property("volume", 0.5_f64);
@@ -360,6 +372,8 @@ impl Playback {
             chapters: RefCell::default(),
             program_number,
             presentation,
+            output_activity,
+            bus_history: RefCell::default(),
         })
     }
 
@@ -487,6 +501,7 @@ impl Playback {
             _ => stop_stream(&self.playbin)?,
         }
         *self.requested_uri.borrow_mut() = None;
+        *self.bus_history.borrow_mut() = Default::default();
         *self.chapters.borrow_mut() = None;
         self.presentation.clear();
         self.presentation.set_latency(None);
@@ -547,6 +562,7 @@ impl Playback {
         let mut event = Event::Idle;
         let mut failure = None;
         while let Some(message) = bus.pop() {
+            self.bus_history.borrow_mut().observe(&message);
             if let Err(error) = self
                 .audio_streams
                 .borrow_mut()
@@ -653,6 +669,7 @@ impl Playback {
             .set_property("widget", std::ptr::null_mut::<std::ffi::c_void>());
         self.video_output = VideoOutputState::Closed;
         *self.requested_uri.borrow_mut() = None;
+        *self.bus_history.borrow_mut() = Default::default();
         *self.chapters.borrow_mut() = None;
         Ok(())
     }

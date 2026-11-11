@@ -51,15 +51,7 @@ Popup {
     property url iconDirectory: "qrc:/qt/qml/MinimalViewer/assets/icons/"
     readonly property var tracks: JSON.parse(tracksJson)
     AudioLabels { id: audioLabels }
-    function trackLabel(track, index) {
-        const language = audioLabels.language(track.language);
-        const number = track.number || index + 1;
-        const role = track.role === "main" ? qsTranslate("Main", "Main audio") : track.role === "sub" ? qsTranslate("Main", "Sub audio") : track.role === "both" ? qsTranslate("Main", "Main / sub") : "";
-        const name = track.role === "both" ? role : (language ? language + (role ? " · " + role : "") : role);
-        const duplicate = tracks.some(other => other.id !== track.id && other.language === track.language && other.role === track.role);
-        const audioName = qsTranslate("Main", "Audio %1").arg(number);
-        return !name ? audioName : duplicate ? name + " · " + audioName : name;
-    }
+    function trackLabel(track, index) { return audioLabels.trackLabel(track, index, tracks); }
     signal refreshRequested
     signal selectRequested(string trackId)
     parent: anchorItem ? anchorItem : Overlay.overlay

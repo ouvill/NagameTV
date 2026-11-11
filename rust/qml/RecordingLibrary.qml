@@ -18,11 +18,15 @@ Rectangle {
     property int afterLoad: RecordingLibrary.KeepFocus
     color: Theme.canvas
     function clearSearch() { keywordField.clear(); }
+    // A search submitted while a reopen refresh is still loading runs once that
+    // load finishes; dropping it would leave the old rows with no feedback.
+    property bool searchPending: false
     function search() {
-        if (backend.epgstation_server.length && !backend.epgstation_busy) {
-            afterLoad = RecordingLibrary.ResetSearch;
-            if (!backend.browse_epgstation(backend.epgstation_server, keywordField.text)) afterLoad = RecordingLibrary.KeepFocus;
-        }
+        if (!backend.epgstation_server.length) return;
+        if (backend.epgstation_busy) { searchPending = true; return; }
+        searchPending = false;
+        afterLoad = RecordingLibrary.ResetSearch;
+        if (!backend.browse_epgstation(backend.epgstation_server, keywordField.text)) afterLoad = RecordingLibrary.KeepFocus;
     }
     // A refresh replaces the rows; the reader stays on the same recording and scroll position.
     QtObject {
@@ -81,7 +85,14 @@ Rectangle {
     Connections {
         target: root.backend
         function onEpgstation_busyChanged() {
-            if (root.backend.epgstation_busy || root.afterLoad === RecordingLibrary.KeepFocus) return;
+            if (root.backend.epgstation_busy) return;
+            if (root.searchPending) {
+                // The user's search supersedes restoring the refreshed position.
+                root.afterLoad = RecordingLibrary.KeepFocus;
+                Qt.callLater(root.search);
+                return;
+            }
+            if (root.afterLoad === RecordingLibrary.KeepFocus) return;
             const action = root.afterLoad;
             root.afterLoad = RecordingLibrary.KeepFocus;
             Qt.callLater(function() {

@@ -256,6 +256,12 @@ impl ffi::Player {
         let changed = self.rust().transport_message != message;
         self.as_mut().rust_mut().transport_message = message;
         self.as_mut().change_stream_state(|state| state);
+        if result.is_ok() {
+            self.as_mut().apply_live_recovery(
+                playback::live_recovery::Observation::Suspended,
+                Instant::now(),
+            );
+        }
         if changed {
             self.as_mut().transport_error_changed();
         }

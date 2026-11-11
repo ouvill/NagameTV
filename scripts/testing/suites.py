@@ -28,6 +28,8 @@ class Suite:
 
 SUITES = {
     "connection": Suite(Requirement.CPU, ("--native-tests", "connection")),
+    "sleep-inhibit": Suite(Requirement.CPU, ("--native-tests", "sleep-inhibit")),
+    "sleep-inhibit-x11": Suite(Requirement.GUI, ("--native-tests", "sleep-inhibit-x11")),
     "desktop-media": Suite(Requirement.CPU, ("--native-tests", "desktop-media")),
     "localization": Suite(Requirement.CPU, ("--native-tests", "localization")),
     "subtitle-outline": Suite(Requirement.CPU, ("--native-tests", "subtitle-outline")),
@@ -62,7 +64,7 @@ def validate_arguments(name, arguments):
     if name == "danmaku":
         if arguments not in ([], ["--evaluation-legacy-comments"]):
             raise ValueError("danmaku accepts only --evaluation-legacy-comments")
-    elif name in ("connection", "desktop-media", "localization", "video-item", "portal-dialogs") and arguments:
+    elif name in ("connection", "desktop-media", "sleep-inhibit", "sleep-inhibit-x11", "localization", "video-item", "portal-dialogs") and arguments:
         raise ValueError(f"{name} does not accept additional arguments")
     elif "--ui-only" in arguments:
         raise ValueError("--ui-only was retired; subtitle-rendering uses the validated private GPU session")
@@ -84,7 +86,13 @@ def run_suite(name, arguments):
         env.update({f"XDG_{kind}_HOME": str(temporary / kind.lower())
                     for kind in ("CONFIG", "CACHE", "STATE", "DATA")})
         env["NAGAMETV_DIAGNOSTICS"] = "0"
+        # CPU suites never reach the real system bus. The private-bus wrapper
+        # below remaps it to the fixture bus; GUI sessions provide their own bus.
+        if suite.requirement == Requirement.CPU:
+            env["DBUS_SYSTEM_BUS_ADDRESS"] = "unix:path=/nonexistent/nagametv-test-system-bus"
         command = [binary, *suite.arguments]
+        if name == "sleep-inhibit-x11":
+            env["QT_QPA_PLATFORM"] = "xcb"
         if name == "startup":
             qpa = env.get("NAGAMETV_TEST_QPA", "wayland" if
                           env.get("NAGAMETV_DEINTERLACE", "yadif").lower() == "va" else "xcb")
@@ -102,8 +110,17 @@ def run_suite(name, arguments):
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(ROOT / relative, destination)
             command.extend(["-input", str(temporary / "tests/screenshots"), *arguments])
-        elif name == "desktop-media":
-            command = ["dbus-run-session", "--", *command]
+        elif name in ("connection", "desktop-media", "sleep-inhibit"):
+            # No service directories: missing-portal checks must never activate
+            # a real desktop service, even on a developer's workstation.
+            config = temporary / "bus.conf"
+            config.write_text(f"""<busconfig>
+<type>session</type><listen>unix:tmpdir={temporary}</listen><auth>EXTERNAL</auth>
+<policy context="default"><allow user="*"/><allow own="*"/>
+<allow send_destination="*"/><allow receive_sender="*"/></policy>
+</busconfig>""")
+            command = ["dbus-run-session", f"--config-file={config}", "--", sys.executable,
+                       "-m", "scripts.testing.suites", "--private-bus", *command]
         elif name == "ui-capture":
             (ROOT / "build/ui-review").mkdir(parents=True, exist_ok=True)
             command.extend(arguments)
@@ -139,6 +156,10 @@ def run_suite(name, arguments):
 
 
 def main():
+    if sys.argv[1:2] == ["--private-bus"]:
+        env = dict(os.environ)
+        env["DBUS_SYSTEM_BUS_ADDRESS"] = env["DBUS_SESSION_BUS_ADDRESS"]
+        return subprocess.run(sys.argv[2:], cwd=ROOT, env=env, pass_fds=lock_fds(), check=False).returncode
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("suite", choices=SUITES)
     parser.add_argument("arguments", nargs=argparse.REMAINDER)

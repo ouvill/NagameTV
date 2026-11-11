@@ -24,6 +24,7 @@ mod recording_information_checks;
 use lifecycle::{Failure as StatusFailure, Status as PlaybackStatus};
 mod data_broadcast;
 mod error_text;
+mod live_recovery;
 mod media_subtitles;
 mod navigation;
 #[cfg(feature = "native_tests")]
@@ -43,6 +44,9 @@ mod remote;
 mod remote_checks;
 mod screenshots;
 mod seek_preview;
+mod sleep_inhibit;
+#[cfg(feature = "native_tests")]
+pub(crate) mod sleep_inhibit_checks;
 mod startup;
 mod statistics;
 mod status;
@@ -244,6 +248,8 @@ pub mod ffi {
         #[qproperty(QString, file_error, READ = file_error, NOTIFY)]
         #[qproperty(bool, recording_loading, READ = recording_loading, NOTIFY)]
         #[qproperty(bool, recording_reconnecting, READ = recording_reconnecting, NOTIFY)]
+        #[qproperty(QString, live_recovery_state, READ = live_recovery_state, NOTIFY = live_recovery_changed)]
+        #[qproperty(QString, live_recovery_message, READ = live_recovery_message, NOTIFY = live_recovery_changed)]
         #[qproperty(bool, subtitles_enabled, READ, CONSTANT)]
         #[qproperty(bool, epg_enabled, READ, CONSTANT)]
         #[qproperty(bool, comments_enabled, READ, NOTIFY)]
@@ -315,6 +321,9 @@ pub mod ffi {
         #[qproperty(UpdateStatus, update_check_status, READ = update_check_status, NOTIFY = updates_changed)]
         #[qproperty(QString, update_version, READ = update_version, NOTIFY = updates_changed)]
         #[qproperty(QString, update_error, READ = update_error, NOTIFY = updates_changed)]
+        #[qproperty(bool, sleep_inhibit_enabled, READ = sleep_inhibit_enabled, NOTIFY = sleep_inhibit_changed)]
+        #[qproperty(QString, sleep_inhibit_state, READ = sleep_inhibit_state, NOTIFY = sleep_inhibit_changed)]
+        #[qproperty(QString, sleep_inhibit_error, READ = sleep_inhibit_error, NOTIFY = sleep_inhibit_changed)]
         #[qproperty(bool, auto_update_check, READ = auto_update_check, NOTIFY = updates_changed)]
         #[qproperty(bool, automatic_updates_allowed, READ = automatic_updates_allowed, CONSTANT)]
         #[qproperty(f64, update_last_checked, READ = update_last_checked, NOTIFY = updates_changed)]
@@ -650,6 +659,12 @@ pub mod ffi {
         fn open_recording_transfer(self: Pin<&mut Player>, key: QString) -> bool;
         fn recording_loading(self: &Player) -> bool;
         fn recording_reconnecting(self: &Player) -> bool;
+        fn live_recovery_state(self: &Player) -> QString;
+        fn live_recovery_message(self: &Player) -> QString;
+        #[qsignal]
+        fn live_recovery_changed(self: Pin<&mut Player>);
+        #[qinvokable]
+        fn retry_live_recovery(self: Pin<&mut Player>);
         #[qsignal]
         #[cxx_name = "recordingOpened"]
         fn recording_opened(self: Pin<&mut Player>, success: bool);
@@ -687,6 +702,13 @@ pub mod ffi {
         fn remember_window_size(self: Pin<&mut Player>, width: i32, height: i32) -> bool;
         #[qinvokable]
         fn configure_autoplay(self: Pin<&mut Player>, enabled: bool);
+        #[qinvokable]
+        fn configure_sleep_inhibit(self: Pin<&mut Player>, enabled: bool);
+        fn sleep_inhibit_enabled(self: &Player) -> bool;
+        fn sleep_inhibit_state(self: &Player) -> QString;
+        fn sleep_inhibit_error(self: &Player) -> QString;
+        #[qsignal]
+        fn sleep_inhibit_changed(self: Pin<&mut Player>);
         #[qinvokable]
         fn configure_window_decoration(self: Pin<&mut Player>, decoration: QString) -> bool;
         #[qinvokable]
@@ -755,6 +777,7 @@ pub struct PlayerRust {
     launched_window_decoration: settings::WindowDecoration,
     #[cfg(target_os = "linux")]
     desktop_media: desktop_media::Registration,
+    sleep_inhibit: crate::sleep_inhibit::Controller<crate::qt::sleep_inhibit::Portal>,
     language: QString,
     ui_language: QString,
     server: QString,
@@ -794,6 +817,8 @@ pub struct PlayerRust {
     catalog: crate::channels::catalog::Catalog,
     stream_state: stream_state::State,
     recording_reconnecting: bool,
+    live_recovery: playback::live_recovery::Recovery,
+    live_recovery_target: Option<stream_state::RecoveryTarget>,
     timeline: playback::timeline::Snapshot,
     speed: playback::speed::Snapshot,
     timeshift_bytes_per_second: f64,
