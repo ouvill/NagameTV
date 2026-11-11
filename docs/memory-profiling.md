@@ -123,3 +123,28 @@ Qt内部の関数・行まで調べるには、使用中のQtに一致するデ�
 RSSの増分をすべてリークとは扱わない。glibc空き領域の保持やキャッシュもあり、
 heaptrackはGPU専用メモリやすべての直接mmapを網羅しない。通常ログのRSSと
 allocator統計、heaptrackの生存確保を合わせて判断する。
+
+## 一時停止履歴のメモリー返却試験
+
+Linuxでは、表示・GPU・音声を使わず、実際の履歴ストアに64 MiBのTSをためて
+ライブ復帰後の返却を検証できる。`/proc/self/smaps_rollup` の読み取りが必要で、
+取得できなければ試験は失敗する。
+
+```sh
+python3 scripts/test.py app --filter 'test(memory_history_releases_resident_pages_after_return_to_live)'
+python3 scripts/test.py app
+```
+
+履歴は匿名mmapに保持するため、判定には既存の診断APIの `anonymous_kib`
+（smapsの `Anonymous`）を使う。nextestは各試験を別プロセスで実行するが、
+実行ファイルや共有ライブラリーのページはプロセス間で共有される。
+`Private_Clean + Private_Dirty` やPSSの増分には、共有相手の終了による
+分類・按分の変化が含まれるので、履歴の返却量を判定する指標には使わない。
+各フィールドの意味は [Linux kernelのproc資料](https://docs.kernel.org/filesystems/proc.html)
+を参照。
+
+試験はファイルを2か所にmapして読み取り、一方のmapだけを測定開始後に外す。
+残したファイルページがPrivateに分類し直されても履歴の残留と誤判定しないことを、
+プロセスの起動・終了のタイミングに依存せず検証する。履歴確保中の匿名常駐量の増加と、
+ライブ復帰後の返却を3周期で確認する。返却後の増分の許容は従来どおり8 MiBで、
+ライブ用の末尾バッファーとメタデータを含む。nextestの既定2並列・リトライ0は維持する。

@@ -845,28 +845,48 @@ mod tests {
         let mut packet = [0xff; super::super::TS_PACKET_SIZE];
         packet[..4].copy_from_slice(&[0x47, 0x1f, 0xff, 0x10]);
         let block = packet.repeat(READ_BYTES / packet.len());
+        // Private/PSS also counts file pages differently when another nextest
+        // process exits; neither can isolate the anonymous TS history.
         let resident = || {
             viewer_diagnostics::measurement::process_memory()
-                .private_kib
-                .ok_or("Linux smaps_rollup private memory is unavailable")
+                .anonymous_kib
+                .ok_or("Linux smaps_rollup anonymous memory is unavailable")
         };
-        // nextest runs each test in its own process. Use resident private pages,
-        // not virtual size or malloc's accounting; leave room for the live tail
-        // and metadata. This is a CPU-only test of the real retention store.
+        // File pages must not count as retained history when their sharing peer
+        // disappears. Two mappings reproduce that change without process timing.
+        let file = tempfile::tempfile()?;
+        file.set_len(2 * ALLOWED_GROWTH_KIB * 1024)?;
+        let map_file = || {
+            // SAFETY: this test owns the unnamed file and never changes its
+            // contents or length while either read-only mapping exists.
+            unsafe { memmap2::Mmap::map(&file) }
+        };
+        let file_pages = map_file()?;
+        let file_alias = map_file()?;
+        for mapping in [&file_pages, &file_alias] {
+            for byte in mapping.iter().step_by(4096) {
+                std::hint::black_box(*byte);
+            }
+        }
         store.append(&block)?;
         let before = resident()?;
+        drop(file_alias);
         for cycle in 0..3 {
             assert!(store.begin_pause(0)?);
             for _ in 0..(HISTORY_MIB as usize * SEGMENT_BYTES).div_ceil(READ_BYTES) {
                 store.append(&block)?;
             }
             let full = resident()?;
+            assert!(
+                full >= before + u64::from(HISTORY_MIB) * 1024 - ALLOWED_GROWTH_KIB,
+                "paused history did not become resident: {full} KiB (before {before})"
+            );
             // Confirmed live output has consumed the old history.
             store.playback = PlaybackCursor::Reading(store.end);
             store.finish_pause()?;
             let released = resident()?;
             eprintln!(
-                "history cycle={cycle} private_kib: before={before} full={full} released={released}; payload={} segments={}",
+                "history cycle={cycle} anonymous_kib: before={before} full={full} released={released}; payload={} segments={}",
                 store.end - store.start(),
                 store.segments.len()
             );
@@ -876,6 +896,7 @@ mod tests {
                 "history was dropped but its resident pages remain: {released} KiB (before {before})"
             );
         }
+        drop(file_pages);
         Ok(())
     }
 
