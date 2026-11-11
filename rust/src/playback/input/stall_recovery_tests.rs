@@ -10,7 +10,18 @@ use std::{io::Write, net::TcpListener, thread};
 const SEND_BYTES: usize = TS_PACKET_SIZE * 8;
 const SEND_INTERVAL: Duration = Duration::from_millis(40);
 const POLL_INTERVAL: Duration = Duration::from_millis(100);
+const REOPEN_POLL_INTERVAL: Duration = Duration::from_millis(1);
 const DEADLINE: Duration = Duration::from_secs(20);
+
+#[derive(Debug)]
+enum Phase {
+    Transition,
+    Stalled,
+    Reopened {
+        wall_time: Instant,
+        policy_time: Instant,
+    },
+}
 
 type TestResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
 struct Server {
@@ -171,45 +182,74 @@ fn transition_stall_reopens_the_same_http_channel_and_confirms_new_decoded_outpu
     let mut recovery = Recovery::default();
     let started = Instant::now();
     let mut policy_time = started;
-    let mut injected = false;
-    let mut restarted = false;
-    while started.elapsed() < DEADLINE {
-        thread::sleep(POLL_INTERVAL);
+    let mut phase = Phase::Transition;
+    let restored_sample = loop {
+        if started.elapsed() >= DEADLINE {
+            return Err(format!(
+                "live recovery test deadline reached: phase={phase:?}, status={:?}",
+                recovery.status()
+            )
+            .into());
+        }
+        // Several frames between observations must not be a scheduling prerequisite.
+        thread::sleep(if matches!(phase, Phase::Reopened { .. }) {
+            REOPEN_POLL_INTERVAL
+        } else {
+            POLL_INTERVAL
+        });
         let current = pipeline.as_ref().ok_or("pipeline")?;
         let observation = current.observation()?;
         let Observation::Live(sample) = observation else {
             unreachable!()
         };
-        if !injected
+        if matches!(phase, Phase::Transition)
             && current.input.recovery_diagnostic()?.contains("version=1")
             && sample.video_output.is_some_and(|count| count > 5)
         {
             current.blocked.store(true, Ordering::Release);
-            injected = true;
+            phase = Phase::Stalled;
         }
-        if !injected {
+        if matches!(phase, Phase::Transition) {
             continue;
         }
         // Inject only policy time; HTTP reception, normalizer, decoders and sink
         // counters are real. Unit tests verify the exact wall-time thresholds.
-        policy_time += Duration::from_secs(1);
+        // Accelerating real decoder preroll would spend its confirmation deadline
+        // before a loaded scheduler can produce the new outputs.
+        policy_time = match phase {
+            Phase::Transition => unreachable!(),
+            Phase::Stalled => policy_time + Duration::from_secs(1),
+            Phase::Reopened {
+                wall_time,
+                policy_time,
+            } => policy_time + wall_time.elapsed(),
+        };
         match recovery.observe(policy_time, observation) {
             Action::Restart(permit) => {
-                assert!(injected);
+                assert!(matches!(phase, Phase::Stalled));
                 assert_eq!(permit.attempt(), 1);
+                let wall_time = Instant::now();
                 pipeline.take();
                 pipeline = Some(Pipeline::start(&server.url)?);
-                restarted = true;
+                phase = Phase::Reopened {
+                    wall_time,
+                    policy_time,
+                };
+                continue;
             }
             Action::Failed => panic!("live output did not recover: {observation:?}"),
             Action::None => {}
         }
-        if restarted && recovery.status() == Status::Idle {
-            assert!(sample.video_output.is_some_and(|count| count > 1));
-            assert!(sample.audio_output.is_some_and(|count| count > 1));
-            assert_eq!(server.requests.load(Ordering::Acquire), 2);
-            return Ok(());
+        if matches!(phase, Phase::Reopened { .. })
+            && recovery.status() == Status::Idle
+            && sample.video_output.is_some_and(|count| count > 1)
+            && sample.audio_output.is_some_and(|count| count > 1)
+        {
+            break sample;
         }
-    }
-    Err("live recovery test deadline reached".into())
+    };
+    assert!(restored_sample.video_output.is_some_and(|count| count > 1));
+    assert!(restored_sample.audio_output.is_some_and(|count| count > 1));
+    assert_eq!(server.requests.load(Ordering::Acquire), 2);
+    Ok(())
 }
