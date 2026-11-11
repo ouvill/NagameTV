@@ -360,7 +360,7 @@ fn toggle_data_broadcast_setting(
     engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
     setting: &str,
 ) -> TestResult {
-    evaluate(engine, "root.openSettings(SettingsPanel.Display); true")?;
+    evaluate(engine, "root.openSettings(SettingsPanel.Watching); true")?;
     wait_for(app, engine, "settings.opened && settings.pageReveal === 1")?;
     evaluate(
         engine,
@@ -706,7 +706,7 @@ pub(super) fn run(
         engine,
         "player.server_configured && !player.loading && player.selected >= 0",
     )?;
-    evaluate(engine, "root.openSettings(SettingsPanel.Timeshift); true")?;
+    evaluate(engine, "root.openSettings(SettingsPanel.Watching); true")?;
     wait_for(app, engine, "settings.opened")?;
     evaluate(engine, "settings.close(); true")?;
     for backend in ["memory", "filesystem"] {
