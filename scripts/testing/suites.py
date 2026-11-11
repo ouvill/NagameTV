@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from urllib.parse import urlsplit
 
 from scripts.build.support import ROOT, lock_fds
 from scripts.testing.gui_session import require_inherited_session, stop_process_group
@@ -60,7 +61,21 @@ def validate_arguments(name, arguments):
         if (arguments[0] in RECORDING_CASES and len(arguments) == 2
                 and Path(arguments[1]).is_file()):
             return
-        raise ValueError(f"startup expects one of {', '.join(STARTUP_CASES)}, or recording-audit/probe TS_PATH")
+        if (arguments[0] == "recording-probe" and len(arguments) == 3
+                and Path(arguments[1]).is_file() and arguments[2].isascii()
+                and arguments[2].isdecimal() and 1 <= int(arguments[2]) <= 600):
+            return
+        if arguments[0] == "live-probe" and len(arguments) in (3, 4):
+            server = urlsplit(arguments[1])
+            numbers = arguments[2:]
+            if (server.scheme in ("http", "https") and server.hostname and server.port != 0
+                    and all(value.isascii() and value.isdecimal() for value in numbers)
+                    and int(numbers[0]) <= 2**64 - 1
+                    and (len(numbers) == 1 or 1 <= int(numbers[1]) <= 600)):
+                return
+        raise ValueError(f"startup expects one of {', '.join(STARTUP_CASES)}, "
+                         "recording-audit TS_PATH, recording-probe TS_PATH [SECONDS], "
+                         "or live-probe SERVER SERVICE_ID [SECONDS]")
     if name == "danmaku":
         if arguments not in ([], ["--evaluation-legacy-comments"]):
             raise ValueError("danmaku accepts only --evaluation-legacy-comments")

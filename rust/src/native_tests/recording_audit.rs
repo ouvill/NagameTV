@@ -1,4 +1,4 @@
-//! Bounded, hardware-dependent comparison of six-second recovery fixtures.
+//! Bounded, hardware-dependent comparison of recordings and live transitions.
 //! Reports observations, including failed seek targets; it is not a claim of
 //! MPEG-TS conformance or a replacement for the assertion-based startup suite.
 use super::{
@@ -28,13 +28,14 @@ struct Observation {
     error: String,
     transport_error: String,
     rendered: Option<u64>,
+    recovery: String,
 }
 
 fn observe(engine: &mut cxx::UniquePtr<QQmlApplicationEngine>) -> TestResult<Observation> {
     let json = ffi::evaluate_root(engine.pin_mut(), &QString::from(
-        "JSON.stringify({ended: player.ended, seeking: player.seeking, paused: player.paused, position_ms: player.position_ms, duration_ms: player.duration_ms, estimated: player.duration_estimated, error: player.playback_error, transport_error: player.transport_error, rendered: JSON.parse(player.video_stats()).rendered, audio: JSON.parse(player.audio_tracks())})",
+        "JSON.stringify({ended: player.ended, seeking: player.seeking, paused: player.paused, position_ms: player.position_ms, duration_ms: player.duration_ms, estimated: player.duration_estimated, error: player.playback_error, transport_error: player.transport_error, rendered: JSON.parse(player.video_stats()).rendered, audio: JSON.parse(player.audio_tracks()), recovery: player.live_recovery_state})",
     ))?.value::<QString>().ok_or("missing recording observation")?.to_string();
-    eprintln!("Recording observation: {json}");
+    eprintln!("Playback observation: {json}");
     Ok(serde_json::from_str(&json)?)
 }
 
@@ -131,10 +132,8 @@ pub(super) fn probe(
     app: &QGuiApplication,
     engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
     path: &Path,
+    seconds: u32,
 ) -> TestResult {
-    const OBSERVE_FOR: Duration = Duration::from_secs(28);
-    const STALL_LIMIT: Duration = Duration::from_secs(6);
-    const PROBE_POLL: Duration = Duration::from_millis(500);
     const CROSSING_TARGETS_MS: [u32; 2] = [20_000, 10_000];
     const LONG_RECORDING: Duration = Duration::from_secs(60);
     const FAR_SEEK_FRACTION: f64 = 0.8;
@@ -155,24 +154,7 @@ pub(super) fn probe(
         )?;
         return Err(format!("{error}: {state:?}").into());
     }
-    let started = Instant::now();
-    let mut progressed = Instant::now();
-    let mut frames = None;
-    while started.elapsed() < OBSERVE_FOR {
-        app.process_events();
-        let sample = observe(engine)?;
-        if !sample.error.is_empty() {
-            return Err(sample.error.into());
-        }
-        if frames != sample.rendered {
-            frames = sample.rendered;
-            progressed = Instant::now();
-        }
-        if progressed.elapsed() > STALL_LIMIT {
-            return Err("decoded output stopped at broadcast transition".into());
-        }
-        thread::sleep(PROBE_POLL);
-    }
+    continuous_output(app, engine, Duration::from_secs(u64::from(seconds)))?;
     assert!(evaluate(engine, "player.pause()")?);
     let duration = observe(engine)?.duration_ms;
     let mut targets = CROSSING_TARGETS_MS.to_vec();
@@ -187,5 +169,90 @@ pub(super) fn probe(
     }
     evaluate(engine, "player.stop(); true")?;
     eprintln!("Broadcast probe passed: continuous output and seeks across transition");
+    Ok(())
+}
+
+fn continuous_output(
+    app: &QGuiApplication,
+    engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
+    duration: Duration,
+) -> TestResult {
+    const STALL_LIMIT: Duration = Duration::from_secs(6);
+    const PROBE_POLL: Duration = Duration::from_millis(500);
+    let started = Instant::now();
+    let mut progressed = started;
+    let mut frames = None;
+    while started.elapsed() < duration {
+        app.process_events();
+        let sample = observe(engine)?;
+        if !sample.error.is_empty() || !sample.transport_error.is_empty() {
+            return Err(format!(
+                "playback failed: {} {}",
+                sample.error, sample.transport_error
+            )
+            .into());
+        }
+        if sample.ended || sample.recovery != "idle" {
+            return Err(format!(
+                "playback interrupted: ended={} recovery={}",
+                sample.ended, sample.recovery
+            )
+            .into());
+        }
+        if sample.rendered.is_some_and(|count| count > 0) && frames != sample.rendered {
+            frames = sample.rendered;
+            progressed = Instant::now();
+        }
+        if progressed.elapsed() > STALL_LIMIT {
+            return Err("decoded output stopped at broadcast transition".into());
+        }
+        thread::sleep(PROBE_POLL);
+    }
+    if frames.is_none() {
+        return Err("no rendered output during playback probe".into());
+    }
+    Ok(())
+}
+
+/// Exercise the production live path against an explicitly selected service.
+pub(super) fn probe_live(
+    app: &QGuiApplication,
+    engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
+    server: &url::Url,
+    service: u64,
+    seconds: u32,
+) -> TestResult {
+    evaluate(
+        engine,
+        "player.enable_comments(false); player.configure_data_broadcast(false); true",
+    )?;
+    assert!(evaluate(
+        engine,
+        &format!(
+            "player.connect_server({})",
+            serde_json::to_string(server.as_str())?
+        )
+    )?);
+    wait_for(
+        app,
+        engine,
+        "player.server_configured && !player.loading && player.channels.count > 0",
+    )?;
+    let select = format!(
+        "(() => {{ for (let i = 0; i < player.channels.count; i++) {{ if (String(player.channels.row(i).serviceId) === '{service}') {{ player.select(i); return true; }} }} return false; }})()"
+    );
+    if !evaluate(engine, &select)? {
+        return Err(format!("service {service} is absent from the supplied server").into());
+    }
+    evaluate(engine, "setup.close(); player.play(); true")?;
+    super::startup::wait_for_timeout(
+        app,
+        engine,
+        "player.playing && player.media_active",
+        Duration::from_secs(30),
+    )?;
+    continuous_output(app, engine, Duration::from_secs(u64::from(seconds)))?;
+    evaluate(engine, "player.stop(); true")?;
+    eprintln!("Live probe passed: {seconds}s of continuous output without recovery");
     Ok(())
 }

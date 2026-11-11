@@ -569,8 +569,8 @@ Git情報・日時の更新でアプリ側のビルド処理が再実行され�
 現在の起動コマンドは`nagametv`、環境変数とCMakeオプションの接頭辞は`NAGAMETV_`です。
 
 長い実録画の冒頭停止・遠方シークを製品画面で調べる場合は、
-`python3 scripts/test.py startup -- recording-probe /path/to/recording.ts` を使います。
-表示・GPU・音声の検証後に実行し、通常の起動試験とは別に約28秒の再生と
+`python3 scripts/test.py startup -- recording-probe /path/to/recording.ts [SECONDS]` を使います。
+表示・GPU・音声の検証後に実行し、通常の起動試験とは別に既定28秒（指定時は1〜600秒）の再生と
 境界前後・長い録画の80%位置へのシークを確認します。全編の検査ではありません。
 
 録画実況の補助I/Oだけを機器なしで測る場合:

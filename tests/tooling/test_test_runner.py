@@ -43,7 +43,9 @@ class RunnerTests(unittest.TestCase):
                           ["app", "--run-ignored"],
                           ["ui-style", "--", "--evaluation-legacy-comments"],
                           ["gui", "--", "unexpected"],
-                          ["startup", "--", "recording-audit", "/missing-file.ts"]):
+                          ["startup", "--", "recording-audit", "/missing-file.ts"],
+                          ["startup", "--", "live-probe", "file:///capture.ts", "1"],
+                          ["startup", "--", "live-probe", "http://127.0.0.1", "1", "0"]):
             with self.subTest(arguments=arguments):
                 result = subprocess.run([sys.executable, str(ROOT / "scripts/test.py"), *arguments],
                                         text=True, capture_output=True, timeout=10)
@@ -64,11 +66,27 @@ class RunnerTests(unittest.TestCase):
             recording = Path(directory) / "録画 #100%.ts"
             recording.touch()
             validate_arguments("startup", ["recording-audit", str(recording)])
+            validate_arguments("startup", ["recording-probe", str(recording), "170"])
             with self.assertRaises(ValueError):
                 validate_arguments("startup", ["startup", str(recording)])
+            for duration in ("0", "601", "NaN"):
+                with self.subTest(duration=duration), self.assertRaises(ValueError):
+                    validate_arguments("startup", ["recording-probe", str(recording), duration])
         validate_arguments("danmaku", ["--evaluation-legacy-comments"])
         with self.assertRaises(ValueError):
             validate_arguments("danmaku", ["--evaluation-legacy-comments", "extra"])
+
+    def test_live_probe_requires_an_explicit_server_service_and_bounded_duration(self):
+        for arguments in (["live-probe", "http://127.0.0.1:40772", "3209641984"],
+                          ["live-probe", "https://example.test", "1", "600"]):
+            validate_arguments("startup", arguments)
+        for arguments in (["live-probe", "http://127.0.0.1"],
+                          ["live-probe", "http://127.0.0.1", "1", "601"],
+                          ["live-probe", "http://127.0.0.1", "18446744073709551616"],
+                          ["live-probe", "http://127.0.0.1", "1", "NaN"],
+                          ["live-probe", "http://127.0.0.1:0", "1"]):
+            with self.subTest(arguments=arguments), self.assertRaises(ValueError):
+                validate_arguments("startup", arguments)
 
     def test_memory_benchmark_gui_launch_keeps_the_inherited_build_lock(self):
         # Replace only hardware setup. The child must actually reacquire the
