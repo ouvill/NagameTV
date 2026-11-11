@@ -242,6 +242,7 @@ impl ffi::Player {
             .unwrap_or(0.0);
         self.as_mut().set_video_aspect_ratio(aspect);
         self.as_mut().publish_remote();
+        self.as_mut().poll_sleep_inhibit();
         #[cfg(target_os = "linux")]
         self.poll_desktop_media();
     }
@@ -328,6 +329,7 @@ impl ffi::Player {
         self.as_mut().poll_features();
     }
     pub fn shutdown(mut self: Pin<&mut Self>) -> bool {
+        self.as_mut().stop_sleep_inhibit();
         self.as_mut().data_broadcast_open(false);
         self.as_mut().rust_mut().data_broadcast_mode.close();
         self.as_mut().cancel_epgstation();

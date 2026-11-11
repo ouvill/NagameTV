@@ -28,6 +28,7 @@ class Suite:
 
 SUITES = {
     "connection": Suite(Requirement.CPU, ("--native-tests", "connection")),
+    "sleep-inhibit": Suite(Requirement.CPU, ("--native-tests", "sleep-inhibit")),
     "desktop-media": Suite(Requirement.CPU, ("--native-tests", "desktop-media")),
     "localization": Suite(Requirement.CPU, ("--native-tests", "localization")),
     "subtitle-outline": Suite(Requirement.CPU, ("--native-tests", "subtitle-outline")),
@@ -62,7 +63,7 @@ def validate_arguments(name, arguments):
     if name == "danmaku":
         if arguments not in ([], ["--evaluation-legacy-comments"]):
             raise ValueError("danmaku accepts only --evaluation-legacy-comments")
-    elif name in ("connection", "desktop-media", "localization", "video-item", "portal-dialogs") and arguments:
+    elif name in ("connection", "desktop-media", "sleep-inhibit", "localization", "video-item", "portal-dialogs") and arguments:
         raise ValueError(f"{name} does not accept additional arguments")
     elif "--ui-only" in arguments:
         raise ValueError("--ui-only was retired; subtitle-rendering uses the validated private GPU session")
@@ -102,8 +103,16 @@ def run_suite(name, arguments):
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(ROOT / relative, destination)
             command.extend(["-input", str(temporary / "tests/screenshots"), *arguments])
-        elif name == "desktop-media":
-            command = ["dbus-run-session", "--", *command]
+        elif name in ("connection", "desktop-media", "sleep-inhibit"):
+            # No service directories: missing-portal checks must never activate
+            # a real desktop service, even on a developer's workstation.
+            config = temporary / "bus.conf"
+            config.write_text(f"""<busconfig>
+<type>session</type><listen>unix:tmpdir={temporary}</listen><auth>EXTERNAL</auth>
+<policy context="default"><allow user="*"/><allow own="*"/>
+<allow send_destination="*"/><allow receive_sender="*"/></policy>
+</busconfig>""")
+            command = ["dbus-run-session", f"--config-file={config}", "--", *command]
         elif name == "ui-capture":
             (ROOT / "build/ui-review").mkdir(parents=True, exist_ok=True)
             command.extend(arguments)

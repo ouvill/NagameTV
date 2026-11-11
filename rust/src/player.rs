@@ -43,6 +43,9 @@ mod remote;
 mod remote_checks;
 mod screenshots;
 mod seek_preview;
+mod sleep_inhibit;
+#[cfg(feature = "native_tests")]
+pub(crate) mod sleep_inhibit_checks;
 mod startup;
 mod statistics;
 mod status;
@@ -315,6 +318,9 @@ pub mod ffi {
         #[qproperty(UpdateStatus, update_check_status, READ = update_check_status, NOTIFY = updates_changed)]
         #[qproperty(QString, update_version, READ = update_version, NOTIFY = updates_changed)]
         #[qproperty(QString, update_error, READ = update_error, NOTIFY = updates_changed)]
+        #[qproperty(bool, sleep_inhibit_enabled, READ = sleep_inhibit_enabled, NOTIFY = sleep_inhibit_changed)]
+        #[qproperty(QString, sleep_inhibit_state, READ = sleep_inhibit_state, NOTIFY = sleep_inhibit_changed)]
+        #[qproperty(QString, sleep_inhibit_error, READ = sleep_inhibit_error, NOTIFY = sleep_inhibit_changed)]
         #[qproperty(bool, auto_update_check, READ = auto_update_check, NOTIFY = updates_changed)]
         #[qproperty(bool, automatic_updates_allowed, READ = automatic_updates_allowed, CONSTANT)]
         #[qproperty(f64, update_last_checked, READ = update_last_checked, NOTIFY = updates_changed)]
@@ -688,6 +694,13 @@ pub mod ffi {
         #[qinvokable]
         fn configure_autoplay(self: Pin<&mut Player>, enabled: bool);
         #[qinvokable]
+        fn configure_sleep_inhibit(self: Pin<&mut Player>, enabled: bool);
+        fn sleep_inhibit_enabled(self: &Player) -> bool;
+        fn sleep_inhibit_state(self: &Player) -> QString;
+        fn sleep_inhibit_error(self: &Player) -> QString;
+        #[qsignal]
+        fn sleep_inhibit_changed(self: Pin<&mut Player>);
+        #[qinvokable]
         fn configure_window_decoration(self: Pin<&mut Player>, decoration: QString) -> bool;
         #[qinvokable]
         fn enable_comments(self: Pin<&mut Player>, enabled: bool);
@@ -755,6 +768,7 @@ pub struct PlayerRust {
     launched_window_decoration: settings::WindowDecoration,
     #[cfg(target_os = "linux")]
     desktop_media: desktop_media::Registration,
+    sleep_inhibit: crate::sleep_inhibit::Controller<crate::qt::sleep_inhibit::Portal>,
     language: QString,
     ui_language: QString,
     server: QString,

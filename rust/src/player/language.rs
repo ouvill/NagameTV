@@ -30,6 +30,7 @@ impl ffi::Player {
         self.as_mut().playback_error_changed();
         self.as_mut().file_error_changed();
         self.as_mut().settings_error_changed();
+        self.as_mut().sleep_inhibit_changed();
         self.as_mut().log_error_changed();
         self.as_mut().remote_error_changed();
         self.as_mut().remote_save_error_changed();

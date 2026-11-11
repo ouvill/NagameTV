@@ -104,6 +104,10 @@ impl Default for PlayerRust {
         );
         let mut player = Self {
             recording_reconnecting: false,
+            sleep_inhibit: crate::sleep_inhibit::Controller::new(
+                crate::qt::sleep_inhibit::Portal,
+                preferences.preferences().sleep_inhibit_enabled,
+            ),
             #[cfg(target_os = "linux")]
             desktop_media: Default::default(),
             language: QString::from(preferences.preferences().language.code()),

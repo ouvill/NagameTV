@@ -105,6 +105,22 @@ impl Default for State {
     }
 }
 impl State {
+    pub(super) fn sleep_inhibit_viewing(
+        &self,
+        reconnecting: bool,
+    ) -> crate::sleep_inhibit::Viewing {
+        use crate::sleep_inhibit::Viewing;
+        match self {
+            Self::Playing(_, phase) | Self::Recording(_, phase) => match phase {
+                Phase::Playing if reconnecting => Viewing::Interrupted,
+                Phase::Playing => Viewing::Playing,
+                Phase::Seeking(Resume::Playing) => Viewing::Interrupted,
+                Phase::Paused | Phase::Seeking(Resume::Paused) | Phase::Ended => Viewing::Inactive,
+            },
+            Self::Stopped(_) | Self::Connecting(_) | Self::StopFailed(_) => Viewing::Inactive,
+        }
+    }
+
     pub(super) fn commentary_playback<'a>(
         &self,
         channel: Option<&'a Channel>,
@@ -320,5 +336,61 @@ mod tests {
         state = state.stopped().started();
         assert!(!state.playing() && !state.connecting());
         assert_eq!(state.recording(), Some(&expected));
+    }
+}
+
+#[cfg(test)]
+mod sleep_inhibit_tests {
+    use super::*;
+    use crate::{playback::input::Retention, sleep_inhibit::Viewing};
+
+    #[test]
+    fn live_recording_and_timeshift_phases_share_the_same_inhibition_policy() {
+        let channels = crate::channels::parse(br#"[{"id":1,"name":"TV","type":1}]"#).unwrap();
+        let file = Recording::open(std::path::Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../tests/fixtures/subtitle-clock.ts"
+        )))
+        .unwrap();
+        for live in [false, true] {
+            let state = || {
+                if live {
+                    State::Connecting(Attempt::new(&channels[0], Retention::Memory.into()))
+                } else {
+                    State::Connecting(Attempt::File(file.clone()))
+                }
+            };
+            assert_eq!(state().sleep_inhibit_viewing(false), Viewing::Inactive);
+            assert_eq!(
+                state().started().sleep_inhibit_viewing(false),
+                Viewing::Playing
+            );
+            assert_eq!(
+                state().started().sleep_inhibit_viewing(true),
+                Viewing::Interrupted
+            );
+            for (phase, expected) in [
+                (Phase::Paused, Viewing::Inactive),
+                (Phase::Seeking(Resume::Paused), Viewing::Inactive),
+                (Phase::Seeking(Resume::Playing), Viewing::Interrupted),
+                (Phase::Ended, Viewing::Inactive),
+            ] {
+                assert_eq!(
+                    state()
+                        .started()
+                        .transport(phase)
+                        .sleep_inhibit_viewing(false),
+                    expected
+                );
+            }
+            assert_eq!(
+                state().started().stopped().sleep_inhibit_viewing(false),
+                Viewing::Inactive
+            );
+            assert_eq!(
+                state().started().stop_failed().sleep_inhibit_viewing(false),
+                Viewing::Inactive
+            );
+        }
     }
 }

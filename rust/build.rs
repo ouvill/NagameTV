@@ -139,7 +139,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     .cpp_file("src/channel_model_types.h")
     .qt_module("Quick");
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("linux") {
-        builder = builder.qt_module("DBus");
+        builder = builder.qt_module("DBus").cpp_file("src/sleep_inhibit.h");
     }
     if std::env::var_os("CARGO_FEATURE_QML_TESTS").is_some() {
         builder = builder

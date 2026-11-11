@@ -32,6 +32,7 @@ mod screenshots;
 mod services;
 mod settings;
 mod shortcut_key;
+mod sleep_inhibit;
 /// Also exercise the startup HTTP fixture's hardware-free login and cancellation
 /// regressions in the normal Rust test suite used by CI.
 #[cfg(any(test, feature = "native_tests"))]

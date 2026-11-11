@@ -2,6 +2,7 @@
 //! Domain modules must not depend on Player to access these services.
 pub mod application;
 pub mod drcs;
+pub mod sleep_inhibit;
 pub mod text;
 pub mod variant;
 
@@ -100,6 +101,18 @@ pub mod ffi {
         fn take_command(self: Pin<&mut DesktopMedia>) -> QString;
         #[cfg(target_os = "linux")]
         fn publish(self: Pin<&mut DesktopMedia>, json: &QString);
+        include!("sleep_inhibit.h");
+        #[cfg(target_os = "linux")]
+        type SleepInhibit;
+        #[cfg(target_os = "linux")]
+        #[cxx_name = "acquireSleepInhibit"]
+        fn acquire_sleep_inhibit(reason: &QString) -> UniquePtr<SleepInhibit>;
+        #[cfg(target_os = "linux")]
+        fn poll(self: Pin<&mut SleepInhibit>) -> i32;
+        #[cfg(target_os = "linux")]
+        fn error(self: &SleepInhibit) -> QString;
+        #[cfg(target_os = "linux")]
+        fn release(self: Pin<&mut SleepInhibit>) -> Result<()>;
         include!("portal.h");
         #[cfg(target_os = "linux")]
         #[cxx_name = "portalThemeLoaded"]
