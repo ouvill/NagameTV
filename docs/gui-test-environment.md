@@ -10,7 +10,7 @@ WorkshopではホストからGPUだけを共有し、PipeWireはコンテナー�
 | 描画 | ホストから共有した実GPU。ソフトウェア描画は拒否します。 |
 | 画面・入力 | swayのheadlessバックエンドと実GPUのGLES2レンダラー、専用XwaylandとOpenbox。1920×1080・60Hzの仮想画面です。 |
 | 音声 | 起動済みのPipeWire／pipewire-pulse上に実行ごとの`module-null-sink`とmonitorを作成。スピーカーへ音を出しません。 |
-| セッションバス | 専用`dbus-daemon`。ホストのPortalには接続しません。 |
+| D-Bus | session/systemの接続先を専用`dbus-daemon`へ向けます。ホストのPortal・logindには接続しません。 |
 
 これは明示的に選択したテスト環境です。GPUが利用できない場合の代替処理ではありません。
 物理モニター、GNOME/KDE固有のウィンドウ操作、実音声デバイスの遅延や聴取品質は

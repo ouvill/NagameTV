@@ -1,5 +1,6 @@
 //! Viewing policy and exclusive ownership of a desktop inhibition request.
 //! This module has no Qt, D-Bus or presentation dependencies.
+pub mod routes;
 use std::time::{Duration, Instant};
 
 pub const INTERRUPTION_GRACE: Duration = Duration::from_secs(5);
@@ -56,6 +57,10 @@ pub trait Request {
 pub trait Inhibitor {
     type Request: Request;
     fn acquire(&mut self) -> Result<Self::Request, Error>;
+    fn revision(&mut self) -> u64 {
+        0
+    }
+    fn reset(&mut self) {}
 }
 
 enum State<R> {
@@ -72,11 +77,13 @@ enum State<R> {
 pub struct Controller<B: Inhibitor> {
     backend: B,
     state: State<B::Request>,
+    revision: u64,
 }
 impl<B: Inhibitor> Controller<B> {
     pub fn new(backend: B, enabled: bool) -> Self {
         Self {
             backend,
+            revision: 0,
             state: if enabled {
                 State::Idle
             } else {
@@ -100,11 +107,19 @@ impl<B: Inhibitor> Controller<B> {
         }
     }
     fn fault(error: Error) -> State<B::Request> {
-        tracing::error!(
-            operation = error.operation,
-            error = &error as &dyn std::error::Error,
-            "Sleep inhibition failed"
-        );
+        if error.unavailable {
+            tracing::warn!(
+                operation = error.operation,
+                error = &error as &dyn std::error::Error,
+                "Sleep inhibition unavailable until the environment changes"
+            );
+        } else {
+            tracing::error!(
+                operation = error.operation,
+                error = &error as &dyn std::error::Error,
+                "Sleep inhibition failed"
+            );
+        }
         State::Fault(error)
     }
     fn release(state: State<B::Request>, next: State<B::Request>) -> State<B::Request> {
@@ -116,10 +131,29 @@ impl<B: Inhibitor> Controller<B> {
             State::Disabled | State::Idle | State::Fault(_) => next,
         }
     }
-    /// Faults are retained during one viewing attempt; polling must not retry.
-    /// Pausing/stopping or toggling the preference arms the next attempt.
+    pub fn reset_environment(&mut self) {
+        self.backend.reset();
+        if matches!(self.state, State::Fault(_)) {
+            self.state = State::Idle;
+        }
+    }
+    /// Unavailable environments survive viewing changes; transient failures do not.
     pub fn update(&mut self, enabled: bool, viewing: Viewing, now: Instant) {
+        let revision = self.backend.revision();
+        if revision != self.revision {
+            self.revision = revision;
+            if matches!(&self.state, State::Fault(error) if error.unavailable) {
+                self.state = State::Idle;
+            }
+        }
         let state = std::mem::replace(&mut self.state, State::Idle);
+        if enabled
+            && viewing == Viewing::Inactive
+            && matches!(&state, State::Fault(error) if error.unavailable)
+        {
+            self.state = state;
+            return;
+        }
         if !enabled || viewing == Viewing::Inactive {
             self.state = Self::release(
                 state,
@@ -193,6 +227,10 @@ impl<B: Inhibitor> Controller<B> {
     }
     pub fn stop(&mut self, enabled: bool) {
         let state = std::mem::replace(&mut self.state, State::Idle);
+        if enabled && matches!(&state, State::Fault(error) if error.unavailable) {
+            self.state = state;
+            return;
+        }
         self.state = Self::release(
             state,
             if enabled {

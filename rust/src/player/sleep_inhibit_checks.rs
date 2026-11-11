@@ -2,7 +2,10 @@
 use super::{ffi, stream_state::State};
 use crate::{
     features, qt, settings,
-    sleep_inhibit::{Inhibitor, Progress, Request},
+    sleep_inhibit::{
+        Progress, Request,
+        routes::{Kind, Transport},
+    },
 };
 use cxx_qt::CxxQtType;
 use cxx_qt_lib::{QCoreApplication, QString};
@@ -53,9 +56,9 @@ fn checks(no_bus: bool) -> Result {
         .map_err(|_| "plan initialized twice")?;
     let app = QCoreApplication::new();
     assert!(!app.is_null());
-    let mut backend = qt::sleep_inhibit::Portal;
+    let mut backend = qt::sleep_inhibit::Native::default();
     if no_bus {
-        let mut request = backend.acquire()?;
+        let mut request = backend.acquire(Kind::Portal)?;
         let error = match request.poll() {
             Err(error) => error,
             Ok(_) => return Err("missing bus was accepted".into()),
@@ -72,7 +75,7 @@ fn checks(no_bus: bool) -> Result {
         .status()?;
     assert!(status.success());
     // No service exists yet. A missing portal must not look like a held grant.
-    let mut missing = backend.acquire()?;
+    let mut missing = backend.acquire(Kind::Portal)?;
     wait(&app, || match missing.poll() {
         Err(error) => {
             assert!(error.unavailable);
@@ -161,6 +164,8 @@ fn checks(no_bus: bool) -> Result {
         "no-response",
     ] {
         fs::write(path.join("mode"), mode)?;
+        player.pin_mut().configure_sleep_inhibit(false);
+        player.pin_mut().configure_sleep_inhibit(true);
         player.pin_mut().rust_mut().stream_state = live();
         wait(&app, || {
             player.pin_mut().poll_sleep_inhibit();
@@ -185,7 +190,7 @@ fn checks(no_bus: bool) -> Result {
         .iter()
         .filter(|e| e["kind"] == "acquire")
         .count();
-    let mut delayed = backend.acquire()?;
+    let mut delayed = backend.acquire(Kind::Portal)?;
     wait(&app, || {
         events(path)
             .iter()
@@ -199,6 +204,97 @@ fn checks(no_bus: bool) -> Result {
         events(path).iter().any(|e| e["kind"] == "cancelled")
     })?;
     fs::write(path.join("mode"), "success")?;
+    // A fallback is complete only with a ScreenSaver cookie and a live logind FD.
+    fs::write(path.join("services"), "logind screensaver")?;
+    wait(&app, || {
+        fs::read_to_string(path.join("services-active")).is_ok_and(|s| s == "logind screensaver")
+    })?;
+    player.pin_mut().configure_sleep_inhibit(false);
+    player.pin_mut().rust_mut().stream_state = live();
+    player.pin_mut().configure_sleep_inhibit(true);
+    wait(&app, || {
+        player.pin_mut().poll_sleep_inhibit();
+        player.sleep_inhibit_state() == QString::from("inhibited")
+    })?;
+    let count = |kind: &str| events(path).iter().filter(|e| e["kind"] == kind).count();
+    let portal_calls = count("acquire");
+    let logind_closed = count("logind-release");
+    let screen_closed = count("screensaver-release");
+    assert!(events(path).iter().any(|e| e["kind"] == "logind-acquire"
+        && e["what"] == "sleep:idle"
+        && e["mode"] == "block"));
+    player.pin_mut().rust_mut().stream_state = State::default();
+    player.pin_mut().poll_sleep_inhibit();
+    wait(&app, || {
+        count("logind-release") > logind_closed && count("screensaver-release") > screen_closed
+    })?;
+    player.pin_mut().rust_mut().stream_state = live();
+    wait(&app, || {
+        player.pin_mut().poll_sleep_inhibit();
+        player.sleep_inhibit_state() == QString::from("inhibited")
+    })?;
+    assert_eq!(
+        count("acquire"),
+        portal_calls,
+        "known-absent portal must not be tried on every play"
+    );
+    let logind_closed = count("logind-release");
+    fs::write(path.join("services"), "logind")?;
+    wait(&app, || {
+        player.pin_mut().poll_sleep_inhibit();
+        player.sleep_inhibit_state() == QString::from("failed")
+    })?;
+    wait(&app, || count("logind-release") > logind_closed)?;
+
+    fs::write(path.join("services"), "logind screensaver")?;
+    fs::write(path.join("screensaver-mode"), "failed")?;
+    wait(&app, || {
+        fs::read_to_string(path.join("services-active")).is_ok_and(|s| s == "logind screensaver")
+    })?;
+    let logind_closed = count("logind-release");
+    player.pin_mut().configure_sleep_inhibit(false);
+    player.pin_mut().configure_sleep_inhibit(true);
+    wait(&app, || {
+        player.pin_mut().poll_sleep_inhibit();
+        player.sleep_inhibit_state() == QString::from("failed")
+    })?;
+    wait(&app, || count("logind-release") > logind_closed)?;
+    fs::write(path.join("screensaver-mode"), "success")?;
+    fs::write(path.join("logind-mode"), "failed")?;
+    let screens = count("screensaver-acquire");
+    player.pin_mut().configure_sleep_inhibit(false);
+    player.pin_mut().configure_sleep_inhibit(true);
+    wait(&app, || {
+        player.pin_mut().poll_sleep_inhibit();
+        player.sleep_inhibit_state() == QString::from("failed")
+    })?;
+    assert_eq!(
+        count("screensaver-acquire"),
+        screens,
+        "failed sleep inhibition cannot start display inhibition"
+    );
+    fs::write(path.join("logind-mode"), "success")?;
+
+    fs::write(path.join("services"), "")?;
+    wait(&app, || {
+        fs::read_to_string(path.join("services-active")).is_ok_and(|s| s.is_empty())
+    })?;
+    player.pin_mut().configure_sleep_inhibit(false);
+    player.pin_mut().configure_sleep_inhibit(true);
+    wait(&app, || {
+        player.pin_mut().poll_sleep_inhibit();
+        player.sleep_inhibit_state() == QString::from("unavailable")
+    })?;
+    for _ in 0..3 {
+        player.pin_mut().rust_mut().stream_state = State::default();
+        player.pin_mut().poll_sleep_inhibit();
+        assert_eq!(player.sleep_inhibit_state(), QString::from("unavailable"));
+        player.pin_mut().rust_mut().stream_state = live();
+        player.pin_mut().poll_sleep_inhibit();
+        assert_eq!(player.sleep_inhibit_state(), QString::from("unavailable"));
+    }
+    // An appearing portal rearms the unavailable environment without a preference toggle.
+    fs::write(path.join("services"), "portal")?;
     player.pin_mut().rust_mut().stream_state = live();
     wait(&app, || {
         player.pin_mut().poll_sleep_inhibit();
@@ -224,4 +320,32 @@ pub fn run(no_bus: bool) -> i32 {
             1
         }
     }
+}
+
+#[cfg(target_os = "linux")]
+pub fn run_x11() -> i32 {
+    use cxx_qt_lib::QGuiApplication;
+    let _app = QGuiApplication::new();
+    let result = qt::ffi::check_x11_sleep_inhibit();
+    if let Err(error) = result {
+        tracing::error!(
+            error = &error as &dyn std::error::Error,
+            "Private Xwayland inhibition wire check failed"
+        );
+        return 1;
+    }
+    let mut native = qt::sleep_inhibit::Native::default();
+    let mut request = native.acquire(Kind::X11).expect("native request");
+    let error = match request.poll() {
+        Err(error) => error,
+        Ok(_) => {
+            tracing::error!("Product X11 fallback incorrectly accepted Xwayland");
+            return 1;
+        }
+    };
+    assert!(error.unavailable);
+    println!(
+        "Private Xwayland wire acquisition/release passed; product fallback rejected Xwayland"
+    );
+    0
 }

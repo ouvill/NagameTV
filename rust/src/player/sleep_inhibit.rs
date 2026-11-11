@@ -27,6 +27,9 @@ impl ffi::Player {
             self.sleep_inhibit_enabled(),
             self.rust().sleep_inhibit.status(),
         );
+        if before.0 != enabled {
+            self.as_mut().rust_mut().sleep_inhibit.reset_environment();
+        }
         self.as_mut()
             .rust_mut()
             .preferences

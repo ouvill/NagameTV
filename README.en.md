@@ -21,7 +21,7 @@ The detailed documentation linked below is currently available in Japanese.
 ## Features
 
 ### Live TV
-- **Sleep inhibition**: Prevents idle screen blanking and automatic suspend while watching on Linux desktops with Inhibit portal support. Enabled by default; change it under Settings → Watching → Keep the screen on while watching. [Conditions and limitations](docs/sleep-inhibit.md)
+- **Sleep inhibition**: Prevents idle screen blanking and automatic suspend while watching on supported Linux desktops. Enabled by default; change it under Settings → Watching → Keep the screen on while watching. [Conditions and limitations](docs/sleep-inhibit.md)
 
 - **Mirakurun and mirakc integration**: Connect to a Mirakurun or mirakc server on your network to receive and play TV broadcasts. Program guide change notifications work with both.
 - **Channel selection**: Browse a channel carousel with station logos, and filter channels using terrestrial, BS, CS, and CATV tabs.

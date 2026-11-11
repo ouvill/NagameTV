@@ -106,7 +106,23 @@ pub mod ffi {
         type SleepInhibit;
         #[cfg(target_os = "linux")]
         #[cxx_name = "acquireSleepInhibit"]
-        fn acquire_sleep_inhibit(reason: &QString) -> UniquePtr<SleepInhibit>;
+        fn acquire_sleep_inhibit(backend: &QString, reason: &QString) -> UniquePtr<SleepInhibit>;
+        #[cfg(target_os = "linux")]
+        type InhibitEnvironment;
+        #[cfg(target_os = "linux")]
+        #[cxx_name = "makeInhibitEnvironment"]
+        fn make_inhibit_environment() -> UniquePtr<InhibitEnvironment>;
+        #[cfg(target_os = "linux")]
+        fn revision(self: &InhibitEnvironment) -> u64;
+        #[cfg(target_os = "linux")]
+        #[cxx_name = "revisionFor"]
+        fn revision_for(self: &InhibitEnvironment, kind: &QString) -> u64;
+        #[cfg(target_os = "linux")]
+        #[cxx_name = "observeSystem"]
+        fn observe_system(self: Pin<&mut InhibitEnvironment>);
+        #[cfg(all(target_os = "linux", feature = "native_tests"))]
+        #[cxx_name = "checkX11SleepInhibit"]
+        fn check_x11_sleep_inhibit() -> Result<()>;
         #[cfg(target_os = "linux")]
         fn poll(self: Pin<&mut SleepInhibit>) -> i32;
         #[cfg(target_os = "linux")]

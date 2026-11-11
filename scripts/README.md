@@ -40,7 +40,8 @@ python3 scripts/test.py web-bml-adapter           # ブラウザー接続・起�
 python3 scripts/test.py remote-web                # Webリモコンの型・単体試験・dist再現性。Node.js/npmが必要
 python3 scripts/test.py viewer-mpegts            # 共通TS・PAT/PMTの機器不要テスト
 python3 scripts/test.py libaribcaption           # 字幕デコーダーの所有権試験。C++/CMake/libclangが必要
-python3 scripts/test.py sleep-inhibit            # 私的D-Busと偽portalによる機器不要試験
+python3 scripts/test.py sleep-inhibit            # 私的D-Busと偽portal/ScreenSaver/logindの機器不要試験
+python3 scripts/test.py sleep-inhibit-x11        # 専用XwaylandでX11の拒否・取得解除を確認
 python3 scripts/test.py connection localization  # 機器不要のQt試験
 python3 scripts/test.py remote-keys               # 専用画面・実GPUでリモコンキー配送と非アクティブ時の挙動を確認
 python3 scripts/test.py danmaku ui-style          # 専用画面・実GPU・仮想音声を検証
@@ -138,5 +139,8 @@ Fedoraの導入は `bash scripts/dev/setup-fedora.sh`、nextestの導入は
   ファイル名の直接参照がなくても、自動収集されるテストや手動ツールは削除候補から区別します。
 
 `sleep-inhibit` は `scripts/testing/sleep_inhibit_service.py` を呼び出し、私的D-Bus上の
-portal取得・解除・拒否・遅延応答を検証します。`dbus-run-session`、Pythonのdbusとgiが
+portal/ScreenSaver/logindの取得・解除・拒否・遅延応答を検証します。`dbus-run-session`、Pythonのdbusとgiが
 必要です。ログと結果は通常の `build/test-runs/run-*/` に出力します。
+
+`sleep-inhibit-x11` は公開GUIランナーが検証した専用Xwaylandのみを使い、X11/Xssの実行時ライブラリーが必要です。
+CPUの私的バス試験と専用GUI試験では、system busも試験用バスへ向け、ホストのlogindへ接続しません。

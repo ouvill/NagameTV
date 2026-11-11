@@ -105,7 +105,7 @@ impl Default for PlayerRust {
         let mut player = Self {
             recording_reconnecting: false,
             sleep_inhibit: crate::sleep_inhibit::Controller::new(
-                crate::qt::sleep_inhibit::Portal,
+                crate::qt::sleep_inhibit::Portal::default(),
                 preferences.preferences().sleep_inhibit_enabled,
             ),
             live_recovery: Default::default(),

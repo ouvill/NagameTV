@@ -1,20 +1,49 @@
-//! Native portal ownership. Each request owns a dedicated bus connection so
-//! cancellation also releases a grant whose method reply arrives too late.
-use crate::sleep_inhibit::{Error, Inhibitor, Progress, Request};
+//! Native leases and environment notifications for Rust-owned routing.
+//! Dedicated connections also release grants whose replies arrive after cancellation.
+use crate::sleep_inhibit::{
+    Error, Progress, Request,
+    routes::{Kind, Routes, Transport},
+};
 
-pub struct Portal;
+pub type Portal = Routes<Native>;
+pub struct Native {
+    #[cfg(target_os = "linux")]
+    environment: cxx::UniquePtr<super::ffi::InhibitEnvironment>,
+}
+impl Default for Native {
+    fn default() -> Self {
+        Self {
+            #[cfg(target_os = "linux")]
+            environment: cxx::UniquePtr::null(),
+        }
+    }
+}
+impl Default for Portal {
+    fn default() -> Self {
+        Self::new(Native::default())
+    }
+}
 #[cfg(target_os = "linux")]
 pub struct PortalRequest(cxx::UniquePtr<super::ffi::SleepInhibit>);
 #[cfg(not(target_os = "linux"))]
 pub struct PortalRequest;
 
-impl Inhibitor for Portal {
-    type Request = PortalRequest;
-    fn acquire(&mut self) -> Result<PortalRequest, Error> {
+impl Transport for Native {
+    type Lease = PortalRequest;
+    fn acquire(&mut self, kind: Kind) -> Result<PortalRequest, Error> {
         #[cfg(target_os = "linux")]
         {
+            if self.environment.is_null() {
+                self.environment = super::ffi::make_inhibit_environment();
+            }
+            if kind == Kind::Logind {
+                self.environment.pin_mut().observe_system();
+            }
             let reason = super::text::Text::source("Watching video").render();
-            Ok(PortalRequest(super::ffi::acquire_sleep_inhibit(&reason)))
+            Ok(PortalRequest(super::ffi::acquire_sleep_inhibit(
+                &kind.as_str().into(),
+                &reason,
+            )))
         }
         #[cfg(not(target_os = "linux"))]
         Err(Error {
@@ -22,6 +51,20 @@ impl Inhibitor for Portal {
             unavailable: true,
             cause: "sleep inhibition is only implemented on Linux".into(),
         })
+    }
+    fn revision_for(&mut self, kind: Kind) -> u64 {
+        #[cfg(target_os = "linux")]
+        if !self.environment.is_null() {
+            return self.environment.revision_for(&kind.as_str().into());
+        }
+        0
+    }
+    fn revision(&mut self) -> u64 {
+        #[cfg(target_os = "linux")]
+        if !self.environment.is_null() {
+            return self.environment.revision();
+        }
+        0
     }
 }
 impl Request for PortalRequest {
@@ -32,7 +75,7 @@ impl Request for PortalRequest {
                 0 => Ok(Progress::Pending),
                 1 => Ok(Progress::Held),
                 code => Err(Error {
-                    operation: "acquire or maintain portal sleep inhibition",
+                    operation: "acquire or maintain desktop sleep inhibition",
                     unavailable: code == 2,
                     cause: self.0.error().to_string().into(),
                 }),
@@ -44,7 +87,7 @@ impl Request for PortalRequest {
     fn release(mut self) -> Result<(), Error> {
         #[cfg(target_os = "linux")]
         self.0.pin_mut().release().map_err(|cause| Error {
-            operation: "release portal sleep inhibition",
+            operation: "release desktop sleep inhibition",
             unavailable: false,
             cause: Box::new(cause),
         })?;
@@ -56,7 +99,7 @@ impl Drop for PortalRequest {
         #[cfg(target_os = "linux")]
         if let Err(error) = self.0.pin_mut().release() {
             tracing::error!(
-                operation = "release portal sleep inhibition on drop",
+                operation = "release desktop sleep inhibition on drop",
                 error = &error as &dyn std::error::Error,
                 "Sleep inhibition cleanup failed"
             );

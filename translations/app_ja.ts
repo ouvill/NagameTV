@@ -1897,6 +1897,7 @@
 </context>
   <context>
     <name>Settings</name>
+    <message><source>This desktop does not allow apps to keep the screen on.</source><translation>このデスクトップ環境では、アプリから画面の消灯を止められません。</translation></message>
     <message><source>Keep the screen on while watching</source><translation>視聴中は画面を消さない</translation></message>
     <message><source>Watching</source><translation>視聴</translation></message>
     <message><source>System</source><translation>システム</translation></message>

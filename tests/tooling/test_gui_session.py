@@ -89,7 +89,7 @@ class GuiSessionTests(unittest.TestCase):
                          WLR_BACKENDS="wayland", WLR_RENDERER_ALLOW_SOFTWARE="1",
                          WLR_RENDER_DRM_DEVICE="/host/device", WLR_HEADLESS_OUTPUTS="3",
                          XAUTHORITY="host-auth", PULSE_SERVER="host-pulse", PULSE_COOKIE="host-cookie",
-                         PIPEWIRE_REMOTE="host-pipewire", DBUS_SESSION_BUS_ADDRESS="host-bus",
+                         PIPEWIRE_REMOTE="host-pipewire", DBUS_SESSION_BUS_ADDRESS="host-bus", DBUS_SYSTEM_BUS_ADDRESS="host-system-bus",
                          DBUS_STARTER_ADDRESS="host-starter", NAGAMETV_GUI_SESSION_DIR="stale",
                          QT_QUICK_BACKEND="software", QT_QPA_PLATFORM="offscreen",
                          CARGO_TARGET_DIR="build/cargo")
@@ -105,6 +105,7 @@ class GuiSessionTests(unittest.TestCase):
         self.assertEqual(env["PULSE_SOURCE"], f"{TEST_SINK}.monitor")
         self.assertIn("node.dont-fallback=true", env["PULSE_PROP"])
         self.assertEqual(env["DBUS_SESSION_BUS_ADDRESS"], "unix:path=/tmp/test-session/bus")
+        self.assertEqual(env["DBUS_SYSTEM_BUS_ADDRESS"], "unix:path=/tmp/test-session/bus")
         self.assertEqual(env["CARGO_TARGET_DIR"], "build/cargo")
         self.assertEqual(env["NAGAMETV_AUDIO_SINK"], "pulsesink")
         self.assertEqual(inherited["DISPLAY"], ":99")
@@ -334,7 +335,7 @@ class GuiSessionTests(unittest.TestCase):
             (self.runtime / name).write_text(value)
         gui.require_inherited_session(env)
         for name, value in (("SWAYSOCK", "/host/sway"), ("WAYLAND_DISPLAY", "host"),
-                            ("DISPLAY", ":99")):
+                            ("DISPLAY", ":99"), ("DBUS_SYSTEM_BUS_ADDRESS", "unix:path=/host/system-bus")):
             with self.subTest(name=name), self.assertRaisesRegex(RuntimeError, "Invalid or closed"):
                 gui.require_inherited_session({**env, name: value})
 
