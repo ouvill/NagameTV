@@ -32,6 +32,19 @@ FocusScope {
     signal shadowRequested(bool enabled)
     property bool statsVisible: false
     signal statsRequested(bool visible)
+    property bool playing: false
+    property real volumeLevel: 1
+    property bool muted: false
+    property string audioTracksJson: "[]"
+    property string audioError: ""
+    property bool subtitlesAvailable: false
+    property bool subtitlesShown: false
+    readonly property bool playbackSettingsVisible: visible && page === ProgramSidebar.Playback
+    signal volumeRequested(real fraction)
+    signal muteRequested(bool muted)
+    signal volumeSaveRequested
+    signal audioTrackRequested(string trackId)
+    signal subtitlesRequested(bool shown)
     signal danmakuRequested(bool enabled)
     property var commentModel: null
     property string commentProgramTitle: ""
@@ -333,6 +346,18 @@ FocusScope {
             speed: root.speed
             shadowEnabled: root.shadowEnabled
             statsVisible: root.statsVisible
+            playing: root.playing
+            volumeLevel: root.volumeLevel
+            muted: root.muted
+            audioTracksJson: root.audioTracksJson
+            audioError: root.audioError
+            subtitlesAvailable: root.subtitlesAvailable
+            subtitlesShown: root.subtitlesShown
+            onVolumeRequested: function(fraction) { root.volumeRequested(fraction); }
+            onMuteRequested: function(muted) { root.muteRequested(muted); }
+            onVolumeSaveRequested: root.volumeSaveRequested()
+            onAudioTrackRequested: function(trackId) { root.audioTrackRequested(trackId); }
+            onSubtitlesRequested: function(shown) { root.subtitlesRequested(shown); }
             onBoundaryReached: function(key) {
                 if (key === Qt.Key_Up) closeButton.forceActiveFocus(Qt.TabFocusReason);
                 else footer.enter();

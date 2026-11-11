@@ -55,6 +55,11 @@ Item {
                 tryVerify(() => item.activeFocus,
                     5000, "Expected focus: " + name + "; actual=" + host.activeFocusItem + "; page=" + sidebar.page + "; channels=" + sidebar.channelModel.count);
             }
+            function expectVolume() {
+                const slider = findChild(findChild(sidebar, "playbackVolume"), "settingSlider");
+                verify(slider !== null, "Missing volume slider");
+                tryVerify(() => slider.activeFocus, 5000, "Expected focus on the volume slider; actual=" + host.activeFocusItem);
+            }
             function verifyVisible(name) {
                 const settings = findChild(sidebar, "sidebarPlaybackSettings");
                 const field = findChild(settings, name);
@@ -64,7 +69,10 @@ Item {
                 }, 5000, name + " must be visible");
             }
             function test_move_adjust_and_scroll_without_pointer() {
-                sidebar.enter(); expectFocus("playbackDanmakuToggle");
+                // Audio comes first; without tracks or subtitles the list skips to comments.
+                sidebar.enter(); expectVolume();
+                keyClick(Qt.Key_Down); expectFocus("playbackMuteToggle");
+                keyClick(Qt.Key_Down); expectFocus("playbackDanmakuToggle");
                 keyClick(Qt.Key_Return);
                 compare(sidebar.danmakuEnabled, true);
                 ime.forward_key(Qt.Key_Return, Qt.NoModifier, "", true);
@@ -102,8 +110,10 @@ Item {
             }
             function test_disabled_fields_tabs_and_header_remain_reachable() {
                 sidebar.commentsEnabled = false;
-                sidebar.enter(); expectFocus("playbackStatsToggle");
+                sidebar.enter(); expectVolume();
                 keyClick(Qt.Key_Up); expectFocus("sidebarCloseButton");
+                keyClick(Qt.Key_Down); expectVolume();
+                keyClick(Qt.Key_Down); expectFocus("playbackMuteToggle");
                 keyClick(Qt.Key_Down); expectFocus("playbackStatsToggle");
                 keyClick(Qt.Key_Down); expectFocus("playbackSidebarTab");
                 keyClick(Qt.Key_Right); expectFocus("programSidebarTab");
@@ -126,7 +136,9 @@ Item {
             }
             function test_switch_label_is_clickable() {
                 const field = findChild(sidebar, "playbackDanmakuToggle");
-                findChild(sidebar, "sidebarPlaybackSettings").contentItem.contentY = 0;
+                const flick = findChild(sidebar, "sidebarPlaybackSettings").contentItem;
+                flick.contentY = Math.min(field.mapToItem(flick.contentItem, 0, 0).y, Math.max(0, flick.contentHeight - flick.height));
+                verify(waitForRendering(sidebar));
                 mouseClick(field, 20, field.height / 2);
                 compare(sidebar.danmakuEnabled, true);
                 compare(toggled.count, 1);

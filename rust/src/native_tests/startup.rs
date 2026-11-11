@@ -505,7 +505,7 @@ fn check_screen_navigation(
         )?;
         wait_for(app, engine, "settings.opened")?;
         capture(engine, &format!("settings-{width}.png"))?;
-        evaluate(engine, "settings.page = SettingsPanel.Connection; true")?;
+        evaluate(engine, "settings.page = SettingsPanel.Watching; true")?;
         wait_for(app, engine, "settings.pageReveal === 1")?;
         assert!(evaluate(
             engine,
@@ -2309,11 +2309,11 @@ fn check_shortcuts(
         ffi::clickRootKey(engine.pin_mut(), &QString::from("Escape"))?;
         wait_for(app, engine, "!root.showChannels")?;
     }
-    evaluate(engine, "root.openSettings(SettingsPanel.Updates); true")?;
+    evaluate(engine, "root.openSettings(SettingsPanel.System); true")?;
     wait_for(
         app,
         engine,
-        "settings.opened && settings.page === SettingsPanel.Updates",
+        "settings.opened && settings.page === SettingsPanel.System",
     )?;
     assert!(evaluate(
         engine,
@@ -2369,7 +2369,7 @@ fn check_shortcuts(
         ),
         (
             "Back",
-            "root.activeFocusItem.objectName === 'settingsCategory1' && settings.opened",
+            "root.activeFocusItem.objectName === 'settingsCategory2' && settings.opened",
         ),
     ] {
         ffi::clickRootKey(engine.pin_mut(), &QString::from(key))?;
@@ -2410,9 +2410,11 @@ fn check_sidebar_navigation(
         engine,
         "root.showProgram && sidebar.reveal === 1 && sidebar.view !== null && sidebar.view.activeFocus",
     )?;
+    // Audio and subtitles come first so a remote reaches them with the fewest presses.
+    wait_for(app, engine, &focused("settingSlider"))?;
     capture_navigation(app, engine, "sidebar-viewing-settings.png")?;
     if evaluate(engine, "player.comments_enabled")? {
-        for _ in 0..10 {
+        for _ in 0..20 {
             if evaluate(engine, &focused("playbackAppearanceButton"))? {
                 break;
             }
@@ -2423,7 +2425,7 @@ fn check_sidebar_navigation(
         capture_navigation(app, engine, "sidebar-comment-appearance.png")?;
         ffi::clickRootKey(engine.pin_mut(), &QString::from("Return"))?;
     }
-    for _ in 0..10 {
+    for _ in 0..20 {
         if evaluate(engine, &focused("playbackStatsToggle"))? {
             break;
         }

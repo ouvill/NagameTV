@@ -32,4 +32,14 @@ QtObject {
         if (audio.samplingRate > 0) parts.push((audio.samplingRate / 1000) + " kHz")
         return parts.join(" · ")
     }
+    // Audio popup and side panel name tracks the same way.
+    function trackLabel(track, index, tracks) {
+        const languageName = language(track.language)
+        const number = track.number || index + 1
+        const role = track.role === "main" ? qsTranslate("Main", "Main audio") : track.role === "sub" ? qsTranslate("Main", "Sub audio") : track.role === "both" ? qsTranslate("Main", "Main / sub") : ""
+        const name = track.role === "both" ? role : (languageName ? languageName + (role ? " · " + role : "") : role)
+        const duplicate = tracks.some(other => other.id !== track.id && other.language === track.language && other.role === track.role)
+        const audioName = qsTranslate("Main", "Audio %1").arg(number)
+        return !name ? audioName : duplicate ? name + " · " + audioName : name
+    }
 }
