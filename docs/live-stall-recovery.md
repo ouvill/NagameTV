@@ -58,9 +58,9 @@ PID固定方式、字幕補完 `-c 5 -u 5` 相当、音声補完を追加しな�
 停止を注入したHTTP結合試験は同じ局への新規接続と出力復帰を確認した。
 全体の検査結果とGUI制約は作業報告に記録する。
 
-この環境には `/dev/dri` がなく、実GPUのrender nodeを検出できなかった。
-`AGENTS.md` の機器要件に従い、実GPU・音声を使う製品Main.qml検証は停止している。
-CPU比較と復旧試験の成功を、実GPUでの切り替え・長時間視聴の完了とは扱わない。
+初回の実行環境では `/dev/dri` が見えず、実GPUのrender nodeを検出できなかったため、
+`AGENTS.md` の機器要件に従ってGUI検証を止めた。下記の再検出後に実GPUでの検証を再開した。
+CPU比較と復旧試験の成功を、実GPUでの長時間視聴の完了とは扱わない。
 
 ## 検出条件と閾値
 
@@ -159,4 +159,25 @@ CPUのQt接続・デスクトップ連携・翻訳・字幕形状・CLI検査は
 復旧通知中の停止の取り消しと、通知中の公開値の整合・日英切り替えも含む。
 Clippyはreleaseの通常構成と `native_tests` 構成の全ターゲットで `-D warnings` を通過し、
 生成した型情報を使う製品QML 112ファイルのqmllintも成功した。
-実GPUの検証と実放送の原因確定は、上記の機器不足・未収集により未完了である。
+初回時点では機器不足で実GPUの検証を保留した。実放送の原因は未確定である。
+
+### GPU再検出後の確認（2026-11-12）
+
+再確認では `/dev/dri/renderD128` とNVIDIAデバイスが読み書き可能で、`nvidia-smi` は
+RTX 4070 Ti、ドライバー595.99.02を返した。公開GUIランナーのGPU・専用画面・
+PipeWire仮想出力の検証も成功した。swayと専用XwaylandのGL rendererはいずれも
+NVIDIAであり、ソフトウェア描画への代替は行っていない。
+
+`python3 scripts/test.py startup --profile release -- recording-pid-change` は成功した。
+製品Main.qmlの初期復旧API値と、PID変更素材の再生・シーク・終端を実描画で確認した。
+ログは `build/test-runs/run-7wsdu0nr/`。
+続く通常のstartup全体でも時計リセット素材150フレーム、PID変更素材149フレームがEOFへ到達したが、
+その後のEPGStation録画一覧で期待50件に対して12件となり停止した。
+ログは `build/test-runs/run-u9ziqc2k/`。この失敗をGPU接続の失敗とは扱わない。
+
+`python3 scripts/test.py startup --profile release -- timeshift` も成功した（約182秒）。
+メモリー／一時ファイルの一時停止中の受信、巻き戻し、ライブ復帰、容量変更、保存先切り替えを確認した。
+この操作列で停止復旧の開始ログはなく、不要な再接続も発生しなかった。
+ログは `build/test-runs/run-mjh3agn0/`。GPU不足による保留は解消した。
+停止を注入して自動再接続させる試験は引き続きCPU限定の結合試験であり、
+実GPUでの停止注入・復旧UIの確認、実放送の切り替え原因の確定とは区別する。
