@@ -65,6 +65,14 @@ enum Suite {
     },
     RecordingProbe {
         path: PathBuf,
+        #[arg(default_value_t = 28, value_parser = clap::value_parser!(u32).range(1..=600))]
+        seconds: u32,
+    },
+    LiveProbe {
+        server: url::Url,
+        service: u64,
+        #[arg(default_value_t = 28, value_parser = clap::value_parser!(u32).range(1..=600))]
+        seconds: u32,
     },
     #[cfg(target_os = "linux")]
     PortalDialogs,
@@ -124,7 +132,12 @@ pub fn run(arguments: Vec<OsString>) -> i32 {
         Suite::ScreenshotPlayback => startup::run_screenshots(),
         Suite::RecordingPidChange => startup::run_pid_change(),
         Suite::RecordingAudit { path } => startup::run_recording_audit(path),
-        Suite::RecordingProbe { path } => startup::run_recording_probe(path),
+        Suite::RecordingProbe { path, seconds } => startup::run_recording_probe(path, seconds),
+        Suite::LiveProbe {
+            server,
+            service,
+            seconds,
+        } => startup::run_live_probe(server, service, seconds),
         #[cfg(target_os = "linux")]
         Suite::PortalDialogs => portal_dialogs::run(),
         Suite::ChannelViews { arguments } | Suite::SubtitleRendering { arguments } => {

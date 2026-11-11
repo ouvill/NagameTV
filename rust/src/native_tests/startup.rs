@@ -641,7 +641,15 @@ enum WindowCheck {
     VideoProcessing,
     PlaybackPerformance,
     RecordingAudit(std::path::PathBuf),
-    RecordingProbe(std::path::PathBuf),
+    RecordingProbe {
+        path: std::path::PathBuf,
+        seconds: u32,
+    },
+    LiveProbe {
+        server: url::Url,
+        service: u64,
+        seconds: u32,
+    },
 }
 
 fn window(
@@ -764,8 +772,18 @@ fn window(
             app.process_events();
             return result;
         }
-        WindowCheck::RecordingProbe(path) => {
-            let result = super::recording_audit::probe(app, &mut engine, &path);
+        WindowCheck::RecordingProbe { path, seconds } => {
+            let result = super::recording_audit::probe(app, &mut engine, &path, seconds);
+            evaluate(&mut engine, "player.stop(); root.close(); true")?;
+            return result;
+        }
+        WindowCheck::LiveProbe {
+            server,
+            service,
+            seconds,
+        } => {
+            let result =
+                super::recording_audit::probe_live(app, &mut engine, &server, service, seconds);
             evaluate(&mut engine, "player.stop(); root.close(); true")?;
             return result;
         }
@@ -2738,8 +2756,16 @@ pub fn run_pid_change() -> i32 {
 pub fn run_recording_audit(path: std::path::PathBuf) -> i32 {
     run_window_check(WindowCheck::RecordingAudit(path))
 }
-pub fn run_recording_probe(path: std::path::PathBuf) -> i32 {
-    run_window_check(WindowCheck::RecordingProbe(path))
+pub fn run_recording_probe(path: std::path::PathBuf, seconds: u32) -> i32 {
+    run_window_check(WindowCheck::RecordingProbe { path, seconds })
+}
+
+pub fn run_live_probe(server: url::Url, service: u64, seconds: u32) -> i32 {
+    run_window_check(WindowCheck::LiveProbe {
+        server,
+        service,
+        seconds,
+    })
 }
 
 fn run_window_check(check: WindowCheck) -> i32 {
