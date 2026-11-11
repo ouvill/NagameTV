@@ -1219,7 +1219,7 @@ fn check_epgstation_library(
             return null;
         }
     "#;
-    evaluate(engine, "root.requestMode(ModeNavigation.Recording); true")?;
+    open_recordings(app, engine)?;
     wait_for(
         app,
         engine,
@@ -1347,7 +1347,7 @@ fn check_epgstation_library(
     )?;
     // Multiple files require an explicit stable video ID. Cancelling the chooser
     // leaves TS playback intact; single encoded recordings play immediately.
-    evaluate(engine, "root.requestMode(ModeNavigation.Recording); true")?;
+    open_recordings(app, engine)?;
     wait_for(
         app,
         engine,
@@ -1428,7 +1428,7 @@ fn check_epgstation_library(
         engine,
         "player.paused && !player.seeking && player.playback_rate === 15",
     )?;
-    evaluate(engine, "root.requestMode(ModeNavigation.Recording); true")?;
+    open_recordings(app, engine)?;
     wait_for(
         app,
         engine,
@@ -1449,9 +1449,10 @@ fn check_epgstation_library(
         engine,
         "player.playing && player.duration_ms > 59000 && player.subtitles_active && JSON.parse(player.video_stats()).rendered > 0",
     )?;
-    // Browsing during playback and leaving the page must retain both the
-    // existing stream and the search editor, without fetching another catalogue.
-    evaluate(engine, "root.requestMode(ModeNavigation.Recording); true")?;
+    // Browsing during playback and leaving the page must retain the existing
+    // stream and the search editor. Reopening refreshes the catalogue and
+    // restores the scroll position once that refresh finishes.
+    open_recordings(app, engine)?;
     wait_for(
         app,
         engine,
@@ -1465,12 +1466,13 @@ fn check_epgstation_library(
     )?;
     wait_for(app, engine, "!recordingLibrary.visible && player.playing")?;
     evaluate(engine, "root.requestMode(ModeNavigation.Recording); true")?;
-    assert!(evaluate(
+    wait_for(
+        app,
         engine,
         &format!(
-            "{FIND} const retainedScrollOffset = 200; find(recordingLibrary, 'epgstationKeyword').text === 'retained search' && find(recordingLibrary, 'epgstationRecordings').contentY === retainedScrollOffset && player.epgstation_loaded && !player.epgstation_busy"
-        )
-    )?);
+            "{FIND} const retainedScrollOffset = 200; find(recordingLibrary, 'epgstationKeyword').text === 'retained search' && find(recordingLibrary, 'epgstationRecordings').contentY === retainedScrollOffset && player.epgstation_loaded && !player.epgstation_busy && player.playing"
+        ),
+    )?;
     evaluate(
         engine,
         &format!(
@@ -2388,6 +2390,20 @@ fn check_shortcuts(
     check_directional_navigation(app, engine)?;
     check_sidebar_navigation(app, engine)?;
     Ok(())
+}
+
+/// Opening the recordings screen refreshes the catalogue; act on rows only
+/// after that refresh has replaced them.
+fn open_recordings(
+    app: &QGuiApplication,
+    engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
+) -> TestResult {
+    evaluate(engine, "root.requestMode(ModeNavigation.Recording); true")?;
+    wait_for(
+        app,
+        engine,
+        "recordingLibrary.visible && !player.epgstation_busy",
+    )
 }
 
 fn check_sidebar_navigation(
