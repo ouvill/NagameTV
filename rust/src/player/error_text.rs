@@ -66,6 +66,8 @@ impl PresentError for crate::playback::Error {
             MissingBus => Text::source("Missing GStreamer bus"),
             MissingDecoder(error) => detail("Missing video or audio decoder: %1", error),
             EndOfStream => Text::source("The stream has ended"),
+            LiveObservation => Text::source("Could not observe live audio output."),
+            LiveRecoveryFailed => Text::source("Could not restore video or audio. Please retry."),
             Recording(error) => error.present(),
             Input(error) => error.present(),
             Transport(error) => error.present(),

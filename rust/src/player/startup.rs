@@ -104,6 +104,8 @@ impl Default for PlayerRust {
         );
         let mut player = Self {
             recording_reconnecting: false,
+            live_recovery: Default::default(),
+            live_recovery_target: None,
             #[cfg(target_os = "linux")]
             desktop_media: Default::default(),
             language: QString::from(preferences.preferences().language.code()),

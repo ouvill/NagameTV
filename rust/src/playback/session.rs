@@ -517,6 +517,54 @@ impl Session {
         }
     }
 
+    pub fn live_recovery_observation(&self) -> Result<super::live_recovery::Observation> {
+        use super::{live_recovery::Observation, timeline::Phase};
+        use gstreamer::prelude::*;
+        let (
+            Some(playback),
+            Input::Active {
+                source,
+                controller,
+                projection: Projection::Live(_),
+                ..
+            },
+        ) = (&self.playback, &self.input)
+        else {
+            return Ok(Observation::Suspended);
+        };
+        if controller.recovery_is_history()
+            || matches!(controller.phase(), Phase::Paused | Phase::Ended)
+        {
+            return Ok(Observation::Suspended);
+        }
+        if matches!(controller.phase(), Phase::Seeking(_))
+            || playback.playbin.current_state() != gstreamer::State::Playing
+            || playback.bus_history.borrow().buffering
+        {
+            return Ok(Observation::Buffering);
+        }
+        let Some(mut sample) = source.recovery_sample()? else {
+            return Ok(Observation::Suspended);
+        };
+        sample.video_output = playback
+            .video_frame_counters()
+            .map(|counts| counts.rendered);
+        sample.audio_output = playback.output_activity.audio()?;
+        sample.output_time_ns = controller.snapshot().position.map(|time| time.nseconds());
+        Ok(Observation::Live(sample))
+    }
+    pub fn live_recovery_diagnostic(&self) -> Result<String> {
+        let input = match &self.input {
+            Input::Active { source, .. } => source.recovery_diagnostic()?,
+            Input::Idle | Input::Media { .. } => String::new(),
+        };
+        let bus = self
+            .playback
+            .as_ref()
+            .map(|p| p.bus_history.borrow().diagnostic());
+        Ok(format!("{input} bus={bus:?}"))
+    }
+
     pub fn recording_reconnecting(&self) -> bool {
         self.http_control()
             .is_some_and(|control| control.reconnecting())

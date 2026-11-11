@@ -221,12 +221,19 @@ enum RecordingNetwork {
     Starved,
 }
 
+#[derive(Clone, Copy)]
+enum RecoveryIntent {
+    Live,
+    History,
+}
+
 pub(super) struct Controller {
     recording_network: RecordingNetwork,
     state: State,
     startup: Startup,
     live_buffer: LiveBuffer,
     live_position: LivePosition,
+    recovery_intent: RecoveryIntent,
     reception: Option<(gst::ClockTime, Instant)>,
     receive_range: Option<Range>,
     supply: supply::Supply,
@@ -298,6 +305,7 @@ impl Controller {
                 StartPosition::Beginning => LiveBuffer::default(),
                 StartPosition::LiveEdge(buffer) => buffer,
             },
+            recovery_intent: RecoveryIntent::Live,
             live_position: match start {
                 StartPosition::Beginning => LivePosition::Recording,
                 StartPosition::LiveEdge(_) => LivePosition::ForwardBuffer,
@@ -366,6 +374,9 @@ impl Controller {
             // HTTP recovery owns its finite deadline until bytes are available.
             seek.deadline = Instant::now() + SEEK_TIMEOUT;
         }
+    }
+    pub fn recovery_is_history(&self) -> bool {
+        matches!(self.recovery_intent, RecoveryIntent::History)
     }
     pub fn phase(&self) -> Phase {
         match &self.state {
@@ -849,6 +860,9 @@ impl Controller {
             return Ok(());
         }
         pipeline.set_state(self.native_resume(resume))?;
+        if resume == Resume::Paused {
+            self.recovery_intent = RecoveryIntent::History;
+        }
         self.startup = Startup::Complete;
         match &mut self.state {
             State::Seeking(seek) => seek.resume = resume,
@@ -1012,10 +1026,14 @@ impl Controller {
                     }
                     match seek.completion {
                         Completion::Position => {}
-                        Completion::Live => self.live_position = LivePosition::Near,
+                        Completion::Live => {
+                            self.live_position = LivePosition::Near;
+                            self.recovery_intent = RecoveryIntent::Live;
+                        }
                         Completion::CaughtUp => {
                             self.live_position = LivePosition::Near;
                             self.notice = Some(Notice::CaughtUp);
+                            self.recovery_intent = RecoveryIntent::Live;
                         }
                         Completion::ReceptionStalled => {
                             self.notice = Some(Notice::ReceptionStalled);
@@ -1154,6 +1172,7 @@ impl Ready<'_> {
             }
         }
         self.controller.startup = Startup::Complete;
+        self.controller.recovery_intent = RecoveryIntent::History;
         Ok(())
     }
 
@@ -1189,6 +1208,7 @@ impl Ready<'_> {
                     completion: Completion::Position,
                 });
                 self.controller.startup = Startup::Complete;
+                self.controller.recovery_intent = RecoveryIntent::History;
                 return Ok(());
             }
             State::Playing | State::Ended => Resume::Playing,
@@ -1197,6 +1217,7 @@ impl Ready<'_> {
         self.controller
             .start_change(self.pipeline, target, resume, rate, Completion::Position)?;
         self.controller.startup = Startup::Complete;
+        self.controller.recovery_intent = RecoveryIntent::History;
         Ok(())
     }
 }

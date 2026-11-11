@@ -451,6 +451,9 @@
 </context>
   <context>
     <name>Backend</name>
+    <message><source>Could not observe live audio output.</source><translation>ライブの音声出力を監視できませんでした。</translation></message>
+    <message><source>Video or audio stopped. Reconnecting to the same channel…</source><translation>映像・音声が停止したため、同じチャンネルに再接続しています…</translation></message>
+    <message><source>Could not restore video or audio. Please retry.</source><translation>映像・音声を復旧できませんでした。再試行してください。</translation></message>
     <message><source>Data broadcast could not start: %1</source><translation>データ放送を開始できません: %1</translation></message>
     <message><source>Could not read subtitles: %1</source><translation>字幕を読み込めませんでした: %1</translation></message>
     <message><source>Select a valid SRT or ASS subtitle file</source><translation>有効な SRT または ASS 字幕ファイルを選択してください</translation></message>

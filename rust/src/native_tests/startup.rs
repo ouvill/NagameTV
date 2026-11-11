@@ -661,6 +661,14 @@ fn window(
         .load(&QUrl::from("qrc:/qt/qml/MinimalViewer/qml/Main.qml"));
     assert_eq!(ffi::root_count(&engine), 1);
     assert!(evaluate(&mut engine, "root.settings === null")?);
+    assert!(evaluate(
+        &mut engine,
+        "player.live_recovery_state === 'idle' && player.live_recovery_message === ''"
+    )?);
+    assert!(evaluate(
+        &mut engine,
+        "player.retry_live_recovery(); player.live_recovery_state === 'idle'"
+    )?);
     match check {
         WindowCheck::PlaybackPerformance => {
             eprintln!(

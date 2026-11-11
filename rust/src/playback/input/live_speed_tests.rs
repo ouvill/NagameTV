@@ -122,7 +122,9 @@ fn live_catch_up_recovers_when_receive_index_is_ahead_of_decodable_video()
         &pipeline.by_name("output").ok_or("output")?,
         StartPosition::Beginning,
     )?;
+    assert!(!controller.recovery_is_history());
     controller.pause(pipeline.upcast_ref(), Resume::Paused)?;
+    assert!(controller.recovery_is_history());
     pipeline
         .state(gst::ClockTime::from_seconds(CATCH_UP_DEADLINE.as_secs()))
         .0?;
@@ -176,6 +178,7 @@ fn live_catch_up_recovers_when_receive_index_is_ahead_of_decodable_video()
         let delay = window.end.saturating_sub(position.nseconds());
         if let Some((at, before)) = restored {
             assert_eq!(controller.speed().applied, Rate::NORMAL);
+            assert!(!controller.recovery_is_history());
             assert!(
                 controller.speed().at_live_edge,
                 "live status lost after catch-up: delay={}ms",

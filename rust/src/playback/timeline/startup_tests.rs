@@ -234,12 +234,24 @@ fn confirmed_live_return_sets_live_status_despite_receive_progress_during_seek()
         playback.controller.speed().at_live_edge,
         "confirmed live return must tolerate reception advancing during preroll"
     );
+    assert!(!playback.controller.recovery_is_history());
+    // A growing receive delay alone must not disable stall detection.
+    playback.controller.observe_live(
+        Range::new(
+            gst::ClockTime::ZERO,
+            later.end() + gst::ClockTime::from_seconds(20),
+        )
+        .unwrap(),
+        true,
+    );
+    assert!(!playback.controller.recovery_is_history());
     Ready {
         controller: &mut playback.controller,
         pipeline: playback.pipeline.upcast_ref(),
         range: later,
     }
     .seek(USER_POSITION.mseconds() as f64)?;
+    assert!(playback.controller.recovery_is_history());
     playback.finish_seek()?;
     playback.controller.retained(
         playback.pipeline.upcast_ref(),
@@ -278,6 +290,7 @@ fn rewind_supersedes_pending_live_return_without_publishing_live_status()
         !playback.controller.speed().at_live_edge,
         "superseded live confirmation is stale"
     );
+    assert!(playback.controller.recovery_is_history());
     assert!(playback.controller.take_notice().is_none());
     Ok(())
 }
