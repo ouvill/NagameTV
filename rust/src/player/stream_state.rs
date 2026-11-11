@@ -53,6 +53,31 @@ impl LiveAttempt {
     }
 }
 
+#[derive(Clone, Debug)]
+pub(super) struct RecoveryTarget {
+    service: u64,
+    name: String,
+    broadcast: Option<BroadcastService>,
+    retention: Policy,
+}
+impl RecoveryTarget {
+    pub(super) fn restart(self, _permit: crate::playback::live_recovery::Restart) -> Attempt {
+        self.attempt(Retry::Used)
+    }
+    pub(super) fn manual_retry(self) -> Attempt {
+        self.attempt(Retry::Available)
+    }
+    fn attempt(self, retry: Retry) -> Attempt {
+        Attempt::Live(LiveAttempt {
+            service: self.service,
+            name: self.name,
+            broadcast: self.broadcast,
+            retention: self.retention,
+            retry,
+        })
+    }
+}
+
 #[derive(Default, Debug, PartialEq, Eq)]
 pub(super) enum Selection {
     #[default]
@@ -168,6 +193,22 @@ impl State {
         self
     }
 
+    pub(super) fn recovery_target(&self) -> Option<RecoveryTarget> {
+        match self {
+            Self::Playing(live, _) | Self::Connecting(Attempt::Live(live)) => {
+                Some(RecoveryTarget {
+                    service: live.service,
+                    name: live.name.clone(),
+                    broadcast: live.broadcast,
+                    retention: live.retention,
+                })
+            }
+            Self::Stopped(_)
+            | Self::Recording(_, _)
+            | Self::StopFailed(_)
+            | Self::Connecting(Attempt::File(_)) => None,
+        }
+    }
     pub(super) fn connecting(&self) -> bool {
         matches!(self, Self::Connecting(_))
     }
@@ -307,6 +348,44 @@ mod tests {
         assert!(state.requested(42));
         assert!(state.take_retry().is_none());
         assert!(State::Connecting(attempt()).take_retry().is_some());
+    }
+    #[test]
+    fn recovery_restarts_and_manual_retry_preserve_the_failed_channel() {
+        use crate::playback::live_recovery::{
+            Action, Observation, Recovery, STALL_TIMEOUT, Sample,
+        };
+        let state = State::Connecting(attempt()).started();
+        let target = state.recovery_target().unwrap();
+        let mut recovery = Recovery::default();
+        let start = std::time::Instant::now();
+        let mut action = Action::None;
+        for second in 0..=STALL_TIMEOUT.as_secs() {
+            action = recovery.observe(
+                start + std::time::Duration::from_secs(second),
+                Observation::Live(Sample {
+                    generation: 1,
+                    video_expected: true,
+                    video_input: second + 1,
+                    received_bytes: (second + 1) * 188,
+                    video_output: Some(1),
+                    ..Default::default()
+                }),
+            );
+        }
+        let Action::Restart(permit) = action else {
+            panic!("stall permit");
+        };
+        let restart = target.clone().restart(permit);
+        assert_eq!(restart.service(), Some(42));
+        assert_eq!(restart.name(), "Original channel");
+        assert!(
+            State::Connecting(restart).take_retry().is_none(),
+            "stall recovery must not grant another HTTP retry"
+        );
+        let manual = target.manual_retry();
+        assert_eq!(manual.service(), Some(42));
+        assert_eq!(manual.name(), "Original channel");
+        assert!(State::Connecting(manual).take_retry().is_some());
     }
     #[test]
     fn stopped_and_failed_cleanup_reject_late_start_events() {

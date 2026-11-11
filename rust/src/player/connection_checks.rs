@@ -249,6 +249,8 @@ fn checks() -> TestResult {
     check_live_buffer()?;
     check_timeshift_options()?;
     check_transport_messages();
+    check_live_recovery_messages();
+    check_live_recovery_notification_cancellation();
     check_screenshot_directory()?;
     check_comment_presentation()?;
     crate::danmaku::checks::run()?;
@@ -1688,4 +1690,131 @@ pub fn run() -> i32 {
             1
         }
     }
+}
+
+fn check_live_recovery_messages() {
+    use crate::playback::live_recovery::{Action, Observation, STALL_TIMEOUT, Sample};
+    use cxx_qt_lib::QQmlApplicationEngine;
+    let mut engine = QQmlApplicationEngine::new();
+    assert!(crate::qt::ffi::initialize_ui_language(
+        engine.pin_mut(),
+        &"en".into()
+    ));
+    let mut player = ffi::new_player();
+    assert_eq!(player.live_recovery_state(), QString::from("idle"));
+    assert!(player.live_recovery_message().is_empty());
+    player.pin_mut().retry_live_recovery();
+    assert_eq!(player.live_recovery_state(), QString::from("idle"));
+    let observed = Arc::new(Mutex::new(Vec::new()));
+    let captured = observed.clone();
+    let _signal = player.pin_mut().on_live_recovery_changed(move |player| {
+        let state = player.live_recovery_state().to_string();
+        let message = player.live_recovery_message().to_string();
+        assert_eq!(state == "idle", message.is_empty());
+        captured.lock().unwrap().push((state, message));
+    });
+    let start = Instant::now();
+    let mut action = Action::None;
+    for second in 0..=STALL_TIMEOUT.as_secs() {
+        action = player.pin_mut().rust_mut().live_recovery.observe(
+            start + Duration::from_secs(second),
+            Observation::Live(Sample {
+                generation: 1,
+                video_expected: true,
+                video_input: second + 1,
+                received_bytes: (second + 1) * 188,
+                video_output: Some(1),
+                ..Default::default()
+            }),
+        );
+    }
+    assert!(matches!(action, Action::Restart(_)));
+    player.pin_mut().live_recovery_changed();
+    assert_eq!(player.live_recovery_state(), QString::from("recovering"));
+    assert_eq!(
+        player.live_recovery_message(),
+        QString::from("Video or audio stopped. Reconnecting to the same channel…")
+    );
+    assert!(player.pin_mut().request_language("ja".into()));
+    assert_eq!(
+        player.live_recovery_message(),
+        QString::from("映像・音声が停止したため、同じチャンネルに再接続しています…")
+    );
+    player.pin_mut().fail_live_recovery();
+    assert_eq!(player.live_recovery_state(), QString::from("failed"));
+    assert_eq!(
+        player.live_recovery_message(),
+        QString::from("映像・音声を復旧できませんでした。再試行してください。")
+    );
+    assert!(player.pin_mut().request_language("en".into()));
+    assert_eq!(
+        player.live_recovery_message(),
+        QString::from("Could not restore video or audio. Please retry.")
+    );
+    player.pin_mut().reset_live_recovery();
+    assert_eq!(player.live_recovery_state(), QString::from("idle"));
+    assert!(observed.lock().unwrap().len() >= 5);
+    eprintln!("Live recovery state/message stay coherent during notification and retranslation");
+}
+
+fn check_live_recovery_notification_cancellation() {
+    use crate::playback::live_recovery::{
+        Action, Observation, RECOVERY_TIMEOUT, STALL_TIMEOUT, Sample,
+    };
+    for cancel_failed in [false, true] {
+        let mut player = ffi::new_player();
+        let _signal = player
+            .pin_mut()
+            .on_live_recovery_changed(move |mut player| {
+                let cancel = if cancel_failed {
+                    "failed"
+                } else {
+                    "recovering"
+                };
+                if player.live_recovery_state() == QString::from(cancel) {
+                    player.as_mut().stop();
+                }
+            });
+        let start = Instant::now();
+        let sample = |second| {
+            Observation::Live(Sample {
+                generation: 1,
+                video_expected: true,
+                video_input: second + 1,
+                received_bytes: (second + 1) * 188,
+                video_output: Some(1),
+                ..Default::default()
+            })
+        };
+        for second in 0..=STALL_TIMEOUT.as_secs() {
+            if cancel_failed {
+                // Keep this policy-only fixture in Starting, without constructing native playback.
+                let action = player
+                    .pin_mut()
+                    .rust_mut()
+                    .live_recovery
+                    .observe(start + Duration::from_secs(second), sample(second));
+                assert!(matches!(action, Action::None | Action::Restart(_)));
+            } else {
+                player
+                    .pin_mut()
+                    .apply_live_recovery(sample(second), start + Duration::from_secs(second));
+            }
+        }
+        if cancel_failed {
+            player.pin_mut().apply_live_recovery(
+                Observation::Buffering,
+                start + STALL_TIMEOUT + RECOVERY_TIMEOUT,
+            );
+        }
+        assert_eq!(player.live_recovery_state(), QString::from("idle"));
+        assert!(
+            player.playback_error().is_empty(),
+            "a notification-time stop must supersede stale recovery"
+        );
+        assert!(player.rust().media.playback().is_none());
+    }
+    eprintln!(
+        "Stop during recovering/failed notification cancels the old action without a spurious error"
+    );
 }

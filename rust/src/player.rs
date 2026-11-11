@@ -24,6 +24,7 @@ mod recording_information_checks;
 use lifecycle::{Failure as StatusFailure, Status as PlaybackStatus};
 mod data_broadcast;
 mod error_text;
+mod live_recovery;
 mod media_subtitles;
 mod navigation;
 #[cfg(feature = "native_tests")]
@@ -247,6 +248,8 @@ pub mod ffi {
         #[qproperty(QString, file_error, READ = file_error, NOTIFY)]
         #[qproperty(bool, recording_loading, READ = recording_loading, NOTIFY)]
         #[qproperty(bool, recording_reconnecting, READ = recording_reconnecting, NOTIFY)]
+        #[qproperty(QString, live_recovery_state, READ = live_recovery_state, NOTIFY = live_recovery_changed)]
+        #[qproperty(QString, live_recovery_message, READ = live_recovery_message, NOTIFY = live_recovery_changed)]
         #[qproperty(bool, subtitles_enabled, READ, CONSTANT)]
         #[qproperty(bool, epg_enabled, READ, CONSTANT)]
         #[qproperty(bool, comments_enabled, READ, NOTIFY)]
@@ -656,6 +659,12 @@ pub mod ffi {
         fn open_recording_transfer(self: Pin<&mut Player>, key: QString) -> bool;
         fn recording_loading(self: &Player) -> bool;
         fn recording_reconnecting(self: &Player) -> bool;
+        fn live_recovery_state(self: &Player) -> QString;
+        fn live_recovery_message(self: &Player) -> QString;
+        #[qsignal]
+        fn live_recovery_changed(self: Pin<&mut Player>);
+        #[qinvokable]
+        fn retry_live_recovery(self: Pin<&mut Player>);
         #[qsignal]
         #[cxx_name = "recordingOpened"]
         fn recording_opened(self: Pin<&mut Player>, success: bool);
@@ -808,6 +817,8 @@ pub struct PlayerRust {
     catalog: crate::channels::catalog::Catalog,
     stream_state: stream_state::State,
     recording_reconnecting: bool,
+    live_recovery: playback::live_recovery::Recovery,
+    live_recovery_target: Option<stream_state::RecoveryTarget>,
     timeline: playback::timeline::Snapshot,
     speed: playback::speed::Snapshot,
     timeshift_bytes_per_second: f64,

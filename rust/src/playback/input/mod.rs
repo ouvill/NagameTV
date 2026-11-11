@@ -7,9 +7,13 @@ pub mod limits;
 pub use limits::{Activation, Limits, Policy};
 #[cfg(test)]
 mod live_speed_tests;
+#[cfg(test)]
+mod live_transition_tests;
 mod packet_tail;
 pub(in crate::playback) mod preview;
 mod source;
+#[cfg(test)]
+mod stall_recovery_tests;
 mod store;
 #[cfg(test)]
 mod tests;
