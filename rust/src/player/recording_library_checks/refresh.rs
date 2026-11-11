@@ -29,6 +29,25 @@ fn value(player: &ffi::Player, row: i32, role: &str) -> cxx_qt_lib::QVariant {
     model.data(&model.model_index(row, 0, &QModelIndex::default()), role)
 }
 
+fn video_ids(player: &ffi::Player) -> Vec<String> {
+    let model = &player.rust().video_file_model;
+    let role = *model
+        .role_names()
+        .iter()
+        .find(|(_, name)| name.to_string() == "videoId")
+        .unwrap()
+        .0;
+    (0..model.count())
+        .map(|row| {
+            model
+                .data(&model.model_index(row, 0, &QModelIndex::default()), role)
+                .value::<QString>()
+                .unwrap()
+                .to_string()
+        })
+        .collect()
+}
+
 pub(super) fn run() -> Result<(), Box<dyn std::error::Error>> {
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(1)
@@ -71,10 +90,17 @@ pub(super) fn run() -> Result<(), Box<dyn std::error::Error>> {
                 index as i32
             );
         }
+        let selected: Vec<_> = player
+            .rust()
+            .recording_library
+            .selected_files()
+            .iter()
+            .map(|file| file.id.to_string())
+            .collect();
         assert_eq!(
-            player.rust().video_file_model.count(),
-            0,
-            "chooser invalidated before notification"
+            video_ids(&player),
+            selected,
+            "chooser reflects retained or invalidated selection before notification"
         );
         observed.lock().unwrap().push((
             player.epgstation_busy(),
@@ -150,6 +176,7 @@ pub(super) fn run() -> Result<(), Box<dyn std::error::Error>> {
     assert_eq!(player.rust().video_file_model.count(), 1);
     let model = player.recordings();
     assert!(player.pin_mut().refresh_epgstation());
+    assert_eq!(video_ids(&player), ["777"]);
     assert!(player.epgstation_busy() && player.epgstation_loaded());
     assert!(player.epgstation_previous() && player.epgstation_next());
     assert_eq!(player.epgstation_page().to_string(), "2");
@@ -171,6 +198,7 @@ pub(super) fn run() -> Result<(), Box<dyn std::error::Error>> {
         "retained rows remain selectable"
     );
     finish(&mut player);
+    assert_eq!(video_ids(&player), ["333"]);
     assert_eq!(player.recordings(), model);
     assert_eq!(
         signals.resets(),
@@ -209,6 +237,7 @@ pub(super) fn run() -> Result<(), Box<dyn std::error::Error>> {
     assert!(player.pin_mut().refresh_epgstation());
     finish(&mut player);
     assert!(!player.epgstation_error().is_empty());
+    assert_eq!(video_ids(&player), ["333"]);
     assert!(player.epgstation_loaded());
     assert_eq!(player.epgstation_page().to_string(), "2");
     assert_eq!(signals.resets(), 1);
@@ -241,6 +270,10 @@ pub(super) fn run() -> Result<(), Box<dyn std::error::Error>> {
     assert!(!player.epgstation_previous() && !player.epgstation_next());
     assert_eq!(signals.resets(), 2);
     assert_eq!(lookup(&player, "7"), -1);
+    assert!(
+        video_ids(&player).is_empty(),
+        "removed recording clears chooser"
+    );
     assert_eq!(lookup(&player, &u64::MAX.to_string()), 0);
     assert_eq!(
         &notices.lock().unwrap()[before_clamp..],

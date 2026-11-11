@@ -45,6 +45,167 @@ fn second_page(fixture: &Fixture) -> Result<Library, Box<dyn std::error::Error>>
 }
 
 #[test]
+fn chooser_opened_during_refresh_keeps_the_selected_recording_after_reordering() -> TestResult {
+    let fixture = Fixture::new()?;
+    let mut library = second_page(&fixture)?;
+    let mut selected = row(2, 222);
+    selected["videoFiles"] = json!([
+        {"id":222,"type":"ts","size":1880},
+        {"id":223,"type":"encoded","size":2048}
+    ]);
+    page(&fixture, 50, response(vec![selected.clone()], 151));
+    assert!(library.refresh(&fixture.network));
+    fixture.finish(&mut library).ok_or("multi-file recording")?;
+    let expected = library.files(2);
+    page(
+        &fixture,
+        50,
+        response(vec![row(3, 333), selected], 151).set_delay(Duration::from_millis(60)),
+    );
+    assert!(library.refresh(&fixture.network));
+    assert_eq!(library.select_recording(Some(2)), expected);
+    assert_eq!(library.selected_files(), expected);
+    fixture.finish(&mut library).ok_or("refreshed selection")?;
+    assert_eq!(library.rows()[1].id, 2);
+    assert_eq!(library.selected_files(), expected);
+    fixture.runtime.block_on(fixture.server.verify());
+    Ok(())
+}
+
+#[test]
+fn chooser_reloads_changed_file_ids_names_and_order_from_the_refreshed_recording() -> TestResult {
+    let fixture = Fixture::new()?;
+    let mut library = second_page(&fixture)?;
+    assert_eq!(library.select_recording(Some(2))[0].id, 222);
+    let mut updated = row(2, 333);
+    updated["videoFiles"] = json!([
+        {"id":444,"type":"encoded","size":2048,"name":"New encode","filename":"new.mp4"},
+        {"id":333,"type":"ts","size":1880,"name":"Original","filename":"new.ts"}
+    ]);
+    page(&fixture, 50, response(vec![updated], 151));
+    assert!(library.refresh(&fixture.network));
+    assert_eq!(library.selected_files()[0].id, 222);
+    fixture.finish(&mut library).ok_or("changed files")?;
+    let files = library.selected_files();
+    assert_eq!(files.len(), 2);
+    assert_eq!((files[0].id, files[0].filename.as_str()), (333, "new.ts"));
+    assert_eq!(
+        (
+            files[1].id,
+            files[1].name.as_str(),
+            files[1].filename.as_str()
+        ),
+        (444, "New encode", "new.mp4")
+    );
+    assert!(library.video_url(2, 222).is_none());
+    assert!(library.video_url(2, 333).is_some());
+    fixture.runtime.block_on(fixture.server.verify());
+    Ok(())
+}
+
+#[test]
+fn removed_recording_clears_the_chooser_without_reopening_it_if_the_id_returns() -> TestResult {
+    let fixture = Fixture::new()?;
+    let mut library = second_page(&fixture)?;
+    assert!(!library.select_recording(Some(2)).is_empty());
+    for rows in [vec![row(3, 333)], vec![row(2, 444)]] {
+        page(&fixture, 50, response(rows, 151));
+        assert!(library.refresh(&fixture.network));
+        fixture.finish(&mut library).ok_or("updated recordings")?;
+        assert!(library.selected_files().is_empty());
+    }
+    assert_eq!(library.files(2)[0].id, 444);
+    fixture.runtime.block_on(fixture.server.verify());
+    Ok(())
+}
+
+#[test]
+fn server_change_clears_the_chooser_even_when_recording_and_file_ids_match() -> TestResult {
+    let fixture = Fixture::new()?;
+    let mut library = second_page(&fixture)?;
+    assert!(!library.select_recording(Some(2)).is_empty());
+    let other = Fixture::new()?;
+    page(&other, 0, response(vec![row(2, 222)], 1));
+    library.open(&other.network, &other.server.uri(), KEYWORD, Login::Current)?;
+    assert!(library.selected_files().is_empty());
+    assert!(library.video_url(2, 222).is_none());
+    other.finish(&mut library).ok_or("other server")?;
+    assert!(!library.files(2).is_empty());
+    assert!(library.selected_files().is_empty());
+    fixture.runtime.block_on(fixture.server.verify());
+    other.runtime.block_on(other.server.verify());
+    Ok(())
+}
+
+#[test]
+fn search_and_login_clear_selection_even_when_the_same_recording_returns() -> TestResult {
+    let fixture = Fixture::new()?;
+    let mut library = second_page(&fixture)?;
+    fixture.mount(
+        Mock::given(method("POST"))
+            .and(path("/api/auth/login"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({"user":{"id":1}})))
+            .expect(1),
+    );
+    fixture.mount(
+        Mock::given(method("GET"))
+            .and(path("/api/auth/media-token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({"token":"test-token"})))
+            .expect(1),
+    );
+    for login in [
+        Login::Current,
+        Login::password("viewer".into(), "test secret".into())?,
+    ] {
+        assert!(!library.select_recording(Some(2)).is_empty());
+        fixture.mount(
+            Mock::given(method("GET"))
+                .and(path("/api/recorded"))
+                .and(query_param("keyword", "changed search"))
+                .respond_with(response(vec![row(2, 222)], 1))
+                .up_to_n_times(1)
+                .expect(1),
+        );
+        library.open(
+            &fixture.network,
+            &fixture.server.uri(),
+            "changed search",
+            login,
+        )?;
+        assert!(library.selected_files().is_empty());
+        fixture
+            .finish(&mut library)
+            .ok_or("replacement catalogue")?;
+        assert!(!library.files(2).is_empty());
+        assert!(library.selected_files().is_empty());
+    }
+    fixture.runtime.block_on(fixture.server.verify());
+    Ok(())
+}
+
+#[test]
+fn unavailable_files_clear_selection_until_the_recording_is_chosen_again() -> TestResult {
+    let fixture = Fixture::new()?;
+    let mut library = second_page(&fixture)?;
+    for recording in [false, true] {
+        assert!(!library.select_recording(Some(2)).is_empty());
+        let mut unavailable = row(2, 222);
+        unavailable["isRecording"] = json!(recording);
+        if !recording {
+            unavailable["videoFiles"] = json!([]);
+        }
+        for updated in [unavailable, row(2, 222)] {
+            page(&fixture, 50, response(vec![updated], 151));
+            assert!(library.refresh(&fixture.network));
+            fixture.finish(&mut library).ok_or("updated availability")?;
+            assert!(library.selected_files().is_empty());
+        }
+    }
+    fixture.runtime.block_on(fixture.server.verify());
+    Ok(())
+}
+
+#[test]
 fn refresh_retains_query_and_usable_snapshot_then_replaces_catalogue() -> TestResult {
     let fixture = Fixture::new()?;
     let mut library = second_page(&fixture)?;
@@ -92,6 +253,7 @@ fn failed_refresh_retains_rows_page_files_and_can_be_retried() -> TestResult {
     let fixture = Fixture::new()?;
     let mut library = second_page(&fixture)?;
     let before = library.rows();
+    let selected = library.select_recording(Some(2));
     for failure in [
         ResponseTemplate::new(503),
         ResponseTemplate::new(200).set_body_string("not JSON"),
@@ -107,6 +269,7 @@ fn failed_refresh_retains_rows_page_files_and_can_be_retried() -> TestResult {
         assert_eq!(library.total(), 151);
         assert!(library.has_previous() && library.has_next());
         assert_eq!(library.files(2)[0].id, 222);
+        assert_eq!(library.selected_files(), selected);
     }
     page(&fixture, 50, response(vec![row(4, 444)], 151));
     assert!(library.refresh(&fixture.network));
@@ -203,6 +366,7 @@ fn ongoing_deletions_bound_correction_requests_and_keep_the_old_page() -> TestRe
 fn navigation_retires_refresh_without_publishing_its_late_response() -> TestResult {
     let fixture = Fixture::new()?;
     let mut library = second_page(&fixture)?;
+    assert!(!library.select_recording(Some(2)).is_empty());
     page(
         &fixture,
         50,
@@ -222,11 +386,13 @@ fn navigation_retires_refresh_without_publishing_its_late_response() -> TestResu
         thread::sleep(Duration::from_millis(1));
     }
     library.next(&fixture.network);
+    assert!(library.selected_files().is_empty());
     assert!(!library.refresh(&fixture.network), "cancellation is busy");
     fixture.finish(&mut library).ok_or("next page")?;
     assert_eq!(library.offset(), 100);
     assert_eq!(library.rows()[0].id, 3);
     assert!(library.files(99).is_empty());
+    assert!(library.selected_files().is_empty());
     fixture.runtime.block_on(fixture.server.verify());
     Ok(())
 }

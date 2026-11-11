@@ -335,6 +335,35 @@ enum Operation {
 }
 
 #[derive(Default)]
+enum FileSelection {
+    #[default]
+    Empty,
+    Recording {
+        id: u64,
+    },
+}
+impl FileSelection {
+    fn files(&self, page: &Page) -> Arc<[Video]> {
+        match self {
+            Self::Empty => Arc::default(),
+            Self::Recording { id } => page
+                .rows
+                .iter()
+                .find(|row| row.id == *id)
+                .map(|row| row.availability.files())
+                .unwrap_or_default(),
+        }
+    }
+    fn retained(self, page: &Page) -> Self {
+        if self.files(page).is_empty() {
+            Self::Empty
+        } else {
+            self
+        }
+    }
+}
+
+#[derive(Default)]
 enum Catalogue {
     #[default]
     Empty,
@@ -342,6 +371,7 @@ enum Catalogue {
         query: Query,
         page: Page,
         connection: Connection,
+        selection: FileSelection,
     },
 }
 
@@ -606,10 +636,21 @@ impl Library {
                             }
                             let verified = VerifiedEndpoint(query.endpoint.clone());
                             self.session = Some((query.endpoint.clone(), connection.clone()));
+                            let selection = match &mut self.catalogue {
+                                Catalogue::Loaded {
+                                    query: current,
+                                    selection,
+                                    ..
+                                } if current.endpoint == query.endpoint => {
+                                    std::mem::take(selection).retained(&page)
+                                }
+                                Catalogue::Empty | Catalogue::Loaded { .. } => FileSelection::Empty,
+                            };
                             self.catalogue = Catalogue::Loaded {
                                 query,
                                 page,
                                 connection,
+                                selection,
                             };
                             return Some(verified);
                         }
@@ -632,6 +673,30 @@ impl Library {
             .find(|row| row.id == id)
             .map(|row| row.availability.files())
             .unwrap_or_default()
+    }
+    /// Select a recording's current files; an absent ID clears the selection.
+    pub fn select_recording(&mut self, id: Option<u64>) -> Arc<[Video]> {
+        match &mut self.catalogue {
+            Catalogue::Empty => Arc::default(),
+            Catalogue::Loaded {
+                page, selection, ..
+            } => {
+                *selection = match id {
+                    Some(id) => FileSelection::Recording { id },
+                    None => FileSelection::Empty,
+                }
+                .retained(page);
+                selection.files(page)
+            }
+        }
+    }
+    pub fn selected_files(&self) -> Arc<[Video]> {
+        match &self.catalogue {
+            Catalogue::Empty => Arc::default(),
+            Catalogue::Loaded {
+                page, selection, ..
+            } => selection.files(page),
+        }
     }
     /// Resolve both IDs in the current server/page. A stale chooser cannot play
     /// a file from another recording or reuse an old server's authentication.

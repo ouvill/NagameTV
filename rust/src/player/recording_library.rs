@@ -11,12 +11,12 @@ impl ffi::Player {
         self.rust().video_file_model.as_ptr().cast_mut()
     }
     pub fn choose_epgstation(mut self: Pin<&mut Self>, id: QString) -> bool {
-        let files = id
-            .to_string()
-            .parse::<u64>()
-            .ok()
-            .map(|id| self.rust().recording_library.files(id))
-            .unwrap_or_default();
+        let id = id.to_string().parse::<u64>().ok();
+        let files = self
+            .as_mut()
+            .rust_mut()
+            .recording_library
+            .select_recording(id);
         let available = !files.is_empty();
         self.as_mut()
             .rust_mut()
@@ -234,11 +234,12 @@ impl ffi::Player {
     }
     fn publish_recording_library(mut self: Pin<&mut Self>) {
         self.as_mut().poll_recording_reservations();
+        let files = self.rust().recording_library.selected_files();
         self.as_mut()
             .rust_mut()
             .video_file_model
             .pin_mut()
-            .replace(Default::default());
+            .replace(files);
         self.as_mut().publish_recording_history();
         self.epgstation_changed();
     }
