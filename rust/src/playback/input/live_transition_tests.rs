@@ -5,12 +5,15 @@ use std::sync::atomic::AtomicU64;
 
 type TestResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
 const AUDIT_DEADLINE: Duration = Duration::from_secs(12);
+const CODEC_CHANGE_FIXTURE: &str = "live-transition-codec.ts";
+const CODEC_INITIAL_VIDEO_FRAMES: u64 = 75;
+const VIDEO_FRAME_TOLERANCE: u64 = 25;
 const CASES: &[(&str, u64)] = &[
     ("live-transition-version.ts", 200),
     ("live-transition-pcr.ts", 200),
     ("live-transition-audio.ts", 200),
     ("live-transition-service.ts", 125),
-    ("live-transition-codec.ts", 250),
+    (CODEC_CHANGE_FIXTURE, 250),
     ("recording-pid-change.ts", 125),
     ("recording-clock-reset.ts", 125),
     ("recording-caption-change.ts", 1400),
@@ -118,9 +121,30 @@ fn audit(name: &str, normalized: bool) -> TestResult<Audit> {
 #[test]
 fn live_transition_comparison_preserves_decoded_output_after_normalization() -> TestResult {
     gst::init()?;
+    let demux_version = gst::Plugin::load_by_name("mpegtsdemux")?.version();
+    eprintln!("LIVE_TRANSITION_BACKEND mpegtsdemux={demux_version}");
     for &(name, minimum_video) in CASES {
         let raw = audit(name, false)?;
         let normalized = audit(name, true)?;
+        let minimum_video = if name == CODEC_CHANGE_FIXTURE && demux_version == "1.24.2" {
+            // This demux version loses the same-PID codec update even for raw TS.
+            // Require normalization to preserve its native output, rather than
+            // promising that an input filter repairs downstream codec handling.
+            let minimum_initial_video = CODEC_INITIAL_VIDEO_FRAMES - VIDEO_FRAME_TOLERANCE;
+            assert!(
+                raw.eos && raw.error.is_none(),
+                "{name}: invalid baseline: {raw:?}"
+            );
+            assert!(
+                raw.video >= minimum_initial_video,
+                "{name}: missing baseline video: {raw:?}"
+            );
+            raw.video
+                .saturating_sub(VIDEO_FRAME_TOLERANCE)
+                .max(minimum_initial_video)
+        } else {
+            minimum_video
+        };
         assert!(
             normalized.eos,
             "{name}: normalized output did not end: {normalized:?}; raw={raw:?}"
@@ -128,7 +152,7 @@ fn live_transition_comparison_preserves_decoded_output_after_normalization() -> 
         assert!(normalized.error.is_none(), "{name}: {normalized:?}");
         assert!(
             normalized.video >= minimum_video,
-            "{name}: missing post-transition video: {normalized:?}"
+            "{name}: expected at least {minimum_video} video buffers: {normalized:?}; raw={raw:?}"
         );
         assert!(
             normalized.audio > 100,
