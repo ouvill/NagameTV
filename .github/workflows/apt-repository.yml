@@ -41,7 +41,6 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
       RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
-      GNUPGHOME: ${{ runner.temp }}/gnupg
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -52,6 +51,10 @@ jobs:
         env:
           APT_SIGNING_KEY: ${{ secrets.APT_SIGNING_KEY }}
         run: |
+          # The runner context is unavailable in job-level env.
+          GNUPGHOME="$RUNNER_TEMP/gnupg"
+          echo "GNUPGHOME=$GNUPGHOME" >> "$GITHUB_ENV"
+          export GNUPGHOME
           install -d -m 700 "$GNUPGHOME"
           gpg --batch --import <<< "$APT_SIGNING_KEY"
       - name: Sign and publish the indexes
@@ -66,4 +69,4 @@ jobs:
         if: always()
         run: |
           gpgconf --kill gpg-agent
-          rm -rf "$GNUPGHOME"
+          rm -rf "$RUNNER_TEMP/gnupg"
