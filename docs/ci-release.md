@@ -188,10 +188,19 @@ AppImageが一致しない場合、GitHubへ書き込まずに停止する。
 公開済みリリースのファイルは上書きせず停止する。
 artifactの保存期限を過ぎた場合は、ビルドを含む全ジョブを再実行する。
 
+## aptリポジトリー
+
+[別のワークフロー](../.github/workflows/apt-repository.yml)が、正式版リリースの公開時に
+署名したaptの索引をGitHub Release `apt-noble`・`apt-resolute`へ添付する。
+署名鍵はEnvironment `apt-repository`のsecretに置き、承認後にだけ読み出す。
+リポジトリー変数`APT_REPOSITORY_ENABLED`が`true`になるまでは実行しない。
+構成と鍵の管理は[aptリポジトリー](apt-repository.md)を参照。
+
 ## GitHub側の設定と保守
 
 通常のCIジョブは`contents: read`のみを設定し、リリースジョブにのみ`contents: write`を付与する。
-標準の`GITHUB_TOKEN`でリリースの下書きを作成・更新するため、追加のPATや配布用秘密鍵は不要である。
+標準の`GITHUB_TOKEN`でリリースの下書きを作成・更新するため、追加のPATは不要である。
+秘密鍵はaptの索引に署名する副鍵だけで、Environment `apt-repository`に限定して置く。
 リポジトリー／OrganizationのポリシーでActionsと利用するActionが許可されている必要がある。
 
 `main`の保護ルールを設定する場合は、上記のCIジョブを必須チェックに指定する。

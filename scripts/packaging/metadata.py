@@ -10,6 +10,14 @@ class UbuntuRelease(str, Enum):
     NOBLE = "24.04"
     RESOLUTE = "26.04"
 
+    @property
+    def codename(self) -> str:
+        match self:
+            case UbuntuRelease.NOBLE:
+                return "noble"
+            case UbuntuRelease.RESOLUTE:
+                return "resolute"
+
 
 def validate_version(version: str) -> str:
     # Cargo/SemVer, including prereleases; prevent path/output injection.

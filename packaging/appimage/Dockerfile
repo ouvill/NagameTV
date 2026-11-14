@@ -66,7 +66,8 @@ WORKDIR /project
 # Neither stage needs display, GPU or audio access.
 FROM appimage AS ci
 # Hardware-free MPRIS contract tests use a private D-Bus and a Python client.
-RUN apt-get update && apt-get install -y --no-install-recommends dbus-daemon python3-dbus python3-gi nodejs npm \
+# apt repository tests sign indexes with a throwaway gpg key.
+RUN apt-get update && apt-get install -y --no-install-recommends dbus-daemon python3-dbus python3-gi nodejs npm gnupg \
     && rm -rf /var/lib/apt/lists/*
 RUN rustup component add rustfmt && chmod -R a+rX /opt/rustup /opt/cargo
 # Match scripts/testing/install-nextest.sh. Avoid compiling the test runner and

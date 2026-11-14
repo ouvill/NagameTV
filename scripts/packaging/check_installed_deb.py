@@ -39,9 +39,12 @@ def main():
                             text=True, capture_output=True, timeout=15)
     if result.returncode != 2 or "deb-package-probe" not in result.stderr:
         raise RuntimeError(f"Argument parsing probe failed: {result.returncode}\n{result.stderr}")
+    keyring = Path("/usr/share/keyrings/nagametv-archive-keyring.gpg")
+    if keyring.read_bytes() != (Path(__file__).resolve().parents[2] / "packaging/deb" / keyring.name).read_bytes():
+        raise RuntimeError(f"Installed apt keyring differs from the repository: {keyring}")
     subprocess.run(["desktop-file-validate",
                     "/usr/share/applications/io.github.ouvill.nagametv.desktop"], check=True)
-    print(f"Ubuntu {ubuntu.value}: {count} ELF files resolved; argument parsing and desktop entry OK")
+    print(f"Ubuntu {ubuntu.value}: {count} ELF files resolved; argument parsing, desktop entry and apt keyring OK")
 
 
 if __name__ == "__main__":
