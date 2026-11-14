@@ -1,0 +1,69 @@
+name: apt repository
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Published version tag, for example v0.8.0
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  # Serialize index updates; a newer release must not race an older one.
+  group: apt-repository
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  publish:
+    name: Publish signed apt indexes
+    # Off until the signing key and the shipped keyring exist (docs/apt-repository.md).
+    if: >-
+      vars.APT_REPOSITORY_ENABLED == 'true' &&
+      (github.event_name == 'workflow_dispatch' ||
+       (startsWith(github.event.release.tag_name, 'v') && !github.event.release.prerelease))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    # The signing key is an environment secret; the environment requires a
+    # reviewer's approval and limits the refs that may deploy.
+    environment: apt-repository
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+      GNUPGHOME: ${{ runner.temp }}/gnupg
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Download the published debs
+        run: gh release download "$RELEASE_TAG" --pattern 'nagametv_*_amd64.deb' --dir "$RUNNER_TEMP/apt-assets"
+      - name: Import the signing subkey
+        env:
+          APT_SIGNING_KEY: ${{ secrets.APT_SIGNING_KEY }}
+        run: |
+          install -d -m 700 "$GNUPGHOME"
+          gpg --batch --import <<< "$APT_SIGNING_KEY"
+      - name: Sign and publish the indexes
+        env:
+          APT_SIGNING_KEY_FINGERPRINT: ${{ vars.APT_SIGNING_KEY_FINGERPRINT }}
+        run: |
+          python3 -m scripts.packaging.publish_apt_repository "$RELEASE_TAG" \
+            "$RUNNER_TEMP/apt-assets" "$RUNNER_TEMP/apt-indexes" \
+            --signing-key "$APT_SIGNING_KEY_FINGERPRINT" \
+            --keyring packaging/deb/nagametv-archive-keyring.gpg
+      - name: Remove the signing key
+        if: always()
+        run: |
+          gpgconf --kill gpg-agent
+          rm -rf "$GNUPGHOME"

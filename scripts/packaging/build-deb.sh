@@ -112,5 +112,8 @@ esac
 install -d "$package_dir/usr/share/doc/nagametv"
 cp -a "$licenses" "$package_dir/usr/share/doc/nagametv/third-party-licenses"
 install -m644 "$project_dir/docs/deb.md" "$package_dir/usr/share/doc/nagametv/README.md"
+# Users point Signed-By at this path, so key changes arrive with package updates.
+install -Dm644 "$project_dir/packaging/deb/nagametv-archive-keyring.gpg" \
+  "$package_dir/usr/share/keyrings/nagametv-archive-keyring.gpg"
 desktop-file-validate "$package_dir/usr/share/applications/$app_id.desktop"
 PYTHONPATH="$project_dir" python3 -m scripts.packaging.package_deb "$ubuntu" "$package_dir" "$output_dir"

@@ -108,6 +108,8 @@ python3 scripts/test.py app --profile release --run-ignored --filter 'test(live_
 | deb | `bash scripts/packaging/build-deb.sh 24.04` または `26.04` | Docker。[手順](../docs/deb.md) |
 | Flatpak | `bash scripts/packaging/build-flatpak.sh` | Flatpak SDK。[手順](../docs/flatpak.md) |
 | リリース | `bash scripts/packaging/create-release.sh TAG ASSET_DIRECTORY` | GitHubを書き換える。[手順](../docs/ci-release.md) |
+| aptの索引 | `python3 -m scripts.packaging.apt_repository UBUNTU VERSION ASSET_DIRECTORY OUTPUT --signing-key FPR --keyring FILE` | gpg、dpkg-deb。署名と検証のみ。[手順](../docs/apt-repository.md) |
+| aptリポジトリーの公開 | `python3 -m scripts.packaging.publish_apt_repository TAG ASSET_DIRECTORY WORK --signing-key FPR --keyring FILE` | GitHubを書き換える。通常はActionsが実行。[手順](../docs/apt-repository.md) |
 | 固定版EPGStationとの結合試験 | `python3 -m scripts.testing.epgstation_integration` | Docker、機器不要。[手順](../docs/epgstation.md) |
 | コメントSQL検査・更新 | `python3 -m scripts.testing.check_comment_sql [--update]` | Cargo、機器不要。一時DBを使用 |
 | Flatpakソース一覧の更新 | `python3 -m scripts.packaging.flatpak_cargo_sources [--check]` | Cargo.lockと配布設定の整合性 |

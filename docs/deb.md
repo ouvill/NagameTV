@@ -14,7 +14,7 @@ GitHub Actionsでは両方を生成し、AppImageやFlatpakとともに
 専用ディレクトリーに同梱する。OSのQtやGStreamerを置き換えない。
 同梱ライブラリーの更新はNagameTVの再ビルド・更新で行う。
 26.04用はOSのライブラリー更新を利用する。
-どちらもUbuntu公式リポジトリーへの収録やaptリポジトリーの提供は行わない。
+Ubuntu公式リポジトリーへは収録しない。`apt upgrade`で更新できる[aptリポジトリー](apt-repository.md)は準備中。
 
 ## インストール・更新・削除
 
@@ -40,6 +40,9 @@ Ubuntuを24.04から26.04へ更新したら、26.04用のdebも導入する。
 ```sh
 sudo apt remove nagametv
 ```
+
+debは[aptリポジトリー](apt-repository.md)の公開鍵を`/usr/share/keyrings/nagametv-archive-keyring.gpg`に置く。
+aptの設定は追加しないため、リポジトリーを登録しない限りこの鍵は使われない。
 
 ユーザー設定はネイティブ版・AppImage版と共通の`~/.config/nagametv/`。
 削除・更新でユーザー設定を消さない。Flatpak版とは設定先が異なる。
@@ -113,7 +116,7 @@ python3 scripts/test.py tooling
 ```
 
 パッケージの生成後は、クリーンな対象Ubuntuコンテナーで、aptによる依存解決・導入、
-全ELFのリンク解決、アプリの引数解析、デスクトップ情報、削除を確認する。
+全ELFのリンク解決、アプリの引数解析、デスクトップ情報、同梱した公開鍵、削除を確認する。
 表示・GPU・音声にはアクセスしない。コンテナー外のパッケージは変更しない。
 
 ```sh

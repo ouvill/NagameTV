@@ -12,6 +12,7 @@
 | ドキュメント | 概要 |
 | :--- | :--- |
 | **[Ubuntu debパッケージ](deb.md)** | Ubuntu 24.04 / 26.04向けdebパッケージの導入・更新・アンインストール手順 |
+| **[aptリポジトリー](apt-repository.md)** | `apt upgrade`で更新するための署名付きリポジトリー（準備中）、署名鍵の管理と公開の流れ |
 | **[Flatpakパッケージ](flatpak.md)** | Flatpak版の導入手順とポータル（FileTransfer等）仕様 |
 | **[AppImageパッケージ](appimage.md)** | AppImage版の実行方法、glibc互換性、システム要件 |
 | **[TS録画の再生](recording-playback.md)** | ローカルTSファイルの再生機能、対応形式、シーク操作、番組情報連携 |
