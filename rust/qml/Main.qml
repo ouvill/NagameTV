@@ -126,6 +126,16 @@ ViewerWindow {
             case Player.RemoteKeyFullscreen: viewerActions.toggleFullscreen.trigger(); break;
             }
         }
+        function onHdmi_cec_input_requested(key: int, repeat: bool) {
+            const colour = { [Qt.Key_Blue]: "b", [Qt.Key_Red]: "r", [Qt.Key_Green]: "g", [Qt.Key_Yellow]: "y" }[key];
+            if (colour !== undefined) {
+                // Colour buttons only have a meaning inside data broadcast.
+                if (root.showDataBroadcast && !repeat) root.sendDataBroadcastKey(colour);
+                return;
+            }
+            if (!shortcutBindings.dispatch(key, Qt.NoModifier, repeat))
+                console.debug("HDMI-CEC key has no binding here: " + key);
+        }
         function onRemote_command_executed(kind: int) {
             remoteNotice.show(kind);
             // Seeks and channel changes are easier to follow with the usual overlay.

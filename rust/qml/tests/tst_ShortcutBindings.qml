@@ -294,6 +294,20 @@ Item {
                 compare(view.backend.chapterSeeks, [1, -1, 1, -1]);
                 compare(view.backend.skips, []);
             }
+            function test_remote_dispatch_uses_enabled_bindings_and_repeat_policy() {
+                compare(view.bindings.dispatch(Qt.Key_5, Qt.NoModifier, false), false);
+                view.bindings.digitsAvailable = true;
+                verify(view.bindings.dispatch(Qt.Key_5, Qt.NoModifier, false));
+                verify(view.bindings.dispatch(Qt.Key_5, Qt.NoModifier, true));
+                compare(view.digits, [5]);
+                view.backend.recording = true;
+                view.backend.playing = true;
+                view.backend.playback_action = Player.Pause;
+                verify(view.bindings.dispatch(Qt.Key_Right, Qt.NoModifier, false));
+                verify(view.bindings.dispatch(Qt.Key_Right, Qt.NoModifier, true));
+                compare(view.backend.skips, [10000, 10000]);
+                compare(view.bindings.dispatch(Qt.Key_Blue, Qt.NoModifier, false), false);
+            }
             function test_seek_yields_to_slider_and_panels_and_closing_disables_all() {
                 view.backend.recording = true;
                 view.backend.playing = true;
