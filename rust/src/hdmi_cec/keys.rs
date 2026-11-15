@@ -73,8 +73,8 @@ fn map(code: u8) -> Option<Input> {
             debug_assert_eq!(BACK, EXIT);
             return Some(Input::Command(Command::SendKey(RemoteKey::Back)));
         }
-        CHANNEL_UP => return Some(Input::Command(Command::StepChannel(Step::Previous))),
-        CHANNEL_DOWN => return Some(Input::Command(Command::StepChannel(Step::Next))),
+        CHANNEL_UP => return Some(Input::Command(Command::StepChannel(Step::Next))),
+        CHANNEL_DOWN => return Some(Input::Command(Command::StepChannel(Step::Previous))),
         PREVIOUS_CHANNEL => return Some(Input::Command(Command::PreviousChannel)),
         PLAY | PLAY_FUNCTION => return Some(Input::Command(Command::Play)),
         PAUSE | PAUSE_FUNCTION => return Some(Input::Command(Command::SetPaused(true))),
@@ -152,11 +152,11 @@ mod tests {
             (BACK, Input::Command(Command::SendKey(RemoteKey::Back))),
             (
                 CHANNEL_UP,
-                Input::Command(Command::StepChannel(Step::Previous)),
+                Input::Command(Command::StepChannel(Step::Next)),
             ),
             (
                 CHANNEL_DOWN,
-                Input::Command(Command::StepChannel(Step::Next)),
+                Input::Command(Command::StepChannel(Step::Previous)),
             ),
             (PREVIOUS_CHANNEL, Input::Command(Command::PreviousChannel)),
             (PLAY, Input::Command(Command::Play)),
