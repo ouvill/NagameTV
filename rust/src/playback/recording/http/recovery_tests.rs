@@ -298,7 +298,7 @@ fn a_continuous_get_survives_a_pause_longer_than_the_former_request_timeout() {
     let mut cursor = server.inspect();
     let control = cursor.prefetch();
     cursor.read_exact(&mut [0; 8]).unwrap();
-    wait(|| control.full());
+    wait(|| control.full().unwrap());
     let requests = server.requests.lock().unwrap().len();
     thread::sleep(REQUEST_TIMEOUT + Duration::from_millis(200));
     assert_eq!(server.requests.lock().unwrap().len(), requests);
@@ -507,7 +507,7 @@ fn read_ahead_is_limited_by_media_time_and_bytes_and_stops_when_full() {
         let control = cursor.prefetch();
         control.duration(Duration::from_secs(duration));
         cursor.read_exact(&mut [0; 1]).unwrap();
-        wait(|| control.full());
+        wait(|| control.full().unwrap());
         let (bytes, budget) = control.buffered().unwrap();
         assert!(budget <= 32 * 1024 * 1024);
         let estimated = bytes as f64 * duration as f64 / SIZE as f64;
@@ -556,7 +556,7 @@ fn seeks_inside_the_window_reuse_bytes_and_the_final_byte_uses_a_valid_range() {
     let mut cursor = server.inspect();
     let control = cursor.prefetch();
     cursor.read_exact(&mut [0; 8]).unwrap();
-    wait(|| control.full());
+    wait(|| control.full().unwrap());
     let requests = server.requests.lock().unwrap().len();
     cursor.seek(SeekFrom::Start(100)).unwrap();
     let mut bytes = [0; 8];
@@ -600,7 +600,7 @@ fn backward_interleaved_accesses_reuse_history_within_the_total_memory_budget() 
     let mut bytes = vec![0; 6 * MIB];
     cursor.read_exact(&mut bytes).unwrap();
     pattern(0, &bytes);
-    wait(|| control.full());
+    wait(|| control.full().unwrap());
     let (start, end) = control.window().unwrap();
     assert!(start <= 4 * MIB as u64);
     assert!(end > 6 * MIB as u64);
@@ -631,7 +631,7 @@ fn a_small_jump_beyond_received_bytes_waits_for_the_same_get() {
     let mut cursor = server.inspect();
     let control = cursor.prefetch();
     cursor.read_exact(&mut [0; 8]).unwrap();
-    wait(|| control.full());
+    wait(|| control.full().unwrap());
     let (_, end) = control.window().unwrap();
     let requests = server.requests.lock().unwrap().len();
     let target = end + FORWARD;
