@@ -150,10 +150,7 @@ mod tests {
             (LEFT, Input::Command(Command::SendKey(RemoteKey::Left))),
             (RIGHT, Input::Command(Command::SendKey(RemoteKey::Right))),
             (BACK, Input::Command(Command::SendKey(RemoteKey::Back))),
-            (
-                CHANNEL_UP,
-                Input::Command(Command::StepChannel(Step::Next)),
-            ),
+            (CHANNEL_UP, Input::Command(Command::StepChannel(Step::Next))),
             (
                 CHANNEL_DOWN,
                 Input::Command(Command::StepChannel(Step::Previous)),
