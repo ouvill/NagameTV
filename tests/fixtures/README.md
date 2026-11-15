@@ -267,9 +267,11 @@ EPGStation file selection and token-authenticated playback.
 data-broadcast test sends it through a private WebSocket to the bundled web-bml.
 The hidden startup document opens a top page on the data key. Enter opens a child
 document whose external script is withheld until the test observes navigation;
-Back returns to the top and then to standby. The test checks input and focus,
-resuming the retained browser, a single activation per open request, Esc as BML Back,
-and cleanup through the feature setting.
+Remote Back returns to the top and then to standby. The test checks input and
+focus, resuming the retained browser, a single activation per open request,
+receiver navigation with keyboard Back/Escape, and cleanup through the feature
+setting. After navigating Home, the fixture returns to Watching before checking
+composed pixels; Home intentionally scales the same picture into a small preview.
 The hidden startup retains `basic data-button` to verify receiver navigation
 while the engine is hidden, and focus restoration on redisplay even when the
 requested key groups do not change.
