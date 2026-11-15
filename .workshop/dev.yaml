@@ -6,6 +6,8 @@ sdks:
     channel: latest/stable
   - name: claude-code
     channel: latest/stable
+  - name: agy
+    channel: latest/stable
   - name: rust
   - name: docker-ce
     channel: latest/stable

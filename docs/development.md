@@ -46,6 +46,8 @@ OpenCodeはCanonical提供の[OpenCode SDK](https://github.com/canonical/opencod
 `latest/stable`チャンネルから導入します。
 Claude CodeもCanonical提供の[Claude Code SDK](https://github.com/canonical/claude-code-sdk)を
 `latest/stable`チャンネルから導入します。
+Antigravity CLI（`agy`）もCanonical提供の[agy SDK](https://github.com/canonical/agy-sdk)を
+`latest/stable`チャンネルから導入します。
 herdrは[プロジェクトSDK](../.workshop/herdr/hooks/setup-project)が
 [公式インストーラー](https://herdr.dev/docs/install/)で最新の安定版を導入します。
 このフックはプロジェクトSDKのセットアップ時に実行され、`curl`とSHA-256検証用の
@@ -70,6 +72,9 @@ workshop refresh
 導入後は`workshop exec -- claude --version`と`workshop exec -- herdr --version`で確認できます。
 Claude Codeの初回認証は`workshop exec -- claude`で行います。
 herdrは`workshop exec -- herdr`で起動します。
+Antigravity CLIは`workshop exec -- agy --version`で導入を確認し、
+`workshop exec -- agy`で起動して初回のGoogleアカウント認証を行います。
+設定と認証情報はSDKの永続マウント`/home/workshop/.gemini`に保存されます。
 
 起動済みコンテナー内で手動導入したパッケージだけに依存しないようにします。
 再構築時のフック実行については[WorkshopのSDK仕様](https://documentation.ubuntu.com/canonical-workshop/stable/reference/sdks/)を参照してください。
