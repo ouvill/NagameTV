@@ -7,7 +7,7 @@ Item {
     ApplicationWindow {
         id: host
         visible: true
-        flags: Qt.Window | Qt.FramelessWindowHint
+        flags: WindowChrome.frameless ? Qt.Window | Qt.FramelessWindowHint : Qt.Window
         width: 640
         height: 480
         property int closeRequests: 0
@@ -63,7 +63,7 @@ Item {
             }
             function cleanup() {
                 otherControl.visible = false;
-                host.flags = Qt.Window | Qt.FramelessWindowHint;
+                WindowChrome.frameless = true;
                 host.showNormal();
             }
             function test_other_control_press_cannot_start_title_move() {
@@ -117,7 +117,7 @@ Item {
             }
             function test_desktop_title_bar_replaces_custom_chrome_until_restored() {
                 const content = findChild(host.contentItem, "contentBelowTitle");
-                host.flags = Qt.Window;
+                WindowChrome.frameless = false;
                 tryCompare(buttons, "visible", false);
                 compare(buttons.navigationButtons.length, 0);
                 compare(dragArea.visible, false);
@@ -134,7 +134,7 @@ Item {
                     mouseRelease(dragArea, 200, 40);
                 }
                 compare(moveRequests.count, 0);
-                host.flags = Qt.Window | Qt.FramelessWindowHint;
+                WindowChrome.frameless = true;
                 tryCompare(buttons, "visible", true);
                 compare(buttons.navigationButtons.length, 3);
                 compare(dragArea.visible, true);

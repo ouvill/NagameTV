@@ -1,11 +1,12 @@
 pragma ComponentBehavior: Bound
 import QtQuick
+import MinimalViewer
 
 Item {
     id: frame
     required property Window targetWindow
     // A decorated window is resized from the window manager's frame.
-    visible: (targetWindow.flags & Qt.FramelessWindowHint) !== 0
+    visible: WindowChrome.frameless
     function resize(edges) {
         if (!targetWindow.startSystemResize(edges))
             console.warn("Could not start the system window resize");
