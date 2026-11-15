@@ -349,6 +349,21 @@ pub(super) fn run(
     run_startup(app, engine, TIMER_STARTUP)
 }
 
+pub(super) fn return_to_watching(
+    app: &QGuiApplication,
+    engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
+) -> TestResult {
+    assert!(evaluate(
+        engine,
+        "player.open_screen(ViewerActions.WatchingScreen)"
+    )?);
+    wait_for(
+        app,
+        engine,
+        "player.screen === ViewerActions.WatchingScreen && inputContext.videoFocused",
+    )
+}
+
 pub(super) fn click_remote(
     app: &QGuiApplication,
     engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
@@ -515,10 +530,14 @@ fn check_keyboard_isolation(
     ffi::clickRootKey(engine.pin_mut(), &QString::from("G"))?;
     wait_for(app, engine, "root.showGuide")?;
     ffi::clickRootKey(engine.pin_mut(), &QString::from("Escape"))?;
-    wait_for(app, engine, "!root.showGuide")?;
-    ffi::clickRootKey(engine.pin_mut(), &QString::from("Back"))?;
-    wait_for(app, engine, "inputContext.videoFocused")?;
-    ffi::clickRootKey(engine.pin_mut(), &QString::from("Escape"))?;
+    wait_for(app, engine, "!root.showGuide && inputContext.videoFocused")?;
+    // Back and Escape navigate the receiver while BML keeps running. Remaining
+    // on Home would leave later composition checks looking at its tiny preview.
+    for key in ["Back", "Escape"] {
+        ffi::clickRootKey(engine.pin_mut(), &QString::from(key))?;
+        wait_for(app, engine, "root.homeScreen")?;
+        return_to_watching(app, engine)?;
+    }
     browser(
         app,
         engine,
@@ -845,10 +864,11 @@ fn run_startup(
     assert!(evaluate(
         engine,
         &format!(
-            "root.dataBroadcastSessionOpen && dataBroadcast.view === {OBSERVER}.retainedView && inputContext.navigationEnabled && player.data_broadcast_receiving()"
+            "root.homeScreen && root.dataBroadcastSessionOpen && dataBroadcast.view === {OBSERVER}.retainedView && inputContext.navigationEnabled && player.data_broadcast_receiving()"
         )
     )?);
     browser(app, engine, "window.nagameSocketReady === true")?;
+    return_to_watching(app, engine)?;
     evaluate(engine, "player.configure_data_broadcast(false); true")?;
     wait_for(
         app,
