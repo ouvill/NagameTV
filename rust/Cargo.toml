@@ -75,7 +75,7 @@ cxx-qt-build = { version = "0.10", features = ["link_qt_object_files"] }
 [profile.release]
 debug = 1
 
-[target.'cfg(all(target_os = "linux", target_env = "gnu"))'.dependencies]
+[target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2"
 
 [patch.crates-io]

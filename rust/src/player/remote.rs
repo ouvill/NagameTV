@@ -328,7 +328,10 @@ impl ffi::Player {
         }
     }
 
-    fn execute_remote(mut self: Pin<&mut Self>, command: Command) -> Result<(), CommandError> {
+    pub(super) fn execute_remote(
+        mut self: Pin<&mut Self>,
+        command: Command,
+    ) -> Result<(), CommandError> {
         match command {
             Command::SelectChannel(id) => {
                 let index = self

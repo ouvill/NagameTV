@@ -18,6 +18,8 @@ mod epg;
 mod epg_checks;
 mod guide;
 mod hdmi_cec;
+#[cfg(feature = "native_tests")]
+mod hdmi_cec_checks;
 mod language;
 mod lifecycle;
 #[cfg(feature = "native_tests")]
@@ -438,6 +440,8 @@ pub mod ffi {
         fn refresh_hdmi_cec_devices(self: Pin<&mut Player>);
         #[qsignal]
         fn hdmi_cec_changed(self: Pin<&mut Player>);
+        #[qsignal]
+        fn hdmi_cec_input_requested(self: Pin<&mut Player>, key: i32, repeat: bool);
         fn remote_web_enabled(self: &Player) -> bool;
         fn remote_web_allowed(self: &Player) -> bool;
         fn remote_web_urls(self: &Player) -> QString;
@@ -920,6 +924,8 @@ pub struct PlayerRust {
     request: crate::features::channel_catalog::Acquisition,
     channel_refresh: channel_refresh::Refresh,
     remote: crate::remote::Control,
+    hdmi_cec: crate::hdmi_cec::Controller,
+    hdmi_cec_model: cxx::UniquePtr<crate::hdmi_cec_model::ffi::HdmiCecDeviceModel>,
     network: Option<services::Network>,
     updates: crate::updates::Checker,
     media: playback::Session,
@@ -1176,6 +1182,7 @@ impl Drop for PlayerRust {
         // The runtime joins cancelled HTTP workers when Player's network is dropped.
         self.updates.stop();
         self.remote.stop();
+        self.hdmi_cec.stop();
         self.epg_events.configure(None);
         // The media owner enforces native shutdown before subtitle destruction,
         // including when QML construction failed before onClosing could run.

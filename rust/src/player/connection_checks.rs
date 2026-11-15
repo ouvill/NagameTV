@@ -255,6 +255,7 @@ fn checks() -> TestResult {
     check_comment_presentation()?;
     crate::danmaku::checks::run()?;
     super::remote_checks::run()?;
+    super::hdmi_cec_checks::run()?;
 
     // HTTP failures and non-Mirakurun responses preserve a working saved URL.
     for (status, body) in [(403, "denied"), (200, "<html>not Mirakurun</html>")] {

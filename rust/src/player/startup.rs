@@ -23,6 +23,7 @@ impl Default for PlayerRust {
                     // as before, independently of normal startup defaults.
                     danmaku_enabled: plan.comments(false),
                     data_broadcast_enabled: plan.data_broadcast(false),
+                    hdmi_cec_enabled: plan.hdmi_cec(false),
                     recording_reservations_enabled: plan.recording_reservations(false),
                     ..Default::default()
                 }),
@@ -230,6 +231,12 @@ impl Default for PlayerRust {
             screenshot_error: QString::default(),
             screenshot_saves: Default::default(),
             seek_preview: Default::default(),
+            hdmi_cec: crate::hdmi_cec::Controller::new(
+                plan,
+                preferences.preferences().hdmi_cec_enabled,
+                preferences.preferences().hdmi_cec_device.clone(),
+            ),
+            hdmi_cec_model: crate::hdmi_cec_model::ffi::make_hdmi_cec_model(),
             preferences,
             autoplay_pending,
             epg: ProgramInfo::default(),

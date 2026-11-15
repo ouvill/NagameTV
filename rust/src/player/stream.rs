@@ -235,6 +235,7 @@ impl ffi::Player {
     pub fn poll(mut self: Pin<&mut Self>) {
         self.as_mut().poll_viewing_history();
         self.as_mut().poll_remote_commands();
+        self.as_mut().poll_hdmi_cec();
         self.as_mut().poll_player();
         self.as_mut().poll_seek_preview();
         self.as_mut()
@@ -368,6 +369,8 @@ impl ffi::Player {
         self.as_mut().rust_mut().updates.stop();
         self.as_mut().updates_changed();
         self.as_mut().rust_mut().remote.stop();
+        self.as_mut().rust_mut().hdmi_cec.stop();
+        self.as_mut().notify_hdmi_cec();
         self.as_mut().rust_mut().epg_events.configure(None);
         self.as_mut().rust_mut().channel_refresh = channel_refresh::Refresh::Disabled;
         // Stop UI samples; the application owner retains GC logging through engine teardown.

@@ -14,7 +14,7 @@ struct Arguments {
         group = "mode",
         long,
         require_equals = true,
-        value_name = "none|subtitles,epg,comments,data-broadcast,recording-reservations,remote-web"
+        value_name = "none|subtitles,epg,comments,data-broadcast,recording-reservations,remote-web,hdmi-cec"
     )]
     features: Option<FeatureSet>,
     // The test runner owns these arguments, including Qt Quick Test switches.
