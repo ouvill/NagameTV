@@ -103,7 +103,9 @@ HDMI-CECから受け取ったユーザー制御コード（`0x00`〜`0x74`）は
 
 ## 状態一覧とトラブルシューティング
 
-`hdmi_cec_state` は次の8種類の固定文字列をとります。設定画面の「テレビのリモコン（HDMI-CEC）」欄には現在状態のほか、保持されたエラー詳細（`hdmi_cec_error`）と、転送されるボタンがテレビメーカーに依存する旨の注意書きを表示します。運用上の失敗は標準エラー出力（`tracing`）にも記録します。
+`hdmi_cec_state` は次の8種類の固定文字列をとります。設定画面の「テレビのリモコン（HDMI-CEC）」欄には現在状態のほか、保持されたエラー詳細（`hdmi_cec_error`）と、転送されるボタンがテレビメーカーに依存する旨の注意書きを表示します。
+
+運用上の失敗は標準エラー出力（`tracing`）にも記録します。状態表示用の変換ではログを出さず、ワーカーが保持する診断履歴で同じ失敗の連続出力を抑えています。新しい失敗や原因・パス・I/O種別の変化、および `active` への復帰後に再び起きた失敗は `WARN` で一度記録し、同じ失敗が定期再試行（受信から再接続への移行を含む）や待機・解放処理で続く間は `DEBUG` に留めます。入力キューの溢れも投入成功まで一度だけ `WARN` を出し、カーネルからの新規イベント／メッセージ欠落通知は発生ごとに `WARN` で記録します。
 
 | `hdmi_cec_state` | 意味 | 確認・対処方法 |
 | --- | --- | --- |
@@ -145,7 +147,7 @@ Phase 1の検証と並行し、以下を今後の検討事項として残しま�
 
 ## 実装構成と検証状況
 
-- **Rustモジュール構成**: コアの状態管理・デバイス抽象・ワーカー制御は [`rust/src/hdmi_cec/mod.rs`](../rust/src/hdmi_cec/mod.rs)、Linux カーネル CEC uAPI の `ioctl` 呼び出し（受信専用）は [`rust/src/hdmi_cec/linux.rs`](../rust/src/hdmi_cec/linux.rs)、キー割り当てと長押し抑止は [`rust/src/hdmi_cec/keys.rs`](../rust/src/hdmi_cec/keys.rs)、`Player` への橋渡しと一覧モデルは [`rust/src/player/hdmi_cec.rs`](../rust/src/player/hdmi_cec.rs)・[`rust/src/hdmi_cec_model.rs`](../rust/src/hdmi_cec_model.rs) が担当します。
+- **Rustモジュール構成**: コアの状態管理・デバイス抽象・ワーカー制御は [`rust/src/hdmi_cec/mod.rs`](../rust/src/hdmi_cec/mod.rs)、Linux カーネル CEC uAPI の `ioctl` 呼び出し（受信専用）は [`rust/src/hdmi_cec/linux.rs`](../rust/src/hdmi_cec/linux.rs)、キー割り当てと長押し抑止は [`rust/src/hdmi_cec/keys.rs`](../rust/src/hdmi_cec/keys.rs)、再試行時のログ重複抑制と診断履歴は [`rust/src/hdmi_cec/diagnostics.rs`](../rust/src/hdmi_cec/diagnostics.rs)、`Player` への橋渡しと一覧モデルは [`rust/src/player/hdmi_cec.rs`](../rust/src/player/hdmi_cec.rs)・[`rust/src/hdmi_cec_model.rs`](../rust/src/hdmi_cec_model.rs) が担当します。
 - **送信操作の不在**: 外部クレート（`libcec` や `cec-linux` 等）を追加せず、Linux の `cec.h` 互換 `ioctl` を直接利用して再生側受信のみを実装しています。論理アドレスの告知と OSD 名 `NagameTV` の設定はカーネルが処理します。
 
 ### 実機検証が必要な項目

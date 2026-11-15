@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check compiler selection without requiring Qt or hardware."""
+"""Check compiler selection and Cargo cache reuse without Qt or hardware."""
 import json
 import os
 from pathlib import Path
@@ -57,10 +57,30 @@ class BuildCacheTests(unittest.TestCase):
 
 
 class RestoredCargoCacheTests(unittest.TestCase):
+    def environment(self, root):
+        env = {key: value for key, value in os.environ.items()
+               if not key.startswith("CARGO_") or key in ("CARGO_HOME", "CARGO_BUILD_JOBS")}
+        return dict(env, CARGO_TARGET_DIR=str(root / "target"), CARGO_NET_OFFLINE="true")
+
+    def build(self, manifest, env, profile):
+        output = subprocess.check_output(
+            ["cargo", "build", "--manifest-path", str(manifest), "--profile", profile,
+             "--message-format=json-render-diagnostics"],
+            cwd=manifest.parent, env=env, text=True, pass_fds=lock_fds())
+        artifacts = [item for line in output.splitlines()
+                     if (item := json.loads(line)).get("reason") == "compiler-artifact"]
+        # Cargo's intermediate directory layout is not a stable interface.
+        dependencies = {Path(filename): Path(filename).stat().st_mtime_ns
+                        for item in artifacts if item["target"]["name"] == "jobserver"
+                        for filename in item["filenames"] if filename.endswith(".rlib")}
+        self.assertEqual(len(dependencies), 1, "expected one compiled registry dependency")
+        executables = [item["executable"] for item in artifacts if item.get("executable")]
+        return dependencies, executables
+
     def test_release_dependencies_are_reused_across_standalone_roots(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            env = dict(os.environ, CARGO_TARGET_DIR=str(root / "target"), CARGO_NET_OFFLINE="true")
+            env = self.environment(root)
             artifacts = None
             for name in ("application", "standalone"):
                 if name == "standalone":
@@ -76,13 +96,9 @@ class RestoredCargoCacheTests(unittest.TestCase):
                     '[lib]\npath="lib.rs"\n[dependencies]\njobserver="=0.1.35"\n'
                     + ('[profile.release]\ndebug=1\n' if name == "application" else ''))
                 (crate / "lib.rs").write_text("pub fn client() -> jobserver::Client { jobserver::Client::new(1).unwrap() }\n")
-                subprocess.run(["cargo", "build", "--manifest-path", str(manifest), "--release"],
-                               cwd=root, env=env, check=True, pass_fds=lock_fds())
-                current = {path.name: path.stat().st_mtime_ns
-                           for path in (root / "target/release/deps").glob("libjobserver-*.rlib")}
-                self.assertEqual(len(current), 1, "profile mismatch rebuilt the shared dependency")
+                current, _executables = self.build(manifest, env, "release")
                 if artifacts is not None:
-                    self.assertEqual(current, artifacts)
+                    self.assertEqual(current, artifacts, "profile mismatch rebuilt the shared dependency")
                 artifacts = current
 
     def test_changed_path_dependency_with_old_mtime_and_registry_reuse(self):
@@ -94,7 +110,9 @@ class RestoredCargoCacheTests(unittest.TestCase):
                     '[package]\nname="cache-fixture"\nversion="0.0.0"\nedition="2024"\n'
                     '[[bin]]\nname="cache-fixture"\npath="main.rs"\n'
                     '[dependencies]\nlocal-value={path="local"}\njobserver="=0.1.35"\n')
-                (root / "main.rs").write_text('fn main(){ println!("{}", local_value::value()); }\n')
+                (root / "main.rs").write_text(
+                    'fn main(){ let _client = jobserver::Client::new(1).unwrap(); '
+                    'println!("{}", local_value::value()); }\n')
                 (root / "local").mkdir()
                 (root / "local/Cargo.toml").write_text(
                     '[package]\nname="local-value"\nversion="0.0.0"\nedition="2024"\n'
@@ -102,21 +120,19 @@ class RestoredCargoCacheTests(unittest.TestCase):
                 source = root / "local/lib.rs"
                 source.write_text("pub fn value() -> u8 { 1 }\n")
                 original = source.stat()
-                env = dict(os.environ, CARGO_TARGET_DIR=str(root / "target"), CARGO_NET_OFFLINE="true")
-                command = ["cargo", "run", "--quiet", "--manifest-path", str(manifest), "--profile", profile]
-                def run():
-                    return subprocess.check_output(command, env=env, text=True, pass_fds=lock_fds()).strip()
-                self.assertEqual(run(), "1")
-                profile_dir = "debug" if profile == "dev" else profile
-                dependencies = list((root / "target" / profile_dir / "deps").glob("libjobserver-*.rlib"))
-                self.assertTrue(dependencies)
-                modified = {path: path.stat().st_mtime_ns for path in dependencies}
+                env = self.environment(root)
+                dependencies, executables = self.build(manifest, env, profile)
+                self.assertEqual(len(executables), 1)
+                self.assertEqual(subprocess.check_output(executables, text=True).strip(), "1")
                 source.write_text("pub fn value() -> u8 { 2 }\n")
                 # Simulate a checkout older than the restored build artifacts.
                 os.utime(source, ns=(original.st_atime_ns, original.st_mtime_ns))
                 fresh.clean_local_packages(manifest, env)
-                self.assertEqual({path: path.stat().st_mtime_ns for path in dependencies}, modified)
-                self.assertEqual(run(), "2")
+                self.assertEqual({path: path.stat().st_mtime_ns for path in dependencies}, dependencies)
+                rebuilt, executables = self.build(manifest, env, profile)
+                self.assertEqual(rebuilt, dependencies)
+                self.assertEqual(len(executables), 1)
+                self.assertEqual(subprocess.check_output(executables, text=True).strip(), "2")
 
 
 if __name__ == "__main__":

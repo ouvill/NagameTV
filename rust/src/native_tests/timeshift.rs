@@ -214,12 +214,14 @@ fn check_data_broadcast(
     ffi::clickRootKey(engine.pin_mut(), &QString::from("Escape"))?;
     assert!(evaluate(
         engine,
-        "dataBroadcast.view !== null && player.data_broadcast_requested"
+        "root.homeScreen && dataBroadcast.view !== null && player.data_broadcast_requested"
     )?);
     evaluate(engine, "player.configure_data_broadcast(false); true")?;
     wait_for(app, engine, "dataBroadcast.view === null")?;
     evaluate(engine, "player.configure_data_broadcast(true); true")?;
-    Ok(())
+    // Escape returned Home while retaining reception. Composition checks need
+    // the full watching surface rather than Home's small playback preview.
+    super::data_broadcast::return_to_watching(app, engine)
 }
 
 pub(super) fn run_data_broadcast(

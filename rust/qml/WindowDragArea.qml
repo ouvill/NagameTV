@@ -1,11 +1,12 @@
 import QtQuick
+import MinimalViewer
 
 MouseArea {
     id: area
     required property Window targetWindow
     signal activity
     // A decorated window is moved from its title bar; presses reach the content.
-    visible: (targetWindow.flags & Qt.FramelessWindowHint) !== 0
+    visible: WindowChrome.frameless
     acceptedButtons: Qt.LeftButton
     property point pressPosition: Qt.point(0, 0)
     property bool moveStarted: false

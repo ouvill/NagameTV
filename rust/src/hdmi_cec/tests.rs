@@ -24,6 +24,7 @@ struct Shared {
     address: Address,
     failures: BTreeMap<String, io::ErrorKind>,
     claim_failure: bool,
+    release_failure: Option<io::ErrorKind>,
     processed: usize,
     panic_on_poll: bool,
 }
@@ -42,6 +43,7 @@ impl Fake {
                     address,
                     failures: BTreeMap::new(),
                     claim_failure: false,
+                    release_failure: None,
                     processed: 0,
                     panic_on_poll: false,
                 })),
@@ -127,6 +129,13 @@ impl Device for FakeDevice {
     fn release(&mut self) -> Result<(), Error> {
         let mut shared = self.fake.shared.lock().unwrap();
         shared.operations.push(format!("release {}", self.path));
+        if let Some(kind) = shared.release_failure {
+            return Err(Error::io(
+                "release logical address",
+                &self.path,
+                io::Error::from(kind),
+            ));
+        }
         shared.address.logical_mask = 0;
         Ok(())
     }
@@ -327,7 +336,7 @@ fn no_device_claim_failure_and_disconnect_have_distinct_states_and_release() {
 fn claim_timeout_uses_injected_time_and_releases_the_requested_address() {
     use std::sync::atomic::{AtomicUsize, Ordering};
     let (fake, _events) = Fake::new(CONNECTED);
-    let requested = connect(&mut fake.clone(), "", &[info(0)]).unwrap();
+    let requested = connect(&mut fake.clone(), "", &[info(0)], Diagnostics::shared()).unwrap();
     fake.shared.lock().unwrap().address.logical_mask = 0;
     let (_stop, stop) = mpsc::channel();
     let (snapshots, _receiver) = mpsc::channel();
@@ -422,4 +431,293 @@ fn unexpected_worker_exit_reports_failure_and_releases_the_device() {
         fake.operations()
             .ends_with(&["release /dev/cec0".into(), "close /dev/cec0".into()])
     );
+}
+
+#[derive(Debug)]
+struct DiagnosticEvent {
+    level: tracing::Level,
+    fields: BTreeMap<String, String>,
+}
+impl tracing::field::Visit for DiagnosticEvent {
+    fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+        self.fields
+            .insert(field.name().into(), format!("{value:?}"));
+    }
+    fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
+        self.fields.insert(field.name().into(), value.into());
+    }
+    fn record_error(
+        &mut self,
+        field: &tracing::field::Field,
+        value: &(dyn std::error::Error + 'static),
+    ) {
+        self.fields.insert(field.name().into(), value.to_string());
+    }
+}
+#[derive(Clone, Default)]
+struct DiagnosticEvents(Arc<Mutex<Vec<DiagnosticEvent>>>);
+impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for DiagnosticEvents {
+    fn on_event(&self, event: &tracing::Event<'_>, _: tracing_subscriber::layer::Context<'_, S>) {
+        if event.metadata().target().ends_with("hdmi_cec::diagnostics") {
+            let mut recorded = DiagnosticEvent {
+                level: *event.metadata().level(),
+                fields: BTreeMap::new(),
+            };
+            event.record(&mut recorded);
+            self.0.lock().unwrap().push(recorded);
+        }
+    }
+}
+impl DiagnosticEvents {
+    fn capture(&self, run: impl FnOnce()) {
+        use tracing_subscriber::prelude::*;
+        tracing::subscriber::with_default(tracing_subscriber::registry().with(self.clone()), run);
+    }
+    fn levels(&self) -> Vec<tracing::Level> {
+        self.0
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|event| event.level)
+            .collect()
+    }
+}
+fn fake_failure(fake: &Fake, diagnostics: &SharedDiagnostics) -> State {
+    let devices = fake.clone().enumerate().unwrap();
+    let error = match connect(&mut fake.clone(), "", &devices, diagnostics.clone()) {
+        Err(error) => error,
+        Ok(_) => panic!("fake was expected to fail connecting"),
+    };
+    diagnostics.borrow_mut().failed("connect adapter", error)
+}
+fn stopped_fake_session(fake: &Fake, diagnostics: &SharedDiagnostics) -> State {
+    let requested = connect(&mut fake.clone(), "", &[info(0)], diagnostics.clone()).unwrap();
+    let (cancel, stop) = mpsc::channel();
+    cancel.send(()).unwrap();
+    let (snapshots, receiver) = mpsc::channel();
+    let (inputs, _input_receiver) = mpsc::sync_channel(INPUT_QUEUE_SIZE);
+    run_device(
+        requested,
+        &[info(0)],
+        &stop,
+        &snapshots,
+        &inputs,
+        &mut 0,
+        Instant::now,
+    )
+    .unwrap();
+    receiver.recv().unwrap().state
+}
+
+#[test]
+fn retrying_fake_failures_only_warn_when_the_cause_changes_or_playback_recovers() {
+    use tracing::Level;
+    let (fake, _events) = Fake::new(CONNECTED);
+    let diagnostics = Diagnostics::shared();
+    let recorded = DiagnosticEvents::default();
+    recorded.capture(|| {
+        fake.shared.lock().unwrap().devices.clear();
+        for _ in 0..2 {
+            let state = fake_failure(&fake, &diagnostics);
+            assert!(matches!(state, State::NoDevice));
+            for _ in 0..3 {
+                assert!(!state.message().is_empty());
+            }
+        }
+        {
+            let mut shared = fake.shared.lock().unwrap();
+            shared.devices.push(info(0));
+            shared
+                .failures
+                .insert(info(0).path, io::ErrorKind::PermissionDenied);
+        }
+        for _ in 0..2 {
+            assert!(matches!(
+                fake_failure(&fake, &diagnostics),
+                State::PermissionDenied(_)
+            ));
+        }
+        fake.shared
+            .lock()
+            .unwrap()
+            .failures
+            .insert(info(0).path, io::ErrorKind::BrokenPipe);
+        for _ in 0..2 {
+            assert!(matches!(
+                fake_failure(&fake, &diagnostics),
+                State::Failed(_)
+            ));
+        }
+        fake.shared.lock().unwrap().failures.clear();
+        assert!(matches!(
+            stopped_fake_session(&fake, &diagnostics),
+            State::Active
+        ));
+        fake.shared
+            .lock()
+            .unwrap()
+            .failures
+            .insert(info(0).path, io::ErrorKind::BrokenPipe);
+        assert!(matches!(
+            fake_failure(&fake, &diagnostics),
+            State::Failed(_)
+        ));
+    });
+    assert_eq!(
+        recorded.levels(),
+        [
+            Level::WARN,
+            Level::DEBUG,
+            Level::WARN,
+            Level::DEBUG,
+            Level::WARN,
+            Level::DEBUG,
+            Level::WARN
+        ]
+    );
+    let events = recorded.0.lock().unwrap();
+    assert!(
+        events
+            .iter()
+            .all(|event| event.fields["operation"] == "connect adapter")
+    );
+    assert!(events[0].fields["error"].contains("No HDMI-CEC device found"));
+    assert!(events[2].fields["error"].contains("/dev/cec0"));
+    assert!(events[2].fields["error"].contains("Permission denied"));
+}
+
+#[test]
+fn failure_identity_includes_error_operation_kind_device_and_the_underlying_causes() {
+    use super::diagnostics::{Change, FailureLog};
+    let mut log = FailureLog::default();
+    for error in [
+        Error::NoDevice,
+        Error::Permission {
+            path: info(0).path,
+            source: io::ErrorKind::PermissionDenied.into(),
+        },
+        Error::Disconnected {
+            path: info(0).path,
+            source: io::ErrorKind::NotConnected.into(),
+        },
+        Error::Disconnected {
+            path: info(1).path,
+            source: io::ErrorKind::NotConnected.into(),
+        },
+        Error::Busy(info(0).path),
+        Error::Capabilities(info(0).path),
+        Error::Claim,
+        Error::Worker(io::ErrorKind::BrokenPipe.into()),
+        Error::Unsupported,
+    ] {
+        assert_eq!(log.observe(&error), Change::New);
+        assert_eq!(log.observe(&error), Change::Repeated);
+    }
+    let operation = |operation| Error::Io {
+        operation,
+        path: info(0).path,
+        source: io::ErrorKind::BrokenPipe.into(),
+    };
+    assert_eq!(log.observe(&operation("open")), Change::New);
+    assert_eq!(log.observe(&operation("receive")), Change::New);
+    let same_message = |kind| Error::Worker(io::Error::new(kind, "adapter not ready"));
+    assert_eq!(
+        log.observe(&same_message(io::ErrorKind::TimedOut)),
+        Change::New
+    );
+    assert_eq!(
+        log.observe(&same_message(io::ErrorKind::WouldBlock)),
+        Change::New
+    );
+
+    #[derive(Debug, thiserror::Error)]
+    #[error("adapter not ready")]
+    struct Source(#[source] io::Error);
+    let cause =
+        |detail: &'static str| Error::Worker(io::Error::other(Source(io::Error::other(detail))));
+    let first = cause("bus disconnected");
+    let second = cause("claim rejected");
+    assert_eq!(first.to_string(), second.to_string());
+    assert_eq!(log.observe(&first), Change::New);
+    assert_eq!(log.observe(&first), Change::Repeated);
+    assert_eq!(log.observe(&second), Change::New);
+}
+
+#[test]
+fn waiting_retries_stay_at_debug_until_an_active_fake_session_recovers() {
+    use tracing::Level;
+    let (fake, _events) = Fake::new(UNPLUGGED);
+    let diagnostics = Diagnostics::shared();
+    let recorded = DiagnosticEvents::default();
+    recorded.capture(|| {
+        for _ in 0..2 {
+            assert!(matches!(
+                stopped_fake_session(&fake, &diagnostics),
+                State::WaitingForTv
+            ));
+        }
+        fake.shared.lock().unwrap().address = CONNECTED;
+        assert!(matches!(
+            stopped_fake_session(&fake, &diagnostics),
+            State::Active
+        ));
+        fake.shared.lock().unwrap().address = UNPLUGGED;
+        assert!(matches!(
+            stopped_fake_session(&fake, &diagnostics),
+            State::WaitingForTv
+        ));
+    });
+    assert_eq!(recorded.levels(), [Level::WARN, Level::DEBUG, Level::WARN]);
+}
+
+#[test]
+fn release_retries_and_a_full_input_queue_report_once_until_their_operation_recovers() {
+    use tracing::Level;
+    let (fake, _events) = Fake::new(CONNECTED);
+    let diagnostics = Diagnostics::shared();
+    let recorded = DiagnosticEvents::default();
+    recorded.capture(|| {
+        fake.shared.lock().unwrap().release_failure = Some(io::ErrorKind::BrokenPipe);
+        for _ in 0..2 {
+            drop(connect(&mut fake.clone(), "", &[info(0)], diagnostics.clone()).unwrap());
+        }
+        fake.shared.lock().unwrap().release_failure = None;
+        drop(connect(&mut fake.clone(), "", &[info(0)], diagnostics.clone()).unwrap());
+        fake.shared.lock().unwrap().release_failure = Some(io::ErrorKind::BrokenPipe);
+        drop(connect(&mut fake.clone(), "", &[info(0)], diagnostics.clone()).unwrap());
+        diagnostics.borrow_mut().input_dropped();
+        diagnostics.borrow_mut().input_dropped();
+        diagnostics.borrow_mut().input_accepted();
+        diagnostics.borrow_mut().input_dropped();
+    });
+    assert_eq!(
+        recorded.levels(),
+        [
+            Level::ERROR,
+            Level::DEBUG,
+            Level::ERROR,
+            Level::WARN,
+            Level::DEBUG,
+            Level::WARN
+        ]
+    );
+}
+
+#[test]
+fn retry_stage_changes_do_not_warn_again_for_the_same_disconnected_adapter() {
+    use tracing::Level;
+    let mut diagnostics = Diagnostics::default();
+    let recorded = DiagnosticEvents::default();
+    recorded.capture(|| {
+        for operation in ["receive from adapter", "connect adapter", "connect adapter"] {
+            diagnostics.failed(
+                operation,
+                Error::Disconnected {
+                    path: info(0).path,
+                    source: io::ErrorKind::NotConnected.into(),
+                },
+            );
+        }
+    });
+    assert_eq!(recorded.levels(), [Level::WARN, Level::DEBUG, Level::DEBUG]);
 }

@@ -1,10 +1,12 @@
 //! Rust-owned HDMI-CEC policy and worker. No Qt types or runtime fake devices.
+mod diagnostics;
 mod keys;
 #[cfg(target_os = "linux")]
 mod linux;
 #[cfg(all(test, target_os = "linux"))]
 mod tests;
 use crate::features::LaunchPlan;
+use diagnostics::{Diagnostics, SharedDiagnostics};
 pub(crate) use keys::{Input, InputKey};
 use std::{
     io,
@@ -87,10 +89,6 @@ impl State {
         }
     }
     fn failure(error: Error) -> Self {
-        tracing::warn!(
-            error = &error as &dyn std::error::Error,
-            "HDMI-CEC operation failed"
-        );
         match error {
             Error::NoDevice => Self::NoDevice,
             error @ Error::Permission { .. } => Self::PermissionDenied(error),
@@ -151,16 +149,22 @@ struct Closed(DeviceInfo);
 struct Opened<D: Device>(D);
 struct Requested<D: Device>(Lease<D>);
 struct Claimed<D: Device>(Lease<D>);
-struct Lease<D: Device>(D);
+struct Lease<D: Device> {
+    device: D,
+    diagnostics: SharedDiagnostics,
+}
 impl Closed {
     fn open<B: Backend>(self, backend: &mut B) -> Result<Opened<B::Device>, Error> {
         backend.open(&self.0).map(Opened)
     }
 }
 impl<D: Device> Opened<D> {
-    fn request(mut self) -> Result<Requested<D>, Error> {
+    fn request(mut self, diagnostics: SharedDiagnostics) -> Result<Requested<D>, Error> {
         self.0.claim_playback()?;
-        Ok(Requested(Lease(self.0)))
+        Ok(Requested(Lease {
+            device: self.0,
+            diagnostics,
+        }))
     }
 }
 impl<D: Device> Requested<D> {
@@ -174,14 +178,11 @@ impl<D: Device> Requested<D> {
 }
 impl<D: Device> Drop for Lease<D> {
     fn drop(&mut self) {
-        if let Err(error) = self.0.release() {
-            tracing::error!(
-                error = &error as &dyn std::error::Error,
-                "HDMI-CEC logical address release failed"
-            );
-        }
+        let result = self.device.release();
+        self.diagnostics.borrow_mut().released(result);
     }
 }
+
 enum Connection<D: Device> {
     Pending(Requested<D>),
     Active(Claimed<D>),
@@ -189,8 +190,8 @@ enum Connection<D: Device> {
 impl<D: Device> Connection<D> {
     fn device(&mut self) -> &mut D {
         match self {
-            Self::Pending(device) => &mut device.0.0,
-            Self::Active(device) => &mut device.0.0,
+            Self::Pending(device) => &mut device.0.device,
+            Self::Active(device) => &mut device.0.device,
         }
     }
     fn update(self, address: Address) -> Self {
@@ -354,10 +355,13 @@ impl Controller {
         }
         if unexpected_exit {
             self.stop();
-            self.snapshot.state = State::failure(Error::Worker(io::Error::new(
-                io::ErrorKind::BrokenPipe,
-                "CEC worker exited unexpectedly; search again to retry",
-            )));
+            self.snapshot.state = Diagnostics::default().failed(
+                "poll worker",
+                Error::Worker(io::Error::new(
+                    io::ErrorKind::BrokenPipe,
+                    "CEC worker exited unexpectedly; search again to retry",
+                )),
+            );
             changed = true;
         }
         changed
@@ -395,7 +399,9 @@ impl Controller {
                 self.snapshots = Some(worker.snapshots);
                 self.inputs = Some(worker.inputs);
             }
-            Err(error) => self.snapshot.state = State::failure(error),
+            Err(error) => {
+                self.snapshot.state = Diagnostics::default().failed("start worker", error)
+            }
         }
     }
     pub fn stop(&mut self) {
@@ -452,6 +458,7 @@ fn worker<B: Backend>(
     inputs: SyncSender<QueuedInput>,
 ) {
     let mut generation = 0;
+    let diagnostics = Diagnostics::shared();
     loop {
         match stop.try_recv() {
             Ok(()) | Err(mpsc::TryRecvError::Disconnected) => return,
@@ -461,7 +468,8 @@ fn worker<B: Backend>(
             Ok(devices) => devices,
             Err(error) => {
                 generation += 1;
-                let mut snapshot = Snapshot::new(State::failure(error));
+                let mut snapshot =
+                    Snapshot::new(diagnostics.borrow_mut().failed("enumerate adapters", error));
                 snapshot.generation = generation;
                 if snapshots.send(snapshot).is_err() {
                     return;
@@ -472,8 +480,8 @@ fn worker<B: Backend>(
                 continue;
             }
         };
-        let result = connect(&mut backend, &selection, &devices);
-        let error = match result {
+        let result = connect(&mut backend, &selection, &devices, diagnostics.clone());
+        let (operation, error) = match result {
             Ok(device) => {
                 match run_device(
                     device,
@@ -485,13 +493,13 @@ fn worker<B: Backend>(
                     Instant::now,
                 ) {
                     Ok(()) => return,
-                    Err(error) => error,
+                    Err(error) => ("receive from adapter", error),
                 }
             }
-            Err(error) => error,
+            Err(error) => ("connect adapter", error),
         };
         generation += 1;
-        let mut snapshot = Snapshot::new(State::failure(error));
+        let mut snapshot = Snapshot::new(diagnostics.borrow_mut().failed(operation, error));
         snapshot.generation = generation;
         snapshot.devices = devices;
         // Receiver shutdown is expected while the owning Player is being destroyed.
@@ -510,16 +518,20 @@ fn connect<B: Backend>(
     backend: &mut B,
     selection: &str,
     devices: &[DeviceInfo],
+    diagnostics: SharedDiagnostics,
 ) -> Result<Requested<B::Device>, Error> {
     let mut failure: Option<Error> = None;
     for info in devices
         .iter()
         .filter(|d| selection.is_empty() || d.path == selection)
     {
-        match Closed(info.clone()).open(backend).and_then(Opened::request) {
+        match Closed(info.clone())
+            .open(backend)
+            .and_then(|opened| opened.request(diagnostics.clone()))
+        {
             Ok(device) => {
                 if let Some(error) = failure {
-                    tracing::warn!(
+                    tracing::debug!(
                         error = &error as &dyn std::error::Error,
                         "HDMI-CEC skipped unusable adapter"
                     );
@@ -528,7 +540,7 @@ fn connect<B: Backend>(
             }
             Err(error) => {
                 if let Some(previous) = failure.replace(error) {
-                    tracing::warn!(
+                    tracing::debug!(
                         error = &previous as &dyn std::error::Error,
                         "HDMI-CEC skipped unusable adapter"
                     );
@@ -536,7 +548,8 @@ fn connect<B: Backend>(
             }
         }
     }
-    // The worker logs the final failure once, when retaining it for presentation.
+    // Candidate probes may recover through another adapter. The worker handles
+    // the final failure and distinguishes changed failures from repeated retries.
     Err(failure.unwrap_or(Error::NoDevice))
 }
 
@@ -549,6 +562,7 @@ fn run_device<D: Device>(
     generation: &mut u64,
     now: impl Fn() -> Instant,
 ) -> Result<(), Error> {
+    let diagnostics = device.0.diagnostics.clone();
     let mut connection = Connection::Pending(device);
     let mut address = connection.device().address()?;
     connection = connection.update(address);
@@ -559,8 +573,10 @@ fn run_device<D: Device>(
         let active = matches!(connection, Connection::Active(_));
         let marker = (active, address);
         if previous != Some(marker) {
-            if !active {
-                tracing::warn!(physical_address = ?address.physical, "HDMI-CEC waiting for TV/logical address");
+            if active {
+                diagnostics.borrow_mut().active();
+            } else {
+                diagnostics.borrow_mut().waiting(address);
                 keys.clear();
             }
             *generation += 1;
@@ -613,10 +629,8 @@ fn run_device<D: Device>(
                         generation: *generation,
                         input,
                     }) {
-                        Ok(()) => {}
-                        Err(TrySendError::Full(_)) => {
-                            tracing::warn!("HDMI-CEC input queue full; discarding key")
-                        }
+                        Ok(()) => diagnostics.borrow_mut().input_accepted(),
+                        Err(TrySendError::Full(_)) => diagnostics.borrow_mut().input_dropped(),
                         Err(TrySendError::Disconnected(_)) => return Ok(()),
                     }
                 }
