@@ -44,9 +44,9 @@ Flatpak版などのサンドボックス環境におけるデバイス公開範�
 
 - **実行時フラグ**: `hdmi_cec_enabled`（既定 `false`）。OFFのときは `/dev/cec*` を開かず、監視スレッドも起動しません。実行中にOFFへ切り替えると、戻る前にワーカーとデバイス（および論理アドレス）を同期的に解放します。
 - **設定の保存**: 通常起動では既存の設定保存先（`settings.toml`）に `hdmi_cec_enabled` と `hdmi_cec_device` を保存・復元します。`hdmi_cec_device` が空文字列 `""` のときは自動選択（最初に利用可能な `/dev/cecN`）を使い、明示指定するときは `/dev/cecN` 形式のパスを指定します。
-- **設定画面からの有効化**: 設定項目名・配置カテゴリは **TBD**（UI文言の確定後に反映）。
+- **設定画面からの有効化**: 「設定 → リモート操作」の「テレビのリモコン（HDMI-CEC）」セクションにある「HDMI-CECでテレビのリモコンから操作する（実験的）」をONにします。ONにすると、使用するアダプターを選ぶ「CECデバイス」（「自動」または「`<名前> (/dev/cecN)`」）と「再検索」ボタンが表示されます。
 - **検証用の起動オプション**: `--features=hdmi-cec`（他機能と併用可。例: `--features=epg,subtitles,hdmi-cec`）。`hdmi-cec` を指定した制限起動では一時セッションとして有効になり、設定ファイルへ書き戻しません。`hdmi-cec` を含まない `--features` 指定では `hdmi_cec_allowed` が `false` となり、設定画面からも有効化できません。
-- **再検出と自動再試行**: 有効化時には自動で `/dev/cec*` を走査します。明示的な再走査・再試行は `refresh_hdmi_cec_devices()` を呼びます（OFFのときはデバイスを開かずワーカーも作りません）。`no-device` と `disconnected` の状態では、有効な間は定期的に再試行します。
+- **再検出と自動再試行**: 有効化時には自動で `/dev/cec*` を走査します。設定画面の「再検索」ボタンを押すと `refresh_hdmi_cec_devices()` で再走査・再試行します（OFFのときはデバイスを開かずワーカーも作りません）。`no-device` と `disconnected` の状態では、有効な間は定期的に再試行します。
 
 ### QML公開API（`Player`）
 
@@ -96,15 +96,15 @@ HDMI-CECから受け取ったキーは、既存のViewer操作経路（`player/r
 
 ## 状態一覧とトラブルシューティング
 
-`hdmi_cec_state` は次の8種類の固定文字列をとります。運用上の失敗は `hdmi_cec_error` へ保持するとともに、標準エラー出力（`tracing`）へ記録します。
+`hdmi_cec_state` は次の8種類の固定文字列をとります。設定画面の「テレビのリモコン（HDMI-CEC）」欄には現在状態のほか、保持されたエラー詳細（`hdmi_cec_error`）と、転送されるボタンがテレビメーカーに依存する旨の注意書きを表示します。運用上の失敗は標準エラー出力（`tracing`）にも記録します。
 
 | `hdmi_cec_state` | 意味 | 確認・対処方法 |
 | --- | --- | --- |
-| `disabled` | 設定OFF、または起動ポリシーで無効 | 設定画面で有効にするか、`--features` に `hdmi-cec` を含める |
-| `no-device` | `/dev/cec*` が見つからない（有効時は定期的に再走査） | `ls -l /dev/cec*` を確認する。PC内蔵GPUの多くはCEC非対応のため、USB CECアダプターを接続する。Raspberry Piではカーネル設定や接続するHDMIポートを確認する |
+| `disabled` | 設定OFF、または起動ポリシーで無効 | 「設定 → リモート操作 → テレビのリモコン（HDMI-CEC）」で有効にするか、`--features` に `hdmi-cec` を含める |
+| `no-device` | `/dev/cec*` が見つからない（有効時は定期的に再走査） | `ls -l /dev/cec*` を確認する。PC内蔵GPUの多くはCEC非対応のため、USB CECアダプターを接続し「再検索」を試す。Raspberry Piではカーネル設定や接続するHDMIポートを確認する |
 | `permission-denied` | `/dev/cec*` を開く権限がない | `groups` で `video` グループ所属を確認し、未所属なら `sudo usermod -aG video "$USER"` の後に再ログインする（またはudevルールを確認する） |
 | `waiting-for-tv` | テレビ電源OFF、ケーブル未接続、または物理アドレスが無効 | テレビの電源を入れ、該当のHDMI入力へ切り替える。テレビ側のHDMI連動機能（CEC）がONか確認する。有効な物理アドレスが割り当てられると、カーネルの状態変化イベントを受けて論理アドレスの取得へ進む |
-| `active` | 論理アドレスを取得し、OSD名 `NagameTV` でキー入力を待機中 | — |
+| `active` | 論理アドレスを取得し、OSD名 `NagameTV` でキー入力を待機中（UIでは物理アドレス `x.x.x.x` と `NagameTV` を表示） | — |
 | `disconnected` | 使用中のデバイスが切断された（有効時は定期的に再試行） | USBケーブルやアダプターの接続を確認する |
 | `error` | 論理アドレスの取得失敗などのエラー | `hdmi_cec_error` の表示と標準エラー出力の `tracing` ログを確認する |
 | `unsupported` | Linux以外のOSで実行している | Linux環境で利用する |
