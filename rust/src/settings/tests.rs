@@ -842,3 +842,30 @@ fn sleep_inhibition_defaults_on_and_round_trips_without_changing_transient_setti
             .sleep_inhibit_enabled
     );
 }
+
+#[test]
+fn hdmi_cec_defaults_off_roundtrips_and_transient_sessions_preserve_saved_choices()
+-> Result<(), Box<dyn std::error::Error>> {
+    let directory = tempfile::tempdir()?;
+    let path = directory.path().join("settings.toml");
+    fs::write(&path, "autoplay = true\nfuture_setting = 'keep'\n")?;
+    let mut session = open(path.clone())?;
+    assert!(!session.preferences().hdmi_cec_enabled);
+    assert!(session.preferences().hdmi_cec_device.is_empty());
+    session.change(Change::HdmiCecEnabled(true));
+    session.change(Change::HdmiCecDevice("/dev/cec2".into()));
+    session.flush()?;
+    let restored = open(path.clone())?;
+    assert!(restored.preferences().hdmi_cec_enabled);
+    assert_eq!(restored.preferences().hdmi_cec_device, "/dev/cec2");
+    assert!(restored.preferences().autoplay);
+    assert_eq!(
+        restored.preferences().extra["future_setting"].as_str(),
+        Some("keep")
+    );
+    let mut transient = Loaded::transient(Preferences::default()).activate(None, None);
+    transient.change(Change::HdmiCecEnabled(false));
+    assert_eq!(transient.flush()?, SaveStatus::Transient);
+    assert!(open(path)?.preferences().hdmi_cec_enabled);
+    Ok(())
+}

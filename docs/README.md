@@ -19,6 +19,7 @@
 | **[EPGStation連携](epgstation.md)** | 録画一覧・検索・TS再生、stuayu版のパスワード認証と対応範囲 |
 | **[遠隔操作API](remote-control.md)** | 家庭内LANから本アプリを操作するgRPC / gRPC-Webの概要と設定方法 |
 | **[APIリファレンス (Protocol Buffers)](api/remote-control.md)** | `viewer.v1.PlayerService` の詳細なRPC・メッセージ定義 |
+| **[HDMI-CECリモコン操作（実験的）](hdmi-cec.md)** | 既定OFFの実験機能。Linux `/dev/cecN` 経由のテレビリモコン操作、権限設定、制限事項 |
 | **[未実装機能・改善候補 (バックログ)](backlog.md)** | 実装検討中の機能や今後のロードマップ |
 | **[スクリーンショット一覧](media/README.md)** | 公開用スクリーンショットと素材クレジット |
 

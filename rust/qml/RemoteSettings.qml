@@ -7,9 +7,10 @@ import QtQuick.Layouts
 ColumnLayout {
     id: root
     required property var backend
-    readonly property list<Item> navigationItems: webToggle.visible
-        ? [enabledToggle, webToggle, addressField, portField, applyButton]
-        : [enabledToggle, addressField, portField, applyButton]
+    readonly property list<Item> navigationItems: [
+        ...(webToggle.visible ? [enabledToggle, webToggle] : [enabledToggle]),
+        addressField, portField, applyButton, ...hdmiCec.navigationItems
+    ]
     readonly property var webUrls: {
         const urls = JSON.parse(backend.remote_web_urls || "[]");
         return Array.isArray(urls) ? urls : [];
@@ -191,5 +192,20 @@ ColumnLayout {
         font.pixelSize: Theme.fontControl
         padding: Theme.spaceMd
         background: Rectangle { color: Theme.surfaceRaised; radius: Theme.controlRadius }
+    }
+    Label {
+        // The network remote and the TV remote are configured independently.
+        Layout.fillWidth: true
+        Layout.topMargin: 20
+        text: qsTranslate("HdmiCec", "TV remote (HDMI-CEC)")
+        color: Theme.textPrimary
+        font.pixelSize: Theme.fontControl
+        font.bold: true
+        wrapMode: Text.Wrap
+    }
+    HdmiCecSettings {
+        id: hdmiCec
+        Layout.fillWidth: true
+        backend: root.backend
     }
 }

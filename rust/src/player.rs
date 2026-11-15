@@ -17,6 +17,9 @@ mod epg;
 #[cfg(feature = "native_tests")]
 mod epg_checks;
 mod guide;
+mod hdmi_cec;
+#[cfg(feature = "native_tests")]
+mod hdmi_cec_checks;
 mod language;
 mod lifecycle;
 #[cfg(feature = "native_tests")]
@@ -138,6 +141,8 @@ pub mod ffi {
         type RecordingModel = crate::recording_model::ffi::RecordingModel;
         include!("nagametv/src/continue_watching_model.cxxqt.h");
         type ContinueWatchingModel = crate::continue_watching_model::ffi::ContinueWatchingModel;
+        include!("nagametv/src/hdmi_cec_model.cxxqt.h");
+        type HdmiCecDeviceModel = crate::hdmi_cec_model::ffi::HdmiCecDeviceModel;
         include!("nagametv/src/subtitle_model.cxxqt.h");
         type SubtitleModel = crate::subtitle_model::ffi::SubtitleModel;
         include!("nagametv/src/video_file_model.cxxqt.h");
@@ -321,6 +326,14 @@ pub mod ffi {
         #[qproperty(UpdateStatus, update_check_status, READ = update_check_status, NOTIFY = updates_changed)]
         #[qproperty(QString, update_version, READ = update_version, NOTIFY = updates_changed)]
         #[qproperty(QString, update_error, READ = update_error, NOTIFY = updates_changed)]
+        #[qproperty(bool, hdmi_cec_enabled, READ = hdmi_cec_enabled, NOTIFY = hdmi_cec_changed)]
+        #[qproperty(bool, hdmi_cec_allowed, READ = hdmi_cec_allowed, CONSTANT)]
+        #[qproperty(QString, hdmi_cec_state, READ = hdmi_cec_state, NOTIFY = hdmi_cec_changed)]
+        #[qproperty(QString, hdmi_cec_error, READ = hdmi_cec_error, NOTIFY = hdmi_cec_changed)]
+        #[qproperty(*mut HdmiCecDeviceModel, hdmi_cec_devices, READ = hdmi_cec_devices, CONSTANT)]
+        #[qproperty(QString, hdmi_cec_device, READ = hdmi_cec_device, NOTIFY = hdmi_cec_changed)]
+        #[qproperty(QString, hdmi_cec_osd_name, READ = hdmi_cec_osd_name, CONSTANT)]
+        #[qproperty(QString, hdmi_cec_physical_address, READ = hdmi_cec_physical_address, NOTIFY = hdmi_cec_changed)]
         #[qproperty(bool, sleep_inhibit_enabled, READ = sleep_inhibit_enabled, NOTIFY = sleep_inhibit_changed)]
         #[qproperty(QString, sleep_inhibit_state, READ = sleep_inhibit_state, NOTIFY = sleep_inhibit_changed)]
         #[qproperty(QString, sleep_inhibit_error, READ = sleep_inhibit_error, NOTIFY = sleep_inhibit_changed)]
@@ -411,6 +424,24 @@ pub mod ffi {
         fn remote_key_requested(self: Pin<&mut Player>, key: i32);
         #[qsignal]
         fn remote_command_executed(self: Pin<&mut Player>, kind: i32);
+        fn hdmi_cec_enabled(self: &Player) -> bool;
+        fn hdmi_cec_allowed(self: &Player) -> bool;
+        fn hdmi_cec_state(self: &Player) -> QString;
+        fn hdmi_cec_error(self: &Player) -> QString;
+        fn hdmi_cec_devices(self: &Player) -> *mut HdmiCecDeviceModel;
+        fn hdmi_cec_device(self: &Player) -> QString;
+        fn hdmi_cec_osd_name(self: &Player) -> QString;
+        fn hdmi_cec_physical_address(self: &Player) -> QString;
+        #[qinvokable]
+        fn set_hdmi_cec_enabled(self: Pin<&mut Player>, enabled: bool) -> bool;
+        #[qinvokable]
+        fn select_hdmi_cec_device(self: Pin<&mut Player>, path: QString) -> bool;
+        #[qinvokable]
+        fn refresh_hdmi_cec_devices(self: Pin<&mut Player>);
+        #[qsignal]
+        fn hdmi_cec_changed(self: Pin<&mut Player>);
+        #[qsignal]
+        fn hdmi_cec_input_requested(self: Pin<&mut Player>, key: i32, repeat: bool);
         fn remote_web_enabled(self: &Player) -> bool;
         fn remote_web_allowed(self: &Player) -> bool;
         fn remote_web_urls(self: &Player) -> QString;
@@ -893,6 +924,8 @@ pub struct PlayerRust {
     request: crate::features::channel_catalog::Acquisition,
     channel_refresh: channel_refresh::Refresh,
     remote: crate::remote::Control,
+    hdmi_cec: crate::hdmi_cec::Controller,
+    hdmi_cec_model: cxx::UniquePtr<crate::hdmi_cec_model::ffi::HdmiCecDeviceModel>,
     network: Option<services::Network>,
     updates: crate::updates::Checker,
     media: playback::Session,
@@ -1149,6 +1182,7 @@ impl Drop for PlayerRust {
         // The runtime joins cancelled HTTP workers when Player's network is dropped.
         self.updates.stop();
         self.remote.stop();
+        self.hdmi_cec.stop();
         self.epg_events.configure(None);
         // The media owner enforces native shutdown before subtitle destruction,
         // including when QML construction failed before onClosing could run.

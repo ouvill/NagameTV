@@ -365,13 +365,21 @@ fn toggle_data_broadcast_setting(
     evaluate(
         engine,
         &format!(
-            "settings.pageFields.find(item => item.objectName === '{setting}').forceActiveFocus(Qt.TabFocusReason); true"
+            "const field = settings.pageFields.find(item => item.objectName === '{setting}');
+            let flick = field.parent;
+            while (flick && !(flick instanceof Flickable)) flick = flick.parent;
+            if (!flick) throw new Error('Setting has no scroll viewport');
+            const y = field.mapToItem(flick.contentItem, 0, 0).y;
+            flick.contentY = Math.max(0, Math.min(y - (flick.height - field.height) / 2, flick.contentHeight - flick.height));
+            field.forceActiveFocus(Qt.TabFocusReason); true"
         ),
     )?;
     wait_for(
         app,
         engine,
-        &format!("root.activeFocusItem.objectName === '{setting}'"),
+        &format!("const field = settings.pageFields.find(item => item.objectName === '{setting}');
+            const point = field.mapToItem(root.contentItem, field.width / 2, field.height / 2);
+            field.activeFocus && point.x >= 0 && point.x < root.width && point.y >= 0 && point.y < root.height"),
     )?;
     ffi::clickRootItem(engine.pin_mut(), &QString::from(setting))?;
     Ok(())

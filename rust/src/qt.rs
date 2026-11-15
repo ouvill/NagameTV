@@ -78,6 +78,20 @@ pub mod ffi {
         #[cxx_name = "installPointerActivity"]
         unsafe fn install_pointer_activity(item: *mut QQuickItem);
         include!("remote_key.h");
+        #[cxx_name = "cecDigitKey"]
+        fn cec_digit_key(digit: u8) -> i32;
+        #[cxx_name = "cecSeekKey"]
+        fn cec_seek_key(forward: bool) -> i32;
+        #[cxx_name = "cecChapterKey"]
+        fn cec_chapter_key(forward: bool) -> i32;
+        #[cxx_name = "cecBlueKey"]
+        fn cec_blue_key() -> i32;
+        #[cxx_name = "cecRedKey"]
+        fn cec_red_key() -> i32;
+        #[cxx_name = "cecGreenKey"]
+        fn cec_green_key() -> i32;
+        #[cxx_name = "cecYellowKey"]
+        fn cec_yellow_key() -> i32;
         #[cxx_name = "supportsNavigationKey"]
         fn supports_navigation_key(key: i32) -> bool;
         #[cxx_name = "postNavigationKey"]

@@ -66,6 +66,7 @@ The detailed documentation linked below is currently available in Japanese.
 - **Autoplay on startup**: Optionally resume the last watched channel when the app starts.
 - **Interface languages**: Japanese and English are supported.
 - **Remote control API**: Control channel selection and playback from another device on your home LAN using gRPC or gRPC-Web.
+- **HDMI-CEC remote control (experimental)**: Enable under Settings → Remote control → TV remote (HDMI-CEC) → “Control with the TV remote over HDMI-CEC (experimental)” to control the viewer with a TV remote over Linux `/dev/cec*` devices (such as Raspberry Pi or USB CEC adapters). Off by default. [Requirements and limitations](docs/hdmi-cec.md)
 
 ---
 

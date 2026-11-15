@@ -108,6 +108,26 @@ Item {
                     return "data:image/svg+xml;base64," + Qt.btoa(
                         "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1 1'><rect width='1' height='1'/></svg>");
                 }
+                property bool hdmi_cec_enabled: false
+                property bool hdmi_cec_allowed: true
+                property string hdmi_cec_state: "disabled"
+                property string hdmi_cec_error: ""
+                property string hdmi_cec_device: ""
+                property string hdmi_cec_osd_name: "NagameTV"
+                property string hdmi_cec_physical_address: ""
+                property ListModel hdmi_cec_devices: ListModel {}
+                property int hdmiCecRefreshes: 0
+                function set_hdmi_cec_enabled(enabled) {
+                    if (enabled && !hdmi_cec_allowed) return false;
+                    hdmi_cec_enabled = enabled;
+                    hdmi_cec_state = enabled ? "waiting-for-tv" : "disabled";
+                    return true;
+                }
+                function select_hdmi_cec_device(path) {
+                    hdmi_cec_device = path;
+                    return true;
+                }
+                function refresh_hdmi_cec_devices() { ++hdmiCecRefreshes; }
                 property string screenshot_directory: "/pictures/nagametv"
                 property string screenshot_error: ""
                 property string screenshot_format: "png"
@@ -274,6 +294,14 @@ Item {
                 backend.remote_web_urls = "[]";
                 backend.remote_watchers = 0;
                 backend.acceptRemote = true;
+                backend.hdmi_cec_enabled = false;
+                backend.hdmi_cec_allowed = true;
+                backend.hdmi_cec_state = "disabled";
+                backend.hdmi_cec_error = "";
+                backend.hdmi_cec_device = "";
+                backend.hdmi_cec_physical_address = "";
+                backend.hdmi_cec_devices.clear();
+                backend.hdmiCecRefreshes = 0;
                 remoteRequests.clear();
                 backend.screenshot_directory = "/pictures/nagametv";
                 backend.screenshot_error = "";
@@ -746,6 +774,63 @@ Item {
                 keyClick(Qt.Key_Space);
                 compare(backend.remote_web_enabled, false);
                 verify(!codes.visible);
+            }
+            function test_hdmi_cec_toggle_selects_device_and_reports_state() {
+                backend.hdmi_cec_devices.append({ path: "/dev/cec0", name: "vc4-hdmi-0", driver: "vc4_hdmi" });
+                backend.hdmi_cec_devices.append({ path: "/dev/cec1", name: "", driver: "pulse8-cec" });
+                selectPage(SettingsPanel.Remote);
+                const toggle = findChild(panel.contentItem, "hdmiCecEnabled");
+                const device = findChild(panel.contentItem, "hdmiCecDevice");
+                const status = findChild(panel.contentItem, "hdmiCecStatus");
+                verify(toggle.enabled);
+                verify(!device.visible);
+                compare(status.text, "HDMI-CEC is off.");
+                toggle.forceActiveFocus();
+                keyClick(Qt.Key_Space);
+                compare(backend.hdmi_cec_enabled, true);
+                compare(toggle.checked, true);
+                verify(device.visible);
+                compare(device.count, 3);
+                compare(device.currentIndex, 0);
+                compare(device.textAt(1), "vc4-hdmi-0 (/dev/cec0)");
+                compare(device.textAt(2), "/dev/cec1");
+                device.activated(2);
+                compare(backend.hdmi_cec_device, "/dev/cec1");
+                compare(device.currentIndex, 2);
+                findChild(panel.contentItem, "retryHdmiCec").forceActiveFocus();
+                keyClick(Qt.Key_Space);
+                compare(backend.hdmiCecRefreshes, 1);
+                backend.hdmi_cec_state = "active";
+                backend.hdmi_cec_physical_address = "1.0.0.0";
+                compare(status.text, "Ready. The TV sees this viewer as “NagameTV” at HDMI 1.0.0.0.");
+                backend.hdmi_cec_state = "permission-denied";
+                backend.hdmi_cec_error = "Permission denied: /dev/cec1";
+                compare(status.color, Theme.warning);
+                compare(findChild(panel.contentItem, "hdmiCecError").visible, true);
+                toggle.forceActiveFocus();
+                keyClick(Qt.Key_Space);
+                compare(backend.hdmi_cec_enabled, false);
+                verify(!device.visible);
+            }
+            function test_hdmi_cec_device_list_follows_model_changes() {
+                backend.hdmi_cec_enabled = true;
+                selectPage(SettingsPanel.Remote);
+                const device = findChild(panel.contentItem, "hdmiCecDevice");
+                compare(device.count, 1);
+                backend.hdmi_cec_devices.append({ path: "/dev/cec0", name: "vc4-hdmi-0", driver: "vc4_hdmi" });
+                tryCompare(device, "count", 2);
+                backend.hdmi_cec_device = "/dev/cec0";
+                compare(device.currentIndex, 1);
+                backend.hdmi_cec_devices.clear();
+                tryCompare(device, "count", 1);
+                compare(device.currentIndex, 0);
+            }
+            function test_hdmi_cec_toggle_is_disabled_when_not_allowed() {
+                backend.hdmi_cec_allowed = false;
+                backend.hdmi_cec_state = "unsupported";
+                selectPage(SettingsPanel.Remote);
+                verify(!findChild(panel.contentItem, "hdmiCecEnabled").enabled);
+                compare(findChild(panel.contentItem, "hdmiCecStatus").text, "HDMI-CEC is not available on this system.");
             }
             function test_remote_web_toggle_is_hidden_when_launch_features_forbid_it() {
                 backend.remote_web_allowed = false;

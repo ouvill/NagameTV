@@ -7,6 +7,7 @@ tonicでgRPC、tonic-webでgRPC-Webを同じポートへ公開する。
 全RPCを認証なしで受け付ける。トークンの用意やペアリングは不要。
 定義は[`player.proto`](../rust/crates/viewer-remote/proto/viewer/v1/player.proto)、
 生成ドキュメントは[APIリファレンス](api/remote-control.md)。
+テレビのリモコンからHDMI経由で直接操作したい場合は、[HDMI-CECリモコン操作（実験的）](hdmi-cec.md)を参照。
 
 ## 設定と起動
 

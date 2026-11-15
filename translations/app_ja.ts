@@ -2486,6 +2486,73 @@
     </message>
   </context>
 <context>
+    <name>HdmiCec</name>
+    <message>
+        <source>Automatic</source>
+        <translation>自動</translation>
+    </message>
+    <message>
+        <source>Control with the TV remote over HDMI-CEC (experimental)</source>
+        <translation>HDMI-CECでテレビのリモコンから操作する（実験的）</translation>
+    </message>
+    <message>
+        <source>Use the remote of a TV connected by HDMI to operate this viewer. The TV and the HDMI port must support CEC.</source>
+        <translation>HDMIでつないだテレビのリモコンで、このViewerを操作します。テレビとHDMI端子がCECに対応している必要があります。</translation>
+    </message>
+    <message>
+        <source>CEC device</source>
+        <translation>CECデバイス</translation>
+    </message>
+    <message>
+        <source>Search again</source>
+        <translation>再検索</translation>
+    </message>
+    <message>
+        <source>HDMI-CEC is off.</source>
+        <translation>HDMI-CECはオフです。</translation>
+    </message>
+    <message>
+        <source>No CEC device found. Connect a device that supports CEC, then search again.</source>
+        <translation>CECデバイスが見つかりません。CEC対応の機器を接続してから再検索してください。</translation>
+    </message>
+    <message>
+        <source>Cannot open the CEC device. Allow this user to access it (for example, add it to the video group) and sign in again.</source>
+        <translation>CECデバイスを開けません。このユーザーにアクセス権を与え（videoグループへの追加など）、ログインし直してください。</translation>
+    </message>
+    <message>
+        <source>Waiting for the TV. Turn on the TV and check the HDMI connection.</source>
+        <translation>テレビを待っています。テレビの電源とHDMIの接続を確認してください。</translation>
+    </message>
+    <message>
+        <source>Ready. The TV sees this viewer as “%1” at HDMI %2.</source>
+        <translation>準備完了。テレビからはHDMI %2 の「%1」として見えます。</translation>
+    </message>
+    <message>
+        <source>Ready. The TV sees this viewer as “%1”.</source>
+        <translation>準備完了。テレビからは「%1」として見えます。</translation>
+    </message>
+    <message>
+        <source>The CEC device was disconnected. Searching again…</source>
+        <translation>CECデバイスが切断されました。再検索しています…</translation>
+    </message>
+    <message>
+        <source>HDMI-CEC stopped because of an error.</source>
+        <translation>エラーのためHDMI-CECを停止しました。</translation>
+    </message>
+    <message>
+        <source>HDMI-CEC is not available on this system.</source>
+        <translation>このシステムではHDMI-CECを利用できません。</translation>
+    </message>
+    <message>
+        <source>Which buttons reach the viewer depends on the TV maker’s CEC implementation.</source>
+        <translation>どのボタンが届くかは、テレビのメーカーのCEC実装によって異なります。</translation>
+    </message>
+    <message>
+        <source>TV remote (HDMI-CEC)</source>
+        <translation>テレビのリモコン（HDMI-CEC）</translation>
+    </message>
+</context>
+<context>
     <name>Remote</name>
     <message>
         <source>Remote control</source>

@@ -13,6 +13,8 @@ mod epgstation;
 mod error_log;
 mod features;
 mod guide_model;
+mod hdmi_cec;
+mod hdmi_cec_model;
 mod json;
 mod logging;
 mod media_caption;

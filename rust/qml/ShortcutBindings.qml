@@ -22,17 +22,22 @@ Item {
         target: root.inputContext.focusItem ? root.inputContext.focusItem.Keys : null
         function onPressed(event) {
             if (!root.inputContext.targetWindow.active) return;
-            const matches = [...root.entries, ...root.digits].filter(binding => binding.enabled
-                && keyMatcher.matches(binding.portableText, event.key, event.modifiers));
-            if (matches.length === 0) return;
-            event.accepted = true;
-            if (matches.length > 1) {
-                console.warn("Ambiguous shortcut: " + matches[0].portableText);
-                return;
-            }
-            const binding = matches[0];
-            if (!event.isAutoRepeat || binding.autoRepeat) binding.operation.trigger();
+            event.accepted = root.dispatch(event.key, event.modifiers, event.isAutoRepeat);
         }
+    }
+    // HDMI-CEC remote keys arrive without window activation, so they bypass
+    // Qt's shortcut map and use this path too. Returns whether a binding matched.
+    function dispatch(key: int, modifiers: int, autoRepeat: bool): bool {
+        const matches = [...root.entries, ...root.digits].filter(binding => binding.enabled
+            && keyMatcher.matches(binding.portableText, key, modifiers));
+        if (matches.length === 0) return false;
+        if (matches.length > 1) {
+            console.warn("Ambiguous shortcut: " + matches[0].portableText);
+            return true;
+        }
+        const binding = matches[0];
+        if (!autoRepeat || binding.autoRepeat) binding.operation.trigger();
+        return true;
     }
     component Binding: ShortcutBinding {
         inputContext: root.inputContext

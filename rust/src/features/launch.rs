@@ -3,7 +3,7 @@ use std::str::FromStr;
 
 #[derive(Debug, PartialEq, Eq, thiserror::Error)]
 #[error(
-    "invalid or repeated feature: {0} (expected none / subtitles / epg / comments / data-broadcast / recording-reservations / remote-web / screen-navigation)"
+    "invalid or repeated feature: {0} (expected none / subtitles / epg / comments / data-broadcast / recording-reservations / remote-web / hdmi-cec / screen-navigation)"
 )]
 pub struct FeatureError(String);
 
@@ -16,6 +16,7 @@ pub struct FeatureSet {
     data_broadcast: bool,
     recording_reservations: bool,
     remote_web: bool,
+    hdmi_cec: bool,
 }
 
 impl FromStr for FeatureSet {
@@ -29,6 +30,7 @@ impl FromStr for FeatureSet {
             data_broadcast: false,
             recording_reservations: false,
             remote_web: false,
+            hdmi_cec: false,
         };
         if value == "none" {
             return Ok(features);
@@ -45,6 +47,7 @@ impl FromStr for FeatureSet {
                     features.recording_reservations = true
                 }
                 "screen-navigation" if !navigation_alias_seen => navigation_alias_seen = true,
+                "hdmi-cec" if !features.hdmi_cec => features.hdmi_cec = true,
                 "remote-web" if !features.remote_web => features.remote_web = true,
                 _ => return Err(FeatureError(name.to_owned())),
             }
@@ -62,6 +65,12 @@ pub enum LaunchPlan {
 }
 
 impl LaunchPlan {
+    pub fn hdmi_cec(self, preference: bool) -> bool {
+        match self {
+            Self::Preferences => preference,
+            Self::Restricted(features) => features.hdmi_cec,
+        }
+    }
     pub fn remote_web(self, preference: bool) -> bool {
         match self {
             Self::Preferences => preference,
