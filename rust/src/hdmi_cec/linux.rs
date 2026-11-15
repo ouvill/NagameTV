@@ -198,7 +198,9 @@ impl Backend for Linux {
                     driver: text(&caps.driver),
                 },
                 Err(error) => {
-                    tracing::warn!(
+                    // Discovery is a probe; opening the selected adapter reports
+                    // the operational failure with the worker's retry policy.
+                    tracing::debug!(
                         error = &error as &dyn std::error::Error,
                         "HDMI-CEC capability discovery failed"
                     );
