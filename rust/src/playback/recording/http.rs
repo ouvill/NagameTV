@@ -40,8 +40,6 @@ pub enum Error {
     InvalidRange,
     #[error("The recording changed on the server. Open the URL again.")]
     Changed,
-    #[error("The recording server returned an oversized body chunk.")]
-    OversizedChunk,
     #[error("Timed out waiting for recording data: {0}")]
     WaitTimedOut(#[source] tokio::time::error::Elapsed),
     #[error("The recording server returned an incomplete byte range.")]
@@ -194,7 +192,6 @@ fn transient(error: &Error) -> bool {
         Error::RangeUnsupported
         | Error::InvalidRange
         | Error::Changed
-        | Error::OversizedChunk
         | Error::Truncated
         | Error::Cancelled
         | Error::Runtime(_)

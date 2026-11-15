@@ -1,7 +1,8 @@
 //! Real HTTP reception/appsrc/playbin3; explicit CPU decoders and memory sinks.
+use super::live_transition_tests::CODEC_INITIAL_VIDEO_FRAMES;
 use super::*;
 use crate::playback::{
-    live_recovery::{Action, Observation, Recovery, Status},
+    live_recovery::{Action, Observation, Recovery, Sample, Status},
     stats,
 };
 use gstreamer::{self as gst, prelude::*};
@@ -16,7 +17,9 @@ const DEADLINE: Duration = Duration::from_secs(20);
 #[derive(Debug)]
 enum Phase {
     Transition,
-    Stalled,
+    Stalled {
+        before: Sample,
+    },
     Reopened {
         wall_time: Instant,
         policy_time: Instant,
@@ -24,6 +27,30 @@ enum Phase {
 }
 
 type TestResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
+#[derive(Clone, Copy, Debug)]
+enum Scenario {
+    InjectedVideoStall,
+    LegacyCodecChange,
+}
+impl Scenario {
+    fn bytes(self, connection: u64) -> &'static [u8] {
+        match self {
+            Self::InjectedVideoStall => {
+                include_bytes!("../../../../tests/fixtures/live-transition-audio.ts")
+            }
+            Self::LegacyCodecChange => {
+                let bytes = include_bytes!("../../../../tests/fixtures/live-transition-codec.ts");
+                if connection == 0 {
+                    bytes
+                } else {
+                    // A live reconnect starts at the current H.264 program;
+                    // replaying the old MPEG-2 transition would recreate the defect.
+                    &bytes[include_bytes!("../../../../tests/fixtures/recording.ts").len()..]
+                }
+            }
+        }
+    }
+}
 struct Server {
     url: String,
     stopped: Arc<AtomicBool>,
@@ -31,7 +58,7 @@ struct Server {
     worker: Option<thread::JoinHandle<()>>,
 }
 impl Server {
-    fn new() -> std::io::Result<Self> {
+    fn new(scenario: Scenario) -> std::io::Result<Self> {
         let listener = TcpListener::bind("127.0.0.1:0")?;
         listener.set_nonblocking(true)?;
         let url = format!("http://{}/api/services/1/stream", listener.local_addr()?);
@@ -44,7 +71,7 @@ impl Server {
             while !stop.load(Ordering::Acquire) {
                 match listener.accept() {
                     Ok((mut socket, _)) => {
-                        received.fetch_add(1, Ordering::AcqRel);
+                        let connection = received.fetch_add(1, Ordering::AcqRel);
                         let stop = stop.clone();
                         clients.push(thread::spawn(move || -> std::io::Result<()> {
                             socket.set_read_timeout(Some(Duration::from_secs(2)))?;
@@ -57,7 +84,7 @@ impl Server {
                                 request.push(byte[0]);
                             }
                             assert!(request.starts_with(b"GET /api/services/1/stream "));
-                            let bytes = include_bytes!("../../../../tests/fixtures/live-transition-audio.ts");
+                            let bytes = scenario.bytes(connection);
                             write!(socket, "HTTP/1.1 200 OK\r\nContent-Type: video/mp2t\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", bytes.len())?;
                             for block in bytes.chunks(SEND_BYTES) {
                                 if stop.load(Ordering::Acquire) { break; }
@@ -108,12 +135,20 @@ struct Pipeline {
     video: gst::Element,
     audio: gst::Element,
     blocked: Arc<AtomicBool>,
+    video_buffers: Arc<std::sync::atomic::AtomicU64>,
 }
 impl Pipeline {
     fn start(uri: &str) -> TestResult<Self> {
         let video = gst::ElementFactory::make("fakesink")
             .property("sync", true)
+            .property("signal-handoffs", true)
             .build()?;
+        let video_buffers = Arc::new(std::sync::atomic::AtomicU64::new(0));
+        let rendered = video_buffers.clone();
+        video.connect("handoff", false, move |_| {
+            rendered.fetch_add(1, Ordering::Relaxed);
+            None
+        });
         let audio = gst::ElementFactory::make("fakesink")
             .property("sync", true)
             .build()?;
@@ -141,6 +176,7 @@ impl Pipeline {
             video,
             audio,
             blocked,
+            video_buffers,
         };
         pipeline.player.set_property("uri", "appsrc://");
         pipeline.player.set_state(gst::State::Playing)?;
@@ -176,8 +212,23 @@ impl Drop for Pipeline {
 
 #[test]
 fn transition_stall_reopens_the_same_http_channel_and_confirms_new_decoded_output() -> TestResult {
+    check_recovery(Scenario::InjectedVideoStall)
+}
+
+#[test]
+fn legacy_same_pid_codec_stall_recovers_from_the_current_http_program() -> TestResult {
     gst::init()?;
-    let server = Server::new()?;
+    if gst::Plugin::load_by_name("mpegtsdemux")?.version() != "1.24.2" {
+        // Newer demuxers decode this transition; the comparison test requires
+        // their post-transition frames and EOS instead of manufacturing a stall.
+        return Ok(());
+    }
+    check_recovery(Scenario::LegacyCodecChange)
+}
+
+fn check_recovery(scenario: Scenario) -> TestResult {
+    gst::init()?;
+    let server = Server::new(scenario)?;
     let mut pipeline = Some(Pipeline::start(&server.url)?);
     let mut recovery = Recovery::default();
     let started = Instant::now();
@@ -185,9 +236,10 @@ fn transition_stall_reopens_the_same_http_channel_and_confirms_new_decoded_outpu
     let mut phase = Phase::Transition;
     let restored_sample = loop {
         if started.elapsed() >= DEADLINE {
+            let current = pipeline.as_ref().ok_or("pipeline")?;
             return Err(format!(
-                "live recovery test deadline reached: phase={phase:?}, status={:?}",
-                recovery.status()
+                "live recovery test deadline reached: phase={phase:?}, status={:?}, input={}, observation={:?}",
+                recovery.status(), current.input.recovery_diagnostic()?, current.observation()?
             )
             .into());
         }
@@ -204,10 +256,12 @@ fn transition_stall_reopens_the_same_http_channel_and_confirms_new_decoded_outpu
         };
         if matches!(phase, Phase::Transition)
             && current.input.recovery_diagnostic()?.contains("version=1")
-            && sample.video_output.is_some_and(|count| count > 5)
+            && current.video_buffers.load(Ordering::Relaxed) > 5
         {
-            current.blocked.store(true, Ordering::Release);
-            phase = Phase::Stalled;
+            if matches!(scenario, Scenario::InjectedVideoStall) {
+                current.blocked.store(true, Ordering::Release);
+            }
+            phase = Phase::Stalled { before: sample };
         }
         if matches!(phase, Phase::Transition) {
             continue;
@@ -218,7 +272,7 @@ fn transition_stall_reopens_the_same_http_channel_and_confirms_new_decoded_outpu
         // before a loaded scheduler can produce the new outputs.
         policy_time = match phase {
             Phase::Transition => unreachable!(),
-            Phase::Stalled => policy_time + Duration::from_secs(1),
+            Phase::Stalled { .. } => policy_time + Duration::from_secs(1),
             Phase::Reopened {
                 wall_time,
                 policy_time,
@@ -226,8 +280,27 @@ fn transition_stall_reopens_the_same_http_channel_and_confirms_new_decoded_outpu
         };
         match recovery.observe(policy_time, observation) {
             Action::Restart(permit) => {
-                assert!(matches!(phase, Phase::Stalled));
+                let Phase::Stalled { before } = phase else {
+                    panic!("restart without an observed stall");
+                };
                 assert_eq!(permit.attempt(), 1);
+                if matches!(scenario, Scenario::LegacyCodecChange) {
+                    assert!(!current.blocked.load(Ordering::Acquire));
+                    assert!(sample.video_input > before.video_input);
+                    assert!(
+                        sample
+                            .audio_output
+                            .zip(before.audio_output)
+                            .is_some_and(|(after, before)| after > before)
+                    );
+                    // The retired sink can be READY, so native stats are unknown.
+                    // Handoffs prove its earlier real output without fabricating
+                    // a live counter for the recovery policy. Paced presentation
+                    // can retire queued initial frames before they are rendered.
+                    let video_buffers = current.video_buffers.load(Ordering::Relaxed);
+                    assert!((1..=CODEC_INITIAL_VIDEO_FRAMES).contains(&video_buffers));
+                    eprintln!("LIVE_CODEC_RECOVERY observed backend stall: {sample:?}");
+                }
                 let wall_time = Instant::now();
                 pipeline.take();
                 pipeline = Some(Pipeline::start(&server.url)?);
@@ -251,5 +324,6 @@ fn transition_stall_reopens_the_same_http_channel_and_confirms_new_decoded_outpu
     assert!(restored_sample.video_output.is_some_and(|count| count > 1));
     assert!(restored_sample.audio_output.is_some_and(|count| count > 1));
     assert_eq!(server.requests.load(Ordering::Acquire), 2);
+    eprintln!("LIVE_RECOVERY scenario={scenario:?} requests=2 restored={restored_sample:?}");
     Ok(())
 }

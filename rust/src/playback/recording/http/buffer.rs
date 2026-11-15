@@ -114,13 +114,16 @@ impl Control {
         })
     }
     #[cfg(test)]
-    pub(super) fn full(&self) -> bool {
-        self.0.upgrade().is_some_and(|shared| {
-            let state = shared.state();
-            state.end >= shared.size
-                || !state
-                    .has_capacity(RANGE_BYTES.min(shared.size.saturating_sub(state.end) as usize))
-        })
+    pub(super) fn full(&self) -> Result<bool, Arc<Error>> {
+        let Some(shared) = self.0.upgrade() else {
+            return Ok(false);
+        };
+        let state = shared.state();
+        if let Phase::Failed(error) = &state.phase {
+            return Err(error.clone());
+        }
+        Ok(state.end >= shared.size
+            || !state.has_capacity(RANGE_BYTES.min(shared.size.saturating_sub(state.end) as usize)))
     }
     pub fn starved(&self) -> bool {
         self.0.upgrade().is_some_and(|shared| {

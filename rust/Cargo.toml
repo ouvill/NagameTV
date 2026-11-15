@@ -20,6 +20,7 @@ video_item_tests = []
 native_tests = ["qml_tests", "dep:tonic", "dep:wiremock"]
 
 [dependencies]
+bytes = "1"
 clap = { version = "4.6", features = ["derive"] }
 tsreadex = { path = "crates/tsreadex" }
 viewer-mpegts = { path = "crates/viewer-mpegts" }
@@ -63,6 +64,7 @@ qrcode = { version = "0.14", default-features = false, features = ["svg"] }
 base64 = "0.23"
 
 [dev-dependencies]
+http = "1"
 tokio = { version = "1.47", features = ["test-util"] }
 proptest = { version = "1", default-features = false, features = ["std"] }
 wiremock = "0.6"
