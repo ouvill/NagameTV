@@ -129,6 +129,10 @@ Fedoraの導入は `bash scripts/dev/setup-fedora.sh`、nextestの導入は
 `bash scripts/testing/install-nextest.sh` です。テストデータの生成は
 [fixturesの説明](../tests/fixtures/README.md)を参照してください。
 
+debは24.04がx86_64、26.04がx86_64・aarch64、Flatpakは両CPUのネイティブビルドを対象とします。
+ARM CIは`packaging/deb/Dockerfile`の`ci`ステージで機器不要の試験を実行します。
+AppImageのQt SDKにはARM用WebEngineがないため、AppImageはx86_64のみです。
+
 ## 追加・変更するとき
 
 - 同じスイートの引数・入力・環境だけが違う場合は、既存の定義を拡張します。

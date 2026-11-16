@@ -6,7 +6,7 @@ NagameTV is a TV viewer and recording player for Linux desktops, designed for Ja
 
 Features include a seven-day electronic program guide (EPG), ARIB-compliant subtitles, and live comment overlays and posting through NX-Jikkyo.
 
-**[Download the latest release (Linux x86_64)](https://github.com/ouvill/NagameTV/releases/latest)** · [Installation](#installation)
+**[Download the latest release (Linux x86_64 / arm64)](https://github.com/ouvill/NagameTV/releases/latest)** · [Installation](#installation)
 
 ![NagameTV showing program information and playback controls over the video](docs/media/live.png)
 
@@ -90,12 +90,16 @@ Preview builds ahead of a release are published as pre-releases with versions su
 If the asset list is collapsed, click its heading to expand it.
 `Source code (zip)` and `Source code (tar.gz)` are source archives, and the `.zsync` file is used by AppImage update tools. To install the app, choose one of the packages below.
 
-| Environment / format | File to download (Linux x86_64 / amd64) |
+| Environment / format | File to download |
 | --- | --- |
-| Ubuntu 24.04 | `nagametv_…ubuntu24.04_amd64.deb` |
-| Ubuntu 26.04 | `nagametv_…ubuntu26.04_amd64.deb` |
-| Linux with Flatpak installed | `nagametv-…-x86_64.flatpak` |
-| Run a single file on Linux with glibc 2.39 or later | `nagametv-…-x86_64.AppImage` |
+| Ubuntu 24.04 (x86_64) | `nagametv_…ubuntu24.04_amd64.deb` |
+| Ubuntu 26.04 (x86_64) | `nagametv_…ubuntu26.04_amd64.deb` |
+| Ubuntu 26.04 (arm64) | `nagametv_…ubuntu26.04_arm64.deb` |
+| Linux with Flatpak installed (x86_64) | `nagametv-…-x86_64.flatpak` |
+| Linux with Flatpak installed (arm64) | `nagametv-…-aarch64.flatpak` |
+| Run a single file on Linux x86_64 with glibc 2.39 or later | `nagametv-…-x86_64.AppImage` |
+
+ARM builds have been added to the build and release configuration; display and playback on ARM hardware remain unverified. Use Flatpak on Ubuntu 24.04 ARM.
 
 Run the following commands in the directory where you downloaded the package. Replace the example filenames with the ones you downloaded.
 
@@ -107,8 +111,11 @@ Install the package and its dependencies with APT:
 # For Ubuntu 24.04
 sudo apt install ./nagametv_0.1.0-1ubuntu24.04_amd64.deb
 
-# For Ubuntu 26.04
+# For Ubuntu 26.04 (x86_64)
 sudo apt install ./nagametv_0.1.0-1ubuntu26.04_amd64.deb
+
+# For Ubuntu 26.04 (arm64)
+sudo apt install ./nagametv_0.1.0-1ubuntu26.04_arm64.deb
 ```
 
 After installation, launch NagameTV from your application launcher or run `nagametv` in a terminal. See the [deb guide](docs/deb.md) for package details and build instructions.
@@ -116,6 +123,7 @@ After installation, launch NagameTV from your application launcher or run `nagam
 ### 2. Flatpak package
 
 Use Flatpak to run the app in a sandbox across Linux distributions.
+On arm64, replace `x86_64` with `aarch64` in the filename below.
 
 ```sh
 flatpak install --user ./nagametv-0.1.0-x86_64.flatpak

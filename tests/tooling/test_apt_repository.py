@@ -14,7 +14,8 @@ import unittest
 from unittest import mock
 
 from scripts.packaging.apt_repository import VerifiedDeb, build
-from scripts.packaging.metadata import UbuntuRelease, deb_filename, debian_version
+from scripts.packaging.metadata import (Architecture, UbuntuRelease, deb_architectures,
+                                        deb_filename, debian_version)
 
 ROOT = Path(__file__).resolve().parents[2]
 VERSION = "0.8.1"
@@ -38,14 +39,15 @@ elif args[:2] == ['release', 'download']:
 """
 
 
-def make_deb(directory: Path, version: str, ubuntu: UbuntuRelease, package_version: str | None = None) -> Path:
-    stage = directory / f"stage-{version}-{ubuntu.value}"
+def make_deb(directory: Path, version: str, ubuntu: UbuntuRelease, package_version: str | None = None,
+             architecture: Architecture = Architecture.X86_64) -> Path:
+    stage = directory / f"stage-{version}-{ubuntu.value}-{architecture.value}"
     (stage / "DEBIAN").mkdir(parents=True)
     (stage / "DEBIAN/control").write_text(
         f"Package: nagametv\nVersion: {package_version or debian_version(version, ubuntu)}\n"
-        "Architecture: amd64\nMaintainer: Test <test@example.invalid>\n"
+        f"Architecture: {architecture.debian}\nMaintainer: Test <test@example.invalid>\n"
         "Description: test package\n second line\n")
-    output = directory / deb_filename(version, ubuntu)
+    output = directory / deb_filename(version, ubuntu, architecture)
     subprocess.run(["dpkg-deb", "--root-owner-group", "--build", str(stage), str(output)],
                    check=True, capture_output=True)
     return output
@@ -96,10 +98,11 @@ class AptRepositoryTests(unittest.TestCase):
         self.assets.mkdir()
 
     def build(self, ubuntu=UbuntuRelease.NOBLE, signing_key=None) -> Path:
-        deb = VerifiedDeb.open(make_deb(self.assets, VERSION, ubuntu), VERSION, ubuntu)
+        debs = [VerifiedDeb.open(make_deb(self.assets, VERSION, ubuntu, architecture=arch), VERSION, ubuntu, arch)
+                for arch in deb_architectures(ubuntu)]
         output = self.directory / "repo"
         with mock.patch.dict(os.environ, GNUPGHOME=str(self.gpg.home)):
-            build(deb, output, signing_key or self.gpg.signing_key, self.gpg.keyring, FIXED_DATE)
+            build(debs, output, signing_key or self.gpg.signing_key, self.gpg.keyring, FIXED_DATE)
         return output
 
     def test_indexes_point_at_version_release_and_verify_with_shipped_keyring(self):
@@ -121,6 +124,34 @@ class AptRepositoryTests(unittest.TestCase):
         other = self.gpg.add_key("Other <other@example.invalid>")
         with self.assertRaises(subprocess.CalledProcessError):
             self.build(signing_key=other)
+
+    def test_resolute_indexes_both_architectures_in_one_signed_repository(self):
+        output = self.build(UbuntuRelease.RESOLUTE)
+        packages = (output / "Packages").read_text()
+        self.assertEqual(packages.count("Package: nagametv\n"), 2)
+        for arch in Architecture:
+            self.assertIn(f"Architecture: {arch.debian}\n", packages)
+            self.assertIn(f"Filename: v{VERSION}/{deb_filename(VERSION, UbuntuRelease.RESOLUTE, arch)}\n", packages)
+        self.assertIn("Architectures: amd64 arm64\n", (output / "Release").read_text())
+        subprocess.run(["gpgv", "--homedir", str(self.directory), "--keyring", str(self.gpg.keyring),
+                        str(output / "InRelease")], check=True, capture_output=True)
+
+    def test_missing_or_duplicate_architecture_stops_before_creating_indexes(self):
+        ubuntu = UbuntuRelease.RESOLUTE
+        deb = VerifiedDeb.open(make_deb(self.assets, VERSION, ubuntu), VERSION, ubuntu)
+        output = self.directory / "repo"
+        for debs in ([deb], [deb, deb]):
+            with self.subTest(count=len(debs)), self.assertRaisesRegex(ValueError, "each supported architecture"):
+                build(debs, output, self.gpg.signing_key, self.gpg.keyring, FIXED_DATE)
+            self.assertFalse(output.exists())
+
+    def test_arm_package_with_mislabeled_control_is_rejected(self):
+        ubuntu = UbuntuRelease.RESOLUTE
+        x86 = make_deb(self.assets, VERSION, ubuntu)
+        arm = self.assets / deb_filename(VERSION, ubuntu, Architecture.AARCH64)
+        shutil.copyfile(x86, arm)
+        with self.assertRaisesRegex(ValueError, "Architecture"):
+            VerifiedDeb.open(arm, VERSION, ubuntu, Architecture.AARCH64)
 
     def test_deb_for_another_release_or_version_is_rejected(self):
         noble = make_deb(self.assets, VERSION, UbuntuRelease.NOBLE)
@@ -144,8 +175,9 @@ class PublishTests(unittest.TestCase):
         self.assets.mkdir()
         digests = {}
         for ubuntu in UbuntuRelease:
-            deb = make_deb(self.assets, VERSION, ubuntu)
-            digests[deb.name] = f"sha256:{hashlib.sha256(deb.read_bytes()).hexdigest()}"
+            for arch in deb_architectures(ubuntu):
+                deb = make_deb(self.assets, VERSION, ubuntu, architecture=arch)
+                digests[deb.name] = f"sha256:{hashlib.sha256(deb.read_bytes()).hexdigest()}"
         self.version_release = {"tag_name": f"v{VERSION}", "draft": False, "prerelease": False,
                                 "assets": [{"name": name, "digest": digest} for name, digest in digests.items()]}
         self.state = {"releases": [self.version_release], "packages": {}, "sha": "a" * 40}
@@ -163,7 +195,9 @@ class PublishTests(unittest.TestCase):
         self.state["releases"].append({"tag_name": tag, "draft": False, "prerelease": False,
                                        "assets": [{"name": name, "digest": "sha256:0"}
                                                   for name in ("Packages", "Release", "InRelease")]})
-        self.state["packages"][tag] = f"Package: nagametv\nVersion: {debian_version(version, ubuntu)}\n"
+        self.state["packages"][tag] = "\n".join(
+            f"Package: nagametv\nVersion: {debian_version(version, ubuntu)}\nArchitecture: {arch.debian}\n"
+            for arch in deb_architectures(ubuntu))
 
     def publish(self, tag=f"v{VERSION}"):
         self.state_file.write_text(json.dumps(self.state))
@@ -203,6 +237,8 @@ class PublishTests(unittest.TestCase):
             "prerelease release": (lambda: self.version_release.update(prerelease=True), "published"),
             "digest mismatch": (lambda: self.version_release["assets"][0].update(digest="sha256:" + "0" * 64),
                                 "digest"),
+            "arm digest mismatch": (lambda: self.version_release["assets"][-1].update(digest="sha256:" + "0" * 64),
+                                    "digest"),
             "downgrade": (lambda: self.add_apt_release(UbuntuRelease.RESOLUTE, "0.9.0"), "downgrade"),
         }
         original = json.loads(json.dumps(self.state))
@@ -217,6 +253,12 @@ class PublishTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 1, result.stdout)
                 self.assertIn(reason, result.stderr)
                 self.assertEqual(self.writes(), [])
+
+    def test_missing_arm_package_stops_before_any_github_write(self):
+        (self.assets / deb_filename(VERSION, UbuntuRelease.RESOLUTE, Architecture.AARCH64)).unlink()
+        result = self.publish()
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertEqual(self.writes(), [])
 
     def test_prerelease_tag_is_not_published(self):
         result = self.publish("v0.9.0-rc.1")

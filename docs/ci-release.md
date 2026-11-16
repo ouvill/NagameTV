@@ -1,7 +1,7 @@
 # CIとリリース
 
-[GitHub Actions](../.github/workflows/ci.yml)でLinux x86_64向けのテストと
-AppImage、Flatpak、Ubuntu 24.04用および26.04用debのビルドを実行する。
+[GitHub Actions](../.github/workflows/ci.yml)でLinux x86_64・aarch64向けのテストと
+パッケージビルドを実行する。AppImageと24.04用debはx86_64、Flatpakと26.04用debは両CPUを対象とする。
 `main`へのpush、pull request、`v*`タグのpush、Actions画面の手動実行（workflow_dispatch）が対象。
 
 Ubuntu 24.04向けdebのクリーン環境試験では、aptが検証したダウンロード済みパッケージを
@@ -9,12 +9,12 @@ CI間でキャッシュする。依存解決・導入・削除の検査は毎回
 aptが取得し直す。キャッシュは`build/deb/apt-cache/ubuntu24.04/archives`に置く。
 保存対象は`*.deb`に限定する。コンテナー内のaptが作る`lock`と`partial`は
 ホストのrunnerユーザーが読めないため、ディレクトリー全体を保存すると権限エラーになる。
-バージョンタグでは、同じコミットの成功済み`main`実行に4種類の配布artifactが残っていれば
+バージョンタグでは、同じコミットの成功済み`main`実行に6種類の配布artifactが残っていれば
 それを再利用してリリース下書きを作る。該当する実行やartifactがない場合は通常どおり
 タグでビルドと検証を実行する。どちらもリリース作成前にチェックサムを確認する。
 `.sha256`はジョブ間の受け渡し確認に使い、リリースには添付しない。
 GitHubが各添付ファイルのSHA-256を計算してリリースページに表示するためである。
-配布ファイルとそれぞれのSHA-256の計8ファイル、AppImageの差分更新用`.zsync`を
+配布ファイル6個とそれぞれのSHA-256の計12ファイル、AppImageの差分更新用`.zsync`を
 Actions artifactとして14日間保存する。
 全ジョブ成功後、`v*`タグのpushではGitHub Releaseの下書きを作成する。
 `main`へのpush、pull request、手動実行では検証とartifact生成のみを行い、GitHub Releaseは作らない。
@@ -26,8 +26,8 @@ Actions artifactとして14日間保存する。
 | --- | --- |
 | Release metadata | Cargo.toml・Cargo.lock・AppStreamのバージョン、FlatpakのCargo依存一覧とサブモジュールの固定コミット、リリース処理の回帰テスト、actionlint・ShellCheck |
 | Tests, AppImage and deb (Ubuntu 24.04, x86_64) | アプリのRust書式、Rustテスト、独立crateのテスト、Pythonテスト、本体全QMLの静的検査、UI共通ルールの検査、機器不要のQt試験、AppImageの生成と全ELFのglibc上限検査、24.04用debの生成・導入・依存解決・削除 |
-| deb (Ubuntu 26.04, amd64) | Ubuntu 26.04のQt/GStreamerでビルドし、debの生成・導入・依存解決・削除 |
-| Flatpak (x86_64) | KDE SDK内でのオフラインコンパイル、FlatpakとSHA-256の生成 |
+| deb (Ubuntu 26.04, amd64 / arm64) | Ubuntu 26.04のQt/GStreamerでビルドし、debの生成・導入・依存解決・削除。arm64では機器不要のRust・Qt・QML・Python・Web試験も実行 |
+| Flatpak (x86_64 / aarch64) | KDE SDK内でのオフラインコンパイル、FlatpakとSHA-256の生成 |
 | Dependency review（pull requestのみ） | 追加・更新する依存関係の既知の脆弱性。実行時・開発用・用途不明の依存関係を対象に、重大度low以上で失敗する |
 
 AppImageとテストは[配布用Dockerfile](../packaging/appimage/Dockerfile)の`ci`ステージを使う。
@@ -41,7 +41,10 @@ FlatpakはマニフェストのKDE 6.10 SDKを使う。26.04用debは[専用Dock
 Webリモコンの依存を `npm ci` で導入してから `cpu` スイートを実行する。
 `remote-web` スイート自体は依存を取得せず、型・単体試験とコミット対象の `dist/` の再現性を検査する。
 
-GitHubの実行ホストはいずれも`ubuntu-24.04`。
+GitHubの実行ホストはx86_64が`ubuntu-24.04`、aarch64が`ubuntu-24.04-arm`。
+ARMはエミュレーションを使わず、[26.04用Dockerfile](../packaging/deb/Dockerfile)の`ci`ステージで
+機器不要の試験を実行する。RustとnextestはCPU別に固定した公式バイナリーをSHA-256で検証する。
+Docker・Cargo・ccache・FlatpakのキャッシュキーにもCPUを含める。
 CIのビルド並列数は実行ホストの`nproc`に合わせる。公開リポジトリー用の標準Linux runnerは
 [4 vCPU・16 GB RAM](https://docs.github.com/en/actions/reference/runners/github-hosted-runners#standard-github-hosted-runners-for-public-repositories)
 で、従来の2並列から利用枠を増やす。nextestのテスト実行は2並列を維持する。
@@ -94,13 +97,14 @@ Rustはnextestで個別プロセスに分離し、Qt試験は一度ビルドし�
 ローカルの既定は`dev`、CIは`release`で、ビルドと検証は共通ロックで直列化する。
 Releaseのデバッグ情報は[共通Cargo設定](../.cargo/config.toml)でアプリと同じ`debug=1`に揃える。
 アプリと独立crateで同じ依存関係を異なるデバッグ情報設定でコンパイルし直すことを避ける。
-各検査のログと実行結果は、失敗時も`test-results` artifactとして14日間保存する。
+各検査のログと実行結果は、失敗時も`test-results`・`test-results-aarch64` artifactとして14日間保存する。
 詳しい選択方法とログの保存先は[開発手順](development.md#テストと診断)を参照。
 debの導入試験は開発パッケージのない対象Ubuntuコンテナーで行い、
 全ELFの依存解決・引数解析（Qt初期化前に終了）・ファイル整合性・削除を検証する。
 画面、GPU、音声機器は使用せず、Dockerに機器やホストセッションを渡さない。
 GUI・再生試験は[実GPUを使う専用環境](gui-test-environment.md)で別途実行する。
 CI成功だけでは画面表示や再生の動作確認を済ませたことにはならない。
+ARM版はCI設定を追加した段階で、ARM上のCI実行と実機での表示・再生は未確認。
 
 ## ローカルで同じテストを実行する
 
@@ -176,7 +180,7 @@ AppImageが一致しない場合、GitHubへ書き込まずに停止する。
 
 5. タグのコミットでCIを実行し、同じコミットの`main`で検証済みの配布artifactがあれば再利用する。
    なければタグ上でビルドと検証を行う。必要な成果物が揃ったらGitHub Releaseの下書きを作成する。
-   AppImage・Flatpak・24.04用deb・26.04用debの4ファイルとAppImageの`.zsync`を添付し、
+   AppImage 1個・Flatpak 2個・24.04用deb 1個・26.04用deb 2個とAppImageの`.zsync`を添付し、
    変更履歴を自動生成する。
    `v0.2.0-rc.1`のようなタグはprereleaseとして扱う。
 6. 下書きから配布ファイルを取得して専用環境・対象OSでGUIと再生を確認し、

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Finish an Ubuntu amd64 package staged by build-deb.sh, without hardware access."""
+"""Finish a native Ubuntu package staged by build-deb.sh, without hardware access."""
 
 import argparse
 import hashlib
@@ -10,32 +10,41 @@ import subprocess
 import tempfile
 import tomllib
 
-from scripts.packaging.metadata import UbuntuRelease, deb_filename, debian_version
+from scripts.packaging.metadata import Architecture, UbuntuRelease, deb_filename, debian_version
 
 
 ROOT = Path(__file__).resolve().parents[2]
 PACKAGE = "nagametv"
+ELF_MAGIC = b"\x7fELF"
+ELF_CLASS_AND_DATA = slice(4, 6)
+ELF_MACHINE = slice(18, 20)
+ELF_HEADER_BYTES = ELF_MACHINE.stop
+ELF64_LITTLE_ENDIAN = b"\x02\x01"
 
 
-def elf_files(stage: Path) -> list[Path]:
+def elf_files(stage: Path, architecture: Architecture) -> list[Path]:
     result = []
     for path in sorted(stage.rglob("*")):
         if path.is_file() and not path.is_symlink():
             with path.open("rb") as stream:
-                if stream.read(4) == b"\x7fELF":
+                header = stream.read(ELF_HEADER_BYTES)
+                if header.startswith(ELF_MAGIC):
+                    if (len(header) != ELF_HEADER_BYTES or header[ELF_CLASS_AND_DATA] != ELF64_LITTLE_ENDIAN
+                            or int.from_bytes(header[ELF_MACHINE], "little") != architecture.elf_machine):
+                        raise ValueError(f"ELF architecture does not match {architecture.value}: {path}")
                     result.append(path)
     if not result:
         raise ValueError("No ELF files in package")
     return result
 
 
-def shared_dependencies(stage: Path, ubuntu: UbuntuRelease) -> str:
-    binaries = elf_files(stage)
+def shared_dependencies(stage: Path, ubuntu: UbuntuRelease, architecture: Architecture) -> str:
+    binaries = elf_files(stage, architecture)
     with tempfile.TemporaryDirectory(prefix="shlibdeps-", dir=stage.parent) as work:
         debian = Path(work) / "debian"
         debian.mkdir()
         (debian / "control").write_text(
-            f"Source: {PACKAGE}\n\nPackage: {PACKAGE}\nArchitecture: amd64\n")
+            f"Source: {PACKAGE}\n\nPackage: {PACKAGE}\nArchitecture: {architecture.debian}\n")
         options = []
         match ubuntu:
             case UbuntuRelease.NOBLE:
@@ -75,15 +84,17 @@ def main():
     parser.add_argument("ubuntu", type=UbuntuRelease, choices=list(UbuntuRelease))
     parser.add_argument("stage", type=Path)
     parser.add_argument("output", type=Path)
+    parser.add_argument("--architecture", type=Architecture, choices=list(Architecture), required=True)
     args = parser.parse_args()
     stage = args.stage.resolve()
     version = tomllib.loads((ROOT / "rust/Cargo.toml").read_text())["package"]["version"]
     try:
+        filename = deb_filename(version, args.ubuntu, args.architecture)
         # dpkg-shlibdeps uses this directory to identify the package root and
         # resolve $ORIGIN paths relative to the staged files.
         control = stage / "DEBIAN"
         control.mkdir()
-        dependencies = [shared_dependencies(stage, args.ubuntu)]
+        dependencies = [shared_dependencies(stage, args.ubuntu, args.architecture)]
         match args.ubuntu:
             case UbuntuRelease.NOBLE:
                 dependencies += ["ca-certificates", "fonts-noto-cjk"]
@@ -93,7 +104,7 @@ def main():
         installed_size = subprocess.check_output(["du", "-sk", stage], text=True).split()[0]
         (control / "control").write_text(
             f"Package: {PACKAGE}\nVersion: {debian_version(version, args.ubuntu)}\n"
-            "Section: video\nPriority: optional\nArchitecture: amd64\n"
+            f"Section: video\nPriority: optional\nArchitecture: {args.architecture.debian}\n"
             "Maintainer: ouvill <contact@ouvill.net>\n"
             "Homepage: https://github.com/ouvill/NagameTV\n"
             f"Installed-Size: {installed_size}\nDepends: {', '.join(dependencies)}\n"
@@ -108,7 +119,6 @@ def main():
                         checksum = hashlib.file_digest(stream, "md5").hexdigest()
                     sums.write(f"{checksum}  {path.relative_to(stage)}\n")
         # Publish only a complete package, retaining the previous build on failure.
-        filename = deb_filename(version, args.ubuntu)
         pending = stage.parent / filename
         subprocess.run(["dpkg-deb", "--root-owner-group", "--build", stage, pending], check=True)
         with pending.open("rb") as stream:

@@ -97,6 +97,8 @@ Linux x86_64向けのAppImageとSHA-256を`build/appimage/`へ出力します。
 `./scripts/packaging/build-deb.sh 24.04`または`./scripts/packaging/build-deb.sh 26.04`を実行します。
 対象OSのDocker環境でビルドし、`build/deb/ubuntu24.04/`または`build/deb/ubuntu26.04/`に
 debとSHA-256を出力します。24.04用はQtを同梱し、26.04用はシステムのQtを利用します。
+24.04用はx86_64、26.04用はx86_64・aarch64でネイティブビルドします。
+ARM環境では[Flatpak](flatpak.md)もビルド対象です。
 [debの構成・検証手順](deb.md)を参照してください。
 
 ## ネイティブ版をビルドする

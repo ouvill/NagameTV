@@ -6,7 +6,7 @@
 
 7日分の番組表、テレビ放送の字幕表示、NX-Jikkyoと連携した実況コメントの表示・投稿にも対応しています。
 
-**[最新版をダウンロード（Linux x86_64）](https://github.com/ouvill/NagameTV/releases/latest)** · [インストール](#インストール) · [使いかた](#使いかた)
+**[最新版をダウンロード（Linux x86_64 / arm64）](https://github.com/ouvill/NagameTV/releases/latest)** · [インストール](#インストール) · [使いかた](#使いかた)
 
 ![ながめTVの視聴画面。番組情報と再生操作を映像に重ねて表示](docs/media/live.png)
 
@@ -48,12 +48,17 @@
 
 [GitHub Releases](https://github.com/ouvill/NagameTV/releases) の [最新の正式リリース](https://github.com/ouvill/NagameTV/releases/latest) を開き、ページ下部の **Assets** からお使いの環境に合うファイルを1つダウンロードしてください（先行版は Pre-release として公開されます）。
 
-| 利用環境・形式 | ダウンロードするファイル（Linux x86_64 / amd64） |
+| 利用環境・形式 | ダウンロードするファイル |
 | --- | --- |
-| Ubuntu 24.04 | `nagametv_…ubuntu24.04_amd64.deb` |
-| Ubuntu 26.04 | `nagametv_…ubuntu26.04_amd64.deb` |
-| Flatpakを導入したLinux | `nagametv-…-x86_64.flatpak` |
-| 単一ファイルから直接起動したいLinux（glibc 2.39以降） | `nagametv-…-x86_64.AppImage` |
+| Ubuntu 24.04（x86_64） | `nagametv_…ubuntu24.04_amd64.deb` |
+| Ubuntu 26.04（x86_64） | `nagametv_…ubuntu26.04_amd64.deb` |
+| Ubuntu 26.04（arm64） | `nagametv_…ubuntu26.04_arm64.deb` |
+| Flatpakを導入したLinux（x86_64） | `nagametv-…-x86_64.flatpak` |
+| Flatpakを導入したLinux（arm64） | `nagametv-…-aarch64.flatpak` |
+| 単一ファイルから直接起動したいLinux（x86_64、glibc 2.39以降） | `nagametv-…-x86_64.AppImage` |
+
+ARM 版はビルド・配布対象に追加した段階で、実機での表示・再生は未検証です。
+Ubuntu 24.04 の ARM 環境では Flatpak を使用してください。
 
 ※ 一覧が折りたたまれている場合は、**Assets** の見出しをクリックして展開してください。`Source code` はソースコード、`.zsync` はAppImage更新ツール用の補助ファイルです。
 
@@ -65,8 +70,11 @@
 # Ubuntu 24.04 の場合
 sudo apt install ./nagametv_0.1.0-1ubuntu24.04_amd64.deb
 
-# Ubuntu 26.04 の場合
+# Ubuntu 26.04（x86_64）の場合
 sudo apt install ./nagametv_0.1.0-1ubuntu26.04_amd64.deb
+
+# Ubuntu 26.04（arm64）の場合
+sudo apt install ./nagametv_0.1.0-1ubuntu26.04_arm64.deb
 ```
 
 導入後はアプリ一覧または端末から `nagametv` で起動できます。更新や詳しい案内は [debパッケージの手順](docs/deb.md) を参照してください。
@@ -74,6 +82,7 @@ sudo apt install ./nagametv_0.1.0-1ubuntu26.04_amd64.deb
 ### 2. Flatpakパッケージ
 
 ディストリビューションを問わず、サンドボックス環境で実行したい場合に向いています。
+arm64 では、以下のファイル名の `x86_64` を `aarch64` に読み替えてください。
 
 ```sh
 flatpak install --user ./nagametv-0.1.0-x86_64.flatpak

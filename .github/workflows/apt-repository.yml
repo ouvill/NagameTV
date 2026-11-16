@@ -46,7 +46,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Download the published debs
-        run: gh release download "$RELEASE_TAG" --pattern 'nagametv_*_amd64.deb' --dir "$RUNNER_TEMP/apt-assets"
+        run: gh release download "$RELEASE_TAG" --pattern 'nagametv_*.deb' --dir "$RUNNER_TEMP/apt-assets"
       - name: Import the signing subkey
         env:
           APT_SIGNING_KEY: ${{ secrets.APT_SIGNING_KEY }}
