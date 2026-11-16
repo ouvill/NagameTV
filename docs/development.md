@@ -136,6 +136,7 @@ GUIテストは既存のPipeWire／pipewire-pulseaudio／WirePlumberと実GPUを
 
 - Rust / Cargo（Rust 1.98.1でビルド確認）
 - CMake 3.24以降、C/C++コンパイラー、pkg-config、libclang、Python 3.11以降（ビルド入力の検出用）
+- Linux aarch64ではLLD（Ubuntuでは`lld`）。CXX-QtのQtリンクに使用
 - Qt 6.8以降のQuick / Controls / Dialogs / Layouts / Shapes / EffectsとQtCore QMLモジュール、LinuxではQt DBus、SVG・JPEG・WebP画像プラグイン、翻訳用の`lrelease`
 - データ放送表示用のQt WebEngine Quick、`QtWebEngine`と`QtWebChannel` QMLモジュール（Ubuntuでは`qt6-webengine-dev`、`qml6-module-qtwebengine`、`qml6-module-qtwebchannel`）
 - GStreamer 1.24以降と開発ライブラリー（`gstreamer-mpegts-1.0`を含む）

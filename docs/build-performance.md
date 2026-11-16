@@ -102,8 +102,10 @@ Cargoのキーは実際のDockerイメージIDと設定・依存情報で決め�
 Rust 1.90以降の`x86_64-unknown-linux-gnu`は標準でLLDを使います。
 このプロジェクトのCXX-Qtも利用可能なLLDを選びます。
 [Rust公式発表](https://blog.rust-lang.org/2025/09/18/Rust-1.90.0/)を参照してください。
+aarch64のUbuntuビルドでは、`lld`を明示的に導入します。
+GNU ld.bfdではアプリのテスト実行ファイルでQt DBusのシンボル解決が失敗するため、
+26.04用DockerfileにもLLDを含め、CXX-Qtが自動選択できるようにしています。
 moldの採用にはCargoビルド全体での評価と動作確認が必要です。
-今回、既定リンカーは変更していません。
 
 moldを別途評価するときは、[公式のRust向け設定](https://github.com/rui314/mold#how-to-use)に従い、
 同じツールチェーン・入力・並列数で、Cargoビルド全体と実行時の動作を比較します。
