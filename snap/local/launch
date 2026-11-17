@@ -67,7 +67,7 @@ export QTWEBENGINE_LOCALES_PATH="$SNAP/usr/share/qt6/translations/qtwebengine_lo
 export GST_GL_PLATFORM=egl
 export GST_PLUGIN_PATH_1_0=
 export GST_PLUGIN_SYSTEM_PATH_1_0="$lib/gstreamer-1.0"
-export GST_PLUGIN_SCANNER_1_0="$lib/gstreamer-1.0/gstreamer-1.0/gst-plugin-scanner"
+export GST_PLUGIN_SCANNER_1_0="$lib/gstreamer1.0/gstreamer-1.0/gst-plugin-scanner"
 export GIO_MODULE_DIR="$lib/gio/modules"
 
 exec "$@"
