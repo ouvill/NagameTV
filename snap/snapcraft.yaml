@@ -20,6 +20,10 @@ plugs:
     default-provider: mesa-2604
 
 layout:
+  /etc/fonts:
+    bind: $SNAP/etc/fonts
+  /usr/share/fontconfig:
+    bind: $SNAP/usr/share/fontconfig
   /usr/share/fonts:
     bind: $SNAP/usr/share/fonts
   /usr/share/alsa:
@@ -96,6 +100,7 @@ parts:
       - rustup
     # Keep the dynamically loaded modules aligned with the Ubuntu 26.04 deb.
     stage-packages:
+      - fontconfig-config
       - fonts-noto-cjk
       - glib-networking
       - gstreamer1.0-alsa
@@ -159,3 +164,21 @@ parts:
     override-prime: |
       craftctl default
       "$CRAFT_PART_SRC/bin/gpu-2604-cleanup" mesa-2604
+
+      # Check modules resolved at runtime that the ELF dependency scan cannot see.
+      lib="$CRAFT_PRIME/usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR"
+      for required in \
+        "$lib/qt6/plugins/platforms/libqwayland.so" \
+        "$lib/qt6/qml/QtWebEngine/qmldir" \
+        "$lib/gstreamer-1.0/libgstqml6.so" \
+        "$lib/gstreamer-1.0/libgstlibav.so" \
+        "$lib/gstreamer-1.0/gstreamer-1.0/gst-plugin-scanner" \
+        "$CRAFT_PRIME/usr/lib/qt6/libexec/QtWebEngineProcess" \
+        "$CRAFT_PRIME/usr/share/qt6/resources/qtwebengine_resources.pak" \
+        "$CRAFT_PRIME/etc/fonts/fonts.conf"
+      do
+        if [ ! -f "$required" ]; then
+          echo "Missing snap runtime file: $required" >&2
+          exit 1
+        fi
+      done
