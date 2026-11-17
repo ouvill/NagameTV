@@ -88,6 +88,9 @@ class SleepInhibit final : public QObject {
         case QDBusError::ServiceUnknown: case QDBusError::UnknownInterface:
         case QDBusError::UnknownMethod: case QDBusError::UnknownObject:
         case QDBusError::Disconnected: case QDBusError::NoServer:
+        // A service that never answers, such as a portal whose activation keeps
+        // timing out, cannot grant inhibition in this session either.
+        case QDBusError::NoReply: case QDBusError::Timeout: case QDBusError::TimedOut:
             state = State::Unavailable; break;
         default: state = State::Failed; break;
         }
@@ -187,7 +190,10 @@ public:
         }
         if (state == State::Pending && replied && accepted) state = State::Held;
         if (state == State::Pending && elapsed.isValid() && elapsed.elapsed() >= CallTimeoutMs) {
-            failure = QStringLiteral("inhibitor did not confirm acquisition before the deadline"); state = State::Failed;
+            // No method reply means no reachable service; a reply without a
+            // Response is a portal that accepted the call and then stalled.
+            if (pending) { failure = QStringLiteral("inhibitor service did not reply before the deadline"); state = State::Unavailable; }
+            else { failure = QStringLiteral("inhibitor did not confirm acquisition before the deadline"); state = State::Failed; }
         }
         switch (state) { case State::Pending: return 0; case State::Held: return 1;
             case State::Unavailable: return 2; case State::Failed: return 3; case State::Closed: return 4; }
