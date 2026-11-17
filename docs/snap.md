@@ -83,9 +83,6 @@ snap connections nagametv
 Mirakurun／mirakcと必要に応じてEPGStationを設定します。`snap run nagametv --kiosk`で
 同じユーザーデータを使って全画面のキオスク表示を試せます。
 
-Desktopの設定ファイルは`$SNAP_USER_DATA/.config/nagametv/settings.toml`
-（通常`~/snap/nagametv/current/.config/nagametv/settings.toml`）に保存されます。
-キャッシュ・データ・状態も同じリビジョンのXDGディレクトリーを使います。
 既存の録画を開く場合や画像を通常の「ピクチャ」へ出す場合は、アクセス可能なフォルダーを選択します。
 USBメディアを使う場合は`sudo snap connect nagametv:removable-media`を実行します。
 
@@ -116,22 +113,78 @@ snap services nagametv
 sudo snap logs -n=80 nagametv.kiosk
 ```
 
-サービスはrootで動き、設定を`$SNAP_DATA/.config/nagametv/settings.toml`
-（通常`/var/snap/nagametv/current/.config/nagametv/settings.toml`）に保存します。
-リビジョンごとのキャッシュ・データ・状態と、初期保存先の`Pictures`も同じ配下にあります。
 初回は画面の設定から接続先・選局・必要に応じて自動再生を保存します。
+ソフトウェアキーボードを用意していない機器では、接続先URLの入力にキーボードを使います。
 設定から終了したあとに画面へ戻す場合は`sudo snap restart nagametv.kiosk`を実行します。
 機器の起動時にサービスを起動する設定を解除する場合は
 `sudo snap stop --disable nagametv.kiosk`を実行します。
-[Waylandクライアントの起動方法](https://ubuntu.com/frame/docs/26/explanation/iot-gui-snaps-made-easy/)、
-[snapのデータディレクトリー](https://snapcraft.io/docs/reference/development/environment-variables/)
+[Waylandクライアントの起動方法](https://ubuntu.com/frame/docs/26/explanation/iot-gui-snaps-made-easy/)
+
+### 画面を操作できない機器の初期設定
+
+画面とキーボードを使える機器は、初回の設定画面で接続先を保存できます。
+SSHだけで新規機器を準備する場合は、サービスを有効にする前に接続先を含むTOMLファイルを置けます。
+たとえば `settings.toml` に次のように記述します。アドレスは利用するサーバーに合わせます。
+
+```toml
+server = "http://192.168.1.100:40772"
+```
+
+新規導入時の配置には
+`sudo install -D -m 0600 settings.toml /var/snap/nagametv/current/.config/nagametv/settings.toml`
+を使えます。設定済みの機器では、サービスを停止して既存ファイルの必要な項目だけを更新します。
+
+複数の機器をSSHから配備する運用では、`snap set nagametv server=…`で接続先を設定できると
+TOMLファイルの管理を省けます。必要になった時点で、`configure`フックで入力を検証し、
+サービスに接続先を渡す方式を検討します。その際は、画面で保存した設定との優先順位と、
+設定を解除したときの動作を決めます。現行版は設定画面とTOMLファイルで設定します。
+[snapのフック](https://snapcraft.io/docs/reference/development/supported-snap-hooks/)
+
+## 設定・キャッシュ・ログの保存先
+
+Desktopコマンドは実行ユーザーのディレクトリーを使います。Ubuntu Coreのキオスクサービスは
+rootで動き、`HOME`を`$SNAP_DATA`に設定します。通常のパスでは
+`$SNAP_USER_DATA`が`~/snap/nagametv/<リビジョン>`、`$SNAP_USER_COMMON`が
+`~/snap/nagametv/common`に対応します。`$SNAP_DATA`は`/var/snap/nagametv/<リビジョン>`、
+`$SNAP_COMMON`は`/var/snap/nagametv/common`です。`current`は有効なリビジョンを指します。
+
+| 用途 | Desktopのユーザー | Ubuntu Coreのサービス |
+| --- | --- | --- |
+| `HOME`、初期スクリーンショット保存先 | `$SNAP_USER_DATA`、その直下の`Pictures/` | `$SNAP_DATA`、その直下の`Pictures/` |
+| 設定と視聴履歴（`XDG_CONFIG_HOME`） | `$SNAP_USER_DATA/.config/nagametv/` | `$SNAP_DATA/.config/nagametv/` |
+| コメントとタイムシフトのキャッシュ（`XDG_CACHE_HOME`） | `$SNAP_USER_COMMON/.cache/nagametv/` | `$SNAP_COMMON/.cache/nagametv/` |
+| 永続データの基点（`XDG_DATA_HOME`） | `$SNAP_USER_DATA/.local/share/` | `$SNAP_DATA/.local/share/` |
+| 更新確認履歴と診断ファイル（`XDG_STATE_HOME`） | `$SNAP_USER_DATA/.local/state/nagametv/` | `$SNAP_DATA/.local/state/nagametv/` |
+
+設定と視聴履歴のファイルはそれぞれ`settings.toml`、`viewing-history.json`です。更新確認の
+日時は`updates.toml`に保存します。設定・データ・状態はリビジョンに属し、snapdは更新時に
+次のリビジョンへコピーし、リビジョンを戻したときはその版のディレクトリーを使います。
+`comment-archive/`と`timeshift/`は容量が増えるため、共通のキャッシュを参照し、更新ごとの
+コピーを避けます。共通キャッシュはリビジョンを戻したあとも同じディレクトリーを参照します。
+[snapのリビジョンと保存データ](https://snapcraft.io/docs/explanation/how-snaps-work/revisions/)、
+[snapの環境変数](https://snapcraft.io/docs/reference/development/environment-variables/)
+
+tracingのログはstderrに出力します。Desktopは起動した端末で確認します。キオスクサービスの
+stderrはsystemd-journaldが受け取り、`sudo snap logs -n=80 nagametv.kiosk`または
+`sudo snap logs -f nagametv.kiosk`で確認できます。履歴の保持期間は機器のjournald設定に従います。
+
+状態ディレクトリーでは、最新の再生失敗を`playback-error.log`に上書きします（最大64 KiB）。
+通常起動時のリソース診断は`usage/`と`usage/history/`にローテーション付きのJSONLを保存します。
+これらのファイルには状態ディレクトリーへの書き込み権限が必要です。
+[リソース診断のファイルと保持条件](memory-profiling.md)
+「ログフォルダーを開く」はこの状態ディレクトリーをファイルマネージャーへ渡します。
+Ubuntu Frameだけを構成した機器では、開けない場合に画面へエラーが表示されます。
+その場合はSSHから`sudo cat /var/snap/nagametv/current/.local/state/nagametv/playback-error.log`で
+最新の再生失敗を確認できます。このファイルは最初の再生失敗時に作成されます。
+[snapサービスとログ](https://snapcraft.io/docs/how-to-guides/manage-snaps/control-services/)
 
 ## 実機検証項目
 
 - amd64 DesktopとPi 4 Desktopで、strictのままWayland表示、HDMIまたは既定出力への音声、
   ライブと録画の再生、再起動後の設定復元、スクリーンショット保存を確認します。
 - Ubuntu Coreで、Frameとサービスの起動順、再起動後の自動起動、ALSAまたはPulseAudio互換
-  サービスでのHDMI音声、CEC、ログの権限エラーを確認します。Frameの`26/stable`は
+  サービスでのHDMI音声、CEC、ログの権限エラーを確認します。更新とリビジョンの切り戻し時に、
+  設定・視聴履歴と共通キャッシュがそれぞれ想定どおりに扱われることも確認します。Frameの`26/stable`は
   2026年11月18日時点で未公開です。
 - Pi 4の既存Desktop環境では、1080iをGreedyLで処理したときCPU使用率が約254%でした。
   ハードウェアH.265デコーダーが出力するBroadcom SANDを表示に使えず、`avdec_h265`に
