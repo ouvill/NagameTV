@@ -42,7 +42,9 @@ ApplicationWindow {
         height = options.initial.height;
         geometryState.normalSize = Qt.size(width, height);
         geometryState.phase = ViewerWindow.Ready;
-        show();
+        // The windowed size above stays the size to restore after fullscreen.
+        if (options.fullscreen) showFullScreen();
+        else show();
         return true;
     }
 

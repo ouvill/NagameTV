@@ -173,6 +173,10 @@ pub mod ffi {
         #[qproperty(QString, deinterlace, READ = deinterlace, NOTIFY)]
         #[qproperty(bool, deinterlace_restart_pending, READ = deinterlace_restart_pending, NOTIFY)]
         #[qproperty(bool, deinterlace_overridden, READ = deinterlace_overridden, CONSTANT)]
+        #[qproperty(QString, startup_display, READ = startup_display, NOTIFY)]
+        #[qproperty(bool, startup_display_restart_pending, READ = startup_display_restart_pending, NOTIFY)]
+        #[qproperty(bool, startup_display_overridden, READ = startup_display_overridden, CONSTANT)]
+        #[qproperty(bool, kiosk, READ = kiosk, CONSTANT)]
         #[qproperty(bool, remote_web_enabled, READ = remote_web_enabled, NOTIFY)]
         #[qproperty(bool, remote_web_allowed, READ = remote_web_allowed, CONSTANT)]
         #[qproperty(QString, remote_web_urls, READ = remote_web_urls, NOTIFY)]
@@ -426,6 +430,10 @@ pub mod ffi {
         fn deinterlace(self: &Player) -> QString;
         fn deinterlace_restart_pending(self: &Player) -> bool;
         fn deinterlace_overridden(self: &Player) -> bool;
+        fn startup_display(self: &Player) -> QString;
+        fn startup_display_restart_pending(self: &Player) -> bool;
+        fn startup_display_overridden(self: &Player) -> bool;
+        fn kiosk(self: &Player) -> bool;
         #[qsignal]
         fn remote_key_requested(self: Pin<&mut Player>, key: i32);
         #[qsignal]
@@ -751,6 +759,8 @@ pub mod ffi {
         #[qinvokable]
         fn configure_deinterlace(self: Pin<&mut Player>, method: QString) -> bool;
         #[qinvokable]
+        fn configure_startup_display(self: Pin<&mut Player>, display: QString) -> bool;
+        #[qinvokable]
         fn enable_comments(self: Pin<&mut Player>, enabled: bool);
         #[qinvokable]
         fn edit_comment_draft(self: Pin<&mut Player>, text: QString);
@@ -817,6 +827,9 @@ pub struct PlayerRust {
     // Playback builds its video filter once at startup from this saved method.
     launched_deinterlace: settings::Deinterlace,
     deinterlace_overridden: bool,
+    // The window appears once; a saved change applies at the next launch.
+    launched_startup_display: settings::StartupDisplay,
+    startup_display_override: Option<settings::StartupDisplay>,
     #[cfg(target_os = "linux")]
     desktop_media: desktop_media::Registration,
     sleep_inhibit: crate::sleep_inhibit::Controller<crate::qt::sleep_inhibit::Portal>,

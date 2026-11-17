@@ -7,4 +7,6 @@ import QtQuick
 // window flags and the custom chrome from this one value.
 QtObject {
     property bool frameless: true
+    // Kiosk launches have no window to minimize, restore or close.
+    property bool kiosk: false
 }

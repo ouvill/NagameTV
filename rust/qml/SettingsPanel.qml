@@ -44,7 +44,7 @@ Popup {
                 ...(timeshiftLoader.item ? (timeshiftLoader.item as TimeshiftSettings).navigationItems : []),
                 dataBroadcastEnabled, dataBroadcastPrefetch];
         case SettingsPanel.Display:
-            return [languageBox, windowDecoration, deinterlace, chooseScreenshotDirectory, openScreenshotDirectory,
+            return [languageBox, windowDecoration, startupDisplay, deinterlace, chooseScreenshotDirectory, openScreenshotDirectory,
                 resetScreenshotDirectory, ...screenshotOptions.navigationItems];
         case SettingsPanel.Comments:
             return [commentsEnabled, danmakuEnabled, ...commentPresentation.navigationItems,
@@ -53,7 +53,7 @@ Popup {
         case SettingsPanel.Remote: return remoteSettings.navigationItems;
         case SettingsPanel.Shortcuts: return [];
         case SettingsPanel.System:
-            return [autoUpdateCheck, checkUpdates, openUpdateRelease, ...updateProblem.navigationItems, ...updateHistoryProblem.navigationItems,
+            return [...(quitApplication.visible ? [quitApplication] : []), autoUpdateCheck, checkUpdates, openUpdateRelease, ...updateProblem.navigationItems, ...updateHistoryProblem.navigationItems,
                 statsToggle, buildInformation, openLogFolder, ...logProblem.navigationItems];
         default: return [];
         }
@@ -613,6 +613,51 @@ Popup {
                             Layout.fillWidth: true
                             spacing: Theme.spaceXl
                             Detail {
+                                text: qsTranslate("Settings", "At startup")
+                                color: Theme.textPrimary
+                                font.pixelSize: Theme.fontControl
+                            }
+                            SettingsChoice {
+                                id: startupDisplay
+                                objectName: "startupDisplaySetting"
+                                readonly property list<string> codes: ["window", "fullscreen", "kiosk"]
+                                Layout.preferredWidth: Math.min(280, pageFlick.width * 0.52)
+                                dropdownIcon: root.iconDirectory + "chevron-down.svg"
+                                Accessible.name: qsTranslate("Settings", "At startup")
+                                model: [qsTranslate("Settings", "Window (default)"), qsTranslate("Settings", "Fullscreen"),
+                                    qsTranslate("Settings", "Kiosk (always fullscreen)")]
+                                currentIndex: codes.indexOf(root.backend.startup_display)
+                                onActivated: function(index) {
+                                    root.backend.configure_startup_display(codes[index]);
+                                    currentIndex = Qt.binding(function() { return codes.indexOf(root.backend.startup_display); });
+                                }
+                            }
+                        }
+                        Detail {
+                            objectName: "startupDisplayKiosk"
+                            Layout.fillWidth: true
+                            visible: root.backend.startup_display === "kiosk"
+                            text: qsTranslate("Settings", "Kiosk mode hides the window buttons and cannot leave fullscreen. Quit from Settings > System.")
+                            wrapMode: Text.WordWrap
+                        }
+                        Detail {
+                            objectName: "startupDisplayRestart"
+                            Layout.fillWidth: true
+                            visible: root.backend.startup_display_restart_pending && !root.backend.startup_display_overridden
+                            text: qsTranslate("Settings", "The startup display change applies after restarting NagameTV.")
+                            wrapMode: Text.WordWrap
+                        }
+                        Detail {
+                            objectName: "startupDisplayOverridden"
+                            Layout.fillWidth: true
+                            visible: root.backend.startup_display_overridden
+                            text: qsTranslate("Settings", "--fullscreen or --kiosk was given, so this launch ignores the saved choice.")
+                            wrapMode: Text.WordWrap
+                        }
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: Theme.spaceXl
+                            Detail {
                                 text: qsTranslate("Settings", "Deinterlacing")
                                 color: Theme.textPrimary
                                 font.pixelSize: Theme.fontControl
@@ -867,6 +912,14 @@ Popup {
                         visible: root.page === SettingsPanel.System
                         Layout.fillWidth: true
                         spacing: Theme.spaceXl
+                        ActionButton {
+                            id: quitApplication
+                            objectName: "quitApplication"
+                            // Kiosk mode has no window close button.
+                            visible: root.backend.kiosk
+                            text: qsTranslate("Settings", "Quit NagameTV")
+                            onClicked: root.targetWindow.close()
+                        }
                         Heading { text: qsTranslate("Settings", "Version: %1").arg(root.buildInfo.version) }
                         Detail { text: qsTranslate("Settings", "Check GitHub for a newer stable release. Pre-releases are excluded.") }
                         SettingsToggle {

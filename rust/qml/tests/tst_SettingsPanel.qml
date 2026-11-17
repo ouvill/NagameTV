@@ -10,6 +10,9 @@ Item {
         visible: true
         width: 900
         height: 560
+        property int closeRequests: 0
+        // Keep the test window open; the quit button only asks it to close.
+        onClosing: function(close) { closeRequests++; close.accepted = false; }
         TestCase {
             id: testCase
             name: "SettingsPanel"
@@ -64,6 +67,16 @@ Item {
                 function configure_deinterlace(value) {
                     if (!["yadif", "greedyl", "linear", "off"].includes(value)) return false;
                     deinterlace = value;
+                    return true;
+                }
+                property string startup_display: "window"
+                property string launched_startup_display: "window"
+                property bool startup_display_overridden: false
+                property bool kiosk: false
+                readonly property bool startup_display_restart_pending: startup_display !== launched_startup_display
+                function configure_startup_display(value) {
+                    if (!["window", "fullscreen", "kiosk"].includes(value)) return false;
+                    startup_display = value;
                     return true;
                 }
                 property string live_buffer_options: JSON.stringify({milliseconds:250, min_ms:1, max_ms:1000, default_ms:250})
@@ -287,6 +300,7 @@ Item {
                 backend.autoplay = false; backend.sleep_inhibit_enabled = true; backend.sleep_inhibit_state = "idle"; backend.sleep_inhibit_error = "";
                 backend.window_decoration = "custom";
                 backend.deinterlace = "greedyl"; backend.deinterlace_overridden = false;
+                backend.startup_display = "window"; backend.startup_display_overridden = false; backend.kiosk = false;
                 backend.configure_live_buffer(250);
                 backend.configure_timeshift_options("pause_memory", 256, 1024, 60);
                 backend.comment_display = "scroll"; backend.comment_placement = "sequential";
@@ -572,6 +586,7 @@ Item {
                 keyClick(Qt.Key_Back); tryCompare(language.popup, "visible", false);
                 verify(panel.opened); expectFocus("languageSetting");
                 keyClick(Qt.Key_Down); expectFocus("windowDecorationSetting");
+                keyClick(Qt.Key_Down); expectFocus("startupDisplaySetting");
                 keyClick(Qt.Key_Down); expectFocus("deinterlaceSetting");
                 keyClick(Qt.Key_Down); expectFocus("chooseScreenshotDirectory");
                 keyClick(Qt.Key_Right); expectFocus("openScreenshotDirectory");
@@ -1376,6 +1391,44 @@ Item {
                 backend.window_decoration = "custom";
                 compare(choice.currentIndex, 0);
                 compare(restart.visible, false);
+            }
+            function test_startup_display_choice_is_saved_for_the_next_launch() {
+                selectPage(SettingsPanel.Display);
+                const choice = findChild(panel.contentItem, "startupDisplaySetting");
+                const kiosk = findChild(panel.contentItem, "startupDisplayKiosk");
+                const restart = findChild(panel.contentItem, "startupDisplayRestart");
+                const overridden = findChild(panel.contentItem, "startupDisplayOverridden");
+                compare(choice.currentIndex, 0);
+                compare(restart.visible, false);
+                compare(overridden.visible, false);
+                choice.forceActiveFocus();
+                keyClick(Qt.Key_Space);
+                tryCompare(choice.popup, "opened", true);
+                keyClick(Qt.Key_Down);
+                keyClick(Qt.Key_Down);
+                keyClick(Qt.Key_Return);
+                tryCompare(choice.popup, "visible", false);
+                compare(backend.startup_display, "kiosk");
+                compare(choice.currentIndex, 2);
+                compare(kiosk.visible, true);
+                compare(restart.visible, true);
+                backend.startup_display_overridden = true;
+                compare(restart.visible, false);
+                compare(overridden.visible, true);
+                backend.startup_display = "window";
+                compare(choice.currentIndex, 0);
+                compare(kiosk.visible, false);
+            }
+            function test_quit_is_offered_only_in_kiosk_mode() {
+                selectPage(SettingsPanel.System);
+                compare(findChild(panel.contentItem, "quitApplication").visible, false);
+                backend.kiosk = true;
+                panel.focusCategory(SettingsPanel.System);
+                panel.enterPage();
+                expectFocus("quitApplication");
+                const before = host.closeRequests;
+                keyClick(Qt.Key_Return);
+                compare(host.closeRequests, before + 1);
             }
             function test_deinterlace_choice_is_saved_for_the_next_launch() {
                 selectPage(SettingsPanel.Display);

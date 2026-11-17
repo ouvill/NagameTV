@@ -177,6 +177,8 @@ impl Default for PlayerRust {
             launched_window_decoration: preferences.preferences().window_decoration,
             launched_deinterlace: preferences.preferences().deinterlace,
             deinterlace_overridden: std::env::var_os("NAGAMETV_DEINTERLACE").is_some(),
+            launched_startup_display: preferences.preferences().startup_display,
+            startup_display_override: crate::settings::startup_display::OVERRIDE.get().copied(),
             subtitles_enabled: plan.subtitles(),
             epg_enabled: plan.epg(),
             comments_enabled: plan.comments(preferences.preferences().comments_enabled),

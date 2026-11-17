@@ -57,8 +57,8 @@ fn main() -> std::process::ExitCode {
             return std::process::ExitCode::from(error.exit_code() as u8);
         }
     };
-    let plan = match command {
-        cli::Command::Launch(plan) => plan,
+    let (plan, display) = match command {
+        cli::Command::Launch { plan, display } => (plan, display),
         cli::Command::BuildInfo => {
             println!("{}", build_info::json());
             return std::process::ExitCode::SUCCESS;
@@ -84,7 +84,7 @@ fn main() -> std::process::ExitCode {
         platform::configure_at_startup();
     }
     // SAFETY: This is the main thread; no application workers have started.
-    match unsafe { qt::application::load(plan) } {
+    match unsafe { qt::application::load(plan, display) } {
         Ok(application) => {
             application.exec();
             std::process::ExitCode::SUCCESS

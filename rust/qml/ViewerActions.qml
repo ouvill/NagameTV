@@ -16,6 +16,8 @@ Item {
     property bool libraryVisible: false
     property bool controlsFocused: false
     property bool canCapture: false
+    // A kiosk launch stays fullscreen; Settings provide the way to quit.
+    property bool kiosk: false
     readonly property bool fullscreen: targetWindow !== null && targetWindow.visibility === Window.FullScreen
     property int restoreVisibility: Window.Windowed
     readonly property RecordingSeekSteps seekSteps: RecordingSeekSteps {}
@@ -35,7 +37,7 @@ Item {
     signal settingsRequested
 
     function leaveFullscreen() {
-        if (!fullscreen) return;
+        if (!fullscreen || kiosk) return;
         if (restoreVisibility === Window.Maximized) targetWindow.showMaximized();
         else targetWindow.showNormal();
     }
@@ -169,6 +171,7 @@ Item {
     }
     readonly property Action toggleFullscreen: Operation {
         text: qsTranslate("Settings", "Toggle fullscreen")
+        enabled: root.enabled && !root.kiosk
         onTriggered: {
             if (root.fullscreen) root.leaveFullscreen();
             else {
