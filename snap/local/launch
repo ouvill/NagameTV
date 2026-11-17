@@ -35,9 +35,9 @@ fi
 # Wayland clients resolve the socket relative to snapd's private runtime dir.
 if [ "$socket" != "$XDG_RUNTIME_DIR/$display" ] && [ "${socket%/*}" = "$runtime_parent" ]; then
     ln -sfn "../$display" "$XDG_RUNTIME_DIR/$display"
-    export WAYLAND_DISPLAY=$display
+    export WAYLAND_DISPLAY="$display"
 else
-    export WAYLAND_DISPLAY=$socket
+    export WAYLAND_DISPLAY="$socket"
 fi
 
 if [ -z "${PULSE_SERVER:-}" ]; then
@@ -48,7 +48,7 @@ if [ -z "${PULSE_SERVER:-}" ]; then
     fi
 fi
 
-export HOME=$data_dir
+export HOME="$data_dir"
 export XDG_CONFIG_HOME="$data_dir/.config"
 export XDG_CACHE_HOME="$data_dir/.cache"
 export XDG_DATA_HOME="$data_dir/.local/share"
