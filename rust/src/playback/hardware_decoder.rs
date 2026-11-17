@@ -1,6 +1,8 @@
 //! Hardware video decoders that cannot produce any format the output accepts.
 use gstreamer::{self as gst, prelude::*};
 
+static DISABLED: std::sync::Mutex<Vec<gst::ElementFactory>> = std::sync::Mutex::new(Vec::new());
+
 /// A hardware decoder present when negotiation failed before any video
 /// reached the sink. Only failure classification constructs it; disabling
 /// consumes it.
@@ -52,6 +54,17 @@ impl Rejected {
     /// device cannot change its output formats until the next launch.
     pub fn disable(self) {
         self.factory.set_rank(gst::Rank::NONE);
+        // The reused decodebin3 keeps its sorted decoder list until the
+        // registry's feature cookie changes, which a rank change does not do.
+        // Removal changes it; the registry cache file is not rewritten.
+        gst::Registry::get().remove_feature(&self.factory);
+        // Element classes point to their factory without owning it, so a
+        // remaining instance (or statistics reading its factory) would
+        // dereference a freed factory once the registry drops its reference.
+        DISABLED
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .push(self.factory);
     }
 }
 
@@ -162,7 +175,14 @@ mod tests {
         assert!(Rejected::find(player, false, &negotiation, None).is_some());
         let rejected = Rejected::find(player, false, &source, Some(debug)).ok_or("not rejected")?;
         assert_eq!(rejected.name(), "nagametestfakehwdec");
+        let cookie = gst::Registry::get().feature_list_cookie();
         rejected.disable();
+        assert_ne!(
+            gst::Registry::get().feature_list_cookie(),
+            cookie,
+            "decodebin3 refreshes its cached decoder list only on a cookie change"
+        );
+        assert!(gst::ElementFactory::find("nagametestfakehwdec").is_none());
         assert!(
             Rejected::find(player, false, &source, Some(debug)).is_none(),
             "a disabled factory must not trigger another reopen"
