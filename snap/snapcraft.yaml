@@ -172,7 +172,7 @@ parts:
         "$lib/qt6/qml/QtWebEngine/qmldir" \
         "$lib/gstreamer-1.0/libgstqml6.so" \
         "$lib/gstreamer-1.0/libgstlibav.so" \
-        "$lib/gstreamer-1.0/gstreamer-1.0/gst-plugin-scanner" \
+        "$lib/gstreamer1.0/gstreamer-1.0/gst-plugin-scanner" \
         "$CRAFT_PRIME/usr/lib/qt6/libexec/QtWebEngineProcess" \
         "$CRAFT_PRIME/usr/share/qt6/resources/qtwebengine_resources.pak" \
         "$CRAFT_PRIME/etc/fonts/fonts.conf"
