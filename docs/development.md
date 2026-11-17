@@ -183,7 +183,8 @@ NAGAMETV_SERVER=http://192.168.1.100:40772 NAGAMETV_AUTOPLAY=1 ./build/nagametv
 `NAGAMETV_SERVICE_ID`で選択局を上書きできます。
 `NAGAMETV_AUTOPLAY`は未指定なら保存済みの自動再生設定（初期値OFF）を使います。
 `0`で無効、それ以外の指定値で有効になり、この上書きは設定ファイルに保存しません。
-`NAGAMETV_DEINTERLACE=yadif|linear|off|gl|va`で起動時の映像処理を指定できます。
+`NAGAMETV_DEINTERLACE=yadif|greedyl|linear|off|gl|va`で起動時の映像処理を指定できます。
+指定すると、設定画面で保存した方式よりも優先します。
 `NAGAMETV_VIDEO_FORMAT=auto|nv12|rgba`で表示形式を選択します。
 GPU経路の前提条件と方式の違いは[GPU映像処理](gpu-video.md)を参照してください。
 `NAGAMETV_PLAYBACK_CLOCK=auto|system`で実機比較用の再生時計を指定できます。

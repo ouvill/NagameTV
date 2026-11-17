@@ -94,7 +94,7 @@ fn portal_available() -> Result<(), PortalError> {
 /// No other thread may read or write the process environment during this call.
 pub unsafe fn configure_at_startup() {
     let mode = crate::playback::deinterlace::Mode::from_environment();
-    if matches!(mode, Ok(crate::playback::deinterlace::Mode::VaApi))
+    if matches!(mode, Ok(Some(crate::playback::deinterlace::Mode::VaApi)))
         && std::env::var_os("QT_QPA_PLATFORM").is_none()
     {
         // qml6glsink <= 1.28.2 assumes GLX for xcb, even if Qt uses EGL.
@@ -104,7 +104,7 @@ pub unsafe fn configure_at_startup() {
             std::env::set_var("QT_QPA_PLATFORM", "wayland");
         }
     }
-    if matches!(mode, Ok(crate::playback::deinterlace::Mode::VaApi))
+    if matches!(mode, Ok(Some(crate::playback::deinterlace::Mode::VaApi)))
         && std::env::var_os("GST_GL_PLATFORM").is_none()
     {
         // DMA_DRM import requires EGL. Explicit choices remain authoritative

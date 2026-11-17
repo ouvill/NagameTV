@@ -178,8 +178,8 @@ pub use session::{Session, SubtitleStart};
 #[must_use = "Keep the preload owner alive until the QML engine is destroyed"]
 pub struct Preloaded(Arc<Mutex<Option<Playback>>>);
 
-pub fn preload() -> Result<Preloaded> {
-    let preloaded = Preloaded(Arc::new(Mutex::new(Some(Playback::new()?))));
+pub fn preload(mode: deinterlace::Mode) -> Result<Preloaded> {
+    let preloaded = Preloaded(Arc::new(Mutex::new(Some(Playback::new(mode)?))));
     PRELOADED
         .set(Arc::downgrade(&preloaded.0))
         .map_err(|_| Error::AlreadyInitialized)?;
@@ -286,14 +286,13 @@ impl Playback {
     pub fn warning_counts(&self) -> warnings::Counts {
         self.warnings.get()
     }
-    fn new() -> Result<Self> {
+    fn new(mode: deinterlace::Mode) -> Result<Self> {
         gst::init()?;
         let sink = gst::ElementFactory::make("qml6glsink")
             .property("enable-last-sample", false)
             .build()?;
         let presentation = crate::screenshots::native::Presentation::default();
         presentation.install(&sink.static_pad("sink").ok_or(Error::MissingSinkPad)?);
-        let mode = deinterlace::Mode::from_environment()?;
         let video_output::Output {
             bin: output,
             processor,

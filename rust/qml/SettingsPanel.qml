@@ -44,7 +44,7 @@ Popup {
                 ...(timeshiftLoader.item ? (timeshiftLoader.item as TimeshiftSettings).navigationItems : []),
                 dataBroadcastEnabled, dataBroadcastPrefetch];
         case SettingsPanel.Display:
-            return [languageBox, windowDecoration, chooseScreenshotDirectory, openScreenshotDirectory,
+            return [languageBox, windowDecoration, deinterlace, chooseScreenshotDirectory, openScreenshotDirectory,
                 resetScreenshotDirectory, ...screenshotOptions.navigationItems];
         case SettingsPanel.Comments:
             return [commentsEnabled, danmakuEnabled, ...commentPresentation.navigationItems,
@@ -607,6 +607,44 @@ Popup {
                             Layout.fillWidth: true
                             visible: root.backend.window_decoration_restart_pending
                             text: qsTranslate("Settings", "The title bar change displays correctly after restarting NagameTV.")
+                            wrapMode: Text.WordWrap
+                        }
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: Theme.spaceXl
+                            Detail {
+                                text: qsTranslate("Settings", "Deinterlacing")
+                                color: Theme.textPrimary
+                                font.pixelSize: Theme.fontControl
+                            }
+                            SettingsChoice {
+                                id: deinterlace
+                                objectName: "deinterlaceSetting"
+                                readonly property list<string> codes: ["greedyl", "yadif", "linear", "off"]
+                                Layout.preferredWidth: Math.min(280, pageFlick.width * 0.52)
+                                dropdownIcon: root.iconDirectory + "chevron-down.svg"
+                                Accessible.name: qsTranslate("Settings", "Deinterlacing")
+                                model: [qsTranslate("Settings", "Standard (default)"), qsTranslate("Settings", "High quality (fast CPU)"),
+                                    qsTranslate("Settings", "Light"), qsTranslate("Settings", "Off")]
+                                currentIndex: codes.indexOf(root.backend.deinterlace)
+                                onActivated: function(index) {
+                                    root.backend.configure_deinterlace(codes[index]);
+                                    currentIndex = Qt.binding(function() { return codes.indexOf(root.backend.deinterlace); });
+                                }
+                            }
+                        }
+                        Detail {
+                            objectName: "deinterlaceRestart"
+                            Layout.fillWidth: true
+                            visible: root.backend.deinterlace_restart_pending && !root.backend.deinterlace_overridden
+                            text: qsTranslate("Settings", "The deinterlacing change applies after restarting NagameTV.")
+                            wrapMode: Text.WordWrap
+                        }
+                        Detail {
+                            objectName: "deinterlaceOverridden"
+                            Layout.fillWidth: true
+                            visible: root.backend.deinterlace_overridden
+                            text: qsTranslate("Settings", "NAGAMETV_DEINTERLACE is set, so this launch ignores the saved method.")
                             wrapMode: Text.WordWrap
                         }
                         Heading { Layout.topMargin: 20; text: qsTranslate("Settings", "Screenshots") }

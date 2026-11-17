@@ -170,6 +170,9 @@ pub mod ffi {
         #[qproperty(bool, autoplay, READ = autoplay, NOTIFY)]
         #[qproperty(QString, window_decoration, READ = window_decoration, NOTIFY)]
         #[qproperty(bool, window_decoration_restart_pending, READ = window_decoration_restart_pending, NOTIFY)]
+        #[qproperty(QString, deinterlace, READ = deinterlace, NOTIFY)]
+        #[qproperty(bool, deinterlace_restart_pending, READ = deinterlace_restart_pending, NOTIFY)]
+        #[qproperty(bool, deinterlace_overridden, READ = deinterlace_overridden, CONSTANT)]
         #[qproperty(bool, remote_web_enabled, READ = remote_web_enabled, NOTIFY)]
         #[qproperty(bool, remote_web_allowed, READ = remote_web_allowed, CONSTANT)]
         #[qproperty(QString, remote_web_urls, READ = remote_web_urls, NOTIFY)]
@@ -420,6 +423,9 @@ pub mod ffi {
         fn autoplay(self: &Player) -> bool;
         fn window_decoration(self: &Player) -> QString;
         fn window_decoration_restart_pending(self: &Player) -> bool;
+        fn deinterlace(self: &Player) -> QString;
+        fn deinterlace_restart_pending(self: &Player) -> bool;
+        fn deinterlace_overridden(self: &Player) -> bool;
         #[qsignal]
         fn remote_key_requested(self: Pin<&mut Player>, key: i32);
         #[qsignal]
@@ -743,6 +749,8 @@ pub mod ffi {
         #[qinvokable]
         fn configure_window_decoration(self: Pin<&mut Player>, decoration: QString) -> bool;
         #[qinvokable]
+        fn configure_deinterlace(self: Pin<&mut Player>, method: QString) -> bool;
+        #[qinvokable]
         fn enable_comments(self: Pin<&mut Player>, enabled: bool);
         #[qinvokable]
         fn edit_comment_draft(self: Pin<&mut Player>, text: QString);
@@ -806,6 +814,9 @@ use std::time::Instant;
 pub struct PlayerRust {
     // The window flag set before the first frame; a later change is saved for the next launch.
     launched_window_decoration: settings::WindowDecoration,
+    // Playback builds its video filter once at startup from this saved method.
+    launched_deinterlace: settings::Deinterlace,
+    deinterlace_overridden: bool,
     #[cfg(target_os = "linux")]
     desktop_media: desktop_media::Registration,
     sleep_inhibit: crate::sleep_inhibit::Controller<crate::qt::sleep_inhibit::Portal>,

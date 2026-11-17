@@ -71,22 +71,26 @@ pub unsafe fn load(plan: features::LaunchPlan) -> Result<LoadedApplication, Erro
     }
     #[cfg(target_os = "linux")]
     dialogs.finish(&app);
-    let preloaded = playback::preload().map_err(Error::Playback)?;
+    // Match main: resolve the startup language before constructing QML. The
+    // video filter is fixed when playback is built, so it is resolved here too.
+    // Player loads the complete settings session and reports load errors separately.
+    let launch = if plan.locked() {
+        settings::Preferences::default()
+    } else {
+        settings::settings_path()
+            .and_then(settings::Loaded::open)
+            .map(|session| session.preferences().clone())
+            .unwrap_or_default()
+    };
+    let mode = playback::deinterlace::Mode::for_launch(launch.deinterlace)
+        .map_err(|error| Error::Playback(error.into()))?;
+    let preloaded = playback::preload(mode).map_err(Error::Playback)?;
     // Reverse local drop order keeps diagnostics alive through engine destruction.
     let diagnostics = diagnostics::Lifetime::new()?;
     let mut engine = QQmlApplicationEngine::new();
     {
         let mut engine = engine.as_mut().ok_or(Error::Engine)?;
-        // Match main: resolve the startup language before constructing QML.
-        // Player loads the complete settings session and reports load errors separately.
-        let language = if plan.locked() {
-            settings::Language::System
-        } else {
-            settings::settings_path()
-                .and_then(settings::Loaded::open)
-                .map(|session| session.preferences().language)
-                .unwrap_or_default()
-        };
+        let language = launch.language;
         if !super::ffi::initialize_ui_language(
             engine.as_mut(),
             &cxx_qt_lib::QString::from(language.code()),

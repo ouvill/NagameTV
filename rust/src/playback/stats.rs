@@ -104,7 +104,7 @@ impl DeinterlaceStatus {
         }
         match mode {
             Mode::Off => Self::Disabled,
-            Mode::Yadif | Mode::Linear => {
+            Mode::Yadif | Mode::GreedyL | Mode::Linear => {
                 if input.scan == Scan::Interlaced
                     && output.interlace == Some(VideoInterlaceMode::Progressive)
                 {
@@ -313,7 +313,7 @@ mod tests {
     -> Result<(), Box<dyn std::error::Error>> {
         gst::init()?;
         // CPU-only video into a fakesink: no display, GPU, audio or network.
-        for mode in [Mode::Yadif, Mode::Linear, Mode::Off] {
+        for mode in [Mode::Yadif, Mode::GreedyL, Mode::Linear, Mode::Off] {
             let pipeline = Running(gst::Pipeline::new());
             let source = gst::ElementFactory::make("videotestsrc")
                 .property("num-buffers", 6_i32)

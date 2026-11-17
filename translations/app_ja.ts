@@ -1130,8 +1130,8 @@
       <translation>%1（停止処理も失敗: %2）</translation>
     </message>
     <message>
-      <source>Invalid NAGAMETV_DEINTERLACE=%1; expected yadif, linear, off, gl or va</source>
-      <translation>NAGAMETV_DEINTERLACE=%1は不正です。yadif、linear、off、gl、vaのいずれかを指定してください</translation>
+      <source>Invalid NAGAMETV_DEINTERLACE=%1; expected yadif, greedyl, linear, off, gl or va</source>
+      <translation>NAGAMETV_DEINTERLACE=%1は不正です。yadif、greedyl、linear、off、gl、vaのいずれかを指定してください</translation>
     </message>
     <message>
       <source>NAGAMETV_DEINTERLACE is not valid Unicode</source>
@@ -1906,6 +1906,13 @@
     <message><source>NagameTV (default)</source><translation>NagameTV（標準）</translation></message>
     <message><source>Desktop environment</source><translation>デスクトップ環境</translation></message>
     <message><source>The title bar change displays correctly after restarting NagameTV.</source><translation>タイトルバーの変更は、NagameTVを再起動すると正しく表示されます。</translation></message>
+    <message><source>Deinterlacing</source><translation>インターレース解除</translation></message>
+    <message><source>Standard (default)</source><translation>標準（既定）</translation></message>
+    <message><source>High quality (fast CPU)</source><translation>高画質（高速なCPU向け）</translation></message>
+    <message><source>Light</source><translation>軽量</translation></message>
+    <message><source>Off</source><translation>なし</translation></message>
+    <message><source>The deinterlacing change applies after restarting NagameTV.</source><translation>インターレース解除の変更は、NagameTVを再起動すると反映されます。</translation></message>
+    <message><source>NAGAMETV_DEINTERLACE is set, so this launch ignores the saved method.</source><translation>NAGAMETV_DEINTERLACEが指定されているため、今回の起動では保存した方式を使いません。</translation></message>
     <message><source>While something plays</source><translation>再生中</translation></message>
     <message><source>Recordings with chapters</source><translation>チャプターのある録画</translation></message>
     <message><source>Reserve recordings from the program guide (experimental)</source><translation>番組表から録画予約する（実験的）</translation></message>

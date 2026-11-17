@@ -19,7 +19,7 @@ impl PresentError for crate::playback::Error {
             ),
             Deinterlace(error) => match error {
                 deinterlace::Error::Invalid(value) => detail(
-                    "Invalid NAGAMETV_DEINTERLACE=%1; expected yadif, linear, off, gl or va",
+                    "Invalid NAGAMETV_DEINTERLACE=%1; expected yadif, greedyl, linear, off, gl or va",
                     value,
                 ),
                 deinterlace::Error::NonUnicode => {

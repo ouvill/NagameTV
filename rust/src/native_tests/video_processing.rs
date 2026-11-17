@@ -57,8 +57,8 @@ fn generate(path: &Path, interlaced: bool) -> TestResult {
 pub(super) fn run(
     app: &QGuiApplication,
     engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
+    mode: Mode,
 ) -> TestResult {
-    let mode = Mode::from_environment()?;
     let temporary = tempfile::tempdir()?;
     evaluate(
         engine,
@@ -129,14 +129,18 @@ pub(super) fn run(
                 .expect("libav decoder thread limit must be reported");
             assert!((1..=MAX_MPEG2_DECODE_THREADS).contains(&threads));
             // CPU filtering must precede the conversion to upload memory.
-            if matches!(mode, Mode::Yadif | Mode::Linear) {
+            if matches!(mode, Mode::Yadif | Mode::GreedyL | Mode::Linear) {
                 assert_eq!(stats["input"]["pixel_format"], "I420");
             }
         }
         assert_eq!(stats["output"]["memory"], "memory:GLMemory");
         assert_eq!(stats["output"]["width"], WIDTH);
         assert_eq!(stats["output"]["height"], HEIGHT);
-        let rate = if is_interlaced && matches!(mode, Mode::Yadif | Mode::Linear | Mode::VaApi) {
+        let rate = if is_interlaced
+            && matches!(
+                mode,
+                Mode::Yadif | Mode::GreedyL | Mode::Linear | Mode::VaApi
+            ) {
             INPUT_FPS * 2.0
         } else {
             INPUT_FPS
@@ -168,7 +172,7 @@ pub(super) fn run(
                 assert_eq!(stats["input"]["memory"], "memory:VAMemory");
                 assert_eq!(stats["decoders"], serde_json::json!(["vampeg2dec"]));
             }
-            Mode::Yadif | Mode::Linear | Mode::Off => {}
+            Mode::Yadif | Mode::GreedyL | Mode::Linear | Mode::Off => {}
         }
         match std::env::var("NAGAMETV_VIDEO_FORMAT").as_deref() {
             Ok("nv12") => assert_eq!(stats["output"]["pixel_format"], "NV12"),

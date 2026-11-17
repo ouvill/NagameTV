@@ -10,7 +10,7 @@ pub(crate) unsafe fn check(
     video: *mut crate::qt::ffi::QQuickItem,
 ) {
     // Construction and NULL teardown do not open an audio device or stream.
-    let mut playback = Playback::new().unwrap();
+    let mut playback = Playback::new(super::deinterlace::Mode::default()).unwrap();
     let writes = Arc::new(AtomicUsize::new(0));
     let observed = writes.clone();
     playback.sink.connect_notify(Some("widget"), move |_, _| {
