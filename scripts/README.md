@@ -11,7 +11,7 @@
 | `scripts/test.py` | テスト選択、ビルド順序、実行結果の記録 |
 | `scripts/build/` | ビルドロック、ソース情報、CIのローカルクレート再ビルド |
 | `scripts/testing/` | スイート定義、Qtバイナリー準備、専用GUI環境、静的検査、結合試験 |
-| `scripts/packaging/` | AppImage・deb・Flatpakの作成、配布物検証、リリース |
+| `scripts/packaging/` | AppImage・deb・Flatpak・snapの作成、配布物検証、リリース |
 | `scripts/dev/` | 手動起動、計測、診断、画像撮影、文書生成、環境セットアップ |
 | `tests/tooling/` | スクリプト自身の機器不要の回帰テスト |
 | `tests/fixtures/` | テストデータと `generate_*.py` による再生成 |
@@ -110,6 +110,7 @@ python3 scripts/test.py app --profile release --run-ignored --filter 'test(live_
 | AppImage | `bash scripts/packaging/build-appimage.sh` | Docker。[手順](../docs/appimage.md) |
 | deb | `bash scripts/packaging/build-deb.sh 24.04` または `26.04` | Docker。[手順](../docs/deb.md) |
 | Flatpak | `bash scripts/packaging/build-flatpak.sh` | Flatpak SDK。[手順](../docs/flatpak.md) |
+| snap | `python3 -m scripts.packaging.build_snap` | Snapcraft 9、LXD。CIはUbuntu 26.04で直接ビルドし、`build/snap/`へsnapとSHA-256を出力。[手順](../docs/snap.md) |
 | リリース | `bash scripts/packaging/create-release.sh TAG ASSET_DIRECTORY` | GitHubを書き換える。[手順](../docs/ci-release.md) |
 | aptの索引 | `python3 -m scripts.packaging.apt_repository UBUNTU VERSION ASSET_DIRECTORY OUTPUT --signing-key FPR --keyring FILE` | gpg、dpkg-deb。署名と検証のみ。[手順](../docs/apt-repository.md) |
 | aptリポジトリーの公開 | `python3 -m scripts.packaging.publish_apt_repository TAG ASSET_DIRECTORY WORK --signing-key FPR --keyring FILE` | GitHubを書き換える。通常はActionsが実行。[手順](../docs/apt-repository.md) |

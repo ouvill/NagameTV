@@ -1,0 +1,161 @@
+name: nagametv
+base: core26
+adopt-info: nagametv
+summary: Watch Japanese TV with subtitles and live comments
+description: |
+  Watch a Mirakurun or mirakc stream or play recordings from EPGStation.
+  Run NagameTV from a Wayland desktop or as a kiosk service with Ubuntu Frame.
+grade: devel
+confinement: strict
+platforms:
+  amd64:
+  arm64:
+
+icon: packaging/linux/io.github.ouvill.nagametv.svg
+
+plugs:
+  gpu-2604:
+    interface: content
+    target: $SNAP/gpu-2604
+    default-provider: mesa-2604
+
+layout:
+  /usr/share/fonts:
+    bind: $SNAP/usr/share/fonts
+  /usr/share/alsa:
+    bind: $SNAP/usr/share/alsa
+
+apps:
+  nagametv:
+    command: usr/bin/nagametv
+    command-chain:
+      - usr/bin/nagametv-snap-launch
+      - bin/gpu-2604-wrapper
+    desktop: usr/share/applications/io.github.ouvill.nagametv.desktop
+    plugs:
+      - wayland
+      - opengl
+      - gpu-2604
+      - desktop
+      - screen-inhibit-control
+      - audio-playback
+      - network
+      - network-bind
+      - home
+      - removable-media
+      - hdmi-cec
+      - camera
+      - media-control
+  kiosk:
+    command: usr/bin/nagametv --kiosk
+    command-chain:
+      - usr/bin/nagametv-snap-launch
+      - bin/gpu-2604-wrapper
+    daemon: simple
+    install-mode: disable
+    restart-condition: on-failure
+    restart-delay: 5s
+    environment:
+      NAGAMETV_SNAP_KIOSK: "1"
+    plugs:
+      - wayland
+      - opengl
+      - gpu-2604
+      - audio-playback
+      - alsa
+      - network
+      - network-bind
+      - removable-media
+      - hdmi-cec
+      - camera
+      - media-control
+
+parts:
+  nagametv:
+    plugin: nil
+    source: .
+    build-packages:
+      - build-essential
+      - ca-certificates
+      - cmake
+      - git
+      - libass-dev
+      - libclang-dev
+      - libgstreamer1.0-dev
+      - libgstreamer-plugins-base1.0-dev
+      - libgstreamer-plugins-bad1.0-dev
+      - lld
+      - pkg-config
+      - python3
+      - qmake6
+      - qt6-base-dev
+      - qt6-declarative-dev
+      - qt6-declarative-dev-tools
+      - qt6-l10n-tools
+      - qt6-webengine-dev
+      - rustup
+    # Keep the dynamically loaded modules aligned with the Ubuntu 26.04 deb.
+    stage-packages:
+      - fonts-noto-cjk
+      - glib-networking
+      - gstreamer1.0-alsa
+      - gstreamer1.0-gl
+      - gstreamer1.0-libav
+      - gstreamer1.0-plugins-base
+      - gstreamer1.0-plugins-good
+      - gstreamer1.0-plugins-bad
+      - gstreamer1.0-pulseaudio
+      - gstreamer1.0-qt6
+      - libass9
+      - libqt6webenginecore6-bin
+      - libsoup-3.0-0
+      - qml6-module-qtcore
+      - qml6-module-qtqml
+      - qml6-module-qtqml-models
+      - qml6-module-qtqml-workerscript
+      - qml6-module-qtquick
+      - qml6-module-qtquick-controls
+      - qml6-module-qtquick-dialogs
+      - qml6-module-qtquick-effects
+      - qml6-module-qtquick-layouts
+      - qml6-module-qtquick-shapes
+      - qml6-module-qtquick-templates
+      - qml6-module-qtquick-window
+      - qml6-module-qtwebengine
+      - qml6-module-qtwebchannel
+      - qt6-image-formats-plugins
+      - qt6-qpa-plugins
+      - qt6-svg-plugins
+      - qt6-wayland
+      - qt6-xdgdesktopportal-platformtheme
+    override-build: |
+      test -f third_party/libaribcaption/CMakeLists.txt
+      test -f third_party/tsreadex/License.txt
+      version=$(python3 -c 'import tomllib; print(tomllib.load(open("rust/Cargo.toml", "rb"))["package"]["version"])')
+      craftctl set version="$version"
+
+      export RUSTUP_HOME="$CRAFT_PART_BUILD/.rustup"
+      export CARGO_HOME="$CRAFT_PART_BUILD/.cargo"
+      rustup toolchain install 1.98.1 --profile minimal
+      rustup run 1.98.1 cmake -S . -B build/snap-release -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/usr -DNAGAMETV_DISTRIBUTION=ON
+      rustup run 1.98.1 cmake --build build/snap-release
+      DESTDIR="$CRAFT_PART_INSTALL" cmake --install build/snap-release
+      install -m755 snap/local/launch "$CRAFT_PART_INSTALL/usr/bin/nagametv-snap-launch"
+      sed -i 's|^Icon=.*|Icon=${SNAP}/usr/share/icons/hicolor/scalable/apps/io.github.ouvill.nagametv.svg|' \
+        "$CRAFT_PART_INSTALL/usr/share/applications/io.github.ouvill.nagametv.desktop"
+    prime:
+      - -usr/share/doc
+      - -usr/share/man
+
+  gpu-2604:
+    after: [nagametv]
+    plugin: dump
+    source: https://github.com/canonical/gpu-snap.git
+    source-type: git
+    source-commit: 7c4091ddcea8f969b98a752c48841af9b0a659d8
+    stage:
+      - bin/gpu-2604-wrapper
+    override-prime: |
+      craftctl default
+      "$CRAFT_PART_SRC/bin/gpu-2604-cleanup" mesa-2604
