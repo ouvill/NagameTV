@@ -46,6 +46,7 @@ python3 scripts/test.py connection localization  # 機器不要のQt試験
 python3 scripts/test.py remote-keys               # 専用画面・実GPUでリモコンキー配送と非アクティブ時の挙動を確認
 python3 scripts/test.py danmaku ui-style          # 専用画面・実GPU・仮想音声を検証
 python3 scripts/test.py startup -- recording-pid-change
+python3 scripts/test.py danmaku -- -input rust/tests/qml/tst_VolumeSlider.qml
 python3 scripts/test.py danmaku -- --evaluation-legacy-comments
 ```
 

@@ -1,7 +1,7 @@
 import QtQuick
 import QtTest
 import "../../rust/qml" as Viewer
-import "../../rust/qml/tests" as Fixtures
+import "../../rust/tests/qml" as Fixtures
 
 TestCase {
     id: testCase

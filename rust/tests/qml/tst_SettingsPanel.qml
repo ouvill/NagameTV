@@ -347,11 +347,26 @@ Item {
                 panel.page = SettingsPanel.Connection;
                 connections.clear();
                 accepted.clear();
-                panel.open();
-                tryCompare(panel, "opened", true);
+                // Leave the production fade enabled for open and close actions
+                // in the tests. Fixture setup only needs an already-open panel.
+                panel.enter.enabled = false;
+                try {
+                    panel.open();
+                    tryCompare(panel, "opened", true);
+                } finally {
+                    panel.enter.enabled = true;
+                }
                 findChild(panel.contentItem, "settingsFlickable").contentY = 0;
             }
-            function cleanup() { panel.close(); tryCompare(panel, "visible", false); }
+            function cleanup() {
+                panel.exit.enabled = false;
+                try {
+                    panel.close();
+                    tryCompare(panel, "visible", false);
+                } finally {
+                    panel.exit.enabled = true;
+                }
+            }
             function test_manual_update_checks_and_download_requires_a_new_release() {
                 panel.focusCategory(SettingsPanel.System);
                 panel.enterPage();

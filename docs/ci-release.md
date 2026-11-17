@@ -47,7 +47,7 @@ ARMはエミュレーションを使わず、[26.04用Dockerfile](../packaging/d
 Docker・Cargo・ccache・FlatpakのキャッシュキーにもCPUを含める。
 CIのビルド並列数は実行ホストの`nproc`に合わせる。公開リポジトリー用の標準Linux runnerは
 [4 vCPU・16 GB RAM](https://docs.github.com/en/actions/reference/runners/github-hosted-runners#standard-github-hosted-runners-for-public-repositories)
-で、従来の2並列から利用枠を増やす。nextestのテスト実行は2並列を維持する。
+で、従来の2並列から利用枠を増やす。nextestは既定で4並列で試験を実行する。
 Dockerレイヤー、Cargoのダウンロード、配布用ツール、Flatpakのビルド状態をキャッシュする。
 Cargoのコンパイル結果も、Ubuntu 24.04の`build/ci/cargo`と
 26.04の`build/deb/ubuntu26.04/native/cargo`を別々に保存する。
@@ -59,7 +59,8 @@ Cargoのキーには実際のDockerイメージID、Cargo設定・マニフェ�
 そのパッケージだけを`cargo clean --package --profile dev`と`--profile release`で消してから検証する。
 `--package`付きのcleanはプロファイルを省略するとdevだけが対象になるため、両方を明示する。
 ファイル時刻が復元した生成物より古い場合も、リポジトリーの実装を確実にコンパイルするためである。
-外部の依存crateとccacheは残す。
+外部の依存crateとccacheは残す。arm64のdebジョブは試験の前に一度だけ消去し、
+同じ実行で生成した依存物を後続のパッケージ作成で再利用する。
 アプリの実行ファイルとincrementalデータは保存対象から外す。
 ディレクトリーを選ぶcacheのglobでは、その後のtarの再帰探索を除外できないため、
 Ubuntu runnerのGNU tarへ`TAR_OPTIONS`で除外条件を渡す。

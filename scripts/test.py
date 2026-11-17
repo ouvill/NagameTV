@@ -146,7 +146,7 @@ def plan(suites, directory, args):
         tests.append(Step("build-qt", [sys.executable, "-m", "scripts.testing.binary",
                                       "--prepare", str(directory / "nagametv"),
                                       *(["--evaluation-legacy-comments"] if
-                                        args.suite_args == ["--evaluation-legacy-comments"] else [])]))
+                                        args.suite_args[:1] == ["--evaluation-legacy-comments"] else [])]))
     for suite in suites:
         if suite not in SUITES:
             continue
@@ -170,7 +170,7 @@ def main():
     parser.add_argument("--profile", choices=("dev", "release"), default="dev")
     parser.add_argument("--log-dir", type=Path, default=ROOT / "build/test-runs",
                         help="parent directory for per-run logs and binaries")
-    parser.add_argument("--test-threads", type=int, help="nextest concurrency (default: 2)")
+    parser.add_argument("--test-threads", type=int, help="nextest concurrency (default: 4)")
     parser.add_argument("--filter", help="nextest filterset; only allowed with Rust suites")
     parser.add_argument("--run-ignored", action="store_true",
                         help="run only ignored Rust tests selected by an explicit --filter")

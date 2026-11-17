@@ -2,7 +2,7 @@ import QtQuick
 import QtTest
 import MinimalViewer 1.0
 // This evaluation-only view is deliberately absent from the normal module.
-import ".." as Evaluation
+import "../../qml" as Evaluation
 
 TestCase {
     id: testCase

@@ -76,6 +76,18 @@ class RunnerTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate_arguments("danmaku", ["--evaluation-legacy-comments", "extra"])
 
+    def test_danmaku_can_select_a_qml_file_with_legacy_evaluation(self):
+        fixture = self.directory / "tst_Fixture.qml"
+        fixture.touch()
+        arguments = ["--evaluation-legacy-comments", "-input", str(fixture)]
+        validate_arguments("danmaku", arguments)
+        steps = runner.plan(["danmaku"], self.directory, Namespace(profile="dev", suite_args=arguments))
+        self.assertEqual(steps[0].name, "gui-environment")
+        self.assertIn("--evaluation-legacy-comments", steps[1].command)
+        self.assertEqual(steps[2].command[-3:], arguments)
+        with self.assertRaises(ValueError):
+            validate_arguments("danmaku", ["-input", str(self.directory / "missing.qml")])
+
     def test_live_probe_requires_an_explicit_server_service_and_bounded_duration(self):
         for arguments in (["live-probe", "http://127.0.0.1:40772", "3209641984"],
                           ["live-probe", "https://example.test", "1", "600"]):
