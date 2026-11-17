@@ -1,0 +1,73 @@
+#!/bin/sh
+set -eu
+
+case "$SNAP_ARCH" in
+    amd64) triplet=x86_64-linux-gnu ;;
+    arm64) triplet=aarch64-linux-gnu ;;
+    *) echo "NagameTV: unsupported snap architecture $SNAP_ARCH" >&2; exit 1 ;;
+esac
+
+if ! snapctl is-connected wayland; then
+    echo 'NagameTV: connect the wayland interface before starting.' >&2
+    exit 1
+fi
+
+runtime_parent=${XDG_RUNTIME_DIR%/*}
+display=${WAYLAND_DISPLAY:-wayland-0}
+case "$display" in
+    /*) socket=$display; display=${display##*/} ;;
+    *) socket=$runtime_parent/$display ;;
+esac
+
+data_dir=$SNAP_USER_DATA
+if [ "${NAGAMETV_SNAP_KIOSK:-}" = 1 ]; then
+    data_dir=$SNAP_DATA
+    # The system service and Ubuntu Frame can start in either order.
+    until [ -S "$socket" ]; do
+        sleep 1
+    done
+fi
+if [ ! -S "$socket" ]; then
+    echo "NagameTV: no Wayland socket at $socket" >&2
+    exit 1
+fi
+
+# Wayland clients resolve the socket relative to snapd's private runtime dir.
+if [ "$socket" != "$XDG_RUNTIME_DIR/$display" ] && [ "${socket%/*}" = "$runtime_parent" ]; then
+    ln -sfn "../$display" "$XDG_RUNTIME_DIR/$display"
+    export WAYLAND_DISPLAY=$display
+else
+    export WAYLAND_DISPLAY=$socket
+fi
+
+if [ -z "${PULSE_SERVER:-}" ]; then
+    if [ -S "$runtime_parent/pulse/native" ]; then
+        export PULSE_SERVER="unix:$runtime_parent/pulse/native"
+    elif [ "${NAGAMETV_SNAP_KIOSK:-}" = 1 ] && [ -S /run/pulse/native ]; then
+        export PULSE_SERVER=unix:/run/pulse/native
+    fi
+fi
+
+export HOME=$data_dir
+export XDG_CONFIG_HOME="$data_dir/.config"
+export XDG_CACHE_HOME="$data_dir/.cache"
+export XDG_DATA_HOME="$data_dir/.local/share"
+export XDG_STATE_HOME="$data_dir/.local/state"
+export XDG_DATA_DIRS="$SNAP/usr/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+mkdir -p "$XDG_CACHE_HOME"
+
+lib="$SNAP/usr/lib/$triplet"
+export LD_LIBRARY_PATH="$lib:$SNAP/usr/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+export QT_QPA_PLATFORM=wayland
+export QT_PLUGIN_PATH="$lib/qt6/plugins"
+export QML_IMPORT_PATH="$lib/qt6/qml"
+export QTWEBENGINEPROCESS_PATH="$SNAP/usr/lib/qt6/libexec/QtWebEngineProcess"
+export QTWEBENGINE_RESOURCES_PATH="$SNAP/usr/share/qt6/resources"
+export QTWEBENGINE_LOCALES_PATH="$SNAP/usr/share/qt6/translations/qtwebengine_locales"
+export GST_GL_PLATFORM=egl
+export GST_PLUGIN_PATH_1_0=
+export GST_PLUGIN_SYSTEM_PATH_1_0="$lib/gstreamer-1.0"
+export GST_PLUGIN_SCANNER_1_0="$lib/gstreamer-1.0/gstreamer-1.0/gst-plugin-scanner"
+export GIO_MODULE_DIR="$lib/gio/modules"
+
+exec "$@"
