@@ -162,6 +162,7 @@ fn checks(no_bus: bool) -> Result {
         "malformed",
         "response-failed",
         "no-response",
+        "no-reply",
     ] {
         fs::write(path.join("mode"), mode)?;
         player.pin_mut().configure_sleep_inhibit(false);
@@ -173,7 +174,7 @@ fn checks(no_bus: bool) -> Result {
         })?;
         assert_eq!(
             player.sleep_inhibit_state().to_string(),
-            if mode == "unavailable" {
+            if matches!(mode, "unavailable" | "no-reply") {
                 "unavailable"
             } else {
                 "failed"

@@ -51,6 +51,9 @@ def main():
                         else "org.freedesktop.DBus.Error.UnknownMethod")
                 error(dbus.exceptions.DBusException("fixture rejected inhibition", name=code))
                 return
+            if mode == "no-reply":
+                # A portal whose activation keeps timing out never answers.
+                return
             if mode == "malformed":
                 reply(dbus.ObjectPath("/invalid"))
                 return
