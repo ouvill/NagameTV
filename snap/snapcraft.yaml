@@ -36,6 +36,13 @@ apps:
       - usr/bin/nagametv-snap-launch
       - bin/gpu-2604-wrapper
     desktop: usr/share/applications/io.github.ouvill.nagametv.desktop
+    environment:
+      HOME: $SNAP_USER_DATA
+      XDG_CONFIG_HOME: $SNAP_USER_DATA/.config
+      # Large caches are shared across refreshes and reverts.
+      XDG_CACHE_HOME: $SNAP_USER_COMMON/.cache
+      XDG_DATA_HOME: $SNAP_USER_DATA/.local/share
+      XDG_STATE_HOME: $SNAP_USER_DATA/.local/state
     plugs:
       - wayland
       - opengl
@@ -61,6 +68,11 @@ apps:
     restart-delay: 5s
     environment:
       NAGAMETV_SNAP_KIOSK: "1"
+      HOME: $SNAP_DATA
+      XDG_CONFIG_HOME: $SNAP_DATA/.config
+      XDG_CACHE_HOME: $SNAP_COMMON/.cache
+      XDG_DATA_HOME: $SNAP_DATA/.local/share
+      XDG_STATE_HOME: $SNAP_DATA/.local/state
     plugs:
       - wayland
       - opengl

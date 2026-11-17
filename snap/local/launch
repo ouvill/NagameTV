@@ -19,9 +19,7 @@ case "$display" in
     *) socket=$runtime_parent/$display ;;
 esac
 
-data_dir=$SNAP_USER_DATA
 if [ "${NAGAMETV_SNAP_KIOSK:-}" = 1 ]; then
-    data_dir=$SNAP_DATA
     # The system service and Ubuntu Frame can start in either order.
     until [ -S "$socket" ]; do
         sleep 1
@@ -48,11 +46,6 @@ if [ -z "${PULSE_SERVER:-}" ]; then
     fi
 fi
 
-export HOME="$data_dir"
-export XDG_CONFIG_HOME="$data_dir/.config"
-export XDG_CACHE_HOME="$data_dir/.cache"
-export XDG_DATA_HOME="$data_dir/.local/share"
-export XDG_STATE_HOME="$data_dir/.local/state"
 export XDG_DATA_DIRS="$SNAP/usr/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
 mkdir -p "$XDG_CACHE_HOME"
 
