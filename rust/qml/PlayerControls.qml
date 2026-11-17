@@ -209,7 +209,7 @@ DirectionalFocus {
             Control {
                 id: fullscreenButton
                 objectName: "fullscreenButton"
-                visible: root.density === PlayerControls.Wide
+                visible: root.density === PlayerControls.Wide && !root.actions.kiosk
                 iconSource: root.iconDirectory + "maximize.svg"
                 tip: action.text
                 action: root.actions.toggleFullscreen
@@ -261,6 +261,9 @@ DirectionalFocus {
                     }
                     Entry {
                         objectName: "overflowFullscreen"
+                        visible: !root.actions.kiosk
+                        // Menu keeps the height of a hidden item.
+                        height: visible ? implicitHeight : 0
                         action: root.actions.toggleFullscreen
                         icon.source: root.iconDirectory + "maximize.svg"
                     }

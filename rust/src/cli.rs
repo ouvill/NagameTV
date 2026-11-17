@@ -1,5 +1,8 @@
 //! Parse all application arguments before environment, settings or GUI initialization.
-use crate::features::{FeatureSet, LaunchPlan};
+use crate::{
+    features::{FeatureSet, LaunchPlan},
+    settings::StartupDisplay,
+};
 use clap::Parser;
 use std::ffi::OsString;
 
@@ -17,6 +20,12 @@ struct Arguments {
         value_name = "none|subtitles,epg,comments,data-broadcast,recording-reservations,remote-web,hdmi-cec"
     )]
     features: Option<FeatureSet>,
+    /// Start fullscreen, ignoring the saved startup display for this launch
+    #[arg(group = "display", long)]
+    fullscreen: bool,
+    /// Start in kiosk mode: fullscreen without window controls, quit from Settings
+    #[arg(group = "display", long)]
+    kiosk: bool,
     // The test runner owns these arguments, including Qt Quick Test switches.
     #[cfg(feature = "native_tests")]
     #[arg(group = "mode", long, hide = true, num_args = 1.., allow_hyphen_values = true)]
@@ -31,7 +40,11 @@ struct Arguments {
 
 #[derive(Debug)]
 pub enum Command {
-    Launch(LaunchPlan),
+    Launch {
+        plan: LaunchPlan,
+        /// None keeps the saved startup display.
+        display: Option<StartupDisplay>,
+    },
     BuildInfo,
     #[cfg(feature = "native_tests")]
     NativeTests(Vec<OsString>),
@@ -61,10 +74,19 @@ impl Command {
         if args.build_info {
             return Ok(Self::BuildInfo);
         }
-        Ok(Self::Launch(match args.features {
-            Some(features) => LaunchPlan::Restricted(features),
-            None => LaunchPlan::Preferences,
-        }))
+        Ok(Self::Launch {
+            plan: match args.features {
+                Some(features) => LaunchPlan::Restricted(features),
+                None => LaunchPlan::Preferences,
+            },
+            display: if args.kiosk {
+                Some(StartupDisplay::Kiosk)
+            } else if args.fullscreen {
+                Some(StartupDisplay::Fullscreen)
+            } else {
+                None
+            },
+        })
     }
 }
 
@@ -79,13 +101,13 @@ mod tests {
 
     #[test]
     fn remote_web_is_an_explicit_runtime_feature() {
-        let Command::Launch(plan) = parse(&["--features=epg,remote-web"]).unwrap() else {
+        let Command::Launch { plan, .. } = parse(&["--features=epg,remote-web"]).unwrap() else {
             panic!("launch expected")
         };
         assert!(plan.remote_web(false));
         assert!(plan.epg());
         assert!(plan.locked());
-        let Command::Launch(plan) = parse(&["--features=none"]).unwrap() else {
+        let Command::Launch { plan, .. } = parse(&["--features=none"]).unwrap() else {
             panic!("launch expected")
         };
         assert!(!plan.remote_web(true));
@@ -96,7 +118,7 @@ mod tests {
 
     #[test]
     fn feature_policy_preserves_preferences_and_restricts_experiments() {
-        let Command::Launch(normal) = parse(&[]).unwrap() else {
+        let Command::Launch { plan: normal, .. } = parse(&[]).unwrap() else {
             panic!("launch");
         };
         assert!(!normal.locked());
@@ -114,7 +136,8 @@ mod tests {
             ("data-broadcast", [false, false, false, true]),
             ("subtitles,data-broadcast", [true, false, false, true]),
         ] {
-            let Command::Launch(plan) = parse(&[&format!("--features={value}")]).unwrap() else {
+            let Command::Launch { plan, .. } = parse(&[&format!("--features={value}")]).unwrap()
+            else {
                 panic!("launch");
             };
             assert!(plan.locked());
@@ -135,7 +158,8 @@ mod tests {
 
     #[test]
     fn reservation_experiments_require_an_explicit_allowlist_entry() {
-        let Command::Launch(plan) = parse(&["--features=epg,recording-reservations"]).unwrap()
+        let Command::Launch { plan, .. } =
+            parse(&["--features=epg,recording-reservations"]).unwrap()
         else {
             panic!("launch")
         };
@@ -149,13 +173,33 @@ mod tests {
             ("screen-navigation", "none"),
             ("epg,screen-navigation", "epg"),
         ] {
-            let Command::Launch(plan) = parse(&[&format!("--features={names}")]).unwrap() else {
+            let Command::Launch { plan, .. } = parse(&[&format!("--features={names}")]).unwrap()
+            else {
                 panic!("launch");
             };
             assert_eq!(plan, LaunchPlan::Restricted(equivalent.parse().unwrap()));
             assert!(plan.locked());
         }
         assert!(parse(&["--features=screen-navigation,screen-navigation"]).is_err());
+    }
+
+    #[test]
+    fn display_flags_override_the_saved_startup_display_for_one_launch() {
+        for (args, expected) in [
+            (&[][..], None),
+            (&["--fullscreen"][..], Some(StartupDisplay::Fullscreen)),
+            (&["--kiosk"][..], Some(StartupDisplay::Kiosk)),
+            (
+                &["--kiosk", "--features=epg"][..],
+                Some(StartupDisplay::Kiosk),
+            ),
+        ] {
+            let Command::Launch { display, .. } = parse(args).unwrap() else {
+                panic!("launch expected for {args:?}");
+            };
+            assert_eq!(display, expected, "{args:?}");
+        }
+        assert!(parse(&["--fullscreen", "--kiosk"]).is_err());
     }
 
     #[test]

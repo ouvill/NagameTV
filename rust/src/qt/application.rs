@@ -14,6 +14,8 @@ pub enum Error {
     Allocator(&'static str),
     #[error("Feature plan was already initialized")]
     PlanAlreadyInitialized,
+    #[error("Startup display was already initialized")]
+    DisplayAlreadyInitialized,
     #[error("Diagnostics initialization failed: {0}")]
     Diagnostics(#[from] diagnostics::Error),
     #[error("Could not create the Qt application")]
@@ -49,7 +51,10 @@ impl LoadedApplication {
 /// # Safety
 /// Call on the process main thread, before Qt initialization or any other
 /// thread can access the environment modified by platform dialog setup.
-pub unsafe fn load(plan: features::LaunchPlan) -> Result<LoadedApplication, Error> {
+pub unsafe fn load(
+    plan: features::LaunchPlan,
+    display: Option<settings::StartupDisplay>,
+) -> Result<LoadedApplication, Error> {
     // SAFETY: Still before Qt, GStreamer, diagnostics or worker initialization.
     #[cfg(target_os = "linux")]
     let dialogs = unsafe { platform::DialogSetup::prepare() };
@@ -58,6 +63,15 @@ pub unsafe fn load(plan: features::LaunchPlan) -> Result<LoadedApplication, Erro
     features::PLAN
         .set(plan)
         .map_err(|_| Error::PlanAlreadyInitialized)?;
+    if let Some(startup) = display {
+        tracing::info!(
+            startup_display = startup.code(),
+            "Startup display set by argument"
+        );
+        settings::startup_display::OVERRIDE
+            .set(startup)
+            .map_err(|_| Error::DisplayAlreadyInitialized)?;
+    }
     super::ffi::install_qt_logging(logging::record_qt);
     if diagnostics::requested(plan.locked()) {
         super::ffi::install_qt_gc_logging(diagnostics::record_qt_gc);

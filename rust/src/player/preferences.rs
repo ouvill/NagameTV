@@ -22,6 +22,7 @@ impl ffi::Player {
             serde_json::json!({
                 "initial": available.startup_in(self.rust().preferences.preferences().window_size),
                 "minimum": available.minimum_in(),
+                "fullscreen": self.launch_display() != crate::settings::StartupDisplay::Window,
             })
             .to_string(),
         )
@@ -227,6 +228,46 @@ impl ffi::Player {
                 .change(crate::settings::Change::Deinterlace(method));
             self.as_mut().deinterlace_changed();
             self.as_mut().deinterlace_restart_pending_changed();
+        }
+        self.save_settings();
+        true
+    }
+
+    pub fn startup_display(&self) -> QString {
+        QString::from(self.rust().preferences.preferences().startup_display.code())
+    }
+
+    pub fn startup_display_restart_pending(&self) -> bool {
+        self.rust().preferences.preferences().startup_display
+            != self.rust().launched_startup_display
+    }
+
+    pub fn startup_display_overridden(&self) -> bool {
+        self.rust().startup_display_override.is_some()
+    }
+
+    /// The display this launch uses, from an argument or the saved choice.
+    fn launch_display(&self) -> crate::settings::StartupDisplay {
+        self.rust()
+            .startup_display_override
+            .unwrap_or(self.rust().launched_startup_display)
+    }
+
+    pub fn kiosk(&self) -> bool {
+        self.launch_display() == crate::settings::StartupDisplay::Kiosk
+    }
+
+    pub fn configure_startup_display(mut self: Pin<&mut Self>, display: QString) -> bool {
+        let Some(display) = crate::settings::StartupDisplay::parse(&display.to_string()) else {
+            return false;
+        };
+        if display != self.rust().preferences.preferences().startup_display {
+            self.as_mut()
+                .rust_mut()
+                .preferences
+                .change(crate::settings::Change::StartupDisplay(display));
+            self.as_mut().startup_display_changed();
+            self.as_mut().startup_display_restart_pending_changed();
         }
         self.save_settings();
         true

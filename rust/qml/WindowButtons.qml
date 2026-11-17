@@ -8,7 +8,7 @@ Rectangle {
     required property Window targetWindow
     property url iconDirectory: "qrc:/qt/qml/MinimalViewer/assets/icons/"
     // The desktop environment's title bar replaces these buttons.
-    readonly property bool active: WindowChrome.frameless
+    readonly property bool active: WindowChrome.frameless && !WindowChrome.kiosk
     readonly property list<Item> navigationButtons: active ? [minimizeButton, maximizeButton, closeButton] : []
     property bool flat: false
     property bool focusLabelBelow: false

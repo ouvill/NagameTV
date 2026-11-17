@@ -101,6 +101,34 @@ fn deinterlace_defaults_to_greedyl_and_the_choice_survives_restart()
 }
 
 #[test]
+fn startup_display_defaults_to_a_window_and_the_choice_survives_restart()
+-> Result<(), Box<dyn std::error::Error>> {
+    let directory = tempfile::tempdir()?;
+    let path = directory.path().join("settings.toml");
+    fs::write(&path, "autoplay = true\n")?;
+    assert_eq!(
+        open(path.clone())?.preferences().startup_display,
+        StartupDisplay::Window
+    );
+    for display in [
+        StartupDisplay::Fullscreen,
+        StartupDisplay::Kiosk,
+        StartupDisplay::Window,
+    ] {
+        let mut session = open(path.clone())?;
+        session.change(Change::StartupDisplay(display));
+        session.flush()?;
+        let restored = open(path.clone())?;
+        assert_eq!(restored.preferences().startup_display, display);
+        assert!(restored.preferences().autoplay);
+    }
+    let future: Preferences = toml::from_str("startup_display = 'tiled'\nautoplay = true")?;
+    assert_eq!(future.startup_display, StartupDisplay::Window);
+    assert!(future.autoplay);
+    Ok(())
+}
+
+#[test]
 fn live_buffer_defaults_migrate_and_custom_values_survive_restart()
 -> Result<(), Box<dyn std::error::Error>> {
     let old: Preferences = toml::from_str("autoplay = true")?;

@@ -10,6 +10,8 @@ pub use live_buffer::LiveBuffer;
 mod model;
 mod screenshot_directory;
 mod screenshot_format;
+pub mod startup_display;
+pub use startup_display::StartupDisplay;
 mod window_decoration;
 mod window_size;
 pub use comment_style::{CommentFontSize, CommentOpacity, CommentSpeed};
@@ -150,6 +152,7 @@ pub enum Change {
     WindowSize(WindowSize),
     WindowDecoration(WindowDecoration),
     Deinterlace(Deinterlace),
+    StartupDisplay(StartupDisplay),
     Language(Language),
     Service(String),
     Autoplay(bool),
@@ -239,6 +242,7 @@ impl Session {
             Change::WindowSize(size) => preferences.window_size = Some(size),
             Change::WindowDecoration(value) => preferences.window_decoration = value,
             Change::Deinterlace(value) => preferences.deinterlace = value,
+            Change::StartupDisplay(value) => preferences.startup_display = value,
             Change::Language(language) => preferences.language = language,
             Change::Service(service) => preferences.service_id = service,
             Change::Autoplay(enabled) => preferences.autoplay = enabled,

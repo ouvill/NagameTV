@@ -15,6 +15,17 @@ ViewerWindow {
         property: "frameless"
         value: player.window_decoration !== "system"
     }
+    Binding {
+        target: WindowChrome
+        property: "kiosk"
+        value: player.kiosk
+    }
+    // The compositor can still leave fullscreen, for example after an output
+    // change; a kiosk has no controls to get back.
+    onVisibilityChanged: {
+        if (player.kiosk && (visibility === Window.Windowed || visibility === Window.Maximized))
+            showFullScreen();
+    }
     title: player.recording ? player.recording_name : programIdentity.view && programIdentity.view.program && programIdentity.view.program.name
         ? programIdentity.view.program.name : qsTranslate("Main", "NagameTV")
     color: Theme.canvas
@@ -339,6 +350,7 @@ ViewerWindow {
         audioVisible: audioSettings.visible
         targetWindow: root
         enabled: !root.closing
+        kiosk: player.kiosk
         channelsVisible: root.showChannels
         composerVisible: root.showCommentComposer
         statsVisible: root.showStats

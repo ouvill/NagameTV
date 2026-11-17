@@ -1913,6 +1913,14 @@
     <message><source>Off</source><translation>なし</translation></message>
     <message><source>The deinterlacing change applies after restarting NagameTV.</source><translation>インターレース解除の変更は、NagameTVを再起動すると反映されます。</translation></message>
     <message><source>NAGAMETV_DEINTERLACE is set, so this launch ignores the saved method.</source><translation>NAGAMETV_DEINTERLACEが指定されているため、今回の起動では保存した方式を使いません。</translation></message>
+    <message><source>At startup</source><translation>起動時の表示</translation></message>
+    <message><source>Window (default)</source><translation>ウィンドウ（既定）</translation></message>
+    <message><source>Fullscreen</source><translation>全画面</translation></message>
+    <message><source>Kiosk (always fullscreen)</source><translation>キオスク（常に全画面）</translation></message>
+    <message><source>Kiosk mode hides the window buttons and cannot leave fullscreen. Quit from Settings &gt; System.</source><translation>キオスクモードではウィンドウのボタンを表示せず、全画面を解除できません。終了するときは［設定］→［システム］から終了します。</translation></message>
+    <message><source>The startup display change applies after restarting NagameTV.</source><translation>起動時の表示の変更は、NagameTVを再起動すると反映されます。</translation></message>
+    <message><source>--fullscreen or --kiosk was given, so this launch ignores the saved choice.</source><translation>--fullscreen または --kiosk が指定されているため、今回の起動では保存した設定を使いません。</translation></message>
+    <message><source>Quit NagameTV</source><translation>NagameTVを終了</translation></message>
     <message><source>While something plays</source><translation>再生中</translation></message>
     <message><source>Recordings with chapters</source><translation>チャプターのある録画</translation></message>
     <message><source>Reserve recordings from the program guide (experimental)</source><translation>番組表から録画予約する（実験的）</translation></message>
