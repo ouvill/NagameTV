@@ -50,6 +50,9 @@ pub enum Error {
 }
 
 pub fn settings_path() -> Result<PathBuf, Error> {
+    if let Some(paths) = crate::data_directory::get() {
+        return Ok(paths.config().join("settings.toml"));
+    }
     let base = std::env::var_os("XDG_CONFIG_HOME")
         .filter(|s| !s.is_empty())
         .map(PathBuf::from)
@@ -62,9 +65,19 @@ pub fn settings_path() -> Result<PathBuf, Error> {
     Ok(base.join("nagametv/settings.toml"))
 }
 
+pub fn viewing_history_path() -> Result<PathBuf, Error> {
+    match crate::data_directory::get() {
+        Some(paths) => Ok(paths.state().join("viewing-history.json")),
+        None => settings_path().map(|path| path.with_file_name("viewing-history.json")),
+    }
+}
+
 /// Native Linux and Flatpak honor their own XDG cache root. Other platforms
 /// keep cache data under their conventional per-user application directory.
 pub fn comment_cache_directory() -> Result<PathBuf, Error> {
+    if let Some(paths) = crate::data_directory::get() {
+        return Ok(paths.comment_archive().into());
+    }
     #[cfg(target_os = "windows")]
     let base = std::env::var_os("LOCALAPPDATA").map(PathBuf::from);
     #[cfg(target_os = "macos")]

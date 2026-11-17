@@ -96,7 +96,7 @@ def run_suite(name, arguments):
     with tempfile.TemporaryDirectory(prefix=f"nagametv-{name}-") as directory:
         temporary = Path(directory)
         env = {key: value for key, value in os.environ.items() if key not in (
-            "NAGAMETV_SERVER", "NAGAMETV_SERVICE_ID", "NAGAMETV_AUTOPLAY",
+            "NAGAMETV_SERVER", "NAGAMETV_SERVICE_ID", "NAGAMETV_AUTOPLAY", "NAGAMETV_DATA_DIR",
             "NAGAMETV_REMOTE_ENABLED", "NAGAMETV_REMOTE_ADDR", "NAGAMETV_REMOTE_PORT")}
         env.update({f"XDG_{kind}_HOME": str(temporary / kind.lower())
                     for kind in ("CONFIG", "CACHE", "STATE", "DATA")})

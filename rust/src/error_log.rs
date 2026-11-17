@@ -1,4 +1,4 @@
-//! Latest playback failure on disk. Qt supplies the platform state directory.
+//! Latest playback failure on disk.
 use std::{
     fs,
     io::{self, Write},

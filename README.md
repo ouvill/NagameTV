@@ -186,6 +186,9 @@ chmod +x ./nagametv-0.1.0-x86_64.AppImage
 - **ネイティブ版・AppImage版**: `~/.config/nagametv/`（`$XDG_CONFIG_HOME/nagametv/`）
 - **Flatpak版**: `~/.var/app/io.github.ouvill.nagametv/config/nagametv/`
 
+読み取り専用のOSで運用する場合は、`NAGAMETV_DATA_DIR`で設定・履歴・キャッシュを
+[書き込み可能なパーティション](docs/development.md#保存データを別のパーティションに置く)にまとめられます。
+
 「設定 → 視聴」にある「起動時に自動再生する」をONにすると、起動時に前回の局を自動で再生開始します。
 
 ### 別の端末からのリモート操作

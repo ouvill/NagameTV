@@ -5,6 +5,8 @@ mod recent;
 use std::io::IsTerminal;
 use tracing_subscriber::{EnvFilter, filter::LevelFilter, prelude::*};
 
+pub const DATA_DIRECTORY_ERROR_TARGET: &str = "nagametv::startup::data_directory";
+
 pub fn init() {
     let (output, stream_error) = match journal::Output::detect() {
         Ok(output) => (output, None),
@@ -12,7 +14,13 @@ pub fn init() {
     };
     let filter = EnvFilter::builder()
         .with_default_directive(LevelFilter::INFO.into())
-        .from_env_lossy();
+        .from_env_lossy()
+        // A storage configuration error is fatal even when ordinary logs are off.
+        .add_directive(
+            format!("{DATA_DIRECTORY_ERROR_TARGET}=error")
+                .parse()
+                .expect("valid data directory error directive"),
+        );
     let terminal = tracing_subscriber::fmt::layer()
         .with_writer(output)
         .with_ansi(std::io::stderr().is_terminal());

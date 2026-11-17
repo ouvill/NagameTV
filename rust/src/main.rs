@@ -8,6 +8,7 @@ mod continue_watching_model;
 mod danmaku;
 #[cfg(feature = "qml_tests")]
 mod danmaku_ui_tests;
+mod data_directory;
 mod diagnostics;
 mod epgstation;
 mod error_log;
@@ -78,6 +79,14 @@ fn main() -> std::process::ExitCode {
     };
     logging::init();
     tracing::info!(build_info = %build_info::json(), "Application build");
+    if let Err(error) = data_directory::initialize() {
+        tracing::error!(
+            target: logging::DATA_DIRECTORY_ERROR_TARGET,
+            error = &error as &dyn std::error::Error,
+            "Application data directory initialization failed"
+        );
+        return std::process::ExitCode::FAILURE;
+    }
     // SAFETY: Logging creates no threads; Qt, GStreamer and workers have not started.
     #[cfg(target_os = "linux")]
     unsafe {
