@@ -79,9 +79,6 @@ class BuildInfoTests(unittest.TestCase):
 
     def build(self, root=None, *, features="distribution", native_builds=1, fresh=None):
         root = root or self.root
-        # Each source tree gets its own build-script outputs; dependency reuse
-        # across worktrees is Cargo's responsibility, outside this assertion.
-        self.env["CARGO_TARGET_DIR"] = str(root / "target")
         if (root / ".git").exists():
             self.env["NAGAMETV_BUILD_FINGERPRINT"] = (
                 packaging.source_identity(root, env=self.env) + ":" + packaging.source_fingerprint(root))
