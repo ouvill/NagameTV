@@ -11,7 +11,7 @@ permissions:
 
 concurrency:
   group: snap-${{ github.event_name }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name != 'push' }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   snap:
@@ -33,6 +33,13 @@ jobs:
           persist-credentials: false
       - name: Install Snapcraft
         run: sudo snap install snapcraft --classic --channel=9.x/stable
+      # Snapcraft's staging cache looks up indexes by source URI. The runner's
+      # mirror list can leave the staged cache without the archive packages.
+      - name: Select the Ubuntu package archive
+        run: |
+          sudo sed -i 's|^URIs: mirror+file:.*$|URIs: http://archive.ubuntu.com/ubuntu|' \
+            /etc/apt/sources.list.d/ubuntu.sources
+          sudo apt-get -o Acquire::Retries=3 update
       - name: Build the native snap
         run: |
           sudo git config --global --add safe.directory "$GITHUB_WORKSPACE"
