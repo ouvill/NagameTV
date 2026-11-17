@@ -62,6 +62,7 @@ impl Error {
             Self::MissingDecoder(_) => Hint::MissingDecoder,
             // Cleanup must not hide the reason the original stream failed.
             Self::Cleanup { primary, .. } => primary.hint(),
+            Self::HardwareDecoderRejected { source, .. } => source.hint(),
             Self::EndOfStream => Hint::Ended,
             // HTTP 503 can originate at a proxy or an overloaded server too;
             // the status alone does not establish Mirakurun tuner exhaustion.

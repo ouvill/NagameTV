@@ -13,6 +13,7 @@ pub(crate) use audio_sink::Error as AudioSinkError;
 pub(crate) use clock::Error as ClockError;
 pub mod deinterlace;
 pub mod failure;
+pub mod hardware_decoder;
 pub mod input;
 pub(crate) mod latency;
 pub(crate) mod live_recovery;
@@ -104,6 +105,12 @@ pub enum Error {
     LiveResumeRejected {
         source: gst::glib::Error,
         debug: Option<String>,
+    },
+    /// Reopening without the decoder can still play the same source.
+    #[error("{source} (unusable hardware decoder: {})", rejected.name())]
+    HardwareDecoderRejected {
+        rejected: hardware_decoder::Rejected,
+        source: Box<Error>,
     },
     #[error("{source} (HTTP: {http_status:?}, debug: {debug:?})")]
     Stream {
@@ -626,9 +633,31 @@ impl Playback {
             }
         }
         if let Some(error) = failure {
-            return Err(error);
+            return Err(self.classify_failure(error));
         }
         Ok(event)
+    }
+
+    // GPU modes select their decoder explicitly and never fall back to another.
+    fn classify_failure(&self, error: Error) -> Error {
+        let rejected = match (&error, self.mode.automatic_decoders()) {
+            (Error::Stream { source, debug, .. }, true) => hardware_decoder::Rejected::find(
+                &self.playbin,
+                self.sink
+                    .static_pad("sink")
+                    .is_some_and(|pad| pad.current_caps().is_some()),
+                source,
+                debug.as_deref(),
+            ),
+            _ => None,
+        };
+        match rejected {
+            Some(rejected) => Error::HardwareDecoderRejected {
+                rejected,
+                source: Box::new(error),
+            },
+            None => error,
+        }
     }
 
     fn shutdown(&mut self) -> Result<()> {

@@ -294,6 +294,28 @@ impl ffi::Player {
                 self.as_mut()
                     .set_transport_message(super::transport::Message::Failure(error.present()));
             }
+            Err(playback::Error::HardwareDecoderRejected { rejected, source }) => {
+                let restart = self.as_mut().rust_mut().stream_state.take_decoder_restart();
+                if let Err(stop_error) = self.as_mut().release_stream() {
+                    self.playback_failed(playback::Error::Cleanup {
+                        primary: source,
+                        cleanup: Box::new(stop_error),
+                    });
+                    return;
+                }
+                tracing::warn!(
+                    decoder = %rejected.name(),
+                    error = &*source as &dyn std::error::Error,
+                    "Hardware video decoder could not negotiate an output format; reopening with it disabled for this session"
+                );
+                rejected.disable();
+                match restart {
+                    Some(attempt) => {
+                        self.as_mut().continue_stream(attempt);
+                    }
+                    None => self.as_mut().playback_failed(*source),
+                }
+            }
             Err(error) => {
                 let retry = error
                     .is_live_resume_rejected()

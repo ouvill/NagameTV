@@ -193,6 +193,26 @@ impl State {
         self
     }
 
+    /// Reopen the same source after excluding a rejected decoder. A live
+    /// attempt moves its remaining HTTP retry instead of being granted a new one.
+    pub(super) fn take_decoder_restart(&mut self) -> Option<Attempt> {
+        match self {
+            Self::Connecting(Attempt::Live(live)) | Self::Playing(live, _) => {
+                Some(Attempt::Live(LiveAttempt {
+                    service: live.service,
+                    name: live.name.clone(),
+                    broadcast: live.broadcast,
+                    retry: std::mem::replace(&mut live.retry, Retry::Used),
+                    retention: live.retention,
+                }))
+            }
+            Self::Connecting(Attempt::File(file)) | Self::Recording(file, _) => {
+                Some(Attempt::File(file.clone()))
+            }
+            Self::Stopped(_) | Self::StopFailed(_) => None,
+        }
+    }
+
     pub(super) fn recovery_target(&self) -> Option<RecoveryTarget> {
         match self {
             Self::Playing(live, _) | Self::Connecting(Attempt::Live(live)) => {
@@ -415,6 +435,33 @@ mod tests {
         state = state.stopped().started();
         assert!(!state.playing() && !state.connecting());
         assert_eq!(state.recording(), Some(&expected));
+    }
+    #[test]
+    fn decoder_restart_reopens_the_same_source_without_a_new_http_retry() {
+        let mut state = State::Connecting(attempt());
+        let mut restart = State::Connecting(state.take_decoder_restart().unwrap());
+        assert!(restart.requested(42));
+        assert!(
+            state.take_retry().is_none(),
+            "the allowance moved to the restart"
+        );
+        assert!(restart.take_retry().is_some());
+        let mut spent = State::Connecting(restart.take_decoder_restart().unwrap());
+        assert!(spent.take_retry().is_none());
+
+        let file = Recording::open(std::path::Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../tests/fixtures/subtitle-clock.ts"
+        )))
+        .unwrap();
+        let mut state = State::Connecting(Attempt::File(file.clone()));
+        assert_eq!(
+            state.take_decoder_restart(),
+            Some(Attempt::File(file.clone()))
+        );
+        let mut state = State::Connecting(Attempt::File(file)).started();
+        assert!(state.take_decoder_restart().is_some());
+        assert!(State::default().take_decoder_restart().is_none());
     }
 }
 
