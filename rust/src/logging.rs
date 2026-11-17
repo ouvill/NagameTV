@@ -1,16 +1,28 @@
 //! Application logging. Initialize once, before any worker threads are started.
+mod journal;
+
 use std::io::IsTerminal;
 use tracing_subscriber::{EnvFilter, filter::LevelFilter};
 
 pub fn init() {
+    let (output, stream_error) = match journal::Output::detect() {
+        Ok(output) => (output, None),
+        Err(error) => (journal::Output::Plain, Some(error)),
+    };
     let filter = EnvFilter::builder()
         .with_default_directive(LevelFilter::INFO.into())
         .from_env_lossy();
     tracing_subscriber::fmt()
         .with_env_filter(filter)
-        .with_writer(std::io::stderr)
+        .with_writer(output)
         .with_ansi(std::io::stderr().is_terminal())
         .init();
+    if let Some(error) = stream_error {
+        tracing::warn!(
+            error = &error as &dyn std::error::Error,
+            "Could not identify the journald stderr stream"
+        );
+    }
 }
 
 /// QtMsgType values are mapped explicitly by the C++ bridge, not cast from its enum.

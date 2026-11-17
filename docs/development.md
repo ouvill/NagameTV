@@ -457,6 +457,15 @@ CXX-Qtが生成する`qml_modules`の場所はCargoから取得します。GStre
 
 通常ログは標準エラーへ出力し、既定は`info`以上です。
 `RUST_LOG=debug`で詳細ログ、`RUST_LOG=info,qt=debug`でQt/QMLのdebugログも表示できます。
+
+systemdで標準エラーをジャーナルに接続する場合、優先度を有効にするには
+`StandardError=journal`と既定の`SyslogLevelPrefix=yes`を使います。
+たとえば、`journalctl -u nagametv.service -p warning`で警告以上を表示できます。
+アプリは`JOURNAL_STREAM`に記録されたデバイス番号とinodeを標準エラーと照合し、
+一致するときに優先度を付けます。tracingのフィールドは本文に残ります。
+既存の標準エラーストリームを使うため、アプリにジャーナルの送信用ソケットへのアクセスを追加する必要がありません。
+[systemd.exec のマニュアル](https://www.freedesktop.org/software/systemd/man/latest/systemd.exec.html)
+
 `METRICS`は字幕・EPGの保持件数などを10秒ごとに出すdebugログです。
 RSSなどの資源使用量は診断JSONLに記録します。[メモリー分析と記録の切り替え](memory-profiling.md)
 
