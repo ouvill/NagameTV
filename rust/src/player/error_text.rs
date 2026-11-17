@@ -13,6 +13,8 @@ impl PresentError for crate::playback::Error {
     fn present(&self) -> Text {
         use crate::playback::{AudioSinkError, ClockError, Error::*, deinterlace};
         match self {
+            // Shown only if reopening without the decoder was not possible.
+            HardwareDecoderRejected { source, .. } => source.present(),
             Cleanup { primary, cleanup } => Text::message(
                 "%1 (stopping also failed: %2)",
                 [primary.present(), cleanup.present()],

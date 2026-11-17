@@ -45,6 +45,13 @@ impl Mode {
             _ => Err(Error::Invalid(value.to_owned())),
         }
     }
+    /// CPU modes keep GStreamer's automatic decoder selection.
+    pub fn automatic_decoders(self) -> bool {
+        match self {
+            Self::Yadif | Self::GreedyL | Self::Linear | Self::Off => true,
+            Self::NvidiaGl | Self::VaApi => false,
+        }
+    }
     pub fn label(self) -> &'static str {
         match self {
             Self::Yadif => "YADIF (auto / all fields)",
