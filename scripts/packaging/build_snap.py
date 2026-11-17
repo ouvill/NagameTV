@@ -22,7 +22,7 @@ def build(project: Path, *, destructive_mode: bool) -> Path:
     snapcraft = shutil.which("snapcraft") or "/snap/bin/snapcraft"
     mode = "--destructive-mode" if destructive_mode else "--use-lxd"
 
-    with tempfile.TemporaryDirectory(prefix="nagametv-snap-") as temporary:
+    with tempfile.TemporaryDirectory(prefix=".packing-", dir=output) as temporary:
         subprocess.run(
             [snapcraft, "pack", mode, "--build-for", architecture, "--output", temporary],
             cwd=project,
