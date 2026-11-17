@@ -1,20 +1,24 @@
 # Ubuntu debパッケージ
 
-Linux amd64向けにUbuntu 24.04用と26.04用を作る。
-GitHub Actionsでは両方を生成し、AppImageやFlatpakとともに
-`main`の最新Pre-releaseまたはバージョンタグのリリース下書きへ添付する。
+Ubuntu 24.04用はamd64、26.04用はamd64・arm64をビルド対象とする。
+GitHub Actionsで生成し、AppImageやFlatpakとともに
+バージョンタグのリリース下書きへ添付する。
 [CIとリリース](ci-release.md)を参照。
 
 | 対象 | Qt／GStreamer | 配置 |
 | --- | --- | --- |
-| Ubuntu 24.04 | AppImageと同じQt 6.8.3・GStreamer・QML・プラグインを同梱 | `/opt/nagametv`、起動用の`/usr/bin/nagametv` |
-| Ubuntu 26.04 | Ubuntuのパッケージをaptで導入 | `/usr/bin/nagametv`、`/usr/share/` |
+| Ubuntu 24.04（amd64） | AppImageと同じQt 6.8.3・GStreamer・QML・プラグインを同梱 | `/opt/nagametv`、起動用の`/usr/bin/nagametv` |
+| Ubuntu 26.04（amd64・arm64） | Ubuntuのパッケージをaptで導入 | `/usr/bin/nagametv`、`/usr/share/` |
 
 24.04標準のQt 6.4ではアプリが必要とするQt 6.8以上を満たせないため、
 専用ディレクトリーに同梱する。OSのQtやGStreamerを置き換えない。
 同梱ライブラリーの更新はNagameTVの再ビルド・更新で行う。
 26.04用はOSのライブラリー更新を利用する。
 Ubuntu公式リポジトリーへは収録しない。`apt upgrade`で更新できる[aptリポジトリー](apt-repository.md)は準備中。
+
+24.04用の[Qt 6.8.3公式ARM SDK](https://download.qt.io/online/qtsdkrepository/linux_arm64/desktop/qt6_683/qt6_683/Updates.xml)には
+必須のWebEngineがないため、24.04のARM環境では[Flatpak](flatpak.md)を使用する。
+arm64のGUI・再生は実機での確認が必要。
 
 ## インストール・更新・削除
 
@@ -24,8 +28,11 @@ Ubuntu公式リポジトリーへは収録しない。`apt upgrade`で更新で�
 # Ubuntu 24.04
 sudo apt install ./nagametv_0.1.0-1ubuntu24.04_amd64.deb
 
-# Ubuntu 26.04
+# Ubuntu 26.04（amd64）
 sudo apt install ./nagametv_0.1.0-1ubuntu26.04_amd64.deb
+
+# Ubuntu 26.04（arm64）
+sudo apt install ./nagametv_0.1.0-1ubuntu26.04_arm64.deb
 ```
 
 SHA-256は`sha256sum`の結果をリリースページの各ファイルに表示される値と比べて確認する。
@@ -55,7 +62,8 @@ debの導入・起動スクリプトは音声サーバーやデスクトップ�
 
 ## パッケージを作る
 
-Linux x86_64、Docker、Git、Python 3を用意して、リポジトリールートで実行する。
+Linux x86_64またはaarch64、Docker、Git、Python 3を用意して、リポジトリールートで実行する。
+ホストと同じCPU向けにネイティブビルドする。aarch64では26.04用のみ生成できる。
 Pythonは元の作業ツリーのGit情報を取得し、Docker内のビルドへ渡すために使う。
 ビルドに表示・GPU・音声機器は使わず、Dockerに機器やホストセッションを渡さない。
 
@@ -79,6 +87,9 @@ build/deb/ubuntu24.04/nagametv_0.1.0-1ubuntu24.04_amd64.deb
 build/deb/ubuntu24.04/nagametv_0.1.0-1ubuntu24.04_amd64.deb.sha256
 build/deb/ubuntu26.04/nagametv_0.1.0-1ubuntu26.04_amd64.deb
 build/deb/ubuntu26.04/nagametv_0.1.0-1ubuntu26.04_amd64.deb.sha256
+# aarch64でビルドした場合
+build/deb/ubuntu26.04/nagametv_0.1.0-1ubuntu26.04_arm64.deb
+build/deb/ubuntu26.04/nagametv_0.1.0-1ubuntu26.04_arm64.deb.sha256
 ```
 
 バージョンはCargo.tomlから取得し、Debianのrevisionと対象Ubuntuを付ける。
@@ -102,6 +113,7 @@ DEB_BUILD_DIR="$PWD/build" ./scripts/packaging/build-deb.sh 26.04 --native
 全ELFのglibc上限2.39を確認する。任意の過去の成果物が現在のソースと一致することまでは
 確認しないため、通常は省略し、CIでは同じジョブで生成したものだけを渡す。
 
+パッケージ内の全ELFが指定CPUの64bit・リトルエンディアン形式であることを確認する。
 共有ライブラリー依存は対象OS内で`dpkg-shlibdeps`から生成する。
 24.04では同梱するライブラリーだけを自己依存として除外し、外部依存の検査は省略しない。
 26.04のQML・画像・再生プラグインなど動的に読み込む依存は

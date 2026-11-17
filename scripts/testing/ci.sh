@@ -2,7 +2,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
-# Linux CI in packaging/appimage/Dockerfile's ci stage. These suites use only
+# Linux CI in the AppImage or deb Dockerfile's ci stage. These suites use only
 # CPU, QCoreApplication, in-memory images and local network/filesystem fixtures.
 # GUI suites must use the separately validated real-GPU test environment.
 export CARGO_TARGET_DIR=${CARGO_TARGET_DIR:-$PWD/build/ci-native/cargo}

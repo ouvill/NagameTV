@@ -97,6 +97,8 @@ Linux x86_64向けのAppImageとSHA-256を`build/appimage/`へ出力します。
 `./scripts/packaging/build-deb.sh 24.04`または`./scripts/packaging/build-deb.sh 26.04`を実行します。
 対象OSのDocker環境でビルドし、`build/deb/ubuntu24.04/`または`build/deb/ubuntu26.04/`に
 debとSHA-256を出力します。24.04用はQtを同梱し、26.04用はシステムのQtを利用します。
+24.04用はx86_64、26.04用はx86_64・aarch64でネイティブビルドします。
+ARM環境では[Flatpak](flatpak.md)もビルド対象です。
 [debの構成・検証手順](deb.md)を参照してください。
 
 ## ネイティブ版をビルドする
@@ -134,6 +136,7 @@ GUIテストは既存のPipeWire／pipewire-pulseaudio／WirePlumberと実GPUを
 
 - Rust / Cargo（Rust 1.98.1でビルド確認）
 - CMake 3.24以降、C/C++コンパイラー、pkg-config、libclang、Python 3.11以降（ビルド入力の検出用）
+- Linux aarch64ではLLD（Ubuntuでは`lld`）。CXX-QtのQtリンクに使用
 - Qt 6.8以降のQuick / Controls / Dialogs / Layouts / Shapes / EffectsとQtCore QMLモジュール、LinuxではQt DBus、SVG・JPEG・WebP画像プラグイン、翻訳用の`lrelease`
 - データ放送表示用のQt WebEngine Quick、`QtWebEngine`と`QtWebChannel` QMLモジュール（Ubuntuでは`qt6-webengine-dev`、`qml6-module-qtwebengine`、`qml6-module-qtwebchannel`）
 - GStreamer 1.24以降と開発ライブラリー（`gstreamer-mpegts-1.0`を含む）

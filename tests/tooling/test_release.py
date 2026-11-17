@@ -10,7 +10,7 @@ import subprocess
 import tempfile
 import unittest
 
-from scripts.packaging.metadata import (UbuntuRelease, appimage_filename, deb_filename, debian_version,
+from scripts.packaging.metadata import (Architecture, UbuntuRelease, appimage_filename, deb_filename, debian_version,
                                         release_assets)
 
 
@@ -224,6 +224,14 @@ if sys.argv[1] == 'api':
         subprocess.run(["dpkg", "--compare-versions",
                         debian_version(VERSION, UbuntuRelease.NOBLE), "lt",
                         debian_version(VERSION, UbuntuRelease.RESOLUTE)], check=True)
+
+    def test_arm_release_assets_are_required(self):
+        self.assertIn(f"nagametv-{VERSION}-aarch64.flatpak", release_assets(VERSION))
+        self.assertIn(f"nagametv_{VERSION}-1ubuntu26.04_arm64.deb", release_assets(VERSION))
+        self.assertEqual(deb_filename(VERSION, UbuntuRelease.RESOLUTE, Architecture.AARCH64),
+                         f"nagametv_{VERSION}-1ubuntu26.04_arm64.deb")
+        with self.assertRaisesRegex(ValueError, "use Flatpak"):
+            deb_filename(VERSION, UbuntuRelease.NOBLE, Architecture.AARCH64)
 
 
 if __name__ == "__main__":

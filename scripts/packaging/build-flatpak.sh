@@ -17,6 +17,10 @@ PYTHONPATH="$project_dir" python3 -m scripts.packaging.flatpak_cargo_sources --c
 mkdir -p "$output_dir"
 app_version=$(python3 -c 'import sys, tomllib; print(tomllib.load(open(sys.argv[1], "rb"))["package"]["version"])' "$project_dir/rust/Cargo.toml")
 architecture=$(flatpak --default-arch)
+case "$(uname -s)/$(uname -m)/$architecture" in
+  Linux/x86_64/x86_64|Linux/aarch64/aarch64) ;;
+  *) echo "Flatpak: only native Linux x86_64 and aarch64 builds are supported." >&2; exit 1 ;;
+esac
 bundle_name="nagametv-$app_version-$architecture.flatpak"
 build_manifest="$output_dir/build-manifest.json"
 PYTHONPATH="$project_dir" python3 -m scripts.build.source_info --flatpak-manifest "$manifest" --output "$build_manifest"

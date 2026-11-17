@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Linux amd64 only. Compilation, AppImage extraction and ELF inspection never
+# Native Linux amd64/arm64. Compilation, AppImage extraction and ELF inspection never
 # open a display, GPU or audio device; no host sessions are passed to Docker.
 project_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
 usage() {
@@ -9,6 +9,7 @@ usage() {
   echo "Default: build in Docker for the selected Ubuntu release."
   echo "--native: require that exact Ubuntu release and installed build dependencies."
   echo "--appimage: native 24.04 only; reuse a matching AppImage and its SHA-256."
+  echo "Architectures: 24.04 x86_64; 26.04 x86_64 and aarch64 (native builds only)."
   echo "Environment: DEB_BUILD_JOBS (default: 8), DEB_BUILD_DIR (native 26.04 only)"
 }
 fail() { echo "deb: $*" >&2; exit 1; }
@@ -26,7 +27,13 @@ while [[ $# -gt 0 ]]; do
     *) usage >&2; exit 2 ;;
   esac
 done
-[[ $(uname -s) == Linux && $(uname -m) == x86_64 ]] || fail "Only Linux x86_64 is supported."
+case "$(uname -s)/$(uname -m)" in
+  Linux/x86_64) architecture=x86_64 ;;
+  Linux/aarch64) architecture=aarch64 ;;
+  *) fail "Only native Linux x86_64 and aarch64 builds are supported." ;;
+esac
+[[ $ubuntu != 24.04 || $architecture == x86_64 ]] \
+  || fail "Ubuntu 24.04 ARM deb requires a bundled Qt WebEngine SDK; use the aarch64 Flatpak."
 build_jobs=${DEB_BUILD_JOBS:-8}
 [[ $build_jobs =~ ^[1-9][0-9]*$ ]] || fail "DEB_BUILD_JOBS must be a positive integer."
 [[ -z $appimage || ( $mode == native && $ubuntu == 24.04 ) ]] || fail "--appimage requires 24.04 --native."
@@ -44,7 +51,7 @@ if [[ $mode == container ]]; then
       ;;
     26.04)
       image=nagametv-deb-ubuntu26:local
-      docker build --tag "$image" "$project_dir/packaging/deb"
+      docker build --target distribution --tag "$image" "$project_dir/packaging/deb"
       options=(--env CARGO_HOME=/project/build/deb/ubuntu26.04/cargo-home)
       ;;
   esac
@@ -116,4 +123,5 @@ install -m644 "$project_dir/docs/deb.md" "$package_dir/usr/share/doc/nagametv/RE
 install -Dm644 "$project_dir/packaging/deb/nagametv-archive-keyring.gpg" \
   "$package_dir/usr/share/keyrings/nagametv-archive-keyring.gpg"
 desktop-file-validate "$package_dir/usr/share/applications/$app_id.desktop"
-PYTHONPATH="$project_dir" python3 -m scripts.packaging.package_deb "$ubuntu" "$package_dir" "$output_dir"
+PYTHONPATH="$project_dir" python3 -m scripts.packaging.package_deb "$ubuntu" "$package_dir" "$output_dir" \
+  --architecture "$architecture"

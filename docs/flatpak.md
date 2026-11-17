@@ -6,7 +6,9 @@ GitHub Actionsでの自動ビルドと配布は[CIとリリース](ci-release.md
 
 ## インストール
 
-Flatpakを導入したLinuxで、配布されたファイルを指定する。
+Flatpakを導入したLinuxで、CPUに合うファイルを指定する。
+x86_64では`-x86_64.flatpak`、arm64では`-aarch64.flatpak`を使う。
+ARM版の実機での表示・再生は未検証。
 
 ```sh
 flatpak install --user ./nagametv-0.1.0-x86_64.flatpak
@@ -44,6 +46,7 @@ flatpak uninstall --user --delete-data io.github.ouvill.nagametv
 
 ## パッケージを作る
 
+Linux x86_64・aarch64上で、ホストと同じCPU向けにビルドする。
 必要なツールはFlatpak、flatpak-builder、elfutils、Python 3.11以降と、
 ホスト側AppStream生成用のGdkPixbuf SVGローダー（Ubuntuでは`librsvg2-common`）。
 Rust、Qt、libclangなどのコンパイラー・SDKはFlatpak側で用意する。

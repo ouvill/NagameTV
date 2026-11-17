@@ -3,7 +3,35 @@
 
 import argparse
 from enum import Enum
+import platform
 import re
+
+
+class Architecture(str, Enum):
+    X86_64 = "x86_64"
+    AARCH64 = "aarch64"
+
+    @property
+    def debian(self) -> str:
+        match self:
+            case Architecture.X86_64:
+                return "amd64"
+            case Architecture.AARCH64:
+                return "arm64"
+
+    @property
+    def elf_machine(self) -> int:
+        match self:
+            case Architecture.X86_64:
+                return 62  # ELF EM_X86_64
+            case Architecture.AARCH64:
+                return 183  # ELF EM_AARCH64
+
+    @classmethod
+    def native(cls) -> "Architecture":
+        if platform.system() != "Linux":
+            raise ValueError("Only native Linux builds are supported")
+        return cls(platform.machine())
 
 
 class UbuntuRelease(str, Enum):
@@ -17,6 +45,15 @@ class UbuntuRelease(str, Enum):
                 return "noble"
             case UbuntuRelease.RESOLUTE:
                 return "resolute"
+
+
+def deb_architectures(ubuntu: UbuntuRelease) -> tuple[Architecture, ...]:
+    match ubuntu:
+        case UbuntuRelease.NOBLE:
+            # The bundled Qt 6.8.3 ARM SDK lacks the required WebEngine module.
+            return (Architecture.X86_64,)
+        case UbuntuRelease.RESOLUTE:
+            return (Architecture.X86_64, Architecture.AARCH64)
 
 
 def validate_version(version: str) -> str:
@@ -37,8 +74,11 @@ def debian_version(version: str, ubuntu: UbuntuRelease) -> str:
     return f"{upstream}{plus}{metadata}-1ubuntu{ubuntu.value}"
 
 
-def deb_filename(version: str, ubuntu: UbuntuRelease) -> str:
-    return f"nagametv_{debian_version(version, ubuntu)}_amd64.deb"
+def deb_filename(version: str, ubuntu: UbuntuRelease,
+                 architecture: Architecture = Architecture.X86_64) -> str:
+    if architecture not in deb_architectures(ubuntu):
+        raise ValueError(f"Ubuntu {ubuntu.value} deb does not support {architecture.value}; use Flatpak")
+    return f"nagametv_{debian_version(version, ubuntu)}_{architecture.debian}.deb"
 
 
 def appimage_filename(version: str) -> str:
@@ -48,8 +88,11 @@ def appimage_filename(version: str) -> str:
 
 def release_assets(version: str) -> list[str]:
     validate_version(version)
-    return [appimage_filename(version), f"nagametv-{version}-x86_64.flatpak"] + [
-        deb_filename(version, ubuntu) for ubuntu in UbuntuRelease
+    return [appimage_filename(version)] + [
+        f"nagametv-{version}-{architecture.value}.flatpak" for architecture in Architecture
+    ] + [
+        deb_filename(version, ubuntu, architecture)
+        for ubuntu in UbuntuRelease for architecture in deb_architectures(ubuntu)
     ]
 
 

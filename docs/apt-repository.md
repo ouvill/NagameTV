@@ -19,6 +19,7 @@ GitHub Releasesで提供する。
 | 索引 | GitHub Release `apt-noble`（24.04）・`apt-resolute`（26.04）に`Packages`・`Release`・`InRelease`だけを添付する |
 | debの取得先 | `Packages`の`Filename`は`v0.8.0/nagametv_0.8.0-1ubuntu24.04_amd64.deb`のように、各バージョンのリリースの添付ファイルを指す。debを重複してアップロードしない |
 | aptの設定 | flat形式。`URIs`はリリースのダウンロード起点、`Suites`は`apt-noble/` |
+| CPU | 24.04はamd64、26.04はamd64・arm64。同じ`Packages`へCPU別の項目を載せ、`Release`の`Architectures`にも列挙する |
 | 対象 | 公開済みの正式版のみ。下書き・rcなどのPre-releaseは載せない |
 | 署名 | 署名専用の副鍵でInReleaseに署名する。親鍵はオフラインで保管する |
 
@@ -40,7 +41,7 @@ GitHubへ書き込む前に、次の条件をすべて確認し、両方のUbunt
 
 - 指定したタグが公開済みの正式版リリースであること
 - ダウンロードしたdebが、GitHubに記録されたリリース添付ファイルのSHA-256と一致すること
-- debのパッケージ名・アーキテクチャー・バージョンが、対象のUbuntuとタグに合うこと
+- 対象Ubuntuの全CPU向けdebが揃い、パッケージ名・アーキテクチャー・バージョンがタグに合うこと
 - 公開中の版より古い版で上書きしないこと（同じ版の再実行は可）
 - 署名がリポジトリーの公開鍵[`nagametv-archive-keyring.gpg`](../packaging/deb/)で検証できること
 
@@ -138,7 +139,7 @@ Pre-releaseと`v`で始まらないタグは対象外。
 ## 利用者向けの導入手順
 
 有効化後に[debの導入手順](deb.md)へ移す。24.04では`Suites`を`apt-noble/`、
-26.04では`apt-resolute/`にする。
+26.04では`apt-resolute/`にする。ARMは26.04用のみを対象とする。
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/ouvill/NagameTV/main/packaging/deb/nagametv-archive-keyring.gpg \

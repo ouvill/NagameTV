@@ -15,7 +15,7 @@ from pathlib import Path
 import subprocess
 
 from scripts.packaging.apt_repository import VerifiedDeb, build, sha256, suite
-from scripts.packaging.metadata import UbuntuRelease, deb_filename, validate_version
+from scripts.packaging.metadata import UbuntuRelease, deb_architectures, deb_filename, validate_version
 
 INDEX_FILES = ("Packages", "Release", "InRelease")
 
@@ -54,11 +54,11 @@ def published_version(apt_release: GitHubRelease) -> str | None:
     if "Packages" not in apt_release.digests:
         return None
     packages = gh("release", "download", apt_release.tag, "--pattern", "Packages", "--output", "-")
-    versions = [line.removeprefix("Version:").strip() for line in packages.splitlines()
-                if line.startswith("Version:")]
+    versions = {line.removeprefix("Version:").strip() for line in packages.splitlines()
+                if line.startswith("Version:")}
     if len(versions) != 1:
-        raise PublishError(f"{apt_release.tag}: expected one package in Packages, found {len(versions)}")
-    return versions[0]
+        raise PublishError(f"{apt_release.tag}: expected one version in Packages, found {len(versions)}")
+    return versions.pop()
 
 
 def version_less_than(left: str, right: str) -> bool:
@@ -88,21 +88,24 @@ def prepare(tag: str, asset_dir: Path, work: Path, signing_key: str, keyring: Pa
     date = datetime.now(timezone.utc)
     prepared = []
     for ubuntu in UbuntuRelease:
-        name = deb_filename(version, ubuntu)
-        deb = VerifiedDeb.open(asset_dir / name, version, ubuntu)
-        # Sign exactly the bytes users download from the release.
-        if release.digests.get(name) != f"sha256:{sha256(deb.path)}":
-            raise PublishError(f"{name} does not match the digest of the {tag} release asset")
+        debs = []
+        for arch in deb_architectures(ubuntu):
+            name = deb_filename(version, ubuntu, arch)
+            deb = VerifiedDeb.open(asset_dir / name, version, ubuntu, arch)
+            # Sign exactly the bytes users download from the release.
+            if release.digests.get(name) != f"sha256:{sha256(deb.path)}":
+                raise PublishError(f"{name} does not match the digest of the {tag} release asset")
+            debs.append(deb)
         existing = known.get(suite(ubuntu))
         if existing is not None:
             if existing.draft or existing.prerelease:
                 raise PublishError(f"{existing.tag} must be a published release")
             current = published_version(existing)
-            if current is not None and version_less_than(deb.debian_version, current):
+            if current is not None and version_less_than(debs[0].debian_version, current):
                 raise PublishError(f"{existing.tag} already serves {current}; "
-                                   f"refusing to downgrade to {deb.debian_version}")
+                                   f"refusing to downgrade to {debs[0].debian_version}")
         directory = work / ubuntu.codename
-        build(deb, directory, signing_key, keyring, date)
+        build(debs, directory, signing_key, keyring, date)
         prepared.append(PreparedSuite(ubuntu, directory, existing))
     return prepared
 

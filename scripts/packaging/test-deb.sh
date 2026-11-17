@@ -26,7 +26,7 @@ apt-get update
 apt-get install --yes --no-install-recommends python3 desktop-file-utils
 version=$(python3 -c 'import tomllib; print(tomllib.load(open("/project/rust/Cargo.toml", "rb"))["package"]["version"])')
 bundle=$(PYTHONPATH=/project python3 -c \
-  'import sys; from scripts.packaging.metadata import UbuntuRelease, deb_filename; print(deb_filename(sys.argv[1], UbuntuRelease(sys.argv[2])))' \
+  'import sys; from scripts.packaging.metadata import Architecture, UbuntuRelease, deb_filename; print(deb_filename(sys.argv[1], UbuntuRelease(sys.argv[2]), Architecture.native()))' \
   "$version" "$UBUNTU_RELEASE")
 cd "/project/build/deb/ubuntu$UBUNTU_RELEASE"
 sha256sum --check "$bundle.sha256"

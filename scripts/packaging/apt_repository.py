@@ -22,10 +22,10 @@ from pathlib import Path
 import subprocess
 import tempfile
 
-from scripts.packaging.metadata import UbuntuRelease, deb_filename, debian_version
+from scripts.packaging.metadata import (Architecture, UbuntuRelease, deb_architectures,
+                                        deb_filename, debian_version)
 
 PACKAGE = "nagametv"
-ARCHITECTURE = "amd64"
 ORIGIN = "NagameTV"
 CHUNK_BYTES = 1 << 20
 
@@ -46,10 +46,12 @@ class VerifiedDeb:
     control: str
     version: str
     ubuntu: UbuntuRelease
+    architecture: Architecture
 
     @classmethod
-    def open(cls, path: Path, version: str, ubuntu: UbuntuRelease) -> "VerifiedDeb":
-        expected_name = deb_filename(version, ubuntu)
+    def open(cls, path: Path, version: str, ubuntu: UbuntuRelease,
+             architecture: Architecture = Architecture.X86_64) -> "VerifiedDeb":
+        expected_name = deb_filename(version, ubuntu, architecture)
         if path.name != expected_name:
             raise ValueError(f"Expected {expected_name}, got {path.name}")
         control = subprocess.run(["dpkg-deb", "--field", str(path)], check=True,
@@ -59,7 +61,7 @@ class VerifiedDeb:
             if line and not line[0].isspace():
                 name, _, value = line.partition(":")
                 fields[name] = value.strip()
-        expected = {"Package": PACKAGE, "Architecture": ARCHITECTURE,
+        expected = {"Package": PACKAGE, "Architecture": architecture.debian,
                     "Version": debian_version(version, ubuntu)}
         for name, value in expected.items():
             if fields.get(name) != value:
@@ -67,7 +69,7 @@ class VerifiedDeb:
         for name in ("Filename", "Size", "SHA256", "MD5sum"):
             if name in fields:
                 raise ValueError(f"{path.name}: control must not define index field {name}")
-        return cls(path, control, version, ubuntu)
+        return cls(path, control, version, ubuntu, architecture)
 
     @property
     def debian_version(self) -> str:
@@ -88,18 +90,25 @@ def release_text(packages: Path, ubuntu: UbuntuRelease, date: datetime) -> str:
     # `apt update` the same way an expired key would. Suite must equal the
     # flat-repository path users configure, or apt warns about a conflict.
     return (f"Origin: {ORIGIN}\nLabel: {ORIGIN}\nSuite: {suite(ubuntu)}\n"
-            f"Architectures: {ARCHITECTURE}\n"
+            f"Architectures: {' '.join(arch.debian for arch in deb_architectures(ubuntu))}\n"
             f"Date: {email.utils.format_datetime(date.astimezone(timezone.utc), usegmt=True)}\n"
             f"Description: NagameTV for Ubuntu {ubuntu.value}\n"
             f"SHA256:\n {sha256(packages)} {packages.stat().st_size} {packages.name}\n")
 
 
-def build(deb: VerifiedDeb, output: Path, signing_key: str, keyring: Path, date: datetime) -> None:
+def build(debs: list[VerifiedDeb], output: Path, signing_key: str, keyring: Path, date: datetime) -> None:
+    if not debs:
+        raise ValueError("No debs supplied")
+    first = debs[0]
+    expected = deb_architectures(first.ubuntu)
+    if (len(debs) != len(expected) or {deb.architecture for deb in debs} != set(expected)
+            or any((deb.version, deb.ubuntu) != (first.version, first.ubuntu) for deb in debs)):
+        raise ValueError("Indexes require one matching deb for each supported architecture")
     output.mkdir(parents=True, exist_ok=False)
     packages = output / "Packages"
-    packages.write_text(deb.stanza())
+    packages.write_text("\n".join(deb.stanza() for deb in debs))
     release = output / "Release"
-    release.write_text(release_text(packages, deb.ubuntu, date))
+    release.write_text(release_text(packages, first.ubuntu, date))
     in_release = output / "InRelease"
     # '!' pins the exact (sub)key instead of letting gpg pick a newer one.
     subprocess.run(["gpg", "--batch", "--yes", "--no-tty", "--local-user", f"{signing_key}!",
@@ -126,10 +135,12 @@ def main():
     parser.add_argument("--keyring", type=Path, required=True, help="public keyring shipped to users")
     args = parser.parse_args()
     try:
-        deb = VerifiedDeb.open(args.asset_dir / deb_filename(args.version, args.ubuntu), args.version, args.ubuntu)
+        debs = [VerifiedDeb.open(args.asset_dir / deb_filename(args.version, args.ubuntu, arch),
+                                 args.version, args.ubuntu, arch)
+                for arch in deb_architectures(args.ubuntu)]
         epoch = os.environ.get("SOURCE_DATE_EPOCH")
         date = datetime.fromtimestamp(int(epoch), timezone.utc) if epoch else datetime.now(timezone.utc)
-        build(deb, args.output, args.signing_key, args.keyring, date)
+        build(debs, args.output, args.signing_key, args.keyring, date)
     except (ValueError, OSError, subprocess.CalledProcessError) as error:
         stderr = getattr(error, "stderr", None)
         detail = f"\n{stderr.decode(errors='replace') if isinstance(stderr, bytes) else stderr}" if stderr else ""
