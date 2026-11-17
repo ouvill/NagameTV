@@ -1,8 +1,9 @@
 //! Application logging. Initialize once, before any worker threads are started.
 mod journal;
+mod recent;
 
 use std::io::IsTerminal;
-use tracing_subscriber::{EnvFilter, filter::LevelFilter};
+use tracing_subscriber::{EnvFilter, filter::LevelFilter, prelude::*};
 
 pub fn init() {
     let (output, stream_error) = match journal::Output::detect() {
@@ -12,10 +13,17 @@ pub fn init() {
     let filter = EnvFilter::builder()
         .with_default_directive(LevelFilter::INFO.into())
         .from_env_lossy();
-    tracing_subscriber::fmt()
-        .with_env_filter(filter)
+    let terminal = tracing_subscriber::fmt::layer()
         .with_writer(output)
-        .with_ansi(std::io::stderr().is_terminal())
+        .with_ansi(std::io::stderr().is_terminal());
+    let recent = tracing_subscriber::fmt::layer()
+        .fmt_fields(recent::Fields::default())
+        .with_writer(&recent::RECENT)
+        .with_ansi(false);
+    tracing_subscriber::registry()
+        .with(filter)
+        .with(terminal)
+        .with(recent)
         .init();
     if let Some(error) = stream_error {
         tracing::warn!(
@@ -23,6 +31,10 @@ pub fn init() {
             "Could not identify the journald stderr stream"
         );
     }
+}
+
+pub fn recent_text() -> String {
+    recent::RECENT.text()
 }
 
 /// QtMsgType values are mapped explicitly by the C++ bridge, not cast from its enum.

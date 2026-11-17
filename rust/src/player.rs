@@ -738,6 +738,8 @@ pub mod ffi {
         #[qinvokable]
         fn record_ui_state(self: Pin<&mut Player>, guide: bool, channels: bool, live_comments: i32);
         #[qinvokable]
+        fn recent_log(self: &Player) -> QString;
+        #[qinvokable]
         fn open_log_folder(self: Pin<&mut Player>) -> bool;
         #[qinvokable]
         fn save_settings(self: Pin<&mut Player>);

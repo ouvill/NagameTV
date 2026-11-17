@@ -457,6 +457,9 @@ CXX-Qtが生成する`qml_modules`の場所はCargoから取得します。GStre
 
 通常ログは標準エラーへ出力し、既定は`info`以上です。
 `RUST_LOG=debug`で詳細ログ、`RUST_LOG=info,qt=debug`でQt/QMLのdebugログも表示できます。
+「設定 → システム → 最近のログ」で、現在のプロセスの直近300件を確認できます。
+Qtのメッセージも含まれます。表示を開いた時点か「ログを更新」を押した時点の内容を
+上下キーでたどれます。1件の表示は最大2 KiBです。
 
 systemdで標準エラーをジャーナルに接続する場合、優先度を有効にするには
 `StandardError=journal`と既定の`SyslogLevelPrefix=yes`を使います。

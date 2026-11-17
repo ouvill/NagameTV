@@ -5,6 +5,10 @@ use cxx_qt_lib::QString;
 use std::pin::Pin;
 
 impl Player {
+    pub fn recent_log(&self) -> QString {
+        QString::from(crate::logging::recent_text().as_str())
+    }
+
     pub(super) fn clear_playback_failure(mut self: Pin<&mut Self>) {
         self.as_mut().set_playback_error(Text::default());
         self.as_mut().set_playback_message(QString::default());
