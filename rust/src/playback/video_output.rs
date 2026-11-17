@@ -135,7 +135,9 @@ impl Validated {
                     })?;
                 Monitor::bypass_progressive(&pad, transform)
             }
-            Mode::Yadif | Mode::Linear | Mode::Off | Mode::VaApi => Monitor::observe(&pad),
+            Mode::Yadif | Mode::GreedyL | Mode::Linear | Mode::Off | Mode::VaApi => {
+                Monitor::observe(&pad)
+            }
         };
         let streams = Streams {
             input,
@@ -156,7 +158,7 @@ impl Validated {
             // Formats already matching the sink can pass through unchanged.
             // videoconvert's ANY feature template still passes GPU memory
             // through in off mode; CPU I420 needs conversion for NV12 output.
-            Mode::Yadif | Mode::Linear | Mode::Off => {
+            Mode::Yadif | Mode::GreedyL | Mode::Linear | Mode::Off => {
                 let mut cpu = vec![
                     // Negotiate unsupported input formats without converting I420
                     // prematurely: deinterlace itself cannot process every format.
@@ -237,7 +239,7 @@ fn select_format(mode: Mode, requested: Option<Format>, caps: &gst::CapsRef) -> 
     let format = match (mode, requested) {
         (Mode::NvidiaGl, None) => Format::Rgba,
         (_, Some(format)) => format,
-        (Mode::Yadif | Mode::Linear | Mode::Off | Mode::VaApi, None) => {
+        (Mode::Yadif | Mode::GreedyL | Mode::Linear | Mode::Off | Mode::VaApi, None) => {
             if caps.can_intersect(&Format::Nv12.caps()) {
                 if caps.can_intersect(&Format::Rgba.caps()) {
                     // NV12 can pass through, but P010 GL textures cannot be
@@ -267,7 +269,7 @@ fn select_format(mode: Mode, requested: Option<Format>, caps: &gst::CapsRef) -> 
 /// hardware downloads/software decoding. CPU modes preserve user GST ranks.
 fn configure_decoders(mode: Mode) -> Result<()> {
     let plugin = match mode {
-        Mode::Yadif | Mode::Linear | Mode::Off => return Ok(()),
+        Mode::Yadif | Mode::GreedyL | Mode::Linear | Mode::Off => return Ok(()),
         Mode::NvidiaGl => "nvcodec",
         Mode::VaApi => "va",
     };

@@ -1,16 +1,29 @@
 # GPU映像処理とNV12表示
 
-`NAGAMETV_DEINTERLACE`で起動時に経路を選択する。既定の`yadif`は維持する。
+起動時に経路を選択する。CPUの方式（`greedyl`・`yadif`・`linear`・`off`）は
+「設定 → 表示 → インターレース解除」で保存し、次回起動時に反映する。既定は`greedyl`。
+`NAGAMETV_DEINTERLACE`を指定すると、その起動に限り保存した方式より優先する。
+設定画面はその間、保存した方式を使わないことを表示する。
+GPUの方式はQtの表示方式を起動前に決める必要があるため、環境変数だけで指定する。
 GPUモードは明示指定とし、必要なデコーダー・処理方式・メモリー形式が使えない場合は
 エラーにする。途中でCPUデコード／デインターレースに切り替えない。
 
 | 指定 | デコード・処理・表示 | 1080i入力の出力レート |
 |---|---|---|
 | `yadif` | 自動選択デコーダー → CPU YADIF → GL upload → NV12表示 | フィールドごと（29.97 → 59.94 fps） |
+| `greedyl` | 自動選択デコーダー → CPU GreedyL（動き適応） → GL upload → NV12表示 | フィールドごと |
 | `linear` | 自動選択デコーダー → CPU linear → GL upload → NV12表示 | フィールドごと |
 | `off` | 自動選択デコーダー → GL import/upload → NV12表示 | 入力と同じ |
 | `gl` | NVIDIA NVDEC → GLMemory NV12 → GPUでRGBA変換 → OpenGL vfir → RGBA表示（NV12も明示指定可） | 入力と同じ（29.97 fps） |
 | `va`（Linux/Wayland） | VAデコーダー → VAMemory NV12 → vadeinterlace adaptive → vapostproc → DMABuf → GL import → NV12表示 | フィールドごと |
+
+`greedyl`を既定にするのは、YADIFが間に合わないCPUがあるため。Raspberry Pi 4（Ubuntu 26.04、GStreamer 1.28.2）で
+地デジ1440×1080i MPEG-2の20秒をデコードからNV12変換まで表示なしで処理した計測
+（2026-11-18）では、実時間比でYADIF 0.33倍、GreedyL 1.44倍、linear 1.48倍、
+デインターレースなし2.95倍だった。GreedyLは静止部分の解像感を保つため、
+静止したテロップの輪郭がlinearより滑らかになる。
+同じ機器のV3Dで`gldeinterlace`を通した場合はvfirが1.41倍、greedyhが0.82倍（29.97 fps出力）で、
+CPU処理より速くならなかった。
 
 `gl`はNVIDIAのNVDECを利用する経路。既存の`gldeinterlace`はRGBA専用で、
 フィールド倍速出力に対応しないため、YADIFと同等品質・同等の動きの滑らかさではない。

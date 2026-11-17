@@ -1,7 +1,9 @@
 //! Bounded, compatible preference storage. IO occurs at startup and explicit save.
 mod comment_cache;
 mod comment_style;
+mod deinterlace;
 pub use comment_cache::CommentCacheLimit;
+pub use deinterlace::Deinterlace;
 mod language;
 mod live_buffer;
 pub use live_buffer::LiveBuffer;
@@ -147,6 +149,7 @@ pub struct Loaded(Session);
 pub enum Change {
     WindowSize(WindowSize),
     WindowDecoration(WindowDecoration),
+    Deinterlace(Deinterlace),
     Language(Language),
     Service(String),
     Autoplay(bool),
@@ -235,6 +238,7 @@ impl Session {
         match change {
             Change::WindowSize(size) => preferences.window_size = Some(size),
             Change::WindowDecoration(value) => preferences.window_decoration = value,
+            Change::Deinterlace(value) => preferences.deinterlace = value,
             Change::Language(language) => preferences.language = language,
             Change::Service(service) => preferences.service_id = service,
             Change::Autoplay(enabled) => preferences.autoplay = enabled,

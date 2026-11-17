@@ -52,6 +52,7 @@ pub struct Preferences {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub window_size: Option<super::WindowSize>,
     pub window_decoration: super::WindowDecoration,
+    pub deinterlace: super::Deinterlace,
     pub language: Language,
     pub server: String,
     pub epgstation_server: String,
@@ -100,6 +101,7 @@ impl Default for Preferences {
         Self {
             window_size: None,
             window_decoration: Default::default(),
+            deinterlace: Default::default(),
             language: Language::default(),
             server: String::new(),
             epgstation_server: String::new(),

@@ -658,7 +658,8 @@ fn window(
     check: WindowCheck,
 ) -> TestResult {
     let load_started = Instant::now();
-    let _preloaded = playback::preload()?;
+    let mode = playback::deinterlace::Mode::for_launch(preferences.deinterlace)?;
+    let _preloaded = playback::preload(mode)?;
     let mut engine = QQmlApplicationEngine::new();
     assert!(crate::qt::ffi::initialize_ui_language(
         engine.pin_mut(),
@@ -720,7 +721,7 @@ fn window(
             }
         }
         WindowCheck::VideoProcessing => {
-            let result = super::video_processing::run(app, &mut engine);
+            let result = super::video_processing::run(app, &mut engine, mode);
             evaluate(&mut engine, "player.stop(); root.close(); true")?;
             return result;
         }

@@ -204,6 +204,34 @@ impl ffi::Player {
         true
     }
 
+    pub fn deinterlace(&self) -> QString {
+        QString::from(self.rust().preferences.preferences().deinterlace.code())
+    }
+
+    pub fn deinterlace_restart_pending(&self) -> bool {
+        self.rust().preferences.preferences().deinterlace != self.rust().launched_deinterlace
+    }
+
+    pub fn deinterlace_overridden(&self) -> bool {
+        self.rust().deinterlace_overridden
+    }
+
+    pub fn configure_deinterlace(mut self: Pin<&mut Self>, method: QString) -> bool {
+        let Some(method) = crate::settings::Deinterlace::parse(&method.to_string()) else {
+            return false;
+        };
+        if method != self.rust().preferences.preferences().deinterlace {
+            self.as_mut()
+                .rust_mut()
+                .preferences
+                .change(crate::settings::Change::Deinterlace(method));
+            self.as_mut().deinterlace_changed();
+            self.as_mut().deinterlace_restart_pending_changed();
+        }
+        self.save_settings();
+        true
+    }
+
     pub fn save_settings(mut self: Pin<&mut Self>) {
         let result = self.as_mut().rust_mut().preferences.flush();
         match result {

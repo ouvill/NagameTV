@@ -57,6 +57,15 @@ Item {
                     window_decoration = value;
                     return true;
                 }
+                property string deinterlace: "greedyl"
+                property string launched_deinterlace: "greedyl"
+                property bool deinterlace_overridden: false
+                readonly property bool deinterlace_restart_pending: deinterlace !== launched_deinterlace
+                function configure_deinterlace(value) {
+                    if (!["yadif", "greedyl", "linear", "off"].includes(value)) return false;
+                    deinterlace = value;
+                    return true;
+                }
                 property string live_buffer_options: JSON.stringify({milliseconds:250, min_ms:1, max_ms:1000, default_ms:250})
                 function configure_live_buffer(value) {
                     const options = JSON.parse(live_buffer_options);
@@ -277,6 +286,7 @@ Item {
                 backend.epg_enabled = true;
                 backend.autoplay = false; backend.sleep_inhibit_enabled = true; backend.sleep_inhibit_state = "idle"; backend.sleep_inhibit_error = "";
                 backend.window_decoration = "custom";
+                backend.deinterlace = "greedyl"; backend.deinterlace_overridden = false;
                 backend.configure_live_buffer(250);
                 backend.configure_timeshift_options("pause_memory", 256, 1024, 60);
                 backend.comment_display = "scroll"; backend.comment_placement = "sequential";
@@ -562,6 +572,7 @@ Item {
                 keyClick(Qt.Key_Back); tryCompare(language.popup, "visible", false);
                 verify(panel.opened); expectFocus("languageSetting");
                 keyClick(Qt.Key_Down); expectFocus("windowDecorationSetting");
+                keyClick(Qt.Key_Down); expectFocus("deinterlaceSetting");
                 keyClick(Qt.Key_Down); expectFocus("chooseScreenshotDirectory");
                 keyClick(Qt.Key_Right); expectFocus("openScreenshotDirectory");
                 keyClick(Qt.Key_Left); expectFocus("chooseScreenshotDirectory");
@@ -1365,6 +1376,29 @@ Item {
                 backend.window_decoration = "custom";
                 compare(choice.currentIndex, 0);
                 compare(restart.visible, false);
+            }
+            function test_deinterlace_choice_is_saved_for_the_next_launch() {
+                selectPage(SettingsPanel.Display);
+                const choice = findChild(panel.contentItem, "deinterlaceSetting");
+                const restart = findChild(panel.contentItem, "deinterlaceRestart");
+                const overridden = findChild(panel.contentItem, "deinterlaceOverridden");
+                compare(choice.currentIndex, 0);
+                compare(restart.visible, false);
+                compare(overridden.visible, false);
+                choice.forceActiveFocus();
+                keyClick(Qt.Key_Space);
+                tryCompare(choice.popup, "opened", true);
+                keyClick(Qt.Key_Down);
+                keyClick(Qt.Key_Return);
+                tryCompare(choice.popup, "visible", false);
+                compare(backend.deinterlace, "yadif");
+                compare(choice.currentIndex, 1);
+                compare(restart.visible, true);
+                backend.deinterlace_overridden = true;
+                compare(restart.visible, false);
+                compare(overridden.visible, true);
+                backend.deinterlace = "greedyl";
+                compare(choice.currentIndex, 0);
             }
             function test_error_details_are_available_without_overwhelming_the_message() {
                 backend.settings_error = "Cannot read <settings>: " + "technical details ".repeat(80);

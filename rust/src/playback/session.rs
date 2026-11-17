@@ -854,7 +854,7 @@ impl Drop for Session {
 pub(super) fn check_stop_ownership() {
     // Install a real subtitle generation while the graph is still in NULL,
     // as production does before PLAYING. No stream or audio device is opened.
-    let playback = Playback::new().expect("native playback");
+    let playback = Playback::new(super::deinterlace::Mode::default()).expect("native playback");
     let subtitles = subtitles::Session::start(
         playback.element(),
         Some(BroadcastService {

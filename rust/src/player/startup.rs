@@ -175,6 +175,8 @@ impl Default for PlayerRust {
             recording_loader: Default::default(),
             file_error: Text::default(),
             launched_window_decoration: preferences.preferences().window_decoration,
+            launched_deinterlace: preferences.preferences().deinterlace,
+            deinterlace_overridden: std::env::var_os("NAGAMETV_DEINTERLACE").is_some(),
             subtitles_enabled: plan.subtitles(),
             epg_enabled: plan.epg(),
             comments_enabled: plan.comments(preferences.preferences().comments_enabled),

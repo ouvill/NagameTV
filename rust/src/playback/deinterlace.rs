@@ -3,8 +3,11 @@ use gstreamer::{self as gst, prelude::*};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Mode {
-    #[default]
     Yadif,
+    /// Motion adaptive at linear's CPU cost. On a Raspberry Pi 4, 1080i
+    /// YADIF runs at 0.33x real time; this keeps field rate at 1.4x.
+    #[default]
+    GreedyL,
     Linear,
     Off,
     /// NVDEC GL textures followed by the single-rate OpenGL filter.
@@ -14,22 +17,27 @@ pub enum Mode {
 }
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("Invalid NAGAMETV_DEINTERLACE={0:?}; expected yadif, linear, off, gl or va")]
+    #[error("Invalid NAGAMETV_DEINTERLACE={0:?}; expected yadif, greedyl, linear, off, gl or va")]
     Invalid(String),
     #[error("NAGAMETV_DEINTERLACE is not valid Unicode")]
     NonUnicode,
 }
 impl Mode {
-    pub fn from_environment() -> Result<Self, Error> {
+    /// An explicit environment value overrides the saved method for this launch.
+    pub fn for_launch(saved: crate::settings::Deinterlace) -> Result<Self, Error> {
+        Ok(Self::from_environment()?.unwrap_or(saved.into()))
+    }
+    pub fn from_environment() -> Result<Option<Self>, Error> {
         match std::env::var("NAGAMETV_DEINTERLACE") {
-            Ok(value) => Self::parse(&value),
-            Err(std::env::VarError::NotPresent) => Ok(Self::default()),
+            Ok(value) => Self::parse(&value).map(Some),
+            Err(std::env::VarError::NotPresent) => Ok(None),
             Err(std::env::VarError::NotUnicode(_)) => Err(Error::NonUnicode),
         }
     }
     pub fn parse(value: &str) -> Result<Self, Error> {
         match value.trim().to_ascii_lowercase().as_str() {
             "yadif" | "quality" => Ok(Self::Yadif),
+            "greedyl" => Ok(Self::GreedyL),
             "linear" | "balanced" => Ok(Self::Linear),
             "off" | "disabled" => Ok(Self::Off),
             "gl" => Ok(Self::NvidiaGl),
@@ -40,6 +48,7 @@ impl Mode {
     pub fn label(self) -> &'static str {
         match self {
             Self::Yadif => "YADIF (auto / all fields)",
+            Self::GreedyL => "GreedyL (auto / all fields)",
             Self::Linear => "Linear (auto / all fields)",
             Self::Off => "Off",
             Self::NvidiaGl => "NVDEC + OpenGL vfir (single rate)",
@@ -50,6 +59,7 @@ impl Mode {
         let method = match self {
             Self::Off => return gst::ElementFactory::make("identity").build(),
             Self::Yadif => "yadif",
+            Self::GreedyL => "greedyl",
             Self::Linear => "linear",
             Self::NvidiaGl => {
                 let element = gst::ElementFactory::make("gldeinterlace").build()?;
@@ -75,6 +85,18 @@ impl Mode {
         element.set_property_from_str("mode", "auto");
         element.set_property_from_str("fields", "all");
         Ok(element)
+    }
+}
+
+impl From<crate::settings::Deinterlace> for Mode {
+    fn from(saved: crate::settings::Deinterlace) -> Self {
+        use crate::settings::Deinterlace;
+        match saved {
+            Deinterlace::Yadif => Self::Yadif,
+            Deinterlace::GreedyL => Self::GreedyL,
+            Deinterlace::Linear => Self::Linear,
+            Deinterlace::Off => Self::Off,
+        }
     }
 }
 
@@ -134,6 +156,7 @@ mod tests {
         for (input, expected, factory) in [
             (" YADIF ", Mode::Yadif, "deinterlace"),
             ("quality", Mode::Yadif, "deinterlace"),
+            ("GreedyL", Mode::GreedyL, "deinterlace"),
             ("balanced", Mode::Linear, "deinterlace"),
             ("linear", Mode::Linear, "deinterlace"),
             ("disabled", Mode::Off, "identity"),
