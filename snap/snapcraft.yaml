@@ -30,6 +30,8 @@ layout:
     bind: $SNAP/usr/share/fontconfig
   /usr/share/fonts:
     bind: $SNAP/usr/share/fonts
+  /usr/share/X11/locale:
+    bind: $SNAP/usr/share/nagametv/x11-locale
   /usr/share/alsa:
     bind: $SNAP/usr/share/alsa
 
@@ -128,6 +130,7 @@ parts:
       - gstreamer1.0-qt6
       - libass9
       - libqt6webenginecore6-bin
+      - libx11-data
       - libsoup-3.0-0
       - qml6-module-qtcore
       - qml6-module-qtqml
@@ -161,6 +164,10 @@ parts:
         -DCMAKE_INSTALL_PREFIX=/usr -DNAGAMETV_DISTRIBUTION=ON
       rustup run 1.98.1 cmake --build build/snap-release
       DESTDIR="$CRAFT_PART_INSTALL" cmake --install build/snap-release
+      # Compose files include absolute paths. Keep a copy outside the GPU cleanup's paths.
+      locale_dir="$CRAFT_PART_INSTALL/usr/share/nagametv/x11-locale"
+      install -d "$locale_dir"
+      cp -a "$CRAFT_PART_INSTALL/usr/share/X11/locale/." "$locale_dir/"
       install -m755 snap/local/launch "$CRAFT_PART_INSTALL/usr/bin/nagametv-snap-launch"
       sed -i 's|^Icon=.*|Icon=${SNAP}/usr/share/icons/hicolor/scalable/apps/io.github.ouvill.nagametv.svg|' \
         "$CRAFT_PART_INSTALL/usr/share/applications/io.github.ouvill.nagametv.desktop"
@@ -190,7 +197,9 @@ parts:
         "$lib/gstreamer1.0/gstreamer-1.0/gst-plugin-scanner" \
         "$CRAFT_PRIME/usr/lib/qt6/libexec/QtWebEngineProcess" \
         "$CRAFT_PRIME/usr/share/qt6/resources/qtwebengine_resources.pak" \
-        "$CRAFT_PRIME/etc/fonts/fonts.conf"
+        "$CRAFT_PRIME/etc/fonts/fonts.conf" \
+        "$CRAFT_PRIME/usr/share/nagametv/x11-locale/en_US.UTF-8/Compose" \
+        "$CRAFT_PRIME/usr/share/nagametv/x11-locale/ja_JP.UTF-8/Compose"
       do
         if [ ! -f "$required" ]; then
           echo "Missing snap runtime file: $required" >&2
