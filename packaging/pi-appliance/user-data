@@ -18,7 +18,9 @@ users:
     gecos: NagameTV kiosk
     shell: /bin/bash
     lock_passwd: true
-    groups: [video, render]
+    # WirePlumber can start before logind grants the seat ACLs to the kiosk
+    # session, and a restarting kiosk briefly has no active session.
+    groups: [video, render, audio]
 
 write_files:
   - path: /etc/ssh/sshd_config.d/00-nagametv-appliance.conf

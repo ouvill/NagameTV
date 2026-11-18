@@ -30,6 +30,8 @@ class PiApplianceTests(unittest.TestCase):
         self.assertTrue(admin["lock_passwd"])
         self.assertTrue(kiosk["lock_passwd"])
         self.assertIn("video", kiosk["groups"])
+        # WirePlumber starts before the kiosk session gets the seat ACLs.
+        self.assertIn("audio", kiosk["groups"])
         self.assertNotIn("sudo", kiosk)
         files = {item["path"]: item["content"] for item in seed["write_files"]}
         self.assertIn("AuthenticationMethods publickey\n", files["/etc/ssh/sshd_config.d/00-nagametv-appliance.conf"])

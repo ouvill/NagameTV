@@ -84,7 +84,9 @@ sudo journalctl -b -u cloud-final.service -u nagametv-kiosk.service
 管理アカウントは `tvadmin` です。公開鍵で接続し、`sudo` で保守できます。labwcとながめTVは
 管理権限のない `nagametv` ユーザーで動きます。systemdがtty1を割り当て、
 PAMとlogindがユーザーセッションと `XDG_RUNTIME_DIR` を作ります。音声は同じユーザーの
-PipeWire、PipeWire PulseAudio互換ソケット、WirePlumberを使います。ながめTVが終了するとlabwcも終了し、
+PipeWire、PipeWire PulseAudio互換ソケット、WirePlumberを使います。kioskユーザーは `audio` グループに属し、
+WirePlumberではPi 4のアナログ出力を無効にします。起動スクリプトは既定の出力がHDMIでなければ停止し、
+HDMI出力の音量を100%にそろえます。音の大きさはテレビとアプリで調節します。ながめTVが終了するとlabwcも終了し、
 2秒後に起動し直します。保守中は `sudo systemctl stop nagametv-kiosk.service` で停止できます。
 
 初回は次を確認します。

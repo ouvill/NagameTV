@@ -64,6 +64,16 @@ install -D -m 0755 "$boot/start-kiosk" /usr/local/lib/nagametv-appliance/start-k
 install -D -m 0644 "$boot/labwc-rc.xml" /usr/local/lib/nagametv-appliance/labwc/rc.xml
 install -m 0644 "$boot/nagametv-kiosk.service" /etc/systemd/system/nagametv-kiosk.service
 systemctl --global enable pipewire.socket pipewire-pulse.socket wireplumber.service
+# WirePlumber otherwise prefers the Pi 4 analog jack over HDMI as the default sink.
+install -d -m 0755 /etc/wireplumber/wireplumber.conf.d
+cat > /etc/wireplumber/wireplumber.conf.d/50-nagametv-hdmi-only.conf <<'EOF'
+monitor.alsa.rules = [
+  {
+    matches = [ { api.alsa.card.name = "bcm2835 Headphones" } ]
+    actions = { update-props = { device.disabled = true } }
+  }
+]
+EOF
 
 # Keep the other virtual terminals and the Plymouth quit action available.
 systemctl mask getty@tty1.service \

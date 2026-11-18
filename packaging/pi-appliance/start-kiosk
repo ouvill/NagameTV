@@ -13,11 +13,14 @@ export PULSE_SERVER="unix:$XDG_RUNTIME_DIR/pulse/native"
 pactl info >/dev/null
 sink=$(pactl get-default-sink)
 case "$sink" in
-    ""|auto_null)
-        echo "NagameTV kiosk: PipeWire has no usable audio sink" >&2
+    *.hdmi.*) ;;
+    *)
+        echo "NagameTV kiosk: default audio sink is not HDMI: ${sink:-none}" >&2
         exit 1
         ;;
 esac
+# WirePlumber starts new sinks at 40%; the TV and the app own the loudness.
+pactl set-sink-volume "$sink" 100%
 
 echo "NagameTV kiosk: HDMI-A-1 and PipeWire ready, starting NagameTV"
 exec /usr/bin/nagametv --kiosk
