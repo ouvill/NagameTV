@@ -26,8 +26,8 @@ TestCase {
         }
     }
     property var holder
-    function initTestCase() { failOnWarning(/.*/) }
     function init() {
+        failOnWarning(/.*/)
         holder = createTemporaryObject(component, testCase)
         verify(holder !== null)
         tryCompare(findChild(holder, "subtitleFont"), "status", FontLoader.Ready)
