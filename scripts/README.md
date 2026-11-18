@@ -20,6 +20,11 @@
 `build/source_info.py` です。Flatpakにもこの2本を同じ配置で渡します。
 `build/` は `testing/` や `dev/` に依存させません。
 配布設定とDockerfileは従来どおりリポジトリー直下の `packaging/` に置きます。
+[Raspberry Pi専用機](../docs/pi-appliance.md)の初回起動用ファイルは
+`packaging/pi-appliance/` にあります。`user-data`から呼ぶ導入スクリプトは
+Ubuntu Server 26.04 arm64上でdebを導入し、tty1用のunitを登録します。
+`python3 scripts/test.py tooling`はShell構文を検査し、利用できる場合は
+PyYAML、cloud-init、`systemd-analyze`で設定も検証します。表示・GPU・音声は使いません。
 
 web-bml のブラウザー用 JS を更新するときは `python3 -m scripts.build.update_web_bml` を実行します。
 Git、Node.js、npm とネットワークが必要で、固定コミットから `assets/web-bml/bundle.js` と
