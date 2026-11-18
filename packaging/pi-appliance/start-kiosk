@@ -1,0 +1,23 @@
+#!/bin/sh
+set -eu
+
+: "${XDG_RUNTIME_DIR:?PAM did not start a user session}"
+: "${WAYLAND_DISPLAY:?Cage did not create a Wayland display}"
+
+# Cage can select the EDID preferred mode even when the boot console used 1080p.
+if ! wlr-randr --output HDMI-A-1 --mode 1920x1080@60Hz; then
+    wlr-randr --output HDMI-A-1 --mode 1920x1080@59.94Hz
+fi
+
+export PULSE_SERVER="unix:$XDG_RUNTIME_DIR/pulse/native"
+pactl info >/dev/null
+sink=$(pactl get-default-sink)
+case "$sink" in
+    ""|auto_null)
+        echo "NagameTV kiosk: PipeWire has no usable audio sink" >&2
+        exit 1
+        ;;
+esac
+
+echo "NagameTV kiosk: HDMI-A-1 and PipeWire ready, starting NagameTV"
+exec /usr/bin/nagametv --kiosk

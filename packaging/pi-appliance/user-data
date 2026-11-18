@@ -1,0 +1,39 @@
+#cloud-config
+hostname: nagametv-pi
+manage_etc_hosts: true
+timezone: Asia/Tokyo
+locale: ja_JP.UTF-8
+ssh_pwauth: false
+disable_root: true
+
+users:
+  - name: tvadmin
+    gecos: NagameTV appliance administrator
+    shell: /bin/bash
+    lock_passwd: true
+    sudo: ["ALL=(ALL:ALL) NOPASSWD:ALL"]
+    ssh_authorized_keys:
+      - REPLACE_WITH_YOUR_SSH_PUBLIC_KEY
+  - name: nagametv
+    gecos: NagameTV kiosk
+    shell: /bin/bash
+    lock_passwd: true
+    groups: [video, render]
+
+write_files:
+  - path: /etc/ssh/sshd_config.d/00-nagametv-appliance.conf
+    owner: root:root
+    permissions: "0644"
+    content: |
+      AuthenticationMethods publickey
+      PermitRootLogin no
+  - path: /etc/pam.d/nagametv-kiosk
+    owner: root:root
+    permissions: "0644"
+    content: |
+      account required pam_unix.so
+      session required pam_env.so envfile=/etc/default/locale
+      session required pam_systemd.so
+
+runcmd:
+  - [/bin/bash, /boot/firmware/provision-nagametv.sh]
