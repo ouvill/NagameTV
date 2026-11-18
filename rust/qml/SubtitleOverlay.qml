@@ -53,8 +53,8 @@ Item {
         readonly property bool drcs: modelData.glyph !== undefined && modelData.glyph.kind === "drcs"
         readonly property alias bitmap: bitmapLoader
         readonly property int drcsPadding: Math.max(1, Math.ceil(modelData.glyphHeight * 0.06)) + (modelData.bold ? 1 : 0)
-        readonly property real sx: overlay.width / Math.max(1, overlay.cue.planeWidth)
-        readonly property real sy: overlay.height / Math.max(1, overlay.cue.planeHeight)
+        readonly property real sx: overlay.cue ? overlay.width / Math.max(1, overlay.cue.planeWidth) : 0
+        readonly property real sy: overlay.cue ? overlay.height / Math.max(1, overlay.cue.planeHeight) : 0
         x: modelData.x * sx; y: modelData.y * sy
         width: Math.max(1, modelData.width * sx)
         height: Math.max(1, modelData.height * sy)
@@ -67,8 +67,13 @@ Item {
             height: (captionCell.modelData.glyphHeight + 2 * captionCell.drcsPadding) * captionCell.sy
             sourceComponent: MediaCaption {
                 objectName: "drcsGlyph"
-                // Presentation revision changes even when only DRCS pixels change.
-                image: { const revision = overlay.cue.revision; return overlay.outlineProvider.subtitle_drcs_image(captionCell.index, overlay.forceOutline); }
+                image: {
+                    const cue = overlay.cue;
+                    // Presentation revision changes even when only DRCS pixels change.
+                    const revision = cue?.revision;
+                    // Until the Repeater removes this delegate, request an empty image.
+                    return overlay.outlineProvider.subtitle_drcs_image(cue ? captionCell.index : -1, overlay.forceOutline);
+                }
                 stretch: true
             }
         }
