@@ -88,6 +88,8 @@ class SleepInhibit final : public QObject {
         case QDBusError::ServiceUnknown: case QDBusError::UnknownInterface:
         case QDBusError::UnknownMethod: case QDBusError::UnknownObject:
         case QDBusError::Disconnected: case QDBusError::NoServer:
+        // A session or sandbox policy denying the D-Bus call will deny later attempts too.
+        case QDBusError::AccessDenied:
         // A service that never answers, such as a portal whose activation keeps
         // timing out, cannot grant inhibition in this session either.
         case QDBusError::NoReply: case QDBusError::Timeout: case QDBusError::TimedOut:

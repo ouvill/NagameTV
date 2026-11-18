@@ -59,14 +59,14 @@ UIは設定値と実際の状態を区別する。`inhibited` 以外を「抑止
 取得済みの資源も解放する。ScreenSaverだけ、またはlogindだけの成功を両方の成功として扱わない。
 選んだ経路は取得時にINFO、利用不可による経路切替は原因とともにWARNへ記録する。
 
-`ServiceUnknown`、必要なインターフェース・オブジェクトの不在、バス不在等は、
+`ServiceUnknown`、`AccessDenied`、必要なインターフェース・オブジェクトの不在、バス不在等は、
 環境の事実としてWARNを一度記録して保持する。停止・一時停止・終端からの再生で
 同じ利用不可を調べ直さない。設定OFF/ONでキャッシュを捨て、またはportal・ScreenSaver・
 logindの `NameOwnerChanged` で利用不可を再検査できる状態へ戻す。
 `unavailable` は設定ONのまま停止しても保持する。利用不可が解消され、再生していなければ `idle` となる。
 
-タイムアウト・拒否・不正応答はERRORに記録し、その視聴中には繰り返さない。
-次の視聴試行では再試行する。portalで拒否された要求を代替で回避しない。
+portalの応答コードによる拒否や不正応答はERRORに記録し、その視聴中には繰り返さない。
+次の視聴試行では再試行する。portalの応答コードで拒否された要求に対しては代替経路を使わない。
 動作中の代替経路はportal出現だけでは取り直さず、次の視聴から第一選択へ戻す。
 
 ### portal
@@ -91,7 +91,7 @@ logindの `NameOwnerChanged` で利用不可を再検査できる状態へ戻す
 [logind仕様](https://www.freedesktop.org/software/systemd/man/latest/org.freedesktop.login1.html)の
 FDロックで補う。どちらも専用D-Bus接続と非同期呼出しを使う。
 
-logindはsystem busに接続する。必要な権限がなければ失敗として公開し、権限昇格や
+logindはsystem busに接続する。D-Busポリシーに拒否された場合は利用不可として公開し、権限昇格や
 認証ダイアログは要求しない。Flatpakでは引き続きportalを第一選択とし、代替のための
 追加のsandbox権限は要求しない。OSの管理者操作等、抑止を無視する権限を持つ操作は防げない。
 
