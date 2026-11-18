@@ -2,9 +2,9 @@
 set -eu
 
 : "${XDG_RUNTIME_DIR:?PAM did not start a user session}"
-: "${WAYLAND_DISPLAY:?Cage did not create a Wayland display}"
+: "${WAYLAND_DISPLAY:?labwc did not create a Wayland display}"
 
-# Cage can select the EDID preferred mode even when the boot console used 1080p.
+# labwc can select the EDID preferred mode even when the boot console used 1080p.
 if ! wlr-randr --output HDMI-A-1 --mode 1920x1080@60Hz; then
     wlr-randr --output HDMI-A-1 --mode 1920x1080@59.94Hz
 fi

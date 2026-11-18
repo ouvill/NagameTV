@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<!-- NagameTV requests fullscreen itself in kiosk mode, so no window rule
+     toggles it here: a Fullscreen action would undo the client's request. -->
+<labwc_config>
+  <core>
+    <decoration>client</decoration>
+  </core>
+  <windowRules>
+    <windowRule identifier="*" serverDecoration="no"/>
+  </windowRules>
+</labwc_config>
