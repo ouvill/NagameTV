@@ -14,12 +14,12 @@ pub(super) enum Error {
     #[error("Could not initialize the desktop portal probe")]
     Runtime(#[source] std::io::Error),
     #[error("Could not connect to the session D-Bus")]
-    Bus(#[source] zbus::Error),
+    Bus(#[source] Box<zbus::Error>),
     #[error("{operation} failed")]
     Call {
         operation: &'static str,
         #[source]
-        source: zbus::Error,
+        source: Box<zbus::Error>,
     },
     #[error("The desktop portal did not answer within {TIMEOUT:?}")]
     Timeout,
@@ -28,9 +28,9 @@ pub(super) enum Error {
 #[derive(Debug, thiserror::Error)]
 pub(super) enum ChooserError {
     #[error("FileChooser portal is unavailable")]
-    Missing(#[source] zbus::Error),
+    Missing(#[source] Box<zbus::Error>),
     #[error("FileChooser portal returned an invalid version")]
-    InvalidVersion(#[source] zbus::Error),
+    InvalidVersion(#[source] Box<zbus::Error>),
     #[error("FileChooser portal version {0} does not support folders")]
     UnsupportedVersion(u32),
 }
@@ -44,7 +44,9 @@ pub(super) fn probe() -> Result<Result<(), ChooserError>, Error> {
         .map_err(Error::Runtime)?;
     runtime.block_on(async {
         tokio::time::timeout(TIMEOUT, async {
-            let connection = Connection::session().await.map_err(Error::Bus)?;
+            let connection = Connection::session()
+                .await
+                .map_err(|error| Error::Bus(Box::new(error)))?;
             // Qt blocks on Settings.ReadAll even if the FileChooser responds.
             // Both calls share the same deadline, including bus connection.
             let ((), chooser) =
@@ -73,7 +75,7 @@ async fn read_settings(connection: &Connection) -> Result<(), Error> {
         Err(error) if missing_interface(&error) => Ok(()),
         Err(source) => Err(Error::Call {
             operation: "Settings.ReadAll",
-            source,
+            source: Box::new(source),
         }),
     }
 }
@@ -90,11 +92,13 @@ async fn file_chooser(connection: &Connection) -> Result<Result<(), ChooserError
         .await
     {
         Ok(response) => response,
-        Err(error) if missing_interface(&error) => return Ok(Err(ChooserError::Missing(error))),
+        Err(error) if missing_interface(&error) => {
+            return Ok(Err(ChooserError::Missing(Box::new(error))));
+        }
         Err(source) => {
             return Err(Error::Call {
                 operation: "FileChooser version query",
-                source,
+                source: Box::new(source),
             });
         }
     };
@@ -102,7 +106,7 @@ async fn file_chooser(connection: &Connection) -> Result<Result<(), ChooserError
         .body()
         .deserialize::<OwnedValue>()
         .and_then(|value| u32::try_from(value).map_err(Into::into))
-        .map_err(ChooserError::InvalidVersion)
+        .map_err(|error| ChooserError::InvalidVersion(Box::new(error)))
         .and_then(|version| {
             // Version 3 introduced folder selection for the screenshot picker.
             if version < MINIMUM_CHOOSER_VERSION {
