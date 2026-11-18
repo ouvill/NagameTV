@@ -196,24 +196,34 @@ Ubuntu Frameだけを構成した機器では、開けない場合に画面へ�
 
 ## Pi 4 Desktopの起動時間
 
-Ubuntu 26.04・labwc・snapリビジョン`x2`では、起動ログからQtのportal
-`Settings.ReadAll`のタイムアウトまで24.90秒、アプリ側のFileChooser検査が
-Qt Quickダイアログへ切り替わるまで26.08秒でした。アプリ側の検査は1秒の上限を設けています。
-Qt側のFileChooser検査のタイムアウトは起動ログの48.50秒後に出ています。この時刻はQt側の
-検査の所要時間を示しません。libproxyの`StartServiceByName`タイムアウトは今回のログでは
-初回の再生開始後に出ており、起動時の待ち時間とは別に計測します。
+Ubuntu 26.04・labwc・snapリビジョン`x3`では、起動コマンドからMPRISに応答するまで
+52.62秒でした。アプリの起動ログとD-Busの呼び出し時刻から、下表の待ち時間を確認しました。
+この計測ではMPRISの応答を起動完了の目安に使いました。
 
-同じlabwcセッションではdeb版もportalの起動を待ちます。対処を行う場合は、アプリ側で
-Qt初期化より前に短い上限でportalの応答を確認する方式を検討します。応答がなければ初回は
-Qt Quickダイアログを使い、応答する環境では現在のportalを使います。libproxyは別経路なので、
-HTTP要求で待つ位置を計測し、必要な場合にプロキシ解決を調整します。プロキシ設定が必要な環境も
-対象にして検証します。パッケージの既定値は今回変更しません。
-[アプリのダイアログ選択](platform-startup.md)
+| 呼び出し | Pi 4で確認した挙動 |
+| --- | --- |
+| Qtの`Settings.ReadAll` | 同期呼び出しが24.71秒でタイムアウトした。 |
+| アプリのFileChooserバージョン検査 | 1.00秒でタイムアウトし、Qt Quickダイアログへ切り替わった。 |
+| QtのFileChooserバージョン検査 | `ReadAll`の直前に開始する非同期呼び出し。タイムアウトの警告はメインループが動き始めたあとに出た。 |
+| libproxyの`StartServiceByName` | 最初の要求はMPRIS応答の0.76秒後。2回の要求は25.10秒間隔だった。別に行った`x2`内での単独のプロキシ解決は50.20秒かかった。 |
+
+この環境ではxdg-desktop-portalがGNOMEの設定バックエンドを待ち、サービスの起動が
+タイムアウトしました。deb版も同じセッションでportalの起動を待ちます。
+ネイティブ版とsnap版では、Qt初期化前に短い上限でportalの応答を調べ、応答がなければ
+初回はQt Quickダイアログを使う方式を検討します。応答する環境では現在のportalを使います。
+起動時間の残りはGStreamerの初期化も含めて個別に計測する必要があります。
+libproxyの待ちはHTTP要求側で扱い、変更するときはプロキシ設定が必要な環境も対象にします。
+パッケージの既定値は今回変更しません。
+[アプリのダイアログ選択](platform-startup.md)、
+[Qt 6.10のportalテーマ実装](https://github.com/qt/qtbase/blob/6.10/src/plugins/platformthemes/xdgdesktopportal/qxdgdesktopportaltheme.cpp)
 
 ## 実機検証項目
 
 - amd64 DesktopとPi 4 Desktopで、strictのままWayland表示、HDMIまたは既定出力への音声、
   ライブと録画の再生、再起動後の設定復元、スクリーンショット保存を確認します。
+  Pi 4の`x3`ではMPRIS経由で2回再生し、GStreamerのPLAYINGとPipeWireの出力ストリームを
+  確認しました。logindの拒否は1回だけWARNに記録されました。隔離内で日本語Composeを
+  コンパイルでき、Fontconfigは同梱のNoto Sans CJK JPを検出しました。
 - Ubuntu Coreで、Frameとサービスの起動順、再起動後の自動起動、ALSAまたはPulseAudio互換
   サービスでのHDMI音声、ログの権限エラーを確認します。更新とリビジョンの切り戻し時に、
   設定・視聴履歴と共通キャッシュがそれぞれ想定どおりに扱われることも確認します。Frameの`26/stable`は
