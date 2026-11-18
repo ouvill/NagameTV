@@ -25,8 +25,13 @@ UtmpMode=user
 StandardInput=tty-fail
 StandardOutput=journal
 StandardError=journal
-ExecStart=/usr/bin/cage -- /usr/local/lib/nagametv-appliance/start-kiosk
-ExecStartPost=+/usr/bin/chvt 1
+# Cage 0.2.1 in Ubuntu 26.04 aborts when a client requests fullscreen before
+# its first commit, which NagameTV does in kiosk mode (cage-kiosk/cage#456).
+# systemd hangs up the TTY for every command, so chvt after the compositor
+# would send it SIGHUP.
+ExecStartPre=+/usr/bin/chvt 1
+ExecStart=/usr/bin/labwc --config-dir /usr/local/lib/nagametv-appliance/labwc \
+    --session /usr/local/lib/nagametv-appliance/start-kiosk
 Restart=always
 RestartSec=2s
 

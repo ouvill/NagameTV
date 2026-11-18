@@ -5,6 +5,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+from xml.etree import ElementTree
 
 try:
     import yaml
@@ -29,6 +30,8 @@ class PiApplianceTests(unittest.TestCase):
         self.assertTrue(admin["lock_passwd"])
         self.assertTrue(kiosk["lock_passwd"])
         self.assertIn("video", kiosk["groups"])
+        # WirePlumber starts before the kiosk session gets the seat ACLs.
+        self.assertIn("audio", kiosk["groups"])
         self.assertNotIn("sudo", kiosk)
         files = {item["path"]: item["content"] for item in seed["write_files"]}
         self.assertIn("AuthenticationMethods publickey\n", files["/etc/ssh/sshd_config.d/00-nagametv-appliance.conf"])
@@ -73,7 +76,7 @@ class PiApplianceTests(unittest.TestCase):
                 (units / f"{name}.target").write_text("[Unit]\nDefaultDependencies=no\n")
             # verify checks executable paths in the offline root. It never
             # starts the compositor, changes the VT, or connects to host systemd.
-            for name in ("cage", "chvt"):
+            for name in ("labwc", "chvt"):
                 command = root / "usr/bin" / name
                 command.parent.mkdir(parents=True, exist_ok=True)
                 command.touch(mode=0o755)
@@ -83,6 +86,17 @@ class PiApplianceTests(unittest.TestCase):
                                     text=True, capture_output=True)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertEqual(result.stderr, "")
+
+    def test_labwc_config_leaves_fullscreen_to_the_client(self):
+        root = ElementTree.parse(PAYLOAD / "labwc-rc.xml").getroot()
+        self.assertEqual(root.tag, "labwc_config")
+        rules = root.findall("windowRules/windowRule")
+        self.assertEqual([rule.attrib for rule in rules],
+                         [{"identifier": "*", "serverDecoration": "no"}])
+        self.assertEqual(rules[0].findall("action"), [])
+        provision = (PAYLOAD / "provision-nagametv.sh").read_text()
+        self.assertIn("labwc-rc.xml", provision)
+        self.assertIn("/usr/local/lib/nagametv-appliance/labwc/rc.xml", provision)
 
     def test_payload_shell_syntax(self):
         subprocess.run(["bash", "-n", str(PAYLOAD / "provision-nagametv.sh")], check=True)

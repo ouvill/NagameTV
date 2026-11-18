@@ -6,6 +6,12 @@ fail() {
     exit 1
 }
 
+# cloud-final copies stdout to the console, so these lines show on the TV
+# between kernel messages during the first boot.
+step() {
+    echo "NagameTV appliance: $*"
+}
+
 # shellcheck source=/dev/null
 . /etc/os-release
 [[ $ID == ubuntu && $VERSION_ID == 26.04 && $(dpkg --print-architecture) == arm64 ]] ||
@@ -13,7 +19,7 @@ fail() {
 
 boot=/boot/firmware
 mountpoint -q "$boot" || fail "$boot is not mounted."
-for file in nagametv.deb nagametv-kiosk.service start-kiosk; do
+for file in nagametv.deb nagametv-kiosk.service start-kiosk labwc-rc.xml; do
     [[ -s $boot/$file ]] || fail "Missing $boot/$file."
 done
 
@@ -28,26 +34,56 @@ case "$(dpkg-deb -f "$deb" Version)" in
     *) fail "nagametv.deb must target Ubuntu 26.04." ;;
 esac
 
+# The image clock starts at its build date, so the first time sync makes both
+# apt timers overdue. Stopping unattended-upgrade mid-run can leave dpkg
+# half-configured, so let a job that already started finish instead.
+# These oneshot services report "activating" while they run, which is-active
+# alone treats as not running.
+apt_job_running() {
+    { systemctl is-active apt-daily.service apt-daily-upgrade.service || true; } |
+        grep -q -x -e active -e activating
+}
+systemctl mask --now apt-daily.timer apt-daily-upgrade.timer
+if apt_job_running; then
+    step "Waiting for the running Ubuntu update to finish."
+    while apt_job_running; do
+        sleep 10
+    done
+fi
+
+step "Installing packages. This can take a while on a slow connection."
 export DEBIAN_FRONTEND=noninteractive
 apt-get -o APT::Update::Error-Mode=any update
-# The stock server image does not include the Mesa DRI modules used by Cage.
+# The stock server image does not include the Mesa DRI modules used by labwc.
 apt-get -o DPkg::Lock::Timeout=300 install -y --no-install-recommends \
-    cage wlr-randr libgl1-mesa-dri kbd libpam-systemd dbus-user-session openssh-server \
+    labwc wlr-randr libgl1-mesa-dri kbd libpam-systemd dbus-user-session openssh-server \
     pipewire pipewire-pulse wireplumber pulseaudio-utils fonts-noto-cjk "$deb"
 
+step "Configuring the kiosk."
 install -D -m 0755 "$boot/start-kiosk" /usr/local/lib/nagametv-appliance/start-kiosk
+install -D -m 0644 "$boot/labwc-rc.xml" /usr/local/lib/nagametv-appliance/labwc/rc.xml
 install -m 0644 "$boot/nagametv-kiosk.service" /etc/systemd/system/nagametv-kiosk.service
 systemctl --global enable pipewire.socket pipewire-pulse.socket wireplumber.service
+# WirePlumber otherwise prefers the Pi 4 analog jack over HDMI as the default sink.
+install -d -m 0755 /etc/wireplumber/wireplumber.conf.d
+cat > /etc/wireplumber/wireplumber.conf.d/50-nagametv-hdmi-only.conf <<'EOF'
+monitor.alsa.rules = [
+  {
+    matches = [ { api.alsa.card.name = "bcm2835 Headphones" } ]
+    actions = { update-props = { device.disabled = true } }
+  }
+]
+EOF
 
 # Keep the other virtual terminals and the Plymouth quit action available.
-systemctl mask getty@tty1.service apt-daily.timer apt-daily-upgrade.timer \
+systemctl mask getty@tty1.service \
     snapd.service snapd.socket snapd.seeded.service snapd.autoimport.service \
     fwupd.service fwupd-refresh.timer plymouth-quit-wait.service ModemManager.service
-systemctl stop apt-daily.timer apt-daily-upgrade.timer
 systemctl daemon-reload
 systemctl enable nagametv-kiosk.service
-# cloud-final already starts after multi-user.target. Queuing Cage here also
+# cloud-final already starts after multi-user.target. Queuing labwc here also
 # covers the first boot without adding an ordering cycle on subsequent boots.
+step "Starting NagameTV."
 systemctl start --no-block nagametv-kiosk.service
 # Leave provisioning available if any earlier operation fails.
 touch /etc/cloud/cloud-init.disabled
