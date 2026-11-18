@@ -206,16 +206,37 @@ Linuxでは、実行ファイルを削除しても動作中のプロセスが終
 
 アプリを削除しても、ユーザーの設定・状態データ・キャッシュは残ります。
 これらも不要になった場合は、アプリを終了してから次のフォルダーを削除できます。
-同じユーザーの手動ビルド版・deb版・AppImage版で共有しています。
+既定の保存先は、同じユーザーの手動ビルド版・deb版・AppImage版で共有します。
 
 | データ | 既定の場所 | 保存先を変更している場合 |
 | --- | --- | --- |
-| 設定 | `~/.config/nagametv/` | `$XDG_CONFIG_HOME/nagametv/` |
-| 状態データ（アップデートの確認日時） | `~/.local/state/nagametv/` | `$XDG_STATE_HOME/nagametv/` |
+| 設定・視聴履歴 | `~/.config/nagametv/` | `$XDG_CONFIG_HOME/nagametv/` |
+| 状態データ（アップデートの確認日時・再生エラーログなど） | `~/.local/state/nagametv/` | `$XDG_STATE_HOME/nagametv/` |
 | キャッシュ | `~/.cache/nagametv/` | `$XDG_CACHE_HOME/nagametv/` |
 
 別の場所へ保存したスクリーンショットや手元の録画ファイルは、必要に応じて保存先で整理してください。
 Flatpak版は[専用の削除手順](flatpak.md#アンインストール)を参照してください。
+
+### 保存データを別のパーティションに置く
+
+OSのルートファイルシステムを読み取り専用にする場合は、書き込み可能なパーティションを
+先にマウントし、起動するプロセスの環境変数 `NAGAMETV_DATA_DIR` に絶対パスを指定します。
+
+```sh
+NAGAMETV_DATA_DIR=/mnt/persistent/nagametv nagametv --kiosk
+```
+
+| 指定先からの相対パス | 保存するデータ |
+| --- | --- |
+| `config/` | 設定（`settings.toml`） |
+| `state/` | 視聴履歴（`viewing-history.json`）、アップデートの確認日時、再生エラーログなど |
+| `cache/` | コメントアーカイブ、タイムシフト |
+
+起動時に必要なディレクトリーを作成し、実行ユーザーが書き込めることを確認します。
+空の値、相対パス、書き込みできない場所を指定すると、標準エラーに原因を出力して終了します。
+変数を設定しなければ従来のXDGの保存先を使います。既存の設定や履歴を引き継ぐ場合は、
+アプリを終了してから、上の表に沿ってファイルをコピーしてください。
+スクリーンショットの保存先と録画ファイルの場所は、従来どおり個別に指定できます。
 
 ## 起動引数
 
@@ -457,6 +478,18 @@ CXX-Qtが生成する`qml_modules`の場所はCargoから取得します。GStre
 
 通常ログは標準エラーへ出力し、既定は`info`以上です。
 `RUST_LOG=debug`で詳細ログ、`RUST_LOG=info,qt=debug`でQt/QMLのdebugログも表示できます。
+「設定 → システム → 最近のログ」で、現在のプロセスの直近300件を確認できます。
+Qtのメッセージも含まれます。表示を開いた時点か「ログを更新」を押した時点の内容を
+上下キーでたどれます。1件の表示は最大2 KiBです。
+
+systemdで標準エラーをジャーナルに接続する場合、優先度を有効にするには
+`StandardError=journal`と既定の`SyslogLevelPrefix=yes`を使います。
+たとえば、`journalctl -u nagametv.service -p warning`で警告以上を表示できます。
+アプリは`JOURNAL_STREAM`に記録されたデバイス番号とinodeを標準エラーと照合し、
+一致するときに優先度を付けます。tracingのフィールドは本文に残ります。
+既存の標準エラーストリームを使うため、アプリにジャーナルの送信用ソケットへのアクセスを追加する必要がありません。
+[systemd.exec のマニュアル](https://www.freedesktop.org/software/systemd/man/latest/systemd.exec.html)
+
 `METRICS`は字幕・EPGの保持件数などを10秒ごとに出すdebugログです。
 RSSなどの資源使用量は診断JSONLに記録します。[メモリー分析と記録の切り替え](memory-profiling.md)
 

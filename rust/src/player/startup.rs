@@ -70,9 +70,7 @@ impl Default for PlayerRust {
                 )
             }
         };
-        let error_log = crate::error_log::ErrorLog::new(
-            crate::qt::ffi::playback_log_directory().to_string().into(),
-        );
+        let error_log = crate::error_log::ErrorLog::new(crate::qt::playback_log_directory());
         if let Err(error) = &error_log {
             tracing::error!(
                 error = error as &dyn std::error::Error,
@@ -135,10 +133,8 @@ impl Default for PlayerRust {
             viewing_history: if plan.locked() {
                 crate::viewing_history::History::transient()
             } else {
-                match settings::settings_path() {
-                    Ok(path) => crate::viewing_history::History::open(
-                        path.with_file_name("viewing-history.json"),
-                    ),
+                match settings::viewing_history_path() {
+                    Ok(path) => crate::viewing_history::History::open(path),
                     Err(error) => {
                         tracing::error!(
                             error = &error as &dyn std::error::Error,

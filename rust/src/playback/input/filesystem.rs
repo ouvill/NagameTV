@@ -187,6 +187,9 @@ fn cleanup_legacy_sessions(root: &Path) -> io::Result<()> {
     Ok(())
 }
 fn cache_root() -> std::io::Result<PathBuf> {
+    if let Some(paths) = crate::data_directory::get() {
+        return Ok(paths.timeshift().into());
+    }
     // This repository currently supports the XDG/Linux desktop. Keep the OS
     // policy here so the storage/reader contract has no path assumptions.
     let root = std::env::var_os("XDG_CACHE_HOME")

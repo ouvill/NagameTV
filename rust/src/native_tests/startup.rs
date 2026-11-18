@@ -2370,6 +2370,25 @@ fn check_shortcuts(
         "root.activeFocusItem.objectName === 'checkUpdates'",
     )?;
     capture_navigation(app, engine, "settings-updates.png")?;
+    assert!(evaluate(
+        engine,
+        "typeof player.recent_log() === 'string' && settings.pageFields.some(item => item.objectName === 'openRecentLog')"
+    )?);
+    evaluate(
+        engine,
+        "settings.pageFields.find(item => item.objectName === 'openRecentLog').clicked(); true",
+    )?;
+    wait_for(
+        app,
+        engine,
+        "inputContext.popupOpen && root.activeFocusItem.objectName === 'recentLogView'",
+    )?;
+    ffi::clickRootKey(engine.pin_mut(), &QString::from("Back"))?;
+    wait_for(
+        app,
+        engine,
+        "settings.opened && root.activeFocusItem.objectName === 'openRecentLog'",
+    )?;
     evaluate(engine, "settings.close(); true")?;
     wait_for(app, engine, "!settings.visible")?;
     evaluate(

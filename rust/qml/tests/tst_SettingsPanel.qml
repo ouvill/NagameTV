@@ -233,6 +233,9 @@ Item {
                 }
                 property int logFolderRequests: 0
                 function open_log_folder() { logFolderRequests++; return true; }
+                property string logSnapshot: ""
+                property int logReads: 0
+                function recent_log() { logReads++; return logSnapshot; }
                 signal connectRequested(string url)
                 signal connectionFinished(bool success, int channels)
                 property bool acceptConnection: false
@@ -343,6 +346,8 @@ Item {
                 backend.comment_shadow_enabled = true;
                 backend.comment_send_on_enter = false;
                 backend.log_error = "";
+                backend.logSnapshot = "";
+                backend.logReads = 0;
                 panel.statsVisible = false;
                 panel.page = SettingsPanel.Connection;
                 connections.clear();
@@ -1507,6 +1512,52 @@ Item {
                 compare(details.selectedText, details.text);
                 verify(details.width <= findChild(panel.contentItem, "settingsScroll").width);
                 tryVerify(() => details.height >= details.contentHeight);
+            }
+            function test_recent_logs_scroll_and_return_focus_with_the_remote() {
+                backend.logSnapshot = Array.from({length: 200}, (_, index) => "Log entry " + index).join("\n");
+                keyboardPage(SettingsPanel.System);
+                downTo("openRecentLog");
+                keyClick(Qt.Key_Return);
+                const dialog = findChild(panel, "recentLogDialog");
+                const view = findChild(dialog.contentItem, "recentLogView");
+                const flick = findChild(dialog.contentItem, "recentLogFlickable");
+                tryCompare(view, "activeFocus", true);
+                tryVerify(() => flick.end > 0 && flick.atYEnd);
+                compare(backend.logReads, 1);
+                keyClick(Qt.Key_Up);
+                verify(flick.contentY < flick.end);
+                keyClick(Qt.Key_Down);
+                tryVerify(() => flick.atYEnd);
+                keyClick(Qt.Key_Back);
+                tryCompare(dialog, "visible", false);
+                verify(panel.opened);
+                expectFocus("openRecentLog");
+            }
+            function test_recent_logs_refresh_and_show_plain_text() {
+                keyboardPage(SettingsPanel.System);
+                downTo("openRecentLog");
+                keyClick(Qt.Key_Return);
+                const dialog = findChild(panel, "recentLogDialog");
+                const view = findChild(dialog.contentItem, "recentLogView");
+                const text = findChild(dialog.contentItem, "recentLogText");
+                tryCompare(view, "activeFocus", true);
+                compare(text.text, "No log entries yet.");
+                compare(text.textFormat, Text.PlainText);
+                backend.logSnapshot = "WARN <b>new log entry</b>";
+                keyClick(Qt.Key_Down);
+                const refresh = findChild(dialog.contentItem, "refreshRecentLog");
+                tryCompare(refresh, "activeFocus", true);
+                keyClick(Qt.Key_Return);
+                tryCompare(view, "activeFocus", true);
+                compare(backend.logReads, 2);
+                compare(text.text, backend.logSnapshot);
+                keyClick(Qt.Key_Down);
+                keyClick(Qt.Key_Right);
+                const close = findChild(dialog.contentItem, "closeRecentLog");
+                tryCompare(close, "activeFocus", true);
+                keyClick(Qt.Key_Return);
+                tryCompare(dialog, "visible", false);
+                expectFocus("openRecentLog");
             }
             function test_diagnostics_remain_readable(data) {
                 backend.diagnostics = data.text;
