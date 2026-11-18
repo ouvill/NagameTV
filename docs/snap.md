@@ -43,7 +43,19 @@ GPUのユーザー空間ドライバーは`mesa-2604`から`gpu-2604` content in
 | `home`、`removable-media` | 録画ファイルの読み込みとスクリーンショットの保存に使用。`home`からはホーム直下の隠し領域への一般アクセスは得られない。メディアを使う場合は`removable-media`を手動接続する。 |
 | `camera`、`media-control` | V4L2の`/dev/video*`とstateless decoderで使う`/dev/media*`への任意アクセス。接続にはカメラやメディアデバイスへのアクセスも伴うため、必要な実機に限って手動接続する。通常の再生には同梱のlibavを使える。 |
 
-HDMI-CECは使えない。snapd 2.78には`/dev/cec*`を許可する`hdmi-cec`インターフェースがなく、宣言するとインストール時に`unknown interface "hdmi-cec"`の警告になるため宣言していない。Ubuntu Coreではgadget snapの`custom-device`で許可する方法が残っている。
+HDMI-CECを使うには、`/dev/cecN`へのアクセスを別途設定する必要があります。snapd 2.78で
+`hdmi-cec`そのものをインターフェースとして宣言すると、`unknown interface "hdmi-cec"`の
+警告が出ます。Pi 4のUbuntu 26.04 Desktopでは、実験用snapに`custom-device`のプラグと
+スロットを置き、`--dangerous`でインストールして手動接続しました。起動プロセスに
+`video`グループを一時的に付与すると、strict confinementのまま`/dev/cec0`で
+Playback論理アドレスを取得できました。テレビとのやり取りとリモコンキーの受信は未検証です。
+
+snapd 2.78のベース宣言は、`custom-device`のスロットのインストールと自動接続を既定で
+拒否します。署名のないローカルsnapにはsnapの型などを対象とする最小限の検査が適用されるため、
+この実験ではアプリsnapに宣言したスロットをインストールできました。
+[`custom-device`のベース宣言](https://github.com/canonical/snapd/blob/2.78/interfaces/builtin/custom_device.go#L41-L48)、
+[署名のないsnapの検査](https://github.com/canonical/snapd/blob/2.78/overlord/ifacestate/ifacestate.go#L515-L548)、
+[最小限の検査の実装](https://github.com/canonical/snapd/blob/2.78/interfaces/policy/policy.go#L288-L337)
 
 [Snapインターフェース一覧](https://snapcraft.io/docs/reference/interfaces/)、
 [`camera`のポリシー](https://github.com/canonical/snapd/blob/master/interfaces/builtin/camera.go)、
@@ -120,6 +132,18 @@ snap connections nagametv
 `gpu-2604`が未接続の場合はDesktopと同じコマンドで接続します。音声サーバーのない機器で
 直接ALSAを使う場合は`sudo snap connect nagametv:alsa`を実行します。
 PulseAudio互換サービスがある場合は、そのサービスの`audio-playback`スロットに接続します。
+
+Ubuntu CoreでHDMI-CECを有効にする構成では、機器のgadget snapに`custom-device`スロットを
+宣言し、対象の`/dev/cecN`と対応するudevルールを指定します。Storeで配布するには、gadgetの
+`snap-declaration`でスロットのインストール許可を得る必要があります。NagameTV側では同じ
+`custom-device`属性値を持つプラグを、利用するアプリまたはサービスに追加します。
+接続は`snap connect`で行うか、同じイメージに含める場合はgadgetの`meta/gadget.yaml`の
+`connections`に指定して初回起動時に行います。カーネルがアダプターを公開し、実行ユーザーが
+そのデバイスを読み書きできることも必要です。
+[custom-deviceインターフェース](https://snapcraft.io/docs/reference/interfaces/custom-device-interface/)、
+[snap-declaration](https://documentation.ubuntu.com/core/reference/assertions/snap-declaration/)、
+[gadget snapの形式](https://documentation.ubuntu.com/core/reference/gadget-snap-format/)
+
 音声出力の準備後にサービスを有効にします。サービスはUbuntu Frameのソケットを待ってから
 `--kiosk`で起動し、異常終了時はsystemdが再起動します。
 
