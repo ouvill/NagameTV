@@ -13,7 +13,7 @@
 #include <QtDBus/QDBusConnection>
 #include <QtDBus/QDBusMessage>
 #include <QtDBus/QDBusReply>
-#include <QtDBus/QDBusVariant>
+#include <QtNetwork/QNetworkProxyFactory>
 #include <stdexcept>
 
 inline bool portalThemeLoaded() {
@@ -30,22 +30,9 @@ inline bool portalThemeLoaded() {
     return false;
 }
 
-inline unsigned int portalFileChooserVersion() {
-    auto message = QDBusMessage::createMethodCall(
-        QStringLiteral("org.freedesktop.portal.Desktop"),
-        QStringLiteral("/org/freedesktop/portal/desktop"),
-        QStringLiteral("org.freedesktop.DBus.Properties"), QStringLiteral("Get"));
-    message << QStringLiteral("org.freedesktop.portal.FileChooser") << QStringLiteral("version");
-    // A missing/unresponsive portal must not hold up native application startup
-    // for the default 25-second D-Bus timeout. This call can activate the service.
-    const QDBusReply<QDBusVariant> reply =
-        QDBusConnection::sessionBus().call(message, QDBus::Block, 1000);
-    if (!reply.isValid())
-        throw std::runtime_error(reply.error().message().toStdString());
-    const auto value = reply.value().variant();
-    if (value.metaType().id() != QMetaType::UInt)
-        throw std::runtime_error("FileChooser portal returned an invalid version");
-    return value.toUInt();
+inline void disableQtSystemProxy() {
+    // Qt Network can link libproxy directly, independently of the GIO override.
+    QNetworkProxyFactory::setUseSystemConfiguration(false);
 }
 
 // Resolve while the drop event is alive: KDE sends StopTransfer when the drag

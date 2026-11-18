@@ -155,8 +155,8 @@ pub mod ffi {
         #[cxx_name = "portalThemeLoaded"]
         fn portal_theme_loaded() -> bool;
         #[cfg(target_os = "linux")]
-        #[cxx_name = "portalFileChooserVersion"]
-        fn portal_file_chooser_version() -> Result<u32>;
+        #[cxx_name = "disableQtSystemProxy"]
+        fn disable_qt_system_proxy();
         #[cfg(target_os = "linux")]
         #[cxx_name = "portalRetrieveRecording"]
         fn portal_retrieve_recording(key: &QString) -> Result<QString>;

@@ -1,10 +1,6 @@
 //! Linux startup defaults; environment hints are not device validation.
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Packaging {
-    Native,
-    Flatpak,
-}
+mod portal;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DialogBackend {
@@ -13,8 +9,12 @@ pub enum DialogBackend {
 }
 
 /// Prepared before Qt starts; consumed after its platform theme has loaded.
-pub struct DialogSetup {
-    packaging: Packaging,
+pub struct DialogSetup(Dialogs);
+
+enum Dialogs {
+    Flatpak,
+    Probed(Result<(), portal::ChooserError>),
+    BypassPortal,
 }
 
 impl DialogSetup {
@@ -24,66 +24,107 @@ impl DialogSetup {
     /// No other thread may access the process environment during this call.
     /// QGuiApplication must not have been constructed yet.
     pub unsafe fn prepare() -> Self {
-        // Qt's portal theme delegates appearance to the desktop theme. Choosing
-        // it explicitly also enables portals outside Flatpak, without changing
-        // the X11/Wayland backend or display scaling.
-        unsafe { std::env::set_var("QT_QPA_PLATFORMTHEME", "xdgdesktopportal") };
-        Self {
-            packaging: if std::path::Path::new("/.flatpak-info").exists() {
-                Packaging::Flatpak
-            } else {
-                Packaging::Native
-            },
+        let dialogs = if std::path::Path::new("/.flatpak-info").exists() {
+            Dialogs::Flatpak
+        } else {
+            match portal::probe() {
+                Ok(chooser) => Dialogs::Probed(chooser),
+                Err(error) => {
+                    tracing::warn!(
+                        error = &error as &dyn std::error::Error,
+                        "Desktop portal probe failed; using Qt Quick dialogs and direct system network connections"
+                    );
+                    Dialogs::BypassPortal
+                }
+            }
+        };
+        // Qt tries this explicit theme before its automatic portal selection.
+        // An empty theme name would let Qt pick xdgdesktopportal again in a snap.
+        if matches!(dialogs, Dialogs::BypassPortal) {
+            unsafe {
+                std::env::set_var("QT_QPA_PLATFORMTHEME", "generic");
+                std::env::set_var("GIO_USE_PROXY_RESOLVER", "dummy");
+            }
+            crate::qt::ffi::disable_qt_system_proxy();
+        } else {
+            unsafe { std::env::set_var("QT_QPA_PLATFORMTHEME", "xdgdesktopportal") };
         }
+        Self(dialogs)
     }
 
     /// Finish before loading QML. The application borrow proves Qt is initialized.
     pub fn finish(self, _app: &cxx_qt_lib::QGuiApplication) -> DialogBackend {
-        match self.packaging {
-            Packaging::Flatpak => {
+        match self.0 {
+            Dialogs::Flatpak => {
                 // The runtime supplies Qt's portal plugin. Never disable native
                 // dialogs here: the document portal grants access outside the sandbox.
                 tracing::info!("Using desktop portal dialogs (Flatpak)");
                 DialogBackend::Portal
             }
-            Packaging::Native => match portal_available() {
-                Ok(()) => {
+            Dialogs::Probed(Ok(())) => {
+                if crate::qt::ffi::portal_theme_loaded() {
                     tracing::info!("Using desktop portal dialogs");
                     DialogBackend::Portal
+                } else {
+                    tracing::warn!(
+                        "Qt xdgdesktopportal theme was not loaded; using Qt Quick dialogs"
+                    );
+                    use_quick_dialogs()
                 }
-                Err(reason) => {
-                    // Qt's portal plugin can fall back to the desktop's GTK3
-                    // dialogs. Avoid that path when portal support is unavailable.
-                    crate::qt::ffi::use_qt_quick_dialogs();
-                    tracing::info!(%reason, "Desktop portal unavailable; using Qt Quick dialogs");
-                    DialogBackend::QtQuick
-                }
-            },
+            }
+            Dialogs::Probed(Err(error)) => {
+                tracing::warn!(
+                    error = &error as &dyn std::error::Error,
+                    "Desktop portal file selection unavailable; using Qt Quick dialogs"
+                );
+                use_quick_dialogs()
+            }
+            // The startup probe already reported this outcome.
+            Dialogs::BypassPortal => use_quick_dialogs(),
         }
     }
 }
 
-#[derive(Debug, thiserror::Error)]
-enum PortalError {
-    #[error("Qt xdgdesktopportal platform theme is not loaded")]
-    ThemeUnavailable,
-    #[error("Could not query FileChooser portal: {0}")]
-    Query(#[from] cxx::Exception),
-    #[error("FileChooser portal version {0} does not support folders")]
-    UnsupportedVersion(u32),
+fn use_quick_dialogs() -> DialogBackend {
+    crate::qt::ffi::use_qt_quick_dialogs();
+    DialogBackend::QtQuick
 }
 
-fn portal_available() -> Result<(), PortalError> {
-    if !crate::qt::ffi::portal_theme_loaded() {
-        return Err(PortalError::ThemeUnavailable);
+#[cfg(feature = "native_tests")]
+#[derive(Clone, Copy, clap::ValueEnum)]
+pub enum PortalFixture {
+    Available,
+    OldChooser,
+    Bypass,
+}
+
+#[cfg(feature = "native_tests")]
+pub fn check_portal_fixture(fixture: PortalFixture) -> i32 {
+    // SAFETY: A fresh test subprocess has no Qt application or worker threads.
+    let DialogSetup(actual) = unsafe { DialogSetup::prepare() };
+    match fixture {
+        PortalFixture::Available => assert!(matches!(actual, Dialogs::Probed(Ok(())))),
+        PortalFixture::OldChooser => assert!(matches!(
+            actual,
+            Dialogs::Probed(Err(portal::ChooserError::UnsupportedVersion(2)))
+        )),
+        PortalFixture::Bypass => assert!(matches!(actual, Dialogs::BypassPortal)),
     }
-    let version = crate::qt::ffi::portal_file_chooser_version()?;
-    // FileChooser version 3 introduced directory selection, which is needed by
-    // the screenshot folder picker as well as the recording file picker.
-    if version < 3 {
-        return Err(PortalError::UnsupportedVersion(version));
-    }
-    Ok(())
+    let theme = if matches!(fixture, PortalFixture::Bypass) {
+        assert_eq!(
+            std::env::var("GIO_USE_PROXY_RESOLVER").as_deref(),
+            Ok("dummy")
+        );
+        "generic"
+    } else {
+        assert_eq!(
+            std::env::var("GIO_USE_PROXY_RESOLVER").as_deref(),
+            Ok("fixture")
+        );
+        "xdgdesktopportal"
+    };
+    assert_eq!(std::env::var("QT_QPA_PLATFORMTHEME").as_deref(), Ok(theme));
+    0
 }
 
 /// Let Qt select the display backend, except for VA's Wayland/EGL requirement.
