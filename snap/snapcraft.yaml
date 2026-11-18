@@ -14,12 +14,24 @@ platforms:
 icon: packaging/linux/io.github.ouvill.nagametv.svg
 
 plugs:
+  hdmi-cec:
+    interface: custom-device
+    custom-device: hdmi-cec
   gpu-2604:
     interface: content
     target: $SNAP/gpu-2604
     default-provider: mesa-2604
 
 slots:
+  cec-adapter:
+    interface: custom-device
+    custom-device: hdmi-cec
+    devices:
+      - /dev/cec[0-9]*
+    udev-tagging:
+      - kernel: cec[0-9]*
+        subsystem: cec
+        for-device: /dev/cec[0-9]*
   mpris:
     interface: mpris
 
@@ -65,6 +77,7 @@ apps:
       - removable-media
       - camera
       - media-control
+      - hdmi-cec
   kiosk:
     command: usr/bin/nagametv --kiosk
     command-chain:
@@ -92,6 +105,7 @@ apps:
       - removable-media
       - camera
       - media-control
+      - hdmi-cec
 
 parts:
   nagametv:
