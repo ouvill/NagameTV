@@ -1,5 +1,6 @@
 """MPRIS wire checks against the hardware-free Qt fixture on a private D-Bus."""
 import math
+import os
 import sys
 import time
 import dbus
@@ -8,7 +9,8 @@ from gi.repository import GLib
 
 DBusGMainLoop(set_as_default=True)
 bus = dbus.SessionBus()
-name = "org.mpris.MediaPlayer2.io.github.ouvill.nagametv.instance" + sys.argv[1]
+player_name = os.environ.get("SNAP_INSTANCE_NAME") or "io.github.ouvill.nagametv"
+name = f"org.mpris.MediaPlayer2.{player_name}.instance{sys.argv[1]}"
 if sys.argv[-1] == "removed":
     assert not bus.name_has_owner(name)
     sys.exit(0)
