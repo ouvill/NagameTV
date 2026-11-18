@@ -48,11 +48,15 @@ sync
 | `network-config` | 有線は同名ファイルで上書き。Wi-Fiは `network-config.wifi` をこの名前に変えてコピーし、SSIDとパスワードを編集する |
 | `provision-nagametv.sh`、`nagametv-kiosk.service`、`start-kiosk` | 配布用ファイルをそのままコピーする |
 | `nagametv.deb` | 照合済みのUbuntu 26.04 arm64用debをこの名前でコピーする |
-| `cmdline.txt` | 既存の1行を残し、末尾に半角空白と `video=HDMI-A-1:1920x1080@60D consoleblank=0` を追加する |
+| `current/cmdline.txt` | 既存の1行を残し、末尾に半角空白と `video=HDMI-A-1:1920x1080@60D consoleblank=0` を追加する |
 
 Wi-Fiの例は日本向けの `regulatory-domain: JP` を含みます。SSIDとパスワードはYAMLの
 文字列として記述します。二重引用符やバックスラッシュが値に含まれる場合はエスケープしてください。
 パスワードはFAT上に平文で保存されるため、カードは管理者の手元で扱います。SSHには公開鍵を入れます。
+
+Ubuntu 26.04のPi用イメージはA/B起動を使い、カーネルなどの起動ファイルを `current/` に置きます。
+カーネル更新時の `new/cmdline.txt` は `current/cmdline.txt` から作られるため、追加した指定は更新後も残ります。
+[A/B起動の説明](https://ubuntu.com/hardware/docs/boards/explanations/piboot-ab/)
 
 `cmdline.txt` の `video=` は起動時のKMS出力を1080pの60Hzに指定します。HDMI0は
 Linuxでは `HDMI-A-1` です。既存の `root=` やコンソール指定は維持します。
