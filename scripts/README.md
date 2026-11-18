@@ -123,6 +123,7 @@ python3 scripts/test.py app --profile release --run-ignored --filter 'test(live_
 | 固定版EPGStationとの結合試験 | `python3 -m scripts.testing.epgstation_integration` | Docker、機器不要。[手順](../docs/epgstation.md) |
 | コメントSQL検査・更新 | `python3 -m scripts.testing.check_comment_sql [--update]` | Cargo、機器不要。一時DBを使用 |
 | Flatpakソース一覧の更新 | `python3 -m scripts.packaging.flatpak_cargo_sources [--check]` | Cargo.lockと配布設定の整合性 |
+| CIのsnapで実機を更新 | `python3 -m scripts.dev.update_snap USER@HOST` | 認証済みのghとSSH、実機のsudo権限。更新後のリビジョンと切り戻しコマンドを表示。[手順](../docs/snap.md#ciの成果物で実機を更新する) |
 | アプリの手動起動 | `bash scripts/dev/run-viewer.sh` | ビルド済みアプリと表示・GPU・音声環境 |
 | heaptrack計測 | `bash scripts/dev/profile-memory.sh` | 手動の表示・GPU・音声環境。[手順](../docs/memory-profiling.md) |
 | 診断ログの解析 | `python3 -m scripts.dev.analyze_memory --output DIRECTORY` | 機器不要。既存ログからHTMLを生成 |

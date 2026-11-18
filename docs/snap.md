@@ -128,6 +128,31 @@ Waylandセッションから`snap run nagametv --features=hdmi-cec`を実行す�
 HDMI-CECを有効にできます。リモコンキーの受信とテレビとのやり取りは未検証です。
 [HDMI-CECの設定と状態表示](hdmi-cec.md#有効化と設定)
 
+### CIの成果物で実機を更新する
+
+リポジトリーのルートから手動で実行します。手元にPython 3.11以降、認証済みのGitHub CLI
+（`gh`）、OpenSSHの`ssh`と`scp`が必要です。更新先にはNagameTVのローカルsnapを導入しておき、
+SSHユーザーにsudo権限を付与します。更新前に実機で起動中のNagameTVを終了します。
+
+```sh
+python3 -m scripts.dev.update_snap user@pi
+python3 -m scripts.dev.update_snap user@pi --branch work/snap
+python3 -m scripts.dev.update_snap user@pi --pr 23
+python3 -m scripts.dev.update_snap user@pi --run 44316734063
+```
+
+既定では、現在のブランチで成功した最新のSnap CI実行を選びます。`--pr`は指定したPRの先端
+コミットに対応する成功済みのPR実行を選び、`--run`は実行IDを直接指定します。
+ツールは実機の`snap version`からアーキテクチャーを読み取り、該当する成果物を取得します。
+手元と転送先でSHA-256を確認してから`sudo snap install --dangerous`を実行します。
+端末から実行すると実機のsudoプロンプトに応答できます。標準入力が端末以外の場合は
+パスワード入力なしでsudoを実行できるアカウントが必要です。
+
+更新前後の`snap connections nagametv`を確認し、以前の手動接続と、接続済みだった
+`gpu-2604`および`hdmi-cec`が外れていれば元のスロットへ再接続します。出力には更新後の
+リビジョンと、更新前のリビジョンに戻すための`snap revert`コマンドが含まれます。
+成果物が見つからない場合、検証やSSH、sudoに失敗した場合はエラーを表示して終了します。
+
 ## Ubuntu Coreに導入する
 
 Raspberry Pi 4ではarm64版、PCではamd64版を用意します。Ubuntu Coreの
