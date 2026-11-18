@@ -42,17 +42,12 @@ GPUのユーザー空間ドライバーは`mesa-2604`から`gpu-2604` content in
 | `network`、`network-bind` | 配信サーバー・関連サービスへの接続と、リモート操作やデータ放送で使用するローカルサーバーの待ち受け。リモート操作はアプリの設定で有効にする。 |
 | `home`、`removable-media` | 録画ファイルの読み込みとスクリーンショットの保存に使用。`home`からはホーム直下の隠し領域への一般アクセスは得られない。メディアを使う場合は`removable-media`を手動接続する。 |
 | `camera`、`media-control` | V4L2の`/dev/video*`とstateless decoderで使う`/dev/media*`への任意アクセス。接続にはカメラやメディアデバイスへのアクセスも伴うため、必要な実機に限って手動接続する。通常の再生には同梱のlibavを使える。 |
+| `custom-device`（`hdmi-cec`） | HDMI-CECアダプター（`/dev/cecN`）への任意アクセス。NagameTVのデスクトップアプリとキオスクサービスが使用し、手動接続で有効にする。 |
 
-HDMI-CECを使うには、`/dev/cecN`へのアクセスを別途設定する必要があります。snapd 2.78で
-`hdmi-cec`そのものをインターフェースとして宣言すると、`unknown interface "hdmi-cec"`の
-警告が出ます。Pi 4のUbuntu 26.04 Desktopでは、実験用snapに`custom-device`のプラグと
-スロットを置き、`--dangerous`でインストールして手動接続しました。起動プロセスに
-`video`グループを一時的に付与すると、strict confinementのまま`/dev/cec0`で
-Playback論理アドレスを取得できました。テレビとのやり取りとリモコンキーの受信は未検証です。
-
-snapd 2.78のベース宣言は、`custom-device`のスロットのインストールと自動接続を既定で
-拒否します。署名のないローカルsnapにはsnapの型などを対象とする最小限の検査が適用されるため、
-この実験ではアプリsnapに宣言したスロットをインストールできました。
+snapd 2.78では、NagameTVが提供する`custom-device`スロットを、署名のないローカルsnapとして
+`--dangerous`でインストールできます。このときもアプリはstrict confinementで動作します。
+Store署名済みのsnapでは、ベース宣言がスロットのインストールを既定で拒否するため、提供元の
+`snap-declaration`で許可を得る必要があります。
 [`custom-device`のベース宣言](https://github.com/canonical/snapd/blob/2.78/interfaces/builtin/custom_device.go#L41-L48)、
 [署名のないsnapの検査](https://github.com/canonical/snapd/blob/2.78/overlord/ifacestate/ifacestate.go#L515-L548)、
 [最小限の検査の実装](https://github.com/canonical/snapd/blob/2.78/interfaces/policy/policy.go#L288-L337)
@@ -114,6 +109,25 @@ Mirakurun／mirakcと必要に応じてEPGStationを設定します。`snap run 
 既存の録画を開く場合や画像を通常の「ピクチャ」へ出す場合は、アクセス可能なフォルダーを選択します。
 USBメディアを使う場合は`sudo snap connect nagametv:removable-media`を実行します。
 
+### HDMI-CECを試す
+
+ローカルsnapを導入したあと、NagameTVの`hdmi-cec`プラグを同じsnapの`cec-adapter`スロットに
+接続します。
+
+```sh
+sudo snap connect nagametv:hdmi-cec nagametv:cec-adapter
+snap connections nagametv
+```
+
+接続に加え、実行ユーザーにデバイスを読み書きできる権限が必要です。Pi 4のUbuntu 26.04では
+`/dev/cecN`の所有グループは`video`です。`id -nG`で現在のセッションに`video`が含まれるか
+確認します。含まれない場合は対象ユーザーで`sudo usermod -aG video "$USER"`を実行し、
+Waylandセッションにログインし直します。
+
+Waylandセッションから`snap run nagametv --features=hdmi-cec`を実行すると、その起動に限って
+HDMI-CECを有効にできます。リモコンキーの受信とテレビとのやり取りは未検証です。
+[HDMI-CECの設定と状態表示](hdmi-cec.md#有効化と設定)
+
 ## Ubuntu Coreに導入する
 
 Raspberry Pi 4ではarm64版、PCではamd64版を用意します。Ubuntu Coreの
@@ -133,13 +147,14 @@ snap connections nagametv
 直接ALSAを使う場合は`sudo snap connect nagametv:alsa`を実行します。
 PulseAudio互換サービスがある場合は、そのサービスの`audio-playback`スロットに接続します。
 
-Ubuntu CoreでHDMI-CECを有効にする構成では、機器のgadget snapに`custom-device`スロットを
-宣言し、対象の`/dev/cecN`と対応するudevルールを指定します。Storeで配布するには、gadgetの
-`snap-declaration`でスロットのインストール許可を得る必要があります。NagameTV側では同じ
-`custom-device`属性値を持つプラグを、利用するアプリまたはサービスに追加します。
-接続は`snap connect`で行うか、同じイメージに含める場合はgadgetの`meta/gadget.yaml`の
-`connections`に指定して初回起動時に行います。カーネルがアダプターを公開し、実行ユーザーが
-そのデバイスを読み書きできることも必要です。
+Ubuntu Coreでgadget snapをHDMI-CECデバイスの提供元にする場合は、gadgetに
+`custom-device`スロットを宣言します。スロットには`custom-device: hdmi-cec`と、対象の
+`/dev/cecN`に対応するデバイスパターンおよびudevルールを指定します。Storeで配布する
+構成では、gadgetの`snap-declaration`でスロットのインストール許可を得ます。
+NagameTV側の`hdmi-cec`プラグをgadgetのスロットに`snap connect`で接続します。
+両方を同じイメージに含める場合は、gadgetの`meta/gadget.yaml`の`connections`で
+初回起動時の接続を指定できます。カーネルによるデバイスの公開と、サービスからの
+読み書きの権限も必要です。
 [custom-deviceインターフェース](https://snapcraft.io/docs/reference/interfaces/custom-device-interface/)、
 [snap-declaration](https://documentation.ubuntu.com/core/reference/assertions/snap-declaration/)、
 [gadget snapの形式](https://documentation.ubuntu.com/core/reference/gadget-snap-format/)
