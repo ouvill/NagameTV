@@ -40,6 +40,7 @@ the complete native Wayland startup/input suite remains unverified on sway.
 | `python3 scripts/test.py desktop-media` | Linux MPRIS wire types, metadata, commands, property/seek signals, stale seeks, rejected values and registration cleanup on private D-Bus | None: QCoreApplication and synthetic metadata |
 | `python3 scripts/test.py subtitle-outline` | Six pixel-exact QPainterPath/SVG comparisons: full height, small ink/cubic curves, midline, overhang/descender, separate contours, empty path | None: QCoreApplication and in-memory QImage rasterization |
 | `python3 scripts/test.py pointer-activity` | Duplicate installation, repeated positions, disabled items, window changes, observer deletion and event delivery after item destruction | Validated X11 display and GPU |
+| `python3 scripts/test.py portal-startup` | Private D-Bus tests for a responsive portal, an absent portal, an old FileChooser and either startup request hanging | None: no Qt GUI initialization |
 | `python3 scripts/test.py portal-dialogs` | Real Qt portal plugin on a private D-Bus session: file/folder selection, FileTransfer TS/M2TS inspection, invalid transfers, Unicode paths and production QML drop areas including first-run setup | Validated X11 display and GPU; the suite itself does not use audio |
 | `python3 scripts/test.py subtitle-rendering` | Existing Qt Quick Test assertions, using the Rust TestOutlineProvider and the production outline helper | Validated X11 display and GPU |
 

@@ -3,18 +3,22 @@
 ## ファイル選択ダイアログ
 
 Linux版では、録画ファイルとキャプチャ保存先の選択にデスクトップのPortalを優先する。
-Qt生成前の `DialogSetup::prepare()` で `QT_QPA_PLATFORMTHEME=xdgdesktopportal` を指定し、
-Qt生成後・QML読込前に同じトークンの `finish()` で利用可否を判定する。
-プラットフォームテーマの指定はこの方針で上書きするが、表示倍率やX11/Waylandの
-描画バックエンドは変更しない。外観はQtのPortalテーマがデスクトップのテーマへ委譲する。
+ネイティブ版とSnapでは、Qtを生成する前にRustからセッションD-Busへ接続し、
+`Settings.ReadAll`と`FileChooser`のバージョンを並行して問い合わせる。
+接続と2件の問い合わせに共通の1秒の期限を設け、ファイル選択の判定にも同じ結果を使う。
 
-ネイティブ版では、QtのPortalプラグインが実際に読み込まれ、セッションD-Busの
-`org.freedesktop.portal.FileChooser` がバージョン3以上を返すことを確認する。
-バージョン3はフォルダー選択にも必要。確認用のD-Bus呼び出しは1秒でタイムアウトする。
-起動時に利用できなければ理由をログに残し、
-[`AA_DontUseNativeDialogs`](https://doc.qt.io/qt-6/qt.html#ApplicationAttribute-enum)
-でQt Quick製ダイアログを選ぶ。Qtの自動フォールバックでGTK3へ戻るのを防ぎ、
-X11・HiDPI環境での `infinite surface size not supported` を回避する。
+Portalが応答すれば`QT_QPA_PLATFORMTHEME=xdgdesktopportal`を指定し、外観をデスクトップの
+テーマに委ねる。QtのPortalプラグインが読み込まれ、フォルダー選択が可能な
+`FileChooser`バージョン3以上を確認できれば、Portalのファイル選択を使う。
+ファイル選択だけが未対応なら、`AA_DontUseNativeDialogs`でQt Quick製ダイアログを選ぶ。
+これによりGTK3への自動フォールバックを避け、X11・HiDPI環境での
+`infinite surface size not supported`を回避する。
+
+Portalに接続できない場合や応答が期限に間に合わない場合は、原因をWARNで一度記録する。
+`QT_QPA_PLATFORMTHEME=generic`を指定し、Qtによる起動時の同期`Settings.ReadAll`を避ける。
+Qt Networkのシステムプロキシ検出を無効にし、GIOは`GIO_USE_PROXY_RESOLVER=dummy`で
+直接接続を使う。これでlibproxyによるPortalの再起動待ちも避けられる。
+いずれもアプリのプロセスにだけ適用する。表示倍率やX11/Waylandの描画バックエンドには影響しない。
 
 Flatpakの `/.flatpak-info` が存在する場合は、QtのPortal連携を維持する。
 サンドボックス外のファイルを選ぶにはホストのPortalとDocument Portalが必要なため、
@@ -26,7 +30,10 @@ Ubuntuではプラグインは `qt6-xdgdesktopportal-platformtheme` パッケー
 Portalの可用性は起動時に決定するため、導入・起動後はアプリも再起動する。
 
 [FileChooserの仕様](https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.portal.FileChooser.html)、
-[QtのPortal実装](https://github.com/qt/qtbase/blob/6.10/src/plugins/platformthemes/xdgdesktopportal/qxdgdesktopportaltheme.cpp)。
+[Qt 6.10.2のテーマ選択](https://github.com/qt/qtbase/blob/v6.10.2/src/gui/kernel/qguiapplication.cpp#L1354-L1387)、
+[QtのPortal実装](https://github.com/qt/qtbase/blob/v6.10.2/src/plugins/platformthemes/xdgdesktopportal/qxdgdesktopportaltheme.cpp#L107-L138)、
+[GIOのプロキシ選択](https://github.com/GNOME/glib/blob/2.88.0/gio/gproxyresolver.c#L78-L89)、
+[Qt Networkのシステムプロキシ設定](https://doc.qt.io/qt-6/qnetworkproxyfactory.html#setUseSystemConfiguration)。
 
 2026-09-16: Qt 6.10.2 / GTK 3.24.52 / X11の表示倍率2倍で、最小の
 FileDialogでも同じ警告を再現。Wayland経由またはGTKの倍率1倍では再現しなかった。

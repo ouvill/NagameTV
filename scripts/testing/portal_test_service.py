@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""FileChooser protocol fixture for python3 scripts/test.py portal-dialogs, on its private bus only."""
+"""Desktop portal protocol fixture for portal-startup and portal-dialogs, on their private buses."""
 import os
 from pathlib import Path
 
@@ -10,6 +10,7 @@ from gi.repository import GLib
 
 dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
 directory = Path(os.environ["VIEWER_PORTAL_TEST_DIR"])
+mode = os.environ.get("VIEWER_PORTAL_MODE", "available")
 bus = dbus.SessionBus()
 name = dbus.service.BusName("org.freedesktop.portal.Desktop", bus)
 documents_name = dbus.service.BusName("org.freedesktop.portal.Documents", bus)
@@ -30,15 +31,22 @@ class Portal(dbus.service.Object):
         super().__init__(bus, "/org/freedesktop/portal/desktop")
         self.requests = []
 
-    @dbus.service.method("org.freedesktop.DBus.Properties", in_signature="ss", out_signature="v")
-    def Get(self, interface, prop):
+    @dbus.service.method("org.freedesktop.DBus.Properties", in_signature="ss", out_signature="v",
+                         async_callbacks=("reply", "error"))
+    def Get(self, interface, prop, reply, error):
         if interface == "org.freedesktop.portal.FileChooser" and prop == "version":
-            return dbus.UInt32(4)
-        raise dbus.exceptions.DBusException("Unknown property")
+            (directory / "chooser-called").touch()
+            if mode != "chooser-no-reply":
+                reply(dbus.UInt32(2 if mode == "old-chooser" else 4))
+        else:
+            error(dbus.exceptions.DBusException("Unknown property"))
 
-    @dbus.service.method("org.freedesktop.portal.Settings", in_signature="as", out_signature="a{sa{sv}}")
-    def ReadAll(self, namespaces):
-        return {}
+    @dbus.service.method("org.freedesktop.portal.Settings", in_signature="as", out_signature="a{sa{sv}}",
+                         async_callbacks=("reply", "error"))
+    def ReadAll(self, namespaces, reply, error):
+        (directory / "settings-called").touch()
+        if mode != "settings-no-reply":
+            reply({})
 
     @dbus.service.method("org.freedesktop.portal.FileChooser", in_signature="ssa{sv}",
                          out_signature="o", sender_keyword="sender")
