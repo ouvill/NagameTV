@@ -79,6 +79,11 @@ enum Suite {
     },
     #[cfg(target_os = "linux")]
     PortalDialogs,
+    #[cfg(target_os = "linux")]
+    PortalStartup {
+        #[arg(value_enum)]
+        fixture: crate::platform::PortalFixture,
+    },
     ChannelViews {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         arguments: Vec<String>,
@@ -143,6 +148,8 @@ pub fn run(arguments: Vec<OsString>) -> i32 {
         } => startup::run_live_probe(server, service, seconds),
         #[cfg(target_os = "linux")]
         Suite::PortalDialogs => portal_dialogs::run(),
+        #[cfg(target_os = "linux")]
+        Suite::PortalStartup { fixture } => crate::platform::check_portal_fixture(fixture),
         Suite::ChannelViews { arguments } | Suite::SubtitleRendering { arguments } => {
             let mut qt_arguments = vec!["viewer-qml-tests".to_owned()];
             qt_arguments.extend(arguments);

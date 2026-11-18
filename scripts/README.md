@@ -42,6 +42,7 @@ python3 scripts/test.py remote-web                # Webリモコンの型・単�
 python3 scripts/test.py viewer-mpegts            # 共通TS・PAT/PMTの機器不要テスト
 python3 scripts/test.py libaribcaption           # 字幕デコーダーの所有権試験。C++/CMake/libclangが必要
 python3 scripts/test.py sleep-inhibit            # 私的D-Busと偽portal/ScreenSaver/logindの機器不要試験
+python3 scripts/test.py portal-startup           # 私的D-BusでPortalの応答・不在・タイムアウトを確認
 python3 scripts/test.py sleep-inhibit-x11        # 専用XwaylandでX11の拒否・取得解除を確認
 python3 scripts/test.py connection localization  # 機器不要のQt試験
 python3 scripts/test.py remote-keys               # 専用画面・実GPUでリモコンキー配送と非アクティブ時の挙動を確認

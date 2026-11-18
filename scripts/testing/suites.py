@@ -1,5 +1,6 @@
 """Qt suite definitions and preparation; invoke through scripts/test.py."""
 import argparse
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from enum import Enum
 import os
@@ -34,6 +35,7 @@ SUITES = {
     "desktop-media": Suite(Requirement.CPU, ("--native-tests", "desktop-media")),
     "localization": Suite(Requirement.CPU, ("--native-tests", "localization")),
     "subtitle-outline": Suite(Requirement.CPU, ("--native-tests", "subtitle-outline")),
+    "portal-startup": Suite(Requirement.CPU, ("--native-tests", "portal-startup")),
     "danmaku": Suite(Requirement.GUI, ("--qml-tests",)),
     "ui-style": Suite(Requirement.GUI, ("--native-tests", "channel-views", "-input", "tests/ui-gallery")),
     "remote-keys": Suite(Requirement.GUI, ("--native-tests", "channel-views", "-input", "tests/remote-keys")),
@@ -50,6 +52,7 @@ STARTUP_CASES = ("startup", "recording-pid-change", "timeshift", "data-broadcast
 RECORDING_CASES = ("recording-audit", "recording-probe")
 PORTAL_TIMEOUT_SECONDS = 5
 PORTAL_POLL_SECONDS = 0.05
+PORTAL_STARTUP_CHECK_SECONDS = 6
 
 
 def validate_arguments(name, arguments):
@@ -81,7 +84,7 @@ def validate_arguments(name, arguments):
         if qt_args and (len(qt_args) != 2 or qt_args[0] != "-input"
                         or not (ROOT / qt_args[1]).is_file() or Path(qt_args[1]).suffix != ".qml"):
             raise ValueError("danmaku accepts [--evaluation-legacy-comments] [-input TEST.qml]")
-    elif name in ("connection", "desktop-media", "sleep-inhibit", "sleep-inhibit-x11", "localization", "video-item", "portal-dialogs") and arguments:
+    elif name in ("connection", "desktop-media", "sleep-inhibit", "sleep-inhibit-x11", "localization", "video-item", "portal-dialogs", "portal-startup") and arguments:
         raise ValueError(f"{name} does not accept additional arguments")
     elif "--ui-only" in arguments:
         raise ValueError("--ui-only was retired; subtitle-rendering uses the validated private GPU session")
@@ -127,7 +130,7 @@ def run_suite(name, arguments):
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(ROOT / relative, destination)
             command.extend(["-input", str(temporary / "tests/screenshots"), *arguments])
-        elif name in ("connection", "desktop-media", "sleep-inhibit"):
+        elif name in ("connection", "desktop-media", "sleep-inhibit", "portal-startup"):
             # No service directories: missing-portal checks must never activate
             # a real desktop service, even on a developer's workstation.
             config = temporary / "bus.conf"
@@ -136,8 +139,12 @@ def run_suite(name, arguments):
 <policy context="default"><allow user="*"/><allow own="*"/>
 <allow send_destination="*"/><allow receive_sender="*"/></policy>
 </busconfig>""")
-            command = ["dbus-run-session", f"--config-file={config}", "--", sys.executable,
-                       "-m", "scripts.testing.suites", "--private-bus", *command]
+            private_bus = ["dbus-run-session", f"--config-file={config}", "--", sys.executable,
+                           "-m", "scripts.testing.suites"]
+            if name == "portal-startup":
+                command = [*private_bus, "--portal-startup-fixture", *command, directory]
+            else:
+                command = [*private_bus, "--private-bus", *command]
         elif name == "ui-capture":
             (ROOT / "build/ui-review").mkdir(parents=True, exist_ok=True)
             command.extend(arguments)
@@ -155,19 +162,8 @@ def run_suite(name, arguments):
             (temporary / "録画 #100%.ts").touch()
             (temporary / "キャプチャ #100%").mkdir()
             env["VIEWER_PORTAL_TEST_DIR"] = directory
-            service = subprocess.Popen([sys.executable, "-m", "scripts.testing.portal_test_service"],
-                                       cwd=ROOT, env=env, start_new_session=True)
-            try:
-                deadline = time.monotonic() + PORTAL_TIMEOUT_SECONDS
-                while not (temporary / "ready").exists():
-                    if service.poll() is not None:
-                        raise RuntimeError(f"Portal test service exited with {service.returncode}")
-                    if time.monotonic() >= deadline:
-                        raise RuntimeError("Portal test service did not become ready")
-                    time.sleep(PORTAL_POLL_SECONDS)
+            with portal_fixture(temporary, env, "available"):
                 return run(command)
-            finally:
-                stop_process_group(service)
         result = run(command)
         if name == "localization" and result == 0:
             # A separate process preserves the fresh translator state.
@@ -175,11 +171,67 @@ def run_suite(name, arguments):
         return result
 
 
+@contextmanager
+def portal_fixture(directory, env, mode):
+    service = subprocess.Popen([sys.executable, "-m", "scripts.testing.portal_test_service"],
+                               cwd=ROOT, start_new_session=True,
+                               env=dict(env, VIEWER_PORTAL_TEST_DIR=str(directory), VIEWER_PORTAL_MODE=mode))
+    try:
+        deadline = time.monotonic() + PORTAL_TIMEOUT_SECONDS
+        while not (directory / "ready").exists():
+            if service.poll() is not None:
+                raise RuntimeError(f"Portal test service exited with {service.returncode}")
+            if time.monotonic() >= deadline:
+                raise RuntimeError("Portal test service did not become ready")
+            time.sleep(PORTAL_POLL_SECONDS)
+        yield
+    finally:
+        stop_process_group(service)
+
+
+def check_portal_startup(command, temporary):
+    env = dict(os.environ, GIO_USE_PROXY_RESOLVER="fixture", RUST_LOG="info",
+               QT_QPA_PLATFORM="nagametv-invalid-platform")
+    env.pop("DISPLAY", None)
+    env.pop("WAYLAND_DISPLAY", None)
+    for mode, expected, cause in (
+        ("absent", "bypass", "org.freedesktop.DBus.Error.ServiceUnknown"),
+        ("available", "available", None),
+        ("old-chooser", "old-chooser", None),
+        ("settings-no-reply", "bypass", "did not answer within 1s"),
+        ("chooser-no-reply", "bypass", "did not answer within 1s"),
+    ):
+        directory = temporary / mode
+        directory.mkdir()
+        fixture = nullcontext() if mode == "absent" else portal_fixture(directory, env, mode)
+        with fixture:
+            started = time.monotonic()
+            result = subprocess.run([*command, expected], cwd=ROOT, env=env, text=True,
+                                    capture_output=True, timeout=PORTAL_STARTUP_CHECK_SECONDS)
+            elapsed = time.monotonic() - started
+            if result.returncode:
+                print(result.stdout, end="")
+                print(result.stderr, end="", file=sys.stderr)
+                return result.returncode
+            warning = "Desktop portal probe failed"
+            if (result.stderr.count(warning) != int(cause is not None)
+                    or (cause is not None and (cause not in result.stderr or "WARN" not in result.stderr))):
+                raise RuntimeError(f"{mode}: unexpected startup diagnostics: {result.stderr}")
+            if mode != "absent":
+                for event in ("settings-called", "chooser-called"):
+                    if not (directory / event).exists():
+                        raise RuntimeError(f"{mode}: missing {event}")
+            print(f"Portal startup {mode}: {expected} in {elapsed:.3f} s")
+    return 0
+
+
 def main():
     if sys.argv[1:2] == ["--private-bus"]:
         env = dict(os.environ)
         env["DBUS_SYSTEM_BUS_ADDRESS"] = env["DBUS_SESSION_BUS_ADDRESS"]
         return subprocess.run(sys.argv[2:], cwd=ROOT, env=env, pass_fds=lock_fds(), check=False).returncode
+    if sys.argv[1:2] == ["--portal-startup-fixture"]:
+        return check_portal_startup(sys.argv[2:-1], Path(sys.argv[-1]))
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("suite", choices=SUITES)
     parser.add_argument("arguments", nargs=argparse.REMAINDER)
