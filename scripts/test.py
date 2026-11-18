@@ -21,6 +21,13 @@ from scripts.testing.suites import SUITES, Requirement
 CRATES = ("viewer-diagnostics", "viewer-mpegts", "arib-b24", "viewer-web-bml", "tsreadex",
           "libaribcaption", "viewer-remote", "viewer-epg-events", "viewer-comments")
 RUST = (*CRATES, "app")
+SLOW_APP_TESTS = (
+    "playback::recording::http::playback_tests::interleaved_mp4_uses_few_gets_during_thirty_seconds_of_qtdemux_playback",
+    "playback::recording::http::playback_tests::transport_stream_uses_few_gets_during_thirty_seconds_of_playback",
+    "playback::recording::http::recovery_tests::a_continuous_get_survives_a_pause_longer_than_the_former_request_timeout",
+    "playback::input::live_speed_tests::live_catch_up_recovers_when_receive_index_is_ahead_of_decodable_video",
+    "playback::timeline::startup_tests::live_reserve_keeps_audio_on_time_through_a_short_delivery_stall",
+)
 NATIVE = tuple(name for name, suite in SUITES.items() if suite.requirement == Requirement.CPU)
 GUI = tuple(name for name, suite in SUITES.items() if suite.requirement == Requirement.GUI
             and name != "ui-capture")
@@ -89,6 +96,10 @@ class Step:
             raise
 
 
+def skipped_slow_tests(suites, args):
+    return SLOW_APP_TESTS if "app" in suites and not (args.slow or args.run_ignored) else ()
+
+
 def plan(suites, directory, args):
     checks, tests = [], []
     if "web-bml-adapter" in suites:
@@ -109,6 +120,7 @@ def plan(suites, directory, args):
         checks.append(Step("localization-catalog", [sys.executable, "-m", "scripts.testing.check_localization"]))
     if any(suite in RUST for suite in suites):
         checks.insert(0, Step("nextest-version", ["cargo", "nextest", "--version"]))
+    excluded = skipped_slow_tests(suites, args)
     for suite in suites:
         if suite not in RUST:
             continue
@@ -131,8 +143,13 @@ def plan(suites, directory, args):
                    "--config-file", str(ROOT / ".config/nextest.toml")]
         if args.test_threads:
             command.extend(["--test-threads", str(args.test_threads)])
-        if args.filter:
-            command.extend(["-E", args.filter])
+        filterset = args.filter
+        if suite == "app" and excluded:
+            slow = " | ".join(f"test(={name})" for name in excluded)
+            exclude_slow = f"not ({slow})"
+            filterset = f"({filterset}) & {exclude_slow}" if filterset else exclude_slow
+        if filterset:
+            command.extend(["-E", filterset])
         if args.run_ignored:
             command.extend(["--run-ignored", "only", "--success-output", "immediate"])
         if "checks" in suites and suite == "app":
@@ -146,7 +163,7 @@ def plan(suites, directory, args):
         tests.append(Step("build-qt", [sys.executable, "-m", "scripts.testing.binary",
                                       "--prepare", str(directory / "nagametv"),
                                       *(["--evaluation-legacy-comments"] if
-                                        args.suite_args == ["--evaluation-legacy-comments"] else [])]))
+                                        args.suite_args[:1] == ["--evaluation-legacy-comments"] else [])]))
     for suite in suites:
         if suite not in SUITES:
             continue
@@ -170,8 +187,10 @@ def main():
     parser.add_argument("--profile", choices=("dev", "release"), default="dev")
     parser.add_argument("--log-dir", type=Path, default=ROOT / "build/test-runs",
                         help="parent directory for per-run logs and binaries")
-    parser.add_argument("--test-threads", type=int, help="nextest concurrency (default: 2)")
+    parser.add_argument("--test-threads", type=int, help="nextest concurrency (default: 4)")
     parser.add_argument("--filter", help="nextest filterset; only allowed with Rust suites")
+    parser.add_argument("--slow", action="store_true",
+                        help="include the slow real-time app tests")
     parser.add_argument("--run-ignored", action="store_true",
                         help="run only ignored Rust tests selected by an explicit --filter")
     arguments = sys.argv[1:]
@@ -184,6 +203,7 @@ def main():
         print("web-bml-adapter: hardware-free browser adapter state and protocol tests (Node.js)")
         print("remote-web: hardware-free type, unit and committed asset checks (Node.js/npm)")
         print("tooling: hardware-free tests of scripts (also included in checks)")
+        print("slow tier: hardware-free real-time app tests (include with --slow)")
         print("ui-capture: manual GUI images for review (explicit selection only)")
         return 0
     suites = []
@@ -201,6 +221,8 @@ def main():
             parser.error(str(error))
     if args.filter and any(suite not in RUST for suite in suites):
         parser.error("--filter requires explicit Rust suites (for example: app --filter 'test(settings::)')")
+    if args.slow and "app" not in suites:
+        parser.error("--slow requires selecting the app suite")
     if args.run_ignored and not args.filter:
         parser.error("--run-ignored requires --filter to select an external/diagnostic test explicitly")
     if args.test_threads is not None and args.test_threads < 1:
@@ -214,6 +236,11 @@ def main():
     env["NAGAMETV_TEST_BINARY"] = str(directory / "nagametv")
     steps = plan(suites, directory, args)
     print(f"Test logs and summary: {directory}", flush=True)
+    excluded = skipped_slow_tests(suites, args)
+    if excluded:
+        print("Skipping slow app tests (include with --slow):", flush=True)
+        for name in excluded:
+            print(f"  {name}", flush=True)
     current = None
     try:
         for current in steps:
@@ -224,7 +251,7 @@ def main():
             current.status = Status.FAILED
         print(f"Test run stopped: {error}", file=sys.stderr)
     finally:
-        report = {"suites": suites, "profile": args.profile, "steps": [
+        report = {"suites": suites, "profile": args.profile, "skipped_slow_tests": excluded, "steps": [
             {"name": step.name, "status": step.status, "seconds": step.seconds,
              "returncode": step.returncode, "log": f"{step.name}.log"} for step in steps]}
         (directory / "summary.json").write_text(json.dumps(report, indent=2) + "\n")

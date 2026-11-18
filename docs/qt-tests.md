@@ -30,7 +30,7 @@ the complete native Wayland startup/input suite remains unverified on sway.
 | --- | --- | --- |
 | `python3 scripts/test.py localization` | Locale resolution, existing QML retranslation, date stability, dynamic snapshots, literal diagnostic arguments, 100 repeated language switches and translator ownership; a separate process removes the real catalog resource and checks failure cleanup | None: QCoreApplication and QtObject |
 | `python3 scripts/test.py connection` | Real Player and local HTTP fixtures: pending/failed saves, empty catalogs, save failures, shutdown, coherent stream properties during Qt signals, retry allowance and guide visibility/day notification order; channel source/proxy models with QAbstractItemModelTester, exact 64-bit service IDs, filtering, replacement and source destruction | None: QCoreApplication and HTTP |
-| `python3 scripts/test.py danmaku` | QML component tests in `rust/qml/tests/`, including channel views using the production Rust models | Validated private X11 display and GPU |
+| `python3 scripts/test.py danmaku` | QML component tests in `rust/tests/qml/`, including channel views using the production Rust models | Validated private X11 display and GPU |
 | `python3 scripts/test.py ui-style` | Production control catalogue, press/release hit areas, disabled actions, keyboard input, popup dismissal | Validated private X11 display and GPU |
 | `python3 scripts/test.py channel-wheel` | Channel browser and sidebar wheel input, cursor movement, snapping and filtering using the production Rust models | Validated private X11 display and GPU |
 | `python3 scripts/test.py startup` | Production Main.qml in separate processes: first run, two saved startups, channel restoration, guide open/close, native playback failure and clean shutdown; QML warnings fail the test | Validated private X11 display, GPU and virtual PipeWire output |
@@ -88,8 +88,11 @@ The separate hardware-free `python3 -m scripts.testing.epgstation_integration` s
 the pinned EPGStation HTTP service in Docker and checks these snapshots and the
 mock's file responses against it. GUI success alone does not verify a real server.
 
-The startup suite also covers persisted autoplay and both directions of the
-environment override, using the restored channel. Screenshot tests copy their
+The startup suite launches with saved autoplay off and on, with each direction
+of the environment override, and on a repeat launch. Each launch checks the
+restored channel, effective autoplay, settings persistence, and clean shutdown.
+The saved launches with autoplay off and on also exercise post-launch navigation,
+guide transitions, and playback. Screenshot tests copy their
 fixture and production component into a temporary directory and run the native
 test runner with the real Player; saved images are removed at exit. They use a
 rendered rectangle as a fixed image input for the queue tests. The production

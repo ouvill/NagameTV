@@ -10,9 +10,20 @@ python3 scripts/test.py app
 python3 scripts/test.py viewer-comments --filter 'test(cache::)'
 ```
 
-変更範囲に応じて[開発手順](development.md#テストと診断)の試験を選びます。
-全CPU試験は`python3 scripts/test.py cpu`、最適化した構成での検証は
-`python3 scripts/test.py cpu --profile release`です。
+変更後の確認には、変更箇所を直接通る試験を選びます。
+
+| 変更箇所 | 反復中に実行するコマンド |
+| --- | --- |
+| アプリのRustモジュール | `python3 scripts/test.py app --filter 'test(settings::)'`（フィルターを対象のモジュールに変更） |
+| 独立crate | `python3 scripts/test.py viewer-comments`（対象のcrateを指定） |
+| QML部品 | `python3 scripts/test.py danmaku -- -input rust/tests/qml/tst_VolumeSlider.qml`（対象の試験ファイルを指定） |
+| 録画のPID切替 | `python3 scripts/test.py startup -- recording-pid-change` |
+| Pythonの開発用スクリプト | `python3 scripts/test.py tooling` |
+
+対象ファイルを指定するQML試験でも、専用画面・実GPU・仮想音声出力を検証します。
+統合前は[開発手順](development.md#テストと診断)に沿って変更範囲を検証します。
+全CPU試験は`python3 scripts/test.py cpu --slow`、最適化した構成での検証は
+`python3 scripts/test.py cpu --slow --profile release`です。
 初めて`dev`へ切り替えるときは依存物をコンパイルします。
 型検査だけなら`bash scripts/build/with-build-lock.sh cargo check --manifest-path rust/Cargo.toml --locked`
 を使えます。CMake・共通ランナー・直接のCargo診断は`build/cargo`を共用し、
@@ -47,7 +58,7 @@ C++やQMLのコンパイル結果を再利用できます。Qt連携・ヘッダ
 
 ローカルのビルド並列数はCargoのCPU検出に任せます。
 メモリー使用量を抑える場合は`CARGO_BUILD_JOBS=2`などで指定してください。
-nextestの並列数は引き続き2です。実時間を使う再生試験は単独実行し、
+nextestの並列数は4です。実時間を使う再生試験は単独実行し、
 ビルドの並列化によって試験どうしが干渉する範囲は広げません。
 CIのCargo・AppImage・deb・Flatpakも、2並列固定から実行ホストの`nproc`へ変更しています。
 この設定はコンパイルの並列数だけに適用します。

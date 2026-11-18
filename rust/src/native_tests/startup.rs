@@ -16,6 +16,16 @@ static UI_WARNINGS: Mutex<Vec<String>> = Mutex::new(Vec::new());
 const SAVED_WINDOW_WIDTH: i32 = 850;
 const SAVED_WINDOW_HEIGHT: i32 = 610;
 
+pub(super) fn record_phase(started: &mut Instant, phase: &str) {
+    let now = Instant::now();
+    tracing::info!(
+        phase,
+        elapsed_ms = now.duration_since(*started).as_millis() as u64,
+        "Startup test phase"
+    );
+    *started = now;
+}
+
 fn record_qt(level: u8, category: &str, message: &str) {
     if level >= 2 {
         eprintln!("Qt [{category}]: {message}");
@@ -626,8 +636,14 @@ fn check_screen_navigation(
     Ok(())
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
+pub(super) enum StartupChecks {
+    Integration,
+    Launch,
+}
+
 enum WindowCheck {
-    Startup,
+    Startup(StartupChecks),
     PidChange,
     Timeshift,
     DataBroadcast,
@@ -658,6 +674,7 @@ fn window(
     check: WindowCheck,
 ) -> TestResult {
     let load_started = Instant::now();
+    let mut first_run_phase = load_started;
     let mode = playback::deinterlace::Mode::for_launch(preferences.deinterlace)?;
     let _preloaded = playback::preload(mode)?;
     let mut engine = QQmlApplicationEngine::new();
@@ -678,7 +695,7 @@ fn window(
         &mut engine,
         "player.retry_live_recovery(); player.live_recovery_state === 'idle'"
     )?);
-    match check {
+    let startup_checks = match check {
         WindowCheck::PlaybackPerformance => {
             eprintln!(
                 "PLAYBACK_LOAD_MS {}",
@@ -688,7 +705,7 @@ fn window(
             evaluate(&mut engine, "player.stop(); root.close(); true")?;
             return result;
         }
-        WindowCheck::Startup => {
+        WindowCheck::Startup(checks) => {
             assert!(evaluate(
                 &mut engine,
                 "player.recording_reservations_allowed && !player.recording_reservations_enabled && !player.reservations_enabled && !player.reservation_busy"
@@ -719,6 +736,7 @@ fn window(
                     "root.width * 9 === root.height * 16 && root.width <= 1280 && root.height <= 720"
                 )?),
             }
+            checks
         }
         WindowCheck::VideoProcessing => {
             let result = super::video_processing::run(app, &mut engine, mode);
@@ -788,7 +806,7 @@ fn window(
             evaluate(&mut engine, "player.stop(); root.close(); true")?;
             return result;
         }
-    }
+    };
     assert!(evaluate(&mut engine, "!screenshot.canCapture")?);
     assert!(evaluate(
         &mut engine,
@@ -805,7 +823,7 @@ fn window(
             preferences.live_buffer_ms.milliseconds()
         )
     )?);
-    if !preferences.server.is_empty() {
+    let configured_autoplay = if !preferences.server.is_empty() {
         wait_for(
             app,
             &mut engine,
@@ -841,6 +859,13 @@ fn window(
                 "root.homeScreen && modeNavigation.mode === ModeNavigation.Home && !player.watching_available"
             },
         )?);
+        Some(autoplay)
+    } else {
+        None
+    };
+    if let Some(autoplay) = configured_autoplay
+        && startup_checks == StartupChecks::Integration
+    {
         check_home_navigation(app, &mut engine)?;
         // The restored channel is now stable. Exercise danmaku before opening
         // the channel browser, whose navigation is checked separately below.
@@ -1033,12 +1058,13 @@ fn window(
                 "!player.recording && !player.connecting && player.playback_error.length > 0 && modeNavigation.mode === ModeNavigation.None",
             )?;
         }
-    } else {
+    } else if configured_autoplay.is_none() {
         wait_for(app, &mut engine, "setup.opened")?;
         assert!(evaluate(
             &mut engine,
             "root.setupRequired && !player.server_configured && !player.loading && !player.server.length && !player.channels.count"
         )?);
+        record_phase(&mut first_run_phase, "launch and setup ready");
         // Comments are enabled here with an empty catalog, so shortcut coverage
         // does not start external comment/activity requests.
         evaluate(&mut engine, "setup.close(); true")?;
@@ -1051,13 +1077,21 @@ fn window(
         check_shortcuts(app, &mut engine)?;
         evaluate(&mut engine, "setup.open(); true")?;
         wait_for(app, &mut engine, "setup.opened")?;
+        record_phase(&mut first_run_phase, "layout and shortcuts");
         check_recording(app, &mut engine)?;
+        record_phase(&mut first_run_phase, "local recording");
         check_recording_recovery(app, &mut engine, "recording-clock-reset.ts")?;
+        record_phase(&mut first_run_phase, "recording clock reset");
         check_recording_recovery(app, &mut engine, "recording-pid-change.ts")?;
+        record_phase(&mut first_run_phase, "recording PID change");
         check_http_recording(app, &mut engine)?;
+        record_phase(&mut first_run_phase, "EPGStation and HTTP recording");
         check_general_media(app, &mut engine)?;
+        record_phase(&mut first_run_phase, "media formats");
         check_media_subtitles(app, &mut engine)?;
+        record_phase(&mut first_run_phase, "media subtitles");
         super::timeshift::run(app, &mut engine)?;
+        record_phase(&mut first_run_phase, "timeshift");
     }
     evaluate(
         &mut engine,
@@ -1078,6 +1112,9 @@ fn window(
     app.process_events();
     let warnings = UI_WARNINGS.lock().unwrap();
     assert!(warnings.is_empty(), "UI warnings: {warnings:?}");
+    if configured_autoplay.is_none() {
+        record_phase(&mut first_run_phase, "window cleanup");
+    }
     Ok(())
 }
 
@@ -1803,6 +1840,7 @@ fn check_recording(
     app: &QGuiApplication,
     engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
 ) -> TestResult {
+    let mut phase = Instant::now();
     let directory = tempfile::tempdir()?;
     let path = directory.path().join("録画 #100%.ts");
     std::fs::write(
@@ -1851,6 +1889,7 @@ fn check_recording(
         engine,
         "player.playing && JSON.parse(player.video_stats()).rendered > 0 && JSON.parse(player.audio_tracks()).length > 0",
     )?;
+    record_phase(&mut phase, "local recording first frame and audio tracks");
     #[cfg(target_os = "linux")]
     super::desktop_media::check_playback(app)?;
     assert!(evaluate(
@@ -1957,6 +1996,7 @@ fn check_recording(
     )?;
     evaluate(engine, "player.stop(); true")?;
     // Replay through the ordinary Play button, then reach a normal file EOF.
+    phase = Instant::now();
     evaluate(engine, "player.play(); true")?;
     wait_for(
         app,
@@ -1972,6 +2012,7 @@ fn check_recording(
         engine,
         "!player.playback_error.length && player.ended && player.media_active && player.recording && player.seekable"
     )?);
+    record_phase(&mut phase, "local recording replay to EOF");
     evaluate(engine, "player.play(); true")?;
     wait_for(
         app,
@@ -2665,7 +2706,7 @@ fn checks() -> TestResult {
         "run via python3 scripts/test.py startup for isolated settings"
     );
     tracing::info!("Startup window check: first run");
-    launch_window(None)?;
+    launch_window(StartupChecks::Integration, None)?;
     assert_eq!(server.requests(), 0);
     let expected_size = settings::WindowSize::checked(SAVED_WINDOW_WIDTH, SAVED_WINDOW_HEIGHT)
         .ok_or("saved window size")?;
@@ -2683,12 +2724,14 @@ fn checks() -> TestResult {
         settings::LiveBuffer::checked(SAVED_LIVE_BUFFER_MS).ok_or("live buffer")?,
     ));
     preferences.flush()?;
-    for (autoplay, launch_override) in [
-        (false, None),
-        (false, None),
-        (true, None),
-        (true, Some("0")),
-        (false, Some("1")),
+    // Once startup has converged to Home or Watching, later actions use
+    // that state. Repeat the launch assertions for restarts and overrides.
+    for (autoplay, launch_override, checks) in [
+        (false, None, StartupChecks::Integration),
+        (false, None, StartupChecks::Launch),
+        (true, None, StartupChecks::Integration),
+        (true, Some("0"), StartupChecks::Launch),
+        (false, Some("1"), StartupChecks::Launch),
     ] {
         preferences.change(settings::Change::Autoplay(autoplay));
         preferences.flush()?;
@@ -2696,9 +2739,10 @@ fn checks() -> TestResult {
         tracing::info!(
             autoplay,
             launch_override,
+            ?checks,
             "Startup window check: saved settings"
         );
-        launch_window(launch_override)?;
+        launch_window(checks, launch_override)?;
         assert!(server.requests() > before);
         let saved = settings::Loaded::open(path.clone())?;
         assert_eq!(saved.preferences().window_size, Some(expected_size));
@@ -2716,9 +2760,10 @@ fn checks() -> TestResult {
     Ok(())
 }
 
-fn launch_window(autoplay_override: Option<&str>) -> TestResult {
+fn launch_window(checks: StartupChecks, autoplay_override: Option<&str>) -> TestResult {
     let mut command = std::process::Command::new(std::env::current_exe()?);
-    command.args(["--native-tests", "startup-window"]);
+    let checks = clap::ValueEnum::to_possible_value(&checks).expect("startup checks name");
+    command.args(["--native-tests", "startup-window", checks.get_name()]);
     match autoplay_override {
         Some(value) => {
             command.env("NAGAMETV_AUTOPLAY", value);
@@ -2734,8 +2779,8 @@ fn launch_window(autoplay_override: Option<&str>) -> TestResult {
     Ok(())
 }
 
-pub fn run_window() -> i32 {
-    run_window_check(WindowCheck::Startup)
+pub(super) fn run_window(checks: StartupChecks) -> i32 {
+    run_window_check(WindowCheck::Startup(checks))
 }
 
 pub fn run_timeshift() -> i32 {

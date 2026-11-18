@@ -32,6 +32,7 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DNAGAMETV_DISTRIBUTION=OFF
 cmake --build build
 python3 scripts/test.py --list
 python3 scripts/test.py                          # 機器不要の標準テスト
+python3 scripts/test.py cpu --slow               # 実時間の試験を含む全CPUテスト
 python3 scripts/test.py core                     # Qt/GStreamer不要のRustクレートをまとめて検証
 python3 scripts/test.py tooling                  # スクリプト自身の回帰テスト
 python3 scripts/test.py arib-b24                 # データカルーセルの機器不要テスト
@@ -46,6 +47,7 @@ python3 scripts/test.py connection localization  # 機器不要のQt試験
 python3 scripts/test.py remote-keys               # 専用画面・実GPUでリモコンキー配送と非アクティブ時の挙動を確認
 python3 scripts/test.py danmaku ui-style          # 専用画面・実GPU・仮想音声を検証
 python3 scripts/test.py startup -- recording-pid-change
+python3 scripts/test.py danmaku -- -input rust/tests/qml/tst_VolumeSlider.qml
 python3 scripts/test.py danmaku -- --evaluation-legacy-comments
 ```
 
@@ -56,7 +58,8 @@ QML試験の関数指定や `-o` も同じ形式です。`checks` には `toolin
 含み、同時に選んでも各検査は一度だけ実行します。
 標準実行ではQt不要のRustクレートを先に検証します。クレートごとにビルド・実行するため、
 テスト失敗後に残りのクレートやQtをビルドしません。`core`はアプリ・Qtの検証を含まないので、
-変更範囲に応じて選択します。CIと引数なしの実行は引き続き全CPUスイートを検証します。
+変更範囲に応じて選択します。アプリの標準実行では、実時間を要する5件の名前を表示して除外します。
+`python3 scripts/test.py app --slow`でアプリの試験にこの5件を含めます。CIは`cpu --slow`を実行します。
 
 `remote-web` は `web-bml-adapter` と同じく `cpu` / `all` に含み、`checks` には含みません。
 初回は `rust/crates/viewer-remote/web/` で `npm ci` を実行してください。

@@ -41,6 +41,7 @@ class RunnerTests(unittest.TestCase):
     def test_invalid_suite_options_fail_before_build_or_hardware_detection(self):
         for arguments in (["video-item", "--", "unexpected"],
                           ["app", "--run-ignored"],
+                          ["core", "--slow"],
                           ["ui-style", "--", "--evaluation-legacy-comments"],
                           ["gui", "--", "unexpected"],
                           ["startup", "--", "recording-audit", "/missing-file.ts"],
@@ -55,7 +56,7 @@ class RunnerTests(unittest.TestCase):
     def test_ignored_rust_checks_keep_the_explicit_filter_and_show_measurements(self):
         steps = runner.plan(["app"], Path("/unused"), Namespace(
             profile="release", suite_args=[], filter="test(captured_program_snapshot_performance)",
-            test_threads=None, run_ignored=True))
+            test_threads=None, run_ignored=True, slow=False))
         command = next(step.command for step in steps if step.name == "app")
         self.assertEqual(command[command.index("--run-ignored") + 1], "only")
         self.assertEqual(command[command.index("-E") + 1], "test(captured_program_snapshot_performance)")
@@ -75,6 +76,18 @@ class RunnerTests(unittest.TestCase):
         validate_arguments("danmaku", ["--evaluation-legacy-comments"])
         with self.assertRaises(ValueError):
             validate_arguments("danmaku", ["--evaluation-legacy-comments", "extra"])
+
+    def test_danmaku_can_select_a_qml_file_with_legacy_evaluation(self):
+        fixture = self.directory / "tst_Fixture.qml"
+        fixture.touch()
+        arguments = ["--evaluation-legacy-comments", "-input", str(fixture)]
+        validate_arguments("danmaku", arguments)
+        steps = runner.plan(["danmaku"], self.directory, Namespace(profile="dev", suite_args=arguments))
+        self.assertEqual(steps[0].name, "gui-environment")
+        self.assertIn("--evaluation-legacy-comments", steps[1].command)
+        self.assertEqual(steps[2].command[-3:], arguments)
+        with self.assertRaises(ValueError):
+            validate_arguments("danmaku", ["-input", str(self.directory / "missing.qml")])
 
     def test_live_probe_requires_an_explicit_server_service_and_bounded_duration(self):
         for arguments in (["live-probe", "http://127.0.0.1:40772", "3209641984"],
@@ -181,6 +194,33 @@ with patch.object(benchmark.subprocess, 'call', side_effect=launch):
         self.assertEqual(len(lines), 1, result.stdout + result.stderr)
         return result, json.loads(Path(lines[0].removeprefix("Summary: ")).read_text())
 
+    def test_default_app_run_names_skipped_slow_tests_and_opt_in_runs_them(self):
+        self.fake_cargo("""import sys
+args = sys.argv[1:]
+if args[0] == 'metadata' or args[:2] == ['nextest', 'list']:
+    print('{}')
+elif args[:2] == ['nextest', 'run']:
+    print('filter:', args[args.index('-E') + 1] if '-E' in args else 'all')
+""")
+        for options in ((), ("--slow",), ("--filter", "test(playback) | test(settings)")):
+            with self.subTest(options=options):
+                result, report = self.run_suite("app", *options)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                log_path = next(line for line in result.stdout.splitlines() if line.startswith("Summary: "))
+                log = Path(log_path.removeprefix("Summary: ")).with_name("app.log").read_text()
+                if options == ("--slow",):
+                    self.assertEqual(log.strip(), "filter: all")
+                    self.assertEqual(report["skipped_slow_tests"], [])
+                    self.assertNotIn("Skipping slow app tests", result.stdout)
+                else:
+                    self.assertEqual(report["skipped_slow_tests"], list(runner.SLOW_APP_TESTS))
+                    self.assertIn("Skipping slow app tests", result.stdout)
+                    for name in runner.SLOW_APP_TESTS:
+                        self.assertIn(f"  {name}\n", result.stdout)
+                        self.assertIn(f"test(={name})", log)
+                    if options:
+                        self.assertIn("(test(playback) | test(settings)) & not (", log)
+
     def test_nextest_failure_skips_later_crate_and_qt_builds_and_reports_them(self):
         self.fake_cargo("""import json, sys
 args = sys.argv[1:]
@@ -228,7 +268,7 @@ elif args[0] == 'test':
 
     def test_gui_preflight_precedes_builds_and_qt_preparation_is_shared(self):
         steps = runner.plan(["app", "connection", "danmaku", "ui-style"], Path("/unused"),
-                            Namespace(profile="dev", suite_args=[], filter=None, test_threads=None, run_ignored=False))
+                            Namespace(profile="dev", suite_args=[], filter=None, test_threads=None, run_ignored=False, slow=False))
         names = [step.name for step in steps]
         self.assertEqual(names[0], "gui-environment")
         self.assertTrue(steps[0].environment_check)

@@ -77,8 +77,10 @@ def validate_arguments(name, arguments):
                          "recording-audit TS_PATH, recording-probe TS_PATH [SECONDS], "
                          "or live-probe SERVER SERVICE_ID [SECONDS]")
     if name == "danmaku":
-        if arguments not in ([], ["--evaluation-legacy-comments"]):
-            raise ValueError("danmaku accepts only --evaluation-legacy-comments")
+        qt_args = arguments[1:] if arguments[:1] == ["--evaluation-legacy-comments"] else arguments
+        if qt_args and (len(qt_args) != 2 or qt_args[0] != "-input"
+                        or not (ROOT / qt_args[1]).is_file() or Path(qt_args[1]).suffix != ".qml"):
+            raise ValueError("danmaku accepts [--evaluation-legacy-comments] [-input TEST.qml]")
     elif name in ("connection", "desktop-media", "sleep-inhibit", "sleep-inhibit-x11", "localization", "video-item", "portal-dialogs") and arguments:
         raise ValueError(f"{name} does not accept additional arguments")
     elif "--ui-only" in arguments:
@@ -139,7 +141,10 @@ def run_suite(name, arguments):
         elif name == "ui-capture":
             (ROOT / "build/ui-review").mkdir(parents=True, exist_ok=True)
             command.extend(arguments)
-        elif name != "danmaku":
+        elif name == "danmaku":
+            if len(arguments) >= 2:
+                command = [binary, "--native-tests", "channel-views", *arguments[-2:]]
+        else:
             command.extend(arguments)
 
         def run(command):

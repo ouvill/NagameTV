@@ -297,17 +297,23 @@ bash scripts/testing/install-nextest.sh
 python3 scripts/test.py --list
 python3 scripts/test.py             # 機器不要: 静的検査、Rustテスト、Qt接続など
 python3 scripts/test.py core        # Qt/GStreamer不要のRustクレートのみ
-python3 scripts/test.py app         # アプリのRustテストのみ
+python3 scripts/test.py app         # アプリの標準Rustテスト
+python3 scripts/test.py app --slow  # 実時間の再生・通信試験を含む
 python3 scripts/test.py danmaku ui-style  # GPU環境を検証してQML部品を確認
 python3 scripts/test.py app --filter 'test(settings::)'
 ```
 
 Rustの通常テストはnextestが個別プロセスで実行します。同じプロセス内のtracing subscriberや
-初期化状態の干渉を避け、既定の同時実行数は2、自動リトライは0とします。実時間の再生試験は
+初期化状態の干渉を避け、既定の同時実行数は4、自動リトライは0とします。実時間の再生試験は
 nextest内で単独実行します。通常のビルド構成は`dev`です。
 `--test-threads N`でテストの並列数、`--profile release`で最適化した構成に変更できます。
 再生性能やフレーム時間を評価する試験では`--profile release`を指定します。
 Qtスイートにも共通ランナーの`--profile release`を指定できます。
+
+実時間を要するアプリの5件は、標準実行では除外し、端末と`summary.json`にテスト名を出します。
+対象はMPEG-TSとMP4の30秒間のHTTP再生、HTTP接続のアイドル維持、ライブ追いつき、
+配信の中断をまたぐライブ音声再生です。`--slow`を付けると選択したスイートにこれらの試験を含めます。
+全CPU試験は`python3 scripts/test.py cpu --slow`です。CIでは毎回`--slow`を付けます。
 個別の引数は`python3 scripts/test.py startup -- recording-pid-change`のように`--`の後に渡します。
 アプリの主要なpath依存クレートと独立したデータ放送デコーダーも明示的に列挙し、nextestの対象外であるdoctestはCargoで別途実行します。
 `core`はこれらの独立クレートをまとめて選択します。字幕デコーダー`libaribcaption`の
@@ -413,7 +419,7 @@ Linuxのメディア連携テストも機器不要で、専用D-Bus・`python3-d
 専用画面・実GPU・起動済みPipeWire上の仮想出力を検証した後、製品の`Main.qml`を読み込み、初回・設定済み起動・
 番組表の開閉・再生エラー・終了を確認します。設定先は一時ディレクトリーです。
 画面部品を変更した場合は、その部品のQMLテストも実行してください。
-`python3 scripts/test.py danmaku`は`rust/qml/tests/`の部品テストを実行します。
+`python3 scripts/test.py danmaku`は`rust/tests/qml/`の部品テストを実行します。
 共通テーマや部品を変更した場合は、次の検査と部品一覧も実行します。
 
 ```sh
@@ -450,7 +456,7 @@ Wayland試験のサイズ変更・入力フォーカスの制約は[専用GUI環
 `pragma Singleton`を持つファイルはsingletonとして登録します。`Theme.qml`などの共有値は
 `import MinimalViewer`で参照し、画面のローカルな状態をそこへ保存しないでください。
 例外として`CommentList.qml`は評価用featureでのみ登録し、通常版のリソースには含めません。
-`rust/qml/tests/`のテスト用コンポーネントは製品モジュールへ含めません。
+`rust/tests/qml/`のテスト用コンポーネントは製品モジュールへ含めません。
 部品テストも`import MinimalViewer`で製品モジュールを読み込みます。`import ".."`で同じ部品を
 別の型として読み込むと、required propertyへ渡すQML型が一致しなくなるため使用しません。
 通常の製品モジュールに含まれない評価用`CommentList`だけは、テスト内で`Evaluation`という

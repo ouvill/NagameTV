@@ -92,7 +92,7 @@ pub fn run_with_arguments(arguments: &[String]) -> i32 {
 
 pub fn run() -> i32 {
     cxx_qt::init_qml_module!("MinimalViewer");
-    let path = cxx_qt_lib::QString::from(concat!(env!("CARGO_MANIFEST_DIR"), "/qml/tests"));
+    let path = cxx_qt_lib::QString::from(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/qml"));
     ffi::run_qml_tests(&path)
 }
 

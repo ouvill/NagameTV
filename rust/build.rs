@@ -38,6 +38,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     watch_headers(std::path::Path::new("src"))?;
     // The source directory is the module manifest. A new production component
     // is registered and compiled without a second hand-maintained file list.
+    // Cargo watches this directory recursively. Component test fixtures live in
+    // tests/qml so editing them does not regenerate the production module.
     println!("cargo:rerun-if-changed=qml");
     let mut qml_files = std::fs::read_dir("qml")?
         .map(|entry| entry.map(|entry| entry.path()))

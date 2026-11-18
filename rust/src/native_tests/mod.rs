@@ -45,7 +45,10 @@ enum Suite {
     SleepInhibitX11,
     Connection,
     Startup,
-    StartupWindow,
+    StartupWindow {
+        #[arg(value_enum, default_value = "integration")]
+        checks: startup::StartupChecks,
+    },
     Timeshift,
     DataBroadcast,
     DataBroadcastLive {
@@ -118,7 +121,7 @@ pub fn run(arguments: Vec<OsString>) -> i32 {
         Suite::SleepInhibitX11 => crate::player::sleep_inhibit_checks::run_x11(),
         Suite::Connection => crate::player::connection_checks::run(),
         Suite::Startup => startup::run(),
-        Suite::StartupWindow => startup::run_window(),
+        Suite::StartupWindow { checks } => startup::run_window(checks),
         Suite::Timeshift => startup::run_timeshift(),
         Suite::DataBroadcast => startup::run_data_broadcast(),
         Suite::DataBroadcastLive {
