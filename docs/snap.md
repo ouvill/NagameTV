@@ -35,7 +35,8 @@ GPUのユーザー空間ドライバーは`mesa-2604`から`gpu-2604` content in
 | インターフェース | 用途と接続条件 |
 | --- | --- |
 | `wayland`、`opengl`、`gpu-2604` | 表示とGPUアクセスに必要。DesktopはセッションのWaylandを使い、Coreでは`ubuntu-frame:wayland`に接続する。 |
-| `desktop`、`screen-inhibit-control` | Desktopのファイル選択・文書ポータルとスクリーンセーバー抑止に使用。Coreではセッションサービスの提供状況に応じてQt Quickのダイアログを使う。logindの`Inhibit`呼び出しは要検証。`login-session-observe`は情報参照用で、`login-session-control`は今回の用途より広いセッション管理権限を持つ。 |
+| `desktop`、`screen-inhibit-control` | Desktopのファイル選択・文書ポータルとスクリーンセーバー抑止に使用。Coreではセッションサービスの提供状況に応じてQt Quickのダイアログを使う。 |
+| `mpris` | Desktopで`org.mpris.MediaPlayer2.<snapインスタンス名>.instance<PID>`を登録する。プロセスごとにPIDを付け、同じインスタンス内で名前の競合を避ける。 |
 | `audio-playback` | PulseAudio互換サービスへの再生用。DesktopはPipeWireのPulseAudio互換ソケットを使う。CoreでPulseAudio互換サービスを使う場合は、対応スロットとシステムサービスから到達できるソケットが必要。 |
 | `alsa` | Coreで音声サーバーを用意せず、ALSAデバイスを直接使うときに手動接続する。HDMI出力の選択は実機で確認する。 |
 | `network`、`network-bind` | 配信サーバー・関連サービスへの接続と、リモート操作やデータ放送で使用するローカルサーバーの待ち受け。リモート操作はアプリの設定で有効にする。 |
@@ -46,7 +47,21 @@ HDMI-CECは使えない。snapd 2.78には`/dev/cec*`を許可する`hdmi-cec`�
 
 [Snapインターフェース一覧](https://snapcraft.io/docs/reference/interfaces/)、
 [`camera`のポリシー](https://github.com/canonical/snapd/blob/master/interfaces/builtin/camera.go)、
-[`media-control`のポリシー](https://github.com/canonical/snapd/blob/master/interfaces/builtin/media_control.go)
+[`media-control`のポリシー](https://github.com/canonical/snapd/blob/master/interfaces/builtin/media_control.go)、
+[`mpris`のポリシー](https://github.com/canonical/snapd/blob/2.78/interfaces/builtin/mpris.go)
+
+Desktopに`screen-inhibit-control`を接続すると、セッション側の
+`org.freedesktop.ScreenSaver.Inhibit`が許可されます。このインターフェースではsystem busの
+logind `Inhibit`の権限は得られません。アプリの代替経路はlogindを先に取得するため、
+厳格に隔離されたsnapでは対応するportalで取得する必要があります。labwcで確認した
+D-Busの`AccessDenied`は利用不可とし、同じ環境で再生のたびに再試行しません。
+CoreとUbuntu Frameのみの構成ではDesktopのセッションサービスを前提としません。
+[`screen-inhibit-control`のポリシー](https://github.com/canonical/snapd/blob/2.78/interfaces/builtin/screen_inhibit_control.go)、
+[アプリの抑止経路](sleep-inhibit.md)
+
+Qtのキー入力が使うX11のComposeデータは、Wayland起動でも同梱します。日本語Composeファイルの
+絶対パスの参照を解決できるように、`/usr/share/X11/locale`へ配置します。
+同梱フォントはFontconfigの設定から直接参照し、Desktopのホストフォント用マウントも利用します。
 
 ## パッケージを作る
 
@@ -179,6 +194,22 @@ Ubuntu Frameだけを構成した機器では、開けない場合に画面へ�
 最新の再生失敗を確認できます。このファイルは最初の再生失敗時に作成されます。
 [snapサービスとログ](https://snapcraft.io/docs/how-to-guides/manage-snaps/control-services/)
 
+## Pi 4 Desktopの起動時間
+
+Ubuntu 26.04・labwc・snapリビジョン`x2`では、起動ログからQtのportal
+`Settings.ReadAll`のタイムアウトまで24.90秒、アプリ側のFileChooser検査が
+Qt Quickダイアログへ切り替わるまで26.08秒でした。アプリ側の検査は1秒の上限を設けています。
+Qt側のFileChooser検査のタイムアウトは起動ログの48.50秒後に出ています。この時刻はQt側の
+検査の所要時間を示しません。libproxyの`StartServiceByName`タイムアウトは今回のログでは
+初回の再生開始後に出ており、起動時の待ち時間とは別に計測します。
+
+同じlabwcセッションではdeb版もportalの起動を待ちます。対処を行う場合は、アプリ側で
+Qt初期化より前に短い上限でportalの応答を確認する方式を検討します。応答がなければ初回は
+Qt Quickダイアログを使い、応答する環境では現在のportalを使います。libproxyは別経路なので、
+HTTP要求で待つ位置を計測し、必要な場合にプロキシ解決を調整します。プロキシ設定が必要な環境も
+対象にして検証します。パッケージの既定値は今回変更しません。
+[アプリのダイアログ選択](platform-startup.md)
+
 ## 実機検証項目
 
 - amd64 DesktopとPi 4 Desktopで、strictのままWayland表示、HDMIまたは既定出力への音声、
@@ -187,9 +218,10 @@ Ubuntu Frameだけを構成した機器では、開けない場合に画面へ�
   サービスでのHDMI音声、ログの権限エラーを確認します。更新とリビジョンの切り戻し時に、
   設定・視聴履歴と共通キャッシュがそれぞれ想定どおりに扱われることも確認します。Frameの`26/stable`は
   2026年11月18日時点で未公開です。
-- Pi 4の既存Desktop環境では、1080iをGreedyLで処理したときCPU使用率が約254%でした。
-  ハードウェアH.265デコーダーが出力するBroadcom SANDを表示に使えず、`avdec_h265`に
-  切り替わりました。snap版での挙動と1080p60表示での余裕は実機で確認します。
+- Pi 4のUbuntu 26.04 Desktopで`x2`を起動し、1080p60の画面でライブ映像と字幕を確認しました。
+  GreedyLで処理したときのCPU使用率は約214%でした。以前のDesktop計測では、ハードウェア
+  H.265デコーダーが出力するBroadcom SANDを表示に使えず、`avdec_h265`に切り替わりました。
+  snapでのハードウェアデコードの挙動は実機で確認します。
 - データ放送は既定で無効です。Qt WebEngineのChromiumサンドボックスは、strict confinementの
   デスクトップ起動とrootのキオスク起動で検証が必要です。サンドボックスを無効にする
   環境変数は設定していません。
