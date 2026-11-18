@@ -1,7 +1,7 @@
 //! Product Main.qml and real output; the HTTP fixture only replaces the tuner.
 mod performance;
 use super::bridge::ffi;
-use super::startup::{TestResult, evaluate, wait_for};
+use super::startup::{TestResult, evaluate, record_phase, wait_for};
 use cxx_qt_lib::{QGuiApplication, QQmlApplicationEngine, QString};
 use std::{
     io::{Read, Write},
@@ -82,10 +82,13 @@ impl Server {
                         }));
                     }
                     Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-                        thread::sleep(ACCEPT_POLL)
+                        wait_for_stop(&stopped, ACCEPT_POLL);
                     }
                     Err(_) => break,
                 }
+            }
+            for client in &clients {
+                client.thread().unpark();
             }
             for client in clients {
                 let _ = client.join();
@@ -103,10 +106,23 @@ impl Drop for Server {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::Release);
         if let Some(worker) = self.worker.take() {
+            worker.thread().unpark();
             let _ = worker.join();
         }
     }
 }
+fn wait_for_stop(stopped: &AtomicBool, interval: Duration) {
+    let deadline = Instant::now() + interval;
+    while !stopped.load(Ordering::Acquire) {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            break;
+        }
+        // A spurious wake must preserve the fixture's packet delivery cadence.
+        thread::park_timeout(remaining);
+    }
+}
+
 fn serve(
     mut socket: TcpStream,
     stopped: &AtomicBool,
@@ -171,7 +187,7 @@ fn serve(
             let end = packets * (interval + 1) / intervals * PACKET;
             socket.write_all(&ts[start..end])?;
             socket.write_all(&padding)?;
-            thread::sleep(send_interval);
+            wait_for_stop(stopped, send_interval);
         }
     } else {
         let body = if header.starts_with(b"GET /api/services ") {
@@ -693,6 +709,7 @@ pub(super) fn run(
     app: &QGuiApplication,
     engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
 ) -> TestResult {
+    let mut phase = Instant::now();
     evaluate(
         engine,
         "overlayVisibility.pinned = true; overlayVisibility.reveal(); true",
@@ -719,6 +736,7 @@ pub(super) fn run(
     evaluate(engine, "root.openSettings(SettingsPanel.Watching); true")?;
     wait_for(app, engine, "settings.opened")?;
     evaluate(engine, "settings.close(); true")?;
+    record_phase(&mut phase, "timeshift setup");
     for backend in ["memory", "filesystem"] {
         let buffer_ms = if backend == "memory" {
             CUSTOM_LIVE_BUFFER_MS
@@ -960,9 +978,11 @@ pub(super) fn run(
             "Timeshift {backend}: receive while paused, backward seek, return to live and stop passed"
         );
     }
+    record_phase(&mut phase, "timeshift continuous history");
     for storage in ["pause_memory", "pause_filesystem"] {
         pause_on_demand(app, engine, &server, storage)?;
     }
+    record_phase(&mut phase, "timeshift pause on demand");
     start_near_live(
         app,
         engine,
@@ -1026,6 +1046,7 @@ pub(super) fn run(
     eprintln!(
         "Timeshift disabled: playback and program/broadcast clock stay available; pause is rejected; enable/disable applies during playback and pause"
     );
+    record_phase(&mut phase, "timeshift disabled and switching");
     let pressure = Server::new(Traffic::CapacityPressure)?;
     evaluate(
         engine,
@@ -1105,6 +1126,7 @@ pub(super) fn run(
             "Timeshift {storage}: expired pause resumed and continued under capacity pressure"
         );
     }
+    record_phase(&mut phase, "timeshift capacity pressure");
     for storage in ["memory", "filesystem"] {
         assert!(evaluate(
             engine,
@@ -1191,6 +1213,10 @@ pub(super) fn run(
         &format!("{OBSERVER}.failure.length === 0")
     )?);
     evaluate(engine, &format!("{OBSERVER}.destroy(); true"))?;
+    record_phase(&mut phase, "timeshift storage resize");
+    drop(pressure);
+    drop(server);
+    record_phase(&mut phase, "timeshift fixture shutdown");
     Ok(())
 }
 

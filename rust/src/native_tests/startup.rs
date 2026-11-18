@@ -16,6 +16,16 @@ static UI_WARNINGS: Mutex<Vec<String>> = Mutex::new(Vec::new());
 const SAVED_WINDOW_WIDTH: i32 = 850;
 const SAVED_WINDOW_HEIGHT: i32 = 610;
 
+pub(super) fn record_phase(started: &mut Instant, phase: &str) {
+    let now = Instant::now();
+    tracing::info!(
+        phase,
+        elapsed_ms = now.duration_since(*started).as_millis() as u64,
+        "Startup test phase"
+    );
+    *started = now;
+}
+
 fn record_qt(level: u8, category: &str, message: &str) {
     if level >= 2 {
         eprintln!("Qt [{category}]: {message}");
@@ -664,6 +674,7 @@ fn window(
     check: WindowCheck,
 ) -> TestResult {
     let load_started = Instant::now();
+    let mut first_run_phase = load_started;
     let mode = playback::deinterlace::Mode::for_launch(preferences.deinterlace)?;
     let _preloaded = playback::preload(mode)?;
     let mut engine = QQmlApplicationEngine::new();
@@ -1053,6 +1064,7 @@ fn window(
             &mut engine,
             "root.setupRequired && !player.server_configured && !player.loading && !player.server.length && !player.channels.count"
         )?);
+        record_phase(&mut first_run_phase, "launch and setup ready");
         // Comments are enabled here with an empty catalog, so shortcut coverage
         // does not start external comment/activity requests.
         evaluate(&mut engine, "setup.close(); true")?;
@@ -1065,13 +1077,21 @@ fn window(
         check_shortcuts(app, &mut engine)?;
         evaluate(&mut engine, "setup.open(); true")?;
         wait_for(app, &mut engine, "setup.opened")?;
+        record_phase(&mut first_run_phase, "layout and shortcuts");
         check_recording(app, &mut engine)?;
+        record_phase(&mut first_run_phase, "local recording");
         check_recording_recovery(app, &mut engine, "recording-clock-reset.ts")?;
+        record_phase(&mut first_run_phase, "recording clock reset");
         check_recording_recovery(app, &mut engine, "recording-pid-change.ts")?;
+        record_phase(&mut first_run_phase, "recording PID change");
         check_http_recording(app, &mut engine)?;
+        record_phase(&mut first_run_phase, "EPGStation and HTTP recording");
         check_general_media(app, &mut engine)?;
+        record_phase(&mut first_run_phase, "media formats");
         check_media_subtitles(app, &mut engine)?;
+        record_phase(&mut first_run_phase, "media subtitles");
         super::timeshift::run(app, &mut engine)?;
+        record_phase(&mut first_run_phase, "timeshift");
     }
     evaluate(
         &mut engine,
@@ -1092,6 +1112,9 @@ fn window(
     app.process_events();
     let warnings = UI_WARNINGS.lock().unwrap();
     assert!(warnings.is_empty(), "UI warnings: {warnings:?}");
+    if configured_autoplay.is_none() {
+        record_phase(&mut first_run_phase, "window cleanup");
+    }
     Ok(())
 }
 
@@ -1817,6 +1840,7 @@ fn check_recording(
     app: &QGuiApplication,
     engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
 ) -> TestResult {
+    let mut phase = Instant::now();
     let directory = tempfile::tempdir()?;
     let path = directory.path().join("録画 #100%.ts");
     std::fs::write(
@@ -1865,6 +1889,7 @@ fn check_recording(
         engine,
         "player.playing && JSON.parse(player.video_stats()).rendered > 0 && JSON.parse(player.audio_tracks()).length > 0",
     )?;
+    record_phase(&mut phase, "local recording first frame and audio tracks");
     #[cfg(target_os = "linux")]
     super::desktop_media::check_playback(app)?;
     assert!(evaluate(
@@ -1971,6 +1996,7 @@ fn check_recording(
     )?;
     evaluate(engine, "player.stop(); true")?;
     // Replay through the ordinary Play button, then reach a normal file EOF.
+    phase = Instant::now();
     evaluate(engine, "player.play(); true")?;
     wait_for(
         app,
@@ -1986,6 +2012,7 @@ fn check_recording(
         engine,
         "!player.playback_error.length && player.ended && player.media_active && player.recording && player.seekable"
     )?);
+    record_phase(&mut phase, "local recording replay to EOF");
     evaluate(engine, "player.play(); true")?;
     wait_for(
         app,
