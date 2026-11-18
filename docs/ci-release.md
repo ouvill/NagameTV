@@ -38,7 +38,7 @@ Dockerレイヤーのキャッシュがない場合も、nextest自体のコン�
 FlatpakはマニフェストのKDE 6.10 SDKを使う。26.04用debは[専用Dockerfile](../packaging/deb/Dockerfile)でUbuntuのQt/GStreamerを使う。
 
 機器不要のWeb試験にはNode.jsとnpmを使う。`scripts/testing/ci.sh` は
-Webリモコンの依存を `npm ci` で導入してから `cpu` スイートを実行する。
+Webリモコンの依存を `npm ci` で導入してから、実時間の試験を含む `cpu --slow` を実行する。
 `remote-web` スイート自体は依存を取得せず、型・単体試験とコミット対象の `dist/` の再現性を検査する。
 
 GitHubの実行ホストはx86_64が`ubuntu-24.04`、aarch64が`ubuntu-24.04-arm`。
@@ -91,7 +91,7 @@ EPGStationは[固定版の本体との結合テスト](epgstation.md#固定版�
 本体QMLは生成した型情報を使って全ファイルを`qmllint`で検査し、警告0件を合格条件とする。
 評価用部品も静的検査に含める。色・寸法・動きの共通化は`check_ui_style.py`で検査する。
 CIの`scripts/testing/ci.sh`は`cargo fetch --locked`で依存ソースを取得してから
-共通ランナー`python3 scripts/test.py cpu --profile release`を実行する。
+共通ランナー`python3 scripts/test.py cpu --profile release --slow`を実行する。
 オフラインで動くビルド情報の試験にも同じ`CARGO_HOME`を引き継ぐため、
 ダウンロードキャッシュが空のCIでも試験に必要なソースを参照できる。
 Rustはnextestで個別プロセスに分離し、Qt試験は一度ビルドした実行ファイルを共用する。

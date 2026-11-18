@@ -276,7 +276,8 @@ bash scripts/testing/install-nextest.sh
 python3 scripts/test.py --list
 python3 scripts/test.py             # 機器不要: 静的検査、Rustテスト、Qt接続など
 python3 scripts/test.py core        # Qt/GStreamer不要のRustクレートのみ
-python3 scripts/test.py app         # アプリのRustテストのみ
+python3 scripts/test.py app         # アプリの標準Rustテスト
+python3 scripts/test.py app --slow  # 実時間の再生・通信試験を含む
 python3 scripts/test.py danmaku ui-style  # GPU環境を検証してQML部品を確認
 python3 scripts/test.py app --filter 'test(settings::)'
 ```
@@ -287,6 +288,11 @@ nextest内で単独実行します。通常のビルド構成は`dev`です。
 `--test-threads N`でテストの並列数、`--profile release`で最適化した構成に変更できます。
 再生性能やフレーム時間を評価する試験では`--profile release`を指定します。
 Qtスイートにも共通ランナーの`--profile release`を指定できます。
+
+実時間を要するアプリの5件は、標準実行では除外し、端末と`summary.json`にテスト名を出します。
+対象はMPEG-TSとMP4の30秒間のHTTP再生、HTTP接続のアイドル維持、ライブ追いつき、
+配信の中断をまたぐライブ音声再生です。`--slow`を付けると選択したスイートにこれらの試験を含めます。
+全CPU試験は`python3 scripts/test.py cpu --slow`です。CIでは毎回`--slow`を付けます。
 個別の引数は`python3 scripts/test.py startup -- recording-pid-change`のように`--`の後に渡します。
 アプリの主要なpath依存クレートと独立したデータ放送デコーダーも明示的に列挙し、nextestの対象外であるdoctestはCargoで別途実行します。
 `core`はこれらの独立クレートをまとめて選択します。字幕デコーダー`libaribcaption`の

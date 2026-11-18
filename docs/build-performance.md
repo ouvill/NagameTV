@@ -22,8 +22,8 @@ python3 scripts/test.py viewer-comments --filter 'test(cache::)'
 
 対象ファイルを指定するQML試験でも、専用画面・実GPU・仮想音声出力を検証します。
 統合前は[開発手順](development.md#テストと診断)に沿って変更範囲を検証します。
-全CPU試験は`python3 scripts/test.py cpu`、最適化した構成での検証は
-`python3 scripts/test.py cpu --profile release`です。
+全CPU試験は`python3 scripts/test.py cpu --slow`、最適化した構成での検証は
+`python3 scripts/test.py cpu --slow --profile release`です。
 初めて`dev`へ切り替えるときは依存物をコンパイルします。
 型検査だけなら`bash scripts/build/with-build-lock.sh cargo check --manifest-path rust/Cargo.toml --locked`
 を使えます。CMake・共通ランナー・直接のCargo診断は`build/cargo`を共用し、

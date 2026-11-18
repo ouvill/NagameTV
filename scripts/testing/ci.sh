@@ -25,4 +25,4 @@ bash scripts/build/with-build-lock.sh npm --prefix rust/crates/viewer-remote/web
 
 # Match the distribution profile so dependencies are reused by packaging and
 # the real EPGStation contract tests; local development defaults to dev.
-exec python3 scripts/test.py cpu --profile release "$@"
+exec python3 scripts/test.py cpu --profile release --slow "$@"
