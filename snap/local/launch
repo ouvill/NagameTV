@@ -50,7 +50,8 @@ export XDG_DATA_DIRS="$SNAP/usr/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/sha
 mkdir -p "$XDG_CACHE_HOME"
 
 lib="$SNAP/usr/lib/$triplet"
-export LD_LIBRARY_PATH="$lib:$SNAP/usr/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+# Debian keeps these private libraries in subdirectories with no RUNPATH.
+export LD_LIBRARY_PATH="$lib:$lib/libproxy:$lib/pulseaudio:$SNAP/usr/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 export QT_QPA_PLATFORM=wayland
 export QT_PLUGIN_PATH="$lib/qt6/plugins"
 export QML_IMPORT_PATH="$lib/qt6/qml"
