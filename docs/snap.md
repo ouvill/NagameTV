@@ -40,8 +40,9 @@ GPUのユーザー空間ドライバーは`mesa-2604`から`gpu-2604` content in
 | `alsa` | Coreで音声サーバーを用意せず、ALSAデバイスを直接使うときに手動接続する。HDMI出力の選択は実機で確認する。 |
 | `network`、`network-bind` | 配信サーバー・関連サービスへの接続と、リモート操作やデータ放送で使用するローカルサーバーの待ち受け。リモート操作はアプリの設定で有効にする。 |
 | `home`、`removable-media` | 録画ファイルの読み込みとスクリーンショットの保存に使用。`home`からはホーム直下の隠し領域への一般アクセスは得られない。メディアを使う場合は`removable-media`を手動接続する。 |
-| `hdmi-cec` | `/dev/cec*`を使う場合に手動接続し、アプリの設定でHDMI-CECを有効にする。デバイスノード自体の権限も必要。 |
 | `camera`、`media-control` | V4L2の`/dev/video*`とstateless decoderで使う`/dev/media*`への任意アクセス。接続にはカメラやメディアデバイスへのアクセスも伴うため、必要な実機に限って手動接続する。通常の再生には同梱のlibavを使える。 |
+
+HDMI-CECは使えない。snapd 2.78には`/dev/cec*`を許可する`hdmi-cec`インターフェースがなく、宣言するとインストール時に`unknown interface "hdmi-cec"`の警告になるため宣言していない。Ubuntu Coreではgadget snapの`custom-device`で許可する方法が残っている。
 
 [Snapインターフェース一覧](https://snapcraft.io/docs/reference/interfaces/)、
 [`camera`のポリシー](https://github.com/canonical/snapd/blob/master/interfaces/builtin/camera.go)、
@@ -183,7 +184,7 @@ Ubuntu Frameだけを構成した機器では、開けない場合に画面へ�
 - amd64 DesktopとPi 4 Desktopで、strictのままWayland表示、HDMIまたは既定出力への音声、
   ライブと録画の再生、再起動後の設定復元、スクリーンショット保存を確認します。
 - Ubuntu Coreで、Frameとサービスの起動順、再起動後の自動起動、ALSAまたはPulseAudio互換
-  サービスでのHDMI音声、CEC、ログの権限エラーを確認します。更新とリビジョンの切り戻し時に、
+  サービスでのHDMI音声、ログの権限エラーを確認します。更新とリビジョンの切り戻し時に、
   設定・視聴履歴と共通キャッシュがそれぞれ想定どおりに扱われることも確認します。Frameの`26/stable`は
   2026年11月18日時点で未公開です。
 - Pi 4の既存Desktop環境では、1080iをGreedyLで処理したときCPU使用率が約254%でした。
