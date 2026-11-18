@@ -6,6 +6,13 @@ pub mod sleep_inhibit;
 pub mod text;
 pub mod variant;
 
+pub fn playback_log_directory() -> std::path::PathBuf {
+    match crate::data_directory::get() {
+        Some(paths) => paths.state().into(),
+        None => ffi::playback_log_directory().to_string().into(),
+    }
+}
+
 /// GUI-thread screen notifications. The item owns the native connections;
 /// consumers can retain weak handles instead of extending playback lifetime.
 pub struct RefreshObserver(Box<dyn Fn(f64)>);

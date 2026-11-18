@@ -218,6 +218,11 @@ The server URL, last selected channel, volume, and display preferences are saved
 - **Native and AppImage versions**: `~/.config/nagametv/` (`$XDG_CONFIG_HOME/nagametv/`).
 - **Flatpak version**: `~/.var/app/io.github.ouvill.nagametv/config/nagametv/`.
 
+For a read-only OS, set `NAGAMETV_DATA_DIR` to an absolute path on a writable
+partition. NagameTV puts settings in `config/`, histories and the latest
+playback failure in `state/`, and comment and timeshift caches in `cache/`.
+An invalid or unwritable path causes startup to fail. [Storage layout](docs/development.md#保存データを別のパーティションに置く)
+
 Enable “Play automatically on startup” under Settings → Watching to start playing the last selected channel when the app launches.
 
 ---

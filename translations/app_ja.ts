@@ -2221,6 +2221,18 @@
       <translation>ログ</translation>
     </message>
     <message>
+      <source>Recent logs</source>
+      <translation>最近のログ</translation>
+    </message>
+    <message>
+      <source>Refresh logs</source>
+      <translation>ログを更新</translation>
+    </message>
+    <message>
+      <source>No log entries yet.</source>
+      <translation>ログはまだありません。</translation>
+    </message>
+    <message>
       <source>Logs contain technical details to help investigate problems.</source>
       <translation>不具合の原因を調べるための技術情報を記録しています。</translation>
     </message>

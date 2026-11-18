@@ -58,6 +58,9 @@ pub(super) struct History {
 }
 
 pub(super) fn path() -> Result<PathBuf, Error> {
+    if let Some(paths) = crate::data_directory::get() {
+        return Ok(paths.state().join("updates.toml"));
+    }
     resolve_path(std::env::var_os("XDG_STATE_HOME"), std::env::var_os("HOME"))
 }
 

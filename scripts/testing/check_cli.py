@@ -8,17 +8,19 @@ import subprocess
 import tempfile
 
 
-def invoke(binary, arguments):
+def invoke(binary, arguments, data_directory="invalid-relative-path", log="info"):
     with tempfile.TemporaryDirectory(prefix="nagametv-cli-") as directory:
         env = dict(os.environ)
         for variable in ("XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME"):
             env[variable] = str(Path(directory) / variable)
+        env["NAGAMETV_DATA_DIR"] = data_directory
+        env["RUST_LOG"] = log
         # Tripwire: these commands must finish before Qt initialization. This
         # invalid platform never supplies or substitutes a display backend.
         env["QT_QPA_PLATFORM"] = "nagametv-invalid-platform"
         env.pop("DISPLAY", None)
         env.pop("WAYLAND_DISPLAY", None)
-        result = subprocess.run([str(binary), *arguments], env=env, capture_output=True,
+        result = subprocess.run([str(binary), *arguments], cwd=directory, env=env, capture_output=True,
                                 text=True, timeout=10)
         if any(Path(directory).iterdir()):
             raise AssertionError(f"CLI created application data: {arguments}")
@@ -41,7 +43,16 @@ def main():
         result = invoke(binary, arguments)
         assert result.returncode == 2, (arguments, result.returncode, result.stderr)
         assert not result.stdout and "error:" in result.stderr, (arguments, result)
-    print("CLI checks passed: information and errors finish before GUI initialization")
+    invalid_directories = [("", "info"), ("invalid-relative-path", "off"), (str(binary), "info")]
+    if os.name == "posix" and Path("/proc/self").is_dir():
+        invalid_directories.append(("/proc/self/nagametv-cli-data", "info"))
+    for value, log in invalid_directories:
+        result = invoke(binary, [], value, log)
+        assert result.returncode == 1, (value, result.returncode, result.stderr)
+        assert not result.stdout and "NAGAMETV_DATA_DIR" in result.stderr, (value, result)
+        assert ("must be an absolute path" if not Path(value).is_absolute()
+                else "Could not prepare writable directory") in result.stderr, (value, result)
+    print("CLI checks passed: information, argument errors and invalid data directories finish before GUI initialization")
 
 
 if __name__ == "__main__":

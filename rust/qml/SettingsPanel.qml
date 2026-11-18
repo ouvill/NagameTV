@@ -54,7 +54,7 @@ Popup {
         case SettingsPanel.Shortcuts: return [];
         case SettingsPanel.System:
             return [...(quitApplication.visible ? [quitApplication] : []), autoUpdateCheck, checkUpdates, openUpdateRelease, ...updateProblem.navigationItems, ...updateHistoryProblem.navigationItems,
-                statsToggle, buildInformation, openLogFolder, ...logProblem.navigationItems];
+                statsToggle, buildInformation, openRecentLog, openLogFolder, ...logProblem.navigationItems];
         default: return [];
         }
     }
@@ -141,6 +141,7 @@ Popup {
     }
     onAboutToHide: {
         epgstationConnection.closeLogin();
+        recentLogDialog.close();
         liveBufferSettings.finishEdit();
         pageRevealMotion.complete();
     }
@@ -162,6 +163,12 @@ Popup {
         Qt.callLater(function() { root.focusCategory(); formNavigation.reset(); });
     }
     parent: Overlay.overlay
+    RecentLogDialog {
+        id: recentLogDialog
+        objectName: "recentLogDialog"
+        onRefreshRequested: logText = root.backend.recent_log()
+        onClosed: if (root.opened) openRecentLog.forceActiveFocus(Qt.TabFocusReason)
+    }
     FolderDialog {
         id: screenshotFolderDialog
         objectName: "screenshotFolderDialog"
@@ -1025,6 +1032,12 @@ Popup {
                             ].join("\n")
                         }
                         Heading { text: qsTranslate("Settings", "Logs") }
+                        ActionButton {
+                            id: openRecentLog
+                            objectName: "openRecentLog"
+                            text: qsTranslate("Settings", "Recent logs")
+                            onClicked: recentLogDialog.open()
+                        }
                         ActionButton {
                             id: openLogFolder
                             objectName: "openLogFolder"

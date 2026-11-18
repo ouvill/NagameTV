@@ -1,16 +1,48 @@
 //! Application logging. Initialize once, before any worker threads are started.
+mod journal;
+mod recent;
+
 use std::io::IsTerminal;
-use tracing_subscriber::{EnvFilter, filter::LevelFilter};
+use tracing_subscriber::{EnvFilter, filter::LevelFilter, prelude::*};
+
+pub const DATA_DIRECTORY_ERROR_TARGET: &str = "nagametv::startup::data_directory";
 
 pub fn init() {
+    let (output, stream_error) = match journal::Output::detect() {
+        Ok(output) => (output, None),
+        Err(error) => (journal::Output::Plain, Some(error)),
+    };
     let filter = EnvFilter::builder()
         .with_default_directive(LevelFilter::INFO.into())
-        .from_env_lossy();
-    tracing_subscriber::fmt()
-        .with_env_filter(filter)
-        .with_writer(std::io::stderr)
-        .with_ansi(std::io::stderr().is_terminal())
+        .from_env_lossy()
+        // A storage configuration error is fatal even when ordinary logs are off.
+        .add_directive(
+            format!("{DATA_DIRECTORY_ERROR_TARGET}=error")
+                .parse()
+                .expect("valid data directory error directive"),
+        );
+    let terminal = tracing_subscriber::fmt::layer()
+        .with_writer(output)
+        .with_ansi(std::io::stderr().is_terminal());
+    let recent = tracing_subscriber::fmt::layer()
+        .fmt_fields(recent::Fields::default())
+        .with_writer(&recent::RECENT)
+        .with_ansi(false);
+    tracing_subscriber::registry()
+        .with(filter)
+        .with(terminal)
+        .with(recent)
         .init();
+    if let Some(error) = stream_error {
+        tracing::warn!(
+            error = &error as &dyn std::error::Error,
+            "Could not identify the journald stderr stream"
+        );
+    }
+}
+
+pub fn recent_text() -> String {
+    recent::RECENT.text()
 }
 
 /// QtMsgType values are mapped explicitly by the C++ bridge, not cast from its enum.
