@@ -2886,6 +2886,8 @@ pub fn run_live_probe(server: url::Url, service: u64, seconds: u32) -> i32 {
 }
 
 fn run_window_check(check: WindowCheck) -> i32 {
+    // Automatic first-run discovery must stay on fixture addresses.
+    crate::services::discovery::limit_to_test_loopback();
     // Native GTK dialog warnings bypass Qt's message handler. Keep them visible
     // and fail this test if the GTK icon-surface regression returns.
     let gtk_log = glib::log_set_handler(

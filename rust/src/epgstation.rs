@@ -159,7 +159,7 @@ pub struct Page {
     rows: Arc<[Recording]>,
     total: u64,
 }
-fn parse(bytes: &[u8]) -> Result<Page, Error> {
+pub(crate) fn parse(bytes: &[u8]) -> Result<Page, Error> {
     let response: Response = crate::json::from_slice(bytes)?;
     if response.records.len() as u64 > PAGE_SIZE {
         return Err(Error::InvalidCatalogue("too many rows"));

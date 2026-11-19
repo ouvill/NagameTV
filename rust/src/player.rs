@@ -20,6 +20,7 @@ mod guide;
 mod hdmi_cec;
 #[cfg(feature = "native_tests")]
 mod hdmi_cec_checks;
+mod lan_discovery;
 mod language;
 mod lifecycle;
 #[cfg(feature = "native_tests")]
@@ -143,6 +144,8 @@ pub mod ffi {
         type ContinueWatchingModel = crate::continue_watching_model::ffi::ContinueWatchingModel;
         include!("nagametv/src/hdmi_cec_model.cxxqt.h");
         type HdmiCecDeviceModel = crate::hdmi_cec_model::ffi::HdmiCecDeviceModel;
+        include!("nagametv/src/lan_discovery_model.cxxqt.h");
+        type LanDiscoveryModel = crate::lan_discovery_model::ffi::LanDiscoveryModel;
         include!("nagametv/src/subtitle_model.cxxqt.h");
         type SubtitleModel = crate::subtitle_model::ffi::SubtitleModel;
         include!("nagametv/src/video_file_model.cxxqt.h");
@@ -338,6 +341,9 @@ pub mod ffi {
         #[qproperty(QString, hdmi_cec_state, READ = hdmi_cec_state, NOTIFY = hdmi_cec_changed)]
         #[qproperty(QString, hdmi_cec_error, READ = hdmi_cec_error, NOTIFY = hdmi_cec_changed)]
         #[qproperty(*mut HdmiCecDeviceModel, hdmi_cec_devices, READ = hdmi_cec_devices, CONSTANT)]
+        #[qproperty(*mut LanDiscoveryModel, lan_discovery_model, READ = lan_discovery_model, CONSTANT)]
+        #[qproperty(QString, lan_search_kind, READ = lan_search_kind, NOTIFY = lan_search_changed)]
+        #[qproperty(QString, lan_search_status, READ = lan_search_status, NOTIFY = lan_search_changed)]
         #[qproperty(QString, hdmi_cec_device, READ = hdmi_cec_device, NOTIFY = hdmi_cec_changed)]
         #[qproperty(QString, hdmi_cec_osd_name, READ = hdmi_cec_osd_name, CONSTANT)]
         #[qproperty(QString, hdmi_cec_physical_address, READ = hdmi_cec_physical_address, NOTIFY = hdmi_cec_changed)]
@@ -443,6 +449,9 @@ pub mod ffi {
         fn hdmi_cec_state(self: &Player) -> QString;
         fn hdmi_cec_error(self: &Player) -> QString;
         fn hdmi_cec_devices(self: &Player) -> *mut HdmiCecDeviceModel;
+        fn lan_discovery_model(self: &Player) -> *mut LanDiscoveryModel;
+        fn lan_search_kind(self: &Player) -> QString;
+        fn lan_search_status(self: &Player) -> QString;
         fn hdmi_cec_device(self: &Player) -> QString;
         fn hdmi_cec_osd_name(self: &Player) -> QString;
         fn hdmi_cec_physical_address(self: &Player) -> QString;
@@ -670,6 +679,12 @@ pub mod ffi {
         unsafe fn observe_pointer(self: &Player, item: *mut QQuickItem);
         #[qinvokable]
         fn connect_server(self: Pin<&mut Player>, server: QString) -> bool;
+        #[qinvokable]
+        fn search_lan(self: Pin<&mut Player>, kind: QString);
+        #[qinvokable]
+        fn cancel_lan_search(self: Pin<&mut Player>, kind: QString);
+        #[qsignal]
+        fn lan_search_changed(self: Pin<&mut Player>);
         #[qsignal]
         #[cxx_name = "connectionFinished"]
         fn connection_finished(self: Pin<&mut Player>, success: bool, channels: i32);
@@ -952,6 +967,8 @@ pub struct PlayerRust {
     remote: crate::remote::Control,
     hdmi_cec: crate::hdmi_cec::Controller,
     hdmi_cec_model: cxx::UniquePtr<crate::hdmi_cec_model::ffi::HdmiCecDeviceModel>,
+    lan_search: services::discovery::Search,
+    lan_discovery_model: cxx::UniquePtr<crate::lan_discovery_model::ffi::LanDiscoveryModel>,
     network: Option<services::Network>,
     updates: crate::updates::Checker,
     media: playback::Session,

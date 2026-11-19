@@ -17,6 +17,7 @@ mod guide_model;
 mod hdmi_cec;
 mod hdmi_cec_model;
 mod json;
+mod lan_discovery_model;
 mod logging;
 mod media_caption;
 mod media_subtitles;
