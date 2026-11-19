@@ -1809,6 +1809,37 @@ fn check_media_subtitles(
             image_visible(engine)?,
             "failed subtitle replacement keeps the displayed cue"
         );
+        evaluate(
+            engine,
+            "root.showFullScreen(); playerControls.subtitleAnchor.forceActiveFocus(Qt.TabFocusReason); true",
+        )?;
+        wait_for(
+            app,
+            engine,
+            "viewerActions.fullscreen && playerControls.subtitleAnchor.activeFocus",
+        )?;
+        ffi::clickRootKey(engine.pin_mut(), &QString::from("Return"))?;
+        wait_for(
+            app,
+            engine,
+            "mediaSubtitleSettings.opened && root.activeFocusItem.objectName === 'mediaSubtitleToggle' && root.activeFocusItem.focusVisible",
+        )?;
+        let reached_retry = "root.activeFocusItem.objectName === 'openSubtitleButton' && root.activeFocusItem.focusVisible";
+        for _ in 0..5 {
+            ffi::clickRootKey(engine.pin_mut(), &QString::from("Down"))?;
+            if evaluate(engine, reached_retry)? {
+                break;
+            }
+        }
+        assert!(evaluate(engine, reached_retry)?);
+        ffi::clickRootKey(engine.pin_mut(), &QString::from("Back"))?;
+        wait_for(
+            app,
+            engine,
+            "viewerActions.fullscreen && !mediaSubtitleSettings.visible && playerControls.subtitleAnchor.activeFocus",
+        )?;
+        evaluate(engine, "root.showNormal(); true")?;
+        wait_for(app, engine, "!viewerActions.fullscreen")?;
         evaluate(engine, "player.stop(); player.play(); true")?;
         wait_for(
             app,

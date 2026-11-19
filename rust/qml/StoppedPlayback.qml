@@ -3,7 +3,7 @@ import QtQuick
 import MinimalViewer
 import QtQuick.Controls
 
-Rectangle {
+DirectionalFocus {
     id: root
     required property string status
     required property bool canPlay
@@ -24,10 +24,12 @@ Rectangle {
     signal settingsRequested
     signal reconnectRequested
     signal openFileRequested
-    color: Theme.canvas
+    navigationItems: [action, openRecording, changeConnection, errorChannels, errorSettings, errorDetails]
+    initialItem: action
     // A quiet backdrop instead of a flat fill; it never animates.
     Rectangle {
         anchors.fill: parent
+        color: Theme.canvas
         gradient: Gradient {
             GradientStop { position: 0; color: Theme.ambientGlow }
             GradientStop { position: 0.6; color: Theme.canvas }
@@ -88,12 +90,14 @@ Rectangle {
             }
         }
         ActionButton {
+            id: openRecording
             objectName: "openRecording"
             anchors.horizontalCenter: parent.horizontalCenter
             text: qsTranslate("Recording", "Open recording")
             onClicked: root.openFileRequested()
         }
         ActionButton {
+            id: changeConnection
             objectName: "changeConnection"
             anchors.horizontalCenter: parent.horizontalCenter
             visible: root.hasServer && !root.hasChannels && !root.loading
@@ -105,14 +109,17 @@ Rectangle {
             spacing: Theme.spaceSm
             visible: root.playbackError.length > 0
             ActionButton {
+                id: errorChannels
                 text: qsTranslate("Viewer", "Choose a channel")
                 onClicked: root.channelsRequested()
             }
             ActionButton {
+                id: errorSettings
                 text: qsTranslate("Main", "Connection settings")
                 onClicked: root.settingsRequested()
             }
             ActionButton {
+                id: errorDetails
                 objectName: "errorDetailsAction"
                 text: qsTranslate("Main", "Error details")
                 onClicked: root.showDetails = true

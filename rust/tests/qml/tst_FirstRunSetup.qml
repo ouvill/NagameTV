@@ -44,7 +44,11 @@ TestCase {
         setup.open();
         tryCompare(setup, "opened", true);
     }
-    function cleanup() { setup.close(); tryCompare(setup, "visible", false); }
+    function cleanup() {
+        setup.close();
+        tryCompare(setup, "visible", false);
+        testCase.Window.window.showNormal();
+    }
     function test_open_recording_does_not_require_a_server() {
         const button = findChild(setup.contentItem, "setupOpenRecording");
         verify(button.visible);
@@ -65,6 +69,36 @@ TestCase {
         field().text = "   ";
         form().connectToServer();
         compare(backend.requests, 0);
+    }
+    function test_connection_failure_retains_visible_retry_in_fullscreen() {
+        const host = setup.contentItem.Window.window;
+        host.showFullScreen();
+        tryCompare(host, "visibility", Window.FullScreen);
+        field().text = "http://example.test:40772";
+        keyClick(Qt.Key_Return);
+        compare(form().phase, ConnectionForm.Checking);
+        backend.status = "HTTP 403";
+        finish(false, 0);
+        verify(action().activeFocus);
+        verify(action().focusVisible);
+        keyClick(Qt.Key_Up);
+        const disclosure = findChild(setup.contentItem, "connectionDetailsToggle");
+        verify(disclosure.focusVisible);
+        keyClick(Qt.Key_Return);
+        verify(findChild(setup.contentItem, "connectionErrorDetails").visible);
+        keyClick(Qt.Key_Down);
+        verify(action().focusVisible);
+        keyClick(Qt.Key_Return);
+        backend.settings_error = "Disk full";
+        finish(true, 4);
+        compare(form().phase, ConnectionForm.SaveFailed);
+        keyClick(Qt.Key_Up);
+        verify(disclosure.focusVisible);
+        keyClick(Qt.Key_Return);
+        compare(findChild(setup.contentItem, "connectionErrorDetails").text, "Disk full");
+        keyClick(Qt.Key_Escape);
+        verify(setup.opened);
+        verify(disclosure.activeFocus);
     }
     function test_failure_empty_catalog_and_save_failure_all_allow_retry() {
         field().text = "http://example.test:40772";

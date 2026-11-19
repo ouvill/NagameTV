@@ -166,6 +166,8 @@ Item {
         anchors.centerIn: parent
         width: Math.min(480, parent.width - 32)
         modal: true
+        focus: true
+        onOpened: errorButtons.standardButton(Dialog.Ok).forceActiveFocus(Qt.TabFocusReason)
         title: qsTranslate("Recording", "Could not open recording")
         standardButtons: Dialog.Ok
         padding: Theme.spaceXl
@@ -178,8 +180,11 @@ Item {
             wrapMode: Text.Wrap
         }
         footer: DialogButtonBox {
+            id: errorButtons
             standardButtons: errorDialog.standardButtons
-            delegate: ActionButton {}
+            delegate: ActionButton {
+                Keys.onBackPressed: function(event) { if (!event.isAutoRepeat) errorDialog.reject(); }
+            }
             background: Item {}
             padding: Theme.spaceLg
             onAccepted: errorDialog.accept()

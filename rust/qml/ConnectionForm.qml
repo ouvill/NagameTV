@@ -20,6 +20,7 @@ ColumnLayout {
     readonly property string serverProduct: backend && backend.server_product ? backend.server_product : ""
     readonly property list<Item> navigationItems: [server, detailsToggle, action, mirakurunHelp, mirakcHelp]
     signal completed
+    property int resultFocusReason: Qt.OtherFocusReason
     spacing: Theme.spaceLg
 
     function reset() {
@@ -28,12 +29,14 @@ ColumnLayout {
         detailsVisible = false;
     }
     function focusInput() { server.focusForEditing(); }
-    function connectToServer() {
+    function connectToServer(focusReason = Qt.OtherFocusReason) {
         if (busy || !server.text.trim().length) return;
+        resultFocusReason = focusReason;
         phase = ConnectionForm.Checking;
         detailsVisible = false;
         if (!backend.connect_server(server.text)) {
             phase = ConnectionForm.Failed;
+            action.forceActiveFocus(resultFocusReason);
         }
     }
     Connections {
@@ -48,7 +51,7 @@ ColumnLayout {
             } else {
                 root.phase = channels > 0 ? ConnectionForm.Ready : ConnectionForm.Empty;
             }
-            if (root.visible) action.forceActiveFocus();
+            if (root.visible) action.forceActiveFocus(root.resultFocusReason);
         }
     }
 
@@ -73,7 +76,7 @@ ColumnLayout {
         editingEnabled: !root.busy
         placeholderText: "http://192.168.1.100:40772"
         Accessible.name: qsTranslate("Settings", "Server URL")
-        onAccepted: root.connectToServer()
+        onAccepted: root.connectToServer(Qt.TabFocusReason)
         onTextEdited: {
             root.phase = ConnectionForm.Idle;
             root.detailsVisible = false;
@@ -141,7 +144,7 @@ ColumnLayout {
         opacity: enabled ? 1 : 0.5
         onClicked: {
             if (root.phase === ConnectionForm.Ready) root.completed();
-            else root.connectToServer();
+            else root.connectToServer(focusVisible ? Qt.TabFocusReason : Qt.OtherFocusReason);
         }
     }
     Detail {
