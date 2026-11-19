@@ -421,6 +421,8 @@ pub mod ffi {
         #[qinvokable]
         fn play_epgstation(self: Pin<&mut Player>, id: QString) -> bool;
         #[qinvokable]
+        fn play_epgstation_from_beginning(self: Pin<&mut Player>, id: QString) -> bool;
+        #[qinvokable]
         fn choose_epgstation(self: Pin<&mut Player>, id: QString) -> bool;
         #[qinvokable]
         fn play_epgstation_file(self: Pin<&mut Player>, id: QString, video: QString) -> bool;

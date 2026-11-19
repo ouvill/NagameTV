@@ -138,7 +138,7 @@ impl ffi::Player {
         // A successful stop grants an exclusive capability for the next start.
         self.as_mut().save_recording_history(true);
         let identity = match &attempt {
-            Attempt::File(file) => Some(file.history_identity()),
+            Attempt::File(file) => Some((file.history_identity(), file.start_position())),
             Attempt::Live(_) => None,
         };
         let result = {
@@ -165,10 +165,11 @@ impl ffi::Player {
             }
         };
         self.as_mut().rust_mut().recording_history_session = if result.is_ok() {
-            identity.map(|identity| {
+            identity.map(|(identity, start)| {
                 crate::viewing_history::recordings::Session::new(
                     identity,
                     std::time::Instant::now(),
+                    start,
                 )
             })
         } else {

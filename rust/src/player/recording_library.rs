@@ -3,11 +3,16 @@ use super::error_text::{PresentError, Text};
 use super::ffi;
 use crate::epgstation::DeletePlayback;
 use crate::services::{FetchError, NetworkError};
+use crate::viewing_history::recordings::{Source, StartPosition};
 use cxx_qt::CxxQtType;
 use cxx_qt_lib::QString;
 use std::pin::Pin;
 
 impl ffi::Player {
+    #[cfg(feature = "qml_tests")]
+    pub(crate) fn disable_recording_deletion_fixture(mut self: Pin<&mut Self>) {
+        self.as_mut().rust_mut().recording_library = crate::epgstation::Library::default();
+    }
     pub fn recording_files(&self) -> *mut crate::video_file_model::ffi::VideoFileModel {
         self.rust().video_file_model.as_ptr().cast_mut()
     }
@@ -252,12 +257,42 @@ impl ffi::Player {
         self.as_mut().rust_mut().recording_library.cancel();
         self.epgstation_changed();
     }
-    pub fn play_epgstation(mut self: Pin<&mut Self>, id: QString) -> bool {
-        let request = id
-            .to_string()
-            .parse::<u64>()
-            .ok()
-            .and_then(|id| self.rust().recording_library.playback_request(id, None));
+    pub fn play_epgstation(self: Pin<&mut Self>, id: QString) -> bool {
+        self.play_listed_recording(id, StartPosition::Resume)
+    }
+    pub fn play_epgstation_from_beginning(self: Pin<&mut Self>, id: QString) -> bool {
+        self.play_listed_recording(id, StartPosition::Beginning)
+    }
+    fn play_listed_recording(mut self: Pin<&mut Self>, id: QString, start: StartPosition) -> bool {
+        let Ok(id) = id.to_string().parse::<u64>() else {
+            return false;
+        };
+        let state = self.rust();
+        let library = &state.recording_library;
+        let preferred = library
+            .server()
+            .and_then(|server| {
+                state.viewing_history.recordings().iter().find_map(|entry| {
+                    match &entry.identity.source {
+                        Source::Epgstation {
+                            server: saved,
+                            recorded_id,
+                            video_file_id,
+                        } if saved == server && *recorded_id == id => {
+                            Some((*video_file_id, entry.position))
+                        }
+                        _ => None,
+                    }
+                })
+            })
+            .filter(|(_, position)| position.resumable())
+            .and_then(|(video, _)| library.playback_request(id, Some(video)))
+            .map(|request| request.with_start_position(start));
+        let request = preferred.or_else(|| {
+            library
+                .playback_request(id, None)
+                .map(|request| request.with_start_position(StartPosition::Beginning))
+        });
         match request {
             Some(request) => {
                 self.as_mut().rust_mut().autoplay_pending = false;

@@ -154,6 +154,13 @@ impl Entry {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) enum StartPosition {
+    #[default]
+    Resume,
+    Beginning,
+}
+
 // Waiting consumes the right to perform the automatic seek exactly once.
 #[derive(Default)]
 enum Resume {
@@ -169,10 +176,13 @@ pub struct Session {
     next_save: Instant,
 }
 impl Session {
-    pub fn new(identity: Identity, now: Instant) -> Self {
+    pub(crate) fn new(identity: Identity, now: Instant, start: StartPosition) -> Self {
         Self {
             identity,
-            resume: Resume::Waiting,
+            resume: match start {
+                StartPosition::Resume => Resume::Waiting,
+                StartPosition::Beginning => Resume::Running,
+            },
             latest: None,
             next_save: now + SAVE_INTERVAL,
         }
@@ -252,7 +262,7 @@ mod tests {
         let mut history = super::super::History::transient();
         let saved = Position::new(120_000.0, 600_000.0).unwrap();
         history.record(identity(), saved);
-        let mut session = Session::new(identity(), now);
+        let mut session = Session::new(identity(), now, StartPosition::Resume);
         session.sample(Position::new(100.0, 600_000.0), false);
         assert!(!session.save(&mut history, now, true));
         assert_eq!(session.resume(&history, 600_000.0), Some(120_000.0));
@@ -279,8 +289,25 @@ mod tests {
         let mut history = super::super::History::transient();
         history.record(identity(), Position::new(599_000.0, 600_000.0).unwrap());
         assert!(history.continue_watching().is_empty());
-        let mut session = Session::new(identity(), Instant::now());
+        let mut session = Session::new(identity(), Instant::now(), StartPosition::Resume);
         assert_eq!(session.resume(&history, 600_000.0), None);
+    }
+    #[test]
+    fn explicit_beginning_skips_automatic_seek_without_erasing_saved_history() {
+        let now = Instant::now();
+        let mut history = super::super::History::transient();
+        let saved = Position::new(120_000.0, 600_000.0).unwrap();
+        history.record(identity(), saved);
+        let mut session = Session::new(identity(), now, StartPosition::Beginning);
+        assert_eq!(session.resume(&history, 600_000.0), None);
+        assert_eq!(history.entry(&identity().source).unwrap().position, saved);
+        let new_position = Position::new(30_000.0, 600_000.0).unwrap();
+        session.sample(Some(new_position), false);
+        assert!(session.save(&mut history, now + SAVE_INTERVAL, false));
+        assert_eq!(
+            history.entry(&identity().source).unwrap().position,
+            new_position
+        );
     }
     #[test]
     fn http_fragments_are_ignored_but_distinct_queries_remain_distinct() {
