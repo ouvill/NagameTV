@@ -239,6 +239,8 @@ Item {
                 signal connectRequested(string url)
                 signal connectionFinished(bool success, int channels)
                 property bool acceptConnection: false
+                property bool recording_reservations_enabled: false
+                property bool recording_reservations_allowed: false
                 property string lan_search_kind: ""
                 property string lan_search_status: "idle"
                 property ListModel lan_discovery_model: ListModel {}
