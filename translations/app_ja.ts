@@ -2791,6 +2791,9 @@
 </context>
   <context>
     <name>RecordingLibrary</name>
+    <message><source>Recording actions</source><translation>録画の操作</translation></message>
+    <message><source>Play from the beginning</source><translation>最初から再生</translation></message>
+    <message><source>Choose file to play</source><translation>再生するファイルを選ぶ</translation></message>
     <message><source>Delete…</source><translation>削除…</translation></message>
     <message><source>Delete recording?</source><translation>録画を削除しますか？</translation></message>
     <message><source>Delete</source><translation>削除する</translation></message>

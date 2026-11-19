@@ -23,10 +23,12 @@ mod ffi {
         #[qobject]
         #[qml_element]
         #[qproperty(*mut Player, backend, READ = backend, CONSTANT)]
+        #[qproperty(*mut Player, browse_backend, READ = browse_backend, CONSTANT)]
         type TestRecordingLibrary = super::RecordingLibraryFixture;
         fn backend(self: &TestRecordingLibrary) -> *mut Player;
+        fn browse_backend(self: &TestRecordingLibrary) -> *mut Player;
         #[qinvokable]
-        fn load(self: Pin<&mut TestRecordingLibrary>) -> bool;
+        fn load(self: Pin<&mut TestRecordingLibrary>, deletion: bool) -> bool;
 
         #[qobject]
         #[qml_element]
@@ -66,6 +68,7 @@ mod ffi {
 
 pub struct RecordingLibraryFixture {
     player: cxx::UniquePtr<crate::player::ffi::Player>,
+    browse_player: cxx::UniquePtr<crate::player::ffi::Player>,
     mock: wiremock::MockServer,
 }
 
@@ -92,7 +95,10 @@ impl Default for RecordingLibraryFixture {
                 json!({
                     "id": id, "name": name, "channelName": "Test TV",
                     "startAt": 1700000000000_i64, "endAt": 1700000060000_i64,
-                    "isRecording": false, "isProtected": false, "videoFiles": [],
+                    "description": "Original program description",
+                    "extended": "Full program notes",
+                    "isRecording": false, "isProtected": false,
+                    "videoFiles": [{"id": 123, "size": 1, "type": "ts"}],
                 })
             });
             Mock::given(method("GET"))
@@ -130,8 +136,11 @@ impl Default for RecordingLibraryFixture {
         crate::features::PLAN.get_or_init(|| {
             crate::features::LaunchPlan::Restricted("recording-delete".parse().expect("test plan"))
         });
+        let mut browse_player = crate::player::ffi::new_player();
+        browse_player.pin_mut().disable_recording_deletion_fixture();
         Self {
             player: crate::player::ffi::new_player(),
+            browse_player,
             mock,
         }
     }
@@ -143,12 +152,21 @@ impl ffi::TestRecordingLibrary {
         self.rust().player.as_ptr().cast_mut()
     }
 
-    pub fn load(mut self: std::pin::Pin<&mut Self>) -> bool {
+    pub fn browse_backend(&self) -> *mut crate::player::ffi::Player {
+        use cxx_qt::CxxQtType;
+        self.rust().browse_player.as_ptr().cast_mut()
+    }
+
+    pub fn load(mut self: std::pin::Pin<&mut Self>, deletion: bool) -> bool {
         use cxx_qt::CxxQtType;
         use cxx_qt_lib::QString;
         let state = self.as_mut().rust_mut().get_mut();
-        state
-            .player
+        let player = if deletion {
+            &mut state.player
+        } else {
+            &mut state.browse_player
+        };
+        player
             .pin_mut()
             .browse_epgstation(QString::from(state.mock.uri()), QString::default())
     }

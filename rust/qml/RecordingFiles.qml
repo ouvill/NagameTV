@@ -14,6 +14,7 @@ Dialog {
     width: Math.min(600, parent.width - Theme.spaceXl * 2)
     modal: true
     title: qsTranslate("RecordingLibrary", "Choose a video file")
+    Shortcut { sequence: "Back"; enabled: root.opened; onActivated: root.reject() }
     padding: Theme.spaceLg
     background: PanelSurface {}
     header: Label {
