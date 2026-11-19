@@ -1822,7 +1822,7 @@ fn check_media_subtitles(
         wait_for(
             app,
             engine,
-            "mediaSubtitleSettings.opened && root.activeFocusItem.objectName === 'mediaSubtitleToggle' && root.activeFocusItem.focusVisible",
+            "mediaSubtitleSettings.opened && root.activeFocusItem.objectName === 'mediaSubtitleToggle' && root.activeFocusItem.focusVisible && mediaSubtitleSettings.contentItem.children.some(item => item.objectName === 'mediaSubtitleStatus' && item.visible)",
         )?;
         let reached_retry = "root.activeFocusItem.objectName === 'openSubtitleButton' && root.activeFocusItem.focusVisible";
         for _ in 0..5 {

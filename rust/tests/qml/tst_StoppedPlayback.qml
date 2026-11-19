@@ -9,6 +9,10 @@ TestCase {
     width: 640
     height: 480
     visible: true
+    Item {
+        id: watching
+        Keys.onDownPressed: panel.enter()
+    }
     StoppedPlayback {
         id: panel
         anchors.fill: parent
@@ -45,7 +49,8 @@ TestCase {
         tryCompare(host, "visibility", Window.FullScreen);
         panel.canPlay = true;
         panel.playbackError = "Stream failed";
-        panel.forceActiveFocus(Qt.TabFocusReason);
+        watching.forceActiveFocus();
+        keyClick(Qt.Key_Down);
         const action = findChild(panel, "stoppedAction");
         tryVerify(() => action.focusVisible);
         keyClick(Qt.Key_Return);
