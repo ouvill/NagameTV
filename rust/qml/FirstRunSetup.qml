@@ -22,7 +22,8 @@ Popup {
     closePolicy: Popup.NoAutoClose
     background: Rectangle { color: Theme.surface }
     onAboutToShow: form.reset()
-    onOpened: form.focusInput()
+    onOpened: form.startDiscovery()
+    onAboutToHide: form.stopDiscovery()
     onClosed: form.phase = ConnectionForm.Idle
     FormNavigation {
         scrollView: scroll
@@ -63,13 +64,6 @@ Popup {
                     text: qsTranslate("Connection", "Connect to Mirakurun or mirakc")
                     color: Theme.textPrimary
                     font.pixelSize: Theme.fontDisplay; font.bold: true
-                    wrapMode: Text.Wrap
-                }
-                Label {
-                    Layout.fillWidth: true
-                    text: qsTranslate("Connection", "To watch TV, you need a configured Mirakurun or mirakc server. Enter its URL to get started.")
-                    color: Theme.textSecondary
-                    font.pixelSize: Theme.fontControl
                     wrapMode: Text.Wrap
                 }
                 Label {

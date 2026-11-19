@@ -137,9 +137,15 @@ Popup {
         });
         pageFlick.contentY = 0;
         if (page === SettingsPanel.Comments) backend.comments_open(true);
+        if (opened && page !== SettingsPanel.Connection) {
+            connectionForm.stopDiscovery();
+            epgstationConnection.stopDiscovery();
+        }
         if (opened) pageRevealMotion.restart();
     }
     onAboutToHide: {
+        connectionForm.stopDiscovery();
+        epgstationConnection.stopDiscovery();
         epgstationConnection.closeLogin();
         recentLogDialog.close();
         liveBufferSettings.finishEdit();
@@ -437,6 +443,7 @@ Popup {
                             id: epgstationConnection
                             objectName: "epgstationConnectionSettings"
                             Layout.fillWidth: true
+                            backend: root.backend
                             serverUrl: root.backend.epgstation_server
                             busy: root.backend.epgstation_busy
                             connected: root.backend.epgstation_loaded

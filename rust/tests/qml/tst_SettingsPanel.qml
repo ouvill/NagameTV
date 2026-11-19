@@ -239,6 +239,19 @@ Item {
                 signal connectRequested(string url)
                 signal connectionFinished(bool success, int channels)
                 property bool acceptConnection: false
+                property string lan_search_kind: ""
+                property string lan_search_status: "idle"
+                property ListModel lan_discovery_model: ListModel {}
+                function search_lan(kind) {
+                    lan_search_kind = kind;
+                    lan_search_status = "searching";
+                }
+                function cancel_lan_search(kind) {
+                    if (lan_search_kind !== kind) return;
+                    lan_search_kind = "";
+                    lan_search_status = "idle";
+                    lan_discovery_model.clear();
+                }
                 function connect_server(url) { connectRequested(url); return acceptConnection; }
             }
             ActionTestBackend { id: actionBackend }
@@ -509,6 +522,8 @@ Item {
             }
             function test_busy_connection_fields_cannot_edit_but_allow_navigation() {
                 keyboardPage(SettingsPanel.Connection);
+                expectFocus("lanSearch_tuner");
+                keyClick(Qt.Key_Down);
                 const field = expectFocus("serverField");
                 keyClick(Qt.Key_Return);
                 backend.loading = true;
@@ -516,7 +531,7 @@ Item {
                 keyClick(Qt.Key_Return); keyClick(Qt.Key_Backspace);
                 compare(field.text, backend.server);
                 verify(field.readOnly);
-                keyClick(Qt.Key_Down); expectFocus("epgstationServer");
+                keyClick(Qt.Key_Down); expectFocus("lanSearch_recordings");
                 compare(connections.count, 0);
                 backend.loading = false;
                 keyClick(Qt.Key_Up); expectFocus("connectServer");
@@ -539,8 +554,10 @@ Item {
             }
             function test_dpad_categories_rows_numeric_editing_and_back() {
                 expectFocus("settingsCategory0");
-                keyClick(Qt.Key_Right); expectFocus("serverField");
+                keyClick(Qt.Key_Right); expectFocus("lanSearch_tuner");
+                keyClick(Qt.Key_Down); expectFocus("serverField");
                 keyClick(Qt.Key_Down); expectFocus("connectServer");
+                keyClick(Qt.Key_Down); expectFocus("lanSearch_recordings");
                 keyClick(Qt.Key_Down); expectFocus("epgstationServer");
                 compare(connections.count, 0); compare(catalogues.count, 0);
                 keyClick(Qt.Key_Back); expectFocus("settingsCategory0");
@@ -658,7 +675,7 @@ Item {
                 keyClick(Qt.Key_Up);
                 const header = findChild(panel.contentItem, "settingsModeNavigation");
                 tryCompare(findChild(header, "settingsModeButton"), "activeFocus", true);
-                keyClick(Qt.Key_Down); expectFocus("serverField");
+                keyClick(Qt.Key_Down); expectFocus("lanSearch_tuner");
             }
             function test_dpad_timeshift_hidden_fields_and_remote_form() {
                 keyboardPage(SettingsPanel.Watching);
@@ -1021,6 +1038,23 @@ Item {
                 keyClick(Qt.Key_Return);
                 compare(connections.count, 1);
                 compare(connect.enabled, false);
+            }
+            function test_epgstation_discovery_connects_through_the_existing_catalogue_flow() {
+                panel.focusEpgstationConnection();
+                const field = findChild(panel.contentItem, "epgstationServer");
+                tryCompare(field, "activeFocus", true);
+                keyClick(Qt.Key_Escape);
+                keyClick(Qt.Key_Up); expectFocus("lanSearch_recordings");
+                keyClick(Qt.Key_Return);
+                compare(backend.lan_search_kind, "recordings");
+                const url = "http://192.168.0.4:8888";
+                backend.lan_discovery_model.append({serverUrl: url, productName: "EPGStation", serverVersion: "2.10.0"});
+                backend.lan_search_status = "finished";
+                keyClick(Qt.Key_Down); expectFocus("lanResult_recordings_0");
+                keyClick(Qt.Key_Return);
+                compare(catalogues.count, 1);
+                compare(catalogues.signalArguments[0][0], url);
+                compare(connections.count, 0);
             }
             function test_epgstation_has_separate_explicit_connection_and_verified_result() {
                 panel.focusEpgstationConnection();

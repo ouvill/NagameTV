@@ -6,6 +6,7 @@ import MinimalViewer
 
 Item {
     id: root
+    required property var backend
     required property string serverUrl
     required property bool busy
     required property bool connected
@@ -17,11 +18,12 @@ Item {
     implicitWidth: content.implicitWidth
     implicitHeight: content.implicitHeight
     readonly property bool inputFocused: serverField.activeFocus
-    readonly property list<Item> navigationItems: [serverField, connectButton, loginButton, cancelButton, browseButton]
+    readonly property list<Item> navigationItems: [...discovery.navigationItems, serverField, connectButton, loginButton, cancelButton, browseButton]
 
     function reset() { serverField.text = serverUrl; loginDialog.close(); }
     function focusInput() { serverField.focusForEditing(); }
     function closeLogin() { loginDialog.close(); }
+    function stopDiscovery() { discovery.stop(); }
     function connectToServer() {
         if (!busy && serverField.text.trim().length) connectRequested(serverField.text.trim());
     }
@@ -31,6 +33,17 @@ Item {
         id: content
         width: parent.width
         spacing: Theme.spaceMd
+        LanServerPicker {
+            id: discovery
+            Layout.fillWidth: true
+            backend: root.backend
+            kind: "recordings"
+            busy: root.busy
+            onServerSelected: function(url) {
+                serverField.text = url;
+                root.connectToServer();
+            }
+        }
         Label {
             text: qsTranslate("RecordingLibrary", "EPGStation URL")
             color: Theme.textPrimary
