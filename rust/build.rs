@@ -129,6 +129,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     .file("src/media_caption.rs")
     .file("src/subtitle_model.rs")
     .file("src/hdmi_cec_model.rs")
+    .file("src/lan_discovery_model.rs")
     .file("src/screenshot_native.rs")
     .file("src/screenshot_overlay.rs")
     .file("src/danmaku.rs")

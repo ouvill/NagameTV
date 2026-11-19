@@ -247,6 +247,8 @@ impl Default for PlayerRust {
             request: Default::default(),
             channel_refresh: Default::default(),
             network: network.ok(),
+            lan_search: Default::default(),
+            lan_discovery_model: crate::lan_discovery_model::ffi::make_lan_discovery_model(),
             updates,
             remote: crate::remote::Control::load(plan),
             media,

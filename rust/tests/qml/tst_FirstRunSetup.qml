@@ -18,8 +18,24 @@ TestCase {
         property string settings_error: ""
         property string server_product: ""
         property int requests: 0
+        property int searches: 0
+        property string requestedUrl: ""
+        property string lan_search_kind: ""
+        property string lan_search_status: "idle"
+        property ListModel lan_discovery_model: ListModel {}
         signal connectionFinished(bool success, int channels)
-        function connect_server(url) { requests++; loading = true; return true; }
+        function connect_server(url) { requests++; requestedUrl = url; loading = true; return true; }
+        function search_lan(kind) {
+            searches++;
+            lan_search_kind = kind;
+            lan_search_status = "searching";
+        }
+        function cancel_lan_search(kind) {
+            if (lan_search_kind !== kind) return;
+            lan_search_status = "idle";
+            lan_search_kind = "";
+            lan_discovery_model.clear();
+        }
     }
     FirstRunSetup { id: setup; backend: backend }
     SignalSpy { id: completed; target: setup; signalName: "completed" }
@@ -27,6 +43,7 @@ TestCase {
     function form() { return findChild(setup.contentItem, "setupConnectionForm"); }
     function field() { return findChild(setup.contentItem, "serverField"); }
     function action() { return findChild(setup.contentItem, "connectServer"); }
+    function search() { return findChild(setup.contentItem, "lanSearch_tuner"); }
     function finish(success, count) {
         backend.loading = false;
         backend.connectionFinished(success, count);
@@ -39,6 +56,9 @@ TestCase {
         backend.settings_error = "";
         backend.server_product = "";
         backend.requests = 0;
+        backend.searches = 0;
+        backend.requestedUrl = "";
+        backend.cancel_lan_search("tuner");
         completed.clear();
         openFile.clear();
         setup.open();
@@ -59,12 +79,14 @@ TestCase {
     }
     function test_initial_input_is_empty_and_does_not_connect_automatically() {
         compare(field().text, "");
-        verify(field().activeFocus);
-        compare(field().interaction, NavigationField.Editing);
+        verify(search().activeFocus);
+        compare(backend.searches, 1);
+        compare(backend.lan_search_status, "searching");
         compare(action().enabled, false);
         compare(backend.requests, 0);
-        keyClick(Qt.Key_Escape);
+        keyClick(Qt.Key_Down);
         compare(setup.opened, true);
+        verify(field().activeFocus);
         compare(field().interaction, NavigationField.Navigating);
         field().text = "   ";
         form().connectToServer();
@@ -74,6 +96,10 @@ TestCase {
         const host = setup.contentItem.Window.window;
         host.showFullScreen();
         tryCompare(host, "visibility", Window.FullScreen);
+        keyClick(Qt.Key_Down);
+        verify(field().activeFocus);
+        keyClick(Qt.Key_Return);
+        compare(field().interaction, NavigationField.Editing);
         field().text = "http://example.test:40772";
         keyClick(Qt.Key_Return);
         compare(form().phase, ConnectionForm.Checking);
@@ -99,6 +125,41 @@ TestCase {
         keyClick(Qt.Key_Escape);
         verify(setup.opened);
         verify(disclosure.activeFocus);
+    }
+    function test_discovered_server_can_be_selected_and_connected_with_the_dpad() {
+        backend.lan_discovery_model.append({serverUrl: "http://192.168.0.2:40772", productName: "Mirakurun", serverVersion: "4.1.3"});
+        backend.lan_discovery_model.append({serverUrl: "http://192.168.0.3:40772", productName: "mirakc", serverVersion: "3.4.89"});
+        backend.lan_search_status = "finished";
+        const first = findChild(setup.contentItem, "lanResult_tuner_0");
+        const second = findChild(setup.contentItem, "lanResult_tuner_1");
+        verify(first.text.includes("Mirakurun 4.1.3"));
+        keyClick(Qt.Key_Down);
+        verify(first.activeFocus);
+        keyClick(Qt.Key_Down);
+        verify(second.activeFocus);
+        keyClick(Qt.Key_Return);
+        compare(backend.requests, 1);
+        compare(backend.requestedUrl, "http://192.168.0.3:40772");
+        backend.status = "HTTP 403";
+        finish(false, 0);
+        compare(form().phase, ConnectionForm.Failed);
+        verify(action().activeFocus);
+        verify(action().focusVisible);
+        keyClick(Qt.Key_Return);
+        compare(backend.requests, 2);
+        compare(backend.requestedUrl, "http://192.168.0.3:40772");
+        finish(true, 2);
+        verify(action().activeFocus);
+        verify(action().focusVisible);
+        keyClick(Qt.Key_Return);
+        compare(completed.count, 1);
+    }
+    function test_cancel_search_and_start_again() {
+        keyClick(Qt.Key_Return);
+        compare(backend.lan_search_status, "idle");
+        keyClick(Qt.Key_Return);
+        compare(backend.searches, 2);
+        compare(backend.lan_search_status, "searching");
     }
     function test_failure_empty_catalog_and_save_failure_all_allow_retry() {
         field().text = "http://example.test:40772";
@@ -162,7 +223,7 @@ TestCase {
         const mirakc = findChild(setup.contentItem, "mirakcSetupHelp");
         verify(mirakurun.visible);
         verify(mirakc.visible);
-        keyClick(Qt.Key_Escape);
+        keyClick(Qt.Key_Down);
         field().text = "http://example.test:40772";
         keyClick(Qt.Key_Down);
         verify(action().activeFocus);
@@ -187,6 +248,9 @@ TestCase {
         compare(form().phase, ConnectionForm.Checking);
     }
     function test_initial_editing_then_directional_navigation() {
+        keyClick(Qt.Key_Down);
+        verify(field().activeFocus);
+        keyClick(Qt.Key_Return);
         keyClick(Qt.Key_H);
         compare(field().text, "h");
         keyClick(Qt.Key_Down);

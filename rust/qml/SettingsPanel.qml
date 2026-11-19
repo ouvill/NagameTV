@@ -121,7 +121,7 @@ Popup {
         // A native resize may update the scaled overlay and nested layouts in
         // separate passes. Recalculate when either viewport or content settles.
         pages.ensurePolished();
-        pageFlick.contentY = Math.min(epgstationConnection.mapToItem(pages, 0, 0).y, Math.max(0, pageFlick.contentHeight - pageFlick.height));
+        formNavigation.revealCurrent();
     }
     function focusEpgstationConnection() {
         page = SettingsPanel.Connection;
@@ -137,9 +137,15 @@ Popup {
         });
         pageFlick.contentY = 0;
         if (page === SettingsPanel.Comments) backend.comments_open(true);
+        if (opened && page !== SettingsPanel.Connection) {
+            connectionForm.stopDiscovery();
+            epgstationConnection.stopDiscovery();
+        }
         if (opened) pageRevealMotion.restart();
     }
     onAboutToHide: {
+        connectionForm.stopDiscovery();
+        epgstationConnection.stopDiscovery();
         epgstationConnection.closeLogin();
         recentLogDialog.close();
         liveBufferSettings.finishEdit();
@@ -437,6 +443,7 @@ Popup {
                             id: epgstationConnection
                             objectName: "epgstationConnectionSettings"
                             Layout.fillWidth: true
+                            backend: root.backend
                             serverUrl: root.backend.epgstation_server
                             busy: root.backend.epgstation_busy
                             connected: root.backend.epgstation_loaded

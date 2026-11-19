@@ -12,6 +12,9 @@ struct Arguments {
     /// Print build identity as JSON without initializing the application
     #[arg(group = "mode", long)]
     build_info: bool,
+    /// Read appliance connection TOML from stdin and save it as preferences
+    #[arg(group = "mode", long, conflicts_with = "display")]
+    import_connection: bool,
     /// Restrict available features and use transient settings (screen-navigation is ignored)
     #[arg(
         group = "mode",
@@ -46,6 +49,7 @@ pub enum Command {
         display: Option<StartupDisplay>,
     },
     BuildInfo,
+    ImportConnection,
     #[cfg(feature = "native_tests")]
     NativeTests(Vec<OsString>),
     #[cfg(feature = "qml_tests")]
@@ -73,6 +77,9 @@ impl Command {
         }
         if args.build_info {
             return Ok(Self::BuildInfo);
+        }
+        if args.import_connection {
+            return Ok(Self::ImportConnection);
         }
         Ok(Self::Launch {
             plan: match args.features {

@@ -2081,10 +2081,6 @@
       <translation>サーバーURL</translation>
     </message>
     <message>
-      <source>Enter the Mirakurun or mirakc server address starting with http:// or https://.</source>
-      <translation>http:// または https:// で始まる Mirakurun または mirakc のアドレスを入力してください。</translation>
-    </message>
-    <message>
       <source>Loading channels…</source>
       <translation>チャンネルを取得中…</translation>
     </message>
@@ -2511,10 +2507,13 @@
       <source>Connect to Mirakurun or mirakc</source>
       <translation>Mirakurun / mirakc に接続</translation>
     </message>
-    <message>
-      <source>To watch TV, you need a configured Mirakurun or mirakc server. Enter its URL to get started.</source>
-      <translation>テレビを見るには、設定済みの Mirakurun または mirakc サーバーが必要です。サーバーのURLを入力してください。</translation>
-    </message>
+    <message><source>Cancel search</source><translation>検索を中止</translation></message>
+    <message><source>Search local network</source><translation>ローカルネットワークを検索</translation></message>
+    <message><source>Search again</source><translation>もう一度検索</translation></message>
+    <message><source>Searching the local network…</source><translation>ローカルネットワークを検索しています…</translation></message>
+    <message><source>Search ended early. Try again or enter the URL.</source><translation>検索を途中で終了しました。再検索するか、URLを入力してください。</translation></message>
+    <message><source>Could not search the local network.</source><translation>ローカルネットワークを検索できませんでした。</translation></message>
+    <message><source>No compatible servers found.</source><translation>対応するサーバーが見つかりませんでした。</translation></message>
     <message>
       <source>Reconnect</source>
       <translation>再接続</translation>

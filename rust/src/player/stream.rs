@@ -255,6 +255,7 @@ impl ffi::Player {
     fn poll_player(mut self: Pin<&mut Self>) {
         self.as_mut().refresh_channels_if_due();
         self.as_mut().poll_channels();
+        self.as_mut().poll_lan_search();
         self.as_mut().poll_recording();
         self.as_mut().poll_recording_library();
         self.as_mut().poll_recording_reservations();

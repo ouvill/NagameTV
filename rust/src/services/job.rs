@@ -39,29 +39,15 @@ impl<T: Send + 'static, E: Send + 'static> Job<T, E> {
         let client = client.clone();
         let task = runtime.spawn(async move {
             let result = async {
-                let mut response = client
+                let response = client
                     .get(url)
                     .send()
                     .await
                     .map_err(NetworkError::from)?
                     .error_for_status()
                     .map_err(NetworkError::from)?;
-                let mut bytes = Vec::new();
-                while let Some(chunk) = response.chunk().await.map_err(NetworkError::from)? {
-                    if bytes.len() + chunk.len() > limit {
-                        return Err(NetworkError::ResponseTooLarge { limit }.into());
-                    }
-                    bytes.extend_from_slice(&chunk);
-                }
-                // Capacity includes spare buffer space; neither value is process RSS.
-                // Log only the endpoint path, never server credentials or query data.
-                tracing::debug!(
-                    "HTTP_JSON path={} body_bytes={} buffer_capacity_bytes={}",
-                    response.url().path(),
-                    bytes.len(),
-                    bytes.capacity()
-                );
-                parse(response.headers(), &bytes).map_err(FetchError::Parse)
+                let (headers, bytes) = read_body(response, limit).await?;
+                parse(&headers, &bytes).map_err(FetchError::Parse)
             }
             .await;
             let _ = tx.try_send(result);
@@ -71,6 +57,28 @@ impl<T: Send + 'static, E: Send + 'static> Job<T, E> {
             rx,
         }
     }
+}
+
+pub(super) async fn read_body(
+    mut response: reqwest::Response,
+    limit: usize,
+) -> Result<(reqwest::header::HeaderMap, Vec<u8>), NetworkError> {
+    let mut bytes = Vec::new();
+    while let Some(chunk) = response.chunk().await? {
+        if bytes.len() + chunk.len() > limit {
+            return Err(NetworkError::ResponseTooLarge { limit });
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    // Capacity includes spare buffer space. Only log the path because other
+    // callers may use server credentials or query parameters.
+    tracing::debug!(
+        "HTTP_JSON path={} body_bytes={} buffer_capacity_bytes={}",
+        response.url().path(),
+        bytes.len(),
+        bytes.capacity()
+    );
+    Ok((std::mem::take(response.headers_mut()), bytes))
 }
 
 pub struct Job<T, E> {

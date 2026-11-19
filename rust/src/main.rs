@@ -17,6 +17,7 @@ mod guide_model;
 mod hdmi_cec;
 mod hdmi_cec_model;
 mod json;
+mod lan_discovery_model;
 mod logging;
 mod media_caption;
 mod media_subtitles;
@@ -62,6 +63,17 @@ fn main() -> std::process::ExitCode {
         cli::Command::Launch { plan, display } => (plan, display),
         cli::Command::BuildInfo => {
             println!("{}", build_info::json());
+            return std::process::ExitCode::SUCCESS;
+        }
+        cli::Command::ImportConnection => {
+            logging::init();
+            if let Err(error) = settings::import_connection(std::io::stdin().lock()) {
+                tracing::error!(
+                    error = &error as &dyn std::error::Error,
+                    "Could not import appliance connection"
+                );
+                return std::process::ExitCode::FAILURE;
+            }
             return std::process::ExitCode::SUCCESS;
         }
         #[cfg(feature = "native_tests")]

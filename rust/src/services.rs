@@ -1,6 +1,7 @@
 use crate::channels;
 use std::time::Duration;
 
+pub mod discovery;
 mod job;
 mod large_json;
 pub use job::{Job, Progress, Stopping};

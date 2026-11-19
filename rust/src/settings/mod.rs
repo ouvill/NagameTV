@@ -1,8 +1,10 @@
 //! Bounded, compatible preference storage. IO occurs at startup and explicit save.
 mod comment_cache;
 mod comment_style;
+mod connection_seed;
 mod deinterlace;
 pub use comment_cache::CommentCacheLimit;
+pub use connection_seed::import_connection;
 pub use deinterlace::Deinterlace;
 mod language;
 mod live_buffer;

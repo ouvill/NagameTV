@@ -18,7 +18,7 @@ ColumnLayout {
     readonly property bool busy: phase === ConnectionForm.Checking || backend.loading
     // Test doubles and older backends may not expose the product; fall back to generic wording.
     readonly property string serverProduct: backend && backend.server_product ? backend.server_product : ""
-    readonly property list<Item> navigationItems: [server, detailsToggle, action, mirakurunHelp, mirakcHelp]
+    readonly property list<Item> navigationItems: [...discovery.navigationItems, server, detailsToggle, action, mirakurunHelp, mirakcHelp]
     signal completed
     property int resultFocusReason: Qt.OtherFocusReason
     spacing: Theme.spaceLg
@@ -28,7 +28,8 @@ ColumnLayout {
         server.text = backend.server;
         detailsVisible = false;
     }
-    function focusInput() { server.focusForEditing(); }
+    function startDiscovery() { discovery.start(); discovery.focusSearch(); }
+    function stopDiscovery() { discovery.stop(); }
     function connectToServer(focusReason = Qt.OtherFocusReason) {
         if (busy || !server.text.trim().length) return;
         resultFocusReason = focusReason;
@@ -62,6 +63,17 @@ ColumnLayout {
         color: Theme.textSecondary
         font.pixelSize: Theme.fontBody
     }
+    LanServerPicker {
+        id: discovery
+        Layout.fillWidth: true
+        backend: root.backend
+        kind: "tuner"
+        busy: root.busy
+        onServerSelected: function(url, focusReason) {
+            server.text = url;
+            root.connectToServer(focusReason);
+        }
+    }
     Detail {
         text: qsTranslate("Settings", "Server URL")
         color: Theme.textPrimary
@@ -81,10 +93,6 @@ ColumnLayout {
             root.phase = ConnectionForm.Idle;
             root.detailsVisible = false;
         }
-    }
-    Detail {
-        visible: root.presentation === ConnectionForm.Setup
-        text: qsTranslate("Settings", "Enter the Mirakurun or mirakc server address starting with http:// or https://.")
     }
     BusyIndicator {
         Layout.alignment: Qt.AlignHCenter
