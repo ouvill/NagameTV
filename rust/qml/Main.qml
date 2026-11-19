@@ -31,6 +31,9 @@ ViewerWindow {
     color: Theme.canvas
     font.family: "Noto Sans CJK JP"
     property bool closing: false
+    readonly property bool cecPlaybackVisible: visible && visibility !== Window.Minimized && !closing
+        && player.screen === ViewerActions.WatchingScreen && player.media_active
+    onCecPlaybackVisibleChanged: player.set_hdmi_cec_playback_visible(cecPlaybackVisible)
     QtObject {
         id: focusHistory
         property Item channels: null

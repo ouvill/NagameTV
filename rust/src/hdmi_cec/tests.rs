@@ -21,6 +21,7 @@ struct Fake {
 struct Shared {
     devices: Vec<DeviceInfo>,
     operations: Vec<String>,
+    sent_frames: Vec<Frame>,
     address: Address,
     failures: BTreeMap<String, io::ErrorKind>,
     claim_failure: bool,
@@ -40,6 +41,7 @@ impl Fake {
                 shared: Arc::new(Mutex::new(Shared {
                     devices: vec![info(0)],
                     operations: Vec::new(),
+                    sent_frames: Vec::new(),
                     address,
                     failures: BTreeMap::new(),
                     claim_failure: false,
@@ -126,6 +128,10 @@ impl Device for FakeDevice {
                 source: io::ErrorKind::NotConnected.into(),
             }),
         }
+    }
+    fn transmit(&mut self, frame: Frame) -> Result<(), Error> {
+        self.fake.shared.lock().unwrap().sent_frames.push(frame);
+        Ok(())
     }
     fn release(&mut self) -> Result<(), Error> {
         let mut shared = self.fake.shared.lock().unwrap();
@@ -265,6 +271,108 @@ fn automatic_selection_prefers_a_connected_adapter_before_claiming() {
     );
 }
 
+fn receive(events: &mpsc::Sender<Result<Event, Error>>, bytes: &[u8]) {
+    events
+        .send(Ok(Event::Message(Frame::parse(bytes).unwrap())))
+        .unwrap();
+}
+
+fn wait_for_transmissions(fake: &Fake, count: usize) -> Vec<Frame> {
+    let deadline = Instant::now() + Duration::from_secs(3);
+    loop {
+        let sent = fake.shared.lock().unwrap().sent_frames.clone();
+        if sent.len() >= count {
+            return sent;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "expected {count} frames, sent {sent:?}"
+        );
+        thread::sleep(Duration::from_millis(1));
+    }
+}
+
+#[test]
+fn replies_to_power_menu_and_unsupported_directed_messages() {
+    let (fake, events) = Fake::new(CONNECTED);
+    let mut controller = fake.controller(true);
+    wait_state(&mut controller, "active");
+    for frame in [
+        &[0x04, 0x8f][..],         // Give Device Power Status
+        &[0x04, 0x8d, 0x02],       // Menu Request, query
+        &[0x04, 0x8d, 0x01],       // Deactivate
+        &[0x04, 0x8d, 0x02],       // Query after deactivation
+        &[0x04, 0x8d, 0x00],       // Activate
+        &[0x04, 0x8d, 0x03],       // Invalid menu operand
+        &[0x04, 0x8c],             // Vendor ID is handled by Linux
+        &[0x04, 0x46],             // OSD name
+        &[0x04, 0x83],             // Physical address
+        &[0x04, 0x9f],             // CEC version
+        &[0x04, 0xff],             // Test-only Abort handled by Linux
+        &[0x04, 0x00, 0x8e, 0x00], // No reply to Feature Abort
+        &[0x0f, 0x89, 0x01],       // No reply to broadcasts
+        &[0xf4, 0x8f],             // No directed reply to Unregistered
+        &[0x08, 0x8f],             // Not our logical address
+        &[0x04, 0x89, 0x01],       // Unsupported directed Vendor Command
+    ] {
+        receive(&events, frame);
+    }
+    let sent = wait_for_transmissions(&fake, 7);
+    assert_eq!(
+        sent.iter().map(Frame::bytes).collect::<Vec<_>>(),
+        [
+            &[0x40, 0x90, 0x00][..],
+            &[0x40, 0x8e, 0x00],
+            &[0x40, 0x8e, 0x01],
+            &[0x40, 0x8e, 0x01],
+            &[0x40, 0x8e, 0x00],
+            &[0x40, 0x00, 0x8d, 0x03],
+            &[0x40, 0x00, 0x89, 0x00],
+        ]
+    );
+}
+
+#[test]
+fn publishes_visible_playback_after_claim_and_respects_the_tv_route() {
+    let (fake, events) = Fake::new(UNPLUGGED);
+    let mut controller = fake.controller(true);
+    controller.set_playback_visible(true);
+    events.send(Ok(Event::StateChange(CONNECTED))).unwrap();
+    wait_state(&mut controller, "active");
+    assert_eq!(
+        wait_for_transmissions(&fake, 1)[0].bytes(),
+        [0x4f, 0x82, 0x21, 0x00]
+    );
+
+    events.send(Ok(Event::StateChange(CONNECTED))).unwrap();
+    receive(&events, &[0x0f, 0x85]); // Request the current source
+    receive(&events, &[0x0f, 0x82, 0, 0]); // The TV selects its own tuner
+    receive(&events, &[0x0f, 0x85]); // No response after losing the route
+    receive(&events, &[0x0f, 0x80, 0, 0, 0x21, 0]); // TV routes back to the player
+    receive(&events, &[0x0f, 0x86, 0x22, 0]); // A sibling input is selected
+    receive(&events, &[0x0f, 0x85]);
+    receive(&events, &[0x0f, 0x86, 0x21, 0]); // Select this player's PA
+    receive(&events, &[0x04, 0x8f]); // Mark all prior events handled
+    let sent = wait_for_transmissions(&fake, 5);
+    assert_eq!(&sent[..4], &[sent[0]; 4]);
+    assert_eq!(sent[4].bytes(), [0x40, 0x90, 0]);
+}
+
+#[test]
+fn a_hidden_playback_claim_passively_waits_for_tv_selection_or_visible_video() {
+    let (fake, events) = Fake::new(CONNECTED);
+    let mut controller = fake.controller(true);
+    wait_state(&mut controller, "active");
+    receive(&events, &[0x0f, 0x85]);
+    receive(&events, &[0x04, 0x8f]);
+    assert_eq!(wait_for_transmissions(&fake, 1)[0].bytes(), [0x40, 0x90, 0]);
+    controller.set_playback_visible(true);
+    assert_eq!(
+        wait_for_transmissions(&fake, 2)[1].bytes(),
+        [0x4f, 0x82, 0x21, 0]
+    );
+}
+
 #[test]
 fn automatic_selection_skips_failed_devices_but_explicit_selection_does_not() {
     let (fake, _events) = Fake::new(CONNECTED);
@@ -371,7 +479,7 @@ fn claim_timeout_uses_injected_time_and_releases_the_requested_address() {
         &stop,
         &snapshots,
         &inputs,
-        &mut 0,
+        (&mut 0, &AtomicBool::new(false)),
         || {
             now + if calls.fetch_add(1, Ordering::SeqCst) == 0 {
                 Duration::ZERO
@@ -524,7 +632,7 @@ fn stopped_fake_session(fake: &Fake, diagnostics: &SharedDiagnostics) -> State {
         &stop,
         &snapshots,
         &inputs,
-        &mut 0,
+        (&mut 0, &AtomicBool::new(false)),
         Instant::now,
     )
     .unwrap();

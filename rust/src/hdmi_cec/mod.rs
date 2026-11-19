@@ -3,14 +3,20 @@ mod diagnostics;
 mod keys;
 #[cfg(target_os = "linux")]
 mod linux;
+mod protocol;
 #[cfg(all(test, target_os = "linux"))]
 mod tests;
 use crate::features::LaunchPlan;
 use diagnostics::{Diagnostics, SharedDiagnostics};
 pub(crate) use keys::{Input, InputKey};
+use protocol::{Frame, PlaybackSource};
 use std::{
     io,
-    sync::mpsc::{self, Receiver, SyncSender, TrySendError},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+        mpsc::{self, Receiver, SyncSender, TrySendError},
+    },
     thread::{self, JoinHandle},
     time::{Duration, Instant},
 };
@@ -132,6 +138,7 @@ trait Device: Send {
     fn address(&mut self) -> Result<Address, Error>;
     fn next_event(&mut self, timeout: Duration) -> Result<Option<Event>, Error>;
     fn release(&mut self) -> Result<(), Error>;
+    fn transmit(&mut self, frame: Frame) -> Result<(), Error>;
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Address {
@@ -144,12 +151,13 @@ enum Event {
     Press { initiator: u8, code: u8 },
     Release { initiator: u8 },
     LostMessages(u32),
+    Message(Frame),
 }
 
 struct Closed(DeviceInfo);
 struct Opened<D: Device>(D);
 struct Requested<D: Device>(Lease<D>);
-struct Claimed<D: Device>(Lease<D>);
+struct Claimed<D: Device>(Lease<D>, PlaybackSource);
 struct Lease<D: Device> {
     device: D,
     diagnostics: SharedDiagnostics,
@@ -170,10 +178,13 @@ impl<D: Device> Opened<D> {
 }
 impl<D: Device> Requested<D> {
     fn claimed(self, address: Address) -> Result<Claimed<D>, Self> {
-        if address.physical.is_some() && address.logical_mask & PLAYBACK_ADDRESS_MASK != 0 {
-            Ok(Claimed(self.0))
-        } else {
-            Err(self)
+        let playback = address.logical_mask & PLAYBACK_ADDRESS_MASK;
+        match address.physical {
+            Some(physical) if playback != 0 => Ok(Claimed(
+                self.0,
+                PlaybackSource::new(physical, playback.trailing_zeros() as u8),
+            )),
+            _ => Err(self),
         }
     }
 }
@@ -181,6 +192,16 @@ impl<D: Device> Drop for Lease<D> {
     fn drop(&mut self) {
         let result = self.device.release();
         self.diagnostics.borrow_mut().released(result);
+    }
+}
+
+impl<D: Device> Claimed<D> {
+    fn transmit(&mut self, frame: Frame) {
+        let result = self.0.device.transmit(frame);
+        if result.is_ok() {
+            self.1.sent(frame);
+        }
+        self.0.diagnostics.borrow_mut().transmitted(result);
     }
 }
 
@@ -225,9 +246,12 @@ struct Worker {
     snapshots: Receiver<Snapshot>,
     inputs: Receiver<QueuedInput>,
 }
+type LaunchWorker = dyn Fn(String, Arc<AtomicBool>) -> Result<Worker, Error>;
+
 pub struct Controller {
-    launcher: Box<dyn Fn(String) -> Result<Worker, Error>>,
+    launcher: Box<LaunchWorker>,
     held_input: Option<QueuedInput>,
+    playback_visible: Arc<AtomicBool>,
     allowed: bool,
     enabled: bool,
     selection: String,
@@ -248,7 +272,7 @@ impl Controller {
                 plan,
                 preference,
                 selection,
-                Box::new(|_| Err(Error::Unsupported)),
+                Box::new(|_, _| Err(Error::Unsupported)),
             )
         }
     }
@@ -262,19 +286,20 @@ impl Controller {
             plan,
             preference,
             selection,
-            Box::new(move |selection| spawn_worker(backend.clone(), selection)),
+            Box::new(move |selection, visible| spawn_worker(backend.clone(), selection, visible)),
         )
     }
     fn create(
         plan: LaunchPlan,
         preference: bool,
         selection: String,
-        launcher: Box<dyn Fn(String) -> Result<Worker, Error>>,
+        launcher: Box<LaunchWorker>,
     ) -> Self {
         let supported = cfg!(target_os = "linux");
         let mut controller = Self {
             launcher,
             held_input: None,
+            playback_visible: Arc::default(),
             allowed: supported && (!plan.locked() || plan.hdmi_cec(false)),
             enabled: supported && plan.hdmi_cec(preference),
             selection,
@@ -392,9 +417,12 @@ impl Controller {
             // Old connection generations cannot act after disconnect/reconfiguration.
         }
     }
+    pub(crate) fn set_playback_visible(&self, visible: bool) {
+        self.playback_visible.store(visible, Ordering::Relaxed);
+    }
     fn start(&mut self) {
         self.snapshot = Snapshot::new(State::WaitingForTv);
-        match (self.launcher)(self.selection.clone()) {
+        match (self.launcher)(self.selection.clone(), self.playback_visible.clone()) {
             Ok(worker) => {
                 self.runtime = worker.runtime;
                 self.snapshots = Some(worker.snapshots);
@@ -436,13 +464,26 @@ pub fn valid_path(path: &str) -> bool {
         .is_some_and(|number| !number.is_empty() && number.bytes().all(|b| b.is_ascii_digit()))
 }
 
-fn spawn_worker<B: Backend>(backend: B, selection: String) -> Result<Worker, Error> {
+fn spawn_worker<B: Backend>(
+    backend: B,
+    selection: String,
+    playback_visible: Arc<AtomicBool>,
+) -> Result<Worker, Error> {
     let (stop, cancellation) = mpsc::channel();
     let (snapshots, receiver) = mpsc::channel();
     let (inputs, input_receiver) = mpsc::sync_channel(INPUT_QUEUE_SIZE);
     let join = thread::Builder::new()
         .name("hdmi-cec".into())
-        .spawn(move || worker(backend, selection, cancellation, snapshots, inputs))
+        .spawn(move || {
+            worker(
+                backend,
+                selection,
+                cancellation,
+                snapshots,
+                inputs,
+                &playback_visible,
+            )
+        })
         .map_err(Error::Worker)?;
     Ok(Worker {
         runtime: Runtime::Running { stop, join },
@@ -457,6 +498,7 @@ fn worker<B: Backend>(
     stop: Receiver<()>,
     snapshots: mpsc::Sender<Snapshot>,
     inputs: SyncSender<QueuedInput>,
+    playback_visible: &AtomicBool,
 ) {
     let mut generation = 0;
     let diagnostics = Diagnostics::shared();
@@ -490,7 +532,7 @@ fn worker<B: Backend>(
                     &stop,
                     &snapshots,
                     &inputs,
-                    &mut generation,
+                    (&mut generation, playback_visible),
                     Instant::now,
                 ) {
                     Ok(()) => return,
@@ -568,7 +610,7 @@ fn run_device<D: Device>(
     stop: &Receiver<()>,
     snapshots: &mpsc::Sender<Snapshot>,
     inputs: &SyncSender<QueuedInput>,
-    generation: &mut u64,
+    (generation, playback_visible): (&mut u64, &AtomicBool),
     now: impl Fn() -> Instant,
 ) -> Result<(), Error> {
     let diagnostics = device.0.diagnostics.clone();
@@ -614,6 +656,13 @@ fn run_device<D: Device>(
         {
             return Err(Error::Claim);
         }
+        if let Connection::Active(claimed) = &mut connection
+            && let Some(frame) = claimed
+                .1
+                .update_visibility(playback_visible.load(Ordering::Relaxed))
+        {
+            claimed.transmit(frame);
+        }
         match connection.device().next_event(POLL_INTERVAL)? {
             Some(Event::StateChange(next)) => {
                 if next.physical != address.physical {
@@ -624,8 +673,10 @@ fn run_device<D: Device>(
                 } else if address.physical.is_none() {
                     claim_started = Some(now());
                 }
-                address = next;
-                connection = connection.update(address);
+                if address != next {
+                    address = next;
+                    connection = connection.update(address);
+                }
                 if matches!(connection, Connection::Active(_)) {
                     claim_started = None;
                 } else if address.physical.is_some() && claim_started.is_none() {
@@ -642,6 +693,13 @@ fn run_device<D: Device>(
                         Err(TrySendError::Full(_)) => diagnostics.borrow_mut().input_dropped(),
                         Err(TrySendError::Disconnected(_)) => return Ok(()),
                     }
+                }
+            }
+            Some(Event::Message(frame)) => {
+                if let Connection::Active(claimed) = &mut connection
+                    && let Some(reply) = claimed.1.receive(frame)
+                {
+                    claimed.transmit(reply);
                 }
             }
             Some(Event::Release { initiator }) => keys.release(initiator),

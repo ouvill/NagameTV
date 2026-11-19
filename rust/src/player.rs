@@ -461,6 +461,8 @@ pub mod ffi {
         fn select_hdmi_cec_device(self: Pin<&mut Player>, path: QString) -> bool;
         #[qinvokable]
         fn refresh_hdmi_cec_devices(self: Pin<&mut Player>);
+        #[qinvokable]
+        fn set_hdmi_cec_playback_visible(self: &Player, visible: bool);
         #[qsignal]
         fn hdmi_cec_changed(self: Pin<&mut Player>);
         #[qsignal]

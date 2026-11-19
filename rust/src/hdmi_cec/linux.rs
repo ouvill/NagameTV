@@ -1,7 +1,11 @@
 //! Linux CEC uAPI, isolated here so other platforms never reference libc or /dev.
 //! Layouts and request numbers follow linux/cec.h. Only fixed-width integer
 //! fields cross the kernel boundary; unknown kernel values are never Rust enums.
-use super::{Address, Backend, Device, DeviceInfo, Error, Event, OSD_NAME, valid_path};
+use super::{
+    Address, Backend, Device, DeviceInfo, Error, Event, OSD_NAME,
+    protocol::{BROADCAST, Frame, MAX_MESSAGE_SIZE, USER_CONTROL_PRESSED, USER_CONTROL_RELEASED},
+    valid_path,
+};
 use std::{
     fs::{self, File, OpenOptions},
     io,
@@ -36,7 +40,6 @@ impl Error {
 }
 
 const CEC_IOCTL_TYPE: u32 = b'a' as u32;
-const MAX_MESSAGE_SIZE: usize = 16;
 const MAX_LOGICAL_ADDRESSES: usize = 4;
 const CAP_LOG_ADDRS: u32 = 1 << 1;
 const CAP_TRANSMIT: u32 = 1 << 2;
@@ -53,10 +56,8 @@ const INVALID_PHYSICAL_ADDRESS: u16 = u16::MAX;
 const EVENT_STATE_CHANGE: u32 = 1;
 const EVENT_LOST_MESSAGES: u32 = 2;
 const EVENT_DROPPED: u32 = 1 << 1;
-const USER_CONTROL_PRESSED: u8 = 0x44;
-const USER_CONTROL_RELEASED: u8 = 0x45;
 const RX_OK: u8 = 1;
-const BROADCAST: u8 = 15;
+const TX_OK: u8 = 1;
 
 #[repr(C)]
 #[derive(Default)]
@@ -134,8 +135,8 @@ impl Uapi for LogAddrs {
     }
 }
 impl Uapi for Message {
-    fn request(_: bool) -> libc::Ioctl {
-        libc::_IOWR::<Self>(CEC_IOCTL_TYPE, 6)
+    fn request(write: bool) -> libc::Ioctl {
+        libc::_IOWR::<Self>(CEC_IOCTL_TYPE, if write { 5 } else { 6 })
     }
 }
 impl Uapi for KernelEvent {
@@ -342,6 +343,23 @@ impl Device for LinuxDevice {
             logical_mask: addresses.log_addr_mask,
         })
     }
+    fn transmit(&mut self, frame: Frame) -> Result<(), Error> {
+        let bytes = frame.bytes();
+        let mut message = Message {
+            len: bytes.len() as u32,
+            ..Default::default()
+        };
+        message.msg[..bytes.len()].copy_from_slice(bytes);
+        ioctl(&self.file, &mut message, true)
+            .map_err(|e| Error::io("transmit message", &self.path, e))?;
+        tracing::debug!(
+            path = self.path,
+            opcode = frame.opcode(),
+            sequence = message.sequence,
+            "HDMI-CEC message queued"
+        );
+        Ok(())
+    }
     fn next_event(&mut self, timeout: Duration) -> Result<Option<Event>, Error> {
         let ready = poll(self.file.as_raw_fd(), timeout)
             .map_err(|e| Error::io("poll adapter", &self.path, e))?;
@@ -381,13 +399,27 @@ impl Device for LinuxDevice {
         if ready & libc::POLLIN != 0 {
             let mut message = Message::default();
             match ioctl(&self.file, &mut message, false) {
-                Ok(()) => return Ok(decode(&message)),
+                Ok(()) => {
+                    if message.sequence != 0
+                        && message.tx_status != 0
+                        && message.tx_status & TX_OK == 0
+                    {
+                        tracing::warn!(
+                            path = self.path,
+                            opcode = message.msg[1],
+                            sequence = message.sequence,
+                            status = message.tx_status,
+                            "HDMI-CEC transmit failed"
+                        );
+                    }
+                    return Ok(decode(&message));
+                }
                 Err(e)
                     if matches!(
                         e.kind(),
                         io::ErrorKind::WouldBlock | io::ErrorKind::Interrupted
                     ) => {}
-                Err(e) => return Err(Error::io("receive key", &self.path, e)),
+                Err(e) => return Err(Error::io("receive message", &self.path, e)),
             }
         }
         Ok(None)
@@ -427,24 +459,27 @@ fn poll(fd: RawFd, timeout: Duration) -> io::Result<i16> {
     }
 }
 fn decode(message: &Message) -> Option<Event> {
-    if message.rx_status & RX_OK == 0 || !(2..=MAX_MESSAGE_SIZE as u32).contains(&message.len) {
+    if message.sequence != 0 || message.rx_status & RX_OK == 0 {
         return None;
     }
-    let initiator = message.msg[0] >> 4;
-    let destination = message.msg[0] & 0x0f;
-    if initiator == BROADCAST || destination == BROADCAST {
-        return None;
-    }
-    match (message.msg[1], message.len) {
-        (USER_CONTROL_PRESSED, 3) => Some(Event::Press {
-            initiator,
-            code: message.msg[2],
-        }),
-        (USER_CONTROL_RELEASED, 2) => Some(Event::Release { initiator }),
-        (opcode, _) => {
-            tracing::debug!(opcode, length = message.len, "HDMI-CEC message ignored");
-            None
+    let frame = Frame::parse(message.msg.get(..message.len as usize)?)?;
+    let initiator = frame.source();
+    match (frame.opcode(), frame.operands()) {
+        (USER_CONTROL_PRESSED, [code])
+            if initiator != BROADCAST && frame.destination() != BROADCAST =>
+        {
+            Some(Event::Press {
+                initiator,
+                code: *code,
+            })
         }
+        (USER_CONTROL_RELEASED, [])
+            if initiator != BROADCAST && frame.destination() != BROADCAST =>
+        {
+            Some(Event::Release { initiator })
+        }
+        (USER_CONTROL_PRESSED | USER_CONTROL_RELEASED, _) => None,
+        _ => Some(Event::Message(frame)),
     }
 }
 
@@ -535,7 +570,7 @@ mod tests {
         assert!(decode(&message).is_none());
         message.msg[0] = 4;
         message.msg[1] = 0xff;
-        assert!(decode(&message).is_none());
+        assert!(matches!(decode(&message), Some(Event::Message(_))));
         message.msg[1] = USER_CONTROL_RELEASED;
         message.len = 2;
         assert!(matches!(

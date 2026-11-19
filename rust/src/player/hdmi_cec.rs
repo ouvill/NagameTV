@@ -78,6 +78,9 @@ impl ffi::Player {
         self.as_mut().rust_mut().hdmi_cec.refresh();
         self.notify_hdmi_cec();
     }
+    pub fn set_hdmi_cec_playback_visible(&self, visible: bool) {
+        self.rust().hdmi_cec.set_playback_visible(visible);
+    }
     pub(super) fn notify_hdmi_cec(mut self: Pin<&mut Self>) {
         let rows = self.rust().hdmi_cec.snapshot().devices.clone();
         self.as_mut()
