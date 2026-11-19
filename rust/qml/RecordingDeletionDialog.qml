@@ -31,11 +31,12 @@ Dialog {
         font.pixelSize: Theme.fontHeading
     }
     onOpened: cancelButton.forceActiveFocus(Qt.TabFocusReason)
-    onDeletionStateChanged: {
-        if (!visible) return;
-        if (deleting) contentItem.forceActiveFocus(Qt.OtherFocusReason);
-        else if (deletionState === "failed") cancelButton.forceActiveFocus(Qt.TabFocusReason);
-    }
+    onDeletionStateChanged: Qt.callLater(function() {
+        if (!root.visible) return;
+        // Wait for the buttons' visibility and enabled bindings before moving focus.
+        if (root.deleting) root.contentItem.forceActiveFocus(Qt.OtherFocusReason);
+        else if (root.deletionState === "failed") cancelButton.forceActiveFocus(Qt.TabFocusReason);
+    })
     contentItem: FocusScope {
         implicitHeight: content.implicitHeight
         Keys.onPressed: function(event) {

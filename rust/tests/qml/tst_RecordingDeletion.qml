@@ -10,6 +10,7 @@ TestCase {
     height: 650
     visible: true
 
+    Window { id: chromeTarget }
     TestRecordingLibrary { id: fixture }
     Timer {
         interval: 10
@@ -21,7 +22,7 @@ TestCase {
         id: library
         anchors.fill: parent
         backend: fixture.backend
-        targetWindow: testCase.Window.window
+        targetWindow: chromeTarget
     }
 
     function init() {
