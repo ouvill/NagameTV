@@ -85,8 +85,17 @@ Rectangle {
         if (!visible) return;
         const retained = backend.recordings.row_for_recording(deletionDialog.recordedId);
         list.currentIndex = retained >= 0 ? retained : Math.min(deletionDialog.recordingIndex, list.count - 1);
-        if (list.count === 0 && backend.epgstation_busy) afterLoad = RecordingLibrary.FocusFirstRecording;
         focusRecordings(false);
+        if (backend.epgstation_busy) {
+            const current = list.currentItem as RecordingRow;
+            if (current) {
+                restore.recording = current.recordedId;
+                restore.contentY = list.contentY;
+                afterLoad = RecordingLibrary.RestorePosition;
+            } else {
+                afterLoad = RecordingLibrary.FocusFirstRecording;
+            }
+        }
     }
     function changePage(forward: bool) {
         afterLoad = pagination.navigating ? RecordingLibrary.FocusFirstRecording : RecordingLibrary.KeepFocus;

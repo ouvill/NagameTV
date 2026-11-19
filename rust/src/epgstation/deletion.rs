@@ -241,8 +241,10 @@ impl Library {
         page.total = page.total.saturating_sub(1);
         *selection = std::mem::take(selection).retained(page);
         self.revision = self.revision.wrapping_add(1);
-        if page.rows.is_empty() && query.offset > 0 {
-            // Refresh corrects the offset when the last page disappears.
+        if (page.rows.is_empty() && query.offset > 0)
+            || page.total > query.offset.saturating_add(page.rows.len() as u64)
+        {
+            // Refill a nonfinal page or correct the offset if the last page disappeared.
             self.refresh(network);
         }
     }

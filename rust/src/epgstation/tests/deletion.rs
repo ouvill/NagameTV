@@ -168,3 +168,62 @@ fn delete_keeps_the_item_when_the_provider_rejects_or_does_not_acknowledge() -> 
     }
     Ok(())
 }
+
+#[test]
+fn delete_refills_the_page_with_the_row_that_shifted_from_the_next_page() -> TestResult {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    let fixture = Fixture::new()?;
+    let deleted = Arc::new(AtomicBool::new(false));
+    let response = deleted.clone();
+    fixture.mount(
+        Mock::given(method("GET"))
+            .and(path("/tv/api/recorded"))
+            .respond_with(move |_: &wiremock::Request| {
+                let (records, total) = if response.load(Ordering::Acquire) {
+                    ((1..=51).filter(|id| *id != ID).collect::<Vec<_>>(), 50)
+                } else {
+                    ((1..=50).collect(), 51)
+                };
+                let records = records
+                    .into_iter()
+                    .map(|id| record(id, id))
+                    .collect::<Vec<_>>();
+                ResponseTemplate::new(200).set_body_json(json!({"records":records,"total":total}))
+            })
+            .expect(2),
+    );
+    fixture.mount(
+        Mock::given(method("GET"))
+            .and(path("/tv/api/recorded/7"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(record(ID, ID)))
+            .expect(1),
+    );
+    fixture.mount(
+        Mock::given(method("DELETE"))
+            .and(path("/tv/api/recorded/7"))
+            .respond_with(move |_: &wiremock::Request| {
+                deleted.store(true, Ordering::Release);
+                ResponseTemplate::new(200).set_body_json(json!({"code":200}))
+            })
+            .expect(1),
+    );
+    let mut library = Library::with_deletion(true);
+    library.open(
+        &fixture.network,
+        &format!("{}/tv", fixture.server.uri()),
+        "",
+        Login::Current,
+    )?;
+    fixture.finish(&mut library);
+    assert!(library.has_next());
+    assert!(library.prepare_deletion(ID, &DeletePlayback::Idle));
+    assert!(library.confirm_deletion(Some(&fixture.network), &DeletePlayback::Idle));
+    finish(&fixture, &mut library);
+    fixture.finish(&mut library);
+    assert_eq!(library.rows().len(), 50);
+    assert_eq!(library.rows().last().unwrap().id, 51);
+    assert_eq!(library.total(), 50);
+    assert!(!library.has_next());
+    Ok(())
+}
