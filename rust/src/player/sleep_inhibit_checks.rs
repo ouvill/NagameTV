@@ -159,6 +159,7 @@ fn checks(no_bus: bool) -> Result {
     for mode in [
         "failed",
         "unavailable",
+        "access-denied",
         "malformed",
         "response-failed",
         "no-response",
@@ -174,7 +175,7 @@ fn checks(no_bus: bool) -> Result {
         })?;
         assert_eq!(
             player.sleep_inhibit_state().to_string(),
-            if matches!(mode, "unavailable" | "no-reply") {
+            if matches!(mode, "unavailable" | "access-denied" | "no-reply") {
                 "unavailable"
             } else {
                 "failed"
@@ -261,19 +262,28 @@ fn checks(no_bus: bool) -> Result {
     })?;
     wait(&app, || count("logind-release") > logind_closed)?;
     fs::write(path.join("screensaver-mode"), "success")?;
-    fs::write(path.join("logind-mode"), "failed")?;
     let screens = count("screensaver-acquire");
-    player.pin_mut().configure_sleep_inhibit(false);
-    player.pin_mut().configure_sleep_inhibit(true);
-    wait(&app, || {
-        player.pin_mut().poll_sleep_inhibit();
-        player.sleep_inhibit_state() == QString::from("failed")
-    })?;
-    assert_eq!(
-        count("screensaver-acquire"),
-        screens,
-        "failed sleep inhibition cannot start display inhibition"
-    );
+    for (mode, expected) in [("failed", "failed"), ("access-denied", "unavailable")] {
+        fs::write(path.join("logind-mode"), mode)?;
+        player.pin_mut().configure_sleep_inhibit(false);
+        player.pin_mut().configure_sleep_inhibit(true);
+        wait(&app, || {
+            player.pin_mut().poll_sleep_inhibit();
+            player.sleep_inhibit_state() == QString::from(expected)
+        })?;
+        assert_eq!(
+            count("screensaver-acquire"),
+            screens,
+            "failed sleep inhibition cannot start display inhibition"
+        );
+    }
+    let logind_calls = count("logind-acquire");
+    player.pin_mut().rust_mut().stream_state = State::default();
+    player.pin_mut().poll_sleep_inhibit();
+    player.pin_mut().rust_mut().stream_state = live();
+    player.pin_mut().poll_sleep_inhibit();
+    assert_eq!(player.sleep_inhibit_state(), QString::from("unavailable"));
+    assert_eq!(count("logind-acquire"), logind_calls);
     fs::write(path.join("logind-mode"), "success")?;
 
     fs::write(path.join("services"), "")?;

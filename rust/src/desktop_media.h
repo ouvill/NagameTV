@@ -60,8 +60,10 @@ public:
         auto object = std::unique_ptr<DesktopMedia>(new DesktopMedia(bus));
         if (!bus.registerVirtualObject(object->path, object.get(), QDBusConnection::SingleNode))
             throw std::runtime_error(bus.lastError().message().toStdString());
-        object->service = QStringLiteral("org.mpris.MediaPlayer2.io.github.ouvill.nagametv.instance%1")
-                              .arg(QCoreApplication::applicationPid());
+        // The snapd MPRIS slot grants the snap instance name and dot-suffixed names.
+        const auto name = qEnvironmentVariable("SNAP_INSTANCE_NAME", QStringLiteral("io.github.ouvill.nagametv"));
+        object->service = QStringLiteral("org.mpris.MediaPlayer2.%1.instance%2")
+                              .arg(name).arg(QCoreApplication::applicationPid());
         if (!bus.registerService(object->service)) {
             bus.unregisterObject(object->path);
             object->service.clear();

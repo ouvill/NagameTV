@@ -46,10 +46,13 @@ def main():
         def Inhibit(self, window, flags, options, sender, reply, error):
             mode = (directory / "mode").read_text()
             record("acquire", flags=int(flags), window=str(window), reason=str(options["reason"]))
-            if mode in ("failed", "unavailable"):
-                code = ("org.freedesktop.portal.Error.Failed" if mode == "failed"
-                        else "org.freedesktop.DBus.Error.UnknownMethod")
-                error(dbus.exceptions.DBusException("fixture rejected inhibition", name=code))
+            failures = {
+                "failed": "org.freedesktop.portal.Error.Failed",
+                "unavailable": "org.freedesktop.DBus.Error.UnknownMethod",
+                "access-denied": "org.freedesktop.DBus.Error.AccessDenied",
+            }
+            if mode in failures:
+                error(dbus.exceptions.DBusException("fixture rejected inhibition", name=failures[mode]))
                 return
             if mode == "no-reply":
                 # A portal whose activation keeps timing out never answers.
@@ -82,7 +85,7 @@ def main():
             mode = mode_path.read_text() if mode_path.exists() else "success"
             record("screensaver-acquire", mode=mode)
             if mode == "failed":
-                raise dbus.exceptions.DBusException("screensaver refused", name="org.freedesktop.DBus.Error.AccessDenied")
+                raise dbus.exceptions.DBusException("screensaver failed", name="org.freedesktop.DBus.Error.Failed")
             cookie_counter += 1
             cookies[cookie_counter] = sender
             return dbus.UInt32(cookie_counter)
@@ -97,8 +100,11 @@ def main():
         def Inhibit(self, what, who, why, mode):
             record("logind-acquire", what=str(what), who=str(who), mode=str(mode))
             mode_path = directory / "logind-mode"
-            if mode_path.exists() and mode_path.read_text() == "failed":
-                raise dbus.exceptions.DBusException("logind refused", name="org.freedesktop.DBus.Error.AccessDenied")
+            mode = mode_path.read_text() if mode_path.exists() else "success"
+            failures = {"failed": "Failed", "access-denied": "AccessDenied"}
+            if mode in failures:
+                code = f"org.freedesktop.DBus.Error.{failures[mode]}"
+                raise dbus.exceptions.DBusException("fixture rejected logind inhibition", name=code)
             read_fd, write_fd = os.pipe()
             result = dbus.types.UnixFd(write_fd)
             os.close(write_fd)
