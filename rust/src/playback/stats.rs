@@ -104,7 +104,7 @@ impl DeinterlaceStatus {
         }
         match mode {
             Mode::Off => Self::Disabled,
-            Mode::Yadif | Mode::GreedyL | Mode::Linear => {
+            Mode::Cpu { .. } => {
                 if input.scan == Scan::Interlaced
                     && output.interlace == Some(VideoInterlaceMode::Progressive)
                 {
@@ -231,7 +231,7 @@ fn decoder_details(player: &gst::Element) -> (Vec<String>, BTreeMap<String, i32>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::playback::deinterlace::Mode;
+    use crate::playback::deinterlace::{CpuMethod, Fields};
 
     // Ensure native streaming tasks stop even when a Result/assertion exits a test.
     struct Running(gst::Pipeline);
@@ -313,7 +313,40 @@ mod tests {
     -> Result<(), Box<dyn std::error::Error>> {
         gst::init()?;
         // CPU-only video into a fakesink: no display, GPU, audio or network.
-        for mode in [Mode::Yadif, Mode::GreedyL, Mode::Linear, Mode::Off] {
+        let cpu = |method, fields| Mode::Cpu { method, fields };
+        for (mode, interlaced_fps, label) in [
+            (
+                cpu(CpuMethod::Yadif, Fields::All),
+                60.0,
+                "YADIF (auto / all fields)",
+            ),
+            (
+                cpu(CpuMethod::GreedyL, Fields::All),
+                60.0,
+                "GreedyL (auto / all fields)",
+            ),
+            (
+                cpu(CpuMethod::Linear, Fields::All),
+                60.0,
+                "Linear (auto / all fields)",
+            ),
+            (
+                cpu(CpuMethod::Yadif, Fields::One),
+                30.0,
+                "YADIF (auto / one field)",
+            ),
+            (
+                cpu(CpuMethod::GreedyL, Fields::One),
+                30.0,
+                "GreedyL (auto / one field)",
+            ),
+            (
+                cpu(CpuMethod::Linear, Fields::One),
+                30.0,
+                "Linear (auto / one field)",
+            ),
+            (Mode::Off, 30.0, "Off"),
+        ] {
             let pipeline = Running(gst::Pipeline::new());
             let source = gst::ElementFactory::make("videotestsrc")
                 .property("num-buffers", 6_i32)
@@ -392,12 +425,9 @@ mod tests {
                 );
                 assert_eq!(
                     running.output.fps,
-                    Some(if mode == Mode::Off || !interlaced {
-                        30.0
-                    } else {
-                        60.0
-                    })
+                    Some(if interlaced { interlaced_fps } else { 30.0 })
                 );
+                assert_eq!(running.deinterlacer, label);
                 assert!(running.rendered.is_some_and(|n| n > 0));
                 let completed = frame_counters(&sink).ok_or("missing native counters")?;
                 assert_eq!(Some(completed.rendered), running.rendered);

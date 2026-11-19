@@ -44,6 +44,11 @@ class PiApplianceTests(unittest.TestCase):
         self.assertIn(f"User={kiosk['name']}\n", unit)
         self.assertIn("PAMName=nagametv-kiosk\n", unit)
 
+    def test_kiosk_selects_greedyl_at_one_field_per_frame(self):
+        unit = (PAYLOAD / "nagametv-kiosk.service").read_text().splitlines()
+        self.assertIn("Environment=NAGAMETV_DEINTERLACE=greedyl", unit)
+        self.assertIn("Environment=NAGAMETV_DEINTERLACE_FIELDS=one", unit)
+
     @unittest.skipUnless(yaml is not None, "PyYAML is required to parse appliance YAML")
     def test_network_examples_require_the_selected_interface(self):
         wired, wifi = (yaml.safe_load((PAYLOAD / name).read_text()) for name in NETWORK_CONFIGS)

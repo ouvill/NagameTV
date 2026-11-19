@@ -55,10 +55,24 @@ pub unsafe fn load(
     plan: features::LaunchPlan,
     display: Option<settings::StartupDisplay>,
 ) -> Result<LoadedApplication, Error> {
+    memory::configure().map_err(Error::Allocator)?;
+    // Player loads the complete settings session and reports load errors separately.
+    let launch = if plan.locked() {
+        settings::Preferences::default()
+    } else {
+        settings::settings_path()
+            .and_then(settings::Loaded::open)
+            .map(|session| session.preferences().clone())
+            .unwrap_or_default()
+    };
+    let mode = playback::deinterlace::Mode::for_launch(launch.deinterlace)
+        .map_err(|error| Error::Playback(error.into()))?;
     // SAFETY: Still before Qt, GStreamer, diagnostics or worker initialization.
     #[cfg(target_os = "linux")]
-    let dialogs = unsafe { platform::DialogSetup::prepare() };
-    memory::configure().map_err(Error::Allocator)?;
+    let dialogs = unsafe {
+        platform::configure_at_startup(mode);
+        platform::DialogSetup::prepare()
+    };
     tracing::info!("Feature plan: {plan:?}");
     features::PLAN
         .set(plan)
@@ -85,19 +99,6 @@ pub unsafe fn load(
     }
     #[cfg(target_os = "linux")]
     dialogs.finish(&app);
-    // Match main: resolve the startup language before constructing QML. The
-    // video filter is fixed when playback is built, so it is resolved here too.
-    // Player loads the complete settings session and reports load errors separately.
-    let launch = if plan.locked() {
-        settings::Preferences::default()
-    } else {
-        settings::settings_path()
-            .and_then(settings::Loaded::open)
-            .map(|session| session.preferences().clone())
-            .unwrap_or_default()
-    };
-    let mode = playback::deinterlace::Mode::for_launch(launch.deinterlace)
-        .map_err(|error| Error::Playback(error.into()))?;
     let preloaded = playback::preload(mode).map_err(Error::Playback)?;
     // Reverse local drop order keeps diagnostics alive through engine destruction.
     let diagnostics = diagnostics::Lifetime::new()?;

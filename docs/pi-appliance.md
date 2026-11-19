@@ -89,6 +89,11 @@ WirePlumberではPi 4のアナログ出力を無効にします。起動スク�
 HDMI出力の音量を100%にそろえます。音の大きさはテレビとアプリで調節します。ながめTVが終了するとlabwcも終了し、
 2秒後に起動し直します。保守中は `sudo systemctl stop nagametv-kiosk.service` で停止できます。
 
+専用機のunitでは `NAGAMETV_DEINTERLACE=greedyl` と `NAGAMETV_DEINTERLACE_FIELDS=one` を
+指定します。Pi 4で地デジの1080iを視聴したとき、GreedyLの両フィールド処理は描画46.5枚/s、
+破棄0.40枚/s、CPU使用率240%でした。専用機はGreedyLの動き適応処理を使い、出力を29.97 fpsに
+抑えます。unitの指定は起動時に保存済みの方式よりも優先されます。[計測条件と比較](gpu-video.md)
+
 初回は次を確認します。
 
 1. テレビの信号情報が1920×1080の60Hzまたは59.94Hzを示し、ながめTVの設定画面または視聴画面が出る。
