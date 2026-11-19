@@ -32,6 +32,7 @@ REQUIRED_TESTS = (
     "authentication_rejects_invalid_credentials_and_scopes_tokens",
     "cancelled_and_fragmented_logins_leave_the_provider_usable",
     "startup_fixture_matches_real_provider_responses",
+    "deletes_only_the_isolated_recording_fixture",
 )
 
 
@@ -110,6 +111,7 @@ def cargo_test(args, endpoints, run_dir):
         "SQLX_OFFLINE": "true",
         "NAGAMETV_EPGSTATION_ANONYMOUS": endpoints["anonymous"],
         "NAGAMETV_EPGSTATION_AUTHENTICATED": endpoints["password"],
+        "NAGAMETV_EPGSTATION_DELETE_FIXTURE": endpoints["deletion"],
     })
     cargo = ["bash", "scripts/build/with-build-lock.sh", "cargo", "test",
              "--manifest-path", "rust/Cargo.toml", "--release", "--locked",
@@ -123,6 +125,7 @@ def cargo_test(args, endpoints, run_dir):
         prefix = ["create", "--name", name, "--network", "host", "--user", f"{os.getuid()}:{os.getgid()}",
                   "--workdir", "/project", "--mount", f"type=bind,src={ROOT},dst=/project"]
         for key in ("SQLX_OFFLINE", "NAGAMETV_EPGSTATION_ANONYMOUS", "NAGAMETV_EPGSTATION_AUTHENTICATED",
+                    "NAGAMETV_EPGSTATION_DELETE_FIXTURE",
                     "CARGO_HOME", "CARGO_TARGET_DIR", "CARGO_BUILD_JOBS"):
             if key in env:
                 prefix += ["--env", f"{key}={env[key]}"]
@@ -187,7 +190,7 @@ def main():
     docker_output("network", "create", network)
     try:
         endpoints = {}
-        for mode in ("anonymous", "password"):
+        for mode in ("anonymous", "password", "deletion"):
             name = network + "-" + mode
             docker_output("create", "--name", name, "--network", network,
                           "--publish", "127.0.0.1::8888", "--env", f"CONTRACT_AUTH={mode}", image_id)
@@ -198,9 +201,10 @@ def main():
                 raise RuntimeError("provider must publish exactly one loopback endpoint")
             endpoint = "http://" + port + ("/protected" if mode == "password" else "")
             ready(name, endpoint, mode == "password")
-            capture(endpoint, mode == "password", args.update_fixtures)
+            if mode != "deletion":
+                capture(endpoint, mode == "password", args.update_fixtures)
             endpoints[mode] = endpoint
-            print(f"Real EPGStation ready: {mode}; JSON snapshots verified", flush=True)
+            print(f"Real EPGStation ready: {mode}", flush=True)
         cargo_test(args, endpoints, run_dir)
     finally:
         cleanup_failed = False
@@ -224,7 +228,7 @@ def main():
         "provider": pin, "image_id": image_id,
         "modes": list(endpoints), "result": "passed",
     }, indent=2) + "\n")
-    print("Real EPGStation API contract passed (anonymous and authenticated).", flush=True)
+    print("Real EPGStation API contract passed (anonymous, authenticated and isolated deletion).", flush=True)
 
 
 if __name__ == "__main__":

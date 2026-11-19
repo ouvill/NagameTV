@@ -77,6 +77,17 @@ Rectangle {
         const row = list.currentItem as RecordingRow;
         if (row) row.choose();
     }
+    function focusDeletion() {
+        const row = list.currentItem as RecordingRow;
+        if (row) row.focusDeletion();
+    }
+    function restoreAfterDeletion() {
+        if (!visible) return;
+        const retained = backend.recordings.row_for_recording(deletionDialog.recordedId);
+        list.currentIndex = retained >= 0 ? retained : Math.min(deletionDialog.recordingIndex, list.count - 1);
+        if (list.count === 0 && backend.epgstation_busy) afterLoad = RecordingLibrary.FocusFirstRecording;
+        focusRecordings(false);
+    }
     function changePage(forward: bool) {
         afterLoad = pagination.navigating ? RecordingLibrary.FocusFirstRecording : RecordingLibrary.KeepFocus;
         if (afterLoad === RecordingLibrary.FocusFirstRecording) keywordField.focusForNavigation();
@@ -84,6 +95,9 @@ Rectangle {
     }
     Connections {
         target: root.backend
+        function onEpgstation_deletion_changed() {
+            if (root.backend.epgstation_deletion_state === "deleted") deletionDialog.close();
+        }
         function onEpgstation_busyChanged() {
             if (root.backend.epgstation_busy) return;
             if (root.searchPending) {
@@ -114,6 +128,19 @@ Rectangle {
         files: root.backend.recording_files
         onFileChosen: function(recordedId, videoId) { root.backend.play_epgstation_file(recordedId, videoId); }
     }
+    RecordingDeletionDialog {
+        id: deletionDialog
+        property string recordedId: ""
+        property int recordingIndex: -1
+        deletionState: root.backend.epgstation_deletion_state
+        errorText: root.backend.epgstation_deletion_error
+        onDeleteRequested: root.backend.confirm_epgstation_deletion()
+        onClosed: {
+            root.backend.dismiss_epgstation_deletion();
+            Qt.callLater(root.restoreAfterDeletion);
+        }
+    }
+    onVisibleChanged: if (!visible) deletionDialog.close()
     Item {
         id: header
         anchors { left: parent.left; right: parent.right; top: parent.top }
@@ -267,6 +294,7 @@ Rectangle {
                 activeFocusOnTab: true
                 Keys.onUpPressed: root.moveRecording(-1)
                 Keys.onDownPressed: root.moveRecording(1)
+                Keys.onRightPressed: root.focusDeletion()
                 Keys.onReturnPressed: function(event) { root.chooseCurrent(event); }
                 Keys.onEnterPressed: function(event) { root.chooseCurrent(event); }
                 onCountChanged: if (count === 0 && activeFocus) keywordField.focusForNavigation()
@@ -299,6 +327,14 @@ Rectangle {
                             filesDialog.recordedId = row.recordedId;
                             filesDialog.open();
                         }
+                    }
+                    function focusDeletion() {
+                        if (deleteButton.visible && deleteButton.enabled) deleteButton.forceActiveFocus(Qt.TabFocusReason);
+                    }
+                    function moveFromAction(offset: int) {
+                        list.currentIndex = row.index;
+                        list.forceActiveFocus(Qt.TabFocusReason);
+                        root.moveRecording(offset);
                     }
                     CardSurface {
                         anchors.fill: parent
@@ -385,8 +421,29 @@ Rectangle {
                             text: row.started ? qsTranslate("RecordingLibrary", "Resume") : qsTranslate("RecordingLibrary", "Play")
                             enabled: row.playable && !root.backend.recording_loading
                             onClicked: row.choose()
-                            Keys.onUpPressed: { list.currentIndex = row.index; list.forceActiveFocus(Qt.TabFocusReason); root.moveRecording(-1); }
-                            Keys.onDownPressed: { list.currentIndex = row.index; list.forceActiveFocus(Qt.TabFocusReason); root.moveRecording(1); }
+                            Keys.onUpPressed: row.moveFromAction(-1)
+                            Keys.onDownPressed: row.moveFromAction(1)
+                            Keys.onRightPressed: row.focusDeletion()
+                        }
+                        ActionButton {
+                            id: deleteButton
+                            objectName: "epgstationDelete"
+                            visible: root.backend.epgstation_deletion_enabled
+                            enabled: !root.backend.epgstation_busy && row.unavailableReason !== "recording"
+                            text: qsTranslate("RecordingLibrary", "Delete…")
+                            Keys.onUpPressed: row.moveFromAction(-1)
+                            Keys.onDownPressed: row.moveFromAction(1)
+                            Keys.onLeftPressed: list.forceActiveFocus(Qt.TabFocusReason)
+                            onClicked: {
+                                list.currentIndex = row.index;
+                                if (!root.backend.prepare_epgstation_deletion(row.recordedId)) return;
+                                deletionDialog.recordedId = row.recordedId;
+                                deletionDialog.recordingIndex = row.index;
+                                deletionDialog.programName = row.programName;
+                                deletionDialog.channelName = row.channelName || qsTranslate("RecordingLibrary", "Unknown channel");
+                                deletionDialog.dateLabel = new Date(row.startMs).toLocaleString(Qt.locale(root.backend.ui_language), "yyyy/MM/dd HH:mm");
+                                deletionDialog.open();
+                            }
                         }
                     }
                 }

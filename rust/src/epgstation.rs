@@ -3,6 +3,7 @@ use crate::services::{FetchError, Job, Network, Progress, ServerUrl, Stopping};
 use serde::Deserialize;
 use std::sync::Arc;
 mod client;
+mod deletion;
 pub(crate) mod program;
 #[cfg(test)]
 mod provider_tests;
@@ -14,6 +15,7 @@ mod verification;
 pub use client::Login;
 pub(crate) use client::PlaybackMetadata;
 use client::{Access, Connection, Fetched};
+pub(crate) use deletion::{DeleteError, DeletePlayback};
 
 pub const PAGE_SIZE: u64 = 50;
 const MAX_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
@@ -37,6 +39,8 @@ pub enum Error {
     MissingToken,
     #[error("Unexpected HTTP status: {0}")]
     UnexpectedStatus(u16),
+    #[error("Finish the recording deletion before changing the catalogue")]
+    DeletionPending,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -378,6 +382,7 @@ enum Catalogue {
 #[derive(Default)]
 pub struct Library {
     operation: Operation,
+    deletion: deletion::Deletion,
     verification: verification::Verification,
     catalogue: Catalogue,
     session: Option<(Endpoint, Connection)>,
@@ -499,6 +504,9 @@ impl Library {
         keyword: &str,
         login: Login,
     ) -> Result<(), Error> {
+        if self.deletion.locked() {
+            return Err(Error::DeletionPending);
+        }
         let endpoint = Endpoint::parse(server)?;
         let keyword = keyword.trim();
         if keyword.chars().count() > MAX_KEYWORD_CHARS {
@@ -534,7 +542,7 @@ impl Library {
         Ok(())
     }
     pub fn refresh(&mut self, network: &Network) -> bool {
-        if self.busy() {
+        if self.busy() || self.deletion.locked() {
             return false;
         }
         let Catalogue::Loaded {
@@ -563,6 +571,9 @@ impl Library {
         }
     }
     fn move_page(&mut self, network: &Network, offset: u64) {
+        if self.deletion.locked() {
+            return;
+        }
         if let Catalogue::Loaded {
             query, connection, ..
         } = &self.catalogue
@@ -611,6 +622,7 @@ impl Library {
         };
     }
     pub fn poll(&mut self, network: &Network) -> Option<VerifiedEndpoint> {
+        self.poll_deletion(network);
         match std::mem::take(&mut self.operation) {
             Operation::Idle => {}
             Operation::Stopping { stopping, next } => match stopping.poll() {

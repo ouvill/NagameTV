@@ -1,6 +1,7 @@
 //! Qt commands/notifications for the independently owned recording catalogue.
 use super::error_text::{PresentError, Text};
 use super::ffi;
+use crate::epgstation::DeletePlayback;
 use crate::services::{FetchError, NetworkError};
 use cxx_qt::CxxQtType;
 use cxx_qt_lib::QString;
@@ -40,8 +41,7 @@ impl ffi::Player {
             Some(request) => {
                 self.as_mut().rust_mut().autoplay_pending = false;
                 self.as_mut().set_file_error(Text::default());
-                self.begin_recording(request);
-                true
+                self.begin_recording(request)
             }
             None => false,
         }
@@ -61,6 +61,68 @@ impl ffi::Player {
     }
     pub fn epgstation_busy(&self) -> bool {
         self.rust().recording_library.busy()
+    }
+    pub fn epgstation_deletion_enabled(&self) -> bool {
+        self.rust().recording_library.deletion_enabled()
+    }
+    pub fn epgstation_deletion_state(&self) -> QString {
+        QString::from(self.rust().recording_library.deletion_state())
+    }
+    pub fn epgstation_deletion_error(&self) -> QString {
+        self.rust()
+            .recording_library
+            .deletion_error()
+            .map(|error| error.present().render())
+            .unwrap_or_default()
+    }
+    fn deletion_playback(&self) -> DeletePlayback {
+        if self.recording_loading() {
+            DeletePlayback::Inspecting
+        } else if let Some(file) = self.rust().stream_state.recording_in_use() {
+            DeletePlayback::Open(file.history_identity().source)
+        } else {
+            DeletePlayback::Idle
+        }
+    }
+    pub fn prepare_epgstation_deletion(mut self: Pin<&mut Self>, id: QString) -> bool {
+        let id = match id.to_string().parse::<u64>() {
+            Ok(id) => id,
+            Err(error) => {
+                tracing::warn!(%error, "Invalid recording ID for EPGStation deletion");
+                return false;
+            }
+        };
+        let playback = self.deletion_playback();
+        if !self
+            .as_mut()
+            .rust_mut()
+            .recording_library
+            .prepare_deletion(id, &playback)
+        {
+            return false;
+        }
+        self.epgstation_deletion_changed();
+        true
+    }
+    pub fn confirm_epgstation_deletion(mut self: Pin<&mut Self>) {
+        let playback = self.deletion_playback();
+        let state = self.as_mut().rust_mut().get_mut();
+        if state
+            .recording_library
+            .confirm_deletion(state.network.as_ref(), &playback)
+        {
+            self.epgstation_deletion_changed();
+        }
+    }
+    pub fn dismiss_epgstation_deletion(mut self: Pin<&mut Self>) {
+        if self
+            .as_mut()
+            .rust_mut()
+            .recording_library
+            .dismiss_deletion()
+        {
+            self.epgstation_deletion_changed();
+        }
     }
     pub fn epgstation_loaded(&self) -> bool {
         self.rust().recording_library.loaded()
@@ -200,13 +262,13 @@ impl ffi::Player {
             Some(request) => {
                 self.as_mut().rust_mut().autoplay_pending = false;
                 self.as_mut().set_file_error(Text::default());
-                self.begin_recording(request);
-                true
+                self.begin_recording(request)
             }
             None => false,
         }
     }
     pub(super) fn poll_recording_library(mut self: Pin<&mut Self>) {
+        let deletion_before = self.rust().recording_library.deletion_state();
         let before = (
             self.epgstation_busy(),
             self.rust().recording_library.revision(),
@@ -229,7 +291,10 @@ impl ffi::Player {
                 self.rust().recording_library.revision(),
             )
         {
-            self.publish_recording_library();
+            self.as_mut().publish_recording_library();
+        }
+        if deletion_before != self.rust().recording_library.deletion_state() {
+            self.epgstation_deletion_changed();
         }
     }
     fn publish_recording_library(mut self: Pin<&mut Self>) {

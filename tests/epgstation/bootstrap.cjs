@@ -9,7 +9,9 @@ const path = require('node:path');
 const assert = require('node:assert/strict');
 
 const mode = process.env.CONTRACT_AUTH;
-assert.ok(mode === 'anonymous' || mode === 'password', 'explicit auth mode required');
+assert.ok(['anonymous', 'password', 'deletion'].includes(mode), 'explicit contract mode required');
+const deletionId = 901;
+const deletionFile = 'delete-contract.ts';
 const { FEATURE_FLAG_KEYS } = require('./dist/model/IConfigFile');
 fs.mkdirSync('data', { recursive: true });
 fs.writeFileSync('config/config.yml', JSON.stringify({
@@ -73,6 +75,22 @@ async function main() {
             });
         }
     }
+    if (mode === 'deletion') {
+        fs.copyFileSync('recorded/recording-seek.ts', path.join('recorded', deletionFile));
+        const name = 'Delete contract fixture';
+        const startAt = 1700000000000;
+        await connection.getRepository(Recorded).save({
+            id: deletionId, channelId: 400101, channelName: 'Test TV', halfWidthChannelName: 'Test TV',
+            name, halfWidthName: name, startAt, endAt: startAt + 60000, duration: 60000,
+            isRecording: false, isProtected: false,
+        });
+        await connection.getRepository(VideoFile).save({
+            id: 9901, recordedId: deletionId, parentDirectoryName: 'recorded',
+            filePath: deletionFile, type: 'ts', name: 'TS',
+            size: fs.statSync(path.join('recorded', deletionFile)).size,
+            duration: 12, startTime: 0, startAt, analyzedAt: startAt,
+        });
+    }
     // Reservation reads exercise real DB/API serialization without starting a
     // tuner or the operator IPC that executes reservation writes.
     for (let id = 1; id <= 4; id++) {
@@ -104,10 +122,9 @@ async function main() {
 }
 
 if (typeof process.send === 'undefined') {
-    // /api/config also reads broadcast status via IPC. Dispatch only that read
-    // to the real reservation model, which obtains channel types from this DB.
-    // Starting the full operator would also start recording/EPG background work.
-    const { ModelName, ReserveationFunctions } = require('./dist/model/ipc/IPCMessageDefine');
+    // Dispatch the two fixture-scoped IPC operations to the real operator models
+    // without starting the tuner or EPG background work.
+    const { ModelName, ReserveationFunctions, RecordedFunctions } = require('./dist/model/ipc/IPCMessageDefine');
     const child = require('node:child_process').fork(__filename, [], {
         stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
     });
@@ -117,13 +134,20 @@ if (typeof process.send === 'undefined') {
         process.exitCode = 1;
     }
     child.on('message', async message => {
-        if (message.model !== ModelName.reserveation || message.func !== ReserveationFunctions.getBroadcastStatus) {
-            fail(new Error('Unexpected operator IPC request in the read-only API suite'));
-            return;
-        }
         try {
-            const result = await container.get('IReservationManageModel').getBroadcastStatus();
-            assert.equal(result.BS, true, 'broadcast status must come from the seeded channel DB');
+            let result;
+            if (message.model === ModelName.reserveation && message.func === ReserveationFunctions.getBroadcastStatus) {
+                result = await container.get('IReservationManageModel').getBroadcastStatus();
+                assert.equal(result.BS, true, 'broadcast status must come from the seeded channel DB');
+            } else if (mode === 'deletion' && message.model === ModelName.recorded
+                       && message.func === RecordedFunctions.delete && message.args?.recordedId === deletionId) {
+                const file = path.join('recorded', deletionFile);
+                assert.ok(fs.existsSync(file));
+                await container.get('IRecordedManageModel').delete(deletionId);
+                assert.ok(!fs.existsSync(file), 'deletion must remove the seeded recording file');
+            } else {
+                throw new Error('Unexpected operator IPC request in the API contract suite');
+            }
             child.send({ id: message.id, result }, error => {
                 if (error) fail(error);
             });

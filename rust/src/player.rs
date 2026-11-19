@@ -124,7 +124,7 @@ pub mod ffi {
         RemoteCommandSendKey,
     }
 
-    #[cfg(feature = "native_tests")]
+    #[cfg(feature = "qml_tests")]
     unsafe extern "C++" {
         include!("cxx-qt-lib/common.h");
         #[namespace = "rust::cxxqtlib1"]
@@ -220,6 +220,9 @@ pub mod ffi {
         #[qproperty(QString, epgstation_page, READ = epgstation_page, NOTIFY = epgstation_changed)]
         #[qproperty(bool, epgstation_previous, READ = epgstation_previous, NOTIFY = epgstation_changed)]
         #[qproperty(bool, epgstation_next, READ = epgstation_next, NOTIFY = epgstation_changed)]
+        #[qproperty(bool, epgstation_deletion_enabled, READ = epgstation_deletion_enabled, CONSTANT)]
+        #[qproperty(QString, epgstation_deletion_state, READ = epgstation_deletion_state, NOTIFY = epgstation_deletion_changed)]
+        #[qproperty(QString, epgstation_deletion_error, READ = epgstation_deletion_error, NOTIFY = epgstation_deletion_changed)]
         #[qproperty(QString, channel_program_data, READ, NOTIFY)]
         #[qproperty(QString, channel_visibility_data, READ, NOTIFY)]
         #[qproperty(QString, guide_visibility_data, READ, NOTIFY)]
@@ -389,6 +392,17 @@ pub mod ffi {
         fn epgstation_next(self: &Player) -> bool;
         #[qsignal]
         fn epgstation_changed(self: Pin<&mut Player>);
+        fn epgstation_deletion_enabled(self: &Player) -> bool;
+        fn epgstation_deletion_state(self: &Player) -> QString;
+        fn epgstation_deletion_error(self: &Player) -> QString;
+        #[qsignal]
+        fn epgstation_deletion_changed(self: Pin<&mut Player>);
+        #[qinvokable]
+        fn prepare_epgstation_deletion(self: Pin<&mut Player>, id: QString) -> bool;
+        #[qinvokable]
+        fn confirm_epgstation_deletion(self: Pin<&mut Player>);
+        #[qinvokable]
+        fn dismiss_epgstation_deletion(self: Pin<&mut Player>);
         #[qinvokable]
         fn browse_epgstation(self: Pin<&mut Player>, server: QString, keyword: QString) -> bool;
         #[qinvokable]

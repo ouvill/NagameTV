@@ -147,6 +147,69 @@ pub(super) async fn recorded(
     let record = super::recording(wire).map_err(FetchError::Parse)?;
     Ok(super::program::Information::from(&record))
 }
+
+pub(super) async fn delete_recorded(
+    connection: Connection,
+    target: super::deletion::Target,
+) -> std::result::Result<(), super::DeleteError> {
+    use super::DeleteError;
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Current {
+        id: u64,
+        name: String,
+        start_at: i64,
+        is_recording: bool,
+        is_protected: bool,
+    }
+    #[derive(Deserialize)]
+    struct Deleted {
+        code: u16,
+    }
+    fn decode<T: serde::de::DeserializeOwned>(bytes: &[u8]) -> Result<T> {
+        crate::json::from_slice(bytes)
+            .map_err(Error::from)
+            .map_err(FetchError::Parse)
+    }
+
+    let path = format!("recorded/{}", target.id);
+    // The provider's DELETE can stop an ongoing recording. Re-read its state
+    // and identity through the same authenticated connection before sending it.
+    let response = connection
+        .api_request(reqwest::Method::GET, &path)
+        .query(&[("isHalfWidth", false)])
+        .send()
+        .await
+        .map_err(network)?;
+    let current: Current = decode(&body(response).await?)?;
+    if current.id != target.id
+        || current.start_at != target.start_ms
+        || current.name != target.title
+    {
+        return Err(DeleteError::Changed);
+    }
+    if current.is_recording {
+        return Err(DeleteError::Recording);
+    }
+    if current.is_protected {
+        return Err(DeleteError::Protected);
+    }
+    let response = connection
+        .api_request(reqwest::Method::DELETE, &path)
+        .send()
+        .await
+        .map_err(network)?;
+    let status = response.status();
+    let result: Deleted = decode(&body(response).await?)?;
+    if status != reqwest::StatusCode::OK || result.code != 200 {
+        return Err(FetchError::Parse(Error::InvalidCatalogue(
+            "unexpected recording deletion acknowledgement",
+        ))
+        .into());
+    }
+    Ok(())
+}
+
 fn network(error: reqwest::Error) -> FetchError<Error> {
     // Login errors must never expose a URL carrying credentials or a media token.
     FetchError::Network(NetworkError::Http(error.without_url()))
