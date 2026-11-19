@@ -2528,7 +2528,7 @@ fn move_past_recovery_actions(
         app.process_events();
         if !evaluate(
             engine,
-            "Boolean(stoppedLoader.view && stoppedLoader.view.navigating)",
+            "Boolean(stoppedLoader.view && stoppedLoader.view.recoveryAvailable && stoppedLoader.view.navigating)",
         )? {
             break;
         }
