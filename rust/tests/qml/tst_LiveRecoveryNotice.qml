@@ -36,6 +36,10 @@ TestCase {
         failOnWarning(/.*/);
         recoveryState = "idle"; message = ""; retries = 0; dismissals = 0;
     }
+    function cleanup() {
+        const host = notice.Window.window;
+        if (host.visibility === Window.FullScreen) host.showNormal();
+    }
     function test_brief_recovery_stays_hidden() {
         recoveryState = "recovering"; message = "Reconnecting";
         compare(notice.visible, false);
