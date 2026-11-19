@@ -130,6 +130,7 @@ python3 scripts/test.py app --profile release --run-ignored --filter 'test(live_
 | 選局・poll処理の計測 | `python3 scripts/test.py startup --profile release -- playback-performance` | 専用GUI環境・実GPU・仮想音声出力。ローカル合成TSのみ。[測定範囲](../docs/playback-performance.md) |
 | 放送TSのライブ入力比較 | `python3 scripts/test.py startup --profile release -- live-probe SERVER SERVICE_ID [SECONDS]` | 専用GUI環境・実GPU・仮想音声出力。指定サーバーの1サービスを既定28秒、最大600秒再生し、映像出力と復旧状態をログへ記録。[比較条件](../docs/live-stall-recovery.md) |
 | UI部品の画像生成 | `python3 scripts/test.py ui-capture` | 専用GUI環境。`build/ui-review/` に出力 |
+| 録画一覧の画像生成 | `python3 scripts/test.py startup -- recording-actions-review [--deletion]` | 専用GUI環境・ループバックの録画一覧。960×540と1920×1080の画像を `build/recording-actions/` に出力 |
 | 公開用スクリーンショット | `bash scripts/dev/capture-publicity.sh` | 専用GUI環境。[準備](../docs/publicity.md) |
 | IME診断 | `bash scripts/dev/diagnose-ime.sh wayland` または `ibus` | 問題が起きるデスクトップで手動実行。[手順](../docs/platform-startup.md) |
 | API文書生成 | `bash scripts/dev/generate-remote-docs.sh` | bufとprotoc-gen-doc。[手順](../docs/remote-control.md) |

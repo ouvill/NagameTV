@@ -15,6 +15,15 @@ pub(super) type TestResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
 static UI_WARNINGS: Mutex<Vec<String>> = Mutex::new(Vec::new());
 const SAVED_WINDOW_WIDTH: i32 = 850;
 const SAVED_WINDOW_HEIGHT: i32 = 610;
+const FIND: &str = r#"
+    function find(item, name) {
+        if (!item) return null;
+        if (item.objectName === name) return item;
+        for (const child of item.data || item.contentData || item.children || []) { const found = find(child, name); if (found) return found; }
+        if (item.contentItem) return find(item.contentItem, name);
+        return null;
+    }
+"#;
 
 pub(super) fn record_phase(started: &mut Instant, phase: &str) {
     let now = Instant::now();
@@ -461,7 +470,16 @@ pub(super) fn capture_navigation(
 ) -> TestResult {
     let review =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../build/navigation-review");
-    std::fs::create_dir_all(&review)?;
+    capture_review(app, engine, &review, name)
+}
+
+fn capture_review(
+    app: &QGuiApplication,
+    engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
+    review: &std::path::Path,
+    name: &str,
+) -> TestResult {
+    std::fs::create_dir_all(review)?;
     wait_navigation_frames(app, engine)?;
     let image = ffi::grabRoot(engine.pin_mut())?;
     let default_quality = -1;
@@ -644,6 +662,9 @@ pub(super) enum StartupChecks {
 
 enum WindowCheck {
     Startup(StartupChecks),
+    RecordingActionsReview {
+        deletion: bool,
+    },
     PidChange,
     Timeshift,
     DataBroadcast,
@@ -737,6 +758,11 @@ fn window(
                 )?),
             }
             checks
+        }
+        WindowCheck::RecordingActionsReview { deletion } => {
+            let result = capture_recording_actions(app, &mut engine, deletion);
+            evaluate(&mut engine, "root.close(); true")?;
+            return result;
         }
         WindowCheck::VideoProcessing => {
             let result = super::video_processing::run(app, &mut engine, mode);
@@ -1266,15 +1292,6 @@ fn check_epgstation_library(
         server.url()
     };
     let endpoint = serde_json::to_string(&endpoint)?;
-    const FIND: &str = r#"
-        function find(item, name) {
-            if (!item) return null;
-            if (item.objectName === name) return item;
-            for (const child of item.data || item.contentData || item.children || []) { const found = find(child, name); if (found) return found; }
-            if (item.contentItem) return find(item.contentItem, name);
-            return null;
-        }
-    "#;
     open_recordings(app, engine)?;
     wait_for(
         app,
@@ -1401,8 +1418,7 @@ fn check_epgstation_library(
         engine,
         "!recordingLibrary.visible && player.playing && player.recording && JSON.parse(player.video_stats()).rendered > 0",
     )?;
-    // Multiple files require an explicit stable video ID. Cancelling the chooser
-    // leaves TS playback intact; single encoded recordings play immediately.
+    // Clicking a multi-file row plays its preferred file immediately.
     open_recordings(app, engine)?;
     wait_for(
         app,
@@ -1412,6 +1428,45 @@ fn check_epgstation_library(
         ),
     )?;
     ffi::clickRootItem(engine.pin_mut(), &QString::from("epgstationRecording-2"))?;
+    wait_for(
+        app,
+        engine,
+        "!recordingLibrary.visible && !player.recording_loading && player.playing && player.duration_ms > 59000 && player.recording_name.endsWith('/api/videos/126')",
+    )?;
+    assert!(evaluate(engine, "player.pause() && player.seek_to(20000)")?);
+    wait_for(
+        app,
+        engine,
+        "player.paused && !player.seeking && Math.abs(player.position_ms - 20000) < 300",
+    )?;
+    evaluate(engine, "player.stop(); true")?;
+    open_recordings(app, engine)?;
+    focus_recording_row(app, engine, 1)?;
+    ffi::clickRootKey(engine.pin_mut(), &QString::from("Return"))?;
+    wait_for(
+        app,
+        engine,
+        "!recordingLibrary.visible && player.playing && player.position_ms >= 19800 && player.position_ms < 25000",
+    )?;
+    open_recordings(app, engine)?;
+    open_recording_actions(app, engine, 1)?;
+    assert!(evaluate(
+        engine,
+        "root.activeFocusItem.text === 'Play from the beginning'"
+    )?);
+    ffi::clickRootKey(engine.pin_mut(), &QString::from("Return"))?;
+    wait_for(
+        app,
+        engine,
+        "!recordingLibrary.visible && player.playing && player.position_ms >= 0 && player.position_ms < 5000",
+    )?;
+
+    // The panel still offers an explicit stable video ID. Cancelling the
+    // chooser leaves TS playback intact.
+    open_recordings(app, engine)?;
+    open_recording_actions(app, engine, 1)?;
+    ffi::clickRootKey(engine.pin_mut(), &QString::from("Down"))?;
+    ffi::clickRootKey(engine.pin_mut(), &QString::from("Return"))?;
     wait_for(
         app,
         engine,
@@ -1431,21 +1486,17 @@ fn check_epgstation_library(
             }
         ),
     )?;
-    evaluate(
-        engine,
-        &format!("{FIND} find(recordingLibrary, 'recordingFiles').reject(); true"),
-    )?;
+    ffi::clickRootKey(engine.pin_mut(), &QString::from("Back"))?;
     wait_for(
         app,
         engine,
-        "player.playing && player.duration_ms > 59000 && !inputContext.popupOpen",
-    )?;
-    evaluate(
-        engine,
         &format!(
-            "{FIND} find(find(recordingLibrary, 'epgstationRecordings').itemAtIndex(1), 'epgstationPlay').clicked(); true"
+            "{FIND} player.playing && player.duration_ms > 59000 && !inputContext.popupOpen && find(recordingLibrary, 'epgstationRecordings').activeFocus"
         ),
     )?;
+    open_recording_actions(app, engine, 1)?;
+    ffi::clickRootKey(engine.pin_mut(), &QString::from("Down"))?;
+    ffi::clickRootKey(engine.pin_mut(), &QString::from("Return"))?;
     wait_for(
         app,
         engine,
@@ -2516,6 +2567,119 @@ fn open_recordings(
     )
 }
 
+fn focus_recording_row(
+    app: &QGuiApplication,
+    engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
+    index: u32,
+) -> TestResult {
+    evaluate(
+        engine,
+        &format!(
+            "{FIND} find(recordingLibrary, 'epgstationRecordings').currentIndex = {index}; recordingLibrary.focusRecordings(false); true"
+        ),
+    )?;
+    wait_for(
+        app,
+        engine,
+        &format!(
+            "{FIND} const list = find(recordingLibrary, 'epgstationRecordings'); list.activeFocus && list.currentIndex === {index} && list.currentItem !== null"
+        ),
+    )
+}
+
+fn open_recording_actions(
+    app: &QGuiApplication,
+    engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
+    index: u32,
+) -> TestResult {
+    focus_recording_row(app, engine, index)?;
+    ffi::clickRootKey(engine.pin_mut(), &QString::from("Right"))?;
+    wait_for(
+        app,
+        engine,
+        &format!(
+            "{FIND} find(recordingLibrary, 'recordingActionPanel').opened && root.activeFocusItem.objectName === 'recordingActionPlay'"
+        ),
+    )
+}
+
+fn capture_recording_actions(
+    app: &QGuiApplication,
+    engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
+    deletion: bool,
+) -> TestResult {
+    let server = crate::startup_test_server::Server::new()?;
+    let endpoint = serde_json::to_string(&server.url())?;
+    assert!(evaluate(
+        engine,
+        &format!("setup.close(); player.browse_epgstation({endpoint}, '')")
+    )?);
+    wait_for(
+        app,
+        engine,
+        "player.epgstation_loaded && !player.epgstation_busy && player.recordings.count > 1",
+    )?;
+    open_recordings(app, engine)?;
+    let output =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../build/recording-actions");
+    for (width, height) in [(960, 540), (1920, 1080)] {
+        resize_navigation(app, engine, width, height)?;
+        focus_recording_row(app, engine, 1)?;
+        if !deletion {
+            capture_review(app, engine, &output, &format!("list-{width}x{height}.png"))?;
+        }
+        open_recording_actions(app, engine, 1)?;
+        assert!(evaluate(
+            engine,
+            &format!(
+                "{FIND} find(recordingLibrary, 'recordingActionDelete').visible === {deletion}"
+            ),
+        )?);
+        let panel = if deletion {
+            "panel-with-delete"
+        } else {
+            "panel-without-delete"
+        };
+        capture_review(
+            app,
+            engine,
+            &output,
+            &format!("{panel}-{width}x{height}.png"),
+        )?;
+        if deletion {
+            for _ in 0..3 {
+                ffi::clickRootKey(engine.pin_mut(), &QString::from("Down"))?;
+            }
+            wait_for(
+                app,
+                engine,
+                "root.activeFocusItem.objectName === 'recordingActionDelete'",
+            )?;
+            ffi::clickRootKey(engine.pin_mut(), &QString::from("Return"))?;
+            wait_for(
+                app,
+                engine,
+                "root.activeFocusItem.objectName === 'recordingDeletionCancel'",
+            )?;
+            capture_review(
+                app,
+                engine,
+                &output,
+                &format!("delete-confirmation-{width}x{height}.png"),
+            )?;
+        }
+        ffi::clickRootKey(engine.pin_mut(), &QString::from("Back"))?;
+        wait_for(
+            app,
+            engine,
+            &format!(
+                "{FIND} !inputContext.popupOpen && find(recordingLibrary, 'epgstationRecordings').activeFocus"
+            ),
+        )?;
+    }
+    Ok(())
+}
+
 fn move_past_recovery_actions(
     app: &QGuiApplication,
     engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
@@ -2870,6 +3034,10 @@ pub fn run_pid_change() -> i32 {
     run_window_check(WindowCheck::PidChange)
 }
 
+pub fn run_recording_actions_review(deletion: bool) -> i32 {
+    run_window_check(WindowCheck::RecordingActionsReview { deletion })
+}
+
 pub fn run_recording_audit(path: std::path::PathBuf) -> i32 {
     run_window_check(WindowCheck::RecordingAudit(path))
 }
@@ -2901,8 +3069,19 @@ fn run_window_check(check: WindowCheck) -> i32 {
         },
     );
     let result = (|| -> TestResult {
+        let plan = match &check {
+            WindowCheck::RecordingActionsReview { deletion } => {
+                let names = if *deletion {
+                    "subtitles,epg,recording-delete"
+                } else {
+                    "subtitles,epg"
+                };
+                features::LaunchPlan::Restricted(names.parse()?)
+            }
+            _ => features::LaunchPlan::Preferences,
+        };
         features::PLAN
-            .set(features::LaunchPlan::Preferences)
+            .set(plan)
             .map_err(|_| "plan already initialized")?;
         // GUI fixtures must not depend on live GitHub release availability.
         let mut fixture = settings::Loaded::open(settings::settings_path()?)?.activate(None, None);

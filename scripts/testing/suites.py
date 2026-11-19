@@ -49,6 +49,7 @@ SUITES = {
     "ui-capture": Suite(Requirement.GUI, ("--native-tests", "channel-views", "-input", "tests/ui-review")),
 }
 STARTUP_CASES = ("startup", "recording-pid-change", "timeshift", "data-broadcast", "screenshot-playback", "video-processing", "playback-performance")
+RECORDING_ACTIONS_REVIEW = ("recording-actions-review",)
 RECORDING_CASES = ("recording-audit", "recording-probe")
 PORTAL_TIMEOUT_SECONDS = 5
 PORTAL_POLL_SECONDS = 0.05
@@ -59,6 +60,8 @@ def validate_arguments(name, arguments):
     if name != "danmaku" and "--evaluation-legacy-comments" in arguments:
         raise ValueError("--evaluation-legacy-comments requires the danmaku suite")
     if name == "startup":
+        if tuple(arguments) in (RECORDING_ACTIONS_REVIEW, (*RECORDING_ACTIONS_REVIEW, "--deletion")):
+            return
         if not arguments or (arguments[0] in STARTUP_CASES and len(arguments) == 1):
             return
         if (arguments[0] in RECORDING_CASES and len(arguments) == 2
@@ -77,6 +80,7 @@ def validate_arguments(name, arguments):
                     and (len(numbers) == 1 or 1 <= int(numbers[1]) <= 600)):
                 return
         raise ValueError(f"startup expects one of {', '.join(STARTUP_CASES)}, "
+                         "recording-actions-review [--deletion], "
                          "recording-audit TS_PATH, recording-probe TS_PATH [SECONDS], "
                          "or live-probe SERVER SERVICE_ID [SECONDS]")
     if name == "danmaku":
