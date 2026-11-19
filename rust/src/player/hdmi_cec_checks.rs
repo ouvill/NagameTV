@@ -133,6 +133,7 @@ pub(super) fn run() -> Result<(), Box<dyn std::error::Error>> {
         path: "/dev/cec1".into(),
         name: "HDMI adapter".into(),
         driver: "vc4_hdmi".into(),
+        physical_address: None,
     }]
     .into();
     model.pin_mut().replace(rows.clone());

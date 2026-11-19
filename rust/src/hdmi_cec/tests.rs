@@ -69,6 +69,7 @@ fn info(number: u8) -> DeviceInfo {
         path: format!("/dev/cec{number}"),
         name: format!("Fake adapter {number}"),
         driver: "test".into(),
+        physical_address: CONNECTED.physical,
     }
 }
 impl Backend for Fake {
@@ -243,6 +244,27 @@ fn launch_feature_enables_transient_cec_and_rejects_duplicates() {
     assert!(!LaunchPlan::Preferences.hdmi_cec(false));
     assert!(LaunchPlan::Preferences.hdmi_cec(true));
 }
+#[test]
+fn automatic_selection_prefers_a_connected_adapter_before_claiming() {
+    let (fake, _events) = Fake::new(CONNECTED);
+    {
+        let mut shared = fake.shared.lock().unwrap();
+        shared.devices[0].physical_address = None;
+        shared.devices.push(info(1));
+    }
+    let mut controller = fake.controller(true);
+    wait_state(&mut controller, "active");
+    assert_eq!(
+        fake.operations(),
+        ["enumerate", "open /dev/cec1", "claim /dev/cec1 NagameTV"]
+    );
+    assert!(controller.enable(false));
+    assert!(
+        fake.operations()
+            .ends_with(&["release /dev/cec1".into(), "close /dev/cec1".into()])
+    );
+}
+
 #[test]
 fn automatic_selection_skips_failed_devices_but_explicit_selection_does_not() {
     let (fake, _events) = Fake::new(CONNECTED);

@@ -27,6 +27,7 @@ pub struct DeviceInfo {
     pub path: String,
     pub name: String,
     pub driver: String,
+    pub(crate) physical_address: Option<u16>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -521,10 +522,12 @@ fn connect<B: Backend>(
     diagnostics: SharedDiagnostics,
 ) -> Result<Requested<B::Device>, Error> {
     let mut failure: Option<Error> = None;
-    for info in devices
+    let mut candidates: Vec<_> = devices
         .iter()
         .filter(|d| selection.is_empty() || d.path == selection)
-    {
+        .collect();
+    candidates.sort_by_key(|info| info.physical_address.is_none());
+    for info in candidates {
         match Closed(info.clone())
             .open(backend)
             .and_then(|opened| opened.request(diagnostics.clone()))
@@ -536,6 +539,12 @@ fn connect<B: Backend>(
                         "HDMI-CEC skipped unusable adapter"
                     );
                 }
+                tracing::info!(
+                    path = info.path,
+                    physical_address = ?info.physical_address,
+                    automatic = selection.is_empty(),
+                    "HDMI-CEC selected adapter"
+                );
                 return Ok(device);
             }
             Err(error) => {
