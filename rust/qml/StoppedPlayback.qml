@@ -12,6 +12,8 @@ DirectionalFocus {
     property bool loading: false
     property string playbackError: ""
     property string playbackMessage: ""
+    readonly property bool recoveryAvailable: playbackError.length > 0
+        || (hasServer && !hasChannels && !canPlay && !loading)
     property bool recording: false
     property bool showDetails: false
     // Home without channels: playback may continue behind it.

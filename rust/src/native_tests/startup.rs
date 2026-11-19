@@ -2516,6 +2516,27 @@ fn open_recordings(
     )
 }
 
+fn move_past_recovery_actions(
+    app: &QGuiApplication,
+    engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
+    key: &str,
+) -> TestResult {
+    // A failed stream adds a center stop between the mode and playback controls.
+    ffi::clickRootKey(engine.pin_mut(), &QString::from(key))?;
+    let direction = QString::from(if key == "Up" { "Up" } else { "Down" });
+    for _ in 0..5 {
+        app.process_events();
+        if !evaluate(
+            engine,
+            "Boolean(stoppedLoader.view && stoppedLoader.view.navigating)",
+        )? {
+            break;
+        }
+        ffi::clickRootKey(engine.pin_mut(), &direction)?;
+    }
+    Ok(())
+}
+
 fn check_sidebar_navigation(
     app: &QGuiApplication,
     engine: &mut cxx::UniquePtr<QQmlApplicationEngine>,
@@ -2526,7 +2547,7 @@ fn check_sidebar_navigation(
     )?;
     enter_watching(app, engine)?;
     evaluate(engine, "surface.forceActiveFocus(); true")?;
-    ffi::clickRootKey(engine.pin_mut(), &QString::from("Down"))?;
+    move_past_recovery_actions(app, engine, "Down")?;
     wait_for(app, engine, "playerControls.navigating")?;
     let focused = |name: &str| {
         format!("root.activeFocusItem && root.activeFocusItem.objectName === '{name}'")
@@ -2591,7 +2612,7 @@ fn check_directional_navigation(
         "root.showProgram = false; surface.forceActiveFocus(); true",
     )?;
     wait_for(app, engine, "!sidebar.active && inputContext.videoFocused")?;
-    ffi::clickRootKey(engine.pin_mut(), &QString::from("Return"))?;
+    move_past_recovery_actions(app, engine, "Return")?;
     wait_for(
         app,
         engine,
@@ -2627,15 +2648,15 @@ fn check_directional_navigation(
             "!root.showChannels && root.activeFocusItem && root.activeFocusItem.objectName === 'channelsButton'",
         )?;
     }
-    ffi::clickRootKey(engine.pin_mut(), &QString::from("Up"))?;
+    move_past_recovery_actions(app, engine, "Up")?;
     wait_for(app, engine, "modeNavigation.navigating")?;
     capture_navigation(app, engine, "dpad-navigation.png")?;
-    ffi::clickRootKey(engine.pin_mut(), &QString::from("Down"))?;
+    move_past_recovery_actions(app, engine, "Down")?;
     wait_for(app, engine, "playerControls.navigating")?;
     ffi::clickRootKey(engine.pin_mut(), &QString::from("Escape"))?;
     wait_for(app, engine, "inputContext.videoFocused")?;
     if evaluate(engine, "player.channels.count > 0")? {
-        ffi::clickRootKey(engine.pin_mut(), &QString::from("Down"))?;
+        move_past_recovery_actions(app, engine, "Down")?;
         wait_for(app, engine, "playerControls.navigating")?;
         ffi::clickRootKey(engine.pin_mut(), &QString::from("Return"))?;
         wait_for(

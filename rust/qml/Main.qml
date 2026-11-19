@@ -274,8 +274,9 @@ ViewerWindow {
     function enterCenter(fromBelow: bool): bool {
         if (enterHome(fromBelow)) return true;
         if (liveRecoveryNotice.enter()) return true;
-        if (!stoppedLoader.view) return false;
-        stoppedLoader.view.enter();
+        const stopped = stoppedLoader.view;
+        if (!stopped || !stopped.recoveryAvailable) return false;
+        stopped.enter();
         return true;
     }
     function openConnectionSettings() {
