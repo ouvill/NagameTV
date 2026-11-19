@@ -1,6 +1,7 @@
 //! CEC 1.4 routing and follower replies for a Playback device.
 
 pub(super) const BROADCAST: u8 = 15;
+const TV: u8 = 0;
 pub(super) const MAX_MESSAGE_SIZE: usize = 16;
 pub(super) const USER_CONTROL_PRESSED: u8 = 0x44;
 pub(super) const USER_CONTROL_RELEASED: u8 = 0x45;
@@ -173,9 +174,15 @@ impl PlaybackSource {
         )
     }
 
-    pub(super) fn sent(&mut self, frame: Frame) {
-        if frame.opcode() == ACTIVE_SOURCE {
-            self.route = Route::Active;
+    pub(super) fn sent(&mut self, frame: Frame) -> Option<Frame> {
+        if frame.opcode() != ACTIVE_SOURCE {
+            return None;
         }
+        self.route = Route::Active;
+        // CEC 1.4 §13.12.2: the TV assumes the new source has no active menu
+        // unless Menu Status follows Active Source. The viewer accepts D-pad
+        // input for its on-screen controls even before video starts.
+        (self.menu == Menu::Active)
+            .then(|| Frame::new(self.logical, TV, MENU_STATUS, &[self.menu as u8]))
     }
 }

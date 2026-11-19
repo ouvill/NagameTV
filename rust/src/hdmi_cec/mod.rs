@@ -198,10 +198,12 @@ impl<D: Device> Drop for Lease<D> {
 impl<D: Device> Claimed<D> {
     fn transmit(&mut self, frame: Frame) {
         let result = self.0.device.transmit(frame);
-        if result.is_ok() {
-            self.1.sent(frame);
-        }
+        let queued = result.is_ok();
         self.0.diagnostics.borrow_mut().transmitted(result);
+        if queued && let Some(menu_status) = self.1.sent(frame) {
+            let result = self.0.device.transmit(menu_status);
+            self.0.diagnostics.borrow_mut().transmitted(result);
+        }
     }
 }
 

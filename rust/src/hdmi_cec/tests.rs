@@ -339,10 +339,9 @@ fn publishes_visible_playback_after_claim_and_respects_the_tv_route() {
     controller.set_playback_visible(true);
     events.send(Ok(Event::StateChange(CONNECTED))).unwrap();
     wait_state(&mut controller, "active");
-    assert_eq!(
-        wait_for_transmissions(&fake, 1)[0].bytes(),
-        [0x4f, 0x82, 0x21, 0x00]
-    );
+    let active = wait_for_transmissions(&fake, 2);
+    assert_eq!(active[0].bytes(), [0x4f, 0x82, 0x21, 0x00]);
+    assert_eq!(active[1].bytes(), [0x40, 0x8e, 0x00]);
 
     events.send(Ok(Event::StateChange(CONNECTED))).unwrap();
     receive(&events, &[0x0f, 0x85]); // Request the current source
@@ -353,9 +352,9 @@ fn publishes_visible_playback_after_claim_and_respects_the_tv_route() {
     receive(&events, &[0x0f, 0x85]);
     receive(&events, &[0x0f, 0x86, 0x21, 0]); // Select this player's PA
     receive(&events, &[0x04, 0x8f]); // Mark all prior events handled
-    let sent = wait_for_transmissions(&fake, 5);
-    assert_eq!(&sent[..4], &[sent[0]; 4]);
-    assert_eq!(sent[4].bytes(), [0x40, 0x90, 0]);
+    let sent = wait_for_transmissions(&fake, 9);
+    assert_eq!(&sent[..8], active.repeat(4));
+    assert_eq!(sent[8].bytes(), [0x40, 0x90, 0]);
 }
 
 #[test]
@@ -368,9 +367,17 @@ fn a_hidden_playback_claim_passively_waits_for_tv_selection_or_visible_video() {
     assert_eq!(wait_for_transmissions(&fake, 1)[0].bytes(), [0x40, 0x90, 0]);
     controller.set_playback_visible(true);
     assert_eq!(
-        wait_for_transmissions(&fake, 2)[1].bytes(),
+        wait_for_transmissions(&fake, 3)[1].bytes(),
         [0x4f, 0x82, 0x21, 0]
     );
+    assert_eq!(wait_for_transmissions(&fake, 3)[2].bytes(), [0x40, 0x8e, 0]);
+    receive(&events, &[0x04, 0x8d, 0x01]); // TV deactivates the device menu
+    receive(&events, &[0x0f, 0x85]);
+    receive(&events, &[0x04, 0x8f]);
+    let sent = wait_for_transmissions(&fake, 6);
+    assert_eq!(sent[3].bytes(), [0x40, 0x8e, 1]);
+    assert_eq!(sent[4].bytes(), [0x4f, 0x82, 0x21, 0]);
+    assert_eq!(sent[5].bytes(), [0x40, 0x90, 0]);
 }
 
 #[test]

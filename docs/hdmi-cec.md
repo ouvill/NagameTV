@@ -86,6 +86,8 @@ sudo usermod -aG video "$USER"
 機器名、物理アドレス、CEC バージョン、ベンダー ID の問い合わせには Linux カーネルが応答します。
 ベンダー ID は `cec-ctl` の既定値と同じ `0x000c03`（HDMI LLC）です。ながめTVは電源状態を
 On として返し、メニューの有効化、無効化、状態の問い合わせに応答します。
+メニューが有効な間は、`ACTIVE_SOURCE` に続けて `MENU_STATUS`（Activated）をテレビに送ります。
+テレビはこの通知を使って、新しい入力で機器のメニューを操作できるか判断します。
 [Linux CEC の応答処理](https://docs.kernel.org/userspace-api/media/cec/cec-ioc-g-mode.html)
 [HDMI 1.4 CEC 仕様 §13.2、§13.9、§13.12](https://felloff.net/doc/comp/spec/HDMISpecification14a.pdf)
 
