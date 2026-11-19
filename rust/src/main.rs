@@ -65,6 +65,17 @@ fn main() -> std::process::ExitCode {
             println!("{}", build_info::json());
             return std::process::ExitCode::SUCCESS;
         }
+        cli::Command::ImportConnection => {
+            logging::init();
+            if let Err(error) = settings::import_connection(std::io::stdin().lock()) {
+                tracing::error!(
+                    error = &error as &dyn std::error::Error,
+                    "Could not import appliance connection"
+                );
+                return std::process::ExitCode::FAILURE;
+            }
+            return std::process::ExitCode::SUCCESS;
+        }
         #[cfg(feature = "native_tests")]
         cli::Command::NativeTests(arguments) => {
             return std::process::ExitCode::from(native_tests::run(arguments).clamp(0, 255) as u8);

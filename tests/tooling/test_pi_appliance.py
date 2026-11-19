@@ -4,6 +4,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import tempfile
+import tomllib
 import unittest
 from xml.etree import ElementTree
 
@@ -102,6 +103,19 @@ class PiApplianceTests(unittest.TestCase):
         provision = (PAYLOAD / "provision-nagametv.sh").read_text()
         self.assertIn("labwc-rc.xml", provision)
         self.assertIn("/usr/local/lib/nagametv-appliance/labwc/rc.xml", provision)
+
+    def test_optional_connection_example_is_imported_as_the_kiosk_user_before_start(self):
+        example = PAYLOAD / "nagametv-connection.toml.example"
+        seed = tomllib.loads(example.read_text())
+        self.assertEqual(seed, {"server": "http://192.168.1.100:40772"})
+        self.assertIn('# epgstation_server = "http://192.168.1.100:8888"', example.read_text())
+        provision = (PAYLOAD / "provision-nagametv.sh").read_text()
+        self.assertIn('connection="$boot/nagametv-connection.toml"', provision)
+        self.assertIn('if [[ -e $connection ]]; then', provision)
+        self.assertIn('runuser -u nagametv', provision)
+        self.assertIn('--import-connection < "$connection"; then', provision)
+        self.assertLess(provision.index('--import-connection'), provision.index('systemctl start --no-block'))
+        self.assertIn('fail "Invalid or unreadable $connection', provision)
 
     def test_payload_shell_syntax(self):
         subprocess.run(["bash", "-n", str(PAYLOAD / "provision-nagametv.sh")], check=True)

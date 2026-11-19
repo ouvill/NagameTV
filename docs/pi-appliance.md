@@ -50,6 +50,7 @@ sync
 | `network-config` | 有線は同名ファイルで上書き。Wi-Fiは `network-config.wifi` をこの名前に変えてコピーし、SSIDとパスワードを編集する |
 | `provision-nagametv.sh`、`nagametv-kiosk.service`、`start-kiosk`、`labwc-rc.xml` | 配布用ファイルをそのままコピーする。1つでも欠けると初回設定は何も導入せずに止まる |
 | `nagametv.deb` | 照合済みのUbuntu 26.04 arm64用debをこの名前でコピーする |
+| `nagametv-connection.toml`（任意） | [接続先の例](../packaging/pi-appliance/nagametv-connection.toml.example)をこの名前でコピーし、URLを編集する |
 | `current/cmdline.txt` | 既存の1行を残し、末尾に半角空白と `video=HDMI-A-1:1920x1080@60D consoleblank=0` を追加する |
 
 Wi-Fiの例は日本向けの `regulatory-domain: JP` を含みます。SSIDとパスワードはYAMLの
@@ -67,6 +68,23 @@ Pi 4で4K60を選ぶ場合にはファームウェア設定 `hdmi_enable_4kp60=1
 labwcの起動時にはEDIDの優先モードが選ばれる場合があるので、アプリ起動前に `wlr-randr` でも1920×1080の60Hzを選びます。
 60.000Hzが選べない場合は、テレビが59.940Hzを提示していればそちらを使います。
 [Piの出力モード指定](https://www.raspberrypi.com/documentation/computers/configuration.html#set-the-kms-display-mode)
+
+### 接続先をカードに入れる
+
+初回起動から視聴する場合は、`system-boot` 直下の `nagametv-connection.toml` に
+MirakurunまたはmirakcのURLを書きます。EPGStationを使う場合は2行目も記入します。
+
+```toml
+server = "http://192.168.1.100:40772"
+epgstation_server = "http://192.168.1.100:8888"
+```
+
+URLは `http://` または `https://` で始めます。ユーザー名、パスワード、クエリー、
+フラグメントを含めず、値は引用符で囲みます。初回設定はながめTVの取り込みコマンドを
+`nagametv` ユーザーとして実行し、`~nagametv/.config/nagametv/settings.toml` に
+接続先と自動再生を保存します。チャンネル一覧を取得できると、初回は一覧の最初の局を再生します。
+取り込みコマンドに対応したdebを使ってください。ファイルの内容が不正な場合は、
+エラーをコンソールとjournalに出し、キオスクを起動する前に初回設定を停止します。
 
 ## 初回起動と動作確認
 
@@ -97,9 +115,13 @@ HDMI出力の音量を100%にそろえます。音の大きさはテレビとア
 初回は次を確認します。
 
 1. テレビの信号情報が1920×1080の60Hzまたは59.94Hzを示し、ながめTVの設定画面または視聴画面が出る。
-2. アプリの初回設定でチューナーを登録して視聴し、HDMI音声が出る。HDMI-CECを使う場合は
+2. 接続先ファイルを入れた場合は、自動再生が始まることを確かめる。ファイルを入れなかった場合は、
+   初回設定がローカルネットワークを検索する。上下でMirakurunまたはmirakcを選び、決定で接続する。
+   見つからないときは再検索するか、手動でURLを入力する。「設定 → 接続」ではEPGStationも検索できる。
+   視聴中はHDMI音声が出ることを確かめる。HDMI-CECを使う場合は
    [設定ガイド](hdmi-cec.md)に沿って有効にする。kioskユーザーは `video` グループに属し、
-   アプリのCEC設定は既定のOFFから始まる。
+   アプリのCEC設定は既定のOFFから始まる。初回に方向キーの入力を用意できない場合は、
+   カードに接続先ファイルを入れて起動する。
 3. 視聴を続け、入力に触れずにテレビの普段の消灯時間を超えても映像と音声が続くことを確かめる。
    Linuxのコンソール消灯は `consoleblank=0` で無効にし、labwcのセッションにはアイドル時に
    消灯するデスクトップサービスを起動しない。テレビ側の無操作電源オフはテレビの設定で扱う。

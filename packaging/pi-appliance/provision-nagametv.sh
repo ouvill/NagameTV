@@ -60,6 +60,17 @@ apt-get -o DPkg::Lock::Timeout=300 install -y --no-install-recommends \
     pipewire pipewire-pulse wireplumber pulseaudio-utils fonts-noto-cjk "$deb"
 
 step "Configuring the kiosk."
+connection="$boot/nagametv-connection.toml"
+if [[ -e $connection ]]; then
+    [[ -f $connection ]] || fail "$connection must be a file."
+    step "Importing the connection settings."
+    # Read FAT as root even when it is mounted with restrictive permissions.
+    # runuser writes through the app as the kiosk user, with its normal XDG path.
+    if ! runuser -u nagametv -- env -u NAGAMETV_DATA_DIR -u XDG_CONFIG_HOME \
+        /usr/bin/nagametv --import-connection < "$connection"; then
+        fail "Invalid or unreadable $connection, or the kiosk settings could not be saved."
+    fi
+fi
 install -D -m 0755 "$boot/start-kiosk" /usr/local/lib/nagametv-appliance/start-kiosk
 install -D -m 0644 "$boot/labwc-rc.xml" /usr/local/lib/nagametv-appliance/labwc/rc.xml
 install -m 0644 "$boot/nagametv-kiosk.service" /etc/systemd/system/nagametv-kiosk.service

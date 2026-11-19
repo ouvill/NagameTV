@@ -1,0 +1,3 @@
+# Copy as nagametv-connection.toml to system-boot and edit the addresses.
+server = "http://192.168.1.100:40772"
+# epgstation_server = "http://192.168.1.100:8888"
