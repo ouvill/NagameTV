@@ -189,11 +189,13 @@ mainのplayback.rsとvideo_stats.rsの契約を移植し、処理別に分割し
 
 ## デインターレース
 
-`NAGAMETV_DEINTERLACE=yadif|linear|off|gl|va`を起動時に指定する。既定はyadif。
+`NAGAMETV_DEINTERLACE=yadif|greedyl|linear|off|gl|va`を起動時に指定する。既定はGreedyL。
 GPU経路、NV12表示、デコーダー／メモリー形式の統計は[GPU映像処理](gpu-video.md)を参照。
 mainと互換のquality・balanced・disabled、前後空白と大文字にも対応する。
 不正な値は型付きエラーとして起動を失敗させる。実行中には変更しない。
-Offはidentityを使い、YADIF/Linearはauto・all fieldsで処理する。
+Offはidentityを使う。CPUフィルターはautoで処理し、`NAGAMETV_DEINTERLACE_FIELDS` で
+両フィールド（`all`、既定）またはトップフィールド（`one`）を選ぶ。
+統計の `deinterlacer` は設定した方式とフィールド数、`output.fps` は実際に交渉されたレートを示す。
 
 [公式deinterlace資料](https://gstreamer.freedesktop.org/documentation/deinterlace/index.html)では、
 autoは入力のinterlace情報に応じた処理、all fieldsは両フィールドの出力となる。

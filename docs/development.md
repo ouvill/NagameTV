@@ -185,6 +185,8 @@ NAGAMETV_SERVER=http://192.168.1.100:40772 NAGAMETV_AUTOPLAY=1 ./build/nagametv
 `0`で無効、それ以外の指定値で有効になり、この上書きは設定ファイルに保存しません。
 `NAGAMETV_DEINTERLACE=yadif|greedyl|linear|off|gl|va`で起動時の映像処理を指定できます。
 指定すると、設定画面で保存した方式よりも優先します。
+`NAGAMETV_DEINTERLACE_FIELDS=all|one`でCPUのインターレース解除の出力を選べます。
+既定は `all`（両フィールド）です。`one`（トップフィールドのみ）は `yadif`、`greedyl`、`linear` で使えます。
 `NAGAMETV_VIDEO_FORMAT=auto|nv12|rgba`で表示形式を選択します。
 GPU経路の前提条件と方式の違いは[GPU映像処理](gpu-video.md)を参照してください。
 `NAGAMETV_PLAYBACK_CLOCK=auto|system`で実機比較用の再生時計を指定できます。

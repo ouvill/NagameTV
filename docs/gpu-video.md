@@ -4,15 +4,20 @@
 「設定 → 表示 → インターレース解除」で保存し、次回起動時に反映する。既定は`greedyl`。
 `NAGAMETV_DEINTERLACE`を指定すると、その起動に限り保存した方式より優先する。
 設定画面はその間、保存した方式を使わないことを表示する。
+CPUの `yadif`・`greedyl`・`linear` では、起動時の `NAGAMETV_DEINTERLACE_FIELDS=all|one` で
+インターレース入力1フレームあたりの出力を選べる。未指定時は `all`。
+`one` はトップフィールドの時刻に対応する映像を1枚出力する。
+保存済みの方式を使う場合にもこの指定は適用される。`off`・`gl`・`va` と `one` を組み合わせると
+起動時にエラーになる。プログレッシブ入力はCPUフィルターをそのまま通過する。
 GPUの方式はQtの表示方式を起動前に決める必要があるため、環境変数だけで指定する。
 GPUモードは明示指定とし、必要なデコーダー・処理方式・メモリー形式が使えない場合は
 エラーにする。途中でCPUデコード／デインターレースに切り替えない。
 
 | 指定 | デコード・処理・表示 | 1080i入力の出力レート |
 |---|---|---|
-| `yadif` | 自動選択デコーダー → CPU YADIF → GL upload → NV12表示 | フィールドごと（29.97 → 59.94 fps） |
-| `greedyl` | 自動選択デコーダー → CPU GreedyL（動き適応） → GL upload → NV12表示 | フィールドごと |
-| `linear` | 自動選択デコーダー → CPU linear → GL upload → NV12表示 | フィールドごと |
+| `yadif` | 自動選択デコーダー → CPU YADIF → GL upload → NV12表示 | `all` は59.94 fps、`one` は29.97 fps |
+| `greedyl` | 自動選択デコーダー → CPU GreedyL（動き適応） → GL upload → NV12表示 | `all` は59.94 fps、`one` は29.97 fps |
+| `linear` | 自動選択デコーダー → CPU linear → GL upload → NV12表示 | `all` は59.94 fps、`one` は29.97 fps |
 | `off` | 自動選択デコーダー → GL import/upload → NV12表示 | 入力と同じ |
 | `gl` | NVIDIA NVDEC → GLMemory NV12 → GPUでRGBA変換 → OpenGL vfir → RGBA表示（NV12も明示指定可） | 入力と同じ（29.97 fps） |
 | `va`（Linux/Wayland） | VAデコーダー → VAMemory NV12 → vadeinterlace adaptive → vapostproc → DMABuf → GL import → NV12表示 | フィールドごと |
@@ -24,6 +29,20 @@ GPUモードは明示指定とし、必要なデコーダー・処理方式・�
 静止したテロップの輪郭がlinearより滑らかになる。
 同じ機器のV3Dで`gldeinterlace`を通した場合はvfirが1.41倍、greedyhが0.82倍（29.97 fps出力）で、
 CPU処理より速くならなかった。
+
+Raspberry Pi 4の専用機（labwc、HDMI出力1080p60）では、実視聴中に両フィールドの処理が
+59.94 fpsに届かなかった。2026-11-19にNHK総合 京都の1440×1080i MPEG-2を各方式で40秒ずつ再生し、
+`live_buffer=debug` のsinkカウンターの差分から毎秒の描画・破棄枚数を求めた。
+
+| 方式 | sinkの描画枚数/s | sinkの破棄枚数/s | CPU使用率 |
+|---|---:|---:|---:|
+| GreedyL（両フィールド） | 46.5 | 0.40 | 240% |
+| linear（両フィールド） | 51.4 | 0.07 | 250% |
+| off | 30.9 | 0 | 183% |
+
+別の局ではGreedyLの両フィールド出力が約30枚/sまで下がり、破棄は2.7枚/sだった。
+[Pi専用機](pi-appliance.md)ではGreedyLの動き適応処理を使いつつ、1フレームあたりの出力を1枚に抑える。
+表はこの設定を導入する前の測定値であり、片フィールド時の実視聴性能はPiで別に確認する。
 
 `gl`はNVIDIAのNVDECを利用する経路。既存の`gldeinterlace`はRGBA専用で、
 フィールド倍速出力に対応しないため、YADIFと同等品質・同等の動きの滑らかさではない。
@@ -55,6 +74,7 @@ NAGAMETV_DEINTERLACE=gl ./build/nagametv
 NAGAMETV_DEINTERLACE=gl NAGAMETV_VIDEO_FORMAT=nv12 ./build/nagametv
 NAGAMETV_DEINTERLACE=va NAGAMETV_VIDEO_FORMAT=nv12 ./build/nagametv
 NAGAMETV_DEINTERLACE=yadif NAGAMETV_VIDEO_FORMAT=nv12 ./build/nagametv
+NAGAMETV_DEINTERLACE=greedyl NAGAMETV_DEINTERLACE_FIELDS=one ./build/nagametv
 ```
 
 `NAGAMETV_VIDEO_FORMAT=auto|nv12|rgba`でsinkの形式を選べる。既定の`auto`は
@@ -133,12 +153,13 @@ Waylandプラグインを読み込み、yadif＋NV12とNVDEC＋OpenGL＋NV12の�
 Waylandの起動・入力試験全体は専用環境のサイズ・フォーカス制約により未完了。
 [表示方式の選択と検証範囲](platform-startup.md)を参照。
 
-ハードウェア不要のRust試験は形式選択、CPUのフィールド倍速出力、NV12のstride・レンジ変換、
+ハードウェア不要のRust試験は形式選択、CPUの両フィールド・片フィールド出力、NV12のstride・レンジ変換、
 表示フレーム保持を検証する。現在のGPU試験はswayの[専用GUI環境](gui-test-environment.md)で実行する。
 native Waylandのリサイズ・全画面切り替えは確認済みで、起動・入力試験全体はsway上では未確認である。
 
 ```sh
 NAGAMETV_DEINTERLACE=yadif NAGAMETV_VIDEO_FORMAT=nv12 python3 scripts/test.py startup -- video-processing
+NAGAMETV_DEINTERLACE=greedyl NAGAMETV_DEINTERLACE_FIELDS=one NAGAMETV_TEST_QPA=wayland python3 scripts/test.py startup -- video-processing
 NAGAMETV_DEINTERLACE=gl python3 scripts/test.py startup -- video-processing
 NAGAMETV_DEINTERLACE=gl NAGAMETV_VIDEO_FORMAT=nv12 python3 scripts/test.py startup -- video-processing
 NAGAMETV_DEINTERLACE=va NAGAMETV_VIDEO_FORMAT=nv12 python3 scripts/test.py startup -- video-processing

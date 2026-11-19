@@ -17,6 +17,8 @@ Environment=LIBSEAT_BACKEND=logind
 Environment=WLR_RENDERER=gles2
 Environment=QT_QPA_PLATFORM=wayland
 Environment=LANG=ja_JP.UTF-8
+Environment=NAGAMETV_DEINTERLACE=greedyl
+Environment=NAGAMETV_DEINTERLACE_FIELDS=one
 TTYPath=/dev/tty1
 TTYReset=yes
 TTYVHangup=yes
