@@ -176,8 +176,7 @@ pub(super) async fn delete_recorded(
     // The provider's DELETE can stop an ongoing recording. Re-read its state
     // and identity through the same authenticated connection before sending it.
     let response = connection
-        .api_request(reqwest::Method::GET, &path)
-        .query(&[("isHalfWidth", false)])
+        .api_request(reqwest::Method::GET, &format!("{path}?isHalfWidth=false"))
         .send()
         .await
         .map_err(network)?;
