@@ -133,11 +133,11 @@ pub fn check_portal_fixture(fixture: PortalFixture) -> i32 {
 /// # Safety
 /// Call only at process startup before Qt, GStreamer or worker threads start.
 /// No other thread may read or write the process environment during this call.
-pub unsafe fn configure_at_startup() {
-    let mode = crate::playback::deinterlace::Mode::from_environment();
-    if matches!(mode, Ok(Some(crate::playback::deinterlace::Mode::VaApi)))
-        && std::env::var_os("QT_QPA_PLATFORM").is_none()
-    {
+pub unsafe fn configure_at_startup(mode: crate::playback::deinterlace::Mode) {
+    if mode != crate::playback::deinterlace::Mode::VaApi {
+        return;
+    }
+    if std::env::var_os("QT_QPA_PLATFORM").is_none() {
         // qml6glsink <= 1.28.2 assumes GLX for xcb, even if Qt uses EGL.
         // VA DMA_DRM import requires EGL, so this backend needs Wayland.
         // A missing Wayland display is an error, not a reason to use X11/CPU.
@@ -145,9 +145,7 @@ pub unsafe fn configure_at_startup() {
             std::env::set_var("QT_QPA_PLATFORM", "wayland");
         }
     }
-    if matches!(mode, Ok(Some(crate::playback::deinterlace::Mode::VaApi)))
-        && std::env::var_os("GST_GL_PLATFORM").is_none()
-    {
+    if std::env::var_os("GST_GL_PLATFORM").is_none() {
         // DMA_DRM import requires EGL. Explicit choices remain authoritative
         // and incompatible choices fail, without falling back to CPU mapping.
         unsafe {

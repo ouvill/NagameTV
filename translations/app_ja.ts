@@ -1138,6 +1138,18 @@
       <translation>NAGAMETV_DEINTERLACEが有効なUnicodeではありません</translation>
     </message>
     <message>
+      <source>Invalid NAGAMETV_DEINTERLACE_FIELDS=%1. Expected all or one</source>
+      <translation>NAGAMETV_DEINTERLACE_FIELDS=%1は不正です。allまたはoneを指定してください</translation>
+    </message>
+    <message>
+      <source>NAGAMETV_DEINTERLACE_FIELDS is not valid Unicode</source>
+      <translation>NAGAMETV_DEINTERLACE_FIELDSが有効なUnicodeではありません</translation>
+    </message>
+    <message>
+      <source>NAGAMETV_DEINTERLACE_FIELDS=one requires yadif, greedyl or linear. The selected method is %1</source>
+      <translation>NAGAMETV_DEINTERLACE_FIELDS=oneにはyadif、greedyl、linearのいずれかが必要です。現在の指定は%1です</translation>
+    </message>
+    <message>
       <source>Invalid NAGAMETV_AUDIO_SINK=%1; expected pulsesink or fakesink</source>
       <translation>NAGAMETV_AUDIO_SINK=%1は不正です。pulsesinkまたはfakesinkを指定してください</translation>
     </message>

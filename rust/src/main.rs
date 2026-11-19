@@ -87,11 +87,6 @@ fn main() -> std::process::ExitCode {
         );
         return std::process::ExitCode::FAILURE;
     }
-    // SAFETY: Logging creates no threads; Qt, GStreamer and workers have not started.
-    #[cfg(target_os = "linux")]
-    unsafe {
-        platform::configure_at_startup();
-    }
     // SAFETY: This is the main thread; no application workers have started.
     match unsafe { qt::application::load(plan, display) } {
         Ok(application) => {

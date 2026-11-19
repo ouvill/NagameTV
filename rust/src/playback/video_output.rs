@@ -135,9 +135,7 @@ impl Validated {
                     })?;
                 Monitor::bypass_progressive(&pad, transform)
             }
-            Mode::Yadif | Mode::GreedyL | Mode::Linear | Mode::Off | Mode::VaApi => {
-                Monitor::observe(&pad)
-            }
+            Mode::Cpu { .. } | Mode::Off | Mode::VaApi => Monitor::observe(&pad),
         };
         let streams = Streams {
             input,
@@ -158,7 +156,7 @@ impl Validated {
             // Formats already matching the sink can pass through unchanged.
             // videoconvert's ANY feature template still passes GPU memory
             // through in off mode; CPU I420 needs conversion for NV12 output.
-            Mode::Yadif | Mode::GreedyL | Mode::Linear | Mode::Off => {
+            Mode::Cpu { .. } | Mode::Off => {
                 let mut cpu = vec![
                     // Negotiate unsupported input formats without converting I420
                     // prematurely: deinterlace itself cannot process every format.
@@ -239,7 +237,7 @@ fn select_format(mode: Mode, requested: Option<Format>, caps: &gst::CapsRef) -> 
     let format = match (mode, requested) {
         (Mode::NvidiaGl, None) => Format::Rgba,
         (_, Some(format)) => format,
-        (Mode::Yadif | Mode::GreedyL | Mode::Linear | Mode::Off | Mode::VaApi, None) => {
+        (Mode::Cpu { .. } | Mode::Off | Mode::VaApi, None) => {
             if caps.can_intersect(&Format::Nv12.caps()) {
                 if caps.can_intersect(&Format::Rgba.caps()) {
                     // NV12 can pass through, but P010 GL textures cannot be
@@ -269,7 +267,7 @@ fn select_format(mode: Mode, requested: Option<Format>, caps: &gst::CapsRef) -> 
 /// hardware downloads/software decoding. CPU modes preserve user GST ranks.
 fn configure_decoders(mode: Mode) -> Result<()> {
     let plugin = match mode {
-        Mode::Yadif | Mode::GreedyL | Mode::Linear | Mode::Off => return Ok(()),
+        Mode::Cpu { .. } | Mode::Off => return Ok(()),
         Mode::NvidiaGl => "nvcodec",
         Mode::VaApi => "va",
     };
@@ -305,14 +303,14 @@ mod tests {
         let mut current = old.clone();
         current.make_mut().append(Format::Nv12.caps());
         assert_eq!(
-            select_format(Mode::Yadif, None, &current).unwrap(),
+            select_format(Mode::default(), None, &current).unwrap(),
             Format::Nv12OrRgba
         );
         assert_eq!(
-            select_format(Mode::Yadif, None, &old).unwrap(),
+            select_format(Mode::default(), None, &old).unwrap(),
             Format::Rgba
         );
-        assert!(select_format(Mode::Yadif, Some(Format::Nv12), &old).is_err());
+        assert!(select_format(Mode::default(), Some(Format::Nv12), &old).is_err());
         assert_eq!(
             select_format(Mode::NvidiaGl, None, &current).unwrap(),
             Format::Rgba

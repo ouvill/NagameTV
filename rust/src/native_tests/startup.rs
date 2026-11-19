@@ -671,11 +671,11 @@ enum WindowCheck {
 fn window(
     app: &QGuiApplication,
     preferences: &settings::Preferences,
+    mode: playback::deinterlace::Mode,
     check: WindowCheck,
 ) -> TestResult {
     let load_started = Instant::now();
     let mut first_run_phase = load_started;
-    let mode = playback::deinterlace::Mode::for_launch(preferences.deinterlace)?;
     let _preloaded = playback::preload(mode)?;
     let mut engine = QQmlApplicationEngine::new();
     assert!(crate::qt::ffi::initialize_ui_language(
@@ -2834,13 +2834,6 @@ pub fn run_live_probe(server: url::Url, service: u64, seconds: u32) -> i32 {
 }
 
 fn run_window_check(check: WindowCheck) -> i32 {
-    // SAFETY: This is a fresh subprocess, before Qt or worker initialization.
-    #[cfg(target_os = "linux")]
-    unsafe {
-        crate::platform::configure_at_startup();
-    }
-    #[cfg(target_os = "linux")]
-    let dialogs = unsafe { crate::platform::DialogSetup::prepare() };
     // Native GTK dialog warnings bypass Qt's message handler. Keep them visible
     // and fail this test if the GTK icon-surface regression returns.
     let gtk_log = glib::log_set_handler(
@@ -2857,6 +2850,18 @@ fn run_window_check(check: WindowCheck) -> i32 {
         features::PLAN
             .set(features::LaunchPlan::Preferences)
             .map_err(|_| "plan already initialized")?;
+        // GUI fixtures must not depend on live GitHub release availability.
+        let mut fixture = settings::Loaded::open(settings::settings_path()?)?.activate(None, None);
+        fixture.change(settings::Change::AutoUpdateCheck(false));
+        fixture.flush()?;
+        let preferences = settings::Loaded::open(settings::settings_path()?)?;
+        let mode = playback::deinterlace::Mode::for_launch(preferences.preferences().deinterlace)?;
+        // SAFETY: This is a fresh subprocess, before Qt or worker initialization.
+        #[cfg(target_os = "linux")]
+        let dialogs = unsafe {
+            crate::platform::configure_at_startup(mode);
+            crate::platform::DialogSetup::prepare()
+        };
         crate::qt::ffi::install_qt_logging(record_qt);
         cxx_qt::init_qml_module!("MinimalViewer");
         crate::qt::ffi::configure_qt_quick_open_gl();
@@ -2864,12 +2869,7 @@ fn run_window_check(check: WindowCheck) -> i32 {
         assert!(!app.is_null());
         #[cfg(target_os = "linux")]
         dialogs.finish(&app);
-        // GUI fixtures must not depend on live GitHub release availability.
-        let mut fixture = settings::Loaded::open(settings::settings_path()?)?.activate(None, None);
-        fixture.change(settings::Change::AutoUpdateCheck(false));
-        fixture.flush()?;
-        let preferences = settings::Loaded::open(settings::settings_path()?)?;
-        window(&app, preferences.preferences(), check)
+        window(&app, preferences.preferences(), mode, check)
     })();
     glib::log_remove_handler(Some("Gtk"), gtk_log);
     match result {

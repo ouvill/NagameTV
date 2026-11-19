@@ -27,6 +27,17 @@ impl PresentError for crate::playback::Error {
                 deinterlace::Error::NonUnicode => {
                     Text::source("NAGAMETV_DEINTERLACE is not valid Unicode")
                 }
+                deinterlace::Error::InvalidFields(value) => detail(
+                    "Invalid NAGAMETV_DEINTERLACE_FIELDS=%1. Expected all or one",
+                    value,
+                ),
+                deinterlace::Error::NonUnicodeFields => {
+                    Text::source("NAGAMETV_DEINTERLACE_FIELDS is not valid Unicode")
+                }
+                deinterlace::Error::OneFieldRequiresCpu(method) => detail(
+                    "NAGAMETV_DEINTERLACE_FIELDS=one requires yadif, greedyl or linear. The selected method is %1",
+                    method,
+                ),
             },
             AudioSink(error) => match error {
                 AudioSinkError::Invalid(value) => detail(
