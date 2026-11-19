@@ -3,7 +3,7 @@ use super::{Preferences, load, save, settings_path};
 use crate::{epgstation::Endpoint, services::ServerUrl};
 use std::{
     io::{self, Read},
-    path::Path,
+    path::{Path, PathBuf},
 };
 
 const MAX_SEED_BYTES: u64 = 8 * 1024;
@@ -22,6 +22,11 @@ pub enum Error {
     Credentials,
     #[error("Invalid epgstation_server URL: {0}")]
     Recordings(#[from] crate::epgstation::Error),
+    #[error("Existing settings at {path:?} contain invalid TOML (byte offset: {offset:?})")]
+    ExistingFormat {
+        path: PathBuf,
+        offset: Option<usize>,
+    },
     #[error(transparent)]
     Settings(#[from] super::Error),
 }
@@ -73,7 +78,16 @@ impl Connection {
     }
 
     fn install(self, path: &Path) -> Result<(), Error> {
-        let mut preferences = load(path)?;
+        let mut preferences = match load(path) {
+            // A parser snippet could quote credentials from an existing file.
+            Err(super::Error::Parse { path, source }) => {
+                return Err(Error::ExistingFormat {
+                    path,
+                    offset: source.span().map(|span| span.start),
+                });
+            }
+            result => result?,
+        };
         self.apply(&mut preferences);
         save(path, &preferences)?;
         Ok(())

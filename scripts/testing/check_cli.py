@@ -54,6 +54,12 @@ def check_appliance_import(binary):
         result = import_seed('server = "http://tuner"\nepgstation_server = false')
         assert result.returncode == 1 and "Could not import appliance connection" in result.stderr, result.stderr
         assert path.read_text() == installed, "invalid seed replaced preferences"
+        malformed = 'server = "http://user:redact-test-secret@tuner\n'
+        path.write_text(malformed)
+        result = import_seed(example.read_text())
+        assert result.returncode == 1 and "contain invalid TOML" in result.stderr, result.stderr
+        assert "redact-test-secret" not in result.stderr, "parser logged a credential"
+        assert path.read_text() == malformed, "import replaced malformed existing preferences"
 
 
 def main():
