@@ -141,6 +141,31 @@ TestCase {
         compare(sent.count, 2);
         verify(editor().activeFocus);
     }
+    function test_failed_send_can_be_retried_with_directional_keys() {
+        const window = composer.Window.window;
+        window.showFullScreen();
+        tryCompare(window, "visibility", Window.FullScreen);
+        try {
+            composer.status = "Could not post comment";
+            verify(findChild(composer, "commentPostHint").visible);
+            editor().cursorPosition = 0;
+            keyClick(Qt.Key_Right);
+            verify(editor().activeFocus);
+            editor().cursorPosition = editor().length;
+            keyClick(Qt.Key_Right);
+            const send = findChild(composer, "sendComment");
+            verify(send.focusVisible);
+            keyClick(Qt.Key_Left);
+            verify(editor().activeFocus);
+            keyClick(Qt.Key_Right);
+            keyClick(Qt.Key_Return);
+            compare(sent.count, 1);
+            verify(editor().activeFocus);
+            compare(composer.draft, "実況🦀");
+        } finally {
+            window.showNormal();
+        }
+    }
     function test_result_and_visibility_keep_text_until_backend_acknowledges() {
         composer.status = "Could not post <comment>";
         compare(editor().text, "実況🦀");

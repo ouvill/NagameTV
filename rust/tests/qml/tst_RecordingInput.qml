@@ -39,6 +39,7 @@ TestCase {
         const error = findChild(input, "recordingOpenError");
         error.close();
         tryCompare(error, "visible", false);
+        input.Window.window.showNormal();
     }
     function test_open_preserves_url_and_waits_for_inspection_data() {
         return [
@@ -129,6 +130,36 @@ TestCase {
         keyClick(Qt.Key_Return);
         tryCompare(dialog, "visible", false);
         compare(backend.calls, 0);
+    }
+    function test_url_error_is_dismissible_in_fullscreen_data() {
+        return [{tag: "ok", key: Qt.Key_Return}, {tag: "escape", key: Qt.Key_Escape},
+                {tag: "back", key: Qt.Key_Back}];
+    }
+    function test_url_error_is_dismissible_in_fullscreen(data) {
+        const host = input.Window.window;
+        host.showFullScreen();
+        tryCompare(host, "visibility", Window.FullScreen);
+        backend.accept = false;
+        input.open();
+        const source = findChild(input, "recordingSource");
+        const field = findChild(input, "recordingUrl");
+        tryCompare(source, "opened", true);
+        field.text = "file:///tmp/invalid.ts";
+        keyClick(Qt.Key_Down);
+        const cancel = findChild(input, "recordingCancelSource");
+        const submit = findChild(input, "recordingOpenUrl");
+        verify(cancel.focusVisible);
+        keyClick(Qt.Key_Right);
+        verify(submit.focusVisible);
+        keyClick(Qt.Key_Return);
+        const error = findChild(input, "recordingOpenError");
+        tryCompare(error, "opened", true);
+        verify(error.activeFocus);
+        keyClick(data.key);
+        tryCompare(error, "visible", false);
+        verify(submit.focusVisible);
+        compare(host.visibility, Window.FullScreen);
+        compare(backend.calls, 1);
     }
     function test_rejected_file_reports_plain_text_without_starting() {
         backend.accept = false;

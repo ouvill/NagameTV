@@ -271,6 +271,14 @@ ViewerWindow {
         }
         return false;
     }
+    function enterCenter(fromBelow: bool): bool {
+        if (enterHome(fromBelow)) return true;
+        if (liveRecoveryNotice.enter()) return true;
+        const stopped = stoppedLoader.view;
+        if (!stopped || !stopped.recoveryAvailable) return false;
+        stopped.enter();
+        return true;
+    }
     function openConnectionSettings() {
         if (root.setupRequired) setup.open();
         else {
@@ -357,7 +365,8 @@ ViewerWindow {
         programVisible: root.showProgram
         programFocused: sidebar.view !== null && sidebar.view.activeFocus
         libraryVisible: root.libraryVisible
-        controlsFocused: playerControls.navigating || modeNavigation.navigating
+        controlsFocused: playerControls.navigating || modeNavigation.navigating || liveRecoveryNotice.retryButton.activeFocus
+            || (stoppedLoader.view && stoppedLoader.view.navigating)
             || (recordingTimeline.activeFocus && inputContext.focusItem instanceof Slider && (inputContext.focusItem as Slider).visualFocus)
         onControlsDismissRequested: {
             if (recordingTimeline.activeFocus) playerControls.enter();
@@ -511,7 +520,7 @@ ViewerWindow {
             if (event.isAutoRepeat) return;
             overlayVisibility.reveal();
             if (event.key === Qt.Key_Up) modeNavigation.enter();
-            else if (!root.enterHome(false)) playerControls.enter();
+            else if (!root.enterCenter(false)) playerControls.enter();
         }
         signal activity
         signal pointerExited
@@ -647,9 +656,14 @@ ViewerWindow {
         }
         Loader {
             id: stoppedLoader
+            readonly property StoppedPlayback view: item as StoppedPlayback
             anchors.fill: parent
             active: !root.closing && !homeLoader.active && (!player.media_active || root.homeScreen)
             sourceComponent: StoppedPlayback {
+                onBoundaryReached: function(key) {
+                    if (key === Qt.Key_Up) modeNavigation.enter();
+                    else if (key === Qt.Key_Down) playerControls.enter();
+                }
                 returnAvailable: root.homeScreen && player.watching_available
                 onReturnRequested: player.open_screen(ViewerActions.WatchingScreen)
                 status: player.status
@@ -875,7 +889,7 @@ ViewerWindow {
                 PlayerControls {
                     id: playerControls
                     onBoundaryReached: function(key) {
-                        if (key === Qt.Key_Up && !recordingTimeline.enter() && !root.enterHome(true)) modeNavigation.enter();
+                        if (key === Qt.Key_Up && !recordingTimeline.enter() && !root.enterCenter(true)) modeNavigation.enter();
                     }
                     onSubtitlesRequested: { audioSettings.close(); closeSpeed(); mediaSubtitleSettings.open(); }
                     Layout.fillWidth: true
@@ -917,12 +931,20 @@ ViewerWindow {
             message: player.live_recovery_message
             anchors.centerIn: parent
             z: 8
-            onRetryRequested: player.retry_live_recovery()
+            upNavigation: modeNavigation
+            downNavigation: playerControls
+            onRetryRequested: {
+                root.restoreFocus(null);
+                player.retry_live_recovery();
+            }
             onDismissFocusRequested: root.restoreFocus(null)
             // A remote-only viewer has no pointer: put the retry action under
             // OK, but only when the video itself had focus so no panel loses it.
             onPhaseChanged: if (phase === LiveRecoveryNotice.Failed && inputContext.videoFocused && !inputContext.popupOpen)
-                retryButton.forceActiveFocus(Qt.TabFocusReason)
+                Qt.callLater(enterIfWatching)
+            function enterIfWatching() {
+                if (inputContext.videoFocused && inputContext.viewing && !inputContext.popupOpen) liveRecoveryNotice.enter();
+            }
         }
         ScreenshotNotice {
             id: screenshotNotice
@@ -1171,7 +1193,7 @@ ViewerWindow {
         HoverHandler { id: modeHover }
         onModeRequested: function(mode) { root.requestMode(mode); }
         onBoundaryReached: function(key) {
-            if (key === Qt.Key_Down && !root.enterHome(false) && !recordingTimeline.enter()) playerControls.enter();
+            if (key === Qt.Key_Down && !root.enterCenter(false) && !recordingTimeline.enter()) playerControls.enter();
         }
     }
     WindowResizeFrame {

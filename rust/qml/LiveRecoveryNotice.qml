@@ -16,6 +16,13 @@ Control {
     readonly property int phase: recoveryState === "recovering" ? LiveRecoveryNotice.Recovering
         : recoveryState === "failed" ? LiveRecoveryNotice.Failed : LiveRecoveryNotice.Idle
     readonly property Item retryButton: retry
+    property Item upNavigation: null
+    property Item downNavigation: null
+    function enter(): bool {
+        if (!retry.visible || !retry.enabled) return false;
+        retry.forceActiveFocus(Qt.TabFocusReason);
+        return true;
+    }
     signal retryRequested
     signal dismissFocusRequested
 
@@ -51,6 +58,8 @@ Control {
             visible: root.phase === LiveRecoveryNotice.Failed
             emphasis: ActionButton.Primary
             text: qsTranslate("Main", "Retry")
+            KeyNavigation.up: root.upNavigation
+            KeyNavigation.down: root.downNavigation
             onClicked: root.retryRequested()
             Keys.onEscapePressed: function(event) { event.accepted = true; root.dismissFocusRequested(); }
             Keys.onBackPressed: function(event) { event.accepted = true; root.dismissFocusRequested(); }

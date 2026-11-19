@@ -9,6 +9,10 @@ TestCase {
     width: 640
     height: 480
     visible: true
+    Item {
+        id: watching
+        Keys.onDownPressed: panel.enter()
+    }
     StoppedPlayback {
         id: panel
         anchors.fill: parent
@@ -34,6 +38,67 @@ TestCase {
         panel.hasChannels = false;
         panel.playbackError = "";
         play.clear(); channels.clear(); settings.clear();
+    }
+    function cleanup() {
+        panel.showDetails = false;
+        panel.Window.window.showNormal();
+    }
+    function test_error_actions_are_reachable_in_fullscreen() {
+        const host = panel.Window.window;
+        host.showFullScreen();
+        tryCompare(host, "visibility", Window.FullScreen);
+        panel.canPlay = true;
+        panel.playbackError = "Stream failed";
+        watching.forceActiveFocus();
+        keyClick(Qt.Key_Down);
+        const action = findChild(panel, "stoppedAction");
+        tryVerify(() => action.focusVisible);
+        keyClick(Qt.Key_Return);
+        compare(play.count, 1);
+        keyClick(Qt.Key_Down);
+        verify(findChild(panel, "openRecording").focusVisible);
+        keyClick(Qt.Key_Down);
+        keyClick(Qt.Key_Right);
+        const details = findChild(panel, "errorDetailsAction");
+        verify(details.focusVisible);
+        keyClick(Qt.Key_Return);
+        const loader = findChild(panel, "errorDetailsLoader");
+        tryVerify(() => loader.item && loader.item.opened);
+        keyClick(Qt.Key_Escape);
+        tryVerify(() => !loader.item);
+        verify(details.focusVisible);
+        compare(host.visibility, Window.FullScreen);
+    }
+    function test_error_popup_has_keyboard_focus_in_fullscreen_data() {
+        return [{tag: "close", key: Qt.Key_Return}, {tag: "back", key: Qt.Key_Back}];
+    }
+    function test_error_popup_has_keyboard_focus_in_fullscreen(data) {
+        const host = panel.Window.window;
+        host.showFullScreen();
+        tryCompare(host, "visibility", Window.FullScreen);
+        panel.playbackError = "Stream failed\n".repeat(100);
+        const details = findChild(panel, "errorDetailsAction");
+        details.forceActiveFocus(Qt.TabFocusReason);
+        keyClick(Qt.Key_Return);
+        const loader = findChild(panel, "errorDetailsLoader");
+        tryVerify(() => loader.item && loader.item.opened);
+        const close = findChild(loader.item.contentItem, "closePlaybackError");
+        const scroll = findChild(loader.item.contentItem, "playbackErrorScroll");
+        verify(close.focusVisible);
+        verify(close.visible);
+        keyClick(Qt.Key_Down);
+        verify(scroll.activeFocus);
+        const flick = scroll.contentItem;
+        keyClick(Qt.Key_Down);
+        verify(flick.contentY > 0);
+        keyClick(Qt.Key_Up);
+        compare(flick.contentY, 0);
+        keyClick(Qt.Key_Up);
+        verify(close.focusVisible);
+        keyClick(data.key);
+        tryVerify(() => !loader.item);
+        verify(details.focusVisible);
+        compare(host.visibility, Window.FullScreen);
     }
     function test_home_without_channels_offers_the_return_in_the_centered_prompt() {
         panel.loading = true;

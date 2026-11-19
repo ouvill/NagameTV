@@ -13,18 +13,32 @@ TestCase {
     property string message: ""
     property int retries: 0
     property int dismissals: 0
+    ActionButton {
+        id: playbackControls
+        anchors.bottom: parent.bottom
+        text: "Playback controls"
+        Keys.onUpPressed: notice.enter()
+    }
     LiveRecoveryNotice {
         id: notice
         x: 20; y: 20
         recoveryState: testCase.recoveryState
         message: testCase.message
         revealDelayMs: 120
+        downNavigation: playbackControls
         onRetryRequested: testCase.retries += 1
-        onDismissFocusRequested: testCase.dismissals += 1
+        onDismissFocusRequested: {
+            testCase.dismissals += 1;
+            playbackControls.forceActiveFocus(Qt.TabFocusReason);
+        }
     }
     function init() {
         failOnWarning(/.*/);
         recoveryState = "idle"; message = ""; retries = 0; dismissals = 0;
+    }
+    function cleanup() {
+        const host = notice.Window.window;
+        if (host.visibility === Window.FullScreen) host.showNormal();
     }
     function test_brief_recovery_stays_hidden() {
         recoveryState = "recovering"; message = "Reconnecting";
@@ -42,15 +56,31 @@ TestCase {
         compare(notice.visible, false);
     }
     function test_failure_shows_immediately_and_retry_is_keyboard_operable() {
+        const host = notice.Window.window;
+        host.showFullScreen();
+        tryCompare(host, "visibility", Window.FullScreen);
+        playbackControls.forceActiveFocus(Qt.TabFocusReason);
         recoveryState = "failed"; message = "Could not restore video or audio. Please retry.";
         compare(notice.visible, true);
         const retry = findChild(notice, "liveRecoveryRetry");
         verify(retry.visible);
-        retry.forceActiveFocus(Qt.TabFocusReason);
+        verify(playbackControls.focusVisible);
+        keyClick(Qt.Key_Up);
+        verify(retry.focusVisible);
+        keyClick(Qt.Key_Down);
+        verify(playbackControls.focusVisible);
+        keyClick(Qt.Key_Up);
+        verify(retry.focusVisible);
         keyClick(Qt.Key_Return);
         compare(retries, 1);
         keyClick(Qt.Key_Escape);
         compare(dismissals, 1);
+        verify(playbackControls.focusVisible);
+        keyClick(Qt.Key_Up);
+        verify(retry.focusVisible);
+        keyClick(Qt.Key_Back);
+        compare(dismissals, 2);
+        verify(playbackControls.focusVisible);
         compare(retries, 1);
     }
 }

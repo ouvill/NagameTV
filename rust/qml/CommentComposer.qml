@@ -93,6 +93,12 @@ Rectangle {
         }
         Keys.priority: Keys.BeforeItem
         Keys.onPressed: function(event) {
+            if (event.key === Qt.Key_Right && (event.modifiers & ~Qt.KeypadModifier) === Qt.NoModifier
+                    && cursorPosition === length && selectionStart === selectionEnd && sendButton.enabled) {
+                event.accepted = true;
+                if (!event.isAutoRepeat) sendButton.forceActiveFocus(Qt.TabFocusReason);
+                return;
+            }
             const disposition = root.submitPolicy.disposition(event, root.composing);
             if (disposition === CommentSubmitPolicy.PassThrough) return;
             event.accepted = true;
@@ -122,6 +128,7 @@ Rectangle {
         iconSource: root.iconDirectory + "send.svg"
         tip: qsTranslate("Main", "Send") + " · " + root.sendHint
         enabled: root.available && !root.busy && editor.text.trim().length > 0 && !root.composing
+        Keys.onLeftPressed: root.focusEditor()
         onClicked: { root.send(); root.focusEditor(); }
     }
     Label {
