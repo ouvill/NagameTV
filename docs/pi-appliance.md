@@ -49,6 +49,7 @@ sync
 | `user-data` | 同名ファイルで上書きし、`REPLACE_WITH_YOUR_SSH_PUBLIC_KEY` を公開鍵1行で置き換える |
 | `network-config` | 有線は同名ファイルで上書き。Wi-Fiは `network-config.wifi` をこの名前に変えてコピーし、SSIDとパスワードを編集する |
 | `provision-nagametv.sh`、`nagametv-kiosk.service`、`start-kiosk`、`labwc-rc.xml` | 配布用ファイルをそのままコピーする。1つでも欠けると初回設定は何も導入せずに止まる |
+| `nagametv-hdmi-audio.service`、`hdmi-audio.py`、`50-nagametv-hdmi-only.conf`、`50-nagametv-hdmi-stream.conf` | HDMI0の音声設定と復旧用。4ファイルともそのままコピーする |
 | `nagametv.deb` | 照合済みのUbuntu 26.04 arm64用debをこの名前でコピーする |
 | `nagametv-connection.toml`（任意） | [接続先の例](../packaging/pi-appliance/nagametv-connection.toml.example)をこの名前でコピーし、URLを編集する |
 | `current/cmdline.txt` | 既存の1行を残し、末尾に半角空白と `video=HDMI-A-1:1920x1080@60D consoleblank=0` を追加する |
@@ -102,10 +103,14 @@ sudo journalctl -b -u cloud-final.service -u nagametv-kiosk.service
 管理アカウントは `tvadmin` です。公開鍵で接続し、`sudo` で保守できます。labwcとながめTVは
 管理権限のない `nagametv` ユーザーで動きます。systemdがtty1を割り当て、
 PAMとlogindがユーザーセッションと `XDG_RUNTIME_DIR` を作ります。音声は同じユーザーの
-PipeWire、PipeWire PulseAudio互換ソケット、WirePlumberを使います。kioskユーザーは `audio` グループに属し、
-WirePlumberではPi 4のアナログ出力を無効にします。起動スクリプトは既定の出力がHDMIでなければ停止し、
-HDMI出力の音量を100%にそろえます。音の大きさはテレビとアプリで調節します。ながめTVが終了するとlabwcも終了し、
-2秒後に起動し直します。保守中は `sudo systemctl stop nagametv-kiosk.service` で停止できます。
+PipeWire、PipeWireのPulseAudio互換ソケット、WirePlumberを使います。kioskユーザーは `audio` グループに属します。
+WirePlumberではPi 4のアナログ出力を無効にし、HDMI0の出力に `nagametv-hdmi0` という名前を付けます。
+起動時はHDMI音声を数秒待ち、応答がなければjournalに理由を記録して画面を起動します。
+視聴時の音声はHDMI0に接続し、出力が消えている間は復帰を待ちます。音の大きさはテレビとアプリで調節します。
+
+ながめTVが終了するとlabwcも終了し、2秒後に起動し直します。60秒以内に5回起動しても安定しない場合は、
+systemdが以降の起動を止めます。原因を取り除いたら `sudo systemctl reset-failed nagametv-kiosk.service` を
+実行し、サービスを起動してください。保守中は `sudo systemctl stop nagametv-kiosk.service` で停止できます。
 
 専用機のunitでは `NAGAMETV_DEINTERLACE=greedyl` と `NAGAMETV_DEINTERLACE_FIELDS=one` を
 指定します。Pi 4で地デジの1080iを視聴したとき、GreedyLの両フィールド処理は描画46.5枚/s、
@@ -127,8 +132,8 @@ HDMI出力の音量を100%にそろえます。音の大きさはテレビとア
    消灯するデスクトップサービスを起動しない。テレビ側の無操作電源オフはテレビの設定で扱う。
 4. 初回セットアップと区別して、次の起動では電源投入から最初のアプリ画面までを計る。
    自動再生を設定した場合は最初の映像までの時間も記録する。
-   `sudo journalctl -b -u nagametv-kiosk.service -o short-monotonic` で
-   モードと音声の準備完了時刻を確認できる。
+   `sudo journalctl -b -u nagametv-kiosk.service -u nagametv-hdmi-audio.service -o short-monotonic` で
+   アプリの起動と音声の準備完了時刻を確認できる。
 
 ## 起動時のサービスと保守
 
@@ -155,3 +160,40 @@ debの更新は26.04 arm64用をSSHで転送し、
 ルートファイルシステムは標準どおり書き込み可能です。将来、読み取り専用ルートに移行する際は、
 永続データ領域を先にマウントし、systemd unitのdrop-inから
 [`NAGAMETV_DATA_DIR`](development.md#保存データを別のパーティションに置く)をそのパスに設定できます。
+
+## HDMIをつなぎ直しても音が出ないとき
+
+HDMIケーブルを抜き差ししたりテレビの入力を切り替えたりした直後に、`vc4-hdmi-0` の
+プロファイルが `output:hdmi-stereo` のままでも、音声の出力先だけが消えることがあります。
+そのときは `wpctl status` に `Dummy Output` が現れたり、journalに `playback open failed: Unknown error 524` が
+記録されたりします。
+
+`nagametv-hdmi-audio.service` はkioskと一緒に動きます。`HDMI-A-1` が接続・有効になり、テレビの
+EDIDを読める状態でHDMI0の出力が見つからなければ、kioskユーザーのWirePlumberを最大3回再起動します。
+出力が戻ると既定の出力に設定し、音量を100%にそろえます。再試行を使い切った場合は、
+テレビを点けてPiの入力に切り替え、HDMI0につなぎ直してください。接続が一度失われて戻ると再試行が始まります。
+出力がない間に視聴を開始して再生エラーが出た場合は、出力が戻ってからチャンネルを選び直してください。
+
+PiにSSHで接続し、kioskユーザーの音声状態とログを確認します。`Sinks` に `nagametv-hdmi0` があるか、
+視聴中の `Streams` がその出力につながっているかを確認してください。
+
+```bash
+kiosk_uid=$(id -u nagametv)
+sudo -u nagametv env XDG_RUNTIME_DIR="/run/user/$kiosk_uid" wpctl status -n
+sudo journalctl -b -u nagametv-kiosk.service -u nagametv-hdmi-audio.service
+sudo journalctl -b _UID="$kiosk_uid" _SYSTEMD_USER_UNIT=wireplumber.service _SYSTEMD_USER_UNIT=pipewire.service
+```
+
+出力が戻らない場合はログを保存し、`sudo systemctl restart nagametv-hdmi-audio.service` で再試行できます。
+
+既存の専用機にHDMIの復旧設定を追加する場合は、更新後の `packaging/pi-appliance/` をPiに転送します。
+転送したディレクトリーで次を実行し、再起動して音声サービスに設定を読み込ませます。
+
+```bash
+sudo install -D -m 0755 start-kiosk /usr/local/lib/nagametv-appliance/start-kiosk
+sudo install -D -m 0644 hdmi-audio.py /usr/local/lib/nagametv-appliance/hdmi-audio.py
+sudo install -m 0644 nagametv-kiosk.service nagametv-hdmi-audio.service /etc/systemd/system/
+sudo install -D -m 0644 50-nagametv-hdmi-only.conf /etc/wireplumber/wireplumber.conf.d/50-nagametv-hdmi-only.conf
+sudo install -D -m 0644 50-nagametv-hdmi-stream.conf /etc/pipewire/pipewire-pulse.conf.d/50-nagametv-hdmi-stream.conf
+sudo reboot
+```
