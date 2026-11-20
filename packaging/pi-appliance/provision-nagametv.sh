@@ -19,7 +19,8 @@ step() {
 
 boot=/boot/firmware
 mountpoint -q "$boot" || fail "$boot is not mounted."
-for file in nagametv.deb nagametv-kiosk.service start-kiosk labwc-rc.xml; do
+for file in nagametv.deb nagametv-kiosk.service start-kiosk labwc-rc.xml \
+    nagametv-hdmi-audio.service hdmi-audio.py 50-nagametv-hdmi-only.conf 50-nagametv-hdmi-stream.conf; do
     [[ -s $boot/$file ]] || fail "Missing $boot/$file."
 done
 
@@ -57,7 +58,7 @@ apt-get -o APT::Update::Error-Mode=any update
 # The stock server image does not include the Mesa DRI modules used by labwc.
 apt-get -o DPkg::Lock::Timeout=300 install -y --no-install-recommends \
     labwc wlr-randr libgl1-mesa-dri kbd libpam-systemd dbus-user-session openssh-server \
-    pipewire pipewire-pulse wireplumber pulseaudio-utils fonts-noto-cjk "$deb"
+    pipewire pipewire-pulse wireplumber pulseaudio-utils python3 fonts-noto-cjk "$deb"
 
 step "Configuring the kiosk."
 connection="$boot/nagametv-connection.toml"
@@ -73,18 +74,14 @@ if [[ -e $connection ]]; then
 fi
 install -D -m 0755 "$boot/start-kiosk" /usr/local/lib/nagametv-appliance/start-kiosk
 install -D -m 0644 "$boot/labwc-rc.xml" /usr/local/lib/nagametv-appliance/labwc/rc.xml
+install -D -m 0644 "$boot/hdmi-audio.py" /usr/local/lib/nagametv-appliance/hdmi-audio.py
 install -m 0644 "$boot/nagametv-kiosk.service" /etc/systemd/system/nagametv-kiosk.service
+install -m 0644 "$boot/nagametv-hdmi-audio.service" /etc/systemd/system/nagametv-hdmi-audio.service
+install -D -m 0644 "$boot/50-nagametv-hdmi-only.conf" \
+    /etc/wireplumber/wireplumber.conf.d/50-nagametv-hdmi-only.conf
+install -D -m 0644 "$boot/50-nagametv-hdmi-stream.conf" \
+    /etc/pipewire/pipewire-pulse.conf.d/50-nagametv-hdmi-stream.conf
 systemctl --global enable pipewire.socket pipewire-pulse.socket wireplumber.service
-# WirePlumber otherwise prefers the Pi 4 analog jack over HDMI as the default sink.
-install -d -m 0755 /etc/wireplumber/wireplumber.conf.d
-cat > /etc/wireplumber/wireplumber.conf.d/50-nagametv-hdmi-only.conf <<'EOF'
-monitor.alsa.rules = [
-  {
-    matches = [ { api.alsa.card.name = "bcm2835 Headphones" } ]
-    actions = { update-props = { device.disabled = true } }
-  }
-]
-EOF
 
 # Keep the other virtual terminals and the Plymouth quit action available.
 systemctl mask getty@tty1.service \

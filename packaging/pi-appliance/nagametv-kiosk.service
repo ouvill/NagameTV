@@ -1,10 +1,11 @@
 [Unit]
 Description=NagameTV Wayland kiosk on tty1
 ConditionPathExists=/dev/tty1
-Wants=dbus.socket systemd-logind.service
+Wants=dbus.socket systemd-logind.service nagametv-hdmi-audio.service
 After=dbus.socket systemd-logind.service systemd-user-sessions.service plymouth-quit.service getty@tty1.service
 Conflicts=getty@tty1.service
-StartLimitIntervalSec=0
+StartLimitIntervalSec=60s
+StartLimitBurst=5
 
 [Service]
 Type=exec
