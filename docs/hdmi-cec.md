@@ -2,7 +2,7 @@
 
 テレビのリモコンを使って、HDMI経由でながめTVを操作する実験的機能です。LinuxカーネルのCECフレームワーク（`/dev/cecN`）からリモコンのキー入力を受信し、ながめTVの選局や再生操作へ割り当てます。
 
-初期状態はOFFです。Phase 1では、自身をOSD名「`NagameTV`」のPlaybackデバイスとしてテレビ側へ通知し、リモコンからのキー受信のみを行います。テレビの電源連動（起動・スタンバイ）、入力自動切り替え（Active Source）、システムオーディオ制御はこの段階に含めません。
+初期状態はOFFです。有効にするとながめTVは、OSD名 `NagameTV` の Playback デバイスとして論理アドレスを取得します。テレビからの機器情報の問い合わせや入力切り替えに応答し、リモコンのキーを受け取ります。
 
 ---
 
@@ -49,7 +49,8 @@ sudo usermod -aG video "$USER"
 - **設定の保存**: 通常起動では既存の設定保存先（`settings.toml`）に `hdmi_cec_enabled` と `hdmi_cec_device` を保存・復元します。`hdmi_cec_device` が空文字列 `""` のときは自動選択（最初に利用可能な `/dev/cecN`）を使い、明示指定するときは `/dev/cecN` 形式のパスを指定します。
 - **設定画面からの有効化**: 「設定 → リモート操作」の「テレビのリモコン（HDMI-CEC）」セクションにある「HDMI-CECでテレビのリモコンから操作する（実験的）」をONにします。ONにすると、使用するアダプターを選ぶ「CECデバイス」（「自動」または「`<名前> (/dev/cecN)`」）と「再検索」ボタンが表示されます。
 - **検証用の起動オプション**: `--features=hdmi-cec`（他機能と併用可。例: `--features=epg,subtitles,hdmi-cec`）。`hdmi-cec` を指定した制限起動では一時セッションとして有効になり、設定ファイルへ書き戻しません。`hdmi-cec` を含まない `--features` 指定では `hdmi_cec_allowed` が `false` となり、設定画面からも有効化できません。
-- **再検出と自動再試行**: 有効化時には自動で `/dev/cec*` を走査します。設定画面の「再検索」ボタンを押すと `refresh_hdmi_cec_devices()` で再走査・再試行します（OFFのときはデバイスを開かずワーカーも作りません）。`no-device` と `disconnected` の状態では、有効な間は定期的に再試行します。
+- **再検出と自動再試行**: 有効化時には自動で `/dev/cec*` を走査します。設定画面の「再検索」ボタンを押すと `refresh_hdmi_cec_devices()` で再走査・再試行します（OFFの間はデバイスもワーカーも使いません）。自動選択では、有効な物理アドレスを持つアダプターを優先します。
+  `no-device` と `disconnected` の状態では、有効な間は定期的に再試行します。
 
 ### QML公開API（`Player`）
 
@@ -68,11 +69,31 @@ sudo usermod -aG video "$USER"
 | invokable | `set_hdmi_cec_enabled(enabled: bool) -> bool` | 有効／無効を切り替え、許可された変更を保存する。禁止時は `false` を返す。OFF時は完了前にデバイスを解放する |
 | invokable | `select_hdmi_cec_device(path: string) -> bool` | `""`（自動選択）または `/dev/cecN` を受け付け、保存する。有効中に変更するとセッションを再起動する。不正値は `false` |
 | invokable | `refresh_hdmi_cec_devices()` | 有効時にデバイスの再走査・再試行を行う。OFF時は何もしない |
+| invokable | `set_hdmi_cec_playback_visible(visible: bool)` | 視聴画面で再生映像が表示される状態をワーカーへ伝える |
 | シグナル | `hdmi_cec_changed()` | 可変プロパティが更新されたときの共通通知 |
 | シグナル | `remote_key_requested(key: int)` | 既存の `RemoteKey` enumでナビゲーションキーを通知 |
 | シグナル | `hdmi_cec_input_requested(key: int, repeat: bool)` | 数字・カラーキー入力をQtキーコードとして通知し、既存の `ShortcutKey` 転送経路へ渡す |
 
 ---
+
+## テレビとの通信
+
+論理アドレスを取得した時点で視聴画面に再生映像が表示されていれば、`ACTIVE_SOURCE` を送ります。
+論理アドレスの取得後に映像が表示された場合も送ります。テレビが `ROUTING_CHANGE` または
+`SET_STREAM_PATH` でながめTVの物理アドレスを選ぶと、視聴開始前でも `ACTIVE_SOURCE` で応答します。
+宛先の物理アドレスを指定しない `REQUEST_ACTIVE_SOURCE` には、ながめTVが選択中の入力である間に応答します。
+
+機器名、物理アドレス、CEC バージョン、ベンダー ID の問い合わせには Linux カーネルが応答します。
+ベンダー ID は `cec-ctl` の既定値と同じ `0x000c03`（HDMI LLC）です。ながめTVは電源状態を
+On として返し、メニューの有効化、無効化、状態の問い合わせに応答します。
+メニューが有効な間は、`ACTIVE_SOURCE` に続けて `MENU_STATUS`（Activated）をテレビに送ります。
+テレビはこの通知を使って、新しい入力で機器のメニューを操作できるか判断します。
+[Linux CEC の応答処理](https://docs.kernel.org/userspace-api/media/cec/cec-ioc-g-mode.html)
+[HDMI 1.4 CEC 仕様 §13.2、§13.9、§13.12](https://felloff.net/doc/comp/spec/HDMISpecification14a.pdf)
+
+前回の終了時に `NagameTV` の Playback 設定がカーネルに残っていれば、排他権の取得後に再利用します。
+以前のバージョンの設定は、同じ名前とデバイス種別を確認したうえで設定し直します。
+無効化または正常終了時は、取得した論理アドレスを解放します。
 
 ## キー割り当て
 
@@ -126,6 +147,7 @@ HDMI-CECでは、どのリモコンキーを外部機器（Playbackデバイス�
 
 テレビ側のHDMI連動機能がONになっており、かつテレビの現在の入力がそのHDMIポートに切り替わっている必要があります。また、各社の連動機能では、一部のキーをテレビ本体が消費して外部機器へ送らないことがあります。
 
+- **LG（SIMPLINK）**: テレビ側で SIMPLINK (HDMI-CEC) を有効にし、ながめTVを接続した HDMI 入力を選びます。LG 固有の初期化手順を使う機種でのキー転送は実機確認が必要です。
 - **ソニー（BRAVIA Sync / ブラビアリンク）**: 機種や設定により方向・決定・戻る・再生系のキーは転送されますが、数字キー、カラーキー、番組表や音量系のキーはテレビ側で処理され届かない場合があります。
 - **パナソニック（VIERA Link / ビエラリンク）**: ビエラリンクの設定や操作対象の選択状態によっては、再生系や方向キー以外のボタンがテレビ本体の操作として扱われることがあります。
 - **シャープ（AQUOS Familink / ファミリンク）**: ファミリンクが有効でも、Playbackデバイスへ転送されるキーが方向・決定・再生操作などに限定される機種があります。
@@ -135,24 +157,39 @@ HDMI-CECでは、どのリモコンキーを外部機器（Playbackデバイス�
 
 ---
 
+### LG SIMPLINK の通信を確認する
+
+Raspberry Pi などで `cec-ctl` を使うと、テレビとアダプター間の通信を確認できます。
+ながめTVと同じデバイスを指定し、テレビの入力を一度切り替えてから戻します。
+`-M` が使えないアダプターでは `-m` を試してください。
+
+```sh
+sudo cec-ctl -d /dev/cec0 -M -r
+```
+
+`GIVE_DEVICE_VENDOR_ID` に対して `DEVICE_VENDOR_ID`、入力切り替えに対して該当ポートの
+物理アドレスを含む `ACTIVE_SOURCE` が流れることを確認します。続けて方向、決定、戻るを押し、
+テレビから選択した論理アドレスへ `USER_CONTROL_PRESSED` と `USER_CONTROL_RELEASED` が届くか確認します。
+[LG の SIMPLINK 設定手順](https://www.lg.com/us/support/help-library/lg-tv-how-to-use-hdmi-cec-CT10000018-20153207563544)
+
+---
+
 ## 今後の拡張予定
 
-Phase 1の検証と並行し、以下を今後の検討事項として残します。
+以下は今後の検討事項です。
 
 - **電源連動**: 起動時のテレビ電源ON（One Touch Play）や、アプリ終了時のスタンバイ連動
-- **入力切り替え**: 再生開始時などにテレビの入力を自動で切り替えるActive Source通知
 - **音声連動**: テレビやAVアンプと音量・ミュートを連携させるシステムオーディオ制御（System Audio Control）
 
 ---
 
 ## 実装構成と検証状況
 
-- **Rustモジュール構成**: コアの状態管理・デバイス抽象・ワーカー制御は [`rust/src/hdmi_cec/mod.rs`](../rust/src/hdmi_cec/mod.rs)、Linux カーネル CEC uAPI の `ioctl` 呼び出し（受信専用）は [`rust/src/hdmi_cec/linux.rs`](../rust/src/hdmi_cec/linux.rs)、キー割り当てと長押し抑止は [`rust/src/hdmi_cec/keys.rs`](../rust/src/hdmi_cec/keys.rs)、再試行時のログ重複抑制と診断履歴は [`rust/src/hdmi_cec/diagnostics.rs`](../rust/src/hdmi_cec/diagnostics.rs)、`Player` への橋渡しと一覧モデルは [`rust/src/player/hdmi_cec.rs`](../rust/src/player/hdmi_cec.rs)・[`rust/src/hdmi_cec_model.rs`](../rust/src/hdmi_cec_model.rs) が担当します。
-- **送信操作の不在**: 外部クレート（`libcec` や `cec-linux` 等）を追加せず、Linux の `cec.h` 互換 `ioctl` を直接利用して再生側受信のみを実装しています。論理アドレスの告知と OSD 名 `NagameTV` の設定はカーネルが処理します。
+- **Rustモジュール構成**: コアの状態管理・デバイス抽象・ワーカー制御は [`rust/src/hdmi_cec/mod.rs`](../rust/src/hdmi_cec/mod.rs)、Linux カーネル CEC uAPI の `ioctl` 呼び出しは [`rust/src/hdmi_cec/linux.rs`](../rust/src/hdmi_cec/linux.rs)、ルーティングと標準応答は [`rust/src/hdmi_cec/protocol.rs`](../rust/src/hdmi_cec/protocol.rs)、キー割り当てと長押し抑止は [`rust/src/hdmi_cec/keys.rs`](../rust/src/hdmi_cec/keys.rs)、再試行時のログ重複抑制と診断履歴は [`rust/src/hdmi_cec/diagnostics.rs`](../rust/src/hdmi_cec/diagnostics.rs)、`Player` への橋渡しと一覧モデルは [`rust/src/player/hdmi_cec.rs`](../rust/src/player/hdmi_cec.rs)・[`rust/src/hdmi_cec_model.rs`](../rust/src/hdmi_cec_model.rs) が担当します。
 
 ### 実機検証が必要な項目
 
-フェイクデバイスを用いた単体試験・Qt 接続試験・QML 部品試験は通過していますが、開発コンテナーには `/dev/cec*` が存在しないため、**実機での確認は未実施** です。実験扱いを解除する前に、Raspberry Pi（`vc4-hdmi`）または Linux 対応 USB CEC アダプターと実テレビで以下を確認する必要があります。
+フェイクアダプターでルーティング、標準応答とデバイスの解放を検証します。実験扱いを解除する前に、Raspberry Pi（`vc4-hdmi`）または Linux 対応 USB CEC アダプターと実テレビで以下を確認します。
 
 1. **デバイス検出・権限・共存**: 能力検出、自動／明示選択、実際の `video` グループ権限での開閉、他の CEC アプリが稼働中の環境で排他取得が既存アドレスを置き換えずに失敗すること。
 2. **アドレス調停と待機復帰**: Playback 論理アドレスの取得、テレビ側での「`NagameTV`」表示、正しい物理アドレスの取得、テレビ電源 OFF／HDMI 未接続からの `CEC_EVENT_STATE_CHANGE` による自動復帰（物理アドレスをユーザー空間から設定する必要があるアダプターには非対応）。

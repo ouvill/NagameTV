@@ -1,7 +1,11 @@
 //! Linux CEC uAPI, isolated here so other platforms never reference libc or /dev.
 //! Layouts and request numbers follow linux/cec.h. Only fixed-width integer
 //! fields cross the kernel boundary; unknown kernel values are never Rust enums.
-use super::{Address, Backend, Device, DeviceInfo, Error, Event, OSD_NAME, valid_path};
+use super::{
+    Address, Backend, Device, DeviceInfo, Error, Event, OSD_NAME,
+    protocol::{BROADCAST, Frame, MAX_MESSAGE_SIZE, USER_CONTROL_PRESSED, USER_CONTROL_RELEASED},
+    valid_path,
+};
 use std::{
     fs::{self, File, OpenOptions},
     io,
@@ -36,7 +40,6 @@ impl Error {
 }
 
 const CEC_IOCTL_TYPE: u32 = b'a' as u32;
-const MAX_MESSAGE_SIZE: usize = 16;
 const MAX_LOGICAL_ADDRESSES: usize = 4;
 const CAP_LOG_ADDRS: u32 = 1 << 1;
 const CAP_TRANSMIT: u32 = 1 << 2;
@@ -45,15 +48,16 @@ const MODE_EXCLUSIVE_FOLLOWER: u32 = 0x20;
 const VERSION_1_4: u8 = 5;
 const PRIMARY_PLAYBACK: u8 = 4;
 const LOG_ADDR_TYPE_PLAYBACK: u8 = 3;
-const VENDOR_ID_NONE: u32 = u32::MAX;
+// Use the same HDMI LLC compatibility ID as cec-ctl, so ordinary vendor
+// discovery succeeds. libCEC's LG ID invokes a private SIMPLINK handshake.
+// The captured TV traffic only demonstrates standard discovery and routing.
+const VENDOR_ID: u32 = 0x000c03;
 const INVALID_PHYSICAL_ADDRESS: u16 = u16::MAX;
 const EVENT_STATE_CHANGE: u32 = 1;
 const EVENT_LOST_MESSAGES: u32 = 2;
 const EVENT_DROPPED: u32 = 1 << 1;
-const USER_CONTROL_PRESSED: u8 = 0x44;
-const USER_CONTROL_RELEASED: u8 = 0x45;
 const RX_OK: u8 = 1;
-const BROADCAST: u8 = 15;
+const TX_OK: u8 = 1;
 
 #[repr(C)]
 #[derive(Default)]
@@ -131,8 +135,8 @@ impl Uapi for LogAddrs {
     }
 }
 impl Uapi for Message {
-    fn request(_: bool) -> libc::Ioctl {
-        libc::_IOWR::<Self>(CEC_IOCTL_TYPE, 6)
+    fn request(write: bool) -> libc::Ioctl {
+        libc::_IOWR::<Self>(CEC_IOCTL_TYPE, if write { 5 } else { 6 })
     }
 }
 impl Uapi for KernelEvent {
@@ -169,6 +173,60 @@ fn caps(file: &File, path: &str) -> Result<Caps, Error> {
     ioctl(file, &mut caps, false).map_err(|e| Error::io("query capabilities", path, e))?;
     Ok(caps)
 }
+fn physical_address(file: &File, path: &str) -> Result<Option<u16>, Error> {
+    let mut physical = INVALID_PHYSICAL_ADDRESS;
+    ioctl(file, &mut physical, false).map_err(|e| Error::io("query physical address", path, e))?;
+    Ok((physical != INVALID_PHYSICAL_ADDRESS).then_some(physical))
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum Registration {
+    Fresh,
+    Reused,
+    Reconfigured,
+}
+
+fn configure_playback(
+    path: &str,
+    current: &LogAddrs,
+    mut set: impl FnMut(&mut LogAddrs) -> Result<(), Error>,
+) -> Result<Registration, Error> {
+    let mut requested = LogAddrs {
+        cec_version: VERSION_1_4,
+        num_log_addrs: 1,
+        vendor_id: VENDOR_ID,
+        ..Default::default()
+    };
+    requested.osd_name[..OSD_NAME.len()].copy_from_slice(OSD_NAME.as_bytes());
+    requested.primary_device_type[0] = PRIMARY_PLAYBACK;
+    requested.log_addr_type[0] = LOG_ADDR_TYPE_PLAYBACK;
+
+    let registration = if current.num_log_addrs == 0 {
+        Registration::Fresh
+    } else {
+        if current.num_log_addrs != 1
+            || current.primary_device_type[0] != PRIMARY_PLAYBACK
+            || current.log_addr_type[0] != LOG_ADDR_TYPE_PLAYBACK
+            || text(&current.osd_name) != OSD_NAME
+        {
+            return Err(Error::Busy(path.into()));
+        }
+        if current.vendor_id == VENDOR_ID
+            && current.cec_version == VERSION_1_4
+            && current.flags == requested.flags
+        {
+            return Ok(Registration::Reused);
+        }
+        // Linux retains the LA configuration after close and requires a clear
+        // before a replacement. Only replace our identity under exclusive mode.
+        set(&mut LogAddrs::default())?;
+        Registration::Reconfigured
+    };
+    // Keep RC passthrough disabled so the kernel does not also inject OS keys.
+    set(&mut requested)?;
+    Ok(registration)
+}
+
 fn text(bytes: &[u8]) -> String {
     let end = bytes.iter().position(|b| *b == 0).unwrap_or(bytes.len());
     String::from_utf8_lossy(&bytes[..end]).into_owned()
@@ -191,11 +249,25 @@ impl Backend for Linux {
             if !valid_path(&path) {
                 continue;
             }
-            let info = match open(&path).and_then(|file| caps(&file, &path)) {
-                Ok(caps) => DeviceInfo {
+            let info = match open(&path).and_then(|file| {
+                let caps = caps(&file, &path)?;
+                let physical = match physical_address(&file, &path) {
+                    Ok(physical) => physical,
+                    Err(error) => {
+                        tracing::debug!(
+                            error = &error as &dyn std::error::Error,
+                            "HDMI-CEC physical address probe failed"
+                        );
+                        None
+                    }
+                };
+                Ok((caps, physical))
+            }) {
+                Ok((caps, physical_address)) => DeviceInfo {
                     path,
                     name: text(&caps.name),
                     driver: text(&caps.driver),
+                    physical_address,
                 },
                 Err(error) => {
                     // Discovery is a probe; opening the selected adapter reports
@@ -209,6 +281,7 @@ impl Backend for Linux {
                         name: path.clone(),
                         path,
                         driver: String::new(),
+                        physical_address: None,
                     }
                 }
             };
@@ -226,14 +299,13 @@ impl Backend for Linux {
             return Err(Error::Capabilities(info.path.clone()));
         }
         let mut mode = MODE_EXCLUSIVE_INITIATOR | MODE_EXCLUSIVE_FOLLOWER;
-        ioctl(&file, &mut mode, true)
-            .map_err(|e| Error::io("acquire exclusive follower", &info.path, e))?;
-        let mut addresses = LogAddrs::default();
-        ioctl(&file, &mut addresses, false)
-            .map_err(|e| Error::io("query logical addresses", &info.path, e))?;
-        if addresses.num_log_addrs != 0 {
-            return Err(Error::Busy(info.path.clone()));
-        }
+        ioctl(&file, &mut mode, true).map_err(|error| {
+            if error.raw_os_error() == Some(libc::EBUSY) {
+                Error::Busy(info.path.clone())
+            } else {
+                Error::io("acquire exclusive follower", &info.path, error)
+            }
+        })?;
         Ok(LinuxDevice {
             file,
             path: info.path.clone(),
@@ -242,30 +314,51 @@ impl Backend for Linux {
 }
 impl Device for LinuxDevice {
     fn claim_playback(&mut self) -> Result<(), Error> {
-        let mut addresses = LogAddrs {
-            cec_version: VERSION_1_4,
-            num_log_addrs: 1,
-            vendor_id: VENDOR_ID_NONE,
-            ..Default::default()
-        };
-        addresses.osd_name[..OSD_NAME.len()].copy_from_slice(OSD_NAME.as_bytes());
-        addresses.primary_device_type[0] = PRIMARY_PLAYBACK;
-        addresses.log_addr_type[0] = LOG_ADDR_TYPE_PLAYBACK;
-        // No RC passthrough: receiving a remote key must not also inject an OS key.
-        ioctl(&self.file, &mut addresses, true)
-            .map_err(|e| Error::io("claim Playback address", &self.path, e))
+        let mut current = LogAddrs::default();
+        ioctl(&self.file, &mut current, false)
+            .map_err(|e| Error::io("query logical address configuration", &self.path, e))?;
+        let registration = configure_playback(&self.path, &current, |addresses| {
+            let operation = if addresses.num_log_addrs == 0 {
+                "clear previous Playback address"
+            } else {
+                "claim Playback address"
+            };
+            ioctl(&self.file, addresses, true).map_err(|e| Error::io(operation, &self.path, e))
+        })?;
+        tracing::info!(
+            path = self.path,
+            ?registration,
+            vendor_id = VENDOR_ID,
+            "HDMI-CEC Playback address configuration"
+        );
+        Ok(())
     }
     fn address(&mut self) -> Result<Address, Error> {
-        let mut physical = INVALID_PHYSICAL_ADDRESS;
+        let physical = physical_address(&self.file, &self.path)?;
         let mut addresses = LogAddrs::default();
-        ioctl(&self.file, &mut physical, false)
-            .map_err(|e| Error::io("query physical address", &self.path, e))?;
         ioctl(&self.file, &mut addresses, false)
             .map_err(|e| Error::io("query logical address", &self.path, e))?;
         Ok(Address {
-            physical: (physical != INVALID_PHYSICAL_ADDRESS).then_some(physical),
+            physical,
             logical_mask: addresses.log_addr_mask,
         })
+    }
+    fn transmit(&mut self, frame: Frame) -> Result<(), Error> {
+        let bytes = frame.bytes();
+        let mut message = Message {
+            len: bytes.len() as u32,
+            ..Default::default()
+        };
+        message.msg[..bytes.len()].copy_from_slice(bytes);
+        ioctl(&self.file, &mut message, true)
+            .map_err(|e| Error::io("transmit message", &self.path, e))?;
+        tracing::debug!(
+            path = self.path,
+            opcode = frame.opcode(),
+            sequence = message.sequence,
+            "HDMI-CEC message queued"
+        );
+        Ok(())
     }
     fn next_event(&mut self, timeout: Duration) -> Result<Option<Event>, Error> {
         let ready = poll(self.file.as_raw_fd(), timeout)
@@ -306,13 +399,27 @@ impl Device for LinuxDevice {
         if ready & libc::POLLIN != 0 {
             let mut message = Message::default();
             match ioctl(&self.file, &mut message, false) {
-                Ok(()) => return Ok(decode(&message)),
+                Ok(()) => {
+                    if message.sequence != 0
+                        && message.tx_status != 0
+                        && message.tx_status & TX_OK == 0
+                    {
+                        tracing::warn!(
+                            path = self.path,
+                            opcode = message.msg[1],
+                            sequence = message.sequence,
+                            status = message.tx_status,
+                            "HDMI-CEC transmit failed"
+                        );
+                    }
+                    return Ok(decode(&message));
+                }
                 Err(e)
                     if matches!(
                         e.kind(),
                         io::ErrorKind::WouldBlock | io::ErrorKind::Interrupted
                     ) => {}
-                Err(e) => return Err(Error::io("receive key", &self.path, e)),
+                Err(e) => return Err(Error::io("receive message", &self.path, e)),
             }
         }
         Ok(None)
@@ -352,30 +459,82 @@ fn poll(fd: RawFd, timeout: Duration) -> io::Result<i16> {
     }
 }
 fn decode(message: &Message) -> Option<Event> {
-    if message.rx_status & RX_OK == 0 || !(2..=MAX_MESSAGE_SIZE as u32).contains(&message.len) {
+    if message.sequence != 0 || message.rx_status & RX_OK == 0 {
         return None;
     }
-    let initiator = message.msg[0] >> 4;
-    let destination = message.msg[0] & 0x0f;
-    if initiator == BROADCAST || destination == BROADCAST {
-        return None;
-    }
-    match (message.msg[1], message.len) {
-        (USER_CONTROL_PRESSED, 3) => Some(Event::Press {
-            initiator,
-            code: message.msg[2],
-        }),
-        (USER_CONTROL_RELEASED, 2) => Some(Event::Release { initiator }),
-        (opcode, _) => {
-            tracing::debug!(opcode, length = message.len, "HDMI-CEC message ignored");
-            None
+    let frame = Frame::parse(message.msg.get(..message.len as usize)?)?;
+    let initiator = frame.source();
+    match (frame.opcode(), frame.operands()) {
+        (USER_CONTROL_PRESSED, [code])
+            if initiator != BROADCAST && frame.destination() != BROADCAST =>
+        {
+            Some(Event::Press {
+                initiator,
+                code: *code,
+            })
         }
+        (USER_CONTROL_RELEASED, [])
+            if initiator != BROADCAST && frame.destination() != BROADCAST =>
+        {
+            Some(Event::Release { initiator })
+        }
+        (USER_CONTROL_PRESSED | USER_CONTROL_RELEASED, _) => None,
+        _ => Some(Event::Message(frame)),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn playback_addresses(vendor_id: u32) -> LogAddrs {
+        let mut addresses = LogAddrs {
+            log_addr: [8, 0xff, 0xff, 0xff],
+            log_addr_mask: 1 << 8,
+            cec_version: VERSION_1_4,
+            num_log_addrs: 1,
+            vendor_id,
+            ..Default::default()
+        };
+        addresses.primary_device_type[0] = PRIMARY_PLAYBACK;
+        addresses.log_addr_type[0] = LOG_ADDR_TYPE_PLAYBACK;
+        addresses.osd_name[..OSD_NAME.len()].copy_from_slice(OSD_NAME.as_bytes());
+        addresses
+    }
+
+    #[test]
+    fn stale_nagametv_registration_is_cleared_then_updated_and_can_be_reused() {
+        let mut writes = Vec::new();
+        let registration = configure_playback("/dev/cec0", &playback_addresses(u32::MAX), |args| {
+            writes.push((args.num_log_addrs, args.vendor_id, text(&args.osd_name)));
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(registration, Registration::Reconfigured);
+        assert_eq!(
+            writes,
+            [(0, 0, String::new()), (1, 0x000c03, "NagameTV".into())]
+        );
+        let registration = configure_playback("/dev/cec0", &playback_addresses(VENDOR_ID), |_| {
+            panic!("the retained Playback address should be reused without ioctl writes")
+        })
+        .unwrap();
+        assert_eq!(registration, Registration::Reused);
+    }
+
+    #[test]
+    fn another_app_or_device_type_keeps_its_registration() {
+        let mut foreign_name = playback_addresses(VENDOR_ID);
+        foreign_name.osd_name[0] = b'X';
+        let mut foreign_type = playback_addresses(VENDOR_ID);
+        foreign_type.log_addr_type[0] = 1;
+        for current in [foreign_name, foreign_type] {
+            assert!(matches!(
+                configure_playback("/dev/cec0", &current, |_| panic!("foreign configuration changed")),
+                Err(Error::Busy(path)) if path == "/dev/cec0"
+            ));
+        }
+    }
+
     #[test]
     fn raw_uapi_layouts_match_linux_cec_h() {
         assert_eq!(size_of::<Caps>(), 76);
@@ -411,7 +570,7 @@ mod tests {
         assert!(decode(&message).is_none());
         message.msg[0] = 4;
         message.msg[1] = 0xff;
-        assert!(decode(&message).is_none());
+        assert!(matches!(decode(&message), Some(Event::Message(_))));
         message.msg[1] = USER_CONTROL_RELEASED;
         message.len = 2;
         assert!(matches!(

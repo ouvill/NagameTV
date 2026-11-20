@@ -94,6 +94,7 @@ enum InputQueue {
 pub(super) struct Diagnostics {
     failure: FailureLog,
     release: FailureLog,
+    transmit: FailureLog,
     waiting: Option<Address>,
     input_queue: InputQueue,
 }
@@ -116,6 +117,14 @@ impl Diagnostics {
             Err(error) => self
                 .release
                 .report("release logical address", &error, Severity::Error),
+        }
+    }
+    pub(super) fn transmitted(&mut self, result: Result<(), Error>) {
+        match result {
+            Ok(()) => self.transmit.recovered(),
+            Err(error) => self
+                .transmit
+                .report("queue CEC message", &error, Severity::Warning),
         }
     }
     pub(super) fn waiting(&mut self, address: Address) {
