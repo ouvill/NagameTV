@@ -451,6 +451,15 @@
 </context>
   <context>
     <name>Backend</name>
+    <message><source>Finish the recording deletion before changing the catalogue</source><translation>録画を削除する操作を終えてから一覧を切り替えてください</translation></message>
+    <message><source>The recording is no longer in the current list</source><translation>この録画は現在の一覧にありません</translation></message>
+    <message><source>Wait for the recording list to finish loading</source><translation>録画一覧の読み込みが終わるまでお待ちください</translation></message>
+    <message><source>Stop playback or opening the recording before deleting it</source><translation>録画の再生または読み込みを停止してから削除してください</translation></message>
+    <message><source>EPGStation is still recording this program</source><translation>EPGStationはこの番組を録画中です</translation></message>
+    <message><source>EPGStation protects this recording from deletion</source><translation>この録画はEPGStationで保護されています</translation></message>
+    <message><source>The recording changed on EPGStation. Refresh the list and confirm again</source><translation>EPGStationで録画の情報が変わりました。一覧を更新してからもう一度確認してください</translation></message>
+    <message><source>Wait for recording deletion to finish</source><translation>録画の削除が終わるまでお待ちください</translation></message>
+    <message><source>Could not delete the recording: %1</source><translation>録画を削除できませんでした（%1）</translation></message>
     <message><source>Watching video</source><translation>動画を視聴中</translation></message>
     <message><source>This desktop does not allow apps to keep the screen on.</source><translation>このデスクトップでは、アプリによる画面消灯の抑止を利用できません。</translation></message>
     <message><source>Could not keep the screen on while watching.</source><translation>視聴中の画面消灯を抑止できませんでした。</translation></message>
@@ -2782,6 +2791,15 @@
 </context>
   <context>
     <name>RecordingLibrary</name>
+    <message><source>Recording actions</source><translation>録画の操作</translation></message>
+    <message><source>Play from the beginning</source><translation>最初から再生</translation></message>
+    <message><source>Choose file to play</source><translation>再生するファイルを選ぶ</translation></message>
+    <message><source>Delete…</source><translation>削除…</translation></message>
+    <message><source>Delete recording?</source><translation>録画を削除しますか？</translation></message>
+    <message><source>Delete</source><translation>削除する</translation></message>
+    <message><source>Deleting recording…</source><translation>録画を削除しています…</translation></message>
+    <message><source>EPGStation will permanently remove this recording.</source><translation>EPGStationからこの録画を削除します。元に戻すことはできません。</translation></message>
+    <message><source>Unknown channel</source><translation>放送局不明</translation></message>
     <message><source>Watched</source><translation>視聴済み</translation></message>
     <message><source>Resume</source><translation>続きから</translation></message>
     <message><source>Choose a video file</source><translation>再生するファイルを選択</translation></message>

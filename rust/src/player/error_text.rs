@@ -226,11 +226,40 @@ impl PresentError for crate::epgstation::Error {
                 crate::epgstation::MAX_KEYWORD_CHARS,
             ),
             Self::MissingCredentials => Text::source("Enter both a username and password"),
+            Self::DeletionPending => {
+                Text::source("Finish the recording deletion before changing the catalogue")
+            }
             // These describe external responses, not application input validation.
             Self::Json(_)
             | Self::InvalidCatalogue(_)
             | Self::MissingToken
             | Self::UnexpectedStatus(_) => Text::literal(self),
+        }
+    }
+}
+
+impl PresentError for crate::epgstation::DeleteError {
+    fn present(&self) -> Text {
+        use crate::epgstation::DeleteError;
+        match self {
+            DeleteError::Missing => Text::source("The recording is no longer in the current list"),
+            DeleteError::CatalogueBusy => {
+                Text::source("Wait for the recording list to finish loading")
+            }
+            DeleteError::Playback => {
+                Text::source("Stop playback or opening the recording before deleting it")
+            }
+            DeleteError::Recording => Text::source("EPGStation is still recording this program"),
+            DeleteError::Protected => {
+                Text::source("EPGStation protects this recording from deletion")
+            }
+            DeleteError::Changed => Text::source(
+                "The recording changed on EPGStation. Refresh the list and confirm again",
+            ),
+            DeleteError::Network => Text::source("Network is unavailable."),
+            DeleteError::Request(error) => {
+                Text::message("Could not delete the recording: %1", [error.present()])
+            }
         }
     }
 }

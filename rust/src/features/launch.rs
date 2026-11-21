@@ -3,7 +3,7 @@ use std::str::FromStr;
 
 #[derive(Debug, PartialEq, Eq, thiserror::Error)]
 #[error(
-    "invalid or repeated feature: {0} (expected none / subtitles / epg / comments / data-broadcast / recording-reservations / remote-web / hdmi-cec / screen-navigation)"
+    "invalid or repeated feature: {0} (expected none / subtitles / epg / comments / data-broadcast / recording-reservations / recording-delete / remote-web / hdmi-cec / screen-navigation)"
 )]
 pub struct FeatureError(String);
 
@@ -15,6 +15,7 @@ pub struct FeatureSet {
     comments: bool,
     data_broadcast: bool,
     recording_reservations: bool,
+    recording_delete: bool,
     remote_web: bool,
     hdmi_cec: bool,
 }
@@ -29,6 +30,7 @@ impl FromStr for FeatureSet {
             comments: false,
             data_broadcast: false,
             recording_reservations: false,
+            recording_delete: false,
             remote_web: false,
             hdmi_cec: false,
         };
@@ -45,6 +47,9 @@ impl FromStr for FeatureSet {
                 "data-broadcast" if !features.data_broadcast => features.data_broadcast = true,
                 "recording-reservations" if !features.recording_reservations => {
                     features.recording_reservations = true
+                }
+                "recording-delete" if !features.recording_delete => {
+                    features.recording_delete = true
                 }
                 "screen-navigation" if !navigation_alias_seen => navigation_alias_seen = true,
                 "hdmi-cec" if !features.hdmi_cec => features.hdmi_cec = true,
@@ -65,6 +70,9 @@ pub enum LaunchPlan {
 }
 
 impl LaunchPlan {
+    pub fn recording_delete(self) -> bool {
+        matches!(self, Self::Restricted(features) if features.recording_delete)
+    }
     pub fn hdmi_cec(self, preference: bool) -> bool {
         match self {
             Self::Preferences => preference,

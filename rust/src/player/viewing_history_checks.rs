@@ -299,7 +299,11 @@ fn shutdown_preserves_the_final_recording_position() -> Result<(), Box<dyn std::
     )))?;
     let identity = file.history_identity();
     let source = identity.source.clone();
-    let mut session = Session::new(identity, Instant::now());
+    let mut session = Session::new(
+        identity,
+        Instant::now(),
+        crate::viewing_history::recordings::StartPosition::Resume,
+    );
     assert_eq!(
         session.resume(&player.rust().viewing_history, 600_000.0),
         None

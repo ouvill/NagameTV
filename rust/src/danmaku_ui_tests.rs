@@ -2,6 +2,8 @@
 #[cxx_qt::bridge]
 mod ffi {
     unsafe extern "C++" {
+        include!("nagametv/src/player.cxxqt.h");
+        type Player = crate::player::ffi::Player;
         include!("nagametv/src/video_file_model.cxxqt.h");
         type VideoFileModel = crate::video_file_model::ffi::VideoFileModel;
         include!("cxx-qt-lib/qstring.h");
@@ -18,6 +20,16 @@ mod ffi {
         fn run_qml_test_args(arguments: &[String]) -> i32;
     }
     unsafe extern "RustQt" {
+        #[qobject]
+        #[qml_element]
+        #[qproperty(*mut Player, backend, READ = backend, CONSTANT)]
+        #[qproperty(*mut Player, browse_backend, READ = browse_backend, CONSTANT)]
+        type TestRecordingLibrary = super::RecordingLibraryFixture;
+        fn backend(self: &TestRecordingLibrary) -> *mut Player;
+        fn browse_backend(self: &TestRecordingLibrary) -> *mut Player;
+        #[qinvokable]
+        fn load(self: Pin<&mut TestRecordingLibrary>, deletion: bool) -> bool;
+
         #[qobject]
         #[qml_element]
         #[qproperty(*mut VideoFileModel, files, READ = files, CONSTANT)]
@@ -51,6 +63,112 @@ mod ffi {
             text: &QString,
             repeat: bool,
         ) -> bool;
+    }
+}
+
+pub struct RecordingLibraryFixture {
+    player: cxx::UniquePtr<crate::player::ffi::Player>,
+    browse_player: cxx::UniquePtr<crate::player::ffi::Player>,
+    mock: wiremock::MockServer,
+}
+
+impl Default for RecordingLibraryFixture {
+    fn default() -> Self {
+        use serde_json::json;
+        use wiremock::{
+            Mock, MockServer, ResponseTemplate,
+            matchers::{method, path},
+        };
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("test runtime");
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("loopback fixture");
+        let mock = runtime.block_on(async {
+            let mock = MockServer::builder().listener(listener).start().await;
+            let rows = [
+                (1, "<b>First recording</b>"),
+                (2, "Second recording"),
+                (3, "Third recording"),
+            ]
+            .map(|(id, name)| {
+                json!({
+                    "id": id, "name": name, "channelName": "Test TV",
+                    "startAt": 1700000000000_i64, "endAt": 1700000060000_i64,
+                    "description": "Original program description",
+                    "extended": "Full program notes",
+                    "isRecording": false, "isProtected": false,
+                    "videoFiles": [{"id": 123, "size": 1, "type": "ts"}],
+                })
+            });
+            Mock::given(method("GET"))
+                .and(path("/api/channels"))
+                .respond_with(ResponseTemplate::new(200).set_body_json(json!([])))
+                .mount(&mock)
+                .await;
+            Mock::given(method("GET"))
+                .and(path("/api/recorded"))
+                .respond_with(
+                    ResponseTemplate::new(200).set_body_json(json!({"records":rows,"total":3})),
+                )
+                .mount(&mock)
+                .await;
+            for (index, row) in rows.into_iter().enumerate() {
+                let route = format!("/api/recorded/{}", index + 1);
+                Mock::given(method("GET"))
+                    .and(path(route.clone()))
+                    .respond_with(ResponseTemplate::new(200).set_body_json(row))
+                    .mount(&mock)
+                    .await;
+                let response = if index == 2 {
+                    ResponseTemplate::new(500)
+                } else {
+                    ResponseTemplate::new(200).set_body_json(json!({"code":200}))
+                };
+                Mock::given(method("DELETE"))
+                    .and(path(route))
+                    .respond_with(response)
+                    .mount(&mock)
+                    .await;
+            }
+            mock
+        });
+        crate::features::PLAN.get_or_init(|| {
+            crate::features::LaunchPlan::Restricted("recording-delete".parse().expect("test plan"))
+        });
+        let mut browse_player = crate::player::ffi::new_player();
+        browse_player.pin_mut().disable_recording_deletion_fixture();
+        Self {
+            player: crate::player::ffi::new_player(),
+            browse_player,
+            mock,
+        }
+    }
+}
+
+impl ffi::TestRecordingLibrary {
+    pub fn backend(&self) -> *mut crate::player::ffi::Player {
+        use cxx_qt::CxxQtType;
+        self.rust().player.as_ptr().cast_mut()
+    }
+
+    pub fn browse_backend(&self) -> *mut crate::player::ffi::Player {
+        use cxx_qt::CxxQtType;
+        self.rust().browse_player.as_ptr().cast_mut()
+    }
+
+    pub fn load(mut self: std::pin::Pin<&mut Self>, deletion: bool) -> bool {
+        use cxx_qt::CxxQtType;
+        use cxx_qt_lib::QString;
+        let state = self.as_mut().rust_mut().get_mut();
+        let player = if deletion {
+            &mut state.player
+        } else {
+            &mut state.browse_player
+        };
+        player
+            .pin_mut()
+            .browse_epgstation(QString::from(state.mock.uri()), QString::default())
     }
 }
 

@@ -63,6 +63,10 @@ enum Suite {
     PlaybackPerformance,
     ScreenshotPlayback,
     RecordingPidChange,
+    RecordingActionsReview {
+        #[arg(long)]
+        deletion: bool,
+    },
     RecordingAudit {
         path: PathBuf,
     },
@@ -139,6 +143,9 @@ pub fn run(arguments: Vec<OsString>) -> i32 {
         Suite::PlaybackPerformance => startup::run_playback_performance(),
         Suite::ScreenshotPlayback => startup::run_screenshots(),
         Suite::RecordingPidChange => startup::run_pid_change(),
+        Suite::RecordingActionsReview { deletion } => {
+            startup::run_recording_actions_review(deletion)
+        }
         Suite::RecordingAudit { path } => startup::run_recording_audit(path),
         Suite::RecordingProbe { path, seconds } => startup::run_recording_probe(path, seconds),
         Suite::LiveProbe {

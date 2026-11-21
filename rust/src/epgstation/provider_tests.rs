@@ -65,6 +65,50 @@ async fn send(request: reqwest::RequestBuilder) -> Result<reqwest::Response, req
 }
 
 #[test]
+#[ignore = "requires private deletion fixture; run python3 -m scripts.testing.epgstation_integration"]
+fn deletes_only_the_isolated_recording_fixture() -> TestResult {
+    let endpoint = std::env::var("NAGAMETV_EPGSTATION_DELETE_FIXTURE")?;
+    let url = url::Url::parse(&endpoint)?;
+    assert_eq!(url.scheme(), "http");
+    assert_eq!(url.host_str(), Some("127.0.0.1"));
+    assert!(url.port().is_some());
+    let network = Network::new()?;
+    let mut library = Library::with_deletion(true);
+    let name = "Delete contract fixture";
+    library.open(&network, &endpoint, name, Login::Current)?;
+    finish(&mut library, &network)?;
+    assert_eq!(library.total(), 1);
+    let rows = library.rows();
+    assert_eq!((rows[0].id, rows[0].name.as_str()), (901, name));
+    assert!(library.prepare_deletion(901, &DeletePlayback::Idle));
+    assert!(library.confirm_deletion(Some(&network), &DeletePlayback::Idle));
+    let deadline = Instant::now() + DEADLINE;
+    while library.deleting() {
+        library.poll(&network);
+        assert!(Instant::now() < deadline, "recording deletion timed out");
+        thread::sleep(POLL_INTERVAL);
+    }
+    assert_eq!(
+        library.deletion_state(),
+        "deleted",
+        "{:?}",
+        library.deletion_error()
+    );
+    assert!(library.rows().is_empty());
+    let runtime = runtime()?;
+    let http = reqwest::Client::builder().timeout(DEADLINE).build()?;
+    runtime.block_on(async {
+        let response =
+            send(http.get(format!("{endpoint}/api/recorded/901?isHalfWidth=false"))).await?;
+        assert_eq!(response.status(), reqwest::StatusCode::NOT_FOUND);
+        let response =
+            send(http.get(format!("{endpoint}/api/recorded/1?isHalfWidth=false"))).await?;
+        assert_eq!(response.status(), reqwest::StatusCode::OK);
+        Ok(())
+    })
+}
+
+#[test]
 #[ignore = "requires pinned real provider; run python3 -m scripts.testing.epgstation_integration"]
 fn catalogue_pagination_metadata_and_file_bytes() -> TestResult {
     // Player construction initializes GStreamer before any file inspection.

@@ -1,4 +1,5 @@
 //! Inspected local/HTTP media. Only transport streams carry a TS service and index.
+use crate::viewing_history::recordings::StartPosition;
 mod broadcast;
 pub(in crate::playback) mod http;
 pub use broadcast::Broadcast;
@@ -27,6 +28,7 @@ pub enum Recording {
 #[derive(Clone, Debug)]
 pub struct TransportStream {
     source: Source,
+    start_position: StartPosition,
     history: Option<Arc<crate::viewing_history::recordings::Identity>>,
     program: Option<Arc<crate::epgstation::program::Information>>,
     name: String,
@@ -55,6 +57,7 @@ impl Eq for TransportStream {}
 #[derive(Clone, Debug)]
 pub struct MediaFile {
     source: Source,
+    start_position: StartPosition,
     history: Option<Arc<crate::viewing_history::recordings::Identity>>,
     program: Option<Arc<crate::epgstation::program::Information>>,
     name: String,
@@ -195,6 +198,7 @@ impl Recording {
                     return Err(Error::Cancelled);
                 }
                 return Ok(Self::Media(MediaFile {
+                    start_position: StartPosition::default(),
                     source,
                     history: None,
                     program: None,
@@ -222,6 +226,7 @@ impl Recording {
         let framing =
             crate::transport::framing::Framing::detect(&prefix).ok_or(Error::MissingProgram)?;
         Ok(Self::Transport(TransportStream {
+            start_position: StartPosition::default(),
             source,
             history: None,
             program: None,
@@ -293,6 +298,18 @@ impl Recording {
         match self {
             Self::Transport(file) => file.history = identity,
             Self::Media(file) => file.history = identity,
+        }
+    }
+    pub(crate) fn start_position(&self) -> StartPosition {
+        match self {
+            Self::Transport(file) => file.start_position,
+            Self::Media(file) => file.start_position,
+        }
+    }
+    fn set_start_position(&mut self, start: StartPosition) {
+        match self {
+            Self::Transport(file) => file.start_position = start,
+            Self::Media(file) => file.start_position = start,
         }
     }
     pub fn replay(&self) -> Request {

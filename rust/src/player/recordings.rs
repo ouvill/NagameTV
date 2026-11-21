@@ -28,8 +28,7 @@ impl ffi::Player {
         };
         self.as_mut().rust_mut().autoplay_pending = false;
         self.as_mut().set_file_error(Text::default());
-        self.begin_recording(request);
-        true
+        self.begin_recording(request)
     }
 
     /// True means accepted for inspection. recordingOpened reports completion.
@@ -50,10 +49,14 @@ impl ffi::Player {
         };
         self.as_mut().rust_mut().autoplay_pending = false;
         self.as_mut().set_file_error(Text::default());
-        self.begin_recording(request);
-        true
+        self.begin_recording(request)
     }
-    pub(super) fn begin_recording(mut self: Pin<&mut Self>, request: Request) {
+    pub(super) fn begin_recording(mut self: Pin<&mut Self>, request: Request) -> bool {
+        if self.rust().recording_library.deleting() {
+            tracing::warn!("Recording open deferred because EPGStation deletion is in progress");
+            self.set_file_error(Text::source("Wait for recording deletion to finish"));
+            return false;
+        }
         let before = self.recording_loading();
         self.as_mut().rust_mut().recording_loader.begin(request);
         self.as_mut()
@@ -61,6 +64,7 @@ impl ffi::Player {
         if before != self.recording_loading() {
             self.recording_loading_changed();
         }
+        true
     }
     pub fn cancel_recording_open(mut self: Pin<&mut Self>) {
         let before = self.recording_loading();

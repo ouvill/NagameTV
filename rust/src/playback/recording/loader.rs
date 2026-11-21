@@ -1,6 +1,6 @@
 //! One blocking inspection at a time. A replacement waits for its cancelled
 //! predecessor; only the newest request can publish. No Qt objects cross threads.
-use super::{Error, Recording, source::Location};
+use super::{Error, Recording, StartPosition, source::Location};
 use crate::services::Progress;
 use std::{
     path::PathBuf,
@@ -19,6 +19,7 @@ pub enum Purpose {
 
 pub struct Request {
     location: Location,
+    start_position: StartPosition,
     pub(super) history: Option<Arc<crate::viewing_history::recordings::Identity>>,
     purpose: Purpose,
     broadcast: Option<super::Broadcast>,
@@ -30,6 +31,7 @@ impl Request {
     pub fn open(path: PathBuf) -> Self {
         Self {
             location: Location::Local(path),
+            start_position: StartPosition::default(),
             purpose: Purpose::Open,
             broadcast: None,
             external_subtitle: None,
@@ -41,6 +43,7 @@ impl Request {
     pub fn from_url(url: &str) -> Result<Self, Error> {
         Ok(Self {
             location: Location::from_url(url)?,
+            start_position: StartPosition::default(),
             purpose: Purpose::Open,
             broadcast: None,
             external_subtitle: None,
@@ -63,6 +66,10 @@ impl Request {
         self.program = Some(Arc::new(program));
         self
     }
+    pub(crate) fn with_start_position(mut self, start: StartPosition) -> Self {
+        self.start_position = start;
+        self
+    }
     pub(crate) fn with_history(
         mut self,
         identity: crate::viewing_history::recordings::Identity,
@@ -78,6 +85,7 @@ impl Request {
     pub(super) fn replay(location: Location, broadcast: Option<super::Broadcast>) -> Self {
         Self {
             location,
+            start_position: StartPosition::default(),
             purpose: Purpose::Replay,
             broadcast,
             external_subtitle: None,
@@ -151,6 +159,7 @@ impl Loader {
         let purpose = request.purpose;
         match Job::spawn(move |cancelled| {
             let mut recording = Recording::inspect(&request.location, cancelled)?;
+            recording.set_start_position(request.start_position);
             recording.set_history_identity(request.history);
             recording.set_program(request.program);
             if let Recording::Media(file) = &mut recording {

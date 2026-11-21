@@ -151,7 +151,7 @@ impl Default for PlayerRust {
             channel_model: crate::channel_model::ffi::make_channel_model(),
             recording_model: crate::recording_model::ffi::make_recording_model(),
             video_file_model: crate::video_file_model::ffi::make_video_file_model(),
-            recording_library: Default::default(),
+            recording_library: crate::epgstation::Library::with_deletion(plan.recording_delete()),
             recording_program: Default::default(),
             chapters: Default::default(),
             epgstation_input_error: Text::default(),

@@ -16,6 +16,7 @@ const FILE_COUNT: i32 = 264;
 const PROGRESS: i32 = 265;
 const WATCHED: i32 = 266;
 const THUMBNAIL: i32 = 267;
+const EXTENDED_DESCRIPTION: i32 = 268;
 
 #[cxx_qt::bridge]
 pub mod ffi {
@@ -124,6 +125,7 @@ impl ffi::RecordingModel {
             (PROGRESS, "progress"),
             (WATCHED, "watched"),
             (THUMBNAIL, "thumbnail"),
+            (EXTENDED_DESCRIPTION, "extendedDescription"),
         ] {
             roles.insert(role, QByteArray::from(name));
         }
@@ -171,6 +173,7 @@ impl ffi::RecordingModel {
             NAME => row.name.clone(),
             CHANNEL => row.channel.clone(),
             DESCRIPTION => row.description.clone(),
+            EXTENDED_DESCRIPTION => row.extended.clone(),
             START => return QVariant::from(&(row.start_ms as f64)),
             END => return QVariant::from(&(row.end_ms as f64)),
             PLAYABLE => {

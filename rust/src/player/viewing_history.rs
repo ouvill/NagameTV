@@ -131,8 +131,7 @@ impl ffi::Player {
                 self.as_mut().rust_mut().autoplay_pending = false;
                 self.as_mut()
                     .set_file_error(super::error_text::Text::default());
-                self.begin_recording(request);
-                true
+                self.begin_recording(request)
             }
             Err(error) => {
                 use super::error_text::{PresentError, Text};

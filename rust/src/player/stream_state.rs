@@ -284,6 +284,12 @@ impl State {
             | Self::StopFailed(Attempt::Live(_)) => None,
         }
     }
+    pub(super) fn recording_in_use(&self) -> Option<&Recording> {
+        match self {
+            Self::Stopped(_) => None,
+            _ => self.recording(),
+        }
+    }
     pub(super) fn active_service(&self) -> Option<u64> {
         match self {
             Self::Stopped(_) | Self::Recording(_, _) => None,
