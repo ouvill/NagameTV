@@ -1,0 +1,16 @@
+[Unit]
+Description=NagameTV HDMI0 audio recovery
+BindsTo=nagametv-kiosk.service
+After=nagametv-kiosk.service
+PartOf=nagametv-kiosk.service
+StartLimitIntervalSec=60s
+StartLimitBurst=4
+
+[Service]
+Type=exec
+User=nagametv
+ExecStart=/usr/bin/python3 /usr/local/lib/nagametv-appliance/hdmi-audio.py
+Restart=on-failure
+RestartSec=5s
+StandardOutput=journal
+StandardError=journal
