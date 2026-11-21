@@ -283,9 +283,9 @@ TestCase {
         tryVerify(() => cursorCells().length === 1)
         const cell = cursorCells()[0]
         compare(cell.color, Viewer.GuidePalette.genres[5])
-        compare(cell.border.color, Viewer.GuidePalette.cursorFrame)
-        compare(cell.border.width, Viewer.GuidePalette.cursorFrameWidth)
-        compare(marked("guideCursorAccent").length, 1)
+        verify(cell.layer.enabled)
+        // The lift grows around the slot: the cell's top-left moves out by the lift.
+        compare(cell.parent.width, findChild(guide, "guideColumn1").width - 2 + 2 * Viewer.GuidePalette.cursorLift)
         compare(marked("guideCursorChannel").length, 1)
         verify(badge.visible)
         compare(badge.children[0].text, Qt.formatTime(new Date(start + 3600000), "hh\nmm"))
