@@ -130,6 +130,10 @@ Item {
         const colors = GuidePalette.genres
         return Number.isInteger(genre) && genre >= 0 && genre < colors.length ? colors[genre] : GuidePalette.defaultGenre
     }
+    function cursorColor(genre) {
+        const base = Qt.color(genreColor(genre))
+        return Qt.hsla(base.hslHue, base.hslSaturation, base.hslLightness - GuidePalette.cursorDeepen, 1)
+    }
     function scrollHorizontally(event) {
         const delta = event.angleDelta.y || event.angleDelta.x
         if (!delta) return
@@ -331,7 +335,7 @@ Item {
                                 width: slot.width; height: slot.height
                                 clip: true
                                 readonly property bool highlighted: slot.highlighted
-                                color: root.genreColor(slot.genre)
+                                color: highlighted ? root.cursorColor(slot.genre) : root.genreColor(slot.genre)
                                 radius: highlighted ? Theme.controlRadius : 0
                                 // Only the cursor cell gets a layer; the grid stays plain for the Pi.
                                 layer.enabled: highlighted

@@ -282,7 +282,12 @@ TestCase {
         tryCompare(timeline, "cursorKey", guide.keyFor("b-2"))
         tryVerify(() => cursorCells().length === 1)
         const cell = cursorCells()[0]
-        compare(cell.color, Viewer.GuidePalette.genres[5])
+        // The cursor deepens the genre color without changing its hue.
+        const genre = Qt.color(Viewer.GuidePalette.genres[5])
+        compare(cell.color, timeline.cursorColor(5))
+        verify(!Qt.colorEqual(cell.color, genre))
+        fuzzyCompare(cell.color.hslHue, genre.hslHue, 0.01)
+        fuzzyCompare(cell.color.hslLightness, genre.hslLightness - Viewer.GuidePalette.cursorDeepen, 0.01)
         verify(cell.layer.enabled)
         // The lift grows around the slot: the cell's top-left moves out by the lift.
         compare(cell.parent.width, findChild(guide, "guideColumn1").width - 2 + 2 * Viewer.GuidePalette.cursorLift)

@@ -16,6 +16,8 @@ QtObject {
     // Why not an outline: a frame on one pastel cell looked dated; a dark fill looked foreign.
     readonly property int cursorLift: 8
     readonly property color cursorShadow: "#d0000000"
+    // The lifted cell also deepens its own genre color; an accent tint would hide the genre.
+    readonly property real cursorDeepen: 0.1
     // Reservation marks sit on the pastel cells and on dark detail panels alike.
     readonly property color reservedMark: "#c2334d"
     readonly property color recordingMark: "#d11f2f"
