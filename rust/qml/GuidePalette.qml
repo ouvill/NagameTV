@@ -11,13 +11,12 @@ QtObject {
     readonly property color programSecondary: "#4e5651"
     readonly property color cellDivider: "#e4e7e4"
     readonly property color logoBackground: "#ffffff"
-    // The accent outline almost vanishes on the mint and cyan genre cells, so
-    // the cursor cell turns dark and the outline sits on the dark fill instead.
-    readonly property color cursorFill: "#181c24"
-    readonly property color cursorText: "#f4f6f8"
-    readonly property color cursorSecondary: "#b4bbc7"
-    readonly property int cursorOutline: 3
-    readonly property int cursorGenreStripe: 6
+    // The accent alone almost vanishes on the mint and cyan genre cells. A dark
+    // outer line gives the contrast; the accent inside keeps the app's focus colour.
+    // Why not a dark cell: inverting one cell reads as foreign to the pastel grid.
+    readonly property color cursorFrame: "#181c24"
+    readonly property int cursorFrameWidth: 3
+    readonly property int cursorAccentWidth: 2
     // Reservation marks sit on the pastel cells and on dark detail panels alike.
     readonly property color reservedMark: "#c2334d"
     readonly property color recordingMark: "#d11f2f"
