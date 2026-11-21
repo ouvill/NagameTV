@@ -1,0 +1,60 @@
+name: Snap packages
+
+on:
+  pull_request:
+  push:
+    # Build the initial work/snap branch before opening its draft PR.
+    branches: [main, work/snap]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: snap-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  snap:
+    name: Snap (${{ matrix.architecture }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - architecture: amd64
+            runner: ubuntu-26.04
+          - architecture: arm64
+            runner: ubuntu-26.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - name: Install Snapcraft
+        run: sudo snap install snapcraft --classic --channel=9.x/stable
+      # Snapcraft 9.x stages from the baseline architecture's APT indexes.
+      # Hosted amd64 runners default to downloading only amd64v3 indexes.
+      - name: Select the Ubuntu package archive
+        run: |
+          sudo sed -i 's|^URIs: mirror+file:.*$|URIs: http://archive.ubuntu.com/ubuntu|' \
+            /etc/apt/sources.list.d/ubuntu.sources
+          printf '%s\n' '#clear APT::Architecture-Variants;' | \
+            sudo tee /etc/apt/apt.conf.d/zz-nagametv-native-arch >/dev/null
+          sudo apt-get -o Acquire::Retries=3 update
+      - name: Build the native snap
+        run: |
+          sudo git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          sudo python3 -m scripts.packaging.build_snap --destructive-mode
+      - name: Check the artifact
+        working-directory: build/snap
+        run: sha256sum --check ./*.snap.sha256
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: snap-${{ matrix.architecture }}
+          path: |
+            build/snap/*.snap
+            build/snap/*.snap.sha256
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14

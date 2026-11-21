@@ -1,3 +1,8 @@
+self-hosted-runner:
+  # These GitHub-hosted labels were added after the pinned actionlint release.
+  labels:
+    - ubuntu-26.04
+    - ubuntu-26.04-arm
 paths:
   .github/workflows/ci.yml:
     ignore:
