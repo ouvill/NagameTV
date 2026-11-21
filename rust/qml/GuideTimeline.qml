@@ -67,6 +67,11 @@ Item {
         guideModel.revision;
         return cursorKey.length ? guideModel.lookup(cursorKey) || null : null;
     }
+    // The details panel takes focus, so its program keeps the cursor cues.
+    readonly property var cursorShownProgram: selectedProgram ? selectedProgram
+        : activeFocus && cursorProgram ? cursorProgram : null
+    readonly property real cursorShownY: cursorShownProgram
+        ? channelHeaderHeight + (cursorShownProgram.begin - dayStart) / 60000 * pixelsPerMinute : 0
     function chooseProgram(time) {
         cursorTime = time
         if (cursorColumn >= channels.count) return
@@ -199,6 +204,18 @@ Item {
             }
         }
         Rectangle {
+            objectName: "guideCursorTimeBadge"
+            visible: root.cursorShownProgram !== null && root.cursorShownY - timelineView.contentY >= root.channelHeaderHeight
+            y: root.cursorShownY - timelineView.contentY
+            width: root.timeRulerWidth; height: 34; color: Theme.accent
+            Label {
+                anchors.centerIn: parent
+                text: root.cursorShownProgram ? Qt.formatTime(new Date(root.cursorShownProgram.begin), "hh\nmm") : ""
+                horizontalAlignment: Text.AlignHCenter
+                color: Theme.textOnAccent; font.pixelSize: Theme.fontCaption; font.bold: true
+            }
+        }
+        Rectangle {
             objectName: "guideCurrentTimeBadge"
             visible: root.today && root.currentTimeY - timelineView.contentY >= root.channelHeaderHeight
             y: root.currentTimeY - height / 2 - timelineView.contentY
@@ -306,40 +323,51 @@ Item {
                                     : slot.name || qsTranslate("Viewer", "No program information")
                                 width: slot.width; height: slot.height
                                 clip: true
-                                color: root.genreColor(slot.genre)
                                 readonly property bool highlighted: (!!root.selectedProgram && slot.watchKey === root.selectedProgram.watchKey)
                                     || (root.activeFocus && column.index === root.cursorColumn && root.cursorKey.length > 0 && slot.watchKey === root.cursorKey)
-                                border.width: highlighted ? 2 : 0
+                                readonly property color textColor: highlighted ? GuidePalette.cursorText : GuidePalette.programText
+                                readonly property color secondaryColor: highlighted ? GuidePalette.cursorSecondary : GuidePalette.programSecondary
+                                color: highlighted ? GuidePalette.cursorFill : root.genreColor(slot.genre)
+                                // Drawn inside the cell: neighbours and the viewport clip cannot cut it.
+                                border.width: highlighted ? GuidePalette.cursorOutline : 0
                                 border.color: Theme.accent
+                                Rectangle {
+                                    objectName: "guideCursorGenre"
+                                    visible: cell.highlighted
+                                    x: GuidePalette.cursorOutline; y: GuidePalette.cursorOutline
+                                    width: GuidePalette.cursorGenreStripe; height: Math.max(0, parent.height - y * 2)
+                                    color: root.genreColor(slot.genre)
+                                }
                                 Text {
                                     objectName: "guideShortProgram"
                                     font.family: root.programFontFamily
                                     visible: cell.layoutMode === GuideTimeline.OneLine
-                                    x: root.cellPadding - root.textSpacing
+                                    x: root.cellPadding - root.textSpacing + (cell.highlighted ? GuidePalette.cursorGenreStripe : 0)
                                     width: parent.width - x * 2; height: parent.height
                                     text: cell.startLabel + " " + cell.title
                                     textFormat: Text.PlainText; elide: Text.ElideRight
-                                    color: GuidePalette.programText; font.pixelSize: Theme.fontCaption; font.weight: Font.Medium
+                                    color: cell.textColor; font.pixelSize: Theme.fontCaption; font.weight: Font.Medium
                                     verticalAlignment: Text.AlignVCenter
                                 }
                                 Item {
                                     visible: cell.layoutMode === GuideTimeline.Full
                                     anchors.fill: parent
-                                    anchors.leftMargin: root.cellPadding; anchors.rightMargin: root.cellPadding
+                                    anchors.leftMargin: root.cellPadding + (cell.highlighted ? GuidePalette.cursorGenreStripe : 0)
+                                    anchors.rightMargin: root.cellPadding
                                     anchors.topMargin: root.cellTopPadding; anchors.bottomMargin: root.cellTopPadding
                                     Text {
                                         id: startLabel
                                         font.family: root.programFontFamily
                                         width: parent.width; height: root.timeLabelHeight
                                         text: cell.startLabel
-                                        color: GuidePalette.programSecondary; font.pixelSize: Theme.fontMicro
+                                        color: cell.secondaryColor; font.pixelSize: Theme.fontMicro
                                     }
                                     Text {
                                         id: titleLabel
                                         font.family: root.programFontFamily
                                         y: startLabel.height + root.textSpacing
                                         width: parent.width; text: cell.title
-                                        color: GuidePalette.programText; font.pixelSize: Theme.fontCaption; font.weight: Font.DemiBold
+                                        color: cell.textColor; font.pixelSize: Theme.fontCaption; font.weight: Font.DemiBold
                                         textFormat: Text.PlainText; wrapMode: Text.Wrap
                                         lineHeightMode: Text.FixedHeight; lineHeight: root.titleLineHeight
                                         maximumLineCount: Math.max(1, Math.min(5, Math.floor((parent.height - y) / root.titleLineHeight)))
@@ -353,7 +381,7 @@ Item {
                                         width: parent.width; height: Math.max(0, parent.height - y)
                                         visible: height >= descriptionLineHeight * 2
                                         text: slot.description
-                                        color: GuidePalette.programSecondary; font.pixelSize: Theme.fontCaption
+                                        color: cell.secondaryColor; font.pixelSize: Theme.fontCaption
                                         textFormat: Text.PlainText; wrapMode: Text.Wrap; elide: Text.ElideRight
                                         lineHeightMode: Text.FixedHeight; lineHeight: descriptionLineHeight
                                         maximumLineCount: Math.max(1, Math.floor(height / descriptionLineHeight))
@@ -381,6 +409,12 @@ Item {
                         z: 30; y: timelineView.contentY
                         width: column.width; height: root.channelHeaderHeight; color: root.headerColor
                         Rectangle { width: root.dividerWidth; height: parent.height; color: root.headerDividerColor }
+                        Rectangle {
+                            objectName: "guideCursorChannel"
+                            visible: root.cursorShownProgram !== null && column.index === root.cursorColumn
+                            anchors.bottom: parent.bottom
+                            width: parent.width; height: GuidePalette.cursorOutline; color: Theme.accent
+                        }
                         Row {
                             anchors.left: parent.left; anchors.leftMargin: root.channelHeaderPadding
                             anchors.verticalCenter: parent.verticalCenter; spacing: root.channelHeaderSpacing

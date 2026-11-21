@@ -254,6 +254,58 @@ TestCase {
         keyClick(Qt.Key_Return)
         compare(loader.item, null)
     }
+    function test_cursor_cell_channel_and_start_time_are_marked() {
+        guide.dayOffset = 1
+        const start = guide.days[1].start
+        guide.rows = [{index:0, label:"Channel 0", band:"GR", logo:""}, {index:2, label:"Channel 1", band:"GR", logo:""}]
+        guide.programsJson = JSON.stringify([0, 2].map(index => ({index, programs:[
+            {watchKey:"a-" + index, name:"A " + index, startAt:start, duration:3600000, genre:4},
+            {watchKey:"b-" + index, name:"B " + index, startAt:start + 3600000, duration:3600000, genre:5}
+        ]})))
+        verify(waitForRendering(guide))
+        const timeline = findChild(guide, "guideTimeline").parent
+        const badge = findChild(guide, "guideCursorTimeBadge")
+        function marked(objectName) {
+            const items = []
+            const visit = item => {
+                if (item.objectName === objectName && item.visible) items.push(item)
+                for (const child of item.children) visit(child)
+            }
+            visit(guide)
+            return items
+        }
+        function cursorCells() { return marked("guideCell").filter(cell => cell.highlighted) }
+        verify(!badge.visible)
+        compare(cursorCells().length, 0)
+        keyClick(Qt.Key_Right)
+        keyClick(Qt.Key_Down)
+        tryCompare(timeline, "cursorKey", guide.keyFor("b-2"))
+        tryVerify(() => cursorCells().length === 1)
+        const cell = cursorCells()[0]
+        compare(cell.color, Viewer.GuidePalette.cursorFill)
+        compare(cell.border.width, Viewer.GuidePalette.cursorOutline)
+        compare(marked("guideCursorGenre").length, 1)
+        compare(marked("guideCursorGenre")[0].color, Viewer.GuidePalette.genres[5])
+        compare(marked("guideCursorChannel").length, 1)
+        verify(badge.visible)
+        compare(badge.children[0].text, Qt.formatTime(new Date(start + 3600000), "hh\nmm"))
+        // The details panel takes focus but keeps every cue on its program.
+        keyClick(Qt.Key_Return)
+        const loader = findChild(guide, "scheduledDetailsLoader")
+        tryCompare(loader.item, "opened", true)
+        verify(!timeline.activeFocus)
+        compare(cursorCells().length, 1)
+        compare(marked("guideCursorChannel").length, 1)
+        verify(badge.visible)
+        keyClick(Qt.Key_Escape)
+        tryCompare(loader, "item", null)
+        tryCompare(timeline, "activeFocus", true)
+        // Focus elsewhere hides the cues.
+        timeline.focus = false
+        tryVerify(() => cursorCells().length === 0)
+        compare(marked("guideCursorChannel").length, 0)
+        verify(!badge.visible)
+    }
     function test_open_details_follow_identity_across_epg_refresh() {
         guide.dayOffset = 1
         const start = guide.days[1].start
