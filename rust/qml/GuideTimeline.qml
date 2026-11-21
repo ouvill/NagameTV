@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import MinimalViewer
 import QtQuick.Controls
+import QtQuick.Effects
 
 Item {
     id: root
@@ -67,6 +68,11 @@ Item {
         guideModel.revision;
         return cursorKey.length ? guideModel.lookup(cursorKey) || null : null;
     }
+    // The details panel takes focus, so its program keeps the cursor cues.
+    readonly property var cursorShownProgram: selectedProgram ? selectedProgram
+        : activeFocus && cursorProgram ? cursorProgram : null
+    readonly property real cursorShownY: cursorShownProgram
+        ? channelHeaderHeight + (cursorShownProgram.begin - dayStart) / 60000 * pixelsPerMinute : 0
     function chooseProgram(time) {
         cursorTime = time
         if (cursorColumn >= channels.count) return
@@ -123,6 +129,10 @@ Item {
     function genreColor(genre) {
         const colors = GuidePalette.genres
         return Number.isInteger(genre) && genre >= 0 && genre < colors.length ? colors[genre] : GuidePalette.defaultGenre
+    }
+    function cursorColor(genre) {
+        const base = Qt.color(genreColor(genre))
+        return Qt.hsla(base.hslHue, base.hslSaturation, base.hslLightness - GuidePalette.cursorDeepen, 1)
     }
     function scrollHorizontally(event) {
         const delta = event.angleDelta.y || event.angleDelta.x
@@ -199,6 +209,18 @@ Item {
             }
         }
         Rectangle {
+            objectName: "guideCursorTimeBadge"
+            visible: root.cursorShownProgram !== null && root.cursorShownY - timelineView.contentY >= root.channelHeaderHeight
+            y: root.cursorShownY - timelineView.contentY
+            width: root.timeRulerWidth; height: 34; color: Theme.accent
+            Label {
+                anchors.centerIn: parent
+                text: root.cursorShownProgram ? Qt.formatTime(new Date(root.cursorShownProgram.begin), "hh\nmm") : ""
+                horizontalAlignment: Text.AlignHCenter
+                color: Theme.textOnAccent; font.pixelSize: Theme.fontCaption; font.bold: true
+            }
+        }
+        Rectangle {
             objectName: "guideCurrentTimeBadge"
             visible: root.today && root.currentTimeY - timelineView.contentY >= root.channelHeaderHeight
             y: root.currentTimeY - height / 2 - timelineView.contentY
@@ -264,6 +286,7 @@ Item {
                 required property string label
                 required property string logo
                 objectName: "guideColumn" + index
+                z: index === root.cursorColumn ? 1 : 0
                 width: root.channelWidth; height: timelineView.contentHeight
                 sourceComponent: Rectangle {
                     width: column.width; height: column.height
@@ -284,10 +307,15 @@ Item {
                             required property double startAt
                             required property string reservation
                             objectName: "guideCellLoader"
-                            y: root.channelHeaderHeight + (begin - root.dayStart) / 60000 * root.pixelsPerMinute
-                            x: root.dividerWidth
-                            width: column.width - root.dividerWidth * 2
-                            height: Math.max(0, (end - begin) / 60000 * root.pixelsPerMinute - root.dividerWidth)
+                            readonly property bool highlighted: (!!root.selectedProgram && watchKey === root.selectedProgram.watchKey)
+                                || (root.activeFocus && column.index === root.cursorColumn && root.cursorKey.length > 0 && watchKey === root.cursorKey)
+                            // Grows around its slot so the text stays where it was.
+                            readonly property real lift: highlighted ? GuidePalette.cursorLift : 0
+                            z: highlighted ? 1 : 0
+                            y: root.channelHeaderHeight + (begin - root.dayStart) / 60000 * root.pixelsPerMinute - lift
+                            x: root.dividerWidth - lift
+                            width: column.width - root.dividerWidth * 2 + lift * 2
+                            height: Math.max(0, (end - begin) / 60000 * root.pixelsPerMinute - root.dividerWidth) + lift * 2
                             active: y + height > timelineView.contentY - root.verticalPreload
                                 && y < timelineView.contentY + timelineView.height + root.verticalPreload
                             // Spread preloading across frames. A jump directly
@@ -306,17 +334,23 @@ Item {
                                     : slot.name || qsTranslate("Viewer", "No program information")
                                 width: slot.width; height: slot.height
                                 clip: true
-                                color: root.genreColor(slot.genre)
-                                readonly property bool highlighted: (!!root.selectedProgram && slot.watchKey === root.selectedProgram.watchKey)
-                                    || (root.activeFocus && column.index === root.cursorColumn && root.cursorKey.length > 0 && slot.watchKey === root.cursorKey)
-                                border.width: highlighted ? 2 : 0
-                                border.color: Theme.accent
+                                readonly property bool highlighted: slot.highlighted
+                                color: highlighted ? root.cursorColor(slot.genre) : root.genreColor(slot.genre)
+                                radius: highlighted ? Theme.controlRadius : 0
+                                // Only the cursor cell gets a layer; the grid stays plain for the Pi.
+                                layer.enabled: highlighted
+                                layer.effect: MultiEffect {
+                                    shadowEnabled: true
+                                    shadowColor: GuidePalette.cursorShadow
+                                    shadowBlur: 0.9
+                                    shadowVerticalOffset: 4
+                                }
                                 Text {
                                     objectName: "guideShortProgram"
                                     font.family: root.programFontFamily
                                     visible: cell.layoutMode === GuideTimeline.OneLine
-                                    x: root.cellPadding - root.textSpacing
-                                    width: parent.width - x * 2; height: parent.height
+                                    x: root.cellPadding - root.textSpacing + slot.lift
+                                    width: parent.width - x * 2; y: slot.lift; height: parent.height - slot.lift * 2
                                     text: cell.startLabel + " " + cell.title
                                     textFormat: Text.PlainText; elide: Text.ElideRight
                                     color: GuidePalette.programText; font.pixelSize: Theme.fontCaption; font.weight: Font.Medium
@@ -325,8 +359,8 @@ Item {
                                 Item {
                                     visible: cell.layoutMode === GuideTimeline.Full
                                     anchors.fill: parent
-                                    anchors.leftMargin: root.cellPadding; anchors.rightMargin: root.cellPadding
-                                    anchors.topMargin: root.cellTopPadding; anchors.bottomMargin: root.cellTopPadding
+                                    anchors.leftMargin: root.cellPadding + slot.lift; anchors.rightMargin: root.cellPadding + slot.lift
+                                    anchors.topMargin: root.cellTopPadding + slot.lift; anchors.bottomMargin: root.cellTopPadding + slot.lift
                                     Text {
                                         id: startLabel
                                         font.family: root.programFontFamily
@@ -361,7 +395,7 @@ Item {
                                 }
                                 ReservationBadge {
                                     objectName: "guideCellReservation"
-                                    anchors { right: parent.right; top: parent.top; margins: root.textSpacing }
+                                    anchors { right: parent.right; top: parent.top; margins: root.textSpacing + slot.lift }
                                     // A cell too short for text has no room for the mark either.
                                     visible: slot.reservation.length > 0 && cell.layoutMode !== GuideTimeline.NoText
                                     reservation: slot.reservation
@@ -371,7 +405,7 @@ Item {
                                     root.cursorKey = slot.watchKey
                                     root.cursorTime = slot.begin
                                     root.forceActiveFocus()
-                                    root.selected(root.guideModel.lookup(slot.watchKey), cell.mapToItem(root, 0, 0), column.label)
+                                    root.selected(root.guideModel.lookup(slot.watchKey), cell.mapToItem(root, slot.lift, slot.lift), column.label)
                                 } }
                             }
                         }
@@ -381,6 +415,12 @@ Item {
                         z: 30; y: timelineView.contentY
                         width: column.width; height: root.channelHeaderHeight; color: root.headerColor
                         Rectangle { width: root.dividerWidth; height: parent.height; color: root.headerDividerColor }
+                        Rectangle {
+                            objectName: "guideCursorChannel"
+                            visible: root.cursorShownProgram !== null && column.index === root.cursorColumn
+                            anchors.bottom: parent.bottom
+                            width: parent.width; height: 3; color: Theme.accent
+                        }
                         Row {
                             anchors.left: parent.left; anchors.leftMargin: root.channelHeaderPadding
                             anchors.verticalCenter: parent.verticalCenter; spacing: root.channelHeaderSpacing
