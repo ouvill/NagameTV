@@ -154,9 +154,9 @@ Item {
                 compare(view.channelRequests, 1);
                 keyClick(Qt.Key_G);
                 compare(view.guideRequests, true);
-                keyClick(Qt.Key_PageUp);
-                compare(view.steps, 1);
                 keyClick(Qt.Key_PageDown);
+                compare(view.steps, 1);
+                keyClick(Qt.Key_PageUp);
                 compare(view.steps, 0);
                 view.editor.forceActiveFocus();
                 compare(view.context.editingText, true);
@@ -302,6 +302,32 @@ Item {
                 verify(ime.native_key(key, 0, Qt.NoModifier, false, false));
                 verify(ime.native_key(key, 0, Qt.NoModifier, false, true));
             }
+            function test_dedicated_channel_keys_step_only_during_live_viewing() {
+                view.backend.playing = true;
+                clickRemoteKey(Qt.Key_ChannelUp);
+                compare(view.steps, 0);
+                view.backend.open_screen(Viewer.ViewerActions.WatchingScreen);
+                view.backend.playing = false;
+                clickRemoteKey(Qt.Key_ChannelUp);
+                compare(view.steps, 0);
+                view.backend.playing = true;
+                clickRemoteKey(Qt.Key_ChannelUp);
+                verify(ime.native_key(Qt.Key_ChannelUp, 0, Qt.NoModifier, true, false));
+                compare(view.steps, 1);
+                clickRemoteKey(Qt.Key_ChannelDown);
+                compare(view.steps, 0);
+                view.editor.forceActiveFocus();
+                clickRemoteKey(Qt.Key_ChannelUp);
+                compare(view.steps, 0);
+                view.forceActiveFocus();
+                view.actions.channelsVisible = true;
+                clickRemoteKey(Qt.Key_ChannelDown);
+                compare(view.steps, 0);
+                view.actions.channelsVisible = false;
+                view.backend.open_screen(Viewer.ViewerActions.GuideScreen);
+                clickRemoteKey(Qt.Key_ChannelDown);
+                compare(view.steps, 0);
+            }
             function test_media_play_and_pause_are_separate_operations() {
                 clickRemoteKey(Qt.Key_MediaPlay);
                 clickRemoteKey(Qt.Key_MediaPause);
@@ -358,8 +384,8 @@ Item {
                 const cases = [
                     {tag: "ok", keysym: xf86Ok, original: 0, key: Qt.Key_Return},
                     {tag: "close", keysym: xf86Close, original: Qt.Key_Close, key: Qt.Key_Back},
-                    {tag: "channel-up", keysym: xf86ChannelUp, original: 0, key: Qt.Key_PageUp},
-                    {tag: "channel-down", keysym: xf86ChannelDown, original: 0, key: Qt.Key_PageDown},
+                    {tag: "channel-up", keysym: xf86ChannelUp, original: 0, key: Qt.Key_ChannelUp},
+                    {tag: "channel-down", keysym: xf86ChannelDown, original: 0, key: Qt.Key_ChannelDown},
                     {tag: "unmapped-close", keysym: 0, original: Qt.Key_Close, key: Qt.Key_Close},
                     {tag: "outside-numeric-range", keysym: xf86Numeric0 + 10, original: Qt.Key_A, key: Qt.Key_A}
                 ];
@@ -385,6 +411,8 @@ Item {
             }
             function test_normalized_keys_reach_focused_controls_and_shortcuts_once() {
                 if (Qt.platform.os !== "linux") skip("Linux XKB keysyms");
+                view.backend.open_screen(Viewer.ViewerActions.WatchingScreen);
+                view.backend.playing = true;
                 view.bindings.digitsAvailable = true;
                 ime.native_key(0, xf86ChannelUp, Qt.NoModifier, false, false);
                 compare(view.steps, 1);
@@ -406,12 +434,19 @@ Item {
                 compare(view.dismissals, 0);
             }
             function test_page_and_media_keys_move_between_chapters() {
+                view.backend.open_screen(Viewer.ViewerActions.WatchingScreen);
                 view.backend.recording = true;
                 view.backend.playing = true;
                 keyClick(Qt.Key_PageDown);
                 keyClick(Qt.Key_Forward);
+                clickRemoteKey(Qt.Key_ChannelUp);
+                compare(view.steps, 1);
                 compare(view.backend.chapterSeeks, []);
                 view.backend.chapters_data = JSON.stringify([{startMs: 0, name: "CM?", commercial: true}, {startMs: 10000, name: "A", commercial: false}, {startMs: 40000, name: "CM", commercial: true}]);
+                clickRemoteKey(Qt.Key_ChannelUp);
+                clickRemoteKey(Qt.Key_ChannelDown);
+                compare(view.backend.chapterSeeks, []);
+                compare(view.steps, 1);
                 keyClick(Qt.Key_PageDown);
                 keyClick(Qt.Key_PageUp);
                 keyClick(Qt.Key_MediaNext);

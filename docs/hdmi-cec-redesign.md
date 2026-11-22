@@ -166,14 +166,14 @@ SIGKILL後は設定と印が残るため、次に起動したプロセスが引�
 xkbはPiの `xkeyboard-config` で、QtはqtbaseのソースでQt側の変換表を確認しました。
 Qtでの受信は、まだ実機で確認していません。
 
-| CECコード | カーネル | keysym | Qtのキー | ながめTVの動作 | 対応 |
+| CECコード | カーネル | keysym | Qtのキー（正規化前） | ながめTVの動作 | 対応 |
 | --- | --- | --- | --- | --- | --- |
 | `0x01`〜`0x04` | `KEY_UP` 等 | `Up` 等 | `Key_Up` 等 | 方向移動 | 変更なし |
 | `0x00` | `KEY_OK` | `XF86OK` | なし（`0`） | 決定 | 正規化で `Key_Return` にする |
 | `0x2b` | `KEY_ENTER` | `Return` | `Key_Return` | 決定 | 変更なし |
 | `0x0d` | `KEY_EXIT` | `XF86Close` | `Key_Close` | 戻る | 正規化で `Key_Back` にする |
 | `0x71`〜`0x74` | `KEY_BLUE` 等 | `XF86Blue` 等 | `Key_Blue` 等 | データ放送のカラーキー | キーボード経路に処理を追加 |
-| `0x30` / `0x31` | `KEY_CHANNELUP` / `DOWN` | `XF86ChannelUp` / `Down` | なし | 次 / 前の局 | 正規化で `Key_PageUp` / `Key_PageDown` にする |
+| `0x30` / `0x31` | `KEY_CHANNELUP` / `DOWN` | `XF86ChannelUp` / `XF86ChannelDown` | なし | 次 / 前の局 | 正規化で `Key_ChannelUp` / `Key_ChannelDown` にして、ライブ視聴中の専用バインドで処理する |
 | `0x20`〜`0x29` | `KEY_NUMERIC_0`〜`9` | `XF86Numeric0`〜`9` | なし | 番号選局 | 正規化で `Key_0`〜`9` にする（LGでは届かない） |
 | `0x32` | `KEY_PREVIOUS` | なし | なし | 直前の局 | 対応しない |
 | `0x44` / `0x60` | `KEY_PLAYCD` | `XF86AudioPlay` | `Key_MediaPlay` | 再生 | バインドを追加 |
@@ -194,9 +194,9 @@ xkbの keysym を使います。変換したイベントは元の宛先へ送り
 変換した押下ではQt Quickのショートカット照合を抑止します。照合とフォーカス先の両方で選局が
 実行されるのを防ぐためです。
 
-ライブの `PgUp` / `PgDown` は次／前の局を選びます。チャンネル▲／▼とWebリモコンの操作を
-同じ方向に揃えています。チャプター付き録画では引き続き `PgUp` / `PgDown` で前／次の
-チャプターへ移動します。[ショートカット一覧](shortcut-actions-design.md#キーバインド一覧)
+チャンネル▲／▼はライブ視聴中に次／前の局を選びます。選局方向はWebリモコンと同じです。
+キーボードの `PgUp` / `PgDown` は、ライブでは前／次の局を選び、チャプター付き録画では
+前／次のチャプターへ移動します。[ショートカット一覧](shortcut-actions-design.md#キーバインド一覧)
 
 - **CEC以外のキー**: このフィルターは、同じ keysym を持つ普通のキーボードやリモコンにも効きます。
   たとえば `XF86Close` を持つキーボードでは、Closeキーが戻るとして働きます。テレビ向けの操作として妥当なので許容します。

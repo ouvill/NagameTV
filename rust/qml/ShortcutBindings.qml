@@ -95,9 +95,23 @@ Item {
             scope: InputContext.Navigation
             available: root.inputContext.viewing
         },
-        // Channel Up/Down normalize to PgUp/PgDown and step in the web remote's order.
-        Binding { id: next; objectName: "nextChannelShortcut"; sequence: "PgUp"; operation: root.actions.nextChannel; scope: InputContext.Navigation; available: !root.actions.chaptersAvailable },
-        Binding { id: previous; objectName: "previousChannelShortcut"; sequence: "PgDown"; operation: root.actions.previousChannel; scope: InputContext.Navigation; available: !root.actions.chaptersAvailable },
+        // A recording with chapters has no channel to step; the same keys move between chapters.
+        Binding { id: previous; objectName: "previousChannelShortcut"; sequence: "PgUp"; operation: root.actions.previousChannel; scope: InputContext.Navigation; available: !root.actions.chaptersAvailable },
+        Binding { id: next; objectName: "nextChannelShortcut"; sequence: "PgDown"; operation: root.actions.nextChannel; scope: InputContext.Navigation; available: !root.actions.chaptersAvailable },
+        Binding {
+            objectName: "channelUpShortcut"
+            sequence: "Channel Up"
+            operation: root.actions.nextChannel
+            scope: InputContext.Navigation
+            available: root.actions.liveViewing && root.inputContext.viewing
+        },
+        Binding {
+            objectName: "channelDownShortcut"
+            sequence: "Channel Down"
+            operation: root.actions.previousChannel
+            scope: InputContext.Navigation
+            available: root.actions.liveViewing && root.inputContext.viewing
+        },
         Binding { id: last; objectName: "lastChannelShortcut"; sequence: "L"; operation: root.actions.lastChannel; scope: InputContext.Navigation },
         Binding {
             id: playback

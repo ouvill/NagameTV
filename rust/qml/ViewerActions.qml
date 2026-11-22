@@ -46,6 +46,9 @@ Item {
     enum DismissMode { PanelsOnly, PanelsOrFullscreen }
     // Player.screen values, shared by the window and the actions.
     enum Screen { HomeScreen, WatchingScreen, GuideScreen, RecordingsScreen }
+    readonly property bool liveViewing: backend.screen === ViewerActions.WatchingScreen
+        && backend.media_active && !backend.recording
+
     function dismiss(mode: int) {
         activity();
         // Match stacking order: the guide covers the channel browser.

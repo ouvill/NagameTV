@@ -23,8 +23,10 @@ constexpr int normalizedKey(int key, quint32 keysym) {
     switch (keysym) {
     case Xf86Ok: return Qt::Key_Return;
     case Xf86Close: return Qt::Key_Back;
-    case Xf86ChannelUp: return Qt::Key_PageUp;
-    case Xf86ChannelDown: return Qt::Key_PageDown;
+    // Keep the dedicated channel keys distinct from the page shortcuts, which
+    // also move between chapters.
+    case Xf86ChannelUp: return Qt::Key_ChannelUp;
+    case Xf86ChannelDown: return Qt::Key_ChannelDown;
     default:
         if (keysym >= Xf86Numeric0 && keysym <= Xf86Numeric9)
             return Qt::Key_0 + int(keysym - Xf86Numeric0);
