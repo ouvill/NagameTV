@@ -298,56 +298,60 @@ Item {
                 keyClick(Qt.Key_MediaStop);
                 compare(view.backend.stopRequests, 1);
             }
+            function clickRemoteKey(key) {
+                verify(ime.native_key(key, 0, Qt.NoModifier, false, false));
+                verify(ime.native_key(key, 0, Qt.NoModifier, false, true));
+            }
             function test_media_play_and_pause_are_separate_operations() {
-                keyClick(Qt.Key_MediaPlay);
-                keyClick(Qt.Key_MediaPause);
+                clickRemoteKey(Qt.Key_MediaPlay);
+                clickRemoteKey(Qt.Key_MediaPause);
                 compare(view.backend.playRequests, 0);
                 compare(view.backend.pauseRequests, 0);
                 view.backend.recording = true;
                 view.backend.playback_action = Player.Play;
-                keyClick(Qt.Key_MediaPause);
+                clickRemoteKey(Qt.Key_MediaPause);
                 compare(view.backend.pauseRequests, 0);
-                keyClick(Qt.Key_MediaPlay);
-                verify(ime.forward_key(Qt.Key_MediaPlay, Qt.NoModifier, "", true));
+                clickRemoteKey(Qt.Key_MediaPlay);
+                verify(ime.native_key(Qt.Key_MediaPlay, 0, Qt.NoModifier, true, false));
                 compare(view.backend.playRequests, 1);
                 view.backend.playback_action = Player.Pause;
-                keyClick(Qt.Key_MediaPlay);
+                clickRemoteKey(Qt.Key_MediaPlay);
                 compare(view.backend.playRequests, 1);
-                keyClick(Qt.Key_MediaPause);
-                verify(ime.forward_key(Qt.Key_MediaPause, Qt.NoModifier, "", true));
+                clickRemoteKey(Qt.Key_MediaPause);
+                verify(ime.native_key(Qt.Key_MediaPause, 0, Qt.NoModifier, true, false));
                 compare(view.backend.pauseRequests, 1);
                 compare(view.backend.playbackRequests, 0);
                 view.editor.forceActiveFocus();
-                keyClick(Qt.Key_MediaPause);
+                clickRemoteKey(Qt.Key_MediaPause);
                 compare(view.backend.pauseRequests, 1);
             }
             function test_media_seek_repeats_only_in_seek_scope() {
-                keyClick(Qt.Key_AudioRewind);
+                clickRemoteKey(Qt.Key_AudioRewind);
                 compare(view.backend.skips, []);
                 view.backend.recording = true;
                 view.backend.playing = true;
-                keyClick(Qt.Key_AudioRewind);
-                keyClick(Qt.Key_AudioForward);
-                verify(ime.forward_key(Qt.Key_AudioForward, Qt.NoModifier, "", true));
+                clickRemoteKey(Qt.Key_AudioRewind);
+                clickRemoteKey(Qt.Key_AudioForward);
+                verify(ime.native_key(Qt.Key_AudioForward, 0, Qt.NoModifier, true, false));
                 compare(view.backend.skips, [-10000, 10000, 10000]);
                 view.actions.channelsVisible = true;
-                keyClick(Qt.Key_AudioRewind);
-                keyClick(Qt.Key_AudioForward);
+                clickRemoteKey(Qt.Key_AudioRewind);
+                clickRemoteKey(Qt.Key_AudioForward);
                 compare(view.backend.skips, [-10000, 10000, 10000]);
             }
             function test_colours_only_send_once_while_data_broadcast_presents() {
                 const keys = [Qt.Key_Red, Qt.Key_Green, Qt.Key_Yellow, Qt.Key_Blue];
-                for (const key of keys) keyClick(key);
+                for (const key of keys) clickRemoteKey(key);
                 compare(view.colours, []);
                 view.bindings.coloursAvailable = true;
                 view.editor.forceActiveFocus();
                 for (const key of keys) {
-                    keyClick(key);
-                    verify(ime.forward_key(key, Qt.NoModifier, "", true));
+                    clickRemoteKey(key);
+                    verify(ime.native_key(key, 0, Qt.NoModifier, true, false));
                 }
                 compare(view.colours, ["r", "g", "y", "b"]);
                 view.bindings.coloursAvailable = false;
-                for (const key of keys) keyClick(key);
+                for (const key of keys) clickRemoteKey(key);
                 compare(view.colours, ["r", "g", "y", "b"]);
             }
             function test_native_keysym_mapping_data() {

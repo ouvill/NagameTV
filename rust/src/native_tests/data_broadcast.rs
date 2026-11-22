@@ -405,7 +405,7 @@ fn check_remote(
     )?;
     for keyboard in [false, true] {
         if keyboard {
-            ffi::clickRootKey(engine.pin_mut(), &QString::from("Red"))?;
+            assert!(ffi::forwardFocusKey(&QString::from("Red"))?);
         } else {
             ffi::clickRootItem(engine.pin_mut(), &QString::from("remoteKey_r"))?;
         }
@@ -415,7 +415,7 @@ fn check_remote(
             &format!("dataBroadcast.view.videoRect.x > {OBSERVER}.previousVideoRect.x + 1"),
         )?;
         if keyboard {
-            ffi::clickRootKey(engine.pin_mut(), &QString::from("Blue"))?;
+            assert!(ffi::forwardFocusKey(&QString::from("Blue"))?);
         } else {
             ffi::clickRootItem(engine.pin_mut(), &QString::from("remoteKey_b"))?;
         }

@@ -6,6 +6,7 @@
 #include <QtGui/QKeyEvent>
 #include <QtGui/QWindow>
 #include <QtQuickTest/quicktest.h>
+#include <QtTest/qtestkeyboard.h>
 #include "qt/key_normalizer.h"
 #include "rust/cxx.h"
 #include <vector>
@@ -66,6 +67,12 @@ inline bool sendTestNativeKey(int key, quint32 keysym, int modifiers, bool repea
     auto *window = QGuiApplication::focusWindow();
     if (!window) return false;
     const auto type = release ? QEvent::KeyRelease : QEvent::KeyPress;
+    // QTest::keyClick derives ASCII text and warns for dedicated remote keys.
+    // Use its window-system delivery with empty text when no keysym is needed.
+    if (keysym == 0) {
+        qt_handleKeyEvent(window, type, key, Qt::KeyboardModifiers(modifiers), QString(), repeat);
+        return true;
+    }
     QKeyEvent event(type, key, Qt::KeyboardModifiers(modifiers), 0, keysym, 0, QString(), repeat);
     return QCoreApplication::sendEvent(window, &event);
 }
