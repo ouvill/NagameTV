@@ -548,7 +548,7 @@ Popup {
                             objectName: "dataBroadcastPrefetchSetting"
                             Layout.fillWidth: true
                             text: qsTranslate("Settings", "Prefetch data broadcast")
-                            description: qsTranslate("Settings", "Keep data broadcast content ready while watching live TV. Uses additional memory and processing. Broadcasts can start automatically even when prefetch is off.")
+                            description: qsTranslate("Settings", "Keep data broadcast content ready while watching live TV. Uses additional memory and processing.")
                             checked: root.backend.data_broadcast_prefetch
                             enabled: root.backend.data_broadcast_enabled
                             onClicked: root.backend.configure_data_broadcast_prefetch(checked)
@@ -935,7 +935,7 @@ Popup {
                             onClicked: root.targetWindow.close()
                         }
                         Heading { text: qsTranslate("Settings", "Version: %1").arg(root.buildInfo.version) }
-                        Detail { text: qsTranslate("Settings", "Check GitHub for a newer stable release. Pre-releases are excluded.") }
+                        Detail { text: qsTranslate("Settings", "Check GitHub for a newer stable release.") }
                         SettingsToggle {
                             id: autoUpdateCheck
                             objectName: "autoUpdateCheck"
@@ -992,7 +992,7 @@ Popup {
                             id: updateHistoryProblem
                             objectName: "updateHistoryProblem"
                             visible: root.backend.update_history_error.length > 0
-                            message: qsTranslate("Settings", "Could not save or load update history. Automatic checking is paused; you can still check manually.")
+                            message: qsTranslate("Settings", "Could not save or load update history. Automatic checking is paused.")
                             details: root.backend.update_history_error
                         }
                     }

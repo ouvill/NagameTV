@@ -53,7 +53,7 @@ ColumnLayout {
         Layout.fillWidth: true
         enabled: root.backend.hdmi_cec_allowed
         text: qsTranslate("HdmiCec", "Control with the TV remote over HDMI-CEC (experimental)")
-        description: qsTranslate("HdmiCec", "Use the remote of a TV connected by HDMI to operate this viewer. The TV and the HDMI port must support CEC.")
+        description: qsTranslate("HdmiCec", "Use the remote of a TV connected by HDMI to operate NagameTV.")
         checked: root.backend.hdmi_cec_enabled
         onClicked: {
             root.backend.set_hdmi_cec_enabled(checked);
@@ -119,6 +119,6 @@ ColumnLayout {
     }
     Detail {
         visible: root.backend.hdmi_cec_enabled
-        text: qsTranslate("HdmiCec", "The viewer must have focus to receive remote buttons. Available buttons depend on the TV.")
+        text: qsTranslate("HdmiCec", "Available buttons depend on the TV.")
     }
 }

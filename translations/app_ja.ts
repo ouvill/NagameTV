@@ -1950,7 +1950,7 @@
     <message><source>Enable data broadcast (experimental)</source><translation>データ放送を有効にする（実験的）</translation></message>
     <message><source>Some broadcasts may not display or respond correctly.</source><translation>放送によっては表示や操作が正しく動作しないことがあります。</translation></message>
     <message><source>Prefetch data broadcast</source><translation>データ放送を先読み</translation></message>
-    <message><source>Keep data broadcast content ready while watching live TV. Uses additional memory and processing. Broadcasts can start automatically even when prefetch is off.</source><translation>視聴中のチャンネルの素材を保持し、開くときの待ち時間を短くします。メモリーとCPUの使用量が増えます。先読みがオフでも、放送の指定による自動起動は行います。</translation></message>
+    <message><source>Keep data broadcast content ready while watching live TV. Uses additional memory and processing.</source><translation>視聴中のチャンネルの素材を保持し、開くときの待ち時間を短くします。メモリーとCPUの使用量が増えます。</translation></message>
     <message><source>Recordings and pausable live TV</source><translation>録画再生中・一時停止できるライブ視聴中</translation></message>
     <message><source>Higher quality increases file size.</source><translation>高画質にするとファイルが大きくなります。</translation></message>
     <message><source>Higher compression saves space but takes longer.</source><translation>圧縮を強くすると容量は減りますが、保存に時間がかかります。</translation></message>
@@ -2142,10 +2142,6 @@
       <translation>映像にコメントを重ねる</translation>
     </message>
     <message>
-      <source>When off, you can still read the comment list and post comments.</source>
-      <translation>オフでも、コメント一覧での確認と投稿はできます。</translation>
-    </message>
-    <message>
       <source>Comment appearance</source>
       <translation>コメントの見た目</translation>
     </message>
@@ -2176,10 +2172,6 @@
     <message>
       <source>Press Enter to send. Ctrl + Enter also works.</source>
       <translation>Enterで送信します。Ctrl + Enterでも送信できます。</translation>
-    </message>
-    <message>
-      <source>Press Ctrl + Enter to send. Enter alone does not send.</source>
-      <translation>Ctrl + Enterで送信します。Enterだけでは送信しません。</translation>
     </message>
     <message>
       <source>Send with</source>
@@ -2410,8 +2402,8 @@
       <translation>アップデート</translation>
     </message>
     <message>
-      <source>Check GitHub for a newer stable release. Pre-releases are excluded.</source>
-      <translation>GitHubで新しい正式リリースを確認します。プレリリースは対象外です。</translation>
+      <source>Check GitHub for a newer stable release.</source>
+      <translation>GitHubで新しい正式リリースを確認します。</translation>
     </message>
     <message>
       <source>Check for updates automatically</source>
@@ -2430,8 +2422,8 @@
       <translation>まだ確認に成功していません。</translation>
     </message>
     <message>
-      <source>Could not save or load update history. Automatic checking is paused; you can still check manually.</source>
-      <translation>確認履歴を保存または読み込みできませんでした。自動確認は停止しています。手動での確認は利用できます。</translation>
+      <source>Could not save or load update history. Automatic checking is paused.</source>
+      <translation>確認履歴を保存または読み込みできませんでした。自動確認は停止しています。</translation>
     </message>
     <message>
       <source>Checking for updates…</source>
@@ -2543,8 +2535,8 @@
         <translation>HDMI-CECでテレビのリモコンから操作する（実験的）</translation>
     </message>
     <message>
-        <source>Use the remote of a TV connected by HDMI to operate this viewer. The TV and the HDMI port must support CEC.</source>
-        <translation>HDMIでつないだテレビのリモコンで、このViewerを操作します。テレビとHDMI端子がCECに対応している必要があります。</translation>
+        <source>Use the remote of a TV connected by HDMI to operate NagameTV.</source>
+        <translation>HDMIでつないだテレビのリモコンで、NagameTVを操作します。</translation>
     </message>
     <message>
         <source>CEC device</source>
@@ -2595,8 +2587,8 @@
         <translation>このシステムではHDMI-CECを利用できません。</translation>
     </message>
     <message>
-        <source>The viewer must have focus to receive remote buttons. Available buttons depend on the TV.</source>
-        <translation>ながめTVのウィンドウがフォーカスされている間に操作できます。使えるボタンはテレビによって異なります。</translation>
+        <source>Available buttons depend on the TV.</source>
+        <translation>使えるボタンはテレビによって異なります。</translation>
     </message>
     <message>
         <source>TV remote (HDMI-CEC)</source>
@@ -2614,8 +2606,8 @@
         <translation>リモート操作を有効にする</translation>
     </message>
     <message>
-        <source>Allow devices on your home network to control this viewer without authentication.</source>
-        <translation>家庭内LANの端末から、このViewerを認証なしで操作できます。</translation>
+        <source>Allow devices on your home network to control NagameTV.</source>
+        <translation>家庭内LANの端末から、NagameTVを操作できます。</translation>
     </message>
     <message>
         <source>These settings apply to this launch only and will not be saved.</source>
@@ -2624,10 +2616,6 @@
     <message>
         <source>Listen address</source>
         <translation>待受IPアドレス</translation>
-    </message>
-    <message>
-        <source>The default 0.0.0.0 accepts connections on all IPv4 interfaces.</source>
-        <translation>既定の0.0.0.0では、すべてのIPv4インターフェースで接続を受け付けます。</translation>
     </message>
     <message>
         <source>Port</source>
