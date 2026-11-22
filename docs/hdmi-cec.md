@@ -77,12 +77,17 @@ CEC設定はOFFのままでも使えます。ONにした場合も「既存のCEC
 [Linux CEC uAPI](https://docs.kernel.org/userspace-api/media/cec/cec-ioc-adap-g-log-addrs.html)
 [カーネル側の論理アドレス処理](https://github.com/torvalds/linux/blob/v7.0/drivers/media/cec/core/cec-adap.c#L1697-L1730)
 
-## キーが届かないとき
+## キー割り当て
 
-テレビのHDMI連動設定、選択中の入力、ながめTVのフォーカスを確認します。Pi 4とLG
-43UN8100PJAの組み合わせでは、方向・決定・戻る・カラーキーがLinuxの入力イベントに
+方向キーで項目を移動します。キー入力はウィンドウ内の通常のキーボード操作に従います。
+Pi 4とLG 43UN8100PJAの組み合わせでは、方向・決定・戻る・カラーキーがLinuxの入力イベントに
 変換されました。数字とチャンネル上下はテレビ側が処理しました。
-[実機調査とキーの変換表](hdmi-cec-redesign.md#実機で確認したこと)
+[実機調査](hdmi-cec-redesign.md#実機で確認したこと)
+[カーネルからQtへのキー変換](hdmi-cec-redesign.md#キー入力)
+
+### キーが届かないとき
+
+テレビのHDMI連動設定、選択中の入力、ながめTVのフォーカスを確認します。
 
 `cec-ctl -d /dev/cec0` でアダプターの能力、論理アドレス、キー転送フラグを確認できます。
 テレビがCECメッセージを送るか調べるには、`cec-ctl -d /dev/cec0 -M -r` で監視しながら
