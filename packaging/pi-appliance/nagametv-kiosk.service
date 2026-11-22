@@ -39,7 +39,9 @@ ExecStart=/usr/bin/labwc --config-dir /usr/local/lib/nagametv-appliance/labwc \
     --session /usr/local/lib/nagametv-appliance/start-kiosk
 # labwc ends its session when the viewer exits. Keep cgroup cleanup for hangs
 # and remaining processes, after giving the viewer a chance to close.
-ExecStop=/usr/bin/python3 /usr/local/lib/nagametv-appliance/stop-kiosk.py $MAINPID
+# The + prefix skips PAMName because opening a second tty1 session fails.
+# The helper starts as root and drops to nagametv before reading the PID file.
+ExecStop=+/usr/bin/python3 -I /usr/local/lib/nagametv-appliance/stop-kiosk.py $MAINPID
 KillMode=control-group
 TimeoutStopSec=20s
 Restart=always

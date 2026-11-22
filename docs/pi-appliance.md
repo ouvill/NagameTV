@@ -119,6 +119,12 @@ systemdが以降の起動を止めます。原因を取り除いたら `sudo sys
 [systemdの停止処理](https://www.freedesktop.org/software/systemd/man/latest/systemd.service.html#ExecStop=)
 [labwcのセッションクライアント監視](https://github.com/labwc/labwc/blob/0.9.3/src/server.c#L146-L182)
 
+停止コマンドの `+` は、tty1で2つ目のPAMセッションを開こうとして停止が失敗するのを防ぎます。
+停止ヘルパーはrootで起動し、キオスクの実行時ディレクトリを開く前に `nagametv` ユーザーへ
+権限を落とします。ビューアーの親プロセスと、ビューアー・labwcの起動時刻が一致した場合に
+終了シグナルを送ります。
+[systemdのコマンド接頭辞](https://www.freedesktop.org/software/systemd/man/latest/systemd.service.html#Command%20Lines)
+
 labwcを先に終了させると、QtはWayland接続の切断時にアプリを即時終了することがあります。
 CECの設定と印が残った場合は、次の起動が引き継ぎます。
 [Qt 6.10のWaylandエラー処理](https://github.com/qt/qtbase/blob/v6.10.2/src/plugins/platforms/wayland/qwaylanddisplay.cpp#L505-L517)
@@ -180,8 +186,10 @@ sudo systemctl daemon-reload
 sudo systemctl restart nagametv-kiosk.service
 ```
 
-更新前に起動したプロセスの停止には旧設定が残る場合があります。新しいunitで起動した後、
-次の停止でCECが解放されることを確認します。
+停止コマンドのPAM修正を既存の専用機へ適用する場合は、サービスを停止してから
+上の3ファイルを一緒に更新します。起動スクリプトが記録するPIDの形式も変わるためです。
+この修正だけならdebの再導入は不要です。新しいunitで起動した後、次の停止でCECが
+解放されることを確認します。
 
 
 ルートファイルシステムは標準どおり書き込み可能です。将来、読み取り専用ルートに移行する際は、
