@@ -22,7 +22,10 @@ Environment=NAGAMETV_DEINTERLACE=greedyl
 Environment=NAGAMETV_DEINTERLACE_FIELDS=one
 TTYPath=/dev/tty1
 TTYReset=yes
-TTYVHangup=yes
+# Keep labwc's terminal connected while ExecStop waits for the viewer.
+TTYVHangup=no
+RuntimeDirectory=nagametv-kiosk
+RuntimeDirectoryMode=0700
 UtmpIdentifier=tty1
 UtmpMode=user
 StandardInput=tty-fail
@@ -30,11 +33,17 @@ StandardOutput=journal
 StandardError=journal
 # Cage 0.2.1 in Ubuntu 26.04 aborts when a client requests fullscreen before
 # its first commit, which NagameTV does in kiosk mode (cage-kiosk/cage#456).
-# systemd hangs up the TTY for every command, so chvt after the compositor
-# would send it SIGHUP.
+# Switch to the kiosk VT before labwc takes the seat.
 ExecStartPre=+/usr/bin/chvt 1
 ExecStart=/usr/bin/labwc --config-dir /usr/local/lib/nagametv-appliance/labwc \
     --session /usr/local/lib/nagametv-appliance/start-kiosk
+# labwc ends its session when the viewer exits. Keep cgroup cleanup for hangs
+# and remaining processes, after giving the viewer a chance to close.
+# The + prefix skips PAMName because opening a second tty1 session fails.
+# The helper starts as root and drops to nagametv before reading the PID file.
+ExecStop=+/usr/bin/python3 -I /usr/local/lib/nagametv-appliance/stop-kiosk.py $MAINPID
+KillMode=control-group
+TimeoutStopSec=20s
 Restart=always
 RestartSec=2s
 

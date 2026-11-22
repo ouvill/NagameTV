@@ -134,6 +134,7 @@ Item {
                 property bool hdmi_cec_allowed: true
                 property string hdmi_cec_state: "disabled"
                 property string hdmi_cec_error: ""
+                property bool hdmi_cec_external_without_passthrough: false
                 property string hdmi_cec_device: ""
                 property string hdmi_cec_osd_name: "NagameTV"
                 property string hdmi_cec_physical_address: ""
@@ -142,7 +143,7 @@ Item {
                 function set_hdmi_cec_enabled(enabled) {
                     if (enabled && !hdmi_cec_allowed) return false;
                     hdmi_cec_enabled = enabled;
-                    hdmi_cec_state = enabled ? "waiting-for-tv" : "disabled";
+                    hdmi_cec_state = enabled ? "configured" : "disabled";
                     return true;
                 }
                 function select_hdmi_cec_device(path) {
@@ -340,6 +341,7 @@ Item {
                 backend.hdmi_cec_allowed = true;
                 backend.hdmi_cec_state = "disabled";
                 backend.hdmi_cec_error = "";
+                backend.hdmi_cec_external_without_passthrough = false;
                 backend.hdmi_cec_device = "";
                 backend.hdmi_cec_physical_address = "";
                 backend.hdmi_cec_devices.clear();
@@ -850,9 +852,16 @@ Item {
                 findChild(panel.contentItem, "retryHdmiCec").forceActiveFocus();
                 keyClick(Qt.Key_Space);
                 compare(backend.hdmiCecRefreshes, 1);
-                backend.hdmi_cec_state = "active";
+                compare(status.text, "Configured as “NagameTV”. The HDMI address is not available.");
                 backend.hdmi_cec_physical_address = "1.0.0.0";
-                compare(status.text, "Ready. The TV sees this viewer as “NagameTV” at HDMI 1.0.0.0.");
+                compare(status.text, "Configured as “NagameTV” at HDMI 1.0.0.0.");
+                backend.hdmi_cec_state = "external";
+                compare(status.text, "Using an existing CEC configuration.");
+                backend.hdmi_cec_external_without_passthrough = true;
+                compare(status.text, "Using an existing CEC configuration. It does not enable key forwarding, so remote buttons may not reach the viewer.");
+                compare(status.color, Theme.warning);
+                backend.hdmi_cec_state = "no-remote-control";
+                compare(status.text, "This CEC device cannot forward remote-control keys to Linux.");
                 backend.hdmi_cec_state = "permission-denied";
                 backend.hdmi_cec_error = "Permission denied: /dev/cec1";
                 compare(status.color, Theme.warning);
@@ -865,6 +874,10 @@ Item {
             function test_hdmi_cec_device_list_follows_model_changes() {
                 backend.hdmi_cec_enabled = true;
                 selectPage(SettingsPanel.Remote);
+                compare(backend.hdmiCecRefreshes, 1);
+                selectPage(SettingsPanel.Connection);
+                selectPage(SettingsPanel.Remote);
+                compare(backend.hdmiCecRefreshes, 2);
                 const device = findChild(panel.contentItem, "hdmiCecDevice");
                 compare(device.count, 1);
                 backend.hdmi_cec_devices.append({ path: "/dev/cec0", name: "vc4-hdmi-0", driver: "vc4_hdmi" });

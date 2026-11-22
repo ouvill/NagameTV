@@ -85,20 +85,6 @@ pub mod ffi {
         #[cxx_name = "installPointerActivity"]
         unsafe fn install_pointer_activity(item: *mut QQuickItem);
         include!("remote_key.h");
-        #[cxx_name = "cecDigitKey"]
-        fn cec_digit_key(digit: u8) -> i32;
-        #[cxx_name = "cecSeekKey"]
-        fn cec_seek_key(forward: bool) -> i32;
-        #[cxx_name = "cecChapterKey"]
-        fn cec_chapter_key(forward: bool) -> i32;
-        #[cxx_name = "cecBlueKey"]
-        fn cec_blue_key() -> i32;
-        #[cxx_name = "cecRedKey"]
-        fn cec_red_key() -> i32;
-        #[cxx_name = "cecGreenKey"]
-        fn cec_green_key() -> i32;
-        #[cxx_name = "cecYellowKey"]
-        fn cec_yellow_key() -> i32;
         #[cxx_name = "supportsNavigationKey"]
         fn supports_navigation_key(key: i32) -> bool;
         #[cxx_name = "postNavigationKey"]
@@ -108,6 +94,19 @@ pub mod ffi {
         unsafe fn install_back_button(item: *mut QQuickItem, popup_open: bool);
         #[cxx_name = "configureQtQuickOpenGl"]
         fn configure_qt_quick_open_gl();
+        include!("qt/key_normalizer.h");
+        #[cfg(target_os = "linux")]
+        type QGuiApplication = cxx_qt_lib::QGuiApplication;
+        #[cfg(target_os = "linux")]
+        #[cxx_name = "installKeyNormalizer"]
+        fn install_key_normalizer(app: Pin<&mut QGuiApplication>);
+        include!("qt/quit_signals.h");
+        #[cfg(target_os = "linux")]
+        #[cxx_name = "openQuitSignalPipe"]
+        fn open_quit_signal_pipe() -> Result<i32>;
+        #[cfg(target_os = "linux")]
+        #[cxx_name = "watchQuitSignals"]
+        fn watch_quit_signals(app: Pin<&mut QGuiApplication>, read_fd: i32, received: fn(i32));
         #[cfg(target_os = "linux")]
         #[cxx_name = "useQtQuickDialogs"]
         fn use_qt_quick_dialogs();

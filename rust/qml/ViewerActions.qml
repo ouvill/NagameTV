@@ -46,6 +46,9 @@ Item {
     enum DismissMode { PanelsOnly, PanelsOrFullscreen }
     // Player.screen values, shared by the window and the actions.
     enum Screen { HomeScreen, WatchingScreen, GuideScreen, RecordingsScreen }
+    readonly property bool liveViewing: backend.screen === ViewerActions.WatchingScreen
+        && backend.media_active && !backend.recording
+
     function dismiss(mode: int) {
         activity();
         // Match stacking order: the guide covers the channel browser.
@@ -70,6 +73,16 @@ Item {
             : root.backend.playback_action === Player.Stop ? qsTranslate("Main", "Stop") : qsTranslate("Viewer", "Play")
         enabled: root.enabled && root.backend.playback_action !== Player.Unavailable
         onTriggered: { root.backend.toggle_playback(); root.activity(); }
+    }
+    readonly property Action play: Operation {
+        text: qsTranslate("Viewer", "Play")
+        enabled: root.enabled && root.backend.playback_action === Player.Play
+        onTriggered: { root.backend.play(); root.activity(); }
+    }
+    readonly property Action pause: Operation {
+        text: qsTranslate("Main", "Pause")
+        enabled: root.enabled && root.backend.playback_action === Player.Pause
+        onTriggered: { root.backend.pause(); root.activity(); }
     }
     // Stops any playback, including recordings and timeshift whose main action pauses.
     readonly property Action stopPlayback: Operation {

@@ -15,6 +15,10 @@ ColumnLayout {
         label: device.name.length > 0 ? "%1 (%2)".arg(device.name).arg(device.path) : device.path
     })))
     spacing: Theme.spaceLg
+    onVisibleChanged: {
+        if (visible && backend.hdmi_cec_enabled)
+            backend.refresh_hdmi_cec_devices();
+    }
 
     component Detail: Label {
         Layout.fillWidth: true
@@ -81,20 +85,27 @@ ColumnLayout {
     }
     Detail {
         objectName: "hdmiCecStatus"
-        color: root.backend.hdmi_cec_state === "active" ? Theme.accent
-            : root.backend.hdmi_cec_state === "disabled" || root.backend.hdmi_cec_state === "waiting-for-tv" ? Theme.textSecondary
-            : Theme.warning
+        color: {
+            switch (root.backend.hdmi_cec_state) {
+            case "configured": return Theme.accent;
+            case "external": return root.backend.hdmi_cec_external_without_passthrough ? Theme.warning : Theme.textSecondary;
+            case "disabled": return Theme.textSecondary;
+            default: return Theme.warning;
+            }
+        }
         text: {
             switch (root.backend.hdmi_cec_state) {
             case "disabled": return qsTranslate("HdmiCec", "HDMI-CEC is off.");
             case "no-device": return qsTranslate("HdmiCec", "No CEC device found. Connect a device that supports CEC, then search again.");
-            case "permission-denied": return qsTranslate("HdmiCec", "Cannot open the CEC device. Allow this user to access it (for example, add it to the video group) and sign in again.");
-            case "waiting-for-tv": return qsTranslate("HdmiCec", "Waiting for the TV. Turn on the TV and check the HDMI connection.");
-            case "active": return root.backend.hdmi_cec_physical_address.length > 0
-                ? qsTranslate("HdmiCec", "Ready. The TV sees this viewer as “%1” at HDMI %2.").arg(root.backend.hdmi_cec_osd_name).arg(root.backend.hdmi_cec_physical_address)
-                : qsTranslate("HdmiCec", "Ready. The TV sees this viewer as “%1”.").arg(root.backend.hdmi_cec_osd_name);
-            case "disconnected": return qsTranslate("HdmiCec", "The CEC device was disconnected. Searching again…");
-            case "error": return qsTranslate("HdmiCec", "HDMI-CEC stopped because of an error.");
+            case "permission-denied": return qsTranslate("HdmiCec", "Cannot access the CEC device. Check access permissions, then search again.");
+            case "no-remote-control": return qsTranslate("HdmiCec", "This CEC device cannot forward remote-control keys to Linux.");
+            case "configured": return root.backend.hdmi_cec_physical_address.length > 0
+                ? qsTranslate("HdmiCec", "Configured as “%1” at HDMI %2.").arg(root.backend.hdmi_cec_osd_name).arg(root.backend.hdmi_cec_physical_address)
+                : qsTranslate("HdmiCec", "Configured as “%1”. The HDMI address is not available.").arg(root.backend.hdmi_cec_osd_name);
+            case "external": return root.backend.hdmi_cec_external_without_passthrough
+                ? qsTranslate("HdmiCec", "Using an existing CEC configuration. It does not enable key forwarding, so remote buttons may not reach the viewer.")
+                : qsTranslate("HdmiCec", "Using an existing CEC configuration.");
+            case "error": return qsTranslate("HdmiCec", "Could not configure or release the CEC device.");
             case "unsupported": return qsTranslate("HdmiCec", "HDMI-CEC is not available on this system.");
             }
             return "";
@@ -108,6 +119,6 @@ ColumnLayout {
     }
     Detail {
         visible: root.backend.hdmi_cec_enabled
-        text: qsTranslate("HdmiCec", "Which buttons reach the viewer depends on the TV maker’s CEC implementation.")
+        text: qsTranslate("HdmiCec", "The viewer must have focus to receive remote buttons. Available buttons depend on the TV.")
     }
 }

@@ -61,11 +61,13 @@ Item {
                         channelsVisible: actions.channelsVisible
                     }
                     property var digits: []
+                    property var colours: []
                     Viewer.ShortcutBindings {
                         id: bindings
                         actions: actions
                         inputContext: inputContext
                         onDigitPressed: function(digit) { parent.digits = parent.digits.concat([digit]); }
+                        onColourPressed: function(key) { parent.colours = parent.colours.concat([key]); }
                     }
                     Drawer { id: drawer; width: 200; height: 300; focus: true }
                     TextField {
@@ -84,10 +86,25 @@ Item {
                     }
                 }
             }
+            Component {
+                id: keyCapture
+                Item {
+                    property var events: []
+                    Keys.onPressed: event => events.push(["press", event.key, event.modifiers, event.isAutoRepeat])
+                    Keys.onReleased: event => events.push(["release", event.key, event.modifiers, event.isAutoRepeat])
+                }
+            }
             property var view
             TestInputMethod { id: ime }
+            // XF86 keysyms as delivered in nativeVirtualKey by Qt's Linux QPA.
+            readonly property int xf86Ok: 0x10081160
+            readonly property int xf86Close: 0x1008ff56
+            readonly property int xf86ChannelUp: 0x10081192
+            readonly property int xf86ChannelDown: 0x10081193
+            readonly property int xf86Numeric0: 0x10081200
             function initTestCase() {
                 failOnWarning(/.*/);
+                ime.install_key_normalizer();
             }
             function init() {
                 failOnWarning(/.*/);
@@ -281,17 +298,162 @@ Item {
                 keyClick(Qt.Key_MediaStop);
                 compare(view.backend.stopRequests, 1);
             }
+            function clickRemoteKey(key) {
+                verify(ime.native_key(key, 0, Qt.NoModifier, false, false));
+                verify(ime.native_key(key, 0, Qt.NoModifier, false, true));
+            }
+            function test_dedicated_channel_keys_step_only_during_live_viewing() {
+                view.backend.playing = true;
+                clickRemoteKey(Qt.Key_ChannelUp);
+                compare(view.steps, 0);
+                view.backend.open_screen(Viewer.ViewerActions.WatchingScreen);
+                view.backend.playing = false;
+                clickRemoteKey(Qt.Key_ChannelUp);
+                compare(view.steps, 0);
+                view.backend.playing = true;
+                clickRemoteKey(Qt.Key_ChannelUp);
+                verify(ime.native_key(Qt.Key_ChannelUp, 0, Qt.NoModifier, true, false));
+                compare(view.steps, 1);
+                clickRemoteKey(Qt.Key_ChannelDown);
+                compare(view.steps, 0);
+                view.editor.forceActiveFocus();
+                clickRemoteKey(Qt.Key_ChannelUp);
+                compare(view.steps, 0);
+                view.forceActiveFocus();
+                view.actions.channelsVisible = true;
+                clickRemoteKey(Qt.Key_ChannelDown);
+                compare(view.steps, 0);
+                view.actions.channelsVisible = false;
+                view.backend.open_screen(Viewer.ViewerActions.GuideScreen);
+                clickRemoteKey(Qt.Key_ChannelDown);
+                compare(view.steps, 0);
+            }
+            function test_media_play_and_pause_are_separate_operations() {
+                clickRemoteKey(Qt.Key_MediaPlay);
+                clickRemoteKey(Qt.Key_MediaPause);
+                compare(view.backend.playRequests, 0);
+                compare(view.backend.pauseRequests, 0);
+                view.backend.recording = true;
+                view.backend.playback_action = Player.Play;
+                clickRemoteKey(Qt.Key_MediaPause);
+                compare(view.backend.pauseRequests, 0);
+                clickRemoteKey(Qt.Key_MediaPlay);
+                verify(ime.native_key(Qt.Key_MediaPlay, 0, Qt.NoModifier, true, false));
+                compare(view.backend.playRequests, 1);
+                view.backend.playback_action = Player.Pause;
+                clickRemoteKey(Qt.Key_MediaPlay);
+                compare(view.backend.playRequests, 1);
+                clickRemoteKey(Qt.Key_MediaPause);
+                verify(ime.native_key(Qt.Key_MediaPause, 0, Qt.NoModifier, true, false));
+                compare(view.backend.pauseRequests, 1);
+                compare(view.backend.playbackRequests, 0);
+                view.editor.forceActiveFocus();
+                clickRemoteKey(Qt.Key_MediaPause);
+                compare(view.backend.pauseRequests, 1);
+            }
+            function test_media_seek_repeats_only_in_seek_scope() {
+                clickRemoteKey(Qt.Key_AudioRewind);
+                compare(view.backend.skips, []);
+                view.backend.recording = true;
+                view.backend.playing = true;
+                clickRemoteKey(Qt.Key_AudioRewind);
+                clickRemoteKey(Qt.Key_AudioForward);
+                verify(ime.native_key(Qt.Key_AudioForward, 0, Qt.NoModifier, true, false));
+                compare(view.backend.skips, [-10000, 10000, 10000]);
+                view.actions.channelsVisible = true;
+                clickRemoteKey(Qt.Key_AudioRewind);
+                clickRemoteKey(Qt.Key_AudioForward);
+                compare(view.backend.skips, [-10000, 10000, 10000]);
+            }
+            function test_colours_only_send_once_while_data_broadcast_presents() {
+                const keys = [Qt.Key_Red, Qt.Key_Green, Qt.Key_Yellow, Qt.Key_Blue];
+                for (const key of keys) clickRemoteKey(key);
+                compare(view.colours, []);
+                view.bindings.coloursAvailable = true;
+                view.editor.forceActiveFocus();
+                for (const key of keys) {
+                    clickRemoteKey(key);
+                    verify(ime.native_key(key, 0, Qt.NoModifier, true, false));
+                }
+                compare(view.colours, ["r", "g", "y", "b"]);
+                view.bindings.coloursAvailable = false;
+                for (const key of keys) clickRemoteKey(key);
+                compare(view.colours, ["r", "g", "y", "b"]);
+            }
+            function test_native_keysym_mapping_data() {
+                const cases = [
+                    {tag: "ok", keysym: xf86Ok, original: 0, key: Qt.Key_Return},
+                    {tag: "close", keysym: xf86Close, original: Qt.Key_Close, key: Qt.Key_Back},
+                    {tag: "channel-up", keysym: xf86ChannelUp, original: 0, key: Qt.Key_ChannelUp},
+                    {tag: "channel-down", keysym: xf86ChannelDown, original: 0, key: Qt.Key_ChannelDown},
+                    {tag: "unmapped-close", keysym: 0, original: Qt.Key_Close, key: Qt.Key_Close},
+                    {tag: "outside-numeric-range", keysym: xf86Numeric0 + 10, original: Qt.Key_A, key: Qt.Key_A}
+                ];
+                for (let digit = 0; digit <= 9; digit++)
+                    cases.push({tag: "digit-" + digit, keysym: xf86Numeric0 + digit, original: 0, key: Qt.Key_0 + digit});
+                return cases;
+            }
+            function test_native_keysym_mapping(data) {
+                if (Qt.platform.os !== "linux") skip("Linux XKB keysyms");
+                view.bindings.enabled = false;
+                const focusTarget = createTemporaryObject(keyCapture, view);
+                verify(focusTarget !== null);
+                focusTarget.forceActiveFocus();
+                const modifiers = Qt.ControlModifier | Qt.ShiftModifier;
+                ime.native_key(data.original, data.keysym, modifiers, false, false);
+                ime.native_key(data.original, data.keysym, modifiers, true, false);
+                ime.native_key(data.original, data.keysym, modifiers, false, true);
+                compare(focusTarget.events, [
+                    ["press", data.key, modifiers, false],
+                    ["press", data.key, modifiers, true],
+                    ["release", data.key, modifiers, false]
+                ]);
+            }
+            function test_normalized_keys_reach_focused_controls_and_shortcuts_once() {
+                if (Qt.platform.os !== "linux") skip("Linux XKB keysyms");
+                view.backend.open_screen(Viewer.ViewerActions.WatchingScreen);
+                view.backend.playing = true;
+                view.bindings.digitsAvailable = true;
+                ime.native_key(0, xf86ChannelUp, Qt.NoModifier, false, false);
+                compare(view.steps, 1);
+                ime.native_key(0, xf86ChannelDown, Qt.NoModifier, false, false);
+                compare(view.steps, 0);
+                ime.native_key(0, xf86Numeric0 + 5, Qt.NoModifier, false, false);
+                ime.native_key(0, xf86Numeric0 + 5, Qt.NoModifier, true, false);
+                compare(view.digits, [5]);
+                view.navigationField.focusForNavigation();
+                ime.native_key(0, xf86Ok, Qt.NoModifier, false, false);
+                compare(view.navigationField.interaction, NavigationField.Editing);
+                ime.native_key(Qt.Key_Close, xf86Close, Qt.NoModifier, false, false);
+                compare(view.navigationField.interaction, NavigationField.Navigating);
+                compare(view.dismissals, 0);
+                view.popup.open();
+                tryCompare(view.popup, "opened", true);
+                ime.native_key(Qt.Key_Close, xf86Close, Qt.NoModifier, false, false);
+                tryCompare(view.popup, "visible", false);
+                compare(view.dismissals, 0);
+            }
             function test_page_and_media_keys_move_between_chapters() {
+                view.backend.open_screen(Viewer.ViewerActions.WatchingScreen);
                 view.backend.recording = true;
                 view.backend.playing = true;
                 keyClick(Qt.Key_PageDown);
+                keyClick(Qt.Key_Forward);
+                clickRemoteKey(Qt.Key_ChannelUp);
+                compare(view.steps, 1);
                 compare(view.backend.chapterSeeks, []);
                 view.backend.chapters_data = JSON.stringify([{startMs: 0, name: "CM?", commercial: true}, {startMs: 10000, name: "A", commercial: false}, {startMs: 40000, name: "CM", commercial: true}]);
+                clickRemoteKey(Qt.Key_ChannelUp);
+                clickRemoteKey(Qt.Key_ChannelDown);
+                compare(view.backend.chapterSeeks, []);
+                compare(view.steps, 1);
                 keyClick(Qt.Key_PageDown);
                 keyClick(Qt.Key_PageUp);
                 keyClick(Qt.Key_MediaNext);
                 keyClick(Qt.Key_MediaPrevious);
-                compare(view.backend.chapterSeeks, [1, -1, 1, -1]);
+                keyClick(Qt.Key_Forward);
+                verify(ime.forward_key(Qt.Key_Forward, Qt.NoModifier, "", true));
+                compare(view.backend.chapterSeeks, [1, -1, 1, -1, 1]);
                 compare(view.backend.skips, []);
             }
             function test_remote_dispatch_uses_enabled_bindings_and_repeat_policy() {

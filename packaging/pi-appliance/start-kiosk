@@ -3,6 +3,26 @@ set -eu
 
 : "${XDG_RUNTIME_DIR:?PAM did not start a user session}"
 : "${WAYLAND_DISPLAY:?labwc did not create a Wayland display}"
+: "${LABWC_PID:?labwc did not publish its PID}"
+: "${RUNTIME_DIRECTORY:?systemd did not create the kiosk runtime directory}"
+
+process_start_time() {
+    IFS= read -r proc_stat < "/proc/$1/stat"
+    # Fields after the final parenthesis start at stat field 3.
+    set -f
+    set -- ${proc_stat##*) }
+    printf '%s' "${20}"
+}
+
+# Publish before checking the stop request. The PID and start time survive
+# exec, and ExecStop can distinguish this invocation from reused PIDs.
+viewer_started=$(process_start_time "$$")
+compositor_started=$(process_start_time "$LABWC_PID")
+printf '%s %s %s\n' "$$" "$viewer_started" "$compositor_started" > "$RUNTIME_DIRECTORY/viewer.pid.tmp"
+mv -f "$RUNTIME_DIRECTORY/viewer.pid.tmp" "$RUNTIME_DIRECTORY/viewer.pid"
+if [ -e "$RUNTIME_DIRECTORY/stopping" ] || [ -L "$RUNTIME_DIRECTORY/stopping" ]; then
+    exit 0
+fi
 
 # labwc can select the EDID preferred mode even when the boot console used 1080p.
 if ! wlr-randr --output HDMI-A-1 --mode 1920x1080@60Hz &&

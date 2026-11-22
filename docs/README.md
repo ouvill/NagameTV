@@ -74,6 +74,7 @@
 | **[字幕描画](subtitle-rendering.md)** | ARIB外字フォント、常時縁取りオプション |
 | **[再生速度変更](playback-speed-design.md)** | 録画再生・タイムシフト時の倍速再生制御 |
 | **[デスクトップメディア連携](desktop-media.md)** | MPRIS等のOSメディアキー連携仕様 |
+| **[HDMI-CEC処理の見直し](hdmi-cec-redesign.md)** | 実機調査に基づく設計案。カーネルのリモコン変換へ移行し、アプリは論理アドレスの設定とキー正規化だけを持つ |
 
 ### 実況コメント (NX-Jikkyo)
 | ドキュメント | 概要 |

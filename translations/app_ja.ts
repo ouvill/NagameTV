@@ -2563,36 +2563,40 @@
         <translation>CECデバイスが見つかりません。CEC対応の機器を接続してから再検索してください。</translation>
     </message>
     <message>
-        <source>Cannot open the CEC device. Allow this user to access it (for example, add it to the video group) and sign in again.</source>
-        <translation>CECデバイスを開けません。このユーザーにアクセス権を与え（videoグループへの追加など）、ログインし直してください。</translation>
+        <source>Cannot access the CEC device. Check access permissions, then search again.</source>
+        <translation>CECデバイスにアクセスできません。アクセス権を確認してから再検索してください。</translation>
     </message>
     <message>
-        <source>Waiting for the TV. Turn on the TV and check the HDMI connection.</source>
-        <translation>テレビを待っています。テレビの電源とHDMIの接続を確認してください。</translation>
+        <source>This CEC device cannot forward remote-control keys to Linux.</source>
+        <translation>このCECデバイスはリモコンのキー入力をLinuxに転送できません。</translation>
     </message>
     <message>
-        <source>Ready. The TV sees this viewer as “%1” at HDMI %2.</source>
-        <translation>準備完了。テレビからはHDMI %2 の「%1」として見えます。</translation>
+        <source>Configured as “%1” at HDMI %2.</source>
+        <translation>HDMI %2 の「%1」として設定しました。</translation>
     </message>
     <message>
-        <source>Ready. The TV sees this viewer as “%1”.</source>
-        <translation>準備完了。テレビからは「%1」として見えます。</translation>
+        <source>Configured as “%1”. The HDMI address is not available.</source>
+        <translation>「%1」として設定しました。HDMIアドレスはまだ取得できていません。</translation>
     </message>
     <message>
-        <source>The CEC device was disconnected. Searching again…</source>
-        <translation>CECデバイスが切断されました。再検索しています…</translation>
+        <source>Using an existing CEC configuration. It does not enable key forwarding, so remote buttons may not reach the viewer.</source>
+        <translation>既存のCEC設定を使用しています。キー転送が無効なため、リモコンの入力がアプリに届かない場合があります。</translation>
     </message>
     <message>
-        <source>HDMI-CEC stopped because of an error.</source>
-        <translation>エラーのためHDMI-CECを停止しました。</translation>
+        <source>Using an existing CEC configuration.</source>
+        <translation>既存のCEC設定を使用しています。</translation>
+    </message>
+    <message>
+        <source>Could not configure or release the CEC device.</source>
+        <translation>CECデバイスの設定または解放ができませんでした。</translation>
     </message>
     <message>
         <source>HDMI-CEC is not available on this system.</source>
         <translation>このシステムではHDMI-CECを利用できません。</translation>
     </message>
     <message>
-        <source>Which buttons reach the viewer depends on the TV maker’s CEC implementation.</source>
-        <translation>どのボタンが届くかは、テレビのメーカーのCEC実装によって異なります。</translation>
+        <source>The viewer must have focus to receive remote buttons. Available buttons depend on the TV.</source>
+        <translation>ながめTVのウィンドウがフォーカスされている間に操作できます。使えるボタンはテレビによって異なります。</translation>
     </message>
     <message>
         <source>TV remote (HDMI-CEC)</source>

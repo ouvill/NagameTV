@@ -25,6 +25,20 @@ TEST_MONITOR_INDEX = 51
 TEST_MONITOR_NAME = f"{TEST_SINK}.monitor"
 TEST_RECORDER_PID = 12000
 
+PID_FILE_CHILD = f"""
+import os
+from pathlib import Path
+import sys
+import time
+
+pid_file = Path(sys.argv[1])
+temporary_pid_file = pid_file.with_suffix(".tmp")
+temporary_pid_file.write_text(str(os.getpid()))
+# Readers use the final file's existence as the readiness signal.
+temporary_pid_file.replace(pid_file)
+time.sleep({CHILD_KEEPALIVE_SECONDS})
+"""
+
 
 class PulseFixture:
     """Protocol replies only: these tests never connect to an audio server."""
@@ -367,9 +381,7 @@ class GuiSessionTests(unittest.TestCase):
 
             processes.validators.append(disappear_after_command_starts)
             with self.assertRaisesRegex(RuntimeError, "disappeared"):
-                gui._run_command(processes, [sys.executable, "-c",
-                    "import os,pathlib,sys,time; pathlib.Path(sys.argv[1]).write_text(str(os.getpid())); "
-                    f"time.sleep({CHILD_KEEPALIVE_SECONDS})", str(pid_file)])
+                gui._run_command(processes, [sys.executable, "-c", PID_FILE_CHILD, str(pid_file)])
         self.assertTrue(stopped(int(pid_file.read_text())))
 
     def test_owned_name_cannot_substitute_a_physical_or_foreign_sink(self):
@@ -418,18 +430,13 @@ class GuiSessionTests(unittest.TestCase):
                     "import pathlib,sys,time; p=pathlib.Path(sys.argv[1]); "
                     f"exec('while not p.exists(): time.sleep({PROCESS_POLL_SECONDS})'); sys.exit(7)", str(pid_file)])
                 with self.assertRaisesRegex(RuntimeError, "service exited with 7"):
-                    gui._run_command(processes, [sys.executable, "-c",
-                        "import os,pathlib,sys,time; pathlib.Path(sys.argv[1]).write_text(str(os.getpid())); "
-                        f"time.sleep({CHILD_KEEPALIVE_SECONDS})",
-                        str(pid_file)])
+                    gui._run_command(processes, [sys.executable, "-c", PID_FILE_CHILD, str(pid_file)])
             self.assertTrue(stopped(int(pid_file.read_text())))
 
     def test_cleanup_kills_descendants_after_group_leader_exits(self):
         with tempfile.TemporaryDirectory() as directory:
             pid_file = Path(directory) / "descendant.pid"
-            child = ("import os,pathlib,signal,sys,time; signal.signal(signal.SIGTERM, signal.SIG_IGN); "
-                     "pathlib.Path(sys.argv[1]).write_text(str(os.getpid())); "
-                     f"time.sleep({CHILD_KEEPALIVE_SECONDS})")
+            child = "import signal\nsignal.signal(signal.SIGTERM, signal.SIG_IGN)\n" + PID_FILE_CHILD
             leader = subprocess.Popen([sys.executable, "-c",
                 "import subprocess,sys; subprocess.Popen([sys.executable, '-c', sys.argv[1], sys.argv[2]])",
                 child, str(pid_file)], start_new_session=True)
@@ -457,9 +464,7 @@ class GuiSessionTests(unittest.TestCase):
             processes = gui._Processes(stack, dict(os.environ), root)
             with patch.object(gui, "PROBE_TIMEOUT_SECONDS", PROBE_FAILURE_TIMEOUT_SECONDS):
                 with self.assertRaises(subprocess.TimeoutExpired):
-                    processes.probe(sys.executable, "-c",
-                        "import os,pathlib,sys,time; pathlib.Path(sys.argv[1]).write_text(str(os.getpid())); "
-                        f"time.sleep({CHILD_KEEPALIVE_SECONDS})", str(pid_file))
+                    processes.probe(sys.executable, "-c", PID_FILE_CHILD, str(pid_file))
             self.assertTrue(stopped(int(pid_file.read_text())))
 
 

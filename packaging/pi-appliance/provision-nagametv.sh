@@ -19,7 +19,7 @@ step() {
 
 boot=/boot/firmware
 mountpoint -q "$boot" || fail "$boot is not mounted."
-for file in nagametv.deb nagametv-kiosk.service start-kiosk labwc-rc.xml \
+for file in nagametv.deb nagametv-kiosk.service start-kiosk stop-kiosk.py labwc-rc.xml \
     nagametv-hdmi-audio.service hdmi-audio.py 50-nagametv-hdmi-only.conf 50-nagametv-hdmi-stream.conf; do
     [[ -s $boot/$file ]] || fail "Missing $boot/$file."
 done
@@ -73,6 +73,7 @@ if [[ -e $connection ]]; then
     fi
 fi
 install -D -m 0755 "$boot/start-kiosk" /usr/local/lib/nagametv-appliance/start-kiosk
+install -D -m 0644 "$boot/stop-kiosk.py" /usr/local/lib/nagametv-appliance/stop-kiosk.py
 install -D -m 0644 "$boot/labwc-rc.xml" /usr/local/lib/nagametv-appliance/labwc/rc.xml
 install -D -m 0644 "$boot/hdmi-audio.py" /usr/local/lib/nagametv-appliance/hdmi-audio.py
 install -m 0644 "$boot/nagametv-kiosk.service" /etc/systemd/system/nagametv-kiosk.service

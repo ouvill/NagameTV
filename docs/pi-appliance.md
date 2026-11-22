@@ -48,7 +48,7 @@ sync
 | --- | --- |
 | `user-data` | 同名ファイルで上書きし、`REPLACE_WITH_YOUR_SSH_PUBLIC_KEY` を公開鍵1行で置き換える |
 | `network-config` | 有線は同名ファイルで上書き。Wi-Fiは `network-config.wifi` をこの名前に変えてコピーし、SSIDとパスワードを編集する |
-| `provision-nagametv.sh`、`nagametv-kiosk.service`、`start-kiosk`、`labwc-rc.xml` | 配布用ファイルをそのままコピーする。1つでも欠けると初回設定は何も導入せずに止まる |
+| `provision-nagametv.sh`、`nagametv-kiosk.service`、`start-kiosk`、`stop-kiosk.py`、`labwc-rc.xml` | 配布用ファイルをそのままコピーする。1つでも欠けると初回設定は何も導入せずに止まる |
 | `nagametv-hdmi-audio.service`、`hdmi-audio.py`、`50-nagametv-hdmi-only.conf`、`50-nagametv-hdmi-stream.conf` | HDMI0の音声設定と復旧用。4ファイルともそのままコピーする |
 | `nagametv.deb` | 照合済みのUbuntu 26.04 arm64用debをこの名前でコピーする |
 | `nagametv-connection.toml`（任意） | [接続先の例](../packaging/pi-appliance/nagametv-connection.toml.example)をこの名前でコピーし、URLを編集する |
@@ -112,6 +112,24 @@ WirePlumberではPi 4のアナログ出力を無効にし、HDMI0の出力に `n
 systemdが以降の起動を止めます。原因を取り除いたら `sudo systemctl reset-failed nagametv-kiosk.service` を
 実行し、サービスを起動してください。保守中は `sudo systemctl stop nagametv-kiosk.service` で停止できます。
 
+`systemctl stop` と `systemctl restart` では、`ExecStop` がながめTVに `SIGTERM` を送り、
+プロセスの終了を待ちます。labwcはセッションクライアントの終了を受けて終了します。これにより、
+ながめTVはWayland接続がある間にCECの解放と設定保存を行えます。`ExecStop` の待機が20秒に
+達すると、systemdは残っているプロセスの停止に進みます。
+[systemdの停止処理](https://www.freedesktop.org/software/systemd/man/latest/systemd.service.html#ExecStop=)
+[labwcのセッションクライアント監視](https://github.com/labwc/labwc/blob/0.9.3/src/server.c#L146-L182)
+
+停止コマンドの `+` は、tty1で2つ目のPAMセッションを開こうとして停止が失敗するのを防ぎます。
+停止ヘルパーはrootで起動し、キオスクの実行時ディレクトリを開く前に `nagametv` ユーザーへ
+権限を落とします。ビューアーの親プロセスと、ビューアー・labwcの起動時刻が一致した場合に
+終了シグナルを送ります。
+[systemdのコマンド接頭辞](https://www.freedesktop.org/software/systemd/man/latest/systemd.service.html#Command%20Lines)
+
+labwcを先に終了させると、QtはWayland接続の切断時にアプリを即時終了することがあります。
+CECの設定と印が残った場合は、次の起動が引き継ぎます。
+[Qt 6.10のWaylandエラー処理](https://github.com/qt/qtbase/blob/v6.10.2/src/plugins/platforms/wayland/qwaylanddisplay.cpp#L505-L517)
+
+
 専用機のunitでは `NAGAMETV_DEINTERLACE=greedyl` と `NAGAMETV_DEINTERLACE_FIELDS=one` を
 指定します。Pi 4で地デジの1080iを視聴したとき、GreedyLの両フィールド処理は描画46.5枚/s、
 破棄0.40枚/s、CPU使用率240%でした。専用機はGreedyLの動き適応処理を使い、出力を29.97 fpsに
@@ -157,6 +175,23 @@ labwcの起動やHDMI出力の失敗は `sudo journalctl -b -u nagametv-kiosk.se
 debの更新は26.04 arm64用をSSHで転送し、
 `sudo apt install ./nagametv.deb && sudo systemctl restart nagametv-kiosk.service` で行います。
 
+既存の専用機にシグナルによる終了と停止順序の修正を適用するときは、修正済みのdebを導入します。
+更新後の `packaging/pi-appliance/` をPiに転送し、そのディレクトリーで次を実行します。
+
+```bash
+sudo install -D -m 0755 start-kiosk /usr/local/lib/nagametv-appliance/start-kiosk
+sudo install -D -m 0644 stop-kiosk.py /usr/local/lib/nagametv-appliance/stop-kiosk.py
+sudo install -m 0644 nagametv-kiosk.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl restart nagametv-kiosk.service
+```
+
+停止コマンドのPAM修正を既存の専用機へ適用する場合は、サービスを停止してから
+上の3ファイルを一緒に更新します。起動スクリプトが記録するPIDの形式も変わるためです。
+この修正だけならdebの再導入は不要です。新しいunitで起動した後、次の停止でCECが
+解放されることを確認します。
+
+
 ルートファイルシステムは標準どおり書き込み可能です。将来、読み取り専用ルートに移行する際は、
 永続データ領域を先にマウントし、systemd unitのdrop-inから
 [`NAGAMETV_DATA_DIR`](development.md#保存データを別のパーティションに置く)をそのパスに設定できます。
@@ -191,6 +226,7 @@ sudo journalctl -b _UID="$kiosk_uid" _SYSTEMD_USER_UNIT=wireplumber.service _SYS
 
 ```bash
 sudo install -D -m 0755 start-kiosk /usr/local/lib/nagametv-appliance/start-kiosk
+sudo install -D -m 0644 stop-kiosk.py /usr/local/lib/nagametv-appliance/stop-kiosk.py
 sudo install -D -m 0644 hdmi-audio.py /usr/local/lib/nagametv-appliance/hdmi-audio.py
 sudo install -m 0644 nagametv-kiosk.service nagametv-hdmi-audio.service /etc/systemd/system/
 sudo install -D -m 0644 50-nagametv-hdmi-only.conf /etc/wireplumber/wireplumber.conf.d/50-nagametv-hdmi-only.conf

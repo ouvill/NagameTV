@@ -1,860 +1,523 @@
-//! All device and lifecycle tests use an injected backend; none open /dev.
-use super::*;
+use super::{
+    ownership::{Backend, Device, LogicalConfig},
+    *,
+};
 use std::{
+    cell::RefCell,
     collections::BTreeMap,
-    sync::{Arc, Mutex},
+    fs,
+    path::{Path, PathBuf},
+    rc::Rc,
 };
-const PRIMARY_PLAYBACK_MASK: u16 = 1 << 4;
-const CONNECTED: Address = Address {
-    physical: Some(0x2100),
-    logical_mask: PRIMARY_PLAYBACK_MASK,
-};
-const UNPLUGGED: Address = Address {
-    physical: None,
-    logical_mask: 0,
-};
-#[derive(Clone)]
-struct Fake {
-    shared: Arc<Mutex<Shared>>,
-    events: Arc<Mutex<Receiver<Result<Event, Error>>>>,
+
+const HDMI_0: &str = "/dev/cec0";
+const HDMI_1: &str = "/dev/cec1";
+const ADAPTER: &str = "vc4-hdmi";
+const TV_ADDRESS: u16 = 0x2000;
+
+struct FakeAdapter {
+    name: String,
+    config: LogicalConfig,
+    physical: Option<u16>,
+    rc: bool,
+    log_addrs: bool,
+    denied: bool,
+    fail_configure: bool,
+    fail_clear: bool,
 }
-struct Shared {
-    devices: Vec<DeviceInfo>,
-    operations: Vec<String>,
-    sent_frames: Vec<Frame>,
-    address: Address,
-    failures: BTreeMap<String, io::ErrorKind>,
-    claim_failure: bool,
-    release_failure: Option<io::ErrorKind>,
-    processed: usize,
-    panic_on_poll: bool,
+
+impl Default for FakeAdapter {
+    fn default() -> Self {
+        Self {
+            name: ADAPTER.into(),
+            config: LogicalConfig::Empty,
+            physical: Some(TV_ADDRESS),
+            rc: true,
+            log_addrs: true,
+            denied: false,
+            fail_configure: false,
+            fail_clear: false,
+        }
+    }
 }
-struct FakeDevice {
-    fake: Fake,
-    path: String,
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Write {
+    Configure,
+    Clear,
 }
+
+#[derive(Default)]
+struct Bus {
+    adapters: BTreeMap<String, FakeAdapter>,
+    writes: Vec<(String, Write)>,
+    scans: usize,
+    open_devices: usize,
+}
+
+#[derive(Clone, Default)]
+struct Fake(Rc<RefCell<Bus>>);
+
 impl Fake {
-    fn new(address: Address) -> (Self, mpsc::Sender<Result<Event, Error>>) {
-        let (events, receiver) = mpsc::channel();
-        (
-            Self {
-                shared: Arc::new(Mutex::new(Shared {
-                    devices: vec![info(0)],
-                    operations: Vec::new(),
-                    sent_frames: Vec::new(),
-                    address,
-                    failures: BTreeMap::new(),
-                    claim_failure: false,
-                    release_failure: None,
-                    processed: 0,
-                    panic_on_poll: false,
-                })),
-                events: Arc::new(Mutex::new(receiver)),
-            },
-            events,
-        )
+    fn with_adapter() -> Self {
+        let fake = Self::default();
+        fake.0
+            .borrow_mut()
+            .adapters
+            .insert(HDMI_0.into(), FakeAdapter::default());
+        fake
     }
-    fn controller(&self, enabled: bool) -> Controller {
-        Controller::with_backend(
+
+    fn modify(&self, path: &str, change: impl FnOnce(&mut FakeAdapter)) {
+        change(self.0.borrow_mut().adapters.get_mut(path).unwrap());
+    }
+
+    fn assert_writes(&self, writes: &[(&str, Write)]) {
+        let bus = self.0.borrow();
+        assert_eq!(
+            bus.writes
+                .iter()
+                .map(|(path, action)| (path.as_str(), *action))
+                .collect::<Vec<_>>(),
+            writes
+        );
+        assert_eq!(bus.open_devices, 0);
+    }
+
+    fn start(&self, runtime_dir: Option<&Path>, preference: bool, selection: &str) -> Controller {
+        Controller::with_session(
             LaunchPlan::Preferences,
-            enabled,
-            String::new(),
-            self.clone(),
+            preference,
+            selection.into(),
+            self.session(runtime_dir),
         )
     }
-    fn operations(&self) -> Vec<String> {
-        self.shared.lock().unwrap().operations.clone()
+
+    fn session(&self, runtime_dir: Option<&Path>) -> Session {
+        Session::new(self.clone(), runtime_dir.map(Path::to_path_buf))
     }
 }
-fn info(number: u8) -> DeviceInfo {
-    DeviceInfo {
-        path: format!("/dev/cec{number}"),
-        name: format!("Fake adapter {number}"),
-        driver: "test".into(),
-        physical_address: CONNECTED.physical,
-    }
+
+struct FakeDevice {
+    bus: Fake,
+    path: String,
+    name: String,
 }
+
 impl Backend for Fake {
-    type Device = FakeDevice;
     fn enumerate(&mut self) -> Result<Vec<DeviceInfo>, Error> {
-        let mut shared = self.shared.lock().unwrap();
-        shared.operations.push("enumerate".into());
-        Ok(shared.devices.clone())
+        let mut bus = self.0.borrow_mut();
+        bus.scans += 1;
+        Ok(bus
+            .adapters
+            .iter()
+            .map(|(path, adapter)| DeviceInfo {
+                path: path.clone(),
+                name: adapter.name.clone(),
+                driver: "fake".into(),
+                physical_address: adapter.physical,
+            })
+            .collect())
     }
-    fn open(&mut self, info: &DeviceInfo) -> Result<Self::Device, Error> {
-        let mut shared = self.shared.lock().unwrap();
-        shared.operations.push(format!("open {}", info.path));
-        if let Some(kind) = shared.failures.get(&info.path) {
-            return Err(Error::io("open", &info.path, io::Error::from(*kind)));
+
+    fn open(&mut self, path: &str) -> Result<Box<dyn Device>, Error> {
+        let mut bus = self.0.borrow_mut();
+        let adapter = bus.adapters.get(path).ok_or(Error::NoDevice)?;
+        if adapter.denied {
+            return Err(Error::Permission {
+                operation: "open",
+                path: path.into(),
+                source: io::ErrorKind::PermissionDenied.into(),
+            });
         }
-        Ok(FakeDevice {
-            fake: self.clone(),
-            path: info.path.clone(),
-        })
+        let name = adapter.name.clone();
+        bus.open_devices += 1;
+        Ok(Box::new(FakeDevice {
+            bus: self.clone(),
+            path: path.into(),
+            name,
+        }))
     }
 }
-impl Device for FakeDevice {
-    fn claim_playback(&mut self) -> Result<(), Error> {
-        let mut shared = self.fake.shared.lock().unwrap();
-        shared
-            .operations
-            .push(format!("claim {} {OSD_NAME}", self.path));
-        if shared.claim_failure {
-            return Err(Error::Claim);
-        }
-        if shared.address.physical.is_some() {
-            shared.address.logical_mask = PRIMARY_PLAYBACK_MASK;
-        }
-        Ok(())
+
+impl FakeDevice {
+    fn read<T>(&self, read: impl FnOnce(&FakeAdapter) -> T) -> T {
+        read(&self.bus.0.borrow().adapters[&self.path])
     }
-    fn address(&mut self) -> Result<Address, Error> {
-        Ok(self.fake.shared.lock().unwrap().address)
-    }
-    fn next_event(&mut self, timeout: Duration) -> Result<Option<Event>, Error> {
-        let panic_on_poll = self.fake.shared.lock().unwrap().panic_on_poll;
-        assert!(!panic_on_poll, "injected worker panic");
-        match self.fake.events.lock().unwrap().recv_timeout(timeout) {
-            Ok(Ok(event)) => {
-                self.fake.shared.lock().unwrap().processed += 1;
-                if let Event::StateChange(address) = &event {
-                    self.fake.shared.lock().unwrap().address = *address;
-                }
-                Ok(Some(event))
-            }
-            Ok(Err(error)) => Err(error),
-            Err(mpsc::RecvTimeoutError::Timeout) => Ok(None),
-            Err(mpsc::RecvTimeoutError::Disconnected) => Err(Error::Disconnected {
+
+    fn write(
+        &self,
+        action: Write,
+        config: LogicalConfig,
+        fail: impl FnOnce(&FakeAdapter) -> bool,
+    ) -> Result<(), Error> {
+        let mut bus = self.bus.0.borrow_mut();
+        let adapter = bus.adapters.get_mut(&self.path).unwrap();
+        if fail(adapter) {
+            return Err(Error::Io {
+                operation: "write logical addresses",
                 path: self.path.clone(),
-                source: io::ErrorKind::NotConnected.into(),
-            }),
+                source: io::Error::from_raw_os_error(libc::EBUSY),
+            });
         }
-    }
-    fn transmit(&mut self, frame: Frame) -> Result<(), Error> {
-        self.fake.shared.lock().unwrap().sent_frames.push(frame);
-        Ok(())
-    }
-    fn release(&mut self) -> Result<(), Error> {
-        let mut shared = self.fake.shared.lock().unwrap();
-        shared.operations.push(format!("release {}", self.path));
-        if let Some(kind) = shared.release_failure {
-            return Err(Error::io(
-                "release logical address",
-                &self.path,
-                io::Error::from(kind),
-            ));
-        }
-        shared.address.logical_mask = 0;
+        adapter.config = config;
+        bus.writes.push((self.path.clone(), action));
         Ok(())
     }
 }
+
 impl Drop for FakeDevice {
     fn drop(&mut self) {
-        self.fake
-            .shared
-            .lock()
-            .unwrap()
-            .operations
-            .push(format!("close {}", self.path));
-    }
-}
-fn wait_state(controller: &mut Controller, expected: &str) {
-    let deadline = Instant::now() + Duration::from_secs(3);
-    loop {
-        controller.poll();
-        if controller.snapshot().state.as_str() == expected {
-            return;
-        }
-        assert!(
-            Instant::now() < deadline,
-            "expected {expected}, got {:?}",
-            controller.snapshot()
-        );
-        thread::sleep(Duration::from_millis(1));
-    }
-}
-#[test]
-fn off_and_restricted_launch_never_enumerate_open_or_start_a_worker() {
-    let (fake, _events) = Fake::new(CONNECTED);
-    let mut controller = fake.controller(false);
-    assert!(controller.allowed());
-    assert!(matches!(controller.runtime, Runtime::Off));
-    controller.refresh();
-    assert!(controller.select("/dev/cec1".into()));
-    assert!(controller.enable(false));
-    drop(controller);
-    assert!(fake.operations().is_empty());
-    let mut restricted = Controller::with_backend(
-        LaunchPlan::Restricted("none".parse().unwrap()),
-        true,
-        String::new(),
-        fake.clone(),
-    );
-    assert!(!restricted.allowed());
-    assert!(!restricted.enabled());
-    assert!(!restricted.enable(true));
-    restricted.refresh();
-    assert!(fake.operations().is_empty());
-}
-#[test]
-fn runtime_off_joins_and_releases_before_returning_and_can_enable_again() {
-    let (fake, _events) = Fake::new(CONNECTED);
-    let mut controller = fake.controller(true);
-    wait_state(&mut controller, "active");
-    assert!(controller.enable(false));
-    assert!(!controller.enabled());
-    assert!(matches!(controller.runtime, Runtime::Off));
-    assert_eq!(controller.snapshot().state.as_str(), "disabled");
-    assert_eq!(
-        fake.operations(),
-        [
-            "enumerate",
-            "open /dev/cec0",
-            "claim /dev/cec0 NagameTV",
-            "release /dev/cec0",
-            "close /dev/cec0"
-        ]
-    );
-    assert!(controller.enable(true));
-    wait_state(&mut controller, "active");
-    drop(controller);
-    assert_eq!(
-        fake.operations()
-            .iter()
-            .filter(|s| s.starts_with("release"))
-            .count(),
-        2
-    );
-}
-#[test]
-fn launch_feature_enables_transient_cec_and_rejects_duplicates() {
-    let (fake, _events) = Fake::new(CONNECTED);
-    let mut controller = Controller::with_backend(
-        LaunchPlan::Restricted("hdmi-cec".parse().unwrap()),
-        false,
-        String::new(),
-        fake,
-    );
-    assert!(controller.enabled());
-    assert!(controller.allowed());
-    wait_state(&mut controller, "active");
-    assert!(
-        "hdmi-cec,hdmi-cec"
-            .parse::<crate::features::FeatureSet>()
-            .is_err()
-    );
-    assert!(
-        "hdmi-cec,remote-web"
-            .parse::<crate::features::FeatureSet>()
-            .is_ok()
-    );
-    assert!(!LaunchPlan::Preferences.hdmi_cec(false));
-    assert!(LaunchPlan::Preferences.hdmi_cec(true));
-}
-#[test]
-fn automatic_selection_prefers_a_connected_adapter_before_claiming() {
-    let (fake, _events) = Fake::new(CONNECTED);
-    {
-        let mut shared = fake.shared.lock().unwrap();
-        shared.devices[0].physical_address = None;
-        shared.devices.push(info(1));
-    }
-    let mut controller = fake.controller(true);
-    wait_state(&mut controller, "active");
-    assert_eq!(
-        fake.operations(),
-        ["enumerate", "open /dev/cec1", "claim /dev/cec1 NagameTV"]
-    );
-    assert!(controller.enable(false));
-    assert!(
-        fake.operations()
-            .ends_with(&["release /dev/cec1".into(), "close /dev/cec1".into()])
-    );
-}
-
-fn receive(events: &mpsc::Sender<Result<Event, Error>>, bytes: &[u8]) {
-    events
-        .send(Ok(Event::Message(Frame::parse(bytes).unwrap())))
-        .unwrap();
-}
-
-fn wait_for_transmissions(fake: &Fake, count: usize) -> Vec<Frame> {
-    let deadline = Instant::now() + Duration::from_secs(3);
-    loop {
-        let sent = fake.shared.lock().unwrap().sent_frames.clone();
-        if sent.len() >= count {
-            return sent;
-        }
-        assert!(
-            Instant::now() < deadline,
-            "expected {count} frames, sent {sent:?}"
-        );
-        thread::sleep(Duration::from_millis(1));
+        self.bus.0.borrow_mut().open_devices -= 1;
     }
 }
 
-#[test]
-fn replies_to_power_menu_and_unsupported_directed_messages() {
-    let (fake, events) = Fake::new(CONNECTED);
-    let mut controller = fake.controller(true);
-    wait_state(&mut controller, "active");
-    for frame in [
-        &[0x04, 0x8f][..],         // Give Device Power Status
-        &[0x04, 0x8d, 0x02],       // Menu Request, query
-        &[0x04, 0x8d, 0x01],       // Deactivate
-        &[0x04, 0x8d, 0x02],       // Query after deactivation
-        &[0x04, 0x8d, 0x00],       // Activate
-        &[0x04, 0x8d, 0x03],       // Invalid menu operand
-        &[0x04, 0x8c],             // Vendor ID is handled by Linux
-        &[0x04, 0x46],             // OSD name
-        &[0x04, 0x83],             // Physical address
-        &[0x04, 0x9f],             // CEC version
-        &[0x04, 0xff],             // Test-only Abort handled by Linux
-        &[0x04, 0x00, 0x8e, 0x00], // No reply to Feature Abort
-        &[0x0f, 0x89, 0x01],       // No reply to broadcasts
-        &[0xf4, 0x8f],             // No directed reply to Unregistered
-        &[0x08, 0x8f],             // Not our logical address
-        &[0x04, 0x89, 0x01],       // Unsupported directed Vendor Command
-    ] {
-        receive(&events, frame);
+impl Device for FakeDevice {
+    fn name(&self) -> &str {
+        &self.name
     }
-    let sent = wait_for_transmissions(&fake, 7);
-    assert_eq!(
-        sent.iter().map(Frame::bytes).collect::<Vec<_>>(),
-        [
-            &[0x40, 0x90, 0x00][..],
-            &[0x40, 0x8e, 0x00],
-            &[0x40, 0x8e, 0x01],
-            &[0x40, 0x8e, 0x01],
-            &[0x40, 0x8e, 0x00],
-            &[0x40, 0x00, 0x8d, 0x03],
-            &[0x40, 0x00, 0x89, 0x00],
-        ]
-    );
-}
 
-#[test]
-fn publishes_visible_playback_after_claim_and_respects_the_tv_route() {
-    let (fake, events) = Fake::new(UNPLUGGED);
-    let mut controller = fake.controller(true);
-    controller.set_playback_visible(true);
-    events.send(Ok(Event::StateChange(CONNECTED))).unwrap();
-    wait_state(&mut controller, "active");
-    let active = wait_for_transmissions(&fake, 2);
-    assert_eq!(active[0].bytes(), [0x4f, 0x82, 0x21, 0x00]);
-    assert_eq!(active[1].bytes(), [0x40, 0x8e, 0x00]);
-
-    events.send(Ok(Event::StateChange(CONNECTED))).unwrap();
-    receive(&events, &[0x0f, 0x85]); // Request the current source
-    receive(&events, &[0x0f, 0x82, 0, 0]); // The TV selects its own tuner
-    receive(&events, &[0x0f, 0x85]); // No response after losing the route
-    receive(&events, &[0x0f, 0x80, 0, 0, 0x21, 0]); // TV routes back to the player
-    receive(&events, &[0x0f, 0x86, 0x22, 0]); // A sibling input is selected
-    receive(&events, &[0x0f, 0x85]);
-    receive(&events, &[0x0f, 0x86, 0x21, 0]); // Select this player's PA
-    receive(&events, &[0x04, 0x8f]); // Mark all prior events handled
-    let sent = wait_for_transmissions(&fake, 9);
-    assert_eq!(&sent[..8], active.repeat(4));
-    assert_eq!(sent[8].bytes(), [0x40, 0x90, 0]);
-}
-
-#[test]
-fn a_hidden_playback_claim_passively_waits_for_tv_selection_or_visible_video() {
-    let (fake, events) = Fake::new(CONNECTED);
-    let mut controller = fake.controller(true);
-    wait_state(&mut controller, "active");
-    receive(&events, &[0x0f, 0x85]);
-    receive(&events, &[0x04, 0x8f]);
-    assert_eq!(wait_for_transmissions(&fake, 1)[0].bytes(), [0x40, 0x90, 0]);
-    controller.set_playback_visible(true);
-    assert_eq!(
-        wait_for_transmissions(&fake, 3)[1].bytes(),
-        [0x4f, 0x82, 0x21, 0]
-    );
-    assert_eq!(wait_for_transmissions(&fake, 3)[2].bytes(), [0x40, 0x8e, 0]);
-    receive(&events, &[0x04, 0x8d, 0x01]); // TV deactivates the device menu
-    receive(&events, &[0x0f, 0x85]);
-    receive(&events, &[0x04, 0x8f]);
-    let sent = wait_for_transmissions(&fake, 6);
-    assert_eq!(sent[3].bytes(), [0x40, 0x8e, 1]);
-    assert_eq!(sent[4].bytes(), [0x4f, 0x82, 0x21, 0]);
-    assert_eq!(sent[5].bytes(), [0x40, 0x90, 0]);
-}
-
-#[test]
-fn automatic_selection_skips_failed_devices_but_explicit_selection_does_not() {
-    let (fake, _events) = Fake::new(CONNECTED);
-    {
-        let mut shared = fake.shared.lock().unwrap();
-        shared.devices.push(info(1));
-        shared
-            .failures
-            .insert(info(0).path, io::ErrorKind::PermissionDenied);
+    fn supports_logical_addresses(&self) -> bool {
+        self.read(|a| a.log_addrs)
     }
-    let mut controller = fake.controller(true);
-    wait_state(&mut controller, "active");
-    assert_eq!(controller.snapshot().devices.len(), 2);
-    assert!(controller.select(info(0).path));
-    wait_state(&mut controller, "permission-denied");
-    assert!(
-        controller
-            .snapshot()
-            .state
-            .message()
-            .contains("video group")
-    );
-    assert_eq!(
-        fake.operations()
-            .iter()
-            .filter(|s| s.as_str() == "open /dev/cec1")
-            .count(),
-        1
-    );
-    assert!(controller.select(info(1).path));
-    wait_state(&mut controller, "active");
-    assert!(controller.select("/dev/cec9".into()));
-    wait_state(&mut controller, "no-device");
-    for invalid in ["/dev/cec", "/dev/cec0/../sda", "/tmp/cec0", "/dev/cec-1"] {
-        assert!(!controller.select(invalid.into()));
+
+    fn supports_remote_control(&self) -> bool {
+        self.read(|a| a.rc)
     }
-    assert_eq!(controller.selection(), "/dev/cec9");
+
+    fn physical_address(&self) -> Result<Option<u16>, Error> {
+        Ok(self.read(|a| a.physical))
+    }
+
+    fn logical_config(&self) -> Result<LogicalConfig, Error> {
+        Ok(self.read(|a| a.config))
+    }
+
+    fn configure_playback(&self) -> Result<(), Error> {
+        self.write(Write::Configure, LogicalConfig::NagameTv, |a| {
+            a.fail_configure
+        })
+    }
+
+    fn clear_logical_addresses(&self) -> Result<(), Error> {
+        self.write(Write::Clear, LogicalConfig::Empty, |a| a.fail_clear)
+    }
 }
+
+fn marker(runtime: &Path) -> PathBuf {
+    runtime.join("nagametv/hdmi-cec/cec0.owner")
+}
+
+fn crash_marker(runtime: &Path, adapter_name: &str) {
+    let path = marker(runtime);
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(path, format!("{HDMI_0}\n{adapter_name}\n")).unwrap();
+}
+
 #[test]
-fn tv_disconnect_and_state_change_reclaim_without_reopening() {
-    let (fake, events) = Fake::new(UNPLUGGED);
-    let mut controller = fake.controller(true);
-    wait_state(&mut controller, "waiting-for-tv");
-    events.send(Ok(Event::StateChange(CONNECTED))).unwrap();
-    wait_state(&mut controller, "active");
-    assert_eq!(controller.snapshot().physical_address, CONNECTED.physical);
-    events.send(Ok(Event::StateChange(UNPLUGGED))).unwrap();
-    wait_state(&mut controller, "waiting-for-tv");
+fn configures_an_empty_adapter_without_a_tv_and_refreshes_without_writing() {
+    let fake = Fake::with_adapter();
+    fake.modify(HDMI_0, |a| a.physical = None);
+    let runtime = tempfile::tempdir().unwrap();
+    let mut controller = fake.start(Some(runtime.path()), true, HDMI_0);
+    assert!(matches!(controller.snapshot().state, State::Configured));
     assert_eq!(controller.snapshot().physical_address, None);
-    events.send(Ok(Event::StateChange(CONNECTED))).unwrap();
-    wait_state(&mut controller, "active");
+    assert_eq!(
+        fs::read_to_string(marker(runtime.path())).unwrap(),
+        format!("{HDMI_0}\n{ADAPTER}\n")
+    );
+    fake.assert_writes(&[(HDMI_0, Write::Configure)]);
+
+    fake.modify(HDMI_0, |a| a.physical = Some(TV_ADDRESS));
+    controller.refresh();
+    assert_eq!(controller.snapshot().physical_address, Some(TV_ADDRESS));
+    fake.assert_writes(&[(HDMI_0, Write::Configure)]);
+
     drop(controller);
-    assert_eq!(
-        fake.operations()
-            .iter()
-            .filter(|s| s.starts_with("open"))
-            .count(),
-        1
-    );
-}
-#[test]
-fn no_device_claim_failure_and_disconnect_have_distinct_states_and_release() {
-    let (fake, _events) = Fake::new(CONNECTED);
-    fake.shared.lock().unwrap().devices.clear();
-    let mut controller = fake.controller(true);
-    wait_state(&mut controller, "no-device");
-    assert!(controller.enable(false));
-    fake.shared.lock().unwrap().devices.push(info(0));
-    fake.shared.lock().unwrap().claim_failure = true;
-    assert!(controller.enable(true));
-    wait_state(&mut controller, "error");
-    assert!(
-        controller
-            .snapshot()
-            .state
-            .message()
-            .contains("claim failed")
-    );
-    assert!(controller.enable(false));
-    fake.shared.lock().unwrap().claim_failure = false;
-    assert!(controller.enable(true));
-    wait_state(&mut controller, "active");
-    drop(_events);
-    wait_state(&mut controller, "disconnected");
-    assert!(
-        fake.operations()
-            .ends_with(&["release /dev/cec0".into(), "close /dev/cec0".into()])
-    );
-}
-#[test]
-fn claim_timeout_uses_injected_time_and_releases_the_requested_address() {
-    use std::sync::atomic::{AtomicUsize, Ordering};
-    let (fake, _events) = Fake::new(CONNECTED);
-    let requested = connect(&mut fake.clone(), "", &[info(0)], Diagnostics::shared()).unwrap();
-    fake.shared.lock().unwrap().address.logical_mask = 0;
-    let (_stop, stop) = mpsc::channel();
-    let (snapshots, _receiver) = mpsc::channel();
-    let (inputs, _input_receiver) = mpsc::sync_channel(4);
-    let now = Instant::now();
-    let calls = AtomicUsize::new(0);
-    let result = run_device(
-        requested,
-        &[info(0)],
-        &stop,
-        &snapshots,
-        &inputs,
-        (&mut 0, &AtomicBool::new(false)),
-        || {
-            now + if calls.fetch_add(1, Ordering::SeqCst) == 0 {
-                Duration::ZERO
-            } else {
-                CLAIM_TIMEOUT
-            }
-        },
-    );
-    assert!(matches!(result, Err(Error::Claim)));
-    assert!(
-        fake.operations()
-            .ends_with(&["release /dev/cec0".into(), "close /dev/cec0".into()])
-    );
-}
-#[test]
-fn lost_release_and_queue_pressure_do_not_block_off_or_deliver_after_off() {
-    let (fake, events) = Fake::new(CONNECTED);
-    let mut controller = fake.controller(true);
-    wait_state(&mut controller, "active");
-    for _ in 0..INPUT_QUEUE_SIZE * 2 {
-        events
-            .send(Ok(Event::Press {
-                initiator: 0,
-                code: 0x49,
-            }))
-            .unwrap();
-        events.send(Ok(Event::Release { initiator: 0 })).unwrap();
-    }
-    events.send(Ok(Event::LostMessages(2))).unwrap();
-    let deadline = Instant::now() + Duration::from_secs(3);
-    while fake.shared.lock().unwrap().processed < INPUT_QUEUE_SIZE * 4 + 1 {
-        assert!(
-            Instant::now() < deadline,
-            "fake did not fill the input queue"
-        );
-        thread::sleep(Duration::from_millis(1));
-    }
-    assert!(controller.enable(false));
-    assert_eq!(controller.next_input(), None);
-    assert!(fake.operations().last().unwrap().starts_with("close"));
+    assert!(!marker(runtime.path()).exists());
+    fake.assert_writes(&[(HDMI_0, Write::Configure), (HDMI_0, Write::Clear)]);
 }
 
 #[test]
-fn queued_input_from_a_disconnected_generation_is_discarded() {
-    let (fake, events) = Fake::new(CONNECTED);
-    let mut controller = fake.controller(true);
-    wait_state(&mut controller, "active");
-    events
-        .send(Ok(Event::Press {
-            initiator: 0,
-            code: 0x45,
-        }))
-        .unwrap();
-    events
-        .send(Err(Error::Disconnected {
-            path: info(0).path,
-            source: io::ErrorKind::NotConnected.into(),
-        }))
-        .unwrap();
-    wait_state(&mut controller, "disconnected");
-    assert_eq!(controller.next_input(), None);
+fn takes_over_a_crashed_owner_without_rewriting_the_kernel_configuration() {
+    let fake = Fake::with_adapter();
+    fake.modify(HDMI_0, |a| a.config = LogicalConfig::NagameTv);
+    let runtime = tempfile::tempdir().unwrap();
+    crash_marker(runtime.path(), ADAPTER);
+
+    let controller = fake.start(Some(runtime.path()), true, "");
+    assert!(matches!(controller.snapshot().state, State::Configured));
+    fake.assert_writes(&[]);
+    drop(controller);
+    assert!(!marker(runtime.path()).exists());
+    fake.assert_writes(&[(HDMI_0, Write::Clear)]);
 }
 
 #[test]
-fn unexpected_worker_exit_reports_failure_and_releases_the_device() {
-    let (fake, _events) = Fake::new(CONNECTED);
-    fake.shared.lock().unwrap().panic_on_poll = true;
-    let mut controller = fake.controller(true);
-    wait_state(&mut controller, "error");
-    assert!(
-        controller
-            .snapshot()
-            .state
-            .message()
-            .contains("exited unexpectedly")
-    );
-    assert!(matches!(controller.runtime, Runtime::Off));
-    assert!(
-        fake.operations()
-            .ends_with(&["release /dev/cec0".into(), "close /dev/cec0".into()])
-    );
-}
-
-#[derive(Debug)]
-struct DiagnosticEvent {
-    level: tracing::Level,
-    fields: BTreeMap<String, String>,
-}
-impl tracing::field::Visit for DiagnosticEvent {
-    fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
-        self.fields
-            .insert(field.name().into(), format!("{value:?}"));
-    }
-    fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
-        self.fields.insert(field.name().into(), value.into());
-    }
-    fn record_error(
-        &mut self,
-        field: &tracing::field::Field,
-        value: &(dyn std::error::Error + 'static),
-    ) {
-        self.fields.insert(field.name().into(), value.to_string());
-    }
-}
-#[derive(Clone, Default)]
-struct DiagnosticEvents(Arc<Mutex<Vec<DiagnosticEvent>>>);
-impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for DiagnosticEvents {
-    fn on_event(&self, event: &tracing::Event<'_>, _: tracing_subscriber::layer::Context<'_, S>) {
-        if event.metadata().target().ends_with("hdmi_cec::diagnostics") {
-            let mut recorded = DiagnosticEvent {
-                level: *event.metadata().level(),
-                fields: BTreeMap::new(),
-            };
-            event.record(&mut recorded);
-            self.0.lock().unwrap().push(recorded);
-        }
-    }
-}
-impl DiagnosticEvents {
-    fn capture(&self, run: impl FnOnce()) {
-        use tracing_subscriber::prelude::*;
-        tracing::subscriber::with_default(tracing_subscriber::registry().with(self.clone()), run);
-    }
-    fn levels(&self) -> Vec<tracing::Level> {
-        self.0
-            .lock()
-            .unwrap()
-            .iter()
-            .map(|event| event.level)
-            .collect()
-    }
-}
-fn fake_failure(fake: &Fake, diagnostics: &SharedDiagnostics) -> State {
-    let devices = fake.clone().enumerate().unwrap();
-    let error = match connect(&mut fake.clone(), "", &devices, diagnostics.clone()) {
-        Err(error) => error,
-        Ok(_) => panic!("fake was expected to fail connecting"),
-    };
-    diagnostics.borrow_mut().failed("connect adapter", error)
-}
-fn stopped_fake_session(fake: &Fake, diagnostics: &SharedDiagnostics) -> State {
-    let requested = connect(&mut fake.clone(), "", &[info(0)], diagnostics.clone()).unwrap();
-    let (cancel, stop) = mpsc::channel();
-    cancel.send(()).unwrap();
-    let (snapshots, receiver) = mpsc::channel();
-    let (inputs, _input_receiver) = mpsc::sync_channel(INPUT_QUEUE_SIZE);
-    run_device(
-        requested,
-        &[info(0)],
-        &stop,
-        &snapshots,
-        &inputs,
-        (&mut 0, &AtomicBool::new(false)),
-        Instant::now,
-    )
-    .unwrap();
-    receiver.recv().unwrap().state
-}
-
-#[test]
-fn retrying_fake_failures_only_warn_when_the_cause_changes_or_playback_recovers() {
-    use tracing::Level;
-    let (fake, _events) = Fake::new(CONNECTED);
-    let diagnostics = Diagnostics::shared();
-    let recorded = DiagnosticEvents::default();
-    recorded.capture(|| {
-        fake.shared.lock().unwrap().devices.clear();
-        for _ in 0..2 {
-            let state = fake_failure(&fake, &diagnostics);
-            assert!(matches!(state, State::NoDevice));
-            for _ in 0..3 {
-                assert!(!state.message().is_empty());
-            }
-        }
-        {
-            let mut shared = fake.shared.lock().unwrap();
-            shared.devices.push(info(0));
-            shared
-                .failures
-                .insert(info(0).path, io::ErrorKind::PermissionDenied);
-        }
-        for _ in 0..2 {
-            assert!(matches!(
-                fake_failure(&fake, &diagnostics),
-                State::PermissionDenied(_)
-            ));
-        }
-        fake.shared
-            .lock()
-            .unwrap()
-            .failures
-            .insert(info(0).path, io::ErrorKind::BrokenPipe);
-        for _ in 0..2 {
-            assert!(matches!(
-                fake_failure(&fake, &diagnostics),
-                State::Failed(_)
-            ));
-        }
-        fake.shared.lock().unwrap().failures.clear();
-        assert!(matches!(
-            stopped_fake_session(&fake, &diagnostics),
-            State::Active
-        ));
-        fake.shared
-            .lock()
-            .unwrap()
-            .failures
-            .insert(info(0).path, io::ErrorKind::BrokenPipe);
-        assert!(matches!(
-            fake_failure(&fake, &diagnostics),
-            State::Failed(_)
-        ));
-    });
-    assert_eq!(
-        recorded.levels(),
-        [
-            Level::WARN,
-            Level::DEBUG,
-            Level::WARN,
-            Level::DEBUG,
-            Level::WARN,
-            Level::DEBUG,
-            Level::WARN
-        ]
-    );
-    let events = recorded.0.lock().unwrap();
-    assert!(
-        events
-            .iter()
-            .all(|event| event.fields["operation"] == "connect adapter")
-    );
-    assert!(events[0].fields["error"].contains("No HDMI-CEC device found"));
-    assert!(events[2].fields["error"].contains("/dev/cec0"));
-    assert!(events[2].fields["error"].contains("Permission denied"));
-}
-
-#[test]
-fn failure_identity_includes_error_operation_kind_device_and_the_underlying_causes() {
-    use super::diagnostics::{Change, FailureLog};
-    let mut log = FailureLog::default();
-    for error in [
-        Error::NoDevice,
-        Error::Permission {
-            path: info(0).path,
-            source: io::ErrorKind::PermissionDenied.into(),
-        },
-        Error::Disconnected {
-            path: info(0).path,
-            source: io::ErrorKind::NotConnected.into(),
-        },
-        Error::Disconnected {
-            path: info(1).path,
-            source: io::ErrorKind::NotConnected.into(),
-        },
-        Error::Busy(info(0).path),
-        Error::Capabilities(info(0).path),
-        Error::Claim,
-        Error::Worker(io::ErrorKind::BrokenPipe.into()),
-        Error::Unsupported,
+fn leaves_matching_os_configuration_and_other_external_configurations_untouched() {
+    for (config, has_marker, without_passthrough) in [
+        (LogicalConfig::NagameTv, false, false),
+        (
+            LogicalConfig::External {
+                rc_passthrough: true,
+            },
+            true,
+            false,
+        ),
+        (
+            LogicalConfig::External {
+                rc_passthrough: false,
+            },
+            true,
+            true,
+        ),
     ] {
-        assert_eq!(log.observe(&error), Change::New);
-        assert_eq!(log.observe(&error), Change::Repeated);
+        let fake = Fake::with_adapter();
+        fake.modify(HDMI_0, |a| a.config = config);
+        let runtime = tempfile::tempdir().unwrap();
+        if has_marker {
+            crash_marker(runtime.path(), ADAPTER);
+        }
+        let mut controller = fake.start(Some(runtime.path()), true, "");
+        assert_eq!(controller.snapshot().state.as_str(), "external");
+        assert_eq!(
+            controller.snapshot().state.external_without_passthrough(),
+            without_passthrough
+        );
+        controller.refresh();
+        controller.enable(false);
+        drop(controller);
+        assert!(!marker(runtime.path()).exists());
+        assert_eq!(fake.0.borrow().adapters[HDMI_0].config, config);
+        fake.assert_writes(&[]);
     }
-    let operation = |operation| Error::Io {
-        operation,
-        path: info(0).path,
-        source: io::ErrorKind::BrokenPipe.into(),
-    };
-    assert_eq!(log.observe(&operation("open")), Change::New);
-    assert_eq!(log.observe(&operation("receive")), Change::New);
-    let same_message = |kind| Error::Worker(io::Error::new(kind, "adapter not ready"));
-    assert_eq!(
-        log.observe(&same_message(io::ErrorKind::TimedOut)),
-        Change::New
-    );
-    assert_eq!(
-        log.observe(&same_message(io::ErrorKind::WouldBlock)),
-        Change::New
-    );
-
-    #[derive(Debug, thiserror::Error)]
-    #[error("adapter not ready")]
-    struct Source(#[source] io::Error);
-    let cause =
-        |detail: &'static str| Error::Worker(io::Error::other(Source(io::Error::other(detail))));
-    let first = cause("bus disconnected");
-    let second = cause("claim rejected");
-    assert_eq!(first.to_string(), second.to_string());
-    assert_eq!(log.observe(&first), Change::New);
-    assert_eq!(log.observe(&first), Change::Repeated);
-    assert_eq!(log.observe(&second), Change::New);
 }
 
 #[test]
-fn waiting_retries_stay_at_debug_until_an_active_fake_session_recovers() {
-    use tracing::Level;
-    let (fake, _events) = Fake::new(UNPLUGGED);
-    let diagnostics = Diagnostics::shared();
-    let recorded = DiagnosticEvents::default();
-    recorded.capture(|| {
-        for _ in 0..2 {
-            assert!(matches!(
-                stopped_fake_session(&fake, &diagnostics),
-                State::WaitingForTv
-            ));
+fn releases_only_while_the_marker_adapter_name_and_configuration_match() {
+    for changed in [
+        "kernel configuration",
+        "adapter name",
+        "marker removed",
+        "device unplugged",
+    ] {
+        let fake = Fake::with_adapter();
+        let runtime = tempfile::tempdir().unwrap();
+        let mut controller = fake.start(Some(runtime.path()), true, "");
+        match changed {
+            "kernel configuration" => fake.modify(HDMI_0, |a| {
+                a.config = LogicalConfig::External {
+                    rc_passthrough: true,
+                }
+            }),
+            "adapter name" => fake.modify(HDMI_0, |a| a.name = "another adapter".into()),
+            "marker removed" => fs::remove_file(marker(runtime.path())).unwrap(),
+            "device unplugged" => {
+                assert!(fake.0.borrow_mut().adapters.remove(HDMI_0).is_some());
+            }
+            _ => unreachable!(),
         }
-        fake.shared.lock().unwrap().address = CONNECTED;
-        assert!(matches!(
-            stopped_fake_session(&fake, &diagnostics),
-            State::Active
-        ));
-        fake.shared.lock().unwrap().address = UNPLUGGED;
-        assert!(matches!(
-            stopped_fake_session(&fake, &diagnostics),
-            State::WaitingForTv
-        ));
-    });
-    assert_eq!(recorded.levels(), [Level::WARN, Level::DEBUG, Level::WARN]);
+        assert!(controller.enable(false));
+        assert!(matches!(controller.snapshot().state, State::Disabled));
+        assert!(!marker(runtime.path()).exists());
+        fake.assert_writes(&[(HDMI_0, Write::Configure)]);
+    }
 }
 
 #[test]
-fn release_retries_and_a_full_input_queue_report_once_until_their_operation_recovers() {
-    use tracing::Level;
-    let (fake, _events) = Fake::new(CONNECTED);
-    let diagnostics = Diagnostics::shared();
-    let recorded = DiagnosticEvents::default();
-    recorded.capture(|| {
-        fake.shared.lock().unwrap().release_failure = Some(io::ErrorKind::BrokenPipe);
-        for _ in 0..2 {
-            drop(connect(&mut fake.clone(), "", &[info(0)], diagnostics.clone()).unwrap());
+fn detects_a_replaced_configuration_on_settings_refresh() {
+    let fake = Fake::with_adapter();
+    let runtime = tempfile::tempdir().unwrap();
+    let mut controller = fake.start(Some(runtime.path()), true, "");
+    fake.modify(HDMI_0, |a| {
+        a.config = LogicalConfig::External {
+            rc_passthrough: false,
         }
-        fake.shared.lock().unwrap().release_failure = None;
-        drop(connect(&mut fake.clone(), "", &[info(0)], diagnostics.clone()).unwrap());
-        fake.shared.lock().unwrap().release_failure = Some(io::ErrorKind::BrokenPipe);
-        drop(connect(&mut fake.clone(), "", &[info(0)], diagnostics.clone()).unwrap());
-        diagnostics.borrow_mut().input_dropped();
-        diagnostics.borrow_mut().input_dropped();
-        diagnostics.borrow_mut().input_accepted();
-        diagnostics.borrow_mut().input_dropped();
     });
-    assert_eq!(
-        recorded.levels(),
-        [
-            Level::ERROR,
-            Level::DEBUG,
-            Level::ERROR,
-            Level::WARN,
-            Level::DEBUG,
-            Level::WARN
-        ]
+    controller.refresh();
+    assert!(controller.snapshot().state.external_without_passthrough());
+    assert!(!marker(runtime.path()).exists());
+    drop(controller);
+    fake.assert_writes(&[(HDMI_0, Write::Configure)]);
+}
+
+#[test]
+fn a_second_process_cannot_take_over_a_live_owner() {
+    let fake = Fake::with_adapter();
+    let runtime = tempfile::tempdir().unwrap();
+    let first = fake.start(Some(runtime.path()), true, "");
+    let second = fake.start(Some(runtime.path()), true, "");
+    assert_eq!(second.snapshot().state.as_str(), "external");
+    drop(second);
+    assert!(marker(runtime.path()).exists());
+    fake.assert_writes(&[(HDMI_0, Write::Configure)]);
+    drop(first);
+    fake.assert_writes(&[(HDMI_0, Write::Configure), (HDMI_0, Write::Clear)]);
+}
+
+#[test]
+fn configures_without_runtime_dir_but_never_clears_that_configuration() {
+    let fake = Fake::with_adapter();
+    let mut controller = fake.start(None, true, "");
+    controller.refresh();
+    assert!(matches!(controller.snapshot().state, State::Configured));
+    controller.enable(false);
+    controller.enable(true);
+    assert_eq!(controller.snapshot().state.as_str(), "external");
+    drop(controller);
+    fake.assert_writes(&[(HDMI_0, Write::Configure)]);
+}
+
+#[test]
+fn off_on_and_device_change_release_only_the_previous_adapter() {
+    let fake = Fake::with_adapter();
+    fake.0
+        .borrow_mut()
+        .adapters
+        .insert(HDMI_1.into(), FakeAdapter::default());
+    let runtime = tempfile::tempdir().unwrap();
+    let mut controller = fake.start(Some(runtime.path()), false, "");
+    controller.refresh();
+    assert_eq!(fake.0.borrow().scans, 0);
+    assert!(controller.select(HDMI_0.into()).is_ok());
+    assert_eq!(fake.0.borrow().scans, 0);
+    controller.enable(true);
+    controller.enable(false);
+    controller.enable(true);
+    assert!(controller.select(HDMI_1.into()).is_ok());
+    assert_eq!(controller.selection(), HDMI_1);
+    assert!(matches!(controller.snapshot().state, State::Configured));
+    drop(controller);
+    fake.assert_writes(&[
+        (HDMI_0, Write::Configure),
+        (HDMI_0, Write::Clear),
+        (HDMI_0, Write::Configure),
+        (HDMI_0, Write::Clear),
+        (HDMI_1, Write::Configure),
+        (HDMI_1, Write::Clear),
+    ]);
+}
+
+#[test]
+fn normal_startup_restores_saved_device_and_restricted_startup_stays_off() {
+    let fake = Fake::with_adapter();
+    fake.0
+        .borrow_mut()
+        .adapters
+        .insert(HDMI_1.into(), FakeAdapter::default());
+    let runtime = tempfile::tempdir().unwrap();
+    let path = runtime.path().join("settings.toml");
+    let mut settings = crate::settings::Loaded::open(path.clone())
+        .unwrap()
+        .activate(None, None);
+    settings.change(crate::settings::Change::HdmiCecEnabled(true));
+    settings.change(crate::settings::Change::HdmiCecDevice(HDMI_1.into()));
+    settings.flush().unwrap();
+    let restored = crate::settings::Loaded::open(path)
+        .unwrap()
+        .activate(None, None);
+    let preferences = restored.preferences();
+    let denied = Controller::with_session(
+        LaunchPlan::Restricted("none".parse().unwrap()),
+        preferences.hdmi_cec_enabled,
+        preferences.hdmi_cec_device.clone(),
+        fake.session(Some(runtime.path())),
     );
+    assert!(!denied.allowed());
+    assert_eq!(fake.0.borrow().scans, 0);
+    let restored = fake.start(
+        Some(runtime.path()),
+        preferences.hdmi_cec_enabled,
+        &preferences.hdmi_cec_device,
+    );
+    assert!(restored.enabled());
+    fake.assert_writes(&[(HDMI_1, Write::Configure)]);
 }
 
 #[test]
-fn retry_stage_changes_do_not_warn_again_for_the_same_disconnected_adapter() {
-    use tracing::Level;
-    let mut diagnostics = Diagnostics::default();
-    let recorded = DiagnosticEvents::default();
-    recorded.capture(|| {
-        for operation in ["receive from adapter", "connect adapter", "connect adapter"] {
-            diagnostics.failed(
-                operation,
-                Error::Disconnected {
-                    path: info(0).path,
-                    source: io::ErrorKind::NotConnected.into(),
-                },
-            );
-        }
+fn auto_prefers_a_valid_physical_address_and_keeps_the_registered_adapter() {
+    let fake = Fake::with_adapter();
+    fake.modify(HDMI_0, |a| a.physical = None);
+    fake.0
+        .borrow_mut()
+        .adapters
+        .insert(HDMI_1.into(), FakeAdapter::default());
+    let runtime = tempfile::tempdir().unwrap();
+    let mut controller = fake.start(Some(runtime.path()), true, "");
+    fake.modify(HDMI_0, |a| a.physical = Some(TV_ADDRESS));
+    fake.modify(HDMI_1, |a| a.physical = None);
+    controller.refresh();
+    assert_eq!(controller.snapshot().physical_address, None);
+    fake.assert_writes(&[(HDMI_1, Write::Configure)]);
+}
+
+#[test]
+fn reports_no_device_missing_capabilities_and_permission_denied() {
+    let fake = Fake::default();
+    let runtime = tempfile::tempdir().unwrap();
+    let mut controller = fake.start(Some(runtime.path()), true, "");
+    assert!(matches!(controller.snapshot().state, State::NoDevice));
+
+    fake.0.borrow_mut().adapters.insert(
+        HDMI_0.into(),
+        FakeAdapter {
+            rc: false,
+            ..Default::default()
+        },
+    );
+    controller.refresh();
+    assert!(matches!(
+        controller.snapshot().state,
+        State::NoRemoteControl
+    ));
+
+    fake.modify(HDMI_0, |a| {
+        a.rc = true;
+        a.log_addrs = false;
     });
-    assert_eq!(recorded.levels(), [Level::WARN, Level::DEBUG, Level::DEBUG]);
+    controller.refresh();
+    assert!(matches!(
+        controller.snapshot().state,
+        State::Failed(Error::NoLogicalAddresses(_))
+    ));
+
+    fake.modify(HDMI_0, |a| a.denied = true);
+    controller.refresh();
+    assert!(matches!(
+        controller.snapshot().state,
+        State::PermissionDenied(_)
+    ));
+    fake.assert_writes(&[]);
+}
+
+#[test]
+fn failed_configure_does_not_leave_a_marker_and_failed_release_keeps_one_for_retry() {
+    let fake = Fake::with_adapter();
+    let runtime = tempfile::tempdir().unwrap();
+    crash_marker(runtime.path(), ADAPTER);
+    fake.modify(HDMI_0, |a| a.fail_configure = true);
+    let mut controller = fake.start(Some(runtime.path()), true, "");
+    assert_eq!(controller.snapshot().state.as_str(), "error");
+    assert!(!marker(runtime.path()).exists());
+    fake.assert_writes(&[]);
+
+    fake.modify(HDMI_0, |a| {
+        a.fail_configure = false;
+        a.fail_clear = true;
+    });
+    controller.refresh();
+    assert!(matches!(
+        controller.select(HDMI_1.into()),
+        Err(SelectionError::ReleaseFailed)
+    ));
+    assert_eq!(controller.selection(), "");
+    assert_eq!(controller.snapshot().state.as_str(), "error");
+    assert!(marker(runtime.path()).exists());
+    fake.assert_writes(&[(HDMI_0, Write::Configure)]);
+
+    fake.modify(HDMI_0, |a| a.fail_clear = false);
+    controller.enable(false);
+    assert!(matches!(controller.snapshot().state, State::Disabled));
+    assert!(!marker(runtime.path()).exists());
+    fake.assert_writes(&[(HDMI_0, Write::Configure), (HDMI_0, Write::Clear)]);
 }

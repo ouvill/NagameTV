@@ -4,7 +4,10 @@
 #include <QtGui/QGuiApplication>
 #include <QtGui/QInputMethodEvent>
 #include <QtGui/QKeyEvent>
+#include <QtGui/QWindow>
 #include <QtQuickTest/quicktest.h>
+#include <QtTest/qtestkeyboard.h>
+#include "qt/key_normalizer.h"
 #include "rust/cxx.h"
 #include <vector>
 
@@ -52,6 +55,26 @@ inline bool sendTestForwardedKey(int key, int modifiers, const QString &text, bo
     if (!target) return false;
     QKeyEvent event(QEvent::KeyPress, key, Qt::KeyboardModifiers(modifiers), text, repeat);
     return QCoreApplication::sendEvent(target, &event);
+}
+
+inline void installTestKeyNormalizer() {
+#ifdef Q_OS_LINUX
+    installKeyNormalizer(*qGuiApp);
+#endif
+}
+
+inline bool sendTestNativeKey(int key, quint32 keysym, int modifiers, bool repeat, bool release) {
+    auto *window = QGuiApplication::focusWindow();
+    if (!window) return false;
+    const auto type = release ? QEvent::KeyRelease : QEvent::KeyPress;
+    // QTest::keyClick derives ASCII text and warns for dedicated remote keys.
+    // Use its window-system delivery with empty text when no keysym is needed.
+    if (keysym == 0) {
+        qt_handleKeyEvent(window, type, key, Qt::KeyboardModifiers(modifiers), QString(), repeat);
+        return true;
+    }
+    QKeyEvent event(type, key, Qt::KeyboardModifiers(modifiers), 0, keysym, 0, QString(), repeat);
+    return QCoreApplication::sendEvent(window, &event);
 }
 
 #endif

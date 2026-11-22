@@ -32,7 +32,7 @@ OFFでは専用ワーカー・通信・ブラウザーを起動せず、自動�
 | `data_broadcast_enabled` | OFF。「設定 → 視聴 → データ放送を有効にする（実験的）」 | `player::data_broadcast`、`playback::session::broadcast` | 対象局と操作の検証結果を[対応表](std-b24-implementation.md)へ記録し、起動・選局・シーク・終了・入力復帰の回帰試験と、継続視聴時のメモリー・処理負荷の確認を完了する |
 | `recording_reservations_enabled` | OFF。「設定 → 接続 → 番組表から録画予約する（実験的）」、検証時は`--features=epg,recording-reservations` | `epgstation::reservations`、`player::recording_reservations` | [予約仕様](recording-reservations.md)に実サーバーでの追加・取消し・競合・録画開始との競合、OFF/ON・認証変更・再起動・番組表更新コストの検証結果を記録する |
 | `recording-delete` | OFF。検証用の起動オプション `--features=recording-delete`（設定が一時的になる） | `epgstation::deletion`、`player::recording_library` | [録画削除](epgstation.md#録画を削除する)の実機での確認、キャンセル、失敗時の復帰と一覧の再取得を、テスト用の録画で確認する |
-| `hdmi_cec_enabled` | OFF。「設定 → リモート操作 → テレビのリモコン（HDMI-CEC） → HDMI-CECでテレビのリモコンから操作する（実験的）」、検証時は `--features=...,hdmi-cec` | `hdmi_cec`、`player::hdmi_cec`、`hdmi_cec_model` | [HDMI-CEC仕様](hdmi-cec.md#実機検証が必要な項目)の実機（Raspberry PiやPulse-Eight USBアダプター）でのキー受信・状態遷移・OFF/ON・デバイス着脱の検証結果を記録する |
+| `hdmi_cec_enabled` | OFF。「設定 → リモート操作 → テレビのリモコン（HDMI-CEC） → HDMI-CECでテレビのリモコンから操作する（実験的）」、検証時は `--features=...,hdmi-cec` | `hdmi_cec`、`player::hdmi_cec`、`hdmi_cec_model` | [HDMI-CEC仕様](hdmi-cec.md#実機検証が必要な項目)の実機（Raspberry PiやPulse-Eight USBアダプター）でのキー受信・テレビ電源とHDMI着脱への追従・OFF/ON・再起動時の所有と外部設定の共存を確認する |
 
 データ放送はQt WebEngineのビルド・配布依存を維持します。
 `--features=data-broadcast`は、保存設定を使わずこの機能だけを有効にする検証用の起動方法です。

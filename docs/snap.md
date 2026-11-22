@@ -125,7 +125,8 @@ snap connections nagametv
 Waylandセッションにログインし直します。
 
 Waylandセッションから`snap run nagametv --features=hdmi-cec`を実行すると、その起動に限って
-HDMI-CECを有効にできます。リモコンキーの受信とテレビとのやり取りは未検証です。
+HDMI-CECを有効にできます。ながめTVは論理アドレスを設定し、Linuxカーネルが変換するキー入力を
+フォーカス中のウィンドウで受け取ります。snap版でのリモコン操作は実機検証が必要です。
 [HDMI-CECの設定と状態表示](hdmi-cec.md#有効化と設定)
 
 ### CIの成果物で実機を更新する
