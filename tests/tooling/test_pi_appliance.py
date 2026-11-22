@@ -151,16 +151,20 @@ while True:
             self.assertTrue(readable, f"Viewer did not send {line}")
             self.assertEqual(process.stdout.readline().strip(), line)
 
-        with tempfile.TemporaryDirectory() as directory, subprocess.Popen(
-            [sys.executable, "-c", viewer_source], text=True, stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-        ) as viewer:
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            subprocess.Popen([sys.executable, "-c", "import sys; sys.stdin.read()"],
+                             stdin=subprocess.PIPE) as wrong_parent,
+            subprocess.Popen([sys.executable, "-c", viewer_source], text=True,
+                             stdin=subprocess.PIPE, stdout=subprocess.PIPE) as viewer,
+        ):
             try:
                 receive(viewer, "ready")
                 pid_file = Path(directory) / "viewer.pid"
                 compositor = os.getpid()
                 _, viewer_started = stop_kiosk.process_identity(viewer.pid)
                 _, compositor_started = stop_kiosk.process_identity(compositor)
+                _, wrong_parent_started = stop_kiosk.process_identity(wrong_parent.pid)
                 # Exercise the stop operation with real processes under the test UID.
                 command = [
                     sys.executable, "-I", "-c",
@@ -169,7 +173,8 @@ while True:
                     str(STOP_SCRIPT), directory,
                 ]
                 for parent, record, message in [
-                    (os.getppid(), (viewer_started, compositor_started), "no longer a child of labwc"),
+                    (wrong_parent.pid, (viewer_started, wrong_parent_started),
+                     "no longer a child of labwc"),
                     (compositor, (viewer_started + 1, compositor_started), "PID was reused"),
                     (compositor, (viewer_started, compositor_started + 1), "PID was reused"),
                 ]:
