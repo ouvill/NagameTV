@@ -4,9 +4,11 @@ import importlib.util
 import io
 import json
 import os
+import select
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import tomllib
 import unittest
@@ -57,6 +59,85 @@ class PiApplianceTests(unittest.TestCase):
         unit = (PAYLOAD / "nagametv-kiosk.service").read_text()
         self.assertIn(f"User={kiosk['name']}\n", unit)
         self.assertIn("PAMName=nagametv-kiosk\n", unit)
+
+    def test_kiosk_stops_the_viewer_before_cgroup_teardown(self):
+        unit = (PAYLOAD / "nagametv-kiosk.service").read_text().splitlines()
+        self.assertIn("RuntimeDirectory=nagametv-kiosk", unit)
+        self.assertIn("RuntimeDirectoryMode=0700", unit)
+        self.assertIn(
+            "ExecStop=/usr/bin/python3 /usr/local/lib/nagametv-appliance/stop-kiosk.py $MAINPID", unit
+        )
+        self.assertIn("TimeoutStopSec=20s", unit)
+        self.assertIn("TTYVHangup=no", unit)
+        self.assertIn("KillMode=control-group", unit)
+        provision = (PAYLOAD / "provision-nagametv.sh").read_text()
+        self.assertIn("stop-kiosk.py", provision[:provision.index("done\n")])
+        self.assertIn("/usr/local/lib/nagametv-appliance/stop-kiosk.py",
+                      provision[:provision.index("systemctl daemon-reload")])
+
+    def test_stop_request_before_pid_publication_prevents_viewer_start(self):
+        with tempfile.TemporaryDirectory() as directory:
+            env = dict(os.environ, RUNTIME_DIRECTORY=directory, XDG_RUNTIME_DIR=directory,
+                       WAYLAND_DISPLAY="unused")
+            subprocess.run([sys.executable, str(PAYLOAD / "stop-kiosk.py"), str(os.getpid())],
+                           env=env, check=True, timeout=5)
+            result = subprocess.run(["/bin/sh", str(PAYLOAD / "start-kiosk")], env=env,
+                                    check=True, timeout=5, text=True, capture_output=True)
+            self.assertEqual((result.stdout, result.stderr), ("", ""))
+            self.assertTrue((Path(directory) / "viewer.pid").is_file())
+
+    @unittest.skipUnless(hasattr(os, "pidfd_open"), "Linux pidfd_open is required")
+    def test_stop_helper_waits_for_the_signalled_viewer_and_rejects_a_wrong_parent(self):
+        viewer_source = """
+import signal
+import sys
+
+def stop(*_):
+    print("term", flush=True)
+    sys.stdin.read(1)
+    raise SystemExit(0)
+
+signal.signal(signal.SIGTERM, stop)
+print("ready", flush=True)
+while True:
+    signal.pause()
+"""
+
+        def receive(process, line):
+            readable, _, _ = select.select([process.stdout], [], [], 5)
+            self.assertTrue(readable, f"Viewer did not send {line}")
+            self.assertEqual(process.stdout.readline().strip(), line)
+
+        with tempfile.TemporaryDirectory() as directory, subprocess.Popen(
+            [sys.executable, "-c", viewer_source], text=True, stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+        ) as viewer:
+            try:
+                receive(viewer, "ready")
+                (Path(directory) / "viewer.pid").write_text(f"{viewer.pid}\n")
+                command = [sys.executable, str(PAYLOAD / "stop-kiosk.py")]
+                env = dict(os.environ, RUNTIME_DIRECTORY=directory)
+                wrong = subprocess.run([*command, str(os.getppid())], env=env, text=True,
+                                       capture_output=True, timeout=5)
+                self.assertEqual(wrong.returncode, 1)
+                self.assertIn("no longer a child of labwc", wrong.stderr)
+                self.assertIsNone(viewer.poll())
+
+                with subprocess.Popen([*command, str(os.getpid())], env=env,
+                                      text=True, stderr=subprocess.PIPE) as stopper:
+                    try:
+                        receive(viewer, "term")
+                        self.assertIsNone(stopper.poll())
+                        viewer.stdin.write("x")
+                        viewer.stdin.flush()
+                        self.assertEqual(viewer.wait(timeout=5), 0)
+                        self.assertEqual(stopper.wait(timeout=5), 0, stopper.stderr.read())
+                    finally:
+                        if stopper.poll() is None:
+                            stopper.kill()
+            finally:
+                if viewer.poll() is None:
+                    viewer.kill()
 
     def test_kiosk_selects_greedyl_at_one_field_per_frame(self):
         unit = (PAYLOAD / "nagametv-kiosk.service").read_text().splitlines()
@@ -180,9 +261,10 @@ class PiApplianceTests(unittest.TestCase):
                     command = commands / name
                     command.write_text(f"#!/bin/sh\n{script}\n")
                     command.chmod(0o755)
+                (commands / "mv").symlink_to(shutil.which("mv"))
                 command_log = commands / "commands.log"
                 result = subprocess.run(["/bin/sh", str(PAYLOAD / "start-kiosk")],
-                                        env=dict(PATH=directory, XDG_RUNTIME_DIR=directory,
+                                        env=dict(PATH=directory, XDG_RUNTIME_DIR=directory, RUNTIME_DIRECTORY=directory,
                                                  WAYLAND_DISPLAY="mock", COMMAND_LOG=str(command_log),
                                                  MODE_STATUS="0" if available else "1",
                                                  PULSE_STATUS="0" if available else "1"),

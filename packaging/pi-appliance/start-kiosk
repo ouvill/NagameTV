@@ -3,6 +3,15 @@ set -eu
 
 : "${XDG_RUNTIME_DIR:?PAM did not start a user session}"
 : "${WAYLAND_DISPLAY:?labwc did not create a Wayland display}"
+: "${RUNTIME_DIRECTORY:?systemd did not create the kiosk runtime directory}"
+
+# Publish before checking the stop request, so ExecStop can either signal this
+# process or prevent it from starting the viewer. The PID survives exec.
+printf '%s\n' "$$" > "$RUNTIME_DIRECTORY/viewer.pid.tmp"
+mv -f "$RUNTIME_DIRECTORY/viewer.pid.tmp" "$RUNTIME_DIRECTORY/viewer.pid"
+if [ -e "$RUNTIME_DIRECTORY/stopping" ]; then
+    exit 0
+fi
 
 # labwc can select the EDID preferred mode even when the boot console used 1080p.
 if ! wlr-randr --output HDMI-A-1 --mode 1920x1080@60Hz &&
