@@ -100,6 +100,13 @@ pub mod ffi {
         #[cfg(target_os = "linux")]
         #[cxx_name = "installKeyNormalizer"]
         fn install_key_normalizer(app: Pin<&mut QGuiApplication>);
+        include!("qt/quit_signals.h");
+        #[cfg(target_os = "linux")]
+        #[cxx_name = "openQuitSignalPipe"]
+        fn open_quit_signal_pipe() -> Result<i32>;
+        #[cfg(target_os = "linux")]
+        #[cxx_name = "watchQuitSignals"]
+        fn watch_quit_signals(app: Pin<&mut QGuiApplication>, read_fd: i32, received: fn(i32));
         #[cfg(target_os = "linux")]
         #[cxx_name = "useQtQuickDialogs"]
         fn use_qt_quick_dialogs();

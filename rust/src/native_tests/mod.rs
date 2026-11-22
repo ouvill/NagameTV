@@ -15,6 +15,8 @@ mod recording_audit;
 #[cfg(target_os = "linux")]
 mod recording_drop;
 mod screenshots;
+#[cfg(target_os = "linux")]
+mod signal_quit;
 mod startup;
 mod timeshift;
 mod video_processing;
@@ -45,6 +47,8 @@ enum Suite {
     SleepInhibitX11,
     Connection,
     Startup,
+    #[cfg(target_os = "linux")]
+    SignalQuit,
     StartupWindow {
         #[arg(value_enum, default_value = "integration")]
         checks: startup::StartupChecks,
@@ -130,6 +134,8 @@ pub fn run(arguments: Vec<OsString>) -> i32 {
         Suite::SleepInhibitX11 => crate::player::sleep_inhibit_checks::run_x11(),
         Suite::Connection => crate::player::connection_checks::run(),
         Suite::Startup => startup::run(),
+        #[cfg(target_os = "linux")]
+        Suite::SignalQuit => signal_quit::run(),
         Suite::StartupWindow { checks } => startup::run_window(checks),
         Suite::Timeshift => startup::run_timeshift(),
         Suite::DataBroadcast => startup::run_data_broadcast(),

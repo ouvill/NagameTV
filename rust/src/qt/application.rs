@@ -18,6 +18,9 @@ pub enum Error {
     DisplayAlreadyInitialized,
     #[error("Diagnostics initialization failed: {0}")]
     Diagnostics(#[from] diagnostics::Error),
+    #[cfg(target_os = "linux")]
+    #[error("Could not install quit signal handlers: {0}")]
+    QuitSignals(#[source] cxx::Exception),
     #[error("Could not create the Qt application")]
     Application,
     #[error("Could not create the Qt QML engine")]
@@ -38,10 +41,15 @@ pub struct LoadedApplication {
     _diagnostics: diagnostics::Lifetime,
     _preloaded: playback::Preloaded,
     app: cxx::UniquePtr<QGuiApplication>,
+    #[cfg(target_os = "linux")]
+    quit_signal_fd: i32,
 }
 
 impl LoadedApplication {
     pub fn exec(mut self) {
+        // Keep an early signal queued until exec can honor the quit request.
+        #[cfg(target_os = "linux")]
+        super::ffi::watch_quit_signals(self.app.pin_mut(), self.quit_signal_fd, log_quit_signal);
         self.app.pin_mut().exec();
     }
 }
@@ -86,6 +94,8 @@ pub unsafe fn load(
             .set(startup)
             .map_err(|_| Error::DisplayAlreadyInitialized)?;
     }
+    #[cfg(target_os = "linux")]
+    let quit_signal_fd = super::ffi::open_quit_signal_pipe().map_err(Error::QuitSignals)?;
     super::ffi::install_qt_logging(logging::record_qt);
     if diagnostics::requested(plan.locked()) {
         super::ffi::install_qt_gc_logging(diagnostics::record_qt_gc);
@@ -135,5 +145,18 @@ pub unsafe fn load(
         _diagnostics: diagnostics,
         _preloaded: preloaded,
         app,
+        #[cfg(target_os = "linux")]
+        quit_signal_fd,
     })
+}
+
+#[cfg(target_os = "linux")]
+fn log_quit_signal(number: i32) {
+    let signal = match number {
+        libc::SIGTERM => "SIGTERM",
+        libc::SIGINT => "SIGINT",
+        libc::SIGHUP => "SIGHUP",
+        _ => "unknown",
+    };
+    tracing::info!(signal, number, "Application quit requested by signal");
 }
