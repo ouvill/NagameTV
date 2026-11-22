@@ -94,6 +94,12 @@ pub mod ffi {
         unsafe fn install_back_button(item: *mut QQuickItem, popup_open: bool);
         #[cxx_name = "configureQtQuickOpenGl"]
         fn configure_qt_quick_open_gl();
+        include!("qt/key_normalizer.h");
+        #[cfg(target_os = "linux")]
+        type QGuiApplication = cxx_qt_lib::QGuiApplication;
+        #[cfg(target_os = "linux")]
+        #[cxx_name = "installKeyNormalizer"]
+        fn install_key_normalizer(app: Pin<&mut QGuiApplication>);
         #[cfg(target_os = "linux")]
         #[cxx_name = "useQtQuickDialogs"]
         fn use_qt_quick_dialogs();

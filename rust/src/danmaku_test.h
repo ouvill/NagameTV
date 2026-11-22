@@ -5,6 +5,7 @@
 #include <QtGui/QInputMethodEvent>
 #include <QtGui/QKeyEvent>
 #include <QtQuickTest/quicktest.h>
+#include "qt/key_normalizer.h"
 #include "rust/cxx.h"
 #include <vector>
 
@@ -52,6 +53,20 @@ inline bool sendTestForwardedKey(int key, int modifiers, const QString &text, bo
     if (!target) return false;
     QKeyEvent event(QEvent::KeyPress, key, Qt::KeyboardModifiers(modifiers), text, repeat);
     return QCoreApplication::sendEvent(target, &event);
+}
+
+inline void installTestKeyNormalizer() {
+#ifdef Q_OS_LINUX
+    installKeyNormalizer(*qGuiApp);
+#endif
+}
+
+inline bool sendTestNativeKey(int key, quint32 keysym, int modifiers, bool repeat, bool release) {
+    auto *window = QGuiApplication::focusWindow();
+    if (!window) return false;
+    const auto type = release ? QEvent::KeyRelease : QEvent::KeyPress;
+    QKeyEvent event(type, key, Qt::KeyboardModifiers(modifiers), 0, keysym, 0, QString(), repeat);
+    return QCoreApplication::sendEvent(window, &event);
 }
 
 #endif

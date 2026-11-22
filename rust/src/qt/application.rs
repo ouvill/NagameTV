@@ -98,6 +98,12 @@ pub unsafe fn load(
         return Err(Error::Application);
     }
     #[cfg(target_os = "linux")]
+    let app = {
+        let mut app = app;
+        super::ffi::install_key_normalizer(app.pin_mut());
+        app
+    };
+    #[cfg(target_os = "linux")]
     dialogs.finish(&app);
     let preloaded = playback::preload(mode).map_err(Error::Playback)?;
     // Reverse local drop order keeps diagnostics alive through engine destruction.

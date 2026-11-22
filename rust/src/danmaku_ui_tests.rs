@@ -16,6 +16,16 @@ mod ffi {
         fn sendTestInputMethodCursor(preedit: &QString) -> bool;
         #[rust_name = "send_forwarded_key"]
         fn sendTestForwardedKey(key: i32, modifiers: i32, text: &QString, repeat: bool) -> bool;
+        #[rust_name = "install_test_key_normalizer"]
+        fn installTestKeyNormalizer();
+        #[rust_name = "send_test_native_key"]
+        fn sendTestNativeKey(
+            key: i32,
+            keysym: u32,
+            modifiers: i32,
+            repeat: bool,
+            release: bool,
+        ) -> bool;
         #[cfg(feature = "native_tests")]
         fn run_qml_test_args(arguments: &[String]) -> i32;
     }
@@ -62,6 +72,17 @@ mod ffi {
             modifiers: i32,
             text: &QString,
             repeat: bool,
+        ) -> bool;
+        #[qinvokable]
+        fn install_key_normalizer(self: &TestInputMethod);
+        #[qinvokable]
+        fn native_key(
+            self: &TestInputMethod,
+            key: i32,
+            keysym: u32,
+            modifiers: i32,
+            repeat: bool,
+            release: bool,
         ) -> bool;
     }
 }
@@ -199,6 +220,21 @@ impl ffi::TestInputMethod {
         repeat: bool,
     ) -> bool {
         ffi::send_forwarded_key(key, modifiers, text, repeat)
+    }
+
+    pub fn install_key_normalizer(&self) {
+        ffi::install_test_key_normalizer();
+    }
+
+    pub fn native_key(
+        &self,
+        key: i32,
+        keysym: u32,
+        modifiers: i32,
+        repeat: bool,
+        release: bool,
+    ) -> bool {
+        ffi::send_test_native_key(key, keysym, modifiers, repeat, release)
     }
 }
 
