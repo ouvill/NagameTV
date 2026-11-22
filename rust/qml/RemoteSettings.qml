@@ -52,7 +52,7 @@ ColumnLayout {
         objectName: "remoteEnabled"
         Layout.fillWidth: true
         text: qsTranslate("Remote", "Enable remote control")
-        description: qsTranslate("Remote", "Allow devices on your home network to control this viewer without authentication.")
+        description: qsTranslate("Remote", "Allow devices on your home network to control NagameTV.")
         checked: root.backend.remote_enabled
         onClicked: root.apply(checked, !checked)
     }
@@ -126,7 +126,6 @@ ColumnLayout {
         objectName: "remoteAddress"
         Accessible.name: qsTranslate("Remote", "Listen address")
     }
-    Detail { text: qsTranslate("Remote", "The default 0.0.0.0 accepts connections on all IPv4 interfaces.") }
     Detail { text: qsTranslate("Remote", "Port"); color: Theme.textPrimary }
     Field {
         id: portField
