@@ -409,6 +409,8 @@ ViewerWindow {
         inputContext: inputContext
         digitsAvailable: inputContext.viewing && !player.recording && player.channels.count > 0
         onDigitPressed: function(digit) { channelNumber.press(digit); }
+        coloursAvailable: root.showDataBroadcast
+        onColourPressed: function(key) { root.sendDataBroadcastKey(key); }
     }
     CommentSubmitPolicy {
         id: commentSubmitPolicy

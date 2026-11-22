@@ -397,23 +397,36 @@ fn check_remote(
         engine,
         "sidebar.view.page === ProgramSidebar.Remote && inputContext.sidebarFocused",
     )?;
-    // Pointer input must reach the real BML document while the sidebar owns focus.
+    // Both the sidebar buttons and dedicated colour keys reach the real BML
+    // document while the sidebar owns focus.
     evaluate(
         engine,
         &format!("{OBSERVER}.previousVideoRect = dataBroadcast.view.videoRect; true"),
     )?;
-    ffi::clickRootItem(engine.pin_mut(), &QString::from("remoteKey_r"))?;
-    wait_for(
-        app,
-        engine,
-        &format!("dataBroadcast.view.videoRect.x > {OBSERVER}.previousVideoRect.x + 1"),
-    )?;
-    ffi::clickRootItem(engine.pin_mut(), &QString::from("remoteKey_b"))?;
-    wait_for(
-        app,
-        engine,
-        &format!("Math.abs(dataBroadcast.view.videoRect.x - {OBSERVER}.previousVideoRect.x) < 1"),
-    )?;
+    for keyboard in [false, true] {
+        if keyboard {
+            ffi::clickRootKey(engine.pin_mut(), &QString::from("Red"))?;
+        } else {
+            ffi::clickRootItem(engine.pin_mut(), &QString::from("remoteKey_r"))?;
+        }
+        wait_for(
+            app,
+            engine,
+            &format!("dataBroadcast.view.videoRect.x > {OBSERVER}.previousVideoRect.x + 1"),
+        )?;
+        if keyboard {
+            ffi::clickRootKey(engine.pin_mut(), &QString::from("Blue"))?;
+        } else {
+            ffi::clickRootItem(engine.pin_mut(), &QString::from("remoteKey_b"))?;
+        }
+        wait_for(
+            app,
+            engine,
+            &format!(
+                "Math.abs(dataBroadcast.view.videoRect.x - {OBSERVER}.previousVideoRect.x) < 1"
+            ),
+        )?;
+    }
     for (width, height) in [(1280, 720), (640, 360)] {
         evaluate(
             engine,

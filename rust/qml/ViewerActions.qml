@@ -71,6 +71,16 @@ Item {
         enabled: root.enabled && root.backend.playback_action !== Player.Unavailable
         onTriggered: { root.backend.toggle_playback(); root.activity(); }
     }
+    readonly property Action play: Operation {
+        text: qsTranslate("Viewer", "Play")
+        enabled: root.enabled && root.backend.playback_action === Player.Play
+        onTriggered: { root.backend.play(); root.activity(); }
+    }
+    readonly property Action pause: Operation {
+        text: qsTranslate("Main", "Pause")
+        enabled: root.enabled && root.backend.playback_action === Player.Pause
+        onTriggered: { root.backend.pause(); root.activity(); }
+    }
     // Stops any playback, including recordings and timeshift whose main action pauses.
     readonly property Action stopPlayback: Operation {
         text: qsTranslate("Main", "Stop")

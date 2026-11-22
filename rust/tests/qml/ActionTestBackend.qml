@@ -55,6 +55,10 @@ QtObject {
     property int channelSteps: 0
     property var skips: []
     function toggle_playback() { playbackRequests++; }
+    property int playRequests: 0
+    function play() { playRequests++; }
+    property int pauseRequests: 0
+    function pause() { pauseRequests++; return true; }
     property int stopRequests: 0
     function stop() { stopRequests++; }
     function skip(milliseconds) { skips.push(milliseconds); }

@@ -180,7 +180,7 @@ Qtでの受信は、まだ実機で確認していません。
 | `0x46` | `KEY_PAUSECD` | `XF86AudioPause` | `Key_MediaPause` | 一時停止 | バインドを追加 |
 | `0x61` | `KEY_PLAYPAUSE` | `XF86AudioPlay` | `Key_MediaPlay` | 再生 | 上と同じ |
 | `0x45` / `0x64` | `KEY_STOPCD` | `XF86AudioStop` | `Key_MediaStop` | 停止 | 既存のバインド |
-| `0x48` / `0x49` | `KEY_REWIND` / `KEY_FASTFORWARD` | `XF86AudioRewind` / `Forward` | `Key_AudioRewind` / `Key_AudioForward` | 10秒戻る / 進む | バインドを追加 |
+| `0x48` / `0x49` | `KEY_REWIND` / `KEY_FASTFORWARD` | `XF86AudioRewind` / `XF86AudioForward` | `Key_AudioRewind` / `Key_AudioForward` | 10秒戻る / 進む | バインドを追加 |
 | `0x4c` | `KEY_BACK` | `XF86Back` | `Key_Back` | **戻る**（従来は前のチャプター） | 区別できないため許容する |
 | `0x4b` | `KEY_FORWARD` | `XF86Forward` | `Key_Forward` | 次のチャプター | バインドを追加 |
 
@@ -189,13 +189,20 @@ Qtでの受信は、まだ実機で確認していません。
 アプリ全体に `QKeyEvent` のイベントフィルターを1つ置きます。`nativeVirtualKey()` の keysym を見て、
 Qtに対応するキーがないものや、意味を揃えたいものを既存のキーに変換します。QMLの `KeyEvent` は
 `nativeVirtualKey` を公開しないため、変換はQtのネイティブ層で行います。CECはLinux専用なので、
-xkbの keysym に依存して構いません。変換後は通常のキー入力と同じ経路をたどるため、
-各パネルのD-pad処理や `ShortcutBindings` をそのまま使えます。
+xkbの keysym を使います。変換したイベントは元の宛先へ送り、押下と解放、修飾キー、自動リピートを
+引き継ぎます。各パネルのD-pad処理や、フォーカス先に届いたキーを受け付ける `ShortcutBindings` が処理します。
+変換した押下ではQt Quickのショートカット照合を抑止します。照合とフォーカス先の両方で選局が
+実行されるのを防ぐためです。
+
+ライブの `PgUp` / `PgDown` は次／前の局を選びます。チャンネル▲／▼とWebリモコンの操作を
+同じ方向に揃えています。チャプター付き録画では引き続き `PgUp` / `PgDown` で前／次の
+チャプターへ移動します。[ショートカット一覧](shortcut-actions-design.md#キーバインド一覧)
 
 - **CEC以外のキー**: このフィルターは、同じ keysym を持つ普通のキーボードやリモコンにも効きます。
   たとえば `XF86Close` を持つキーボードでは、Closeキーが戻るとして働きます。テレビ向けの操作として妥当なので許容します。
-- **入力デバイスは区別しない**: Qtのキーイベントには入力元のデバイス情報がありません。
-  `0x4c`（前へスキップ）が `Key_Back` になるのはカーネルのキーマップによるもので、アプリ側では区別できません。
+- **入力デバイスは区別しない**: Linuxの通常のQtキー入力からCEC由来かどうかを判定できません。
+  `0x4c`（前へスキップ）が `Key_Back` になるのはカーネルのキーマップによるもので、
+  アプリはほかの戻るキーと同じ操作に使います。
 
 ### 長押しとリピート
 
