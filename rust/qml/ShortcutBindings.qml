@@ -112,12 +112,14 @@ Item {
         // for keys that reach Qt. MPRIS calls carry no key identity, so a timing
         // heuristic could swallow a separate desktop request or a seek repeat.
         Binding {
+            objectName: "playMediaShortcut"
             sequence: "Media Play"
             operation: root.actions.play
             scope: InputContext.Playback
             condition: playback.condition
         },
         Binding {
+            objectName: "pauseMediaShortcut"
             sequence: "Media Pause"
             operation: root.actions.pause
             scope: InputContext.Playback
@@ -142,6 +144,7 @@ Item {
             condition: qsTranslate("Settings", "Recordings and timeshift")
         },
         Binding {
+            objectName: "rewindMediaShortcut"
             sequence: "Media Rewind"
             operation: root.actions.seekBackward
             scope: InputContext.Seek
@@ -149,6 +152,7 @@ Item {
             condition: backward.condition
         },
         Binding {
+            objectName: "fastForwardMediaShortcut"
             sequence: "Media Fast Forward"
             operation: root.actions.seekForward
             scope: InputContext.Seek
@@ -185,6 +189,7 @@ Item {
             condition: qsTranslate("Settings", "Recordings with chapters")
         },
         Binding {
+            objectName: "forwardShortcut"
             sequence: "Forward"
             operation: root.actions.nextChapter
             scope: InputContext.Seek
