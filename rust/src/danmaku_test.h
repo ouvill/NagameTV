@@ -4,6 +4,7 @@
 #include <QtGui/QGuiApplication>
 #include <QtGui/QInputMethodEvent>
 #include <QtGui/QKeyEvent>
+#include <QtGui/QWindow>
 #include <QtQuickTest/quicktest.h>
 #include "qt/key_normalizer.h"
 #include "rust/cxx.h"
