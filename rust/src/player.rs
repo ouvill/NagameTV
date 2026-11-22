@@ -343,6 +343,7 @@ pub mod ffi {
         #[qproperty(bool, hdmi_cec_allowed, READ = hdmi_cec_allowed, CONSTANT)]
         #[qproperty(QString, hdmi_cec_state, READ = hdmi_cec_state, NOTIFY = hdmi_cec_changed)]
         #[qproperty(QString, hdmi_cec_error, READ = hdmi_cec_error, NOTIFY = hdmi_cec_changed)]
+        #[qproperty(bool, hdmi_cec_external_without_passthrough, READ = hdmi_cec_external_without_passthrough, NOTIFY = hdmi_cec_changed)]
         #[qproperty(*mut HdmiCecDeviceModel, hdmi_cec_devices, READ = hdmi_cec_devices, CONSTANT)]
         #[qproperty(*mut LanDiscoveryModel, lan_discovery_model, READ = lan_discovery_model, CONSTANT)]
         #[qproperty(QString, lan_search_kind, READ = lan_search_kind, NOTIFY = lan_search_changed)]
@@ -464,6 +465,7 @@ pub mod ffi {
         fn hdmi_cec_allowed(self: &Player) -> bool;
         fn hdmi_cec_state(self: &Player) -> QString;
         fn hdmi_cec_error(self: &Player) -> QString;
+        fn hdmi_cec_external_without_passthrough(self: &Player) -> bool;
         fn hdmi_cec_devices(self: &Player) -> *mut HdmiCecDeviceModel;
         fn lan_discovery_model(self: &Player) -> *mut LanDiscoveryModel;
         fn lan_search_kind(self: &Player) -> QString;
@@ -477,12 +479,8 @@ pub mod ffi {
         fn select_hdmi_cec_device(self: Pin<&mut Player>, path: QString) -> bool;
         #[qinvokable]
         fn refresh_hdmi_cec_devices(self: Pin<&mut Player>);
-        #[qinvokable]
-        fn set_hdmi_cec_playback_visible(self: &Player, visible: bool);
         #[qsignal]
         fn hdmi_cec_changed(self: Pin<&mut Player>);
-        #[qsignal]
-        fn hdmi_cec_input_requested(self: Pin<&mut Player>, key: i32, repeat: bool);
         fn remote_web_enabled(self: &Player) -> bool;
         fn remote_web_allowed(self: &Player) -> bool;
         fn remote_web_urls(self: &Player) -> QString;
@@ -1243,7 +1241,6 @@ impl Drop for PlayerRust {
         // The runtime joins cancelled HTTP workers when Player's network is dropped.
         self.updates.stop();
         self.remote.stop();
-        self.hdmi_cec.stop();
         self.epg_events.configure(None);
         // The media owner enforces native shutdown before subtitle destruction,
         // including when QML construction failed before onClosing could run.

@@ -25,8 +25,6 @@ Item {
             event.accepted = root.dispatch(event.key, event.modifiers, event.isAutoRepeat);
         }
     }
-    // HDMI-CEC remote keys arrive without window activation, so they bypass
-    // Qt's shortcut map and use this path too. Returns whether a binding matched.
     function dispatch(key: int, modifiers: int, autoRepeat: bool): bool {
         const matches = [...root.entries, ...root.digits].filter(binding => binding.enabled
             && keyMatcher.matches(binding.portableText, key, modifiers));

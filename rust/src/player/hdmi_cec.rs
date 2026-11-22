@@ -1,14 +1,12 @@
-//! QObject projection and input delivery; CEC resources and decisions live in Rust.
+//! QObject projection of the Rust-owned HDMI-CEC configuration.
 use super::ffi;
 use crate::{
-    hdmi_cec::{Input, InputKey, OSD_NAME},
-    qt, settings,
+    hdmi_cec::{OSD_NAME, SelectionError},
+    settings,
 };
 use cxx_qt::CxxQtType;
 use cxx_qt_lib::QString;
 use std::pin::Pin;
-
-const INPUTS_PER_TICK: usize = 16;
 
 impl ffi::Player {
     pub fn hdmi_cec_enabled(&self) -> bool {
@@ -22,6 +20,13 @@ impl ffi::Player {
     }
     pub fn hdmi_cec_error(&self) -> QString {
         QString::from(self.rust().hdmi_cec.snapshot().state.message())
+    }
+    pub fn hdmi_cec_external_without_passthrough(&self) -> bool {
+        self.rust()
+            .hdmi_cec
+            .snapshot()
+            .state
+            .external_without_passthrough()
     }
     pub fn hdmi_cec_devices(&self) -> *mut crate::hdmi_cec_model::ffi::HdmiCecDeviceModel {
         self.rust().hdmi_cec_model.as_ptr().cast_mut()
@@ -62,9 +67,13 @@ impl ffi::Player {
     }
     pub fn select_hdmi_cec_device(mut self: Pin<&mut Self>, path: QString) -> bool {
         let path = path.to_string();
-        if !self.as_mut().rust_mut().hdmi_cec.select(path.clone()) {
-            tracing::warn!("HDMI-CEC adapter selection rejected: expected /dev/cecN or automatic");
-            return false;
+        match self.as_mut().rust_mut().hdmi_cec.select(path.clone()) {
+            Ok(()) => {}
+            Err(SelectionError::InvalidPath) => return false,
+            Err(SelectionError::ReleaseFailed) => {
+                self.notify_hdmi_cec();
+                return false;
+            }
         }
         self.as_mut()
             .rust_mut()
@@ -78,9 +87,6 @@ impl ffi::Player {
         self.as_mut().rust_mut().hdmi_cec.refresh();
         self.notify_hdmi_cec();
     }
-    pub fn set_hdmi_cec_playback_visible(&self, visible: bool) {
-        self.rust().hdmi_cec.set_playback_visible(visible);
-    }
     pub(super) fn notify_hdmi_cec(mut self: Pin<&mut Self>) {
         let rows = self.rust().hdmi_cec.snapshot().devices.clone();
         self.as_mut()
@@ -89,45 +95,5 @@ impl ffi::Player {
             .pin_mut()
             .replace(rows.into());
         self.hdmi_cec_changed();
-    }
-    pub(super) fn poll_hdmi_cec(mut self: Pin<&mut Self>) {
-        if self.as_mut().rust_mut().hdmi_cec.poll() {
-            self.as_mut().notify_hdmi_cec();
-        }
-        for _ in 0..INPUTS_PER_TICK {
-            let Some(input) = self.as_mut().rust_mut().hdmi_cec.next_input() else {
-                break;
-            };
-            self.as_mut().dispatch_hdmi_cec(input);
-        }
-    }
-    pub(super) fn dispatch_hdmi_cec(mut self: Pin<&mut Self>, input: Input) {
-        let command = match input {
-            Input::Command(command) => command,
-            Input::Key { key, repeat } => {
-                let key = match key {
-                    InputKey::Digit(digit) => qt::ffi::cec_digit_key(digit),
-                    InputKey::SeekBackward => qt::ffi::cec_seek_key(false),
-                    InputKey::SeekForward => qt::ffi::cec_seek_key(true),
-                    InputKey::PreviousChapter => qt::ffi::cec_chapter_key(false),
-                    InputKey::NextChapter => qt::ffi::cec_chapter_key(true),
-                    InputKey::Blue => qt::ffi::cec_blue_key(),
-                    InputKey::Red => qt::ffi::cec_red_key(),
-                    InputKey::Green => qt::ffi::cec_green_key(),
-                    InputKey::Yellow => qt::ffi::cec_yellow_key(),
-                };
-                self.hdmi_cec_input_requested(key, repeat);
-                return;
-            }
-        };
-        match self.as_mut().execute_remote(command) {
-            Ok(()) => self.remote_command_executed(viewer_remote::command_kind(command) as i32),
-            // Playback operation handlers already recorded their underlying failure.
-            Err(viewer_remote::model::CommandError::Playback(_)) => {}
-            Err(error) => tracing::warn!(
-                error = &error as &dyn std::error::Error,
-                "HDMI-CEC player command rejected"
-            ),
-        }
     }
 }

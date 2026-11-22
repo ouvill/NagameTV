@@ -101,6 +101,15 @@ impl Default for PlayerRust {
             !plan.locked(),
             preferences.preferences().auto_update_check,
         );
+        let hdmi_cec = crate::hdmi_cec::Controller::new(
+            plan,
+            preferences.preferences().hdmi_cec_enabled,
+            preferences.preferences().hdmi_cec_device.clone(),
+        );
+        let mut hdmi_cec_model = crate::hdmi_cec_model::ffi::make_hdmi_cec_model();
+        hdmi_cec_model
+            .pin_mut()
+            .replace(hdmi_cec.snapshot().devices.clone().into());
         let mut player = Self {
             recording_reconnecting: false,
             sleep_inhibit: crate::sleep_inhibit::Controller::new(
@@ -231,12 +240,8 @@ impl Default for PlayerRust {
             screenshot_error: QString::default(),
             screenshot_saves: Default::default(),
             seek_preview: Default::default(),
-            hdmi_cec: crate::hdmi_cec::Controller::new(
-                plan,
-                preferences.preferences().hdmi_cec_enabled,
-                preferences.preferences().hdmi_cec_device.clone(),
-            ),
-            hdmi_cec_model: crate::hdmi_cec_model::ffi::make_hdmi_cec_model(),
+            hdmi_cec,
+            hdmi_cec_model,
             preferences,
             autoplay_pending,
             epg: ProgramInfo::default(),

@@ -31,9 +31,6 @@ ViewerWindow {
     color: Theme.canvas
     font.family: "Noto Sans CJK JP"
     property bool closing: false
-    readonly property bool cecPlaybackVisible: visible && visibility !== Window.Minimized && !closing
-        && player.screen === ViewerActions.WatchingScreen && player.media_active
-    onCecPlaybackVisibleChanged: player.set_hdmi_cec_playback_visible(cecPlaybackVisible)
     QtObject {
         id: focusHistory
         property Item channels: null
@@ -144,16 +141,6 @@ ViewerWindow {
             case Player.RemoteKeyChannels: viewerActions.toggleChannels.trigger(); break;
             case Player.RemoteKeyFullscreen: viewerActions.toggleFullscreen.trigger(); break;
             }
-        }
-        function onHdmi_cec_input_requested(key: int, repeat: bool) {
-            const colour = { [Qt.Key_Blue]: "b", [Qt.Key_Red]: "r", [Qt.Key_Green]: "g", [Qt.Key_Yellow]: "y" }[key];
-            if (colour !== undefined) {
-                // Colour buttons only have a meaning inside data broadcast.
-                if (root.showDataBroadcast && !repeat) root.sendDataBroadcastKey(colour);
-                return;
-            }
-            if (!shortcutBindings.dispatch(key, Qt.NoModifier, repeat))
-                console.debug("HDMI-CEC key has no binding here: " + key);
         }
         function onRemote_command_executed(kind: int) {
             remoteNotice.show(kind);
