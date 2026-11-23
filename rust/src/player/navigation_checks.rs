@@ -107,7 +107,7 @@ pub(super) fn run() -> TestResult {
     assert!(player.pin_mut().open_recording(missing.clone()));
     assert_screen(&player, Screen::Watching, Some(Screen::Guide));
     assert!(player.pin_mut().go_back());
-    assert_screen(&player, Screen::Guide, Some(Screen::Recordings));
+    assert_screen(&player, Screen::Guide, Some(Screen::Watching));
     let deadline = Instant::now() + Duration::from_secs(4);
     while player.recording_loading() {
         player.pin_mut().poll_recording();
@@ -119,15 +119,24 @@ pub(super) fn run() -> TestResult {
         player.watching_available(),
         "accepted failure retains a viewing session"
     );
-    assert_screen(&player, Screen::Guide, Some(Screen::Recordings));
-    assert!(player.pin_mut().open_screen(Screen::Watching as i32));
+    assert_screen(&player, Screen::Guide, Some(Screen::Watching));
+    assert!(player.pin_mut().go_back());
+    assert_screen(&player, Screen::Watching, Some(Screen::Guide));
     player.pin_mut().open_screen(Screen::Home as i32);
     assert!(player.watching_available());
-    assert_screen(&player, Screen::Home, None);
-    player.pin_mut().open_screen(Screen::Watching as i32);
+    assert_screen(&player, Screen::Home, Some(Screen::Watching));
+    assert!(player.pin_mut().go_back());
     assert_screen(&player, Screen::Watching, Some(Screen::Home));
+    player.pin_mut().open_screen(Screen::Home as i32);
+    let before_stop = changes.lock().unwrap().len();
     player.pin_mut().stop();
+    assert_eq!(
+        &changes.lock().unwrap()[before_stop..],
+        &[(Screen::Home as i32, -1)],
+        "closing the session withdraws Watching as the back target"
+    );
     assert!(!player.watching_available());
+    assert!(!player.pin_mut().open_screen(Screen::Watching as i32));
     assert_screen(&player, Screen::Home, None);
 
     // Re-select an already-owned attempt: this exercises the real selection path

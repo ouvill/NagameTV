@@ -69,7 +69,25 @@ TestCase {
         tryCompare(grid, "activeFocus", true);
         compare(grid.currentIndex, 1);
         keyClick(Qt.Key_Return);
-        compare(selection.signalArguments[0][0], 1);
+        compare(returning.count, 1);
+        compare(selection.count, 0);
+        keyClick(Qt.Key_Right);
+        keyClick(Qt.Key_Return);
+        compare(selection.signalArguments[0][0], 2);
+    }
+    function test_the_card_on_air_returns_to_it_and_others_tune() {
+        const grid = findChild(home, "homeChannels");
+        tryVerify(() => grid.itemAtIndex(1) !== null && grid.itemAtIndex(0) !== null);
+        mouseClick(grid.itemAtIndex(1));
+        compare(returning.count, 1);
+        compare(selection.count, 0);
+        mouseClick(grid.itemAtIndex(0));
+        compare(selection.signalArguments[0][0], 0);
+        // Without live viewing, the selected card is tuned again.
+        home.viewingIndex = -1;
+        mouseClick(grid.itemAtIndex(1));
+        compare(selection.signalArguments[1][0], 1);
+        compare(returning.count, 1);
     }
     function test_bands_switch_the_listed_channels() {
         const grid = findChild(home, "homeChannels");

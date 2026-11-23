@@ -119,7 +119,12 @@ Rectangle {
     }
     function selectCurrent() {
         const row = channelFilter.row(grid.currentIndex);
-        if (row.channelIndex !== undefined) selectRequested(row.channelIndex);
+        if (row.channelIndex !== undefined) watchChannel(row.channelIndex);
+    }
+    // Retuning the channel already on air would restart it and drop the timeshift position.
+    function watchChannel(index) {
+        if (index === viewingIndex) returnRequested();
+        else selectRequested(index);
     }
 
     component SectionTitle: Label {
@@ -291,7 +296,7 @@ Rectangle {
                         onFavoriteRequested: root.favoriteRequested(slot.serviceId)
                         onClicked: {
                             grid.currentIndex = slot.index;
-                            root.selectRequested(slot.channelIndex);
+                            root.watchChannel(slot.channelIndex);
                         }
                     }
                 }
