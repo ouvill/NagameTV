@@ -381,8 +381,7 @@ impl ffi::Player {
             return false;
         }
         // Closing Watching must not reveal and refresh a historical Guide during shutdown.
-        self.as_mut()
-            .open_screen(crate::screen_navigation::Screen::Home as i32);
+        self.as_mut().close_viewing_at_home();
         self.as_mut().shutdown_recording_reservations();
         #[cfg(target_os = "linux")]
         {

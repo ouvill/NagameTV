@@ -50,10 +50,22 @@ pub struct Projection {
     pub back: Option<Screen>,
 }
 impl Navigation {
-    pub fn projection(&self) -> Projection {
+    fn current(&self) -> Screen {
+        *self.history.last().expect("Home is always present")
+    }
+    /// While a session exists, every other screen goes back to Watching.
+    fn resumes_watching(&self, availability: Availability) -> bool {
+        availability.watching && self.current() != Screen::Watching
+    }
+    pub fn projection(&self, availability: Availability) -> Projection {
+        let back = if self.resumes_watching(availability) {
+            Some(Screen::Watching)
+        } else {
+            self.history.iter().rev().nth(1).copied()
+        };
         Projection {
-            screen: *self.history.last().expect("Home is always present"),
-            back: self.history.iter().rev().nth(1).copied(),
+            screen: self.current(),
+            back,
         }
     }
     pub fn reconcile(&mut self, availability: Availability) {
@@ -74,7 +86,13 @@ impl Navigation {
     }
     pub fn back(&mut self, availability: Availability) -> bool {
         self.reconcile(availability);
-        if self.history.len() > 1 {
+        let below = self.history.iter().rev().nth(1).copied();
+        if self.resumes_watching(availability) && below != Some(Screen::Watching) {
+            // Reopening keeps the screen left from Watching as its next back target.
+            self.open(Screen::Watching, availability)
+        } else if self.history.len() > 1 {
+            // A screen opened from Watching is a detour: dropping it keeps the screen
+            // that chose the current content below Watching.
             self.history.pop();
             true
         } else {
