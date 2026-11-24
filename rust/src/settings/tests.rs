@@ -129,6 +129,37 @@ fn startup_display_defaults_to_a_window_and_the_choice_survives_restart()
 }
 
 #[test]
+fn ui_scale_defaults_to_standard_and_all_saved_codes_survive_restart()
+-> Result<(), Box<dyn std::error::Error>> {
+    let directory = tempfile::tempdir()?;
+    let path = directory.path().join("settings.toml");
+    fs::write(&path, "autoplay = true\n")?;
+    assert_eq!(
+        open(path.clone())?.preferences().ui_scale,
+        UiScale::Standard
+    );
+    for (scale, code) in [
+        (UiScale::Percent125, "125"),
+        (UiScale::Percent150, "150"),
+        (UiScale::Percent200, "200"),
+        (UiScale::Standard, "100"),
+    ] {
+        let mut session = open(path.clone())?;
+        session.change(Change::UiScale(scale));
+        session.flush()?;
+        let serialized: toml::Value = toml::from_str(&fs::read_to_string(&path)?)?;
+        assert_eq!(serialized["ui_scale"].as_str(), Some(code));
+        let restored = open(path.clone())?;
+        assert_eq!(restored.preferences().ui_scale, scale);
+        assert!(restored.preferences().autoplay);
+    }
+    let future: Preferences = toml::from_str("ui_scale = '250'\nautoplay = true")?;
+    assert_eq!(future.ui_scale, UiScale::Standard);
+    assert!(future.autoplay);
+    Ok(())
+}
+
+#[test]
 fn live_buffer_defaults_migrate_and_custom_values_survive_restart()
 -> Result<(), Box<dyn std::error::Error>> {
     let old: Preferences = toml::from_str("autoplay = true")?;

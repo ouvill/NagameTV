@@ -295,8 +295,8 @@ impl ffi::Player {
             if self.ui_scale_restart_pending() != was_pending {
                 self.as_mut().ui_scale_restart_pending_changed();
             }
-            self.save_settings();
         }
+        self.save_settings();
         true
     }
 

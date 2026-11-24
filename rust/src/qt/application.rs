@@ -3,10 +3,48 @@
 use crate::platform;
 use crate::{diagnostics, features, logging, memory, playback, settings};
 use cxx_qt_lib::{QGuiApplication, QQmlApplicationEngine, QUrl};
+use std::ffi::OsStr;
 use std::sync::{
-    Arc,
+    Arc, OnceLock,
     atomic::{AtomicBool, Ordering},
 };
+
+const QT_SCALE_FACTOR: &str = "QT_SCALE_FACTOR";
+static LAUNCHED_UI_SCALE: OnceLock<settings::UiScale> = OnceLock::new();
+
+pub(crate) fn launched_ui_scale() -> Option<settings::UiScale> {
+    LAUNCHED_UI_SCALE.get().copied()
+}
+
+#[derive(Debug, thiserror::Error)]
+enum ScaleFactorError {
+    #[error("the value is not valid Unicode")]
+    NonUnicode,
+    #[error("the value is not a number: {0}")]
+    Parse(#[from] std::num::ParseFloatError),
+    #[error("the resulting factor must be positive and finite")]
+    Range,
+}
+
+fn combined_scale_factor(
+    scale: settings::UiScale,
+    inherited: Option<&OsStr>,
+) -> Result<f64, ScaleFactorError> {
+    let Some(inherited) = inherited else {
+        return Ok(scale.factor());
+    };
+    let factor = scale.factor()
+        * inherited
+            .to_str()
+            .ok_or(ScaleFactorError::NonUnicode)?
+            .trim()
+            .parse::<f64>()?;
+    if factor.is_finite() && factor > 0.0 {
+        Ok(factor)
+    } else {
+        Err(ScaleFactorError::Range)
+    }
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -58,7 +96,7 @@ impl LoadedApplication {
 ///
 /// # Safety
 /// Call on the process main thread, before Qt initialization or any other
-/// thread can access the environment modified by platform dialog setup.
+/// thread can access the environment modified by display setup.
 pub unsafe fn load(
     plan: features::LaunchPlan,
     display: Option<settings::StartupDisplay>,
@@ -85,6 +123,26 @@ pub unsafe fn load(
     features::PLAN
         .set(plan)
         .map_err(|_| Error::PlanAlreadyInitialized)?;
+    // Keep the applied preference even if the file changes before Player loads it.
+    let scale = *LAUNCHED_UI_SCALE.get_or_init(|| launch.ui_scale);
+    if scale != settings::UiScale::Standard {
+        let inherited = std::env::var_os(QT_SCALE_FACTOR);
+        let factor = match combined_scale_factor(scale, inherited.as_deref()) {
+            Ok(factor) => factor,
+            Err(error) => {
+                tracing::warn!(%error, "Invalid inherited QT_SCALE_FACTOR, using the saved UI scale");
+                scale.factor()
+            }
+        };
+        // SAFETY: Still on the process main thread, before Qt, GStreamer or
+        // any worker that could access the environment.
+        unsafe { std::env::set_var(QT_SCALE_FACTOR, factor.to_string()) };
+        tracing::info!(
+            ui_scale = scale.code(),
+            qt_scale_factor = factor,
+            "Applied startup UI scale"
+        );
+    }
     if let Some(startup) = display {
         tracing::info!(
             startup_display = startup.code(),
@@ -159,4 +217,44 @@ fn log_quit_signal(number: i32) {
         _ => "unknown",
     };
     tracing::info!(signal, number, "Application quit requested by signal");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use settings::UiScale;
+
+    #[test]
+    fn combines_the_saved_scale_with_the_inherited_factor() {
+        for (scale, standalone, combined) in [
+            (UiScale::Standard, 1.0, 1.5),
+            (UiScale::Percent125, 1.25, 1.875),
+            (UiScale::Percent150, 1.5, 2.25),
+            (UiScale::Percent200, 2.0, 3.0),
+        ] {
+            assert_eq!(combined_scale_factor(scale, None).unwrap(), standalone);
+            assert_eq!(
+                combined_scale_factor(scale, Some(OsStr::new(" 1.5 "))).unwrap(),
+                combined
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_unusable_inherited_values_and_products() {
+        for value in ["", "125%", "0", "-1", "NaN", "inf", "1e308"] {
+            assert!(
+                combined_scale_factor(UiScale::Percent200, Some(OsStr::new(value))).is_err(),
+                "{value:?}"
+            );
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::ffi::OsStrExt;
+            assert!(matches!(
+                combined_scale_factor(UiScale::Percent150, Some(OsStr::from_bytes(b"\xff"))),
+                Err(ScaleFactorError::NonUnicode)
+            ));
+        }
+    }
 }

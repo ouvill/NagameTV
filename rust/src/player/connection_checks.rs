@@ -252,6 +252,7 @@ fn checks() -> TestResult {
     check_live_recovery_messages();
     check_live_recovery_notification_cancellation();
     check_screenshot_directory()?;
+    check_ui_scale()?;
     check_comment_presentation()?;
     crate::danmaku::checks::run()?;
     super::remote_checks::run()?;
@@ -1600,6 +1601,59 @@ fn check_guide_state() {
     player.pin_mut().guide_day(0.0, 86_400_000.0);
     assert!(matches!(player.rust().guide, Guide::Closed));
     assert_eq!(*changes.lock().unwrap(), [true, false]);
+}
+
+fn check_ui_scale() -> TestResult {
+    let directory = tempfile::tempdir()?;
+    let path = directory.path().join("settings.toml");
+    let mut player = ffi::new_player();
+    player.pin_mut().rust_mut().preferences =
+        settings::Loaded::open(path.clone())?.activate(None, None);
+    assert_eq!(player.ui_scale().to_string(), "100");
+    assert!(!player.ui_scale_restart_pending());
+
+    let choices = Arc::new(Mutex::new(Vec::new()));
+    let observed = choices.clone();
+    let _choice = player.pin_mut().on_ui_scale_changed(move |player| {
+        observed.lock().unwrap().push((
+            player.ui_scale().to_string(),
+            player.ui_scale_restart_pending(),
+        ));
+    });
+    let pending = Arc::new(Mutex::new(Vec::new()));
+    let observed = pending.clone();
+    let _restart = player
+        .pin_mut()
+        .on_ui_scale_restart_pending_changed(move |player| {
+            observed
+                .lock()
+                .unwrap()
+                .push(player.ui_scale_restart_pending());
+        });
+
+    for (code, restart_pending) in [("125", true), ("200", true), ("100", false)] {
+        assert!(player.pin_mut().configure_ui_scale(code.into()));
+        assert_eq!(player.ui_scale_restart_pending(), restart_pending);
+        let saved = settings::Loaded::open(path.clone())?;
+        assert_eq!(saved.preferences().ui_scale.code(), code);
+    }
+    assert!(player.pin_mut().configure_ui_scale("100".into()));
+    assert!(!player.pin_mut().configure_ui_scale("250".into()));
+    assert_eq!(player.ui_scale().to_string(), "100");
+    assert_eq!(
+        *choices.lock().unwrap(),
+        [
+            ("125".into(), true),
+            ("200".into(), true),
+            ("100".into(), false)
+        ]
+    );
+    assert_eq!(*pending.lock().unwrap(), [true, false]);
+    assert_eq!(
+        settings::Loaded::open(path)?.preferences().ui_scale,
+        settings::UiScale::Standard
+    );
+    Ok(())
 }
 
 fn check_comment_presentation() -> TestResult {
