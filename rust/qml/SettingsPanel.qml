@@ -44,7 +44,7 @@ Popup {
                 ...(timeshiftLoader.item ? (timeshiftLoader.item as TimeshiftSettings).navigationItems : []),
                 dataBroadcastEnabled, dataBroadcastPrefetch];
         case SettingsPanel.Display:
-            return [languageBox, windowDecoration, startupDisplay, deinterlace, chooseScreenshotDirectory, openScreenshotDirectory,
+            return [languageBox, windowDecoration, startupDisplay, uiScale, deinterlace, chooseScreenshotDirectory, openScreenshotDirectory,
                 resetScreenshotDirectory, ...screenshotOptions.navigationItems];
         case SettingsPanel.Comments:
             return [commentsEnabled, danmakuEnabled, ...commentPresentation.navigationItems,
@@ -666,6 +666,36 @@ Popup {
                             Layout.fillWidth: true
                             visible: root.backend.startup_display_overridden
                             text: qsTranslate("Settings", "--fullscreen or --kiosk was given, so this launch ignores the saved choice.")
+                            wrapMode: Text.WordWrap
+                        }
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: Theme.spaceXl
+                            Detail {
+                                text: qsTranslate("Settings", "Screen size")
+                                color: Theme.textPrimary
+                                font.pixelSize: Theme.fontControl
+                            }
+                            SettingsChoice {
+                                id: uiScale
+                                objectName: "uiScaleSetting"
+                                readonly property list<string> codes: ["100", "125", "150", "200"]
+                                Layout.preferredWidth: Math.min(280, pageFlick.width * 0.52)
+                                dropdownIcon: root.iconDirectory + "chevron-down.svg"
+                                Accessible.name: qsTranslate("Settings", "Screen size")
+                                model: [qsTranslate("Settings", "100% (default)"), "125%", "150%", "200%"]
+                                currentIndex: codes.indexOf(root.backend.ui_scale)
+                                onActivated: function(index) {
+                                    root.backend.configure_ui_scale(codes[index]);
+                                    currentIndex = Qt.binding(function() { return codes.indexOf(root.backend.ui_scale); });
+                                }
+                            }
+                        }
+                        Detail {
+                            objectName: "uiScaleRestart"
+                            Layout.fillWidth: true
+                            visible: root.backend.ui_scale_restart_pending
+                            text: qsTranslate("Settings", "The screen size change applies after restarting NagameTV.")
                             wrapMode: Text.WordWrap
                         }
                         RowLayout {

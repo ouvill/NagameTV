@@ -79,6 +79,14 @@ Item {
                     startup_display = value;
                     return true;
                 }
+                property string ui_scale: "100"
+                property string launched_ui_scale: "100"
+                readonly property bool ui_scale_restart_pending: ui_scale !== launched_ui_scale
+                function configure_ui_scale(value) {
+                    if (!["100", "125", "150", "200"].includes(value)) return false;
+                    ui_scale = value;
+                    return true;
+                }
                 property string live_buffer_options: JSON.stringify({milliseconds:250, min_ms:1, max_ms:1000, default_ms:250})
                 function configure_live_buffer(value) {
                     const options = JSON.parse(live_buffer_options);
@@ -320,6 +328,7 @@ Item {
                 backend.window_decoration = "custom";
                 backend.deinterlace = "greedyl"; backend.deinterlace_overridden = false;
                 backend.startup_display = "window"; backend.startup_display_overridden = false; backend.kiosk = false;
+                backend.ui_scale = "100";
                 backend.configure_live_buffer(250);
                 backend.configure_timeshift_options("pause_memory", 256, 1024, 60);
                 backend.comment_display = "scroll"; backend.comment_placement = "sequential";
@@ -1443,6 +1452,26 @@ Item {
                 compare(choice.currentIndex, 1);
                 compare(restart.visible, true);
                 backend.window_decoration = "custom";
+                compare(choice.currentIndex, 0);
+                compare(restart.visible, false);
+            }
+            function test_ui_scale_choice_is_saved_for_the_next_launch() {
+                selectPage(SettingsPanel.Display);
+                const choice = findChild(panel.contentItem, "uiScaleSetting");
+                const restart = findChild(panel.contentItem, "uiScaleRestart");
+                compare(choice.currentIndex, 0);
+                compare(restart.visible, false);
+                choice.forceActiveFocus();
+                keyClick(Qt.Key_Space);
+                tryCompare(choice.popup, "opened", true);
+                keyClick(Qt.Key_Down);
+                keyClick(Qt.Key_Down);
+                keyClick(Qt.Key_Return);
+                tryCompare(choice.popup, "visible", false);
+                compare(backend.ui_scale, "150");
+                compare(choice.currentIndex, 2);
+                compare(restart.visible, true);
+                backend.configure_ui_scale("100");
                 compare(choice.currentIndex, 0);
                 compare(restart.visible, false);
             }
