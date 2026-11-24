@@ -179,6 +179,8 @@ pub mod ffi {
         #[qproperty(QString, startup_display, READ = startup_display, NOTIFY)]
         #[qproperty(bool, startup_display_restart_pending, READ = startup_display_restart_pending, NOTIFY)]
         #[qproperty(bool, startup_display_overridden, READ = startup_display_overridden, CONSTANT)]
+        #[qproperty(QString, ui_scale, READ, NOTIFY)]
+        #[qproperty(bool, ui_scale_restart_pending, READ, NOTIFY)]
         #[qproperty(bool, kiosk, READ = kiosk, CONSTANT)]
         #[qproperty(bool, remote_web_enabled, READ = remote_web_enabled, NOTIFY)]
         #[qproperty(bool, remote_web_allowed, READ = remote_web_allowed, CONSTANT)]
@@ -456,6 +458,8 @@ pub mod ffi {
         fn startup_display(self: &Player) -> QString;
         fn startup_display_restart_pending(self: &Player) -> bool;
         fn startup_display_overridden(self: &Player) -> bool;
+        fn ui_scale(self: &Player) -> QString;
+        fn ui_scale_restart_pending(self: &Player) -> bool;
         fn kiosk(self: &Player) -> bool;
         #[qsignal]
         fn remote_key_requested(self: Pin<&mut Player>, key: i32);
@@ -794,6 +798,8 @@ pub mod ffi {
         #[qinvokable]
         fn configure_startup_display(self: Pin<&mut Player>, display: QString) -> bool;
         #[qinvokable]
+        fn configure_ui_scale(self: Pin<&mut Player>, scale: QString) -> bool;
+        #[qinvokable]
         fn enable_comments(self: Pin<&mut Player>, enabled: bool);
         #[qinvokable]
         fn edit_comment_draft(self: Pin<&mut Player>, text: QString);
@@ -863,6 +869,7 @@ pub struct PlayerRust {
     // The window appears once; a saved change applies at the next launch.
     launched_startup_display: settings::StartupDisplay,
     startup_display_override: Option<settings::StartupDisplay>,
+    launched_ui_scale: settings::UiScale,
     #[cfg(target_os = "linux")]
     desktop_media: desktop_media::Registration,
     sleep_inhibit: crate::sleep_inhibit::Controller<crate::qt::sleep_inhibit::Portal>,

@@ -14,6 +14,8 @@ mod screenshot_directory;
 mod screenshot_format;
 pub mod startup_display;
 pub use startup_display::StartupDisplay;
+mod ui_scale;
+pub use ui_scale::UiScale;
 mod window_decoration;
 mod window_size;
 pub use comment_style::{CommentFontSize, CommentOpacity, CommentSpeed};
@@ -168,6 +170,7 @@ pub enum Change {
     WindowDecoration(WindowDecoration),
     Deinterlace(Deinterlace),
     StartupDisplay(StartupDisplay),
+    UiScale(UiScale),
     Language(Language),
     Service(String),
     Autoplay(bool),
@@ -258,6 +261,7 @@ impl Session {
             Change::WindowDecoration(value) => preferences.window_decoration = value,
             Change::Deinterlace(value) => preferences.deinterlace = value,
             Change::StartupDisplay(value) => preferences.startup_display = value,
+            Change::UiScale(value) => preferences.ui_scale = value,
             Change::Language(language) => preferences.language = language,
             Change::Service(service) => preferences.service_id = service,
             Change::Autoplay(enabled) => preferences.autoplay = enabled,
