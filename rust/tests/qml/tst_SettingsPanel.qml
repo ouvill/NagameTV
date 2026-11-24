@@ -622,6 +622,7 @@ Item {
                 verify(panel.opened); expectFocus("languageSetting");
                 keyClick(Qt.Key_Down); expectFocus("windowDecorationSetting");
                 keyClick(Qt.Key_Down); expectFocus("startupDisplaySetting");
+                keyClick(Qt.Key_Down); expectFocus("uiScaleSetting");
                 keyClick(Qt.Key_Down); expectFocus("deinterlaceSetting");
                 keyClick(Qt.Key_Down); expectFocus("chooseScreenshotDirectory");
                 keyClick(Qt.Key_Right); expectFocus("openScreenshotDirectory");
