@@ -273,6 +273,33 @@ impl ffi::Player {
         true
     }
 
+    pub fn ui_scale(&self) -> QString {
+        QString::from(self.rust().preferences.preferences().ui_scale.code())
+    }
+
+    pub fn ui_scale_restart_pending(&self) -> bool {
+        self.rust().preferences.preferences().ui_scale != self.rust().launched_ui_scale
+    }
+
+    pub fn configure_ui_scale(mut self: Pin<&mut Self>, scale: QString) -> bool {
+        let Some(scale) = crate::settings::UiScale::parse(&scale.to_string()) else {
+            return false;
+        };
+        if scale != self.rust().preferences.preferences().ui_scale {
+            let was_pending = self.ui_scale_restart_pending();
+            self.as_mut()
+                .rust_mut()
+                .preferences
+                .change(crate::settings::Change::UiScale(scale));
+            self.as_mut().ui_scale_changed();
+            if self.ui_scale_restart_pending() != was_pending {
+                self.as_mut().ui_scale_restart_pending_changed();
+            }
+        }
+        self.save_settings();
+        true
+    }
+
     pub fn save_settings(mut self: Pin<&mut Self>) {
         let result = self.as_mut().rust_mut().preferences.flush();
         match result {

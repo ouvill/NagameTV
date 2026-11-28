@@ -1940,6 +1940,9 @@
     <message><source>Kiosk (always fullscreen)</source><translation>キオスク（常に全画面）</translation></message>
     <message><source>Kiosk mode hides the window buttons and cannot leave fullscreen. Quit from Settings &gt; System.</source><translation>キオスクモードではウィンドウのボタンを表示せず、全画面を解除できません。終了するときは［設定］→［システム］から終了します。</translation></message>
     <message><source>The startup display change applies after restarting NagameTV.</source><translation>起動時の表示の変更は、NagameTVを再起動すると反映されます。</translation></message>
+    <message><source>Screen size</source><translation>画面の表示サイズ</translation></message>
+    <message><source>100% (default)</source><translation>100%（既定）</translation></message>
+    <message><source>The screen size change applies after restarting NagameTV.</source><translation>表示サイズの変更は、NagameTVを再起動すると反映されます。</translation></message>
     <message><source>--fullscreen or --kiosk was given, so this launch ignores the saved choice.</source><translation>--fullscreen または --kiosk が指定されているため、今回の起動では保存した設定を使いません。</translation></message>
     <message><source>Quit NagameTV</source><translation>NagameTVを終了</translation></message>
     <message><source>While something plays</source><translation>再生中</translation></message>
