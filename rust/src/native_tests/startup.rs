@@ -2348,13 +2348,38 @@ fn check_shortcuts(
         engine,
         "root.showProgram = false; root.showChannels = false; root.requestActivate(); surface.forceActiveFocus(); true",
     )?;
-    wait_for(app, engine, "root.active && inputContext.navigationEnabled")?;
+    wait_for(
+        app,
+        engine,
+        "root.active && inputContext.navigationEnabled && player.back_screen === ViewerActions.HomeScreen",
+    )?;
     ffi::clickRootKey(engine.pin_mut(), &QString::from("F11"))?;
     wait_for(app, engine, "viewerActions.fullscreen")?;
-    for _ in 0..2 {
-        ffi::clickRootKey(engine.pin_mut(), &QString::from("Back"))?;
-        assert!(evaluate(engine, "viewerActions.fullscreen")?);
+    // A viewing session lets Back and Escape navigate while staying fullscreen.
+    for (key, condition) in [
+        ("Back", "viewerActions.fullscreen && root.homeScreen"),
+        (
+            "Back",
+            "viewerActions.fullscreen && player.screen === ViewerActions.WatchingScreen",
+        ),
+        ("Escape", "viewerActions.fullscreen && root.homeScreen"),
+    ] {
+        ffi::clickRootKey(engine.pin_mut(), &QString::from(key))?;
+        wait_for(app, engine, condition)?;
     }
+
+    // Stopping on Home removes the back target. Only Escape leaves fullscreen.
+    evaluate(engine, "player.stop(); true")?;
+    wait_for(
+        app,
+        engine,
+        "viewerActions.fullscreen && root.homeScreen && !player.watching_available && player.back_screen === -1",
+    )?;
+    ffi::clickRootKey(engine.pin_mut(), &QString::from("Back"))?;
+    assert!(evaluate(
+        engine,
+        "viewerActions.fullscreen && root.homeScreen"
+    )?);
     ffi::clickRootKey(engine.pin_mut(), &QString::from("Escape"))?;
     wait_for(app, engine, "!viewerActions.fullscreen && root.homeScreen")?;
     enter_watching(app, engine)?;
